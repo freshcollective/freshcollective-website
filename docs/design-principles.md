@@ -21,12 +21,29 @@ Every design decision should support this feeling:
 ## Visual Style
 
 ### Colour Palette
-_To be defined when Phase 1 begins. Direction: soft neutrals as the base, one or two warm accent tones, nothing overly bright or saturated._
+
+**Approved direction:** white or near-white background, with navy, teal, and gold accents and supporting tints/shades.
+
+| Role | Colour | Value |
+|---|---|---|
+| **Background** | Warm off-white | `#FAFAF8` |
+| **Surface** (cards, header) | White | `#FFFFFF` |
+| **Navy** (headings, depth, footer) | Deep navy | `#1C2B4A` |
+| **Teal** (buttons, links, active states) | Brand teal | `#3D8B8A` |
+| **Gold** (warmth, emphasis, premium details) | Warm gold | `#B8902A` |
+| **Border** | Warm grey | `#E2DDD5` |
+| **Text: secondary** | Slate | `#4A5568` |
+| **Text: muted** | Light slate | `#718096` |
+
+Each of the three accent colours (navy, teal, gold) has a full tint/shade range defined in `src/app/globals.css` for use in cards, hover states, backgrounds, and borders.
+
+**Palette feel:** calm, spacious, premium, grounded. Warm without being beige. Feminine without being pastel. Navy is depth, not dominance — the background stays light.
 
 Avoid:
-- Dark, heavy dashboard palettes
-- Overly bright or neon colours
+- Dark, heavy dashboard palettes (navy should accent, not fill)
+- Bright cyan, harsh blue, mustard, orange-gold, hot pink, or purple
 - Colour combinations that feel busy or corporate
+- Overly beige or greige palettes
 
 ### Typography
 - Use elegant, readable typefaces
