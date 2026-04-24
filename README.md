@@ -4,11 +4,11 @@ Fresh Collective is a membership-based transformation platform for women moving 
 
 ## What This Repo Contains
 
-At this stage: project documentation only. No framework, no pages, no app code yet.
+Phase 0 (documentation) and Phase 1 (framework setup) are complete.
 
 The `/docs` folder is the source of truth for all product strategy, design direction, platform structure, and build roadmap. Future Claude Code sessions should read the relevant docs before building anything.
 
-## Tech Stack (planned, not yet installed)
+## Tech Stack
 
 - **Framework:** Next.js (App Router)
 - **Language:** TypeScript
@@ -35,17 +35,15 @@ Start each session by telling Claude which phase you are working on and which do
 
 ## Next Build Step
 
-**Phase 1: Framework Setup**
+**Phase 2: Public Site**
 
-- Initialise Next.js with TypeScript and Tailwind CSS
-- Set up folder structure and design tokens
-- No pages yet — foundation only
+- Home, About, REAL Journey sales page, Membership sales page
+- Login and Sign up pages
+- Fully responsive, matching design principles
 
 See [docs/roadmap.md](docs/roadmap.md) for the full phased plan.
 
 ## Local Development
-
-_To be completed when Phase 1 is built._
 
 ```bash
 # Install dependencies
@@ -53,6 +51,12 @@ npm install
 
 # Run development server
 npm run dev
+
+# Type check
+npm run type-check
+
+# Production build
+npm run build
 ```
 
 ## Deployment
