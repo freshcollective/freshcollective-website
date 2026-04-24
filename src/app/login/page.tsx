@@ -6,10 +6,15 @@ import Button from "@/components/ui/Button";
 export default function LoginPage() {
   return (
     <SiteShell>
-      <section className="flex min-h-[72vh] items-center py-20">
+      {/* Teal-50 wash background lifts the white form card */}
+      <section className="flex min-h-[72vh] items-center bg-teal-50 py-20">
         <Container>
-          <div className="mx-auto max-w-sm">
+          <div
+            className="mx-auto max-w-sm rounded-xl border border-border bg-surface p-8 md:p-10"
+            style={{ boxShadow: "var(--fc-shadow-md)" }}
+          >
             <div className="mb-8">
+              <div className="mb-4 h-px w-6 bg-gold-500" />
               <h1 className="mb-2 font-serif text-3xl text-navy-900">Welcome back.</h1>
               <p className="text-sm text-[#718096]">
                 Don&apos;t have an account?{" "}

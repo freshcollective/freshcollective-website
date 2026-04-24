@@ -10,11 +10,13 @@ export default function AboutPage() {
       <section className="border-b border-border py-20 md:py-28">
         <Container>
           <div className="max-w-2xl">
-            <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+            <p className="mb-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+              <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
               About Fresh Collective
             </p>
             <h1 className="mb-6 font-serif text-4xl leading-tight text-navy-900 md:text-5xl">
-              Built on the belief that sustainable change is quiet.
+              Built on the belief that sustainable change is{" "}
+              <em className="text-teal-600">quiet.</em>
             </h1>
             <p className="text-lg leading-relaxed text-[#4A5568]">
               Fresh Collective exists for women who are done with quick fixes and ready for something
@@ -24,8 +26,8 @@ export default function AboutPage() {
         </Container>
       </section>
 
-      {/* Why this platform exists */}
-      <section className="py-20 md:py-28">
+      {/* Why this platform exists — teal wash */}
+      <section className="bg-teal-50 py-20 md:py-28">
         <Container>
           <div className="max-w-2xl">
             <SectionHeading title="Why this platform exists." className="mb-10" />
@@ -48,16 +50,16 @@ export default function AboutPage() {
         </Container>
       </section>
 
-      {/* Foundations */}
-      <section className="border-t border-border py-20 md:py-28">
+      {/* Foundations — white with left-border accents */}
+      <section className="py-20 md:py-28">
         <Container>
           <SectionHeading
             title="What it is built on."
             subtitle="Every part of Fresh Collective is grounded in the same foundations."
             className="mb-14 max-w-xl"
           />
-          <div className="grid max-w-3xl gap-10 md:grid-cols-2">
-            <div>
+          <div className="grid max-w-3xl gap-8 md:grid-cols-2">
+            <div className="border-l-2 border-teal-200 pl-5">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
                 Nervous system safety
               </p>
@@ -66,7 +68,7 @@ export default function AboutPage() {
                 manageable — short, grounded, and accessible even on a hard day.
               </p>
             </div>
-            <div>
+            <div className="border-l-2 border-teal-200 pl-5">
               <p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
                 Personal leadership
               </p>
@@ -75,8 +77,8 @@ export default function AboutPage() {
                 intentional, from survival to expansion.
               </p>
             </div>
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
+            <div className="border-l-2 border-gold-300 pl-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-gold-700">
                 Community
               </p>
               <p className="text-sm leading-relaxed text-[#4A5568]">
@@ -84,8 +86,8 @@ export default function AboutPage() {
                 community is not an add-on. It is one of the most important things in the platform.
               </p>
             </div>
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
+            <div className="border-l-2 border-gold-300 pl-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-gold-700">
                 Practical integration
               </p>
               <p className="text-sm leading-relaxed text-[#4A5568]">
@@ -97,8 +99,8 @@ export default function AboutPage() {
         </Container>
       </section>
 
-      {/* CTA */}
-      <section className="border-t border-border bg-navy-50 py-20 md:py-24">
+      {/* CTA — warm gold wash */}
+      <section className="bg-gold-50 py-20 md:py-24">
         <Container>
           <div className="max-w-xl">
             <SectionHeading
@@ -115,7 +117,7 @@ export default function AboutPage() {
               </Link>
               <Link
                 href="/membership"
-                className="inline-flex items-center justify-center rounded-lg border border-navy-300 bg-transparent px-6 py-3 text-base font-medium text-navy-900 transition-colors duration-200 hover:border-navy-500 hover:bg-navy-50"
+                className="inline-flex items-center justify-center rounded-lg border border-navy-300 bg-transparent px-6 py-3 text-base font-medium text-navy-900 transition-colors duration-200 hover:border-navy-500 hover:bg-white"
               >
                 Explore Membership
               </Link>

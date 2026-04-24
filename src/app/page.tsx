@@ -11,11 +11,14 @@ export default function Home() {
       <section className="border-b border-border py-24 md:py-32">
         <Container>
           <div className="max-w-2xl">
-            <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+            <p className="mb-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+              <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
               A membership for women
             </p>
             <h1 className="mb-6 font-serif text-4xl leading-tight text-navy-900 md:text-5xl lg:text-6xl">
-              Move from survival into expansion that lasts.
+              Move from survival into{" "}
+              <em className="text-gold-500">expansion</em>
+              {" "}that lasts.
             </h1>
             <p className="mb-10 text-lg leading-relaxed text-[#4A5568]">
               Fresh Collective is a structured transformation membership — one foundation, a live
@@ -49,8 +52,9 @@ export default function Home() {
             className="mb-14 max-w-xl"
           />
           <div className="grid gap-6 md:grid-cols-3">
-            <Card className="flex flex-col gap-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
+            {/* REAL Journey — teal tint */}
+            <Card className="flex flex-col gap-4 bg-teal-50 border-teal-100">
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-teal-700">
                 Start Here
               </p>
               <h3 className="font-serif text-xl text-navy-900">REAL Journey</h3>
@@ -60,14 +64,15 @@ export default function Home() {
               </p>
               <Link
                 href="/real-journey"
-                className="mt-auto text-sm font-medium text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"
+                className="mt-auto text-sm font-medium text-teal-700 underline-offset-4 transition-colors hover:text-teal-900 hover:underline"
               >
                 Learn more →
               </Link>
             </Card>
 
-            <Card className="flex flex-col gap-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
+            {/* The Heart — gold tint */}
+            <Card className="flex flex-col gap-4 bg-gold-50 border-gold-100">
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-gold-700">
                 The Heart
               </p>
               <h3 className="font-serif text-xl text-navy-900">Live Layer</h3>
@@ -77,14 +82,15 @@ export default function Home() {
               </p>
               <Link
                 href="/membership"
-                className="mt-auto text-sm font-medium text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"
+                className="mt-auto text-sm font-medium text-gold-700 underline-offset-4 transition-colors hover:text-gold-900 hover:underline"
               >
                 Learn more →
               </Link>
             </Card>
 
-            <Card className="flex flex-col gap-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
+            {/* The Rooms — navy tint */}
+            <Card className="flex flex-col gap-4 bg-navy-50 border-navy-100">
+              <p className="text-xs font-semibold uppercase tracking-[0.15em] text-navy-700">
                 The Rooms
               </p>
               <h3 className="font-serif text-xl text-navy-900">Deepening Pathways</h3>
@@ -94,7 +100,7 @@ export default function Home() {
               </p>
               <Link
                 href="/membership"
-                className="mt-auto text-sm font-medium text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"
+                className="mt-auto text-sm font-medium text-navy-700 underline-offset-4 transition-colors hover:text-navy-900 hover:underline"
               >
                 Learn more →
               </Link>
@@ -103,53 +109,68 @@ export default function Home() {
         </Container>
       </section>
 
-      {/* Two entry paths */}
-      <section className="border-t border-border bg-navy-50 py-20 md:py-28">
+      {/* Two entry paths — dark navy section */}
+      <section className="bg-navy-950 py-20 md:py-28">
         <Container>
           <SectionHeading
             title="Two ways in."
             subtitle="Start where you are. There is no wrong entry point."
             align="center"
             className="mb-14"
+            dark
           />
           <div className="mx-auto grid max-w-3xl gap-6 md:grid-cols-2">
-            <Card className="flex flex-col gap-5 p-8">
+            {/* Path 1 — teal top border */}
+            <div
+              className="flex flex-col gap-5 rounded-xl bg-navy-900 p-8"
+              style={{
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderTop: "3px solid var(--color-teal-500)",
+              }}
+            >
               <div>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.15em] text-gold-700">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.15em] text-teal-400">
                   Path 1
                 </p>
-                <h3 className="font-serif text-2xl text-navy-900">REAL Journey first</h3>
+                <h3 className="font-serif text-2xl text-white">REAL Journey first</h3>
               </div>
-              <p className="text-sm leading-relaxed text-[#4A5568]">
+              <p className="text-sm leading-relaxed text-navy-300">
                 Begin with the REAL Journey as a standalone. Work through the four phases at your
                 own pace. When you are ready, step into the full membership.
               </p>
               <Link
                 href="/real-journey"
-                className="mt-auto inline-flex w-full items-center justify-center rounded-lg border border-transparent bg-teal-500 px-4 py-2.5 text-sm font-medium text-white transition-colors duration-200 hover:bg-teal-700"
+                className="mt-auto inline-flex w-full items-center justify-center rounded-lg border border-teal-500 bg-teal-500 px-4 py-2.5 text-sm font-medium text-white transition-colors duration-200 hover:bg-teal-700 hover:border-teal-700"
               >
                 Start with REAL Journey
               </Link>
-            </Card>
+            </div>
 
-            <Card className="flex flex-col gap-5 p-8">
+            {/* Path 2 — gold top border */}
+            <div
+              className="flex flex-col gap-5 rounded-xl bg-navy-900 p-8"
+              style={{
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderTop: "3px solid var(--color-gold-500)",
+              }}
+            >
               <div>
-                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.15em] text-gold-700">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.15em] text-gold-300">
                   Path 2
                 </p>
-                <h3 className="font-serif text-2xl text-navy-900">Full membership</h3>
+                <h3 className="font-serif text-2xl text-white">Full membership</h3>
               </div>
-              <p className="text-sm leading-relaxed text-[#4A5568]">
+              <p className="text-sm leading-relaxed text-navy-300">
                 Join the full membership and get everything — REAL Journey, live calls, The Rooms,
                 and community — from day one.
               </p>
               <Link
                 href="/membership"
-                className="mt-auto inline-flex w-full items-center justify-center rounded-lg border border-transparent bg-teal-500 px-4 py-2.5 text-sm font-medium text-white transition-colors duration-200 hover:bg-teal-700"
+                className="mt-auto inline-flex w-full items-center justify-center rounded-lg border border-gold-500 bg-transparent px-4 py-2.5 text-sm font-medium text-gold-300 transition-colors duration-200 hover:bg-gold-500 hover:text-navy-950"
               >
                 Explore Membership
               </Link>
-            </Card>
+            </div>
           </div>
         </Container>
       </section>

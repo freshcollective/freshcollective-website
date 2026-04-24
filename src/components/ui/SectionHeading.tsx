@@ -3,6 +3,7 @@ interface SectionHeadingProps {
   subtitle?: string;
   align?: "left" | "center";
   className?: string;
+  dark?: boolean;
 }
 
 export default function SectionHeading({
@@ -10,12 +11,19 @@ export default function SectionHeading({
   subtitle,
   align = "left",
   className = "",
+  dark = false,
 }: SectionHeadingProps) {
+  const isCenter = align === "center";
   return (
-    <div className={`${align === "center" ? "text-center" : "text-left"} ${className}`}>
-      <h2 className="font-serif text-3xl text-navy-900 md:text-4xl">{title}</h2>
+    <div className={`${isCenter ? "text-center" : "text-left"} ${className}`}>
+      <div className={`mb-3 h-px w-8 bg-gold-500 ${isCenter ? "mx-auto" : ""}`} />
+      <h2 className={`font-serif text-3xl md:text-4xl ${dark ? "text-white" : "text-navy-900"}`}>
+        {title}
+      </h2>
       {subtitle && (
-        <p className="mt-3 text-base text-[#4A5568] md:text-lg">{subtitle}</p>
+        <p className={`mt-3 text-base md:text-lg ${dark ? "text-navy-300" : "text-[#4A5568]"}`}>
+          {subtitle}
+        </p>
       )}
     </div>
   );

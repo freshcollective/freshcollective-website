@@ -3,7 +3,10 @@ import Container from "./Container";
 
 export default function PublicHeader() {
   return (
-    <header className="border-b border-border bg-surface py-5">
+    <header
+      className="border-b border-border bg-surface py-5"
+      style={{ borderTop: "2px solid var(--color-gold-500)" }}
+    >
       <Container className="flex items-center justify-between">
         <Link
           href="/"
