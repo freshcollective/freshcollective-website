@@ -15,7 +15,9 @@ Phases are ordered by dependency, not by date. No timelines are set. Build each 
 
 ---
 
-## Phase 1 — Framework Setup
+## Phase 1 — Framework Setup ✓
+
+**Status:** Complete (includes brand styling and layout system)
 
 **Goal:** A working Next.js project with the right configuration. No pages yet.
 
