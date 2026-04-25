@@ -1,14 +1,8 @@
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
-import LoginForm from './LoginForm'
+import ForgotPasswordForm from './ForgotPasswordForm'
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ next?: string }>
-}) {
-  const { next } = await searchParams
-
+export default function ForgotPasswordPage() {
   return (
     <SiteShell>
       <section className="relative flex min-h-[80vh] items-center overflow-hidden py-20">
@@ -18,7 +12,7 @@ export default async function LoginPage({
         </div>
         <Container className="relative z-10">
           <div className="flex items-center justify-center">
-            <LoginForm nextUrl={next} />
+            <ForgotPasswordForm />
           </div>
         </Container>
       </section>

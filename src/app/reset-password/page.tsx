@@ -1,13 +1,19 @@
+import { notFound } from 'next/navigation'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
-import LoginForm from './LoginForm'
+import ResetPasswordForm from './ResetPasswordForm'
 
-export default async function LoginPage({
+export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string }>
+  searchParams: Promise<{ token?: string }>
 }) {
-  const { next } = await searchParams
+  const { token } = await searchParams
+
+  // Token must be present and look like a 64-char hex string
+  if (!token || !/^[0-9a-f]{64}$/.test(token)) {
+    notFound()
+  }
 
   return (
     <SiteShell>
@@ -18,7 +24,7 @@ export default async function LoginPage({
         </div>
         <Container className="relative z-10">
           <div className="flex items-center justify-center">
-            <LoginForm nextUrl={next} />
+            <ResetPasswordForm token={token} />
           </div>
         </Container>
       </section>
