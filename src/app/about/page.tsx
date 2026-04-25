@@ -14,7 +14,7 @@ export default function AboutPage() {
               <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
               About Fresh Collective
             </p>
-            <h1 className="mb-6 font-serif text-4xl leading-tight text-navy-900 md:text-5xl">
+            <h1 className="mb-6 font-serif text-4xl leading-tight text-navy-900 md:text-5xl lg:text-6xl">
               Built on the belief that sustainable change is{" "}
               <em className="text-teal-600">quiet.</em>
             </h1>
@@ -50,7 +50,7 @@ export default function AboutPage() {
         </Container>
       </section>
 
-      {/* Foundations — white with left-border accents */}
+      {/* Foundations */}
       <section className="py-20 md:py-28">
         <Container>
           <SectionHeading
@@ -99,25 +99,26 @@ export default function AboutPage() {
         </Container>
       </section>
 
-      {/* CTA — warm gold wash */}
-      <section className="bg-gold-50 py-20 md:py-24">
+      {/* CTA — dark navy for energy */}
+      <section className="bg-navy-950 py-20 md:py-24">
         <Container>
           <div className="max-w-xl">
             <SectionHeading
               title="Ready to begin?"
               subtitle="Start with the REAL Journey or explore full membership."
               className="mb-8"
+              dark
             />
             <div className="flex flex-wrap gap-4">
               <Link
                 href="/real-journey"
-                className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-6 py-3 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700"
+                className="inline-flex items-center justify-center rounded-lg border border-teal-500 bg-teal-500 px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700 hover:border-teal-700"
               >
                 Start with REAL Journey
               </Link>
               <Link
                 href="/membership"
-                className="inline-flex items-center justify-center rounded-lg border border-navy-300 bg-transparent px-6 py-3 text-base font-medium text-navy-900 transition-colors duration-200 hover:border-navy-500 hover:bg-white"
+                className="inline-flex items-center justify-center rounded-lg border border-white/30 bg-transparent px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:border-white/60 hover:bg-white/10"
               >
                 Explore Membership
               </Link>

@@ -4,78 +4,63 @@ import Container from "@/components/layout/Container";
 import Card from "@/components/ui/Card";
 import SectionHeading from "@/components/ui/SectionHeading";
 
-const pillars = [
-  {
-    label: "Start Here",
-    labelClass: "text-teal-700",
-    name: "REAL Journey",
-    description:
-      "Every member begins with the REAL Journey — four grounded phases that build self-awareness, clarity, and a way forward. You can return to it at any time.",
-    href: "/real-journey",
-    cardClass: "bg-teal-50 border-teal-100",
-    linkClass: "text-teal-700 hover:text-teal-900",
-  },
-  {
-    label: "The Heart",
-    labelClass: "text-gold-700",
-    name: "Live Layer",
-    description:
-      "Monthly live calls, community prompts, integration threads, and a shared space with women moving through the same work. This is where the membership comes alive.",
-    href: null,
-    cardClass: "bg-gold-50 border-gold-100",
-    linkClass: "",
-  },
-  {
-    label: "The Rooms",
-    labelClass: "text-navy-700",
-    name: "Deepening Pathways",
-    description:
-      "Once you have your foundation, The Rooms take you deeper. Growth pathway is live. Transformation and Essence are coming soon.",
-    href: null,
-    cardClass: "bg-navy-50 border-navy-100",
-    linkClass: "",
-  },
-  {
-    label: "Community",
-    labelClass: "text-teal-600",
-    name: "Shared space",
-    description:
-      "A feed, member reflections, and discussion threads tied to live calls and REAL phases. You are not doing this alone.",
-    href: null,
-    cardClass: "",
-    linkClass: "",
-  },
-];
-
 export default function MembershipPage() {
   return (
     <SiteShell>
-      {/* Hero */}
+      {/* Hero — split layout */}
       <section className="border-b border-border py-20 md:py-28">
         <Container>
-          <div className="max-w-2xl">
-            <p className="mb-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
-              <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
-              Full membership
-            </p>
-            <h1 className="mb-6 font-serif text-5xl leading-tight text-navy-900 md:text-6xl">
-              Everything you need to move from survival into{" "}
-              <em className="text-gold-500">expansion.</em>
-            </h1>
-            <p className="mb-10 text-lg leading-relaxed text-[#4A5568]">
-              This is not a content library. There is nothing to binge or fall behind on. Fresh
-              Collective gives you a structured foundation, a live community layer, deepening
-              pathways, and the people who make the work real.
-            </p>
-            {/* STRIPE_INTEGRATION */}
-            <button className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700">
-              Join Fresh Collective
-            </button>
+          <div className="grid gap-12 md:grid-cols-[55%_45%] md:gap-10 md:items-center">
+            <div>
+              <p className="mb-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+                <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
+                Full membership
+              </p>
+              <h1 className="mb-6 font-serif text-5xl leading-tight text-navy-900 md:text-6xl">
+                Everything you need to move from survival into{" "}
+                <em className="text-gold-500">expansion.</em>
+              </h1>
+              <p className="mb-10 text-lg leading-relaxed text-[#4A5568]">
+                This is not a content library. There is nothing to binge or fall behind on. Fresh
+                Collective gives you a structured foundation, a live community layer, deepening
+                pathways, and the people who make the work real.
+              </p>
+              {/* STRIPE_INTEGRATION */}
+              <button className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700">
+                Join Fresh Collective
+              </button>
+            </div>
+
+            {/* Right: membership layers preview */}
+            {/* IMAGE_PLACEHOLDER: Warm group or connection image — women in conversation, or a single woman feeling settled and present. Editorial tone. Replace this div with Next.js Image when photography is available. */}
+            <div className="hidden md:block">
+              <div className="space-y-3">
+                {[
+                  { label: "Start Here", name: "REAL Journey", color: "border-teal-200 bg-teal-50", labelColor: "text-teal-700" },
+                  { label: "The Heart", name: "Live Layer", color: "border-gold-200 bg-gold-50", labelColor: "text-gold-700" },
+                  { label: "The Rooms", name: "Deepening Pathways", color: "border-navy-100 bg-navy-50", labelColor: "text-navy-700" },
+                  { label: "Community", name: "Shared space", color: "border-border bg-surface", labelColor: "text-teal-600" },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className={`flex items-center justify-between rounded-xl border px-5 py-3.5 ${item.color}`}
+                  >
+                    <div>
+                      <p className={`text-[10px] font-semibold uppercase tracking-widest ${item.labelColor}`}>
+                        {item.label}
+                      </p>
+                      <p className="mt-0.5 text-sm font-medium text-navy-900">{item.name}</p>
+                    </div>
+                    <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </Container>
       </section>
 
-      {/* What is inside — four tinted pillar cards */}
+      {/* What is inside — asymmetric: REAL featured, then 3-col */}
       <section className="py-20 md:py-28">
         <Container>
           <SectionHeading
@@ -83,30 +68,80 @@ export default function MembershipPage() {
             subtitle="Four connected parts. Each one designed to support the others."
             className="mb-14 max-w-xl"
           />
-          <div className="grid gap-6 md:grid-cols-2">
-            {pillars.map((pillar) => (
-              <Card key={pillar.label} className={`flex flex-col gap-3 ${pillar.cardClass}`}>
-                <p className={`text-xs font-semibold uppercase tracking-[0.15em] ${pillar.labelClass}`}>
-                  {pillar.label}
-                </p>
-                <h3 className="font-serif text-xl text-navy-900">{pillar.name}</h3>
-                <p className="text-sm leading-relaxed text-[#4A5568]">{pillar.description}</p>
-                {pillar.href && (
+
+          <div className="space-y-6">
+            {/* REAL Journey — featured full-width */}
+            <div
+              className="overflow-hidden rounded-xl border border-teal-100 bg-teal-50"
+              style={{ boxShadow: "var(--fc-shadow-sm)" }}
+            >
+              <div className="flex flex-col md:flex-row md:items-stretch">
+                <div className="flex-1 p-8 md:p-10">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.15em] text-teal-700">
+                    Start Here
+                  </p>
+                  <h3 className="mb-3 font-serif text-2xl text-navy-900">REAL Journey</h3>
+                  <p className="mb-4 max-w-md text-sm leading-relaxed text-[#4A5568]">
+                    Every member begins with the REAL Journey — four grounded phases that build
+                    self-awareness, clarity, and a way forward. You can return to it at any time.
+                  </p>
                   <Link
-                    href={pillar.href}
-                    className={`mt-1 text-sm font-medium underline-offset-4 transition-colors hover:underline ${pillar.linkClass}`}
+                    href="/real-journey"
+                    className="text-sm font-medium text-teal-700 underline-offset-4 transition-colors hover:text-teal-900 hover:underline"
                   >
-                    Learn more →
+                    Learn about REAL Journey →
                   </Link>
-                )}
+                </div>
+                {/* IMAGE_PLACEHOLDER: Close-up of journalling or handwriting — warm, intimate, personal. */}
+                <div className="flex min-h-[140px] items-center justify-center bg-teal-100/50 md:w-56 md:shrink-0">
+                  <div className="font-serif text-6xl font-light tracking-[0.4em] text-teal-300">
+                    REAL
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Three remaining pillars — 3-col */}
+            <div className="grid gap-6 md:grid-cols-3">
+              <Card className="flex flex-col gap-3 bg-gold-50 border-gold-100">
+                <p className="text-xs font-semibold uppercase tracking-[0.15em] text-gold-700">
+                  The Heart
+                </p>
+                <h3 className="font-serif text-xl text-navy-900">Live Layer</h3>
+                <p className="text-sm leading-relaxed text-[#4A5568]">
+                  Monthly live calls, community prompts, integration threads, and a shared space
+                  with women moving through the same work.
+                </p>
               </Card>
-            ))}
+
+              <Card className="flex flex-col gap-3 bg-navy-50 border-navy-100">
+                <p className="text-xs font-semibold uppercase tracking-[0.15em] text-navy-700">
+                  The Rooms
+                </p>
+                <h3 className="font-serif text-xl text-navy-900">Deepening Pathways</h3>
+                <p className="text-sm leading-relaxed text-[#4A5568]">
+                  Once you have your foundation, The Rooms take you deeper. Growth pathway is live.
+                  Transformation and Essence are coming soon.
+                </p>
+              </Card>
+
+              <Card className="flex flex-col gap-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
+                  Community
+                </p>
+                <h3 className="font-serif text-xl text-navy-900">Shared space</h3>
+                <p className="text-sm leading-relaxed text-[#4A5568]">
+                  A feed, member reflections, and discussion threads tied to live calls and REAL
+                  phases. You are not doing this alone.
+                </p>
+              </Card>
+            </div>
           </div>
         </Container>
       </section>
 
       {/* What a week inside looks like */}
-      <section className="border-t border-border py-20 md:py-28">
+      <section className="border-t border-border bg-ivory py-20 md:py-28">
         <Container>
           <div className="max-w-2xl">
             <SectionHeading
@@ -136,8 +171,8 @@ export default function MembershipPage() {
                   <p className="mb-2 text-sm font-semibold text-navy-900">Mid-week</p>
                   <p className="text-sm leading-relaxed text-[#4A5568]">
                     A community prompt lands. You read what other women are noticing this week.
-                    Maybe you write something. Maybe you just recognise yourself in someone else&apos;s
-                    words. Either way, you feel less alone in what you are moving through.
+                    Maybe you write something. Maybe you just recognise yourself in someone
+                    else&apos;s words. Either way, you feel less alone in what you are moving through.
                   </p>
                 </div>
               </div>
@@ -188,7 +223,7 @@ export default function MembershipPage() {
         </Container>
       </section>
 
-      {/* Bottom CTA — dark navy */}
+      {/* Bottom CTA */}
       <section className="bg-navy-950 py-20 md:py-24">
         <Container>
           <div className="max-w-xl">
