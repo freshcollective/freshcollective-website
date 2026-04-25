@@ -58,7 +58,7 @@ export default function MembershipPage() {
               <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
               Full membership
             </p>
-            <h1 className="mb-6 font-serif text-4xl leading-tight text-navy-900 md:text-5xl">
+            <h1 className="mb-6 font-serif text-5xl leading-tight text-navy-900 md:text-6xl">
               Everything you need to move from survival into{" "}
               <em className="text-gold-500">expansion.</em>
             </h1>
@@ -68,7 +68,7 @@ export default function MembershipPage() {
               pathways, and the people who make the work real.
             </p>
             {/* STRIPE_INTEGRATION */}
-            <button className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-6 py-3 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700">
+            <button className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700">
               Join Fresh Collective
             </button>
           </div>
@@ -114,12 +114,12 @@ export default function MembershipPage() {
               subtitle="Not a schedule. A rhythm."
               className="mb-12"
             />
-            <div className="space-y-10">
-              <div className="flex gap-6">
+            <div className="space-y-12">
+              <div className="flex gap-8">
                 <div className="shrink-0 pt-0.5">
-                  <span className="font-serif text-lg font-light text-gold-500">01</span>
+                  <span className="font-serif text-5xl font-light leading-none text-gold-400">01</span>
                 </div>
-                <div>
+                <div className="pt-2">
                   <p className="mb-2 text-sm font-semibold text-navy-900">At the start of your week</p>
                   <p className="text-sm leading-relaxed text-[#4A5568]">
                     You open your REAL Journey phase. A short lesson. A reflection prompt to carry
@@ -128,24 +128,24 @@ export default function MembershipPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex gap-6">
+              <div className="flex gap-8">
                 <div className="shrink-0 pt-0.5">
-                  <span className="font-serif text-lg font-light text-gold-500">02</span>
+                  <span className="font-serif text-5xl font-light leading-none text-gold-400">02</span>
                 </div>
-                <div>
+                <div className="pt-2">
                   <p className="mb-2 text-sm font-semibold text-navy-900">Mid-week</p>
                   <p className="text-sm leading-relaxed text-[#4A5568]">
                     A community prompt lands. You read what other women are noticing this week.
-                    Maybe you write something. Maybe you just recognise yourself in someone else's
+                    Maybe you write something. Maybe you just recognise yourself in someone else&apos;s
                     words. Either way, you feel less alone in what you are moving through.
                   </p>
                 </div>
               </div>
-              <div className="flex gap-6">
+              <div className="flex gap-8">
                 <div className="shrink-0 pt-0.5">
-                  <span className="font-serif text-lg font-light text-gold-500">03</span>
+                  <span className="font-serif text-5xl font-light leading-none text-gold-400">03</span>
                 </div>
-                <div>
+                <div className="pt-2">
                   <p className="mb-2 text-sm font-semibold text-navy-900">This month</p>
                   <p className="text-sm leading-relaxed text-[#4A5568]">
                     There is a live call. You are in a room with other women doing the same work. It
@@ -159,10 +159,15 @@ export default function MembershipPage() {
         </Container>
       </section>
 
-      {/* Community emphasis — teal wash */}
+      {/* Community emphasis — teal wash with pull-quote */}
       <section className="bg-teal-50 py-20 md:py-28">
         <Container>
           <div className="max-w-2xl">
+            <div className="mb-8 h-px w-8 bg-gold-400" />
+            <p className="mb-10 font-serif text-2xl leading-relaxed text-navy-900 md:text-3xl">
+              Community is not a bonus.<br />
+              It is <em className="text-teal-600">the point.</em>
+            </p>
             <SectionHeading title="Community is the primary value." className="mb-8" />
             <div className="space-y-5 leading-relaxed text-[#4A5568]">
               <p>
@@ -195,12 +200,12 @@ export default function MembershipPage() {
             />
             <div className="flex flex-wrap gap-4">
               {/* STRIPE_INTEGRATION */}
-              <button className="inline-flex items-center justify-center rounded-lg border border-teal-500 bg-teal-500 px-6 py-3 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700 hover:border-teal-700">
+              <button className="inline-flex items-center justify-center rounded-lg border border-teal-500 bg-teal-500 px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700 hover:border-teal-700">
                 Join Fresh Collective
               </button>
               <Link
                 href="/real-journey"
-                className="inline-flex items-center justify-center rounded-lg border border-white/30 bg-transparent px-6 py-3 text-base font-medium text-white transition-colors duration-200 hover:border-white/60 hover:bg-white/10"
+                className="inline-flex items-center justify-center rounded-lg border border-white/30 bg-transparent px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:border-white/60 hover:bg-white/10"
               >
                 Start with REAL Journey first
               </Link>

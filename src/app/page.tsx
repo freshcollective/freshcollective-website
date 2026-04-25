@@ -7,20 +7,19 @@ import SectionHeading from "@/components/ui/SectionHeading";
 export default function Home() {
   return (
     <SiteShell>
-      {/* Hero */}
-      <section className="border-b border-border py-24 md:py-32">
+      {/* Hero — ivory wash lifts it from plain white */}
+      <section className="border-b border-border bg-ivory py-24 md:py-36">
         <Container>
           <div className="max-w-2xl">
             <p className="mb-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
               <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
               A membership for women
             </p>
-            <h1 className="mb-5 font-serif text-4xl leading-tight text-navy-900 md:text-5xl lg:text-6xl">
+            <h1 className="mb-5 font-serif text-5xl leading-tight text-navy-900 md:text-6xl lg:text-7xl">
               Move from survival into{" "}
               <em className="text-gold-500">expansion</em>
               {" "}that lasts.
             </h1>
-            {/* Speaks to where she is right now, before what FC offers */}
             <p className="mb-6 font-serif text-lg italic leading-relaxed text-[#4A5568] md:text-xl">
               If you have been managing, adapting, and holding it together for a long time — you already know something needs to change.
             </p>
@@ -32,13 +31,13 @@ export default function Home() {
             <div className="flex flex-wrap gap-4">
               <Link
                 href="/real-journey"
-                className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-6 py-3 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700"
+                className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700"
               >
                 Start with REAL Journey
               </Link>
               <Link
                 href="/membership"
-                className="inline-flex items-center justify-center rounded-lg border border-navy-300 bg-transparent px-6 py-3 text-base font-medium text-navy-900 transition-colors duration-200 hover:border-navy-500 hover:bg-navy-50"
+                className="inline-flex items-center justify-center rounded-lg border border-navy-300 bg-transparent px-7 py-3.5 text-base font-medium text-navy-900 transition-colors duration-200 hover:border-navy-500 hover:bg-navy-50"
               >
                 Explore Membership
               </Link>
@@ -47,7 +46,7 @@ export default function Home() {
         </Container>
       </section>
 
-      {/* Three pillars — each with a distinct decorative number for visual character */}
+      {/* Three pillars — large decorative numbers, distinct card tints */}
       <section className="py-20 md:py-28">
         <Container>
           <SectionHeading
@@ -58,7 +57,7 @@ export default function Home() {
           <div className="grid gap-6 md:grid-cols-3">
             {/* REAL Journey — teal */}
             <Card className="flex flex-col gap-3 bg-teal-50 border-teal-100">
-              <div className="font-serif text-5xl font-light leading-none text-teal-200" aria-hidden="true">
+              <div className="font-serif text-8xl font-light leading-none text-teal-300 select-none" aria-hidden="true">
                 01
               </div>
               <p className="text-xs font-semibold uppercase tracking-[0.15em] text-teal-700">
@@ -79,7 +78,7 @@ export default function Home() {
 
             {/* The Heart — gold */}
             <Card className="flex flex-col gap-3 bg-gold-50 border-gold-100">
-              <div className="font-serif text-5xl font-light leading-none text-gold-100" aria-hidden="true">
+              <div className="font-serif text-8xl font-light leading-none text-gold-200 select-none" aria-hidden="true">
                 02
               </div>
               <p className="text-xs font-semibold uppercase tracking-[0.15em] text-gold-700">
@@ -100,7 +99,7 @@ export default function Home() {
 
             {/* The Rooms — navy */}
             <Card className="flex flex-col gap-3 bg-navy-50 border-navy-100">
-              <div className="font-serif text-5xl font-light leading-none text-navy-100" aria-hidden="true">
+              <div className="font-serif text-8xl font-light leading-none text-navy-200 select-none" aria-hidden="true">
                 03
               </div>
               <p className="text-xs font-semibold uppercase tracking-[0.15em] text-navy-700">
@@ -122,16 +121,16 @@ export default function Home() {
         </Container>
       </section>
 
-      {/* Community anchoring — ivory background, centred serif moment */}
-      <section className="bg-ivory py-16 md:py-20">
+      {/* Community anchoring — editorial serif moment */}
+      <section className="bg-ivory py-20 md:py-28">
         <Container>
-          <div className="mx-auto max-w-2xl text-center">
-            <div className="mx-auto mb-6 h-px w-10 bg-gold-300" />
-            <p className="font-serif text-xl leading-relaxed text-navy-900 md:text-2xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="mx-auto mb-8 h-px w-10 bg-gold-300" />
+            <p className="font-serif text-2xl leading-relaxed text-navy-900 md:text-3xl md:leading-relaxed">
               You are not doing this work alone. Other women are moving through the same phases,
               sitting in the same live calls, and reading the same prompts — at the same time as you.
             </p>
-            <div className="mx-auto mt-6 h-px w-10 bg-gold-300" />
+            <div className="mx-auto mt-8 h-px w-10 bg-gold-300" />
           </div>
         </Container>
       </section>
@@ -152,7 +151,7 @@ export default function Home() {
               className="flex flex-col gap-5 rounded-xl bg-navy-900 p-8"
               style={{
                 border: "1px solid rgba(255,255,255,0.08)",
-                borderTop: "3px solid var(--color-teal-500)",
+                borderTop: "4px solid var(--color-teal-500)",
               }}
             >
               <div>
@@ -167,7 +166,7 @@ export default function Home() {
               </p>
               <Link
                 href="/real-journey"
-                className="mt-auto inline-flex w-full items-center justify-center rounded-lg border border-teal-500 bg-teal-500 px-4 py-2.5 text-sm font-medium text-white transition-colors duration-200 hover:bg-teal-700 hover:border-teal-700"
+                className="mt-auto inline-flex w-full items-center justify-center rounded-lg border border-teal-500 bg-teal-500 px-4 py-3 text-sm font-medium text-white transition-colors duration-200 hover:bg-teal-700 hover:border-teal-700"
               >
                 Start with REAL Journey
               </Link>
@@ -178,7 +177,7 @@ export default function Home() {
               className="flex flex-col gap-5 rounded-xl bg-navy-900 p-8"
               style={{
                 border: "1px solid rgba(255,255,255,0.08)",
-                borderTop: "3px solid var(--color-gold-500)",
+                borderTop: "4px solid var(--color-gold-500)",
               }}
             >
               <div>
@@ -193,7 +192,7 @@ export default function Home() {
               </p>
               <Link
                 href="/membership"
-                className="mt-auto inline-flex w-full items-center justify-center rounded-lg border border-gold-500 bg-transparent px-4 py-2.5 text-sm font-medium text-gold-300 transition-colors duration-200 hover:bg-gold-500 hover:text-navy-950"
+                className="mt-auto inline-flex w-full items-center justify-center rounded-lg border border-gold-500 bg-transparent px-4 py-3 text-sm font-medium text-gold-300 transition-colors duration-200 hover:bg-gold-500 hover:text-navy-950"
               >
                 Explore Membership
               </Link>

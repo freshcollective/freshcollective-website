@@ -42,29 +42,29 @@ const phases = [
 export default function REALJourneyPage() {
   return (
     <SiteShell>
-      {/* Hero */}
-      <section className="border-b border-border py-20 md:py-28">
+      {/* Hero — dark navy, premium feel */}
+      <section className="bg-navy-950 py-20 md:py-32">
         <Container>
           <div className="max-w-2xl">
-            <p className="mb-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+            <p className="mb-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-teal-400">
               <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
               Where it all begins
             </p>
-            <h1 className="mb-6 font-serif text-4xl leading-tight text-navy-900 md:text-5xl">
-              The REAL Journey
+            <h1 className="mb-6 font-serif text-5xl leading-tight text-white md:text-6xl">
+              The <em className="text-gold-400">REAL</em> Journey
             </h1>
-            <p className="mb-10 text-lg leading-relaxed text-[#4A5568]">
-              A structured, grounded starting point. Four phases designed to help you see clearly,
-              get curious, align with what matters, and move forward — at your own pace.
+            <p className="mb-10 text-lg leading-relaxed text-navy-300">
+              A structured, grounded starting point. Four phases designed to help you see{" "}
+              <em>clearly</em>, get curious, align with what matters, and move forward — at your own pace.
             </p>
             <div className="flex flex-wrap gap-4">
               {/* STRIPE_INTEGRATION */}
-              <button className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-6 py-3 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700">
+              <button className="inline-flex items-center justify-center rounded-lg border border-teal-500 bg-teal-500 px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700 hover:border-teal-700">
                 Buy REAL Journey
               </button>
               <Link
                 href="/membership"
-                className="inline-flex items-center justify-center rounded-lg border border-navy-300 bg-transparent px-6 py-3 text-base font-medium text-navy-900 transition-colors duration-200 hover:border-navy-500 hover:bg-navy-50"
+                className="inline-flex items-center justify-center rounded-lg border border-white/30 bg-transparent px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:border-white/60 hover:bg-white/10"
               >
                 Join Membership (includes REAL)
               </Link>
@@ -92,7 +92,7 @@ export default function REALJourneyPage() {
               <Card key={phase.letter} className="flex gap-5">
                 <div className="shrink-0">
                   <span
-                    className={`flex h-11 w-11 items-center justify-center rounded-full font-serif text-xl font-medium ${phase.badgeBg} ${phase.badgeText}`}
+                    className={`flex h-14 w-14 items-center justify-center rounded-full font-serif text-2xl font-medium ${phase.badgeBg} ${phase.badgeText}`}
                   >
                     {phase.letter}
                   </span>
@@ -103,6 +103,20 @@ export default function REALJourneyPage() {
                 </div>
               </Card>
             ))}
+          </div>
+        </Container>
+      </section>
+
+      {/* Editorial pull — grounded moment between sections */}
+      <section className="border-t border-border bg-ivory py-16 md:py-20">
+        <Container>
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="mx-auto mb-6 h-px w-8 bg-gold-400" />
+            <p className="font-serif text-2xl leading-relaxed text-navy-900 md:text-3xl">
+              You do not need to have it figured out.<br />
+              You just need to be willing to <em className="text-teal-600">look.</em>
+            </p>
+            <div className="mx-auto mt-6 h-px w-8 bg-gold-400" />
           </div>
         </Container>
       </section>
@@ -173,12 +187,12 @@ export default function REALJourneyPage() {
             />
             <div className="flex flex-wrap gap-4">
               {/* STRIPE_INTEGRATION */}
-              <button className="inline-flex items-center justify-center rounded-lg border border-teal-500 bg-teal-500 px-6 py-3 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700 hover:border-teal-700">
+              <button className="inline-flex items-center justify-center rounded-lg border border-teal-500 bg-teal-500 px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700 hover:border-teal-700">
                 Buy REAL Journey
               </button>
               <Link
                 href="/membership"
-                className="inline-flex items-center justify-center rounded-lg border border-white/30 bg-transparent px-6 py-3 text-base font-medium text-white transition-colors duration-200 hover:border-white/60 hover:bg-white/10"
+                className="inline-flex items-center justify-center rounded-lg border border-white/30 bg-transparent px-7 py-3.5 text-base font-medium text-white transition-colors duration-200 hover:border-white/60 hover:bg-white/10"
               >
                 Explore Membership
               </Link>
