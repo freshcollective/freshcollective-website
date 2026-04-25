@@ -15,12 +15,16 @@ export default function Home() {
               <span className="inline-block h-px w-6 shrink-0 bg-gold-500" aria-hidden="true" />
               A membership for women
             </p>
-            <h1 className="mb-6 font-serif text-4xl leading-tight text-navy-900 md:text-5xl lg:text-6xl">
+            <h1 className="mb-5 font-serif text-4xl leading-tight text-navy-900 md:text-5xl lg:text-6xl">
               Move from survival into{" "}
               <em className="text-gold-500">expansion</em>
               {" "}that lasts.
             </h1>
-            <p className="mb-10 text-lg leading-relaxed text-[#4A5568]">
+            {/* Speaks to where she is right now, before what FC offers */}
+            <p className="mb-6 font-serif text-lg italic leading-relaxed text-[#4A5568] md:text-xl">
+              If you have been managing, adapting, and holding it together for a long time — you already know something needs to change.
+            </p>
+            <p className="mb-10 text-base leading-relaxed text-[#4A5568] md:text-lg">
               Fresh Collective is a structured transformation membership — one foundation, a live
               community layer, and deepening pathways — for women who are ready to stop coping and
               start leading their own lives.
@@ -43,7 +47,7 @@ export default function Home() {
         </Container>
       </section>
 
-      {/* Three pillars */}
+      {/* Three pillars — each with a distinct decorative number for visual character */}
       <section className="py-20 md:py-28">
         <Container>
           <SectionHeading
@@ -52,8 +56,11 @@ export default function Home() {
             className="mb-14 max-w-xl"
           />
           <div className="grid gap-6 md:grid-cols-3">
-            {/* REAL Journey — teal tint */}
-            <Card className="flex flex-col gap-4 bg-teal-50 border-teal-100">
+            {/* REAL Journey — teal */}
+            <Card className="flex flex-col gap-3 bg-teal-50 border-teal-100">
+              <div className="font-serif text-5xl font-light leading-none text-teal-200" aria-hidden="true">
+                01
+              </div>
               <p className="text-xs font-semibold uppercase tracking-[0.15em] text-teal-700">
                 Start Here
               </p>
@@ -70,8 +77,11 @@ export default function Home() {
               </Link>
             </Card>
 
-            {/* The Heart — gold tint */}
-            <Card className="flex flex-col gap-4 bg-gold-50 border-gold-100">
+            {/* The Heart — gold */}
+            <Card className="flex flex-col gap-3 bg-gold-50 border-gold-100">
+              <div className="font-serif text-5xl font-light leading-none text-gold-100" aria-hidden="true">
+                02
+              </div>
               <p className="text-xs font-semibold uppercase tracking-[0.15em] text-gold-700">
                 The Heart
               </p>
@@ -88,8 +98,11 @@ export default function Home() {
               </Link>
             </Card>
 
-            {/* The Rooms — navy tint */}
-            <Card className="flex flex-col gap-4 bg-navy-50 border-navy-100">
+            {/* The Rooms — navy */}
+            <Card className="flex flex-col gap-3 bg-navy-50 border-navy-100">
+              <div className="font-serif text-5xl font-light leading-none text-navy-100" aria-hidden="true">
+                03
+              </div>
               <p className="text-xs font-semibold uppercase tracking-[0.15em] text-navy-700">
                 The Rooms
               </p>
@@ -105,6 +118,20 @@ export default function Home() {
                 Learn more →
               </Link>
             </Card>
+          </div>
+        </Container>
+      </section>
+
+      {/* Community anchoring — ivory background, centred serif moment */}
+      <section className="bg-ivory py-16 md:py-20">
+        <Container>
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="mx-auto mb-6 h-px w-10 bg-gold-300" />
+            <p className="font-serif text-xl leading-relaxed text-navy-900 md:text-2xl">
+              You are not doing this work alone. Other women are moving through the same phases,
+              sitting in the same live calls, and reading the same prompts — at the same time as you.
+            </p>
+            <div className="mx-auto mt-6 h-px w-10 bg-gold-300" />
           </div>
         </Container>
       </section>

@@ -73,14 +73,20 @@ export default function REALJourneyPage() {
         </Container>
       </section>
 
-      {/* The four phases — very light teal wash (matching the website) */}
+      {/* The four phases — very light teal wash */}
       <section className="bg-teal-50 py-20 md:py-28">
         <Container>
           <SectionHeading
             title="The four phases."
             subtitle="Each phase builds on the last. You can move at your own pace — and return to any phase at any time."
-            className="mb-14 max-w-xl"
+            className="mb-6 max-w-xl"
           />
+          {/* What to expect when you start */}
+          <p className="mb-12 max-w-xl text-sm leading-relaxed text-[#4A5568] md:text-base">
+            You do not need to be ready to start. The first phase asks only one thing: honesty.
+            From there, the journey builds at a pace your nervous system can hold. Most women find
+            the beginning easier than they expected — and more meaningful than they anticipated.
+          </p>
           <div className="grid gap-6 md:grid-cols-2">
             {phases.map((phase) => (
               <Card key={phase.letter} className="flex gap-5">

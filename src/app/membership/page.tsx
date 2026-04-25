@@ -63,8 +63,9 @@ export default function MembershipPage() {
               <em className="text-gold-500">expansion.</em>
             </h1>
             <p className="mb-10 text-lg leading-relaxed text-[#4A5568]">
-              Fresh Collective membership gives you the full structure: a grounded foundation, a live
-              community layer, deepening pathways, and the people who make it real.
+              This is not a content library. There is nothing to binge or fall behind on. Fresh
+              Collective gives you a structured foundation, a live community layer, deepening
+              pathways, and the people who make the work real.
             </p>
             {/* STRIPE_INTEGRATION */}
             <button className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-6 py-3 text-base font-medium text-white transition-colors duration-200 hover:bg-teal-700">
@@ -79,7 +80,7 @@ export default function MembershipPage() {
         <Container>
           <SectionHeading
             title="What is inside."
-            subtitle="Not a course library. A connected system — designed so that each part supports the others."
+            subtitle="Four connected parts. Each one designed to support the others."
             className="mb-14 max-w-xl"
           />
           <div className="grid gap-6 md:grid-cols-2">
@@ -100,6 +101,60 @@ export default function MembershipPage() {
                 )}
               </Card>
             ))}
+          </div>
+        </Container>
+      </section>
+
+      {/* What a week inside looks like */}
+      <section className="border-t border-border py-20 md:py-28">
+        <Container>
+          <div className="max-w-2xl">
+            <SectionHeading
+              title="What a week inside looks like."
+              subtitle="Not a schedule. A rhythm."
+              className="mb-12"
+            />
+            <div className="space-y-10">
+              <div className="flex gap-6">
+                <div className="shrink-0 pt-0.5">
+                  <span className="font-serif text-lg font-light text-gold-500">01</span>
+                </div>
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-navy-900">At the start of your week</p>
+                  <p className="text-sm leading-relaxed text-[#4A5568]">
+                    You open your REAL Journey phase. A short lesson. A reflection prompt to carry
+                    with you. Five minutes, not fifty. You move on with your day. The work begins to
+                    settle quietly underneath everything else.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-6">
+                <div className="shrink-0 pt-0.5">
+                  <span className="font-serif text-lg font-light text-gold-500">02</span>
+                </div>
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-navy-900">Mid-week</p>
+                  <p className="text-sm leading-relaxed text-[#4A5568]">
+                    A community prompt lands. You read what other women are noticing this week.
+                    Maybe you write something. Maybe you just recognise yourself in someone else's
+                    words. Either way, you feel less alone in what you are moving through.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-6">
+                <div className="shrink-0 pt-0.5">
+                  <span className="font-serif text-lg font-light text-gold-500">03</span>
+                </div>
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-navy-900">This month</p>
+                  <p className="text-sm leading-relaxed text-[#4A5568]">
+                    There is a live call. You are in a room with other women doing the same work. It
+                    is led. It is structured. It is not a 90-minute performance — it is an hour of
+                    grounded, honest conversation. You leave with something you did not have before.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </Container>
       </section>
