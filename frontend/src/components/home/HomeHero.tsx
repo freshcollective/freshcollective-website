@@ -24,26 +24,24 @@ export default function HomeHero() {
         />
       </div>
 
-      <Container className="relative pb-24 pt-20 sm:pb-28 sm:pt-24 lg:pb-32 lg:pt-28">
-        <div className="max-w-[700px]">
+      <Container className="relative pt-16 pb-12 sm:pt-20 sm:pb-16 lg:pt-24 lg:pb-20">
+        <div className="max-w-[660px]">
 
           {/* Eyebrow */}
-          <div className="mb-8 flex items-center gap-3">
+          <div className="mb-6 flex items-center gap-3">
             <div className="h-px w-8 bg-teal-400" />
-            <span
-              className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600"
-            >
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
               A membership for women
             </span>
           </div>
 
           {/* Headline */}
           <h1
-            className="mb-8 text-navy-950"
+            className="mb-6 text-navy-950"
             style={{
-              fontSize: 'clamp(2.75rem, 5.5vw, 5rem)',
-              lineHeight: '1.04',
-              letterSpacing: '-0.045em',
+              fontSize: 'clamp(2.5rem, 5vw, 4.5rem)',
+              lineHeight: '1.06',
+              letterSpacing: '-0.04em',
               fontWeight: 650,
             }}
           >
@@ -65,8 +63,8 @@ export default function HomeHero() {
 
           {/* Sub-copy */}
           <p
-            className="mb-12 text-navy-500"
-            style={{ fontSize: '1.0625rem', lineHeight: '1.78', maxWidth: '560px' }}
+            className="mb-10 text-navy-500"
+            style={{ fontSize: '1.0625rem', lineHeight: '1.78', maxWidth: '540px' }}
           >
             If you&apos;ve been holding everything together for a long time, you already know
             something needs to change. Fresh Collective gives you a way to move out of
@@ -89,14 +87,14 @@ export default function HomeHero() {
             <Link
               href="/real-journey"
               className="inline-flex items-center rounded-xl border px-7 py-3.5 text-[15px] font-semibold text-navy-700 transition-colors hover:bg-navy-50"
-              style={{ borderColor: '#D1DCE9' }}
+              style={{ borderColor: '#C8D5E3' }}
             >
               Start at The Entrance
             </Link>
           </div>
 
           {/* Social proof */}
-          <div className="mt-10 flex items-center gap-3">
+          <div className="mt-8 flex items-center gap-3">
             <div className="flex -space-x-1.5">
               {['#55B8B6', '#7FCFCD', '#AAE1E0', '#38A09E'].map((c, i) => (
                 <div
@@ -107,7 +105,7 @@ export default function HomeHero() {
               ))}
             </div>
             <span className="text-[13px] text-navy-400">
-              42 women in The Heart · REAL Journey free to begin
+              42 women in The Heart · free to begin
             </span>
           </div>
 
