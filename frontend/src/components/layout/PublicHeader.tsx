@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { cookies } from 'next/headers'
 import Container from './Container'
 import LogoutButton from './LogoutButton'
+import MobileNav from './MobileNav'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
 
@@ -16,7 +17,6 @@ async function getCurrentUser(): Promise<MeResponse | null> {
   const cookieStore = await cookies()
   const session = cookieStore.get(SESSION_COOKIE)
   if (!session) return null
-
   try {
     const res = await fetch(apiUrl('/api/auth/me'), {
       headers: { Cookie: `${SESSION_COOKIE}=${session.value}` },
@@ -34,57 +34,91 @@ export default async function PublicHeader() {
 
   return (
     <header
-      className="border-b border-border bg-surface py-5"
-      style={{ borderTop: '2px solid var(--color-gold-500)' }}
+      className="sticky top-0 z-50 backdrop-blur-xl"
+      style={{
+        background: 'rgba(8,15,30,0.85)',
+        borderBottom: '1px solid rgba(255,255,255,0.07)',
+      }}
     >
-      <Container className="flex items-center justify-between">
-        <Link
-          href="/"
-          className="font-serif text-xl tracking-wide text-navy-900 transition-colors hover:text-navy-700"
-        >
-          Fresh Collective
+      <Container className="flex h-16 items-center justify-between gap-8">
+
+        {/* Wordmark */}
+        <Link href="/" className="group flex shrink-0 items-center gap-2.5">
+          <div
+            className="flex h-7 w-7 items-center justify-center rounded-lg"
+            style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
+          >
+            <div className="h-3 w-3 rounded-sm bg-white" style={{ opacity: 0.92 }} />
+          </div>
+          <span className="text-[15px] font-semibold tracking-[-0.02em] text-white transition-opacity group-hover:opacity-60">
+            Fresh Collective
+          </span>
         </Link>
 
-        <nav aria-label="Main navigation" className="hidden items-center gap-8 md:flex">
-          <Link href="/about" className="text-sm text-[#4A5568] transition-colors hover:text-navy-900">
-            About
-          </Link>
-          <Link href="/real-journey" className="text-sm text-[#4A5568] transition-colors hover:text-navy-900">
-            REAL Journey
-          </Link>
-          <Link href="/membership" className="text-sm text-[#4A5568] transition-colors hover:text-navy-900">
-            Membership
-          </Link>
+        {/* Nav — desktop */}
+        <nav aria-label="Main" className="hidden flex-1 items-center justify-center gap-8 md:flex">
+          {[
+            { href: '/about',        label: 'About' },
+            { href: '/real-journey', label: 'REAL Journey' },
+            { href: '/membership',   label: 'Membership' },
+          ].map(({ href, label }) => (
+            <Link
+              key={href}
+              href={href}
+              className="text-[14px] font-medium transition-colors"
+              style={{ color: 'rgba(255,255,255,0.62)' }}
+            >
+              {label}
+            </Link>
+          ))}
         </nav>
 
-        <div className="flex items-center gap-4">
+        {/* Auth — desktop */}
+        <div className="hidden shrink-0 items-center gap-3 md:flex">
           {user ? (
             <>
               <Link
                 href="/dashboard"
-                className="hidden text-sm text-[#4A5568] transition-colors hover:text-navy-900 md:block"
+                className="text-[14px] font-medium transition-colors"
+                style={{ color: 'rgba(255,255,255,0.62)' }}
               >
                 Dashboard
               </Link>
-              <LogoutButton className="inline-flex items-center justify-center rounded-lg border border-navy-300 px-4 py-2 text-sm font-medium text-navy-700 transition-colors duration-200 hover:border-navy-500 hover:bg-navy-50" />
+              <LogoutButton
+                className="rounded-xl px-4 py-2 text-[13px] font-medium transition-all"
+                style={{
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  background: 'rgba(255,255,255,0.06)',
+                  color: 'rgba(255,255,255,0.72)',
+                }}
+              />
             </>
           ) : (
             <>
               <Link
                 href="/login"
-                className="hidden text-sm text-[#4A5568] transition-colors hover:text-navy-900 md:block"
+                className="text-[14px] font-medium transition-colors"
+                style={{ color: 'rgba(255,255,255,0.62)' }}
               >
                 Log in
               </Link>
               <Link
                 href="/signup"
-                className="inline-flex items-center justify-center rounded-lg border border-transparent bg-teal-500 px-4 py-2 text-sm font-medium text-white transition-colors duration-200 hover:bg-teal-700"
+                className="rounded-xl px-5 py-2 text-[13px] font-semibold text-white transition-all"
+                style={{
+                  background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                  boxShadow: '0 2px 12px rgba(56,160,158,0.35)',
+                }}
               >
                 Join
               </Link>
             </>
           )}
         </div>
+
+        {/* Mobile nav */}
+        <MobileNav isLoggedIn={!!user} dark />
+
       </Container>
     </header>
   )

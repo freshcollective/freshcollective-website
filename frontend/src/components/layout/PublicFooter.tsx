@@ -1,62 +1,65 @@
-import Link from "next/link";
-import Container from "./Container";
+import Link from 'next/link'
+import Container from './Container'
 
 export default function PublicFooter() {
   return (
-    <footer className="bg-navy-950 py-14">
-      <Container>
-        <div className="flex flex-col gap-10 md:flex-row md:items-start md:justify-between">
-          <div className="max-w-xs">
-            <span className="font-serif text-xl tracking-wide text-white">Fresh Collective</span>
-            <p className="mt-3 text-sm leading-relaxed text-navy-300">
+    <footer
+      className="relative"
+      style={{ background: '#060C17', borderTop: '1px solid rgba(255,255,255,0.05)' }}
+    >
+      <Container className="py-12 md:py-16">
+
+        <div className="grid gap-10 md:grid-cols-[1fr_auto] md:items-start">
+
+          <div>
+            <div className="mb-4 flex items-center gap-2.5">
+              <div
+                className="flex h-6 w-6 items-center justify-center rounded-md"
+                style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
+              >
+                <div className="h-[10px] w-[10px] rounded-sm bg-white" style={{ opacity: 0.9 }} />
+              </div>
+              <span className="text-[15px] font-semibold tracking-[-0.02em] text-white">
+                Fresh Collective
+              </span>
+            </div>
+            <p className="max-w-[300px] text-[14px] leading-[1.75] text-navy-400">
               A structured transformation membership for women moving from survival into expansion
               that lasts.
             </p>
           </div>
 
-          <nav aria-label="Footer navigation" className="flex flex-wrap gap-x-10 gap-y-3">
-            <Link
-              href="/about"
-              className="text-sm text-navy-300 transition-colors hover:text-white"
-            >
-              About
-            </Link>
-            <Link
-              href="/real-journey"
-              className="text-sm text-navy-300 transition-colors hover:text-white"
-            >
-              REAL Journey
-            </Link>
-            <Link
-              href="/membership"
-              className="text-sm text-navy-300 transition-colors hover:text-white"
-            >
-              Membership
-            </Link>
-            <Link
-              href="/login"
-              className="text-sm text-navy-300 transition-colors hover:text-white"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/signup"
-              className="text-sm text-teal-400 transition-colors hover:text-teal-200"
-            >
-              Join
-            </Link>
+          <nav aria-label="Footer" className="flex flex-wrap gap-x-8 gap-y-2.5 pt-1">
+            {[
+              { href: '/about',        label: 'About' },
+              { href: '/real-journey', label: 'REAL Journey' },
+              { href: '/membership',   label: 'Membership' },
+              { href: '/login',        label: 'Log in' },
+              { href: '/signup',       label: 'Join' },
+            ].map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                className="text-[13px] transition-colors hover:text-white"
+                style={{ color: 'rgba(255,255,255,0.35)' }}
+              >
+                {label}
+              </Link>
+            ))}
           </nav>
+
         </div>
 
         <div
-          className="mt-12 pt-8"
-          style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}
+          className="mt-10 flex items-center justify-between pt-6"
+          style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
         >
-          <p className="text-center text-xs text-navy-300" style={{ opacity: 0.6 }}>
+          <p className="text-[12px]" style={{ color: 'rgba(255,255,255,0.20)' }}>
             © {new Date().getFullYear()} Fresh Collective. All rights reserved.
           </p>
         </div>
+
       </Container>
     </footer>
-  );
+  )
 }

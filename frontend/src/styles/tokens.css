@@ -1,6 +1,20 @@
-/* Non-Tailwind design tokens: shadows, semantic CSS custom properties */
 :root {
-  --fc-shadow-sm: 0 1px 3px 0 rgb(28 43 74 / 0.06), 0 1px 2px -1px rgb(28 43 74 / 0.06);
-  --fc-shadow-md: 0 4px 6px -1px rgb(28 43 74 / 0.08), 0 2px 4px -2px rgb(28 43 74 / 0.06);
-  --fc-shadow-lg: 0 10px 15px -3px rgb(28 43 74 / 0.08), 0 4px 6px -4px rgb(28 43 74 / 0.06);
+  --fc-shadow-xs:        0 1px 2px rgba(0,0,0,0.05);
+  --fc-shadow-sm:        0 1px 0 0 #E8E8E5, 0 2px 8px rgba(0,0,0,0.05);
+  --fc-shadow-card:      0 0 0 1px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06), 0 12px 40px rgba(0,0,0,0.04);
+  --fc-shadow-raised:    0 0 0 1px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.08), 0 24px 64px rgba(0,0,0,0.06);
+  --fc-shadow-panel:     0 0 0 1px rgba(0,0,0,0.05), 0 8px 32px rgba(0,0,0,0.10), 0 32px 80px rgba(0,0,0,0.08);
+  --fc-shadow-hero:      0 0 0 1px rgba(0,0,0,0.06), 0 12px 40px rgba(0,0,0,0.14), 0 48px 120px rgba(0,0,0,0.12);
+  --fc-shadow-btn:       0 0 0 1px rgba(56,160,158,0.35), 0 4px 24px rgba(56,160,158,0.45), 0 0 60px rgba(56,160,158,0.10);
+  --fc-shadow-btn-hover: 0 0 0 1px rgba(56,160,158,0.50), 0 4px 32px rgba(56,160,158,0.55), 0 0 80px rgba(56,160,158,0.18);
+  --fc-shadow-dark:      0 24px 80px rgba(12,24,38,0.50);
+  --fc-shadow-input:     0 0 0 3px rgba(56,160,158,0.12);
+
+  /* Floating card shadows */
+  --fc-shadow-float:     0 4px 20px rgba(0,0,0,0.12), 0 12px 40px rgba(0,0,0,0.08);
+  --fc-shadow-float-teal: 0 4px 24px rgba(56,160,158,0.18), 0 0 0 1px rgba(56,160,158,0.14);
+  --fc-shadow-float-gold: 0 4px 24px rgba(212,176,72,0.14), 0 0 0 1px rgba(212,176,72,0.14);
+
+  /* Premium card on dark bg */
+  --fc-shadow-card-dark: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.40), 0 20px 60px rgba(0,0,0,0.30);
 }

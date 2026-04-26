@@ -2,68 +2,133 @@
 @import "../styles/tokens.css";
 
 @theme {
-  /* Background */
-  --color-background: #FAFAF8;
-  --color-surface: #FFFFFF;
+  --color-background: #F5F7FA;
+  --color-surface:    #FFFFFF;
 
-  /* Navy: depth, headings, footer/header accents */
-  --color-navy-950: #0F1B30;
-  --color-navy-900: #1C2B4A;
-  --color-navy-700: #2D4270;
-  --color-navy-500: #4A6090;
-  --color-navy-300: #8BA0C0;
-  --color-navy-100: #D6DEE8;
-  --color-navy-50: #EEF2F7;
+  --color-navy-950: #0C1826;
+  --color-navy-900: #152236;
+  --color-navy-700: #1E3354;
+  --color-navy-500: #2D4D73;
+  --color-navy-400: #3D6289;
+  --color-navy-300: #6B8EB2;
+  --color-navy-200: #A8BDD4;
+  --color-navy-100: #D1DCE9;
+  --color-navy-50:  #EBF0F6;
 
-  /* Teal: primary brand accent, buttons, links, active states */
-  --color-teal-900: #1A4D4C;
-  --color-teal-700: #2A6E6D;
-  --color-teal-600: #348685;
-  --color-teal-500: #3D8B8A;
-  --color-teal-400: #5AA3A2;
-  --color-teal-300: #7EBDBC;
-  --color-teal-200: #A8CFCE;
-  --color-teal-100: #D4E8E8;
-  --color-teal-50: #EEF7F7;
+  --color-teal-950: #071F1F;
+  --color-teal-900: #103535;
+  --color-teal-800: #1A5150;
+  --color-teal-700: #246B6A;
+  --color-teal-600: #2E8584;
+  --color-teal-500: #38A09E;
+  --color-teal-400: #55B8B6;
+  --color-teal-300: #7FCFCD;
+  --color-teal-200: #AAE1E0;
+  --color-teal-100: #D5F0EF;
+  --color-teal-50:  #EAF7F7;
 
-  /* Gold: warmth, emphasis, premium touches */
-  --color-gold-900: #7A5C10;
-  --color-gold-700: #9E7820;
-  --color-gold-500: #B8902A;
-  --color-gold-400: #C4A035;
-  --color-gold-300: #D4B060;
-  --color-gold-200: #DFCA7A;
-  --color-gold-100: #EDD98A;
-  --color-gold-50: #FBF5DC;
+  --color-gold-600: #8B6914;
+  --color-gold-500: #A67E1E;
+  --color-gold-400: #BF9830;
+  --color-gold-300: #D4B048;
+  --color-gold-50:  #FBF5DC;
 
-  /* Ivory: warm near-white surface for premium section backgrounds */
-  --color-ivory: #F7F3ED;
+  --color-ivory:        #F5F0E8;
+  --color-border:       #E8E8E5;
+  --color-border-light: #F0F0ED;
 
-  /* Border */
-  --color-border: #E2DDD5;
-  --color-border-light: #EEE9E1;
-
-  /* Typography: system fonts only */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
+  --font-sans:  -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+                "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-serif: Georgia, "Times New Roman", Times, serif;
+  --font-mono:  "SF Mono", "Fira Code", "Roboto Mono", monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   background-color: var(--color-background);
   color: var(--color-navy-900);
   font-family: var(--font-sans);
-  line-height: 1.6;
+  font-size: 17px;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-width: 320px;
+  overflow-x: hidden;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  font-family: var(--font-serif);
-  line-height: 1.25;
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1.06;
+  letter-spacing: -0.04em;
+  color: var(--color-navy-950);
+}
+
+p { letter-spacing: -0.01em; }
+
+::selection {
+  background: rgba(56, 160, 158, 0.18);
+}
+
+/* Ribbon marquee */
+@keyframes ribbon-fwd { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes ribbon-rev { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+
+/* Cycling phase animation */
+@keyframes phase-in {
+  0%, 10%   { opacity: 0; transform: translateY(6px); }
+  20%, 80%  { opacity: 1; transform: translateY(0); }
+  90%, 100% { opacity: 0; transform: translateY(-6px); }
+}
+
+/* Fade-up on scroll */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Gentle floating (hero visual elements) */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%      { transform: translateY(-10px); }
+}
+
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0px) scale(1); }
+  50%      { transform: translateY(-18px) scale(1.02); }
+}
+
+/* CTA glow pulse */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(56,160,158,0.35), 0 4px 24px rgba(56,160,158,0.40), 0 0 60px rgba(56,160,158,0.10); }
+  50%      { box-shadow: 0 0 0 1px rgba(56,160,158,0.50), 0 4px 32px rgba(56,160,158,0.55), 0 0 80px rgba(56,160,158,0.18); }
+}
+
+/* Platform surface pulse ring */
+@keyframes ring-pulse {
+  0%   { transform: scale(1);    opacity: 0.6; }
+  100% { transform: scale(1.6);  opacity: 0; }
+}
+
+/* Scroll-reveal: applied via .reveal class */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-ribbon, .fc-cycle { animation: none !important; }
+  .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
