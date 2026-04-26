@@ -47,7 +47,9 @@ export default function HomeHero() {
               fontWeight: 650,
             }}
           >
-            You are not the problem.
+            You&apos;re not here to just
+            <br />
+            survive your life.
             <br />
             <span
               style={{
@@ -57,24 +59,18 @@ export default function HomeHero() {
                 backgroundClip: 'text',
               }}
             >
-              The pace is.
+              You&apos;re here to live it.
             </span>
           </h1>
 
           {/* Sub-copy */}
           <p
-            className="mb-3 text-navy-500"
+            className="mb-12 text-navy-500"
             style={{ fontSize: '1.0625rem', lineHeight: '1.78', maxWidth: '560px' }}
           >
-            Fresh Collective is a structured transformation for women who are ready
-            to stop surviving — and start leading from the inside out.
-          </p>
-          <p
-            className="mb-12 text-navy-400"
-            style={{ fontSize: '0.9375rem', lineHeight: '1.8', maxWidth: '500px' }}
-          >
-            One foundation. Monthly live calls. Deepening pathways.
-            Built for real life, not aspirational schedules.
+            If you&apos;ve been holding everything together for a long time, you already know
+            something needs to change. Fresh Collective gives you a way to move out of
+            survival — and into a life that actually works.
           </p>
 
           {/* CTAs */}
@@ -87,14 +83,15 @@ export default function HomeHero() {
                 boxShadow: 'var(--fc-shadow-btn)',
               }}
             >
-              Step inside the Collective
+              See inside the Collective
             </Link>
+            {/* /entrance — dedicated onboarding welcome route, not yet built; linking to /real-journey in the meantime */}
             <Link
               href="/real-journey"
               className="inline-flex items-center rounded-xl border px-7 py-3.5 text-[15px] font-semibold text-navy-700 transition-colors hover:bg-navy-50"
               style={{ borderColor: '#D1DCE9' }}
             >
-              See the REAL Journey
+              Start at The Entrance
             </Link>
           </div>
 

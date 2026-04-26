@@ -266,15 +266,15 @@ function FinalCTA() {
           >
             You can keep holding
             <br />
-            it all together.
+            it all together…
+            <br />
+            <span className="text-navy-500">or you can start living differently.</span>
           </h2>
 
-          <p className="mb-4 text-[17px] leading-[1.8] text-navy-500">
-            Or you could step into something built to hold you.
-          </p>
-          <p className="mb-14 text-[15px] leading-[1.8] text-navy-400">
-            Start free with the REAL Journey whenever you are ready.
-            Join the full membership when you want to be held through the deeper work.
+          <p className="mb-14 text-[16px] leading-[1.8] text-navy-400">
+            Start where you are.
+            <br />
+            Come inside when you&apos;re ready.
           </p>
 
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
@@ -288,13 +288,13 @@ function FinalCTA() {
             >
               Step inside the Collective
             </Link>
-            {/* The Entrance — a dedicated welcome/onboarding route to be added at /entrance */}
+            {/* /entrance — dedicated onboarding welcome route, not yet built; linking to /real-journey in the meantime */}
             <Link
               href="/real-journey"
               className="inline-flex items-center rounded-xl border px-8 py-4 text-[15px] font-semibold text-navy-700 transition-colors hover:bg-navy-50"
               style={{ borderColor: '#D1DCE9' }}
             >
-              Start free
+              Start at The Entrance
             </Link>
           </div>
 

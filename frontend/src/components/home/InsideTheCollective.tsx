@@ -1,45 +1,6 @@
 import Link from 'next/link'
 import Container from '@/components/layout/Container'
 
-const PILLARS = [
-  {
-    num: '01',
-    tag: 'Foundation',
-    name: 'The REAL Journey',
-    desc: 'A four-phase programme to help you reconnect with yourself, expand your perspective, act from your values, and live with intention. Free to begin.',
-    detail: ['Reconnect · Expand · Act · Live', '4 phases · Self-paced · Free to start'],
-    color: '#38A09E',
-    bgAccent: 'rgba(56,160,158,0.05)',
-    borderAccent: 'rgba(56,160,158,0.15)',
-    href: '/real-journey',
-    cta: 'Start free',
-  },
-  {
-    num: '02',
-    tag: 'Deepening',
-    name: 'The Rooms',
-    desc: 'Focused pathways to go deeper in the areas that matter most — work and money, relationships, body and health, purpose and creative life.',
-    detail: ['4 Rooms · Choose your path', 'Included in membership'],
-    color: '#C9A83C',
-    bgAccent: 'rgba(201,168,60,0.05)',
-    borderAccent: 'rgba(201,168,60,0.15)',
-    href: '/membership',
-    cta: 'Explore membership',
-  },
-  {
-    num: '03',
-    tag: 'Community',
-    name: 'The Heart',
-    desc: 'Monthly live calls and a community of women walking alongside you. Real connection, not just content. The part that holds everything together.',
-    detail: ['Monthly live calls · Private community', '42 women and growing'],
-    color: '#38A09E',
-    bgAccent: 'rgba(56,160,158,0.05)',
-    borderAccent: 'rgba(56,160,158,0.15)',
-    href: '/membership',
-    cta: 'Join the Heart',
-  },
-]
-
 export default function InsideTheCollective() {
   return (
     <section id="inside-the-collective" className="py-24 sm:py-32" style={{ background: '#FDFCF9' }}>
@@ -67,78 +28,100 @@ export default function InsideTheCollective() {
           </p>
         </div>
 
-        {/* Cards */}
+        {/* Cards — centre card is featured */}
         <div className="grid gap-5 sm:grid-cols-3">
-          {PILLARS.map(({ num, tag, name, desc, detail, color, bgAccent, borderAccent, href, cta }) => (
-            <div
-              key={num}
-              className="group flex flex-col rounded-2xl bg-white p-7 transition-shadow hover:shadow-lg"
-              style={{
-                border: '1px solid #EBEBEB',
-                boxShadow: 'var(--fc-shadow-card)',
-              }}
+
+          {/* Card 1: Start Here */}
+          <div
+            className="flex flex-col rounded-2xl bg-white p-7 transition-shadow hover:shadow-lg"
+            style={{ border: '1px solid #EBEBEB', boxShadow: 'var(--fc-shadow-card)' }}
+          >
+            <p
+              className="mb-5 text-[11px] font-semibold uppercase tracking-[0.12em]"
+              style={{ color: '#38A09E' }}
             >
-              <div className="mb-6 flex items-center gap-3">
-                <div
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[11px] font-bold"
-                  style={{ background: bgAccent, border: `1px solid ${borderAccent}`, color }}
-                >
-                  {num}
-                </div>
-                <span
-                  className="text-[11px] font-semibold uppercase tracking-[0.1em]"
-                  style={{ color }}
-                >
-                  {tag}
-                </span>
-              </div>
+              Start Here
+            </p>
+            <h3 className="mb-4 text-[1.1875rem] font-semibold leading-snug tracking-tight text-navy-950">
+              A place to begin
+            </h3>
+            <p className="flex-1 text-[14.5px] leading-[1.75] text-navy-400">
+              When everything feels unclear, this is where you start.
+              Something steady. Something you can actually return to.
+            </p>
+          </div>
 
-              <h3 className="mb-3 text-[1.1875rem] font-semibold leading-tight tracking-tight text-navy-950">
-                {name}
-              </h3>
+          {/* Card 2: The Heart — featured centre */}
+          <div
+            className="flex flex-col rounded-2xl p-7 transition-shadow hover:shadow-xl"
+            style={{
+              background: 'linear-gradient(160deg, #FAFFFE 0%, #F0FAFA 100%)',
+              border: '1px solid rgba(56,160,158,0.22)',
+              boxShadow: '0 0 0 1px rgba(56,160,158,0.10), var(--fc-shadow-raised)',
+            }}
+          >
+            <p
+              className="mb-5 text-[11px] font-semibold uppercase tracking-[0.12em]"
+              style={{ color: '#38A09E' }}
+            >
+              The Heart
+            </p>
+            <h3 className="mb-4 text-[1.1875rem] font-semibold leading-snug tracking-tight text-navy-950">
+              Where it becomes real
+            </h3>
+            <p className="flex-1 text-[14.5px] leading-[1.75] text-navy-500">
+              Live calls, shared reflections, and honest conversation.
+              This is where the work starts to land.
+            </p>
+          </div>
 
-              <p className="mb-6 flex-1 text-[14.5px] leading-[1.7] text-navy-400">
-                {desc}
-              </p>
+          {/* Card 3: The Rooms */}
+          <div
+            className="flex flex-col rounded-2xl bg-white p-7 transition-shadow hover:shadow-lg"
+            style={{ border: '1px solid #EBEBEB', boxShadow: 'var(--fc-shadow-card)' }}
+          >
+            <p
+              className="mb-5 text-[11px] font-semibold uppercase tracking-[0.12em]"
+              style={{ color: '#C9A83C' }}
+            >
+              The Rooms
+            </p>
+            <h3 className="mb-4 text-[1.1875rem] font-semibold leading-snug tracking-tight text-navy-950">
+              Spaces to go deeper
+            </h3>
+            <p className="flex-1 text-[14.5px] leading-[1.75] text-navy-400">
+              As things begin to shift, you can move into the Rooms —
+              each one holding a different part of your growth.
+            </p>
+          </div>
 
-              <div className="mb-6 space-y-1.5">
-                {detail.map((d) => (
-                  <div key={d} className="flex items-center gap-2">
-                    <div className="h-1 w-1 flex-shrink-0 rounded-full" style={{ background: color }} />
-                    <span className="text-[12px] text-navy-400">{d}</span>
-                  </div>
-                ))}
-              </div>
-
-              <Link
-                href={href}
-                className="inline-flex items-center gap-1.5 text-[13px] font-semibold transition-opacity hover:opacity-70"
-                style={{ color }}
-              >
-                {cta}
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </Link>
-            </div>
-          ))}
         </div>
 
         {/* Bottom CTA */}
         <div className="mt-14 flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[15px] text-navy-400">
-            AUD $39/month · Cancel anytime · REAL Journey free to begin
+            AUD $39/month · Cancel anytime
           </p>
-          <Link
-            href="/membership"
-            className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{
-              background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-              boxShadow: 'var(--fc-shadow-btn)',
-            }}
-          >
-            Step inside the Collective
-          </Link>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href="/membership"
+              className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{
+                background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                boxShadow: 'var(--fc-shadow-btn)',
+              }}
+            >
+              Step inside the Collective
+            </Link>
+            {/* /entrance — dedicated onboarding welcome route, not yet built; linking to /real-journey in the meantime */}
+            <Link
+              href="/real-journey"
+              className="inline-flex items-center rounded-xl border px-7 py-3.5 text-[15px] font-semibold text-navy-700 transition-colors hover:bg-navy-50"
+              style={{ borderColor: '#D1DCE9' }}
+            >
+              Start at The Entrance
+            </Link>
+          </div>
         </div>
 
       </Container>
