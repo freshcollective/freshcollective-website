@@ -36,8 +36,8 @@ export default async function PublicHeader() {
     <header
       className="sticky top-0 z-50 backdrop-blur-xl"
       style={{
-        background: 'rgba(8,15,30,0.85)',
-        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        background: 'rgba(255,255,255,0.95)',
+        borderBottom: '1px solid #E8E8E5',
       }}
     >
       <Container className="flex h-16 items-center justify-between gap-8">
@@ -50,7 +50,7 @@ export default async function PublicHeader() {
           >
             <div className="h-3 w-3 rounded-sm bg-white" style={{ opacity: 0.92 }} />
           </div>
-          <span className="text-[15px] font-semibold tracking-[-0.02em] text-white transition-opacity group-hover:opacity-60">
+          <span className="text-[15px] font-semibold tracking-[-0.02em] text-navy-950 transition-opacity group-hover:opacity-60">
             Fresh Collective
           </span>
         </Link>
@@ -65,8 +65,7 @@ export default async function PublicHeader() {
             <Link
               key={href}
               href={href}
-              className="text-[14px] font-medium transition-colors"
-              style={{ color: 'rgba(255,255,255,0.62)' }}
+              className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
             >
               {label}
             </Link>
@@ -79,35 +78,28 @@ export default async function PublicHeader() {
             <>
               <Link
                 href="/dashboard"
-                className="text-[14px] font-medium transition-colors"
-                style={{ color: 'rgba(255,255,255,0.62)' }}
+                className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
               >
                 Dashboard
               </Link>
               <LogoutButton
-                className="rounded-xl px-4 py-2 text-[13px] font-medium transition-all"
-                style={{
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  background: 'rgba(255,255,255,0.06)',
-                  color: 'rgba(255,255,255,0.72)',
-                }}
+                className="rounded-xl border border-navy-100 px-4 py-2 text-[13px] font-medium text-navy-600 transition-all hover:border-navy-200 hover:bg-navy-50"
               />
             </>
           ) : (
             <>
               <Link
                 href="/login"
-                className="text-[14px] font-medium transition-colors"
-                style={{ color: 'rgba(255,255,255,0.62)' }}
+                className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
               >
                 Log in
               </Link>
               <Link
                 href="/signup"
-                className="rounded-xl px-5 py-2 text-[13px] font-semibold text-white transition-all"
+                className="rounded-xl px-5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
                 style={{
                   background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                  boxShadow: '0 2px 12px rgba(56,160,158,0.35)',
+                  boxShadow: '0 2px 12px rgba(56,160,158,0.30)',
                 }}
               >
                 Join
@@ -116,8 +108,8 @@ export default async function PublicHeader() {
           )}
         </div>
 
-        {/* Mobile nav */}
-        <MobileNav isLoggedIn={!!user} dark />
+        {/* Mobile nav — hamburger defaults to dark (navy) for light header */}
+        <MobileNav isLoggedIn={!!user} />
 
       </Container>
     </header>
