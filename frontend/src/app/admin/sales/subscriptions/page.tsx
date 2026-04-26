@@ -3,11 +3,16 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   salesApi,
+  adminApi,
+  type AdminUser,
+  type Plan,
+  type Price,
   type Subscription,
   type SubscriptionCreate,
   type SubscriptionUpdate,
   SUBSCRIPTION_STATUSES,
   fmtDate,
+  userLabel,
 } from '@/lib/adminSalesApi'
 import StatusBadge from '@/components/admin/StatusBadge'
 import Modal from '@/components/admin/Modal'
@@ -17,6 +22,11 @@ export default function SubscriptionsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState('')
+
+  // Lookup data for the create form
+  const [users, setUsers] = useState<AdminUser[]>([])
+  const [plans, setPlans] = useState<Plan[]>([])
+  const [prices, setPrices] = useState<Price[]>([])
 
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState<SubscriptionCreate>({
@@ -30,15 +40,40 @@ export default function SubscriptionsPage() {
   const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
+  // Prices filtered to the currently selected plan
+  const availablePrices = prices.filter(
+    (p) => p.plan_id === createForm.plan_id && p.is_active
+  )
+
+  // When plan changes, reset price selection
+  function handlePlanChange(planId: string) {
+    setCreateForm((p) => ({ ...p, plan_id: planId, price_id: '' }))
+  }
+
   const load = useCallback(() => {
     setLoading(true)
-    salesApi.listSubscriptions({ status: statusFilter || undefined })
-      .then(setSubs)
+    Promise.all([
+      salesApi.listSubscriptions({ status: statusFilter || undefined }),
+      adminApi.listUsers(),
+      salesApi.listPlans(),
+      salesApi.listPrices(),
+    ])
+      .then(([s, u, pl, pr]) => {
+        setSubs(s)
+        setUsers(u)
+        setPlans(pl)
+        setPrices(pr)
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
   }, [statusFilter])
 
   useEffect(() => { load() }, [load])
+
+  // Build lookup maps for table display
+  const userMap = new Map(users.map((u) => [u.id, u]))
+  const planMap = new Map(plans.map((p) => [p.id, p]))
+  const priceMap = new Map(prices.map((p) => [p.id, p]))
 
   async function handleCreate() {
     setCreateSaving(true)
@@ -70,7 +105,7 @@ export default function SubscriptionsPage() {
     }
   }
 
-  const inputCls = 'w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-[13px] font-mono outline-none focus:border-teal-400'
+  const selectCls = 'w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-[13px] bg-white outline-none focus:border-teal-400'
   const labelCls = 'mb-1 block text-[12px] font-medium text-[#64748B]'
 
   return (
@@ -114,7 +149,7 @@ export default function SubscriptionsPage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr style={{ borderBottom: '1px solid #E2E8F0', background: '#F8F9FA' }}>
-                {['User ID', 'Plan ID', 'Price ID', 'Status', 'Started', 'Period End', 'Cancelled', ''].map((h) => (
+                {['User', 'Plan', 'Price', 'Status', 'Started', 'Period End', 'Cancelled', ''].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
                     {h}
                   </th>
@@ -122,27 +157,46 @@ export default function SubscriptionsPage() {
               </tr>
             </thead>
             <tbody>
-              {subs.map((s) => (
-                <tr key={s.id} className="transition-colors hover:bg-[#F8F9FA]" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                  <td className="px-4 py-3 font-mono text-[11px] text-[#475569]">{s.user_id.slice(0, 12)}…</td>
-                  <td className="px-4 py-3 font-mono text-[11px] text-[#475569]">{s.plan_id.slice(0, 12)}…</td>
-                  <td className="px-4 py-3 font-mono text-[11px] text-[#475569]">{s.price_id.slice(0, 12)}…</td>
-                  <td className="px-4 py-3"><StatusBadge value={s.status} /></td>
-                  <td className="px-4 py-3 text-[#475569]">{fmtDate(s.started_at)}</td>
-                  <td className="px-4 py-3 text-[#475569]">{fmtDate(s.current_period_end)}</td>
-                  <td className="px-4 py-3 text-[#475569]">
-                    {s.cancelled_at ? <span className="text-red-500">{fmtDate(s.cancelled_at)}</span> : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => { setEditing(s); setEditForm({ status: s.status }); setEditError(null) }}
-                      className="text-teal-600 hover:underline text-[12px]"
-                    >
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {subs.map((s) => {
+                const user = userMap.get(s.user_id)
+                const plan = planMap.get(s.plan_id)
+                const price = priceMap.get(s.price_id)
+                return (
+                  <tr key={s.id} className="transition-colors hover:bg-[#F8F9FA]" style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    <td className="px-4 py-3">
+                      {user ? (
+                        <span className="text-[#0F172A] font-medium">{userLabel(user)}</span>
+                      ) : (
+                        <span className="font-mono text-[11px] text-[#94A3B8]">{s.user_id.slice(0, 12)}…</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-[#475569]">
+                      {plan?.name ?? <span className="font-mono text-[11px] text-[#94A3B8]">{s.plan_id.slice(0, 12)}…</span>}
+                    </td>
+                    <td className="px-4 py-3 text-[#475569]">
+                      {price ? (
+                        <span>{price.amount_display} / {price.billing_interval}</span>
+                      ) : (
+                        <span className="font-mono text-[11px] text-[#94A3B8]">{s.price_id.slice(0, 12)}…</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge value={s.status} /></td>
+                    <td className="px-4 py-3 text-[#475569]">{fmtDate(s.started_at)}</td>
+                    <td className="px-4 py-3 text-[#475569]">{fmtDate(s.current_period_end)}</td>
+                    <td className="px-4 py-3 text-[#475569]">
+                      {s.cancelled_at ? <span className="text-red-500">{fmtDate(s.cancelled_at)}</span> : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => { setEditing(s); setEditForm({ status: s.status }); setEditError(null) }}
+                        className="text-teal-600 hover:underline text-[12px]"
+                      >
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -155,22 +209,67 @@ export default function SubscriptionsPage() {
             <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">{createError}</div>
           )}
           <div className="space-y-3">
-            {(['user_id', 'plan_id', 'price_id'] as const).map((k) => (
-              <label key={k} className="block">
-                <span className={labelCls}>{k.replace(/_/g, ' ')} <span className="text-red-500">*</span></span>
-                <input
-                  required
-                  className={inputCls}
-                  placeholder="UUID"
-                  value={createForm[k]}
-                  onChange={(e) => setCreateForm((p) => ({ ...p, [k]: e.target.value }))}
-                />
-              </label>
-            ))}
+            {/* User */}
+            <label className="block">
+              <span className={labelCls}>User <span className="text-red-500">*</span></span>
+              <select
+                required
+                className={selectCls}
+                value={createForm.user_id}
+                onChange={(e) => setCreateForm((p) => ({ ...p, user_id: e.target.value }))}
+              >
+                <option value="">— select a user —</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{userLabel(u)}</option>
+                ))}
+              </select>
+            </label>
+
+            {/* Plan */}
+            <label className="block">
+              <span className={labelCls}>Plan <span className="text-red-500">*</span></span>
+              <select
+                required
+                className={selectCls}
+                value={createForm.plan_id}
+                onChange={(e) => handlePlanChange(e.target.value)}
+              >
+                <option value="">— select a plan —</option>
+                {plans.filter((p) => p.is_active).map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
+
+            {/* Price — filtered to selected plan */}
+            <label className="block">
+              <span className={labelCls}>Price <span className="text-red-500">*</span></span>
+              <select
+                required
+                disabled={!createForm.plan_id}
+                className={`${selectCls} disabled:opacity-50`}
+                value={createForm.price_id}
+                onChange={(e) => setCreateForm((p) => ({ ...p, price_id: e.target.value }))}
+              >
+                <option value="">
+                  {createForm.plan_id ? '— select a price —' : '— choose a plan first —'}
+                </option>
+                {availablePrices.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.amount_display} / {p.billing_interval}
+                  </option>
+                ))}
+              </select>
+              {createForm.plan_id && availablePrices.length === 0 && (
+                <p className="mt-1 text-[11px] text-orange-500">No active prices for this plan.</p>
+              )}
+            </label>
+
+            {/* Status */}
             <label className="block">
               <span className={labelCls}>Status</span>
               <select
-                className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-[13px] outline-none focus:border-teal-400"
+                className={selectCls}
                 value={createForm.status}
                 onChange={(e) => setCreateForm((p) => ({ ...p, status: e.target.value as Subscription['status'] }))}
               >
@@ -179,6 +278,8 @@ export default function SubscriptionsPage() {
                 ))}
               </select>
             </label>
+
+            {/* Started at */}
             <label className="block">
               <span className={labelCls}>Started at</span>
               <input
@@ -188,6 +289,7 @@ export default function SubscriptionsPage() {
                 onChange={(e) => setCreateForm((p) => ({ ...p, started_at: e.target.value || undefined }))}
               />
             </label>
+
             <div className="flex justify-end gap-2 pt-2">
               <button onClick={() => setShowCreate(false)} className="rounded-lg px-4 py-2 text-[13px] text-[#64748B] hover:bg-[#F1F5F9]">
                 Cancel
@@ -212,16 +314,25 @@ export default function SubscriptionsPage() {
           )}
           <div className="space-y-3">
             <div className="rounded-lg p-3 text-[12px] text-[#64748B]" style={{ background: '#F8F9FA' }}>
-              <p>User: <span className="font-mono">{editing.user_id}</span></p>
-              <p>Plan: <span className="font-mono">{editing.plan_id}</span></p>
-              <p className="mt-1 text-[11px] text-[#94A3B8]">
-                Price ID is locked at subscription time to preserve the original join price.
-              </p>
+              {(() => {
+                const u = userMap.get(editing.user_id)
+                const pl = planMap.get(editing.plan_id)
+                const pr = priceMap.get(editing.price_id)
+                return (
+                  <>
+                    <p>User: <span className="font-medium text-[#0F172A]">{u ? userLabel(u) : editing.user_id}</span></p>
+                    <p>Plan: <span className="font-medium text-[#0F172A]">{pl?.name ?? editing.plan_id}</span></p>
+                    <p>Price: <span className="font-medium text-[#0F172A]">
+                      {pr ? `${pr.amount_display} / ${pr.billing_interval}` : editing.price_id}
+                    </span> <span className="text-[11px] text-[#94A3B8]">(locked at join time)</span></p>
+                  </>
+                )
+              })()}
             </div>
             <label className="block">
               <span className={labelCls}>Status</span>
               <select
-                className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-[13px] outline-none focus:border-teal-400"
+                className={selectCls}
                 value={editForm.status ?? editing.status}
                 onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value as Subscription['status'] }))}
               >

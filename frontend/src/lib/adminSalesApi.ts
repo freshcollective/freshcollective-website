@@ -412,6 +412,20 @@ export const salesApi = {
   getSummary: () => req<SalesSummary>('/api/admin/sales/summary'),
 }
 
+// ── Admin user type (from /api/admin/users) ───────────────────────────────────
+
+export interface AdminUser {
+  id: string
+  email: string
+  name: string | null
+  role: string
+  created_at: string
+}
+
+export const adminApi = {
+  listUsers: () => req<AdminUser[]>('/api/admin/users'),
+}
+
 // ── Display helpers ───────────────────────────────────────────────────────────
 
 export function formatCents(cents: number, currency = 'AUD'): string {
@@ -427,4 +441,13 @@ export function fmtDate(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString('en-AU', {
     day: 'numeric', month: 'short', year: 'numeric',
   })
+}
+
+export function leadLabel(lead: { first_name: string | null; last_name: string | null; email: string }): string {
+  const name = [lead.first_name, lead.last_name].filter(Boolean).join(' ')
+  return name ? `${name} — ${lead.email}` : lead.email
+}
+
+export function userLabel(user: { name: string | null; email: string }): string {
+  return user.name ? `${user.name} — ${user.email}` : user.email
 }

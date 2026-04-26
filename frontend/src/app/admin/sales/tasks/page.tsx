@@ -3,10 +3,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   salesApi,
+  type Lead,
   type SalesTask,
   type TaskCreate,
   type TaskUpdate,
   fmtDate,
+  leadLabel,
 } from '@/lib/adminSalesApi'
 import Modal from '@/components/admin/Modal'
 
@@ -15,6 +17,7 @@ type FilterMode = 'open' | 'completed' | 'all'
 function TaskForm({
   initial,
   isEdit,
+  leads,
   onSave,
   onCancel,
   saving,
@@ -22,6 +25,7 @@ function TaskForm({
 }: {
   initial: TaskCreate | TaskUpdate
   isEdit: boolean
+  leads: Lead[]
   onSave: (data: TaskCreate | TaskUpdate) => void
   onCancel: () => void
   saving: boolean
@@ -35,14 +39,20 @@ function TaskForm({
 
       {!isEdit && (
         <label className="block">
-          <span className="mb-1 block text-[12px] font-medium text-[#64748B]">Lead ID <span className="text-red-500">*</span></span>
-          <input
+          <span className="mb-1 block text-[12px] font-medium text-[#64748B]">
+            Lead <span className="text-red-500">*</span>
+          </span>
+          <select
             required
-            className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-[13px] font-mono outline-none focus:border-teal-400"
-            placeholder="lead UUID"
+            className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-[13px] bg-white outline-none focus:border-teal-400"
             value={(f as TaskCreate).lead_id ?? ''}
             onChange={(e) => setF((p) => ({ ...p, lead_id: e.target.value }))}
-          />
+          >
+            <option value="">— select a lead —</option>
+            {leads.map((l) => (
+              <option key={l.id} value={l.id}>{leadLabel(l)}</option>
+            ))}
+          </select>
         </label>
       )}
 
@@ -94,6 +104,7 @@ function TaskForm({
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<SalesTask[]>([])
+  const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<FilterMode>('open')
@@ -108,14 +119,16 @@ export default function TasksPage() {
 
   const [completing, setCompleting] = useState<string | null>(null)
 
+  const leadMap = new Map(leads.map((l) => [l.id, l]))
+
   const load = useCallback(() => {
     setLoading(true)
     const params =
       filter === 'open' ? { completed: false }
       : filter === 'completed' ? { completed: true }
       : {}
-    salesApi.listTasks(params)
-      .then(setTasks)
+    Promise.all([salesApi.listTasks(params), salesApi.listLeads()])
+      .then(([t, l]) => { setTasks(t); setLeads(l) })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
   }, [filter])
@@ -177,7 +190,6 @@ export default function TasksPage() {
         </button>
       </div>
 
-      {/* Filter tabs */}
       <div className="mb-4 flex gap-1 rounded-lg p-1 w-fit" style={{ background: '#F1F5F9' }}>
         {(['open', 'completed', 'all'] as FilterMode[]).map((f) => (
           <button
@@ -207,6 +219,7 @@ export default function TasksPage() {
         <div className="space-y-2">
           {tasks.map((t) => {
             const overdue = !t.completed_at && t.due_at && new Date(t.due_at) < now
+            const lead = leadMap.get(t.lead_id)
             return (
               <div
                 key={t.id}
@@ -220,6 +233,9 @@ export default function TasksPage() {
                   <p className={`text-[13px] font-medium leading-snug ${t.completed_at ? 'line-through text-[#94A3B8]' : 'text-[#0F172A]'}`}>
                     {t.title}
                   </p>
+                  {lead && (
+                    <p className="mt-0.5 text-[11px] text-[#94A3B8]">{leadLabel(lead)}</p>
+                  )}
                   {t.description && (
                     <p className="mt-0.5 text-[12px] text-[#64748B]">{t.description}</p>
                   )}
@@ -262,6 +278,7 @@ export default function TasksPage() {
           <TaskForm
             initial={{ lead_id: '', title: '' } as TaskCreate}
             isEdit={false}
+            leads={leads}
             onSave={handleCreate}
             onCancel={() => setShowCreate(false)}
             saving={createSaving}
@@ -280,6 +297,7 @@ export default function TasksPage() {
               assigned_to_user_id: editing.assigned_to_user_id ?? undefined,
             }}
             isEdit={true}
+            leads={leads}
             onSave={handleEdit}
             onCancel={() => setEditing(null)}
             saving={editSaving}

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   salesApi,
+  type Lead,
   type Opportunity,
   type OpportunityCreate,
   type OpportunityUpdate,
@@ -10,18 +11,53 @@ import {
   PIPELINE_STAGES,
   formatCents,
   fmtDate,
+  leadLabel,
 } from '@/lib/adminSalesApi'
 import StatusBadge from '@/components/admin/StatusBadge'
 import Modal from '@/components/admin/Modal'
 
+// ── Lead select ──────────────────────────────────────────────────────────────
+
+function LeadSelect({
+  value,
+  onChange,
+  leads,
+  required,
+}: {
+  value: string
+  onChange: (id: string) => void
+  leads: Lead[]
+  required?: boolean
+}) {
+  return (
+    <select
+      required={required}
+      className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-[13px] outline-none focus:border-teal-400 bg-white"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">— select a lead —</option>
+      {leads.map((l) => (
+        <option key={l.id} value={l.id}>
+          {leadLabel(l)}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+// ── Opportunity form ─────────────────────────────────────────────────────────
+
 function OppForm({
   initial,
+  leads,
   onSave,
   onCancel,
   saving,
   error,
 }: {
   initial: OpportunityCreate | OpportunityUpdate
+  leads: Lead[]
   onSave: (data: OpportunityCreate | OpportunityUpdate) => void
   onCancel: () => void
   saving: boolean
@@ -38,13 +74,14 @@ function OppForm({
 
       {isCreate && (
         <label className="block">
-          <span className="mb-1 block text-[12px] font-medium text-[#64748B]">Lead ID <span className="text-red-500">*</span></span>
-          <input
+          <span className="mb-1 block text-[12px] font-medium text-[#64748B]">
+            Lead <span className="text-red-500">*</span>
+          </span>
+          <LeadSelect
             required
-            className="w-full rounded-lg border border-[#E2E8F0] px-3 py-2 text-[13px] font-mono outline-none focus:border-teal-400"
-            placeholder="lead UUID"
             value={(f as OpportunityCreate).lead_id ?? ''}
-            onChange={(e) => setF((p) => ({ ...p, lead_id: e.target.value }))}
+            onChange={(id) => setF((p) => ({ ...p, lead_id: id }))}
+            leads={leads}
           />
         </label>
       )}
@@ -118,8 +155,11 @@ function OppForm({
   )
 }
 
+// ── Page ─────────────────────────────────────────────────────────────────────
+
 export default function OpportunitiesPage() {
   const [opps, setOpps] = useState<Opportunity[]>([])
+  const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [stageFilter, setStageFilter] = useState('')
@@ -137,10 +177,16 @@ export default function OpportunitiesPage() {
   const [stageSaving, setStageSaving] = useState(false)
   const [stageError, setStageError] = useState<string | null>(null)
 
+  // Build a lookup map: lead_id → lead for table display
+  const leadMap = new Map(leads.map((l) => [l.id, l]))
+
   const load = useCallback(() => {
     setLoading(true)
-    salesApi.listOpportunities({ stage: stageFilter || undefined })
-      .then(setOpps)
+    Promise.all([
+      salesApi.listOpportunities({ stage: stageFilter || undefined }),
+      salesApi.listLeads(),
+    ])
+      .then(([o, l]) => { setOpps(o); setLeads(l) })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
   }, [stageFilter])
@@ -232,7 +278,7 @@ export default function OpportunitiesPage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr style={{ borderBottom: '1px solid #E2E8F0', background: '#F8F9FA' }}>
-                {['Stage', 'Est. Value', 'Probability', 'Close Date', 'Won/Lost', 'Created', ''].map((h) => (
+                {['Lead', 'Stage', 'Est. Value', 'Probability', 'Close Date', 'Won/Lost', ''].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
                     {h}
                   </th>
@@ -240,43 +286,49 @@ export default function OpportunitiesPage() {
               </tr>
             </thead>
             <tbody>
-              {opps.map((opp) => (
-                <tr key={opp.id} className="transition-colors hover:bg-[#F8F9FA]" style={{ borderBottom: '1px solid #F1F5F9' }}>
-                  <td className="px-4 py-3"><StatusBadge value={opp.stage} /></td>
-                  <td className="px-4 py-3 font-medium text-[#0F172A]">
-                    {opp.estimated_value_cents != null ? formatCents(opp.estimated_value_cents) : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-[#475569]">
-                    {opp.probability != null ? `${opp.probability}%` : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-[#475569]">{fmtDate(opp.expected_close_date)}</td>
-                  <td className="px-4 py-3 text-[#475569]">
-                    {opp.won_at ? <span className="text-green-600 font-medium">Won {fmtDate(opp.won_at)}</span>
-                      : opp.lost_at ? <span className="text-red-500 font-medium">Lost {fmtDate(opp.lost_at)}</span>
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-[#94A3B8]">{fmtDate(opp.created_at)}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                        setEditing(opp)
-                        setEditError(null)
-                      }}
-                        className="text-teal-600 hover:underline"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => { setMovingStage(opp); setStageData({ stage: opp.stage }); setStageError(null) }}
-                        className="text-[#94A3B8] hover:text-[#0F172A]"
-                      >
-                        Stage
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {opps.map((opp) => {
+                const lead = leadMap.get(opp.lead_id)
+                return (
+                  <tr key={opp.id} className="transition-colors hover:bg-[#F8F9FA]" style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    <td className="px-4 py-3">
+                      {lead ? (
+                        <span className="font-medium text-[#0F172A]">{leadLabel(lead)}</span>
+                      ) : (
+                        <span className="font-mono text-[11px] text-[#94A3B8]">{opp.lead_id.slice(0, 12)}…</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge value={opp.stage} /></td>
+                    <td className="px-4 py-3 font-medium text-[#0F172A]">
+                      {opp.estimated_value_cents != null ? formatCents(opp.estimated_value_cents) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-[#475569]">
+                      {opp.probability != null ? `${opp.probability}%` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-[#475569]">{fmtDate(opp.expected_close_date)}</td>
+                    <td className="px-4 py-3">
+                      {opp.won_at ? <span className="text-green-600 font-medium">Won {fmtDate(opp.won_at)}</span>
+                        : opp.lost_at ? <span className="text-red-500 font-medium">Lost {fmtDate(opp.lost_at)}</span>
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { setEditing(opp); setEditError(null) }}
+                          className="text-teal-600 hover:underline"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => { setMovingStage(opp); setStageData({ stage: opp.stage }); setStageError(null) }}
+                          className="text-[#94A3B8] hover:text-[#0F172A]"
+                        >
+                          Stage
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -286,6 +338,7 @@ export default function OpportunitiesPage() {
         <Modal title="New opportunity" onClose={() => setShowCreate(false)}>
           <OppForm
             initial={{ lead_id: '', stage: 'new_lead' } as OpportunityCreate}
+            leads={leads}
             onSave={handleCreate}
             onCancel={() => setShowCreate(false)}
             saving={createSaving}
@@ -306,6 +359,7 @@ export default function OpportunitiesPage() {
               expected_close_date: editing.expected_close_date ?? undefined,
               lost_reason: editing.lost_reason ?? undefined,
             }}
+            leads={leads}
             onSave={handleEdit}
             onCancel={() => setEditing(null)}
             saving={editSaving}
@@ -320,6 +374,12 @@ export default function OpportunitiesPage() {
             <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">{stageError}</div>
           )}
           <div className="space-y-3">
+            {(() => {
+              const lead = leadMap.get(movingStage.lead_id)
+              return lead ? (
+                <p className="text-[13px] text-[#64748B]">{leadLabel(lead)}</p>
+              ) : null
+            })()}
             <p className="text-[13px] text-[#64748B]">
               Current stage: <StatusBadge value={movingStage.stage} />
             </p>
