@@ -1,0 +1,69 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+@theme {
+  /* Background */
+  --color-background: #FAFAF8;
+  --color-surface: #FFFFFF;
+
+  /* Navy: depth, headings, footer/header accents */
+  --color-navy-950: #0F1B30;
+  --color-navy-900: #1C2B4A;
+  --color-navy-700: #2D4270;
+  --color-navy-500: #4A6090;
+  --color-navy-300: #8BA0C0;
+  --color-navy-100: #D6DEE8;
+  --color-navy-50: #EEF2F7;
+
+  /* Teal: primary brand accent, buttons, links, active states */
+  --color-teal-900: #1A4D4C;
+  --color-teal-700: #2A6E6D;
+  --color-teal-600: #348685;
+  --color-teal-500: #3D8B8A;
+  --color-teal-400: #5AA3A2;
+  --color-teal-300: #7EBDBC;
+  --color-teal-200: #A8CFCE;
+  --color-teal-100: #D4E8E8;
+  --color-teal-50: #EEF7F7;
+
+  /* Gold: warmth, emphasis, premium touches */
+  --color-gold-900: #7A5C10;
+  --color-gold-700: #9E7820;
+  --color-gold-500: #B8902A;
+  --color-gold-400: #C4A035;
+  --color-gold-300: #D4B060;
+  --color-gold-200: #DFCA7A;
+  --color-gold-100: #EDD98A;
+  --color-gold-50: #FBF5DC;
+
+  /* Ivory: warm near-white surface for premium section backgrounds */
+  --color-ivory: #F7F3ED;
+
+  /* Border */
+  --color-border: #E2DDD5;
+  --color-border-light: #EEE9E1;
+
+  /* Typography: system fonts only */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-serif: Georgia, "Times New Roman", Times, serif;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-navy-900);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-serif);
+  line-height: 1.25;
+}

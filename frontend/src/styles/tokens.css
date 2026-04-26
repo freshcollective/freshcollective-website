@@ -1,0 +1,6 @@
+/* Non-Tailwind design tokens: shadows, semantic CSS custom properties */
+:root {
+  --fc-shadow-sm: 0 1px 3px 0 rgb(28 43 74 / 0.06), 0 1px 2px -1px rgb(28 43 74 / 0.06);
+  --fc-shadow-md: 0 4px 6px -1px rgb(28 43 74 / 0.08), 0 2px 4px -2px rgb(28 43 74 / 0.06);
+  --fc-shadow-lg: 0 10px 15px -3px rgb(28 43 74 / 0.08), 0 4px 6px -4px rgb(28 43 74 / 0.06);
+}
