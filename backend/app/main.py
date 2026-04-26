@@ -10,6 +10,7 @@ from slowapi.util import get_remote_address
 from app.auth.routes import router as auth_router
 from app.client.routes import router as client_router
 from app.admin.routes import router as admin_router
+from app.sales.routes import router as sales_router
 from app.core.config import settings
 
 logging.basicConfig(
@@ -51,6 +52,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(client_router)
 app.include_router(admin_router)
+app.include_router(sales_router)
 
 
 # ---------------------------------------------------------------------------
