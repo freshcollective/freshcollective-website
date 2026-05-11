@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
 
-const PROTECTED_PREFIXES = ['/dashboard', '/admin']
+const PROTECTED_PREFIXES = ['/dashboard', '/admin', '/spaces', '/creator']
 const AUTH_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password']
 
 export async function proxy(request: NextRequest) {

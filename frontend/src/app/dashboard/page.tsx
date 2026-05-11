@@ -56,9 +56,9 @@ export default async function DashboardPage() {
 
           <div className="grid gap-6 md:grid-cols-3">
             {[
-              { num: '01', label: 'Foundation', title: 'REAL Journey', desc: 'A four-phase programme to help you reconnect, expand, act, and live with intention.' },
-              { num: '02', label: 'Deepening', title: 'The Rooms', desc: 'Focused pathways to go deeper in the areas that matter most to you.' },
-              { num: '03', label: 'Community', title: 'The Heart', desc: 'Monthly live calls and a community of women walking alongside you.' },
+              { num: '01', label: 'Foundation', title: 'REAL Journey', desc: 'The foundational pathway. Four phases — Recognise, Explore, Align, Lead — to help you reconnect and move forward with intention.' },
+              { num: '02', label: 'Pathways', title: 'The Rooms', desc: 'Structured pathways to go deeper. Growth, Transformation, and Essence — each with guided steps and reflection.' },
+              { num: '03', label: 'Community & Events', title: 'Fresh Collective Space', desc: 'Monthly live calls, community prompts, and a space of women walking alongside you.' },
             ].map(({ num, label, title, desc }) => (
               <div key={num} className="rounded-xl border border-border bg-surface p-6" style={{ boxShadow: 'var(--fc-shadow-sm)' }}>
                 <div className="mb-3 text-xs font-medium uppercase tracking-widest text-gold-700">{num} — {label}</div>
