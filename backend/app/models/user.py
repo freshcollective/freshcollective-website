@@ -27,7 +27,7 @@ class User(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("role IN ('user', 'admin')", name="users_role_check"),
+        CheckConstraint("role IN ('user', 'creator', 'admin')", name="users_role_check"),
     )
 
     password_resets: Mapped[list["PasswordReset"]] = relationship(
