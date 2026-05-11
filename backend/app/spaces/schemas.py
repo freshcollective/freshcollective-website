@@ -35,3 +35,70 @@ class SpaceSummary(BaseModel):
     name: str
     tagline: str | None
     status: str
+
+
+class StepSummary(BaseModel):
+    """Step within a pathway list — includes current user's completion state."""
+
+    id: str
+    slug: str
+    title: str
+    content_type: str
+    estimated_minutes: int | None
+    is_required: bool
+    position: int
+    is_completed: bool
+
+
+class StepDetail(BaseModel):
+    """Full step for the step reading page."""
+
+    id: str
+    slug: str
+    title: str
+    content_type: str
+    content_body: str | None
+    content_url: str | None
+    estimated_minutes: int | None
+    is_required: bool
+    position: int
+    is_completed: bool
+    reflection_text: str | None
+
+
+class PathwayWithSteps(BaseModel):
+    """Pathway overview with ordered steps and progress summary."""
+
+    id: str
+    slug: str
+    title: str
+    description: str | None
+    status: str
+    step_count: int
+    completed_count: int
+    steps: list[StepSummary]
+
+
+class CompleteStepRequest(BaseModel):
+    reflection_text: str | None = None
+
+
+class CompleteStepResponse(BaseModel):
+    is_completed: bool
+
+
+class SaveNotesRequest(BaseModel):
+    reflection_text: str
+
+
+class SaveNotesResponse(BaseModel):
+    saved: bool
+
+
+class ContinueResponse(BaseModel):
+    space_slug: str
+    pathway_slug: str
+    pathway_title: str
+    step_slug: str
+    step_title: str
+    all_complete: bool

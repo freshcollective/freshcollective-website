@@ -1,21 +1,110 @@
+import uuid
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
-from app.models.platform import Pathway, Space
+from app.models.platform import (
+    Enrollment,
+    Pathway,
+    PathwayStep,
+    Space,
+    StepProgress,
+)
 from app.models.user import User
-from app.spaces.schemas import PathwaySummary, SpaceResponse, SpaceSummary
+from app.spaces.schemas import (
+    CompleteStepRequest,
+    CompleteStepResponse,
+    ContinueResponse,
+    PathwaySummary,
+    PathwayWithSteps,
+    SaveNotesRequest,
+    SaveNotesResponse,
+    SpaceResponse,
+    SpaceSummary,
+    StepDetail,
+    StepSummary,
+)
 
 router = APIRouter(prefix="/api/spaces", tags=["spaces"])
+me_router = APIRouter(prefix="/api/me", tags=["me"])
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _get_space_or_404(slug: str, db: Session) -> Space:
+    space = db.query(Space).filter(Space.slug == slug, Space.status == "active").first()
+    if not space:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+    return space
+
+
+def _get_pathway_or_404(space_id: str, pathway_slug: str, db: Session) -> Pathway:
+    pathway = (
+        db.query(Pathway)
+        .filter(Pathway.space_id == space_id, Pathway.slug == pathway_slug)
+        .first()
+    )
+    if not pathway:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pathway not found.")
+    return pathway
+
+
+def _get_step_or_404(pathway_id: str, step_slug: str, db: Session) -> PathwayStep:
+    step = (
+        db.query(PathwayStep)
+        .filter(PathwayStep.pathway_id == pathway_id, PathwayStep.slug == step_slug)
+        .first()
+    )
+    if not step:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Step not found.")
+    return step
+
+
+def _completed_step_ids(user_id: str, step_ids: list[str], db: Session) -> set[str]:
+    """Return the subset of step_ids the user has completed (completed_at IS NOT NULL)."""
+    records = (
+        db.query(StepProgress.step_id)
+        .filter(
+            StepProgress.user_id == user_id,
+            StepProgress.step_id.in_(step_ids),
+            StepProgress.completed_at.isnot(None),
+        )
+        .all()
+    )
+    return {r.step_id for r in records}
+
+
+def _ensure_enrollment(user_id: str, pathway_id: str, db: Session) -> None:
+    """Create an active enrollment if one does not already exist."""
+    exists = (
+        db.query(Enrollment.id)
+        .filter(Enrollment.user_id == user_id, Enrollment.pathway_id == pathway_id)
+        .first()
+    )
+    if not exists:
+        db.add(Enrollment(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            pathway_id=pathway_id,
+            status="active",
+        ))
+        db.flush()
+
+
+# ---------------------------------------------------------------------------
+# Spaces
+# ---------------------------------------------------------------------------
 
 @router.get("", response_model=list[SpaceSummary])
 def list_spaces(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Space]:
-    """Return all active spaces the current user has access to."""
     return (
         db.query(Space)
         .filter(Space.status == "active")
@@ -30,7 +119,6 @@ def get_space(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Space:
-    """Return a single space with its pathways."""
     space = (
         db.query(Space)
         .options(selectinload(Space.pathways))
@@ -42,16 +130,17 @@ def get_space(
     return space
 
 
+# ---------------------------------------------------------------------------
+# Pathways
+# ---------------------------------------------------------------------------
+
 @router.get("/{slug}/pathways", response_model=list[PathwaySummary])
 def list_pathways(
     slug: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Pathway]:
-    """Return all pathways in a space, ordered by position."""
-    space = db.query(Space).filter(Space.slug == slug).first()
-    if not space:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+    space = _get_space_or_404(slug, db)
     return (
         db.query(Pathway)
         .filter(Pathway.space_id == space.id)
@@ -67,15 +156,257 @@ def get_pathway(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Pathway:
-    """Return a single pathway by slug within a space."""
-    space = db.query(Space).filter(Space.slug == slug).first()
-    if not space:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+    space = _get_space_or_404(slug, db)
+    return _get_pathway_or_404(space.id, pathway_slug, db)
+
+
+@router.get("/{slug}/pathways/{pathway_slug}/overview", response_model=PathwayWithSteps)
+def get_pathway_overview(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PathwayWithSteps:
+    """Pathway detail with ordered steps and this user's completion state."""
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+
+    steps = (
+        db.query(PathwayStep)
+        .filter(PathwayStep.pathway_id == pathway.id)
+        .order_by(PathwayStep.position)
+        .all()
+    )
+
+    step_ids = [s.id for s in steps]
+    completed = _completed_step_ids(current_user.id, step_ids, db)
+
+    step_summaries = [
+        StepSummary(
+            id=s.id,
+            slug=s.slug,
+            title=s.title,
+            content_type=s.content_type.value if hasattr(s.content_type, "value") else str(s.content_type),
+            estimated_minutes=s.estimated_minutes,
+            is_required=s.is_required,
+            position=s.position,
+            is_completed=s.id in completed,
+        )
+        for s in steps
+    ]
+
+    return PathwayWithSteps(
+        id=pathway.id,
+        slug=pathway.slug,
+        title=pathway.title,
+        description=pathway.description,
+        status=pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
+        step_count=len(steps),
+        completed_count=len(completed),
+        steps=step_summaries,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Steps
+# ---------------------------------------------------------------------------
+
+@router.get("/{slug}/pathways/{pathway_slug}/steps", response_model=list[StepSummary])
+def list_steps(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[StepSummary]:
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+
+    steps = (
+        db.query(PathwayStep)
+        .filter(PathwayStep.pathway_id == pathway.id)
+        .order_by(PathwayStep.position)
+        .all()
+    )
+
+    step_ids = [s.id for s in steps]
+    completed = _completed_step_ids(current_user.id, step_ids, db)
+
+    return [
+        StepSummary(
+            id=s.id,
+            slug=s.slug,
+            title=s.title,
+            content_type=s.content_type.value if hasattr(s.content_type, "value") else str(s.content_type),
+            estimated_minutes=s.estimated_minutes,
+            is_required=s.is_required,
+            position=s.position,
+            is_completed=s.id in completed,
+        )
+        for s in steps
+    ]
+
+
+@router.get("/{slug}/pathways/{pathway_slug}/steps/{step_slug}", response_model=StepDetail)
+def get_step(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StepDetail:
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    step = _get_step_or_404(pathway.id, step_slug, db)
+
+    progress = (
+        db.query(StepProgress)
+        .filter(
+            StepProgress.user_id == current_user.id,
+            StepProgress.step_id == step.id,
+        )
+        .first()
+    )
+
+    return StepDetail(
+        id=step.id,
+        slug=step.slug,
+        title=step.title,
+        content_type=step.content_type.value if hasattr(step.content_type, "value") else str(step.content_type),
+        content_body=step.content_body,
+        content_url=step.content_url,
+        estimated_minutes=step.estimated_minutes,
+        is_required=step.is_required,
+        position=step.position,
+        is_completed=progress is not None and progress.completed_at is not None,
+        reflection_text=progress.reflection_text if progress else None,
+    )
+
+
+@router.post(
+    "/{slug}/pathways/{pathway_slug}/steps/{step_slug}/complete",
+    response_model=CompleteStepResponse,
+)
+def complete_step(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    body: CompleteStepRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CompleteStepResponse:
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    step = _get_step_or_404(pathway.id, step_slug, db)
+
+    _ensure_enrollment(current_user.id, pathway.id, db)
+
+    progress = (
+        db.query(StepProgress)
+        .filter(
+            StepProgress.user_id == current_user.id,
+            StepProgress.step_id == step.id,
+        )
+        .first()
+    )
+
+    if progress:
+        progress.completed_at = datetime.utcnow()
+        if body.reflection_text is not None:
+            progress.reflection_text = body.reflection_text
+    else:
+        db.add(StepProgress(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            step_id=step.id,
+            completed_at=datetime.utcnow(),
+            reflection_text=body.reflection_text,
+        ))
+
+    db.commit()
+    return CompleteStepResponse(is_completed=True)
+
+
+@router.patch(
+    "/{slug}/pathways/{pathway_slug}/steps/{step_slug}/notes",
+    response_model=SaveNotesResponse,
+)
+def save_notes(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    body: SaveNotesRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SaveNotesResponse:
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    step = _get_step_or_404(pathway.id, step_slug, db)
+
+    progress = (
+        db.query(StepProgress)
+        .filter(
+            StepProgress.user_id == current_user.id,
+            StepProgress.step_id == step.id,
+        )
+        .first()
+    )
+
+    if progress:
+        progress.reflection_text = body.reflection_text
+    else:
+        # Create a draft progress record (completed_at stays NULL)
+        db.add(StepProgress(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            step_id=step.id,
+            completed_at=None,
+            reflection_text=body.reflection_text,
+        ))
+
+    db.commit()
+    return SaveNotesResponse(saved=True)
+
+
+# ---------------------------------------------------------------------------
+# Me — continue journey
+# ---------------------------------------------------------------------------
+
+@me_router.get("/continue", response_model=ContinueResponse | None)
+def get_continue(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ContinueResponse | None:
+    """Return the user's most relevant next step, defaulting to REAL Journey."""
+    # Always anchor to REAL Journey as the primary pathway
     pathway = (
         db.query(Pathway)
-        .filter(Pathway.space_id == space.id, Pathway.slug == pathway_slug)
+        .join(Space)
+        .filter(Space.slug == "fresh-collective", Pathway.slug == "real-journey")
         .first()
     )
     if not pathway:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pathway not found.")
-    return pathway
+        return None
+
+    steps = (
+        db.query(PathwayStep)
+        .filter(PathwayStep.pathway_id == pathway.id)
+        .order_by(PathwayStep.position)
+        .all()
+    )
+    if not steps:
+        return None
+
+    step_ids = [s.id for s in steps]
+    completed = _completed_step_ids(current_user.id, step_ids, db)
+    all_complete = len(completed) >= len(steps)
+
+    next_step = next((s for s in steps if s.id not in completed), steps[-1])
+
+    return ContinueResponse(
+        space_slug="fresh-collective",
+        pathway_slug=pathway.slug,
+        pathway_title=pathway.title,
+        step_slug=next_step.slug,
+        step_title=next_step.title,
+        all_complete=all_complete,
+    )

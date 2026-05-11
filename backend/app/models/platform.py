@@ -410,8 +410,9 @@ class StepProgress(Base):
         nullable=False,
         index=True,
     )
-    completed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=False), server_default=func.now(), nullable=False
+    # NULL = notes saved but step not yet marked complete
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
     )
     reflection_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
