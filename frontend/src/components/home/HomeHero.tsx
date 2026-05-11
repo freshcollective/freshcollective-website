@@ -83,13 +83,12 @@ export default function HomeHero() {
             >
               See inside the Collective
             </Link>
-            {/* /entrance — dedicated onboarding welcome route, not yet built; linking to /real-journey in the meantime */}
             <Link
-              href="/real-journey"
+              href="/signup"
               className="inline-flex items-center rounded-xl border px-7 py-3.5 text-[15px] font-semibold text-navy-700 transition-colors hover:bg-navy-50"
               style={{ borderColor: '#C8D5E3' }}
             >
-              Start at The Entrance
+              Create a free account
             </Link>
           </div>
 

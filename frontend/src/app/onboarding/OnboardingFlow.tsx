@@ -162,17 +162,14 @@ function StepWelcome({ firstName, onNext }: { firstName: string | null; onNext: 
       <h1 className="mb-6 font-serif text-4xl leading-snug text-navy-900 md:text-5xl">
         {firstName ? `Welcome, ${firstName}.` : 'Welcome.'}
       </h1>
-      <div className="space-y-4 text-[15px] leading-[1.85] text-slate-600">
+      <div className="space-y-4 text-[16px] leading-[1.85] text-slate-600">
         <p>
-          Fresh Collective is a place for experiential learning — structured pathways,
-          real community, and live moments that support genuine change.
+          Fresh Collective is a place for experiential learning — guided pathways,
+          live experiences, and a real community supporting the work.
         </p>
         <p>
-          This isn&apos;t a course library. It&apos;s a living learning environment
+          This isn&apos;t a course library. It&apos;s a living environment
           designed to move with you, at a pace that honours how change actually works.
-        </p>
-        <p>
-          We&apos;ll take a moment to orient you before you enter.
         </p>
       </div>
       <NavRow onNext={onNext} nextLabel="Let's begin" />
