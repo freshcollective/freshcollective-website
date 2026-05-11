@@ -23,6 +23,7 @@ from app.creator.schemas import (
     PathwayUpdateRequest,
     PostCreateRequest,
     PostManageResponse,
+    PostUpdateRequest,
     ReorderRequest,
     SpaceDetail,
     SpaceUpdateRequest,
@@ -374,18 +375,20 @@ def update_step(
     if not step:
         raise HTTPException(status_code=404, detail="Step not found.")
 
-    if body.title is not None:
-        step.title = body.title.strip()
-    if body.content_type is not None:
-        step.content_type = body.content_type
-    if body.content_body is not None:
-        step.content_body = body.content_body
-    if body.content_url is not None:
-        step.content_url = body.content_url or None
-    if body.estimated_minutes is not None:
-        step.estimated_minutes = body.estimated_minutes
-    if body.is_required is not None:
-        step.is_required = body.is_required
+    # Use model_fields_set so null values in JSON explicitly clear the field
+    update = body.model_dump(exclude_unset=True)
+    if "title" in update and update["title"] is not None:
+        step.title = update["title"].strip()
+    if "content_type" in update and update["content_type"] is not None:
+        step.content_type = update["content_type"]
+    if "content_body" in update:
+        step.content_body = update["content_body"] or None
+    if "content_url" in update:
+        step.content_url = update["content_url"] or None
+    if "estimated_minutes" in update:
+        step.estimated_minutes = update["estimated_minutes"]
+    if "is_required" in update and update["is_required"] is not None:
+        step.is_required = update["is_required"]
 
     db.commit()
     db.refresh(step)
@@ -593,6 +596,44 @@ def create_post(
     }
 
 
+@router.patch("/spaces/{slug}/community/{post_id}", response_model=PostManageResponse)
+def update_post(
+    slug: str,
+    post_id: str,
+    body: PostUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    space = _get_managed_space(slug, current_user, db)
+    post = db.query(CommunityPost).filter(
+        CommunityPost.id == post_id, CommunityPost.space_id == space.id
+    ).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    if body.post_type is not None:
+        post.post_type = body.post_type
+    if body.title is not None:
+        post.title = body.title or None
+    if body.body is not None:
+        post.body = body.body
+    if body.is_pinned is not None:
+        post.is_pinned = body.is_pinned
+    db.commit()
+    db.refresh(post)
+    from app.models.user import User as UserModel
+    author = db.get(UserModel, post.author_id)
+    return {
+        "id": post.id,
+        "post_type": post.post_type.value if hasattr(post.post_type, "value") else str(post.post_type),
+        "title": post.title,
+        "body": post.body,
+        "is_pinned": post.is_pinned,
+        "is_visible": post.is_visible,
+        "created_at": post.created_at,
+        "author_name": author.name or author.email.split("@")[0] if author else "",
+    }
+
+
 @router.patch("/spaces/{slug}/community/{post_id}/pin", status_code=204)
 def toggle_pin(
     slug: str,
@@ -610,13 +651,14 @@ def toggle_pin(
     db.commit()
 
 
-@router.delete("/spaces/{slug}/community/{post_id}", status_code=204)
+@router.patch("/spaces/{slug}/community/{post_id}/hide", status_code=204)
 def hide_post(
     slug: str,
     post_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> None:
+    """Soft-hide: removes from learner feed but keeps manageable in Creator Studio."""
     space = _get_managed_space(slug, current_user, db)
     post = db.query(CommunityPost).filter(
         CommunityPost.id == post_id, CommunityPost.space_id == space.id
@@ -624,4 +666,40 @@ def hide_post(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found.")
     post.is_visible = False
+    db.commit()
+
+
+@router.patch("/spaces/{slug}/community/{post_id}/unhide", status_code=204)
+def unhide_post(
+    slug: str,
+    post_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    """Restore a hidden post to the learner feed."""
+    space = _get_managed_space(slug, current_user, db)
+    post = db.query(CommunityPost).filter(
+        CommunityPost.id == post_id, CommunityPost.space_id == space.id
+    ).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    post.is_visible = True
+    db.commit()
+
+
+@router.delete("/spaces/{slug}/community/{post_id}", status_code=204)
+def delete_post(
+    slug: str,
+    post_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    """Hard delete. Use hide/unhide for reversible moderation."""
+    space = _get_managed_space(slug, current_user, db)
+    post = db.query(CommunityPost).filter(
+        CommunityPost.id == post_id, CommunityPost.space_id == space.id
+    ).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    db.delete(post)
     db.commit()

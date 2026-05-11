@@ -250,6 +250,29 @@ class PostCreateRequest(BaseModel):
         return v
 
 
+class PostUpdateRequest(BaseModel):
+    post_type: str | None = None
+    title: str | None = None
+    body: str | None = None
+    is_pinned: bool | None = None
+
+    @field_validator("post_type")
+    @classmethod
+    def validate_post_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("prompt", "reflection", "discussion", "announcement"):
+            raise ValueError("Invalid post type.")
+        return v
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Body cannot be empty.")
+        return v
+
+
 class PostManageResponse(BaseModel):
     model_config = {"from_attributes": True}
     id: str
