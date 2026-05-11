@@ -35,7 +35,7 @@ export default function SignupForm() {
         return
       }
 
-      router.push('/dashboard')
+      router.push('/onboarding')
       router.refresh()
     } catch {
       setError('Unable to connect to the server. Please try again.')

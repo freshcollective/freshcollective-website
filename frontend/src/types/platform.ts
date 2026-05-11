@@ -138,6 +138,8 @@ export interface UserProfile {
   bio: string | null
   display_name: string | null
   is_public: boolean
+  has_completed_onboarding: boolean
+  interests: string[]
 }
 
 export interface SpaceMembership {
