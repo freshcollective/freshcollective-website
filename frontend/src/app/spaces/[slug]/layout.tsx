@@ -21,9 +21,14 @@ export default async function SpaceLayout({ children, params }: Props) {
           <Link href="/dashboard" className="font-serif text-lg text-navy-900 hover:text-teal-600">
             Fresh Collective
           </Link>
-          <Link href="/dashboard" className="text-sm text-slate-500 hover:text-navy-700">
-            ← Dashboard
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/settings" className="text-sm text-slate-400 hover:text-navy-700">
+              Settings
+            </Link>
+            <Link href="/dashboard" className="text-sm text-slate-500 hover:text-navy-700">
+              ← Dashboard
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -39,7 +44,7 @@ export default async function SpaceLayout({ children, params }: Props) {
 
       <SpaceNav spaceSlug={slug} />
 
-      <main className="flex-1 py-10">
+      <main className="flex-1 py-10 pb-24 md:pb-10">
         <div className="mx-auto max-w-6xl px-6 md:px-10">
           {children}
         </div>

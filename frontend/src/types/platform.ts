@@ -130,6 +130,25 @@ export interface PostDetail extends Omit<PostSummary, 'comment_count'> {
   comments: CommentItem[]
 }
 
+export interface UserProfile {
+  id: string
+  email: string
+  name: string | null
+  role: string
+  bio: string | null
+  display_name: string | null
+  is_public: boolean
+}
+
+export interface SpaceMembership {
+  space_id: string
+  space_name: string
+  space_slug: string
+  role: 'learner' | 'moderator' | 'creator'
+  joined_at: string
+  status: string
+}
+
 export interface ContinueResponse {
   space_slug: string
   pathway_slug: string

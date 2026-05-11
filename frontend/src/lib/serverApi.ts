@@ -97,3 +97,15 @@ export const getContinue = cache(async () => {
   if (!res.ok) return null
   return res.json()
 })
+
+export const getMe = cache(async () => {
+  const res = await fetchWithSession('/api/auth/me')
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getMyMemberships = cache(async () => {
+  const res = await fetchWithSession('/api/auth/me/memberships')
+  if (!res.ok) return []
+  return res.json()
+})

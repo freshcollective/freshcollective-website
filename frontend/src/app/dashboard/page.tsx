@@ -54,8 +54,13 @@ export default async function DashboardPage() {
       >
         <Container className="flex items-center justify-between">
           <span className="font-serif text-xl tracking-wide text-navy-900">Fresh Collective</span>
-          <div className="flex items-center gap-4">
-            <span className="hidden text-sm text-[#4A5568] md:block">{user?.email}</span>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/settings"
+              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-700"
+            >
+              Settings
+            </Link>
             <LogoutButton className="rounded-lg border border-navy-300 px-4 py-2 text-sm font-medium text-navy-700 transition-colors hover:border-navy-500 hover:bg-navy-50" />
           </div>
         </Container>
