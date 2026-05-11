@@ -209,6 +209,29 @@ def list_pathways(
     return result
 
 
+@router.get("/spaces/{slug}/pathways/{pathway_slug}", response_model=PathwayResponse)
+def get_pathway(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    step_count = db.query(PathwayStep).filter(PathwayStep.pathway_id == pathway.id).count()
+    return {
+        "id": pathway.id,
+        "slug": pathway.slug,
+        "title": pathway.title,
+        "description": pathway.description,
+        "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
+        "is_sequential": pathway.is_sequential,
+        "position": pathway.position,
+        "step_count": step_count,
+        "created_at": pathway.created_at,
+    }
+
+
 @router.post("/spaces/{slug}/pathways", response_model=PathwayResponse, status_code=201)
 def create_pathway(
     slug: str,
