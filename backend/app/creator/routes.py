@@ -165,6 +165,10 @@ def update_space(
         space.tagline = body.tagline.strip() or None
     if body.description is not None:
         space.description = body.description.strip() or None
+    if body.is_public is not None:
+        space.is_public = body.is_public
+    if body.status is not None:
+        space.status = body.status
     db.commit()
     db.refresh(space)
     return space

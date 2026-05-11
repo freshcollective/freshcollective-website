@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { apiUrl } from '@/lib/api'
 
 interface SpaceData {
   slug: string
@@ -35,16 +36,21 @@ export default function SpaceSettingsForm({ space }: { space: SpaceData }) {
     setError(null)
     setSaved(false)
     try {
-      const res = await fetch(`/api/creator/spaces/${space.slug}`, {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${space.slug}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ name, tagline: tagline || null, description: description || null, is_public: isPublic, status }),
       })
-      if (!res.ok) throw new Error('Failed to save')
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`
+        try { const b = await res.json(); detail = typeof b.detail === 'string' ? b.detail : detail } catch {}
+        throw new Error(detail)
+      }
       setSaved(true)
       router.refresh()
-    } catch {
-      setError('Something went wrong. Please try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
       setSaving(false)
     }

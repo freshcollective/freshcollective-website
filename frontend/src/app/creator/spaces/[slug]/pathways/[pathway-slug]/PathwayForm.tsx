@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { apiUrl } from '@/lib/api'
 
 interface PathwayData {
   slug: string
@@ -40,16 +41,21 @@ export default function PathwayForm({
     setSaved(false)
     setError(null)
     try {
-      const res = await fetch(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}`, {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ title, description: description || null, status, is_sequential: isSequential }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`
+        try { const b = await res.json(); detail = typeof b.detail === 'string' ? b.detail : detail } catch {}
+        throw new Error(detail)
+      }
       setSaved(true)
       router.refresh()
-    } catch {
-      setError('Could not save. Try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save.')
     } finally {
       setSaving(false)
     }

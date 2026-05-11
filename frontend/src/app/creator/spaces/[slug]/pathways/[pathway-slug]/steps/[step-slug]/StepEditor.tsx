@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { apiUrl } from '@/lib/api'
 import type { CreatorStep } from '@/types/platform'
 
 const CONTENT_TYPES = [
@@ -42,10 +43,11 @@ export default function StepEditor({
     setError(null)
     try {
       const res = await fetch(
-        `/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/steps/${step.slug}`,
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/steps/${step.slug}`),
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({
             title,
             content_type: contentType,
@@ -56,11 +58,15 @@ export default function StepEditor({
           }),
         },
       )
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`
+        try { const b = await res.json(); detail = typeof b.detail === 'string' ? b.detail : detail } catch {}
+        throw new Error(detail)
+      }
       setSaved(true)
       router.refresh()
-    } catch {
-      setError('Could not save. Try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save.')
     } finally {
       setSaving(false)
     }

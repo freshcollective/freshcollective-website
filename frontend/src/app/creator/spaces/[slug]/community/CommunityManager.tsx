@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { apiUrl } from '@/lib/api'
 import type { CreatorPost } from '@/types/platform'
 
 const POST_TYPES = [
@@ -21,6 +21,20 @@ const TYPE_LABELS: Record<string, string> = {
   reflection: 'Reflection',
 }
 
+async function apiFetch(url: string, options?: RequestInit) {
+  const res = await fetch(apiUrl(url), { credentials: 'include', ...options })
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`
+    try {
+      const body = await res.json()
+      detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {}
+    if (process.env.NODE_ENV === 'development') console.error(`${options?.method ?? 'GET'} ${url} → ${detail}`)
+    throw new Error(detail)
+  }
+  return res
+}
+
 export default function CommunityManager({
   posts: initialPosts,
   spaceSlug,
@@ -28,7 +42,6 @@ export default function CommunityManager({
   posts: CreatorPost[]
   spaceSlug: string
 }) {
-  const router = useRouter()
   const [posts, setPosts] = useState(initialPosts)
   const [postType, setPostType] = useState('announcement')
   const [title, setTitle] = useState('')
@@ -37,13 +50,15 @@ export default function CommunityManager({
   const [posting, setPosting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const base = `/api/creator/spaces/${spaceSlug}/community`
+
   async function handlePost(e: React.FormEvent) {
     e.preventDefault()
     if (!body.trim()) return
     setPosting(true)
     setError(null)
     try {
-      const res = await fetch(`/api/creator/spaces/${spaceSlug}/community`, {
+      const res = await apiFetch(base, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -53,37 +68,36 @@ export default function CommunityManager({
           is_pinned: isPinned,
         }),
       })
-      if (!res.ok) throw new Error()
       const data: CreatorPost = await res.json()
       setPosts((prev) => [data, ...prev])
       setTitle('')
       setBody('')
       setIsPinned(false)
-    } catch {
-      setError('Could not post. Try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not post. Try again.')
     } finally {
       setPosting(false)
     }
   }
 
   async function togglePin(post: CreatorPost) {
-    const res = await fetch(`/api/creator/spaces/${spaceSlug}/community/${post.id}/pin`, {
-      method: 'POST',
-    })
-    if (res.ok) {
+    try {
+      await apiFetch(`${base}/${post.id}/pin`, { method: 'PATCH' })
       setPosts((prev) =>
         prev.map((p) => (p.id === post.id ? { ...p, is_pinned: !p.is_pinned } : p)),
       )
+    } catch (err) {
+      console.error('Pin failed:', err)
     }
   }
 
   async function hidePost(post: CreatorPost) {
     if (!confirm('Hide this post? Members will no longer see it.')) return
-    const res = await fetch(`/api/creator/spaces/${spaceSlug}/community/${post.id}/hide`, {
-      method: 'POST',
-    })
-    if (res.ok) {
+    try {
+      await apiFetch(`${base}/${post.id}`, { method: 'DELETE' })
       setPosts((prev) => prev.filter((p) => p.id !== post.id))
+    } catch (err) {
+      console.error('Hide failed:', err)
     }
   }
 

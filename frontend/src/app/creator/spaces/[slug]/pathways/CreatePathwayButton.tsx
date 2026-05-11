@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { apiUrl } from '@/lib/api'
 
 export default function CreatePathwayButton({ slug }: { slug: string }) {
   const router = useRouter()
@@ -16,12 +17,13 @@ export default function CreatePathwayButton({ slug }: { slug: string }) {
     setCreating(true)
     setError(null)
     try {
-      const res = await fetch(`/api/creator/spaces/${slug}/pathways`, {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${slug}/pathways`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ title: title.trim() }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       router.push(`/creator/spaces/${slug}/pathways/${data.slug}`)
       router.refresh()

@@ -23,6 +23,8 @@ class SpaceUpdateRequest(BaseModel):
     name: str | None = None
     tagline: str | None = None
     description: str | None = None
+    is_public: bool | None = None
+    status: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -31,6 +33,13 @@ class SpaceUpdateRequest(BaseModel):
             v = v.strip()
             if not v:
                 raise ValueError("Name cannot be empty.")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("draft", "active", "archived"):
+            raise ValueError("Invalid status.")
         return v
 
 

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { apiUrl } from '@/lib/api'
 import type { CreatorStep } from '@/types/platform'
 
 const TYPE_LABELS: Record<string, string> = {
@@ -29,7 +30,7 @@ export default function StepList({
   const [creating, setCreating] = useState(false)
   const [moving, setMoving] = useState<string | null>(null)
 
-  const base = `/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}`
+  const base = apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}`)
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -39,9 +40,10 @@ export default function StepList({
       const res = await fetch(`${base}/steps`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ title: addingTitle.trim(), content_type: 'text' }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setSteps((prev) => [...prev, data])
       setAddingTitle('')
@@ -65,6 +67,7 @@ export default function StepList({
       await fetch(`${base}/steps/reorder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ ids: next.map((s) => s.id) }),
       })
     } finally {
@@ -74,7 +77,7 @@ export default function StepList({
 
   async function deleteStep(step: CreatorStep) {
     if (!confirm(`Delete "${step.title}"? This cannot be undone.`)) return
-    const res = await fetch(`${base}/steps/${step.slug}`, { method: 'DELETE' })
+    const res = await fetch(`${base}/steps/${step.slug}`, { method: 'DELETE', credentials: 'include' })
     if (res.ok) {
       setSteps((prev) => prev.filter((s) => s.id !== step.id))
     }

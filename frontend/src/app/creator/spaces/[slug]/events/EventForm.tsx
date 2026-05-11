@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { apiUrl } from '@/lib/api'
 import type { CreatorEvent } from '@/types/platform'
 
 const LOCATION_TYPES = [
@@ -42,13 +43,14 @@ export default function EventForm({
     setSaving(true)
     setError(null)
     try {
-      const url = isEdit
+      const url = apiUrl(isEdit
         ? `/api/creator/spaces/${spaceSlug}/events/${event!.id}`
-        : `/api/creator/spaces/${spaceSlug}/events`
+        : `/api/creator/spaces/${spaceSlug}/events`)
       const method = isEdit ? 'PATCH' : 'POST'
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           title,
           description: description || null,
@@ -60,11 +62,15 @@ export default function EventForm({
           is_published: isPublished,
         }),
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`
+        try { const b = await res.json(); detail = typeof b.detail === 'string' ? b.detail : detail } catch {}
+        throw new Error(detail)
+      }
       router.push(`/creator/spaces/${spaceSlug}/events`)
       router.refresh()
-    } catch {
-      setError('Could not save event. Try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save event.')
       setSaving(false)
     }
   }
