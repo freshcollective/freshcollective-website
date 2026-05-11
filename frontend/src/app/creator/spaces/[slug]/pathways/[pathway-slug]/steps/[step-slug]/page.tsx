@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getCreatorStep, getCreatorPathway } from '@/lib/serverApi'
+import { getCreatorStep, getCreatorPathway, getCreatorStepResources } from '@/lib/serverApi'
 import StepEditor from './StepEditor'
+import ResourceManager from './ResourceManager'
+import type { StepResource } from '@/types/platform'
 
 export default async function CreatorStepPage({
   params,
@@ -9,9 +11,10 @@ export default async function CreatorStepPage({
   params: Promise<{ slug: string; 'pathway-slug': string; 'step-slug': string }>
 }) {
   const { slug, 'pathway-slug': pathwaySlug, 'step-slug': stepSlug } = await params
-  const [step, pathway] = await Promise.all([
+  const [step, pathway, resources]: [any, any, StepResource[]] = await Promise.all([
     getCreatorStep(slug, pathwaySlug, stepSlug),
     getCreatorPathway(slug, pathwaySlug),
+    getCreatorStepResources(slug, pathwaySlug, stepSlug),
   ])
   if (!step || !pathway) notFound()
 
@@ -43,6 +46,16 @@ export default async function CreatorStepPage({
       </div>
 
       <StepEditor step={step} spaceSlug={slug} pathwaySlug={pathwaySlug} />
+
+      <div className="mt-12 border-t border-border pt-10">
+        <ResourceManager
+          stepId={step.id}
+          spaceSlug={slug}
+          pathwaySlug={pathwaySlug}
+          stepSlug={stepSlug}
+          initialResources={resources}
+        />
+      </div>
     </div>
   )
 }

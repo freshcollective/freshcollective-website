@@ -167,3 +167,19 @@ export const getCreatorPosts = cache(async (slug: string) => {
   if (!res.ok) return []
   return res.json()
 })
+
+export const getCreatorStepResources = cache(async (slug: string, pathwaySlug: string, stepSlug: string) => {
+  const res = await fetchWithSession(
+    `/api/creator/spaces/${slug}/pathways/${pathwaySlug}/steps/${stepSlug}/resources`,
+  )
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getStepResources = cache(async (spaceSlug: string, pathwaySlug: string, stepSlug: string) => {
+  const res = await fetchWithSession(
+    `/api/spaces/${spaceSlug}/pathways/${pathwaySlug}/steps/${stepSlug}/resources`,
+  )
+  if (!res.ok) return []
+  return res.json()
+})

@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getStep, getSteps, getPathway } from '@/lib/serverApi'
+import { getStep, getSteps, getPathway, getStepResources } from '@/lib/serverApi'
 import StepActions from '@/components/spaces/StepActions'
-import type { StepDetail, StepSummary } from '@/types/platform'
+import type { StepDetail, StepSummary, StepResource } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string; 'step-slug': string }>
@@ -69,15 +69,94 @@ function renderContent(body: string): React.ReactNode {
     .filter(Boolean)
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+
+const RESOURCE_GROUP: Record<string, string> = {
+  video: 'Watch',
+  audio: 'Listen',
+  pdf: 'Download',
+  file: 'Download',
+  link: 'Links',
+}
+
+const RESOURCE_ACTION: Record<string, string> = {
+  video: 'Watch',
+  audio: 'Listen',
+  pdf: 'Download',
+  file: 'Open',
+  link: 'Open',
+}
+
+function resourceHref(resource: StepResource): string {
+  if (!resource.url) return '#'
+  return resource.url.startsWith('http')
+    ? resource.url
+    : `${API_BASE}/api/uploads/${resource.url}`
+}
+
+function StepResourceList({ resources }: { resources: StepResource[] }) {
+  const groups = ['Watch', 'Listen', 'Download', 'Links']
+  const grouped: Record<string, StepResource[]> = {}
+  for (const r of resources) {
+    const g = RESOURCE_GROUP[r.resource_type] ?? 'Links'
+    ;(grouped[g] ??= []).push(r)
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {groups
+        .filter((g) => grouped[g]?.length)
+        .map((group) => (
+          <div key={group}>
+            <p className="mb-2.5 text-xs font-semibold uppercase tracking-widest text-slate-400">
+              {group}
+            </p>
+            <div className="flex flex-col gap-2">
+              {grouped[group].map((resource) => (
+                <a
+                  key={resource.id}
+                  href={resourceHref(resource)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  download={resource.is_downloadable && resource.file_name ? resource.file_name : undefined}
+                  className="group flex items-start justify-between gap-4 rounded-xl border border-border bg-surface px-4 py-3 transition-colors hover:border-navy-200 hover:bg-white"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-navy-900 group-hover:underline underline-offset-2">
+                      {resource.title}
+                    </p>
+                    {resource.description && (
+                      <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
+                        {resource.description}
+                      </p>
+                    )}
+                  </div>
+                  <span className="shrink-0 rounded-full border border-border bg-white px-2.5 py-1 text-xs font-medium text-slate-600 group-hover:border-navy-300 group-hover:text-navy-700">
+                    {RESOURCE_ACTION[resource.resource_type] ?? 'Open'} ↗
+                  </span>
+                </a>
+              ))}
+            </div>
+          </div>
+        ))}
+    </div>
+  )
+}
+
 export default async function StepPage({ params }: Props) {
   const { slug, 'pathway-slug': pathwaySlug, 'step-slug': stepSlug } = await params
 
-  const [step, allSteps, pathway]: [StepDetail | null, StepSummary[], { title: string } | null] =
-    await Promise.all([
-      getStep(slug, pathwaySlug, stepSlug),
-      getSteps(slug, pathwaySlug),
-      getPathway(slug, pathwaySlug),
-    ])
+  const [step, allSteps, pathway, resources]: [
+    StepDetail | null,
+    StepSummary[],
+    { title: string } | null,
+    StepResource[],
+  ] = await Promise.all([
+    getStep(slug, pathwaySlug, stepSlug),
+    getSteps(slug, pathwaySlug),
+    getPathway(slug, pathwaySlug),
+    getStepResources(slug, pathwaySlug, stepSlug),
+  ])
 
   if (!step) notFound()
 
@@ -150,6 +229,16 @@ export default async function StepPage({ params }: Props) {
         isCompleted={step.is_completed}
         initialNotes={step.reflection_text}
       />
+
+      {/* Resources */}
+      {resources.length > 0 && (
+        <section className="mt-10 border-t border-border pt-8">
+          <p className="mb-5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            Resources for this step
+          </p>
+          <StepResourceList resources={resources} />
+        </section>
+      )}
 
       {/* Prev / Next */}
       <div className="mt-10 flex items-center justify-between border-t border-border pt-6">

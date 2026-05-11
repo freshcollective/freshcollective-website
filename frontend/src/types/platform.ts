@@ -203,6 +203,20 @@ export interface CreatorPost {
   author_name: string
 }
 
+export interface StepResource {
+  id: string
+  resource_type: 'video' | 'audio' | 'pdf' | 'file' | 'link'
+  title: string
+  description: string | null
+  url: string | null
+  file_name: string | null
+  file_size: number | null
+  mime_type: string | null
+  position: number
+  is_downloadable: boolean
+  created_at: string
+}
+
 export interface ContinueResponse {
   space_slug: string
   pathway_slug: string
