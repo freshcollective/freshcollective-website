@@ -50,6 +50,18 @@ export const getSteps = cache(async (spaceSlug: string, pathwaySlug: string) => 
   return res.json()
 })
 
+export const getCommunityFeed = cache(async (spaceSlug: string) => {
+  const res = await fetchWithSession(`/api/spaces/${spaceSlug}/community`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCommunityPost = cache(async (spaceSlug: string, postId: string) => {
+  const res = await fetchWithSession(`/api/spaces/${spaceSlug}/community/${postId}`)
+  if (!res.ok) return null
+  return res.json()
+})
+
 export const getSpaceEvent = cache(async (spaceSlug: string, eventId: string) => {
   const res = await fetchWithSession(`/api/spaces/${spaceSlug}/events/${eventId}`)
   if (!res.ok) return null

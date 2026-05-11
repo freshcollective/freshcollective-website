@@ -81,6 +81,35 @@ export interface EventDetail extends EventSummary {
   recording_url: string | null
 }
 
+export interface PostAuthor {
+  id: string
+  name: string | null
+  email: string
+  display_name: string
+}
+
+export interface CommentItem {
+  id: string
+  body: string
+  author: PostAuthor
+  created_at: string
+}
+
+export interface PostSummary {
+  id: string
+  post_type: 'prompt' | 'reflection' | 'discussion' | 'announcement'
+  title: string | null
+  body: string
+  is_pinned: boolean
+  author: PostAuthor
+  comment_count: number
+  created_at: string
+}
+
+export interface PostDetail extends Omit<PostSummary, 'comment_count'> {
+  comments: CommentItem[]
+}
+
 export interface ContinueResponse {
   space_slug: string
   pathway_slug: string
