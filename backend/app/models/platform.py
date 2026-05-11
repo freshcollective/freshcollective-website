@@ -526,8 +526,10 @@ class CommunityPost(Base):
     )
 
     space: Mapped[Space] = relationship("Space", back_populates="community_posts")
+    author: Mapped["User"] = relationship("User", foreign_keys=[author_id])  # type: ignore[name-defined]
     comments: Mapped[list["PostComment"]] = relationship(
-        "PostComment", back_populates="post", cascade="all, delete-orphan"
+        "PostComment", back_populates="post", cascade="all, delete-orphan",
+        order_by="PostComment.created_at",
     )
 
     __table_args__ = (
@@ -569,6 +571,7 @@ class PostComment(Base):
     )
 
     post: Mapped[CommunityPost] = relationship("CommunityPost", back_populates="comments")
+    author: Mapped["User"] = relationship("User", foreign_keys=[author_id])  # type: ignore[name-defined]
 
     __table_args__ = (
         Index("ix_post_comments_post_created", "post_id", "created_at"),
