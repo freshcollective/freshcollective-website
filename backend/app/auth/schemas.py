@@ -99,6 +99,10 @@ class UpdateProfileRequest(BaseModel):
         return v
 
 
+class CompleteOnboardingRequest(BaseModel):
+    interests: list[str] = []
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -130,3 +134,5 @@ class ProfileResponse(BaseModel):
     bio: str | None
     display_name: str | None
     is_public: bool
+    has_completed_onboarding: bool
+    interests: list[str]

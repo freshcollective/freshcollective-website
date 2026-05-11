@@ -10,6 +10,7 @@ from app.auth import service
 from app.auth.dependencies import SESSION_COOKIE, get_current_user
 from app.auth.schemas import (
     ChangePasswordRequest,
+    CompleteOnboardingRequest,
     ForgotPasswordRequest,
     LoginRequest,
     ProfileResponse,
@@ -87,21 +88,36 @@ async def logout(response: Response) -> dict:
     return {"message": "Logged out."}
 
 
+import json as _json
+
+
+def _profile_response(user: User, cp: "CreatorProfile | None") -> ProfileResponse:
+    interests: list[str] = []
+    if user.interests:
+        try:
+            interests = _json.loads(user.interests)
+        except Exception:
+            interests = []
+    return ProfileResponse(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        bio=cp.bio if cp else None,
+        display_name=cp.display_name if cp else None,
+        is_public=cp.is_public if cp else False,
+        has_completed_onboarding=user.onboarding_completed_at is not None,
+        interests=interests,
+    )
+
+
 @router.get("/me")
 async def me(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ProfileResponse:
     cp = db.query(CreatorProfile).filter(CreatorProfile.user_id == current_user.id).first()
-    return ProfileResponse(
-        id=current_user.id,
-        email=current_user.email,
-        name=current_user.name,
-        role=current_user.role,
-        bio=cp.bio if cp else None,
-        display_name=cp.display_name if cp else None,
-        is_public=cp.is_public if cp else False,
-    )
+    return _profile_response(current_user, cp)
 
 
 @router.patch("/me")
@@ -143,15 +159,20 @@ async def update_me(
     if cp:
         db.refresh(cp)
 
-    return ProfileResponse(
-        id=current_user.id,
-        email=current_user.email,
-        name=current_user.name,
-        role=current_user.role,
-        bio=cp.bio if cp else None,
-        display_name=cp.display_name if cp else None,
-        is_public=cp.is_public if cp else False,
-    )
+    return _profile_response(current_user, cp)
+
+
+@router.post("/me/complete-onboarding")
+async def complete_onboarding(
+    payload: CompleteOnboardingRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    from datetime import datetime
+    current_user.onboarding_completed_at = datetime.now()
+    current_user.interests = _json.dumps(payload.interests)
+    db.commit()
+    return {"message": "Welcome to Fresh Collective."}
 
 
 @router.get("/me/memberships")
