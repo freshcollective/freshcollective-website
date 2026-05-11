@@ -26,6 +26,7 @@ from app.spaces.schemas import (
     PathwayProgress,
     PathwaySummary,
     PathwayWithSteps,
+    PublicSpaceCard,
     SaveNotesRequest,
     SaveNotesResponse,
     SpaceResponse,
@@ -37,6 +38,75 @@ from app.spaces.schemas import (
 
 router = APIRouter(prefix="/api/spaces", tags=["spaces"])
 me_router = APIRouter(prefix="/api/me", tags=["me"])
+public_router = APIRouter(prefix="/api/public", tags=["public"])
+
+
+# ---------------------------------------------------------------------------
+# Public (unauthenticated) discovery endpoint
+# ---------------------------------------------------------------------------
+
+@public_router.get("/spaces", response_model=list[PublicSpaceCard])
+def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
+    """Return all public active spaces with aggregated counts — no auth required."""
+    spaces = (
+        db.query(Space)
+        .filter(Space.status == "active", Space.is_public.is_(True))
+        .order_by(Space.created_at)
+        .all()
+    )
+    if not spaces:
+        return []
+
+    space_ids = [s.id for s in spaces]
+
+    pathway_counts: dict[str, int] = dict(
+        db.query(Pathway.space_id, func.count(Pathway.id))
+        .filter(Pathway.space_id.in_(space_ids))
+        .group_by(Pathway.space_id)
+        .all()
+    )
+
+    member_counts: dict[str, int] = dict(
+        db.query(Pathway.space_id, func.count(func.distinct(Enrollment.user_id)))
+        .join(Enrollment, Enrollment.pathway_id == Pathway.id)
+        .filter(Pathway.space_id.in_(space_ids))
+        .group_by(Pathway.space_id)
+        .all()
+    )
+
+    upcoming_event_space_ids: set[str] = {
+        r[0] for r in db.query(Event.space_id)
+        .filter(
+            Event.space_id.in_(space_ids),
+            Event.is_published.is_(True),
+            Event.starts_at >= datetime.utcnow(),
+        )
+        .distinct()
+        .all()
+    }
+
+    creator_ids = [s.creator_id for s in spaces if s.creator_id]
+    creator_names: dict[str, str | None] = {}
+    if creator_ids:
+        rows = db.query(User.id, User.name).filter(User.id.in_(creator_ids)).all()
+        creator_names = {r.id: r.name for r in rows}
+
+    return [
+        PublicSpaceCard(
+            id=s.id,
+            slug=s.slug,
+            name=s.name,
+            tagline=s.tagline,
+            description=s.description,
+            cover_image_url=s.cover_image_url,
+            is_public=s.is_public,
+            pathway_count=pathway_counts.get(s.id, 0),
+            member_count=member_counts.get(s.id, 0),
+            creator_name=creator_names.get(s.creator_id) if s.creator_id else None,
+            has_upcoming_event=s.id in upcoming_event_space_ids,
+        )
+        for s in spaces
+    ]
 
 
 # ---------------------------------------------------------------------------

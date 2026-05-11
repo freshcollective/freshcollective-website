@@ -1,101 +1,92 @@
 import Link from 'next/link'
 import Container from '@/components/layout/Container'
 
-const LAYERS = [
+const PILLARS = [
   {
-    eyebrow: 'Foundation',
-    eyebrowStyle: { color: '#38A09E' } as React.CSSProperties,
-    title: 'Guided pathways',
-    body: 'Structured learning you move through at your own pace — with reflection built in at every step. Start with the REAL Journey and go deeper from there.',
-    borderStyle: { border: '1px solid rgba(56,160,158,0.20)', background: 'linear-gradient(160deg, #FAFFFE 0%, #EEF9F8 100%)' },
+    number: '01',
+    heading: 'A clear path through the work',
+    body: 'Pathways break learning into steps you can actually follow — with reflection built in at every stage. Progress is visible. The pace is real. You always know where you are and what comes next.',
   },
   {
-    eyebrow: 'Community',
-    eyebrowStyle: { color: '#38A09E' } as React.CSSProperties,
-    title: 'Where it becomes real',
-    body: 'Live calls, shared reflections, and honest conversation. Real women, real support. The work lands differently when you do it together.',
-    borderStyle: { border: '1px solid rgba(0,0,0,0.07)', background: '#ffffff' },
+    number: '02',
+    heading: 'Learning with other people',
+    body: 'Every space includes live gatherings, community prompts, and a shared feed. The gap between understanding something and actually living it is almost always other people.',
   },
   {
-    eyebrow: 'Spaces',
-    eyebrowStyle: { color: '#B8922A' } as React.CSSProperties,
-    title: 'Rooms to go deeper',
-    body: 'As things begin to shift, you move into Spaces — each one focused on a different dimension of your growth. Led by creators who know the work.',
-    borderStyle: { border: '1px solid rgba(0,0,0,0.07)', background: '#ffffff' },
+    number: '03',
+    heading: 'Led by someone who knows',
+    body: 'Spaces are built and run by creators who have done this work themselves. Not content libraries. Not algorithms. Real expertise shaped into a guided experience — start to finish.',
   },
 ]
 
-export default function InsideTheCollective() {
+export default function HowItWorks() {
   return (
-    <section id="inside-the-collective" className="py-16 sm:py-24" style={{ background: '#FDFCF9' }}>
+    <section id="how-it-works" className="bg-white py-20 sm:py-28">
       <Container>
 
-        <div className="mb-10 max-w-[520px]">
-          <div className="mb-3 flex items-center gap-3">
+        <div className="mb-16 max-w-[560px]">
+          <div className="mb-4 flex items-center gap-3">
             <div className="h-px w-8 bg-teal-400" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              Inside the Collective
+              Why it works
             </span>
           </div>
           <h2
-            className="mb-3 text-navy-950"
-            style={{ fontSize: 'clamp(1.875rem, 3.5vw, 2.875rem)', letterSpacing: '-0.04em', lineHeight: '1.08' }}
+            className="mb-5 text-navy-950"
+            style={{ fontSize: 'clamp(2rem, 3.75vw, 3.25rem)', letterSpacing: '-0.04em', lineHeight: '1.07', fontWeight: 650 }}
           >
-            One system. Three layers.
-            <br />
-            All working together.
+            Learning that
+            <br />actually sticks.
           </h2>
-          <p className="text-[15.5px] leading-[1.7] text-navy-400">
-            Most programmes give you content. Fresh Collective gives you a structure —
-            a beginning, a rhythm, and people beside you through it all.
+          <p className="text-[15.5px] leading-[1.75] text-navy-400" style={{ maxWidth: '460px' }}>
+            Most learning environments separate content from community.
+            Here, structure, participation, and real expertise work together — by design.
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          {LAYERS.map((layer) => (
+        <div className="space-y-0 divide-y" style={{ borderTop: '1px solid #EEEDE9', borderBottom: '1px solid #EEEDE9' }}>
+          {PILLARS.map((pillar, i) => (
             <div
-              key={layer.title}
-              className="flex flex-col rounded-2xl p-6 transition-all hover:-translate-y-0.5 hover:shadow-lg"
-              style={{
-                ...layer.borderStyle,
-                boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 20px rgba(0,0,0,0.04)',
-              }}
+              key={pillar.number}
+              className="group grid gap-6 py-10 sm:grid-cols-[80px_1fr_1.5fr] sm:gap-10 sm:py-12"
             >
-              <p
-                className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em]"
-                style={layer.eyebrowStyle}
+              <div
+                className="text-[13px] font-semibold tabular-nums text-navy-200 transition-colors group-hover:text-teal-400"
+                style={{ letterSpacing: '0.04em', lineHeight: '1' }}
               >
-                {layer.eyebrow}
-              </p>
-              <h3 className="mb-3 text-[1.125rem] font-semibold leading-snug tracking-tight text-navy-950">
-                {layer.title}
+                {pillar.number}
+              </div>
+              <h3
+                className="font-semibold leading-snug text-navy-950"
+                style={{ fontSize: 'clamp(1.0625rem, 1.5vw, 1.25rem)', letterSpacing: '-0.02em' }}
+              >
+                {pillar.heading}
               </h3>
-              <p className="flex-1 text-[14px] leading-[1.72] text-navy-400">{layer.body}</p>
+              <p className="text-[15px] leading-[1.78] text-navy-400">
+                {pillar.body}
+              </p>
             </div>
           ))}
         </div>
 
-        <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[14px] text-navy-400">AUD $39/month · Cancel anytime</p>
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/membership"
-              className="inline-flex items-center rounded-xl px-6 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-              style={{
-                background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                boxShadow: 'var(--fc-shadow-btn)',
-              }}
-            >
-              Step inside the Collective
-            </Link>
-            <Link
-              href="/signup"
-              className="inline-flex items-center rounded-xl border px-6 py-3 text-[14px] font-semibold text-navy-700 transition-colors hover:bg-navy-50"
-              style={{ borderColor: '#C8D5E3' }}
-            >
-              Create a free account
-            </Link>
-          </div>
+        <div className="mt-10 flex flex-wrap gap-3">
+          <Link
+            href="/spaces"
+            className="inline-flex items-center rounded-xl px-6 py-3 text-[14px] font-semibold text-white transition-all hover:opacity-90 hover:-translate-y-px"
+            style={{
+              background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+              boxShadow: 'var(--fc-shadow-btn)',
+            }}
+          >
+            Explore Spaces
+          </Link>
+          <Link
+            href="/about"
+            className="inline-flex items-center rounded-xl border px-6 py-3 text-[14px] font-semibold text-navy-600 transition-colors hover:bg-navy-50"
+            style={{ borderColor: '#D0D8E2' }}
+          >
+            About the platform
+          </Link>
         </div>
 
       </Container>

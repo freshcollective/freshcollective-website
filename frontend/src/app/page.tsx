@@ -2,217 +2,166 @@ import Link from 'next/link'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import HomeHero from '@/components/home/HomeHero'
-import InsideTheCollective from '@/components/home/InsideTheCollective'
-import WhatHappensInside from '@/components/home/WhatHappensInside'
 
-/* ─── Section 2: This is for you if ────────────────────────────────────────── */
+/* ─── Two Ways In ───────────────────────────────────────────────────────────── */
 
-const FOR_YOU_IF = [
-  'You are exhausted by how hard you work just to stay afloat.',
-  'You know something needs to change, but you cannot see where to begin.',
-  'You give everything to everyone else and quietly wonder when it will be your turn.',
-  'You are craving depth — not more content, more advice, or more to do.',
-  'You want to feel like yourself again, and you are not sure you remember who that is.',
-  'You are ready to stop coping and start actually changing.',
-]
-
-function ForYouIf() {
+function TwoWaysIn() {
   return (
     <section className="py-16 sm:py-24" style={{ background: '#FDFCF9' }}>
       <Container>
-        <div className="mx-auto max-w-[640px]">
 
-          <div className="mb-8">
-            <div className="mb-3 flex items-center gap-3">
-              <div className="h-px w-8 bg-teal-400" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-                This is for you if
-              </span>
-            </div>
-            <h2
-              className="text-navy-950"
-              style={{ fontSize: 'clamp(1.75rem, 3vw, 2.625rem)', letterSpacing: '-0.04em', lineHeight: '1.1' }}
-            >
-              You recognise yourself
-              <br />in any of these.
-            </h2>
-          </div>
-
-          <div className="divide-y divide-[#EEEDE9]" style={{ borderTop: '1px solid #EEEDE9', borderBottom: '1px solid #EEEDE9' }}>
-            {FOR_YOU_IF.map((line, i) => (
-              <div key={i} className="flex items-baseline gap-4 py-4">
-                <div className="mt-[6px] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-teal-400" />
-                <p className="text-[15.5px] leading-[1.65] text-navy-700">{line}</p>
-              </div>
-            ))}
-          </div>
-
-          <div
-            className="mt-8 rounded-2xl p-6"
-            style={{ background: 'rgba(56,160,158,0.04)', border: '1px solid rgba(56,160,158,0.11)' }}
-          >
-            <p className="text-[15px] leading-[1.75] text-navy-600">
-              If you felt even one of those — you are in the right place.
-              Fresh Collective exists for exactly this moment.
-            </p>
-          </div>
-
-        </div>
-      </Container>
-    </section>
-  )
-}
-
-/* ─── Section 3: The Shift ──────────────────────────────────────────────────── */
-
-function TheShift() {
-  return (
-    <section className="bg-white py-16 sm:py-24">
-      <Container>
-        <div className="mx-auto max-w-[560px] text-center">
-
-          <div className="mb-6 inline-flex items-center gap-3">
-            <div className="h-px w-8 bg-teal-400" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              The shift
-            </span>
-            <div className="h-px w-8 bg-teal-400" />
-          </div>
-
-          <h2
-            className="mb-5 text-navy-950"
-            style={{ fontSize: 'clamp(1.75rem, 3vw, 2.625rem)', letterSpacing: '-0.04em', lineHeight: '1.12' }}
-          >
-            Information was never the problem.
-          </h2>
-
-          <p className="mb-4 text-[16.5px] leading-[1.78] text-navy-500">
-            Thousands of hours of content, advice, and self-help did not move you
-            because information is not transformation.
-          </p>
-
-          <p className="text-[15px] leading-[1.82] text-navy-400">
-            Fresh Collective is built differently. It is a structured system with a beginning,
-            a rhythm, and a community that holds you through the work — not just a library
-            of things to read when you find the time.
-          </p>
-
-        </div>
-      </Container>
-    </section>
-  )
-}
-
-/* ─── Section 6: What it actually feels like ───────────────────────────────── */
-
-const FEELS_LIKE = [
-  {
-    quote: 'Less noise. More clarity.',
-    detail: 'A quieter relationship with the constant pressure to do more.',
-  },
-  {
-    quote: 'Held by something bigger than willpower.',
-    detail: 'Structure that carries you when motivation runs out.',
-  },
-  {
-    quote: 'Like you stopped performing your life.',
-    detail: 'And started actually living it.',
-  },
-]
-
-function WhatItFeelsLike() {
-  return (
-    <section className="py-16 sm:py-24" style={{ background: '#FDFCF9' }}>
-      <Container>
-        <div className="mb-10 max-w-[460px]">
+        <div className="mb-12">
           <div className="mb-3 flex items-center gap-3">
             <div className="h-px w-8 bg-teal-400" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              What it actually feels like
+              Who it&apos;s for
             </span>
           </div>
           <h2
             className="text-navy-950"
-            style={{ fontSize: 'clamp(1.75rem, 3vw, 2.5rem)', letterSpacing: '-0.04em', lineHeight: '1.1' }}
+            style={{ fontSize: 'clamp(1.875rem, 3.5vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
           >
-            Not a temporary high.
-            <br />A lasting shift.
+            Two ways in.
           </h2>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          {FEELS_LIKE.map(({ quote, detail }) => (
-            <div
-              key={quote}
-              className="rounded-2xl bg-white p-6"
-              style={{
-                border: '1px solid rgba(0,0,0,0.07)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 20px rgba(0,0,0,0.04)',
-              }}
+        <div
+          className="grid gap-12 sm:grid-cols-2 sm:gap-0"
+          style={{ borderTop: '1px solid #EEEDE9', paddingTop: '3rem' }}
+        >
+
+          <div className="sm:pr-12 lg:pr-20">
+            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
+              For learners
+            </p>
+            <p
+              className="mb-5 text-navy-950"
+              style={{ fontSize: 'clamp(1.125rem, 1.75vw, 1.375rem)', letterSpacing: '-0.02em', lineHeight: '1.3', fontWeight: 620 }}
             >
-              <p
-                className="mb-2.5 font-semibold text-navy-950"
-                style={{ fontSize: '1.125rem', letterSpacing: '-0.02em', lineHeight: '1.35' }}
-              >
-                {quote}
-              </p>
-              <p className="text-[14px] leading-[1.7] text-navy-400">{detail}</p>
-            </div>
-          ))}
+              Seeking thoughtful growth
+            </p>
+            <p className="mb-7 text-[15.5px] leading-[1.82] text-navy-500">
+              Join guided pathways built around real expertise. Attend live gatherings.
+              Participate in focused community. Learn at a pace that allows integration —
+              not just accumulation.
+            </p>
+            <Link
+              href="/spaces"
+              className="text-[14px] font-semibold text-teal-600 transition-colors hover:underline underline-offset-2"
+            >
+              Explore Spaces →
+            </Link>
+          </div>
+
+          <div
+            className="sm:pl-12 lg:pl-20"
+            style={{ borderLeft: '1px solid #EEEDE9' }}
+          >
+            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#9A7420' }}>
+              For creators
+            </p>
+            <p
+              className="mb-5 text-navy-950"
+              style={{ fontSize: 'clamp(1.125rem, 1.75vw, 1.375rem)', letterSpacing: '-0.02em', lineHeight: '1.3', fontWeight: 620 }}
+            >
+              Building something that matters
+            </p>
+            <p className="mb-7 text-[15.5px] leading-[1.82] text-navy-500">
+              Design intentional learning experiences around the work you know deeply.
+              Host live events. Gather a focused community. Build an environment where
+              people actually grow.
+            </p>
+            <Link
+              href="/signup"
+              className="text-[14px] font-semibold transition-colors hover:underline underline-offset-2"
+              style={{ color: '#9A7420' }}
+            >
+              Start Building →
+            </Link>
+          </div>
+
         </div>
       </Container>
     </section>
   )
 }
 
-/* ─── Section 7: The Heart ──────────────────────────────────────────────────── */
+/* ─── Vision (emotional centre — dark) ─────────────────────────────────────── */
 
-const HEART_FEATURES = [
-  { label: 'Monthly live gathering', desc: 'One structured call per month. Real connection, real conversation, real support.' },
-  { label: '42 women and growing', desc: 'A private community of women at all stages of their journey.' },
-  { label: 'The founder present', desc: 'Not outsourced to coaches. Lindsey shows up, every single month.' },
-  { label: 'Between-call community', desc: 'A place to land between sessions. To share, to ask, to be seen.' },
-]
-
-function TheHeart() {
+function Vision() {
   return (
-    <section className="bg-white py-16 sm:py-24">
-      <Container>
-        <div className="grid items-start gap-12 lg:grid-cols-2 lg:gap-16">
+    <section className="relative overflow-hidden py-24 sm:py-32" style={{ background: '#060C17' }}>
 
-          <div>
-            <div className="mb-3 flex items-center gap-3">
-              <div className="h-px w-8 bg-teal-400" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-                The Heart of the Collective
-              </span>
-            </div>
-            <h2
-              className="mb-5 text-navy-950"
-              style={{ fontSize: 'clamp(1.75rem, 3vw, 2.625rem)', letterSpacing: '-0.04em', lineHeight: '1.1' }}
-            >
-              You are not meant to
-              <br />do this alone.
-            </h2>
-            <p className="mb-4 text-[16px] leading-[1.78] text-navy-500">
-              Every month, the whole Collective gathers live — not for another masterclass,
-              but for real conversation. Questions without easy answers. Women holding space
-              for each other through the actual work.
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+        <div style={{
+          position: 'absolute', top: '-20%', right: '-5%',
+          width: '700px', height: '700px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(56,160,158,0.08) 0%, transparent 60%)',
+          filter: 'blur(80px)',
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '-15%', left: '-8%',
+          width: '600px', height: '600px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(201,168,60,0.05) 0%, transparent 60%)',
+          filter: 'blur(100px)',
+        }} />
+      </div>
+
+      <Container className="relative">
+        <div className="max-w-[680px]">
+
+          <div className="mb-8 flex items-center gap-3">
+            <div className="h-px w-8 bg-teal-400/40" />
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-400/60">
+              What we&apos;re building
+            </span>
+          </div>
+
+          <h2
+            style={{
+              fontSize: 'clamp(2.25rem, 4.5vw, 4rem)',
+              letterSpacing: '-0.04em',
+              lineHeight: '1.07',
+              fontWeight: 650,
+              color: '#ffffff',
+            }}
+          >
+            Fresh ideas need
+            <br />
+            <span style={{ color: 'rgba(255,255,255,0.30)' }}>spaces to grow.</span>
+          </h2>
+
+          <div className="mt-10 space-y-5" style={{ maxWidth: '500px' }}>
+            <p className="text-[16px] leading-[1.88]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              Fresh Collective is a platform for educators, practitioners, and guides building
+              intentional learning spaces — and for people who want to grow in ways that
+              actually last.
             </p>
-            <p className="text-[14.5px] leading-[1.78] text-navy-400">
-              The Heart is what makes Fresh Collective different. You can read every piece of
-              content alone. You cannot build real change alone. That is why this exists.
+            <p className="text-[15px] leading-[1.88]" style={{ color: 'rgba(255,255,255,0.26)' }}>
+              Not content libraries. Not endless courses. Structured environments where
+              learning happens in community — guided, grounded, and connected to real life.
             </p>
           </div>
 
-          <div className="divide-y" style={{ borderTop: '1px solid #EEEDE9', borderBottom: '1px solid #EEEDE9' }}>
-            {HEART_FEATURES.map(({ label, desc }) => (
-              <div key={label} className="flex items-start gap-4 py-5">
-                <div className="mt-[5px] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-teal-400" />
-                <div>
-                  <p className="mb-1 text-[14px] font-semibold text-navy-950">{label}</p>
-                  <p className="text-[13.5px] leading-[1.6] text-navy-400">{desc}</p>
-                </div>
+          <div
+            className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-8"
+            style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '2.5rem' }}
+          >
+            {[
+              { label: 'Thoughtful creators', sub: 'Building experiences around ideas that matter.' },
+              { label: 'Depth-seeking learners', sub: 'Growing in ways that last.' },
+              { label: 'Fresh ideas', sub: 'Given the space they need to develop.' },
+            ].map(({ label, sub }) => (
+              <div key={label}>
+                <p
+                  className="mb-1.5 font-semibold"
+                  style={{ color: 'rgba(255,255,255,0.70)', fontSize: '0.9375rem', letterSpacing: '-0.01em' }}
+                >
+                  {label}
+                </p>
+                <p style={{ color: 'rgba(255,255,255,0.24)', fontSize: '13px', lineHeight: '1.65' }}>
+                  {sub}
+                </p>
               </div>
             ))}
           </div>
@@ -223,61 +172,264 @@ function TheHeart() {
   )
 }
 
-/* ─── Section 8: Final CTA ──────────────────────────────────────────────────── */
+/* ─── Platform Preview (compact — 3 items) ──────────────────────────────────── */
 
-function FinalCTA() {
+const CARD_STYLE = {
+  border: '1px solid rgba(0,0,0,0.07)',
+  boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 6px 18px rgba(0,0,0,0.04)',
+}
+
+function PlatformPreview() {
+  return (
+    <section className="bg-white py-16 sm:py-20">
+      <Container>
+
+        <div className="mb-8">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="h-px w-8 bg-teal-400" />
+            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
+              Inside a space
+            </span>
+          </div>
+          <h2
+            className="text-navy-950"
+            style={{ fontSize: 'clamp(1.625rem, 2.75vw, 2.25rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
+          >
+            What it actually looks like.
+          </h2>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+
+          {/* Pathway */}
+          <div className="rounded-2xl bg-white p-5" style={CARD_STYLE}>
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-teal-600">Pathway · Step 3 of 12</p>
+            <p className="mb-3 text-[13.5px] font-semibold text-navy-950">The REAL Journey</p>
+            <div className="mb-3 h-0.5 rounded-full bg-navy-100">
+              <div className="h-0.5 w-1/4 rounded-full bg-teal-400" />
+            </div>
+            <div className="space-y-2">
+              {['Coming home to yourself', 'Your energy baseline', 'The patterns keeping you stuck'].map((t, i) => (
+                <div key={t} className="flex items-center gap-2">
+                  <div
+                    className={`h-3.5 w-3.5 flex-shrink-0 rounded-full text-[8px] font-bold flex items-center justify-center ${i === 0 ? 'bg-teal-500 text-white' : 'bg-navy-50 text-navy-300'}`}
+                    style={{ border: i === 0 ? 'none' : '1px solid #E2E8F0' }}
+                  >
+                    {i === 0 ? '✓' : i + 1}
+                  </div>
+                  <span className={`text-[11.5px] ${i === 0 ? 'text-navy-300 line-through' : 'text-navy-700'}`}>{t}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Event */}
+          <div className="rounded-2xl bg-white p-5" style={CARD_STYLE}>
+            <div className="mb-3 flex items-center gap-2">
+              <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-teal-600">Live event</span>
+            </div>
+            <p className="mb-0.5 text-[13.5px] font-semibold text-navy-950">Monthly gathering — June</p>
+            <p className="mb-4 text-[11.5px] text-navy-400">First Thursday · 7:30 pm AEST</p>
+            <div className="mb-3 rounded-xl p-3" style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.09)' }}>
+              <p className="mb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-teal-700">This month</p>
+              <p className="text-[12px] font-semibold text-navy-900">What are you actually saying yes to?</p>
+            </div>
+            <p className="text-[11px] text-navy-400">42 attending</p>
+          </div>
+
+          {/* Community */}
+          <div className="rounded-2xl bg-white p-5" style={CARD_STYLE}>
+            <div className="mb-3">
+              <span className="rounded-lg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ background: 'rgba(56,160,158,0.07)', color: '#2E8584' }}>
+                Community prompt
+              </span>
+            </div>
+            <p className="mb-4 text-[13px] font-medium leading-[1.55] text-navy-800">
+              What shifted for you this week — even something small?
+            </p>
+            <div className="space-y-2">
+              {[
+                { c: '#55B8B6', t: 'I stopped apologising before asking for help.' },
+                { c: '#AAE1E0', t: 'Noticed I was bracing — chose to stay open.' },
+              ].map(({ c, t }, i) => (
+                <div key={i} className="flex items-start gap-2 rounded-lg p-2" style={{ background: '#F5F7FA' }}>
+                  <div className="mt-0.5 h-4 w-4 flex-shrink-0 rounded-full border-2 border-white" style={{ background: c }} />
+                  <p className="text-[11px] leading-[1.55] text-navy-600">{t}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-[11px] text-navy-400">23 responses · 3 hrs ago</p>
+          </div>
+
+        </div>
+      </Container>
+    </section>
+  )
+}
+
+/* ─── Featured Spaces ───────────────────────────────────────────────────────── */
+
+const FEATURED = [
+  {
+    slug: 'fresh-collective',
+    name: 'Fresh Collective',
+    tagline: 'The founding space — built around the REAL Journey and a live monthly community.',
+    creator: 'Lindsey',
+    isFlagship: true,
+    color: '#38A09E',
+  },
+  {
+    slug: 'the-creative-thread',
+    name: 'The Creative Thread',
+    tagline: 'For makers, writers, and visual artists building a sustainable creative practice.',
+    creator: 'Priya Mehta',
+    isFlagship: false,
+    color: '#C06B3A',
+  },
+  {
+    slug: 'letters-to-myself',
+    name: 'Letters to Myself',
+    tagline: 'A reflective journaling practice for people in it for the long game.',
+    creator: 'Caitlin Marsh',
+    isFlagship: false,
+    color: '#B8922A',
+  },
+]
+
+function FeaturedSpaces() {
   return (
     <section className="py-16 sm:py-24" style={{ background: '#FDFCF9' }}>
       <Container>
-        <div className="mx-auto max-w-[560px] text-center">
 
-          <div className="mb-6 inline-flex items-center gap-3">
-            <div className="h-px w-8 bg-teal-400" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              Ready when you are
-            </span>
-            <div className="h-px w-8 bg-teal-400" />
+        <div className="mb-10 flex items-end justify-between">
+          <div>
+            <div className="mb-3 flex items-center gap-3">
+              <div className="h-px w-8 bg-teal-400" />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
+                Spaces
+              </span>
+            </div>
+            <h2
+              className="text-navy-950"
+              style={{ fontSize: 'clamp(1.625rem, 2.75vw, 2.25rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
+            >
+              Where the learning lives.
+            </h2>
           </div>
+          <Link
+            href="/spaces"
+            className="hidden text-[13.5px] font-semibold text-teal-600 hover:underline underline-offset-2 sm:block"
+          >
+            Explore all →
+          </Link>
+        </div>
+
+        <div className="divide-y" style={{ borderTop: '1px solid #EEEDE9', borderBottom: '1px solid #EEEDE9' }}>
+          {FEATURED.map(({ slug, name, tagline, creator, isFlagship, color }) => (
+            <div key={slug} className="group flex items-center justify-between gap-6 py-6">
+              <div className="flex items-start gap-4 min-w-0">
+                <div
+                  className="mt-1 h-7 w-1 flex-shrink-0 rounded-full"
+                  style={{ background: color }}
+                />
+                <div className="min-w-0">
+                  <div className="mb-0.5 flex flex-wrap items-center gap-2">
+                    <p className="text-[15px] font-semibold text-navy-950">{name}</p>
+                    {isFlagship && (
+                      <span
+                        className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em]"
+                        style={{ background: 'rgba(201,168,60,0.10)', color: '#9A7420' }}
+                      >
+                        Flagship
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[13.5px] leading-[1.6] text-navy-400 line-clamp-1">{tagline}</p>
+                  <p className="mt-0.5 text-[12px] text-navy-300">by {creator}</p>
+                </div>
+              </div>
+              <Link
+                href={isFlagship ? '/spaces/fresh-collective' : '/spaces'}
+                className="hidden flex-shrink-0 text-[13px] font-semibold text-navy-400 transition-colors group-hover:text-navy-700 sm:block"
+              >
+                Explore →
+              </Link>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 sm:hidden">
+          <Link
+            href="/spaces"
+            className="text-[14px] font-semibold text-teal-600 hover:underline underline-offset-2"
+          >
+            Explore all spaces →
+          </Link>
+        </div>
+
+      </Container>
+    </section>
+  )
+}
+
+/* ─── Final CTA ─────────────────────────────────────────────────────────────── */
+
+function FinalCTA() {
+  return (
+    <section
+      className="relative overflow-hidden py-24 sm:py-32"
+      style={{ background: '#060C17' }}
+    >
+      <div
+        className="pointer-events-none absolute inset-0"
+        aria-hidden="true"
+        style={{
+          background: 'radial-gradient(ellipse 80% 60% at 50% 100%, rgba(56,160,158,0.12) 0%, transparent 70%)',
+        }}
+      />
+
+      <Container className="relative">
+        <div className="mx-auto max-w-[520px] text-center">
 
           <h2
-            className="mb-5 text-navy-950"
-            style={{ fontSize: 'clamp(1.875rem, 3.5vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.1' }}
+            className="mb-6"
+            style={{
+              fontSize: 'clamp(2.25rem, 4vw, 3.5rem)',
+              letterSpacing: '-0.04em',
+              lineHeight: '1.08',
+              fontWeight: 650,
+              color: '#ffffff',
+            }}
           >
-            You can keep holding
-            <br />it all together…
+            Find your space.
             <br />
-            <span className="text-navy-400">or you can start living differently.</span>
+            <span style={{ color: 'rgba(255,255,255,0.30)' }}>Or build one.</span>
           </h2>
 
-          <p className="mb-10 text-[16px] leading-[1.78] text-navy-500">
-            Start where you are.
-            <br />
-            Come inside when you&apos;re ready.
+          <p className="mb-10 text-[15.5px] leading-[1.82]" style={{ color: 'rgba(255,255,255,0.40)' }}>
+            Join a guided learning space — or create an intentional one of your own.
           </p>
 
-          <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <div className="flex flex-col items-center gap-4">
             <Link
-              href="/membership"
-              className="inline-flex items-center rounded-xl px-8 py-3.5 text-[15px] font-semibold text-white transition-opacity hover:opacity-90"
+              href="/spaces"
+              className="inline-flex items-center rounded-xl px-9 py-4 text-[15px] font-semibold text-white transition-all hover:opacity-90 hover:-translate-y-px"
               style={{
                 background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                boxShadow: 'var(--fc-shadow-btn)',
+                boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
               }}
             >
-              Step inside the Collective
+              Explore Spaces
             </Link>
             <Link
               href="/signup"
-              className="inline-flex items-center rounded-xl border px-8 py-3.5 text-[15px] font-semibold text-navy-700 transition-colors hover:bg-navy-50"
-              style={{ borderColor: '#C8D5E3' }}
+              className="text-[13.5px] font-medium transition-opacity hover:opacity-60"
+              style={{ color: 'rgba(255,255,255,0.32)' }}
             >
-              Create a free account
+              or Create a Space →
             </Link>
           </div>
-
-          <p className="mt-6 text-[13px] text-navy-400">
-            AUD $39/month · No lock-in · Cancel anytime
-          </p>
 
         </div>
       </Container>
@@ -291,12 +443,10 @@ export default function Home() {
   return (
     <SiteShell>
       <HomeHero />
-      <ForYouIf />
-      <TheShift />
-      <InsideTheCollective />
-      <WhatHappensInside />
-      <WhatItFeelsLike />
-      <TheHeart />
+      <TwoWaysIn />
+      <Vision />
+      <PlatformPreview />
+      <FeaturedSpaces />
       <FinalCTA />
     </SiteShell>
   )

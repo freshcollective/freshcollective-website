@@ -3,109 +3,110 @@ import Container from '@/components/layout/Container'
 
 export default function HomeHero() {
   return (
-    <section className="relative overflow-hidden bg-white">
-      {/* Ambient glows */}
+    <section className="relative overflow-hidden" style={{ background: '#FAFAF8' }}>
+
+      {/* Subtle grid */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        aria-hidden="true"
+        style={{
+          backgroundImage:
+            'linear-gradient(rgba(12,24,38,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(12,24,38,0.025) 1px, transparent 1px)',
+          backgroundSize: '56px 56px',
+        }}
+      />
+
+      {/* Layered gradient atmosphere */}
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div
-          style={{
-            position: 'absolute', top: '-15%', right: '-8%',
-            width: '700px', height: '700px', borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(56,160,158,0.07) 0%, transparent 65%)',
-            filter: 'blur(80px)',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute', bottom: '-5%', left: '-8%',
-            width: '550px', height: '550px', borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(212,176,72,0.05) 0%, transparent 60%)',
-            filter: 'blur(100px)',
-          }}
-        />
+        <div style={{
+          position: 'absolute', top: '-25%', right: '-12%',
+          width: '900px', height: '900px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(56,160,158,0.10) 0%, transparent 58%)',
+          filter: 'blur(72px)',
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '-15%', left: '-14%',
+          width: '700px', height: '700px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(201,168,60,0.07) 0%, transparent 58%)',
+          filter: 'blur(90px)',
+        }} />
+        <div style={{
+          position: 'absolute', top: '30%', right: '18%',
+          width: '380px', height: '380px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(56,160,158,0.06) 0%, transparent 65%)',
+          filter: 'blur(50px)',
+        }} />
       </div>
 
-      <Container className="relative pt-16 pb-12 sm:pt-20 sm:pb-16 lg:pt-24 lg:pb-20">
+      {/* Grain */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        aria-hidden="true"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='300' height='300' filter='url(%23n)' opacity='0.035'/></svg>")`,
+          opacity: 0.8,
+        }}
+      />
+
+      <Container className="relative py-16 sm:py-24 lg:py-28">
         <div className="max-w-[660px]">
 
-          {/* Eyebrow */}
           <div className="mb-6 flex items-center gap-3">
             <div className="h-px w-8 bg-teal-400" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              A membership for women
+              A creator-led learning platform
             </span>
           </div>
 
-          {/* Headline */}
           <h1
             className="mb-6 text-navy-950"
             style={{
-              fontSize: 'clamp(2.5rem, 5vw, 4.5rem)',
-              lineHeight: '1.06',
-              letterSpacing: '-0.04em',
-              fontWeight: 650,
+              fontSize: 'clamp(2.5rem, 5vw, 4.625rem)',
+              lineHeight: '1.05',
+              letterSpacing: '-0.045em',
+              fontWeight: 660,
             }}
           >
-            You&apos;re not here to just
-            <br />
-            survive your life.
+            Guided spaces for
             <br />
             <span
               style={{
-                background: 'linear-gradient(120deg, #38A09E 0%, #55B8B6 45%, #C9A83C 100%)',
+                background: 'linear-gradient(118deg, #38A09E 0%, #55B8B6 40%, #C9A83C 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
               }}
             >
-              You&apos;re here to live it.
+              people who learn differently.
             </span>
           </h1>
 
-          {/* Sub-copy */}
           <p
-            className="mb-10 text-navy-500"
-            style={{ fontSize: '1.0625rem', lineHeight: '1.78', maxWidth: '540px' }}
+            className="mb-9 text-navy-500"
+            style={{ fontSize: '1.0625rem', lineHeight: '1.78', maxWidth: '500px' }}
           >
-            If you&apos;ve been holding everything together for a long time, you already know
-            something needs to change. Fresh Collective gives you a way to move out of
-            survival — and into a life that actually works.
+            Structured pathways. Live gatherings. Focused community.
+            Built by people who know the work — for people doing it.
           </p>
 
-          {/* CTAs */}
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Link
-              href="#inside-the-collective"
-              className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-opacity hover:opacity-90"
+              href="/spaces"
+              className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:opacity-90 hover:-translate-y-px"
               style={{
                 background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                boxShadow: 'var(--fc-shadow-btn)',
+                boxShadow: '0 2px 16px rgba(56,160,158,0.35), 0 1px 3px rgba(0,0,0,0.08)',
               }}
             >
-              See inside the Collective
+              Explore Spaces
             </Link>
             <Link
               href="/signup"
-              className="inline-flex items-center rounded-xl border px-7 py-3.5 text-[15px] font-semibold text-navy-700 transition-colors hover:bg-navy-50"
-              style={{ borderColor: '#C8D5E3' }}
+              className="inline-flex items-center rounded-xl border bg-white/70 px-7 py-3.5 text-[15px] font-semibold text-navy-700 backdrop-blur-sm transition-all hover:bg-white hover:-translate-y-px"
+              style={{ borderColor: '#D0D8E2' }}
             >
-              Create a free account
+              Create a Space
             </Link>
-          </div>
-
-          {/* Social proof */}
-          <div className="mt-8 flex items-center gap-3">
-            <div className="flex -space-x-1.5">
-              {['#55B8B6', '#7FCFCD', '#AAE1E0', '#38A09E'].map((c, i) => (
-                <div
-                  key={i}
-                  className="h-6 w-6 rounded-full border-[2.5px] border-white"
-                  style={{ background: c }}
-                />
-              ))}
-            </div>
-            <span className="text-[13px] text-navy-400">
-              42 women in The Heart · free to begin
-            </span>
           </div>
 
         </div>

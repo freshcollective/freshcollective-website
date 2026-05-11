@@ -2,6 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
+import type { PublicSpaceCard } from '@/types/platform'
 
 async function fetchWithSession(path: string): Promise<Response> {
   const cookieStore = await cookies()
@@ -11,6 +12,16 @@ async function fetchWithSession(path: string): Promise<Response> {
     next: { revalidate: 0 },
   })
 }
+
+export const getPublicSpaces = cache(async (): Promise<PublicSpaceCard[]> => {
+  try {
+    const res = await fetch(apiUrl('/api/public/spaces'), { next: { revalidate: 60 } })
+    if (!res.ok) return []
+    return res.json()
+  } catch {
+    return []
+  }
+})
 
 export const getSpace = cache(async (slug: string) => {
   const res = await fetchWithSession(`/api/spaces/${slug}`)

@@ -217,6 +217,20 @@ export interface StepResource {
   created_at: string
 }
 
+export interface PublicSpaceCard {
+  id: string
+  slug: string
+  name: string
+  tagline: string | null
+  description: string | null
+  cover_image_url: string | null
+  is_public: boolean
+  pathway_count: number
+  member_count: number
+  creator_name: string | null
+  has_upcoming_event: boolean
+}
+
 export interface ContinueResponse {
   space_slug: string
   pathway_slug: string

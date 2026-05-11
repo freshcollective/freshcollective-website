@@ -149,3 +149,17 @@ class ContinueResponse(BaseModel):
     step_slug: str
     step_title: str
     all_complete: bool
+
+
+class PublicSpaceCard(BaseModel):
+    id: str
+    slug: str
+    name: str
+    tagline: str | None
+    description: str | None
+    cover_image_url: str | None
+    is_public: bool
+    pathway_count: int
+    member_count: int
+    creator_name: str | None
+    has_upcoming_event: bool

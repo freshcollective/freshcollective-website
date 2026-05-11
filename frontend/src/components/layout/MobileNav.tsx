@@ -11,9 +11,8 @@ interface Props {
 }
 
 const NAV = [
-  { href: '/about',        label: 'About' },
-  { href: '/real-journey', label: 'REAL Journey' },
-  { href: '/membership',   label: 'Membership' },
+  { href: '/spaces', label: 'Explore Spaces' },
+  { href: '/about',  label: 'About' },
 ]
 
 export default function MobileNav({ isLoggedIn, dark }: Props) {
