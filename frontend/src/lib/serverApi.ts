@@ -109,3 +109,61 @@ export const getMyMemberships = cache(async () => {
   if (!res.ok) return []
   return res.json()
 })
+
+// ---------------------------------------------------------------------------
+// Creator Studio
+// ---------------------------------------------------------------------------
+
+export const getCreatorSpaces = cache(async () => {
+  const res = await fetchWithSession('/api/creator/spaces')
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCreatorSpace = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}`)
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getCreatorPathways = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/pathways`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCreatorPathway = cache(async (slug: string, pathwaySlug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/pathways/${pathwaySlug}`)
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getCreatorSteps = cache(async (slug: string, pathwaySlug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/pathways/${pathwaySlug}/steps`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCreatorStep = cache(async (slug: string, pathwaySlug: string, stepSlug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/pathways/${pathwaySlug}/steps/${stepSlug}`)
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getCreatorEvents = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/events`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCreatorEvent = cache(async (slug: string, eventId: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/events/${eventId}`)
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getCreatorPosts = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/community`)
+  if (!res.ok) return []
+  return res.json()
+})

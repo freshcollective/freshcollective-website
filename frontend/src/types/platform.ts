@@ -151,6 +151,58 @@ export interface SpaceMembership {
   status: string
 }
 
+// ---------------------------------------------------------------------------
+// Creator Studio
+// ---------------------------------------------------------------------------
+
+export interface CreatorPathway {
+  id: string
+  slug: string
+  title: string
+  description: string | null
+  status: 'draft' | 'active' | 'coming_soon' | 'archived'
+  is_sequential: boolean
+  position: number
+  step_count: number
+  created_at: string
+}
+
+export interface CreatorStep {
+  id: string
+  slug: string
+  title: string
+  content_type: 'text' | 'video' | 'reflection' | 'exercise' | 'audio'
+  content_body: string | null
+  content_url: string | null
+  estimated_minutes: number | null
+  is_required: boolean
+  position: number
+}
+
+export interface CreatorEvent {
+  id: string
+  title: string
+  description: string | null
+  starts_at: string
+  ends_at: string | null
+  location_type: 'zoom' | 'in_person' | 'async_recorded'
+  location_url: string | null
+  recording_url: string | null
+  is_published: boolean
+  created_at: string
+}
+
+export interface CreatorPost {
+  id: string
+  post_type: string
+  title: string | null
+  body: string
+  is_pinned: boolean
+  is_visible: boolean
+  created_at: string
+  author_name: string
+}
+
 export interface ContinueResponse {
   space_slug: string
   pathway_slug: string
