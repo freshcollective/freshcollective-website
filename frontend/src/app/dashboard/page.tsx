@@ -1,8 +1,12 @@
 import { cookies } from 'next/headers'
+import Link from 'next/link'
 import Container from '@/components/layout/Container'
 import LogoutButton from '@/components/layout/LogoutButton'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
+import { getSpace } from '@/lib/serverApi'
+import PathwayCard from '@/components/spaces/PathwayCard'
+import type { PathwaySummary } from '@/types/platform'
 
 interface User {
   id: string
@@ -28,8 +32,14 @@ async function getUser(): Promise<User | null> {
 }
 
 export default async function DashboardPage() {
-  const user = await getUser()
+  const [user, space] = await Promise.all([
+    getUser(),
+    getSpace('fresh-collective'),
+  ])
+
   const firstName = user?.name?.split(' ')[0] ?? 'there'
+  const pathways: PathwaySummary[] = space?.pathways ?? []
+  const realJourney = pathways.find((p) => p.slug === 'real-journey')
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -50,24 +60,46 @@ export default async function DashboardPage() {
         <Container>
           <div className="mb-10">
             <div className="mb-4 h-px w-6 bg-gold-500" />
-            <h1 className="mb-2 font-serif text-4xl text-navy-900">Welcome back, {firstName}.</h1>
-            <p className="text-[#718096]">Your member area is being built. Here&apos;s what&apos;s coming.</p>
+            <h1 className="mb-3 font-serif text-4xl text-navy-900">Welcome back, {firstName}.</h1>
+            <Link
+              href="/spaces/fresh-collective"
+              className="inline-block rounded-full bg-teal-500 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-600"
+            >
+              Enter Fresh Collective →
+            </Link>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-3">
-            {[
-              { num: '01', label: 'Foundation', title: 'REAL Journey', desc: 'The foundational pathway. Four phases — Recognise, Explore, Align, Lead — to help you reconnect and move forward with intention.' },
-              { num: '02', label: 'Pathways', title: 'The Rooms', desc: 'Structured pathways to go deeper. Growth, Transformation, and Essence — each with guided steps and reflection.' },
-              { num: '03', label: 'Community & Events', title: 'Fresh Collective Space', desc: 'Monthly live calls, community prompts, and a space of women walking alongside you.' },
-            ].map(({ num, label, title, desc }) => (
-              <div key={num} className="rounded-xl border border-border bg-surface p-6" style={{ boxShadow: 'var(--fc-shadow-sm)' }}>
-                <div className="mb-3 text-xs font-medium uppercase tracking-widest text-gold-700">{num} — {label}</div>
-                <h2 className="mb-2 font-serif text-xl text-navy-900">{title}</h2>
-                <p className="text-sm text-[#718096]">{desc}</p>
-                <div className="mt-4 inline-block rounded-full bg-navy-50 px-3 py-1 text-xs text-navy-500">Coming soon</div>
+          {realJourney && (
+            <section className="mb-10">
+              <div className="mb-4 text-xs font-medium uppercase tracking-widest text-gold-700">
+                Your Foundation
               </div>
-            ))}
-          </div>
+              <div className="max-w-sm">
+                <PathwayCard pathway={realJourney} spaceSlug="fresh-collective" />
+              </div>
+            </section>
+          )}
+
+          <section>
+            <div className="mb-4 text-xs font-medium uppercase tracking-widest text-gold-700">
+              Also Inside
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {[
+                { label: 'Community', desc: 'Connect with the women in your space.', href: '/spaces/fresh-collective/community' },
+                { label: 'Events', desc: 'Live calls, workshops, and gatherings.', href: '/spaces/fresh-collective/events' },
+              ].map(({ label, desc, href }) => (
+                <Link
+                  key={label}
+                  href={href}
+                  className="rounded-xl border border-border bg-surface p-5 transition-shadow hover:shadow-[var(--fc-shadow-card)]"
+                >
+                  <h3 className="mb-1 font-serif text-lg text-navy-900">{label}</h3>
+                  <p className="text-sm text-slate-500">{desc}</p>
+                </Link>
+              ))}
+            </div>
+          </section>
         </Container>
       </main>
     </div>

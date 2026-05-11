@@ -1,4 +1,6 @@
-import Container from '@/components/layout/Container'
+import { getSpacePathways } from '@/lib/serverApi'
+import PathwayCard from '@/components/spaces/PathwayCard'
+import type { PathwaySummary } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -6,17 +8,20 @@ interface Props {
 
 export default async function SpacePathwaysPage({ params }: Props) {
   const { slug } = await params
+  const pathways: PathwaySummary[] = await getSpacePathways(slug)
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <main className="flex-1 py-12">
-        <Container>
-          <div className="mb-4 h-px w-6 bg-gold-500" />
-          <h1 className="mb-2 font-serif text-4xl text-navy-900">Pathways</h1>
-          <p className="mb-1 text-sm text-[#718096]">Space: {slug}</p>
-          <p className="text-[#718096]">Pathways for this space are being built.</p>
-        </Container>
-      </main>
+    <div>
+      <h2 className="mb-6 font-serif text-2xl text-navy-900">Pathways</h2>
+      {pathways.length === 0 ? (
+        <p className="text-sm text-slate-500">No pathways available yet.</p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {pathways.map((pathway) => (
+            <PathwayCard key={pathway.id} pathway={pathway} spaceSlug={slug} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

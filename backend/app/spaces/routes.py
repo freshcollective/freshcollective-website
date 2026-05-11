@@ -58,3 +58,24 @@ def list_pathways(
         .order_by(Pathway.position)
         .all()
     )
+
+
+@router.get("/{slug}/pathways/{pathway_slug}", response_model=PathwaySummary)
+def get_pathway(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Pathway:
+    """Return a single pathway by slug within a space."""
+    space = db.query(Space).filter(Space.slug == slug).first()
+    if not space:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+    pathway = (
+        db.query(Pathway)
+        .filter(Pathway.space_id == space.id, Pathway.slug == pathway_slug)
+        .first()
+    )
+    if not pathway:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pathway not found.")
+    return pathway

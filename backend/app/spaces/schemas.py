@@ -9,6 +9,7 @@ class PathwaySummary(BaseModel):
     slug: str
     title: str
     description: str | None
+    cover_image_url: str | None = None
     status: str
     position: int
 
