@@ -3,11 +3,12 @@ import {
   getContinue,
   getSpacePathwaysProgress,
   getSpaceEvents,
+  getCommunityFeed,
 } from '@/lib/serverApi'
 import ContinueCard from '@/components/spaces/ContinueCard'
 import PathwayProgressCard from '@/components/spaces/PathwayProgressCard'
 import EventCard from '@/components/spaces/EventCard'
-import type { PathwayProgress, EventSummary, ContinueResponse } from '@/types/platform'
+import type { PathwayProgress, EventSummary, ContinueResponse, PostSummary } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -15,27 +16,29 @@ interface Props {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-4 text-xs font-medium uppercase tracking-widest text-gold-700">
+    <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-700">
       {children}
     </p>
   )
 }
 
 function Divider() {
-  return <div className="my-12 h-px bg-border" />
+  return <div className="my-10 h-px bg-border" />
 }
 
 export default async function SpacePage({ params }: Props) {
   const { slug } = await params
 
-  const [pathwaysProgress, events, continueData]: [
+  const [pathwaysProgress, events, continueData, communityFeed]: [
     PathwayProgress[],
     EventSummary[],
     ContinueResponse | null,
+    PostSummary[],
   ] = await Promise.all([
     getSpacePathwaysProgress(slug),
     getSpaceEvents(slug),
     getContinue(),
+    getCommunityFeed(slug),
   ])
 
   const activePathways = pathwaysProgress.filter(
@@ -51,11 +54,14 @@ export default async function SpacePage({ params }: Props) {
       ? Math.round((continuedPathway.completed_count / continuedPathway.step_count) * 100)
       : 0
 
+  // Pick up to 2 recent community posts for the snapshot
+  const recentPosts = communityFeed.slice(0, 2)
+
   return (
     <div className="pb-16">
 
       {/* ── Continue Your Journey ─────────────────────────────────── */}
-      <section className="mb-12">
+      <section className="mb-10">
         <SectionLabel>Your journey</SectionLabel>
         <ContinueCard
           data={continueData}
@@ -69,14 +75,14 @@ export default async function SpacePage({ params }: Props) {
       {activePathways.length > 0 && (
         <>
           <Divider />
-          <section className="mb-12">
-            <div className="mb-5 flex items-baseline justify-between">
+          <section className="mb-10">
+            <div className="mb-4 flex items-baseline justify-between">
               <SectionLabel>Pathways</SectionLabel>
               <Link
                 href={`/spaces/${slug}/pathways`}
-                className="text-sm text-teal-600 hover:underline"
+                className="text-xs text-teal-600 hover:underline"
               >
-                Browse all
+                Browse all →
               </Link>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -94,78 +100,107 @@ export default async function SpacePage({ params }: Props) {
 
         {/* Upcoming Events */}
         <section>
-          <SectionLabel>Coming up</SectionLabel>
+          <SectionLabel>Live experiences</SectionLabel>
           {events.length > 0 ? (
             <div className="flex flex-col gap-3">
-              {events.map((e) => (
+              {events.slice(0, 3).map((e) => (
                 <EventCard key={e.id} event={e} spaceSlug={slug} />
               ))}
+              {events.length > 3 && (
+                <Link
+                  href={`/spaces/${slug}/events`}
+                  className="mt-1 text-xs text-slate-400 hover:text-teal-600"
+                >
+                  View all events →
+                </Link>
+              )}
             </div>
           ) : (
-            <div className="rounded-xl border border-border bg-surface p-6">
+            <div className="rounded-xl border border-border bg-surface px-6 py-6">
               <p className="mb-1 font-serif text-base text-navy-700">
-                No upcoming sessions yet.
+                Nothing scheduled yet.
               </p>
               <p className="text-sm text-slate-400">
-                Live calls, workshops, and gatherings will appear here when scheduled.
+                Live calls and gatherings will appear here. Come back soon.
               </p>
             </div>
           )}
         </section>
 
-        {/* Community Snapshot */}
+        {/* Community Snapshot — real data */}
         <section>
-          <SectionLabel>In the community</SectionLabel>
-          <div className="flex flex-col gap-3">
-
-            <div className="rounded-xl border border-border bg-surface px-5 py-4">
-              <p className="mb-1 text-xs font-medium text-teal-700 uppercase tracking-wider">
-                This week's reflection
-              </p>
-              <p className="font-serif text-base text-navy-800 leading-snug">
-                What pattern are you noticing most clearly right now?
-              </p>
-              <Link
-                href={`/spaces/${slug}/community`}
-                className="mt-2 inline-block text-xs text-slate-400 hover:text-teal-600"
-              >
-                Share your reflection →
-              </Link>
-            </div>
-
-            <div className="rounded-xl border border-border bg-surface px-5 py-4">
-              <p className="mb-1 text-xs font-medium text-slate-400 uppercase tracking-wider">
-                Members exploring
-              </p>
-              <p className="text-sm leading-relaxed text-slate-500">
-                Growth, alignment, and what feels most alive right now.
-              </p>
-              <Link
-                href={`/spaces/${slug}/community`}
-                className="mt-2 inline-block text-xs text-slate-400 hover:text-teal-600"
-              >
-                Join the conversation →
-              </Link>
-            </div>
-
+          <div className="mb-4 flex items-baseline justify-between">
+            <SectionLabel>In the community</SectionLabel>
+            <Link
+              href={`/spaces/${slug}/community`}
+              className="text-xs text-teal-600 hover:underline"
+            >
+              Open community →
+            </Link>
           </div>
+
+          {recentPosts.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {recentPosts.map((post) => (
+                <Link
+                  key={post.id}
+                  href={`/spaces/${slug}/community/${post.id}`}
+                  className="group block rounded-xl border border-border bg-surface px-5 py-4 transition-all hover:border-slate-200 hover:shadow-[var(--fc-shadow-card)]"
+                >
+                  {post.title ? (
+                    <p className="mb-1 font-serif text-sm text-navy-800 group-hover:text-teal-700 transition-colors leading-snug">
+                      {post.title}
+                    </p>
+                  ) : (
+                    <p className="mb-1 text-sm text-navy-800 group-hover:text-teal-700 transition-colors leading-relaxed line-clamp-2">
+                      {post.body.split('\n\n')[0]}
+                    </p>
+                  )}
+                  <div className="mt-2 flex items-center gap-2 text-xs text-slate-400">
+                    <span>{post.author.display_name}</span>
+                    <span>·</span>
+                    <span>
+                      {post.comment_count === 0
+                        ? 'No replies yet'
+                        : `${post.comment_count} ${post.comment_count === 1 ? 'reply' : 'replies'}`}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-surface px-5 py-6">
+              <p className="mb-1 font-serif text-base text-navy-700">
+                The conversation begins with you.
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                Share a reflection, ask a question, or start a discussion.
+              </p>
+              <Link
+                href={`/spaces/${slug}/community`}
+                className="mt-3 inline-block text-xs font-medium text-teal-600 hover:underline"
+              >
+                Open community →
+              </Link>
+            </div>
+          )}
         </section>
       </div>
 
-      {/* ── Announcements ────────────────────────────────────────── */}
+      {/* ── Welcome note ─────────────────────────────────────────── */}
       <Divider />
       <section>
-        <SectionLabel>From Fresh Collective</SectionLabel>
         <div
-          className="rounded-xl border border-gold-200 bg-gold-50/40 px-6 py-5"
+          className="rounded-xl border border-gold-200 px-6 py-5"
+          style={{ background: 'rgba(212,176,72,0.04)' }}
         >
-          <p className="mb-0.5 text-xs font-medium text-gold-700 uppercase tracking-wider">
-            Welcome
+          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-700">
+            A note
           </p>
           <p className="font-serif text-lg text-navy-900">
             You are in the right place.
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-slate-500 max-w-prose">
+          <p className="mt-2 max-w-prose text-sm leading-relaxed text-slate-500">
             This space is designed to grow with you. Start with the REAL Journey,
             return often, and let the structure hold you. Nothing here is about
             speed or perfection.

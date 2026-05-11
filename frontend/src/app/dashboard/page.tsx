@@ -2,6 +2,7 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import Container from '@/components/layout/Container'
 import LogoutButton from '@/components/layout/LogoutButton'
+import Avatar from '@/components/ui/Avatar'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
 import { getContinue, getSpaceEvents } from '@/lib/serverApi'
@@ -30,9 +31,9 @@ async function getUser(): Promise<User | null> {
   }
 }
 
-function formatEventDateShort(isoString: string): string {
+function formatEventDate(isoString: string): string {
   const d = new Date(isoString)
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
 export default async function DashboardPage() {
@@ -40,6 +41,7 @@ export default async function DashboardPage() {
     await Promise.all([getUser(), getContinue(), getSpaceEvents('fresh-collective')])
 
   const firstName = user?.name?.split(' ')[0] ?? 'there'
+  const displayName = user?.name ?? firstName
   const continueHref = continueData
     ? `/spaces/${continueData.space_slug}/pathways/${continueData.pathway_slug}/${continueData.step_slug}`
     : '/spaces/fresh-collective/pathways/real-journey/welcome'
@@ -49,19 +51,25 @@ export default async function DashboardPage() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <header
-        className="border-b border-border bg-surface py-4"
+        className="border-b border-border bg-surface py-3.5"
         style={{ borderTop: '2px solid var(--color-gold-500)' }}
       >
         <Container className="flex items-center justify-between">
-          <span className="font-serif text-xl tracking-wide text-navy-900">Fresh Collective</span>
-          <div className="flex items-center gap-3">
+          <span className="font-serif text-lg text-navy-900">Fresh Collective</span>
+          <div className="flex items-center gap-2">
             <Link
               href="/settings"
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-700"
+              className="rounded-lg px-3 py-2 text-sm text-slate-500 transition-colors hover:text-navy-700"
             >
               Settings
             </Link>
-            <LogoutButton className="rounded-lg border border-navy-300 px-4 py-2 text-sm font-medium text-navy-700 transition-colors hover:border-navy-500 hover:bg-navy-50" />
+            <Link
+              href="/settings/profile"
+              className="ml-1 flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-50"
+              aria-label="Your profile"
+            >
+              <Avatar name={displayName} size="sm" />
+            </Link>
           </div>
         </Container>
       </header>
@@ -71,83 +79,97 @@ export default async function DashboardPage() {
 
           {/* Greeting */}
           <div className="mb-10">
-            <div className="mb-4 h-px w-6 bg-gold-500" />
-            <h1 className="font-serif text-4xl text-navy-900">Welcome back, {firstName}.</h1>
+            <div className="mb-3 h-px w-6 bg-gold-500" />
+            <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
+              Welcome back, {firstName}.
+            </h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Ready to continue where you left off?
+            </p>
           </div>
 
           {/* Primary CTA — Enter the Space */}
-          <section className="mb-10">
+          <section className="mb-8">
             <Link
               href="/spaces/fresh-collective"
-              className="group block rounded-xl border border-teal-200 bg-teal-50/50 px-7 py-6 transition-shadow hover:shadow-[var(--fc-shadow-card)]"
+              className="group block rounded-xl border border-teal-200 bg-teal-50/40 px-7 py-6 transition-all hover:border-teal-300 hover:shadow-[var(--fc-shadow-card)]"
               style={{ borderLeft: '3px solid var(--color-teal-500)' }}
             >
-              <p className="mb-0.5 text-xs font-medium uppercase tracking-widest text-teal-600">
-                Your space
-              </p>
-              <p className="font-serif text-2xl text-navy-900 group-hover:text-teal-700 transition-colors">
-                Fresh Collective
-              </p>
-              <p className="mt-1 text-sm text-slate-400">
-                {continueData && !continueData.all_complete
-                  ? `Continue: ${continueData.step_title}`
-                  : 'Your home for guided learning and reflection.'}
-              </p>
-              <p className="mt-3 text-sm font-medium text-teal-600 group-hover:underline">
-                Enter space →
-              </p>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="mb-0.5 text-xs font-semibold uppercase tracking-widest text-teal-600">
+                    Your space
+                  </p>
+                  <p className="font-serif text-2xl text-navy-900 group-hover:text-teal-700 transition-colors">
+                    Fresh Collective
+                  </p>
+                  <p className="mt-1 text-sm text-slate-400">
+                    {continueData && !continueData.all_complete
+                      ? `Next: ${continueData.step_title}`
+                      : 'Your home for guided learning and reflection.'}
+                  </p>
+                </div>
+                <span className="shrink-0 text-teal-500 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true">
+                  →
+                </span>
+              </div>
             </Link>
           </section>
 
-          {/* Two-column: Continue step + Next event */}
-          <div className="grid gap-5 sm:grid-cols-2">
+          {/* Two-column: Continue + Next event */}
+          <div className="grid gap-4 sm:grid-cols-2">
 
             {/* Continue step */}
             <Link
               href={continueHref}
-              className="group flex flex-col rounded-xl border border-border bg-surface p-5 transition-shadow hover:shadow-[var(--fc-shadow-card)]"
+              className="group flex flex-col rounded-xl border border-border bg-surface p-5 transition-all hover:border-slate-200 hover:shadow-[var(--fc-shadow-card)]"
             >
-              <p className="mb-1 text-xs font-medium uppercase tracking-widest text-gold-600">
+              <p className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-gold-600">
                 {continueData?.all_complete ? 'Journey complete' : 'Next step'}
               </p>
-              <p className="flex-1 font-serif text-base text-navy-900 group-hover:text-teal-700 transition-colors leading-snug">
+              <p className="flex-1 font-serif text-base leading-snug text-navy-900 group-hover:text-teal-700 transition-colors">
                 {continueData ? continueData.step_title : 'Begin the REAL Journey'}
               </p>
               {continueData && !continueData.all_complete && (
                 <p className="mt-2 text-xs text-slate-400">{continueData.pathway_title}</p>
               )}
-              <p className="mt-3 text-xs text-teal-600 group-hover:underline">
-                {continueData?.all_complete ? 'Review' : 'Go →'}
+              <p className="mt-3 text-xs font-medium text-teal-600">
+                {continueData?.all_complete ? 'Review →' : 'Continue →'}
               </p>
             </Link>
 
             {/* Next event */}
             {nextEvent ? (
               <Link
-                href="/spaces/fresh-collective/events"
-                className="group flex flex-col rounded-xl border border-border bg-surface p-5 transition-shadow hover:shadow-[var(--fc-shadow-card)]"
+                href={`/spaces/fresh-collective/events/${nextEvent.id}`}
+                className="group flex flex-col rounded-xl border border-border bg-surface p-5 transition-all hover:border-slate-200 hover:shadow-[var(--fc-shadow-card)]"
               >
-                <p className="mb-1 text-xs font-medium uppercase tracking-widest text-gold-600">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-gold-600">
                   Coming up
                 </p>
-                <p className="flex-1 font-serif text-base text-navy-900 group-hover:text-teal-700 transition-colors leading-snug">
+                <p className="flex-1 font-serif text-base leading-snug text-navy-900 group-hover:text-teal-700 transition-colors">
                   {nextEvent.title}
                 </p>
-                <p className="mt-2 text-xs text-slate-400">
-                  {formatEventDateShort(nextEvent.starts_at)}
-                </p>
-                <p className="mt-3 text-xs text-teal-600 group-hover:underline">View details →</p>
+                <p className="mt-2 text-xs text-slate-400">{formatEventDate(nextEvent.starts_at)}</p>
+                <p className="mt-3 text-xs font-medium text-teal-600">View details →</p>
               </Link>
             ) : (
               <div className="flex flex-col rounded-xl border border-border bg-surface p-5">
-                <p className="mb-1 text-xs font-medium uppercase tracking-widest text-gold-600">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-widest text-gold-600">
                   Coming up
                 </p>
-                <p className="flex-1 text-sm text-slate-400">
-                  No upcoming events yet. Check back soon.
+                <p className="flex-1 font-serif text-base text-slate-400">
+                  No upcoming events yet.
                 </p>
+                <p className="mt-3 text-xs text-slate-300">Check back soon.</p>
               </div>
             )}
+
+          </div>
+
+          {/* Logout — tucked away at bottom */}
+          <div className="mt-12 border-t border-border pt-6 flex justify-end">
+            <LogoutButton className="text-xs text-slate-400 hover:text-slate-600 transition-colors" />
           </div>
 
         </Container>

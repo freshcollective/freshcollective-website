@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getStep, getSteps } from '@/lib/serverApi'
+import { getStep, getSteps, getPathway } from '@/lib/serverApi'
 import StepActions from '@/components/spaces/StepActions'
 import type { StepDetail, StepSummary } from '@/types/platform'
 
@@ -23,27 +23,27 @@ function renderContent(body: string): React.ReactNode {
       const trimmed = block.trim()
       if (!trimmed) return null
 
-      // Heading: **text**
       if (trimmed.startsWith('**') && trimmed.endsWith('**') && !trimmed.slice(2, -2).includes('\n')) {
         return (
-          <h3 key={i} className="mt-6 mb-2 font-serif text-lg text-navy-900">
+          <h3 key={i} className="mt-8 mb-3 font-serif text-xl text-navy-900">
             {trimmed.slice(2, -2)}
           </h3>
         )
       }
 
-      // Horizontal rule
       if (trimmed === '---') {
-        return <hr key={i} className="my-6 border-border" />
+        return <hr key={i} className="my-8 border-border" />
       }
 
-      // Bullet list block
       if (trimmed.split('\n').every((l) => l.trimStart().startsWith('- '))) {
         const items = trimmed.split('\n').map((l) => l.replace(/^- /, '').trim())
         return (
-          <ul key={i} className="my-3 space-y-1 pl-4">
+          <ul key={i} className="my-4 space-y-2 pl-5">
             {items.map((item, j) => (
-              <li key={j} className="relative text-sm leading-relaxed text-slate-600 before:absolute before:-left-4 before:text-slate-300 before:content-['–']">
+              <li
+                key={j}
+                className="relative text-[15px] leading-[1.8] text-slate-600 before:absolute before:-left-5 before:text-slate-300 before:content-['–']"
+              >
                 {item}
               </li>
             ))}
@@ -51,10 +51,9 @@ function renderContent(body: string): React.ReactNode {
         )
       }
 
-      // Bold inline markers **text**
       const parts = trimmed.split(/(\*\*[^*]+\*\*)/)
       return (
-        <p key={i} className="my-3 text-[15px] leading-[1.8] text-slate-600">
+        <p key={i} className="my-4 text-[15px] leading-[1.85] text-slate-600">
           {parts.map((part, j) =>
             part.startsWith('**') && part.endsWith('**') ? (
               <strong key={j} className="font-semibold text-navy-800">
@@ -73,10 +72,12 @@ function renderContent(body: string): React.ReactNode {
 export default async function StepPage({ params }: Props) {
   const { slug, 'pathway-slug': pathwaySlug, 'step-slug': stepSlug } = await params
 
-  const [step, allSteps]: [StepDetail | null, StepSummary[]] = await Promise.all([
-    getStep(slug, pathwaySlug, stepSlug),
-    getSteps(slug, pathwaySlug),
-  ])
+  const [step, allSteps, pathway]: [StepDetail | null, StepSummary[], { title: string } | null] =
+    await Promise.all([
+      getStep(slug, pathwaySlug, stepSlug),
+      getSteps(slug, pathwaySlug),
+      getPathway(slug, pathwaySlug),
+    ])
 
   if (!step) notFound()
 
@@ -85,51 +86,58 @@ export default async function StepPage({ params }: Props) {
   const nextStep = currentIndex < allSteps.length - 1 ? allSteps[currentIndex + 1] : null
 
   const pathwayHref = `/spaces/${slug}/pathways/${pathwaySlug}`
+  const pathwayTitle = pathway?.title ?? 'Pathway'
   const completedCount = allSteps.filter((s) => s.is_completed).length
+  const totalCount = allSteps.length
 
   return (
     <div className="mx-auto max-w-[680px]">
+
       {/* Breadcrumb */}
       <div className="mb-8 flex items-center gap-2 text-sm text-slate-400">
-        <Link href={pathwayHref} className="hover:text-navy-700">
-          REAL Journey
+        <Link href={pathwayHref} className="hover:text-navy-700 transition-colors">
+          {pathwayTitle}
         </Link>
-        <span>/</span>
-        <span className="text-slate-500">{step.title}</span>
+        <span className="text-slate-200">/</span>
+        <span className="text-slate-500 line-clamp-1">{step.title}</span>
       </div>
 
       {/* Progress strip */}
-      <div className="mb-8">
-        <div className="mb-1 flex items-baseline justify-between text-xs text-slate-400">
-          <span>{completedCount} of {allSteps.length} complete</span>
-          <span>Step {step.position} of {allSteps.length}</span>
+      <div className="mb-10">
+        <div className="mb-2 flex items-baseline justify-between text-xs text-slate-400">
+          <span>{completedCount} of {totalCount} complete</span>
+          <span>Step {step.position} of {totalCount}</span>
         </div>
-        <div className="h-1 w-full overflow-hidden rounded-full bg-navy-100">
+        <div className="h-0.5 w-full overflow-hidden rounded-full bg-navy-100">
           <div
-            className="h-full rounded-full bg-teal-500 transition-all"
-            style={{ width: `${allSteps.length > 0 ? Math.round((completedCount / allSteps.length) * 100) : 0}%` }}
+            className="h-full rounded-full bg-teal-400 transition-all duration-500"
+            style={{ width: `${totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%` }}
           />
         </div>
       </div>
 
       {/* Step header */}
-      <div className="mb-8">
-        <div className="mb-1 flex items-center gap-2 text-xs text-slate-400">
-          <span>{CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}</span>
+      <div className="mb-10">
+        <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
+          <span className="font-medium uppercase tracking-wider">
+            {CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}
+          </span>
           {step.estimated_minutes && (
             <>
-              <span>·</span>
+              <span className="text-slate-200">·</span>
               <span>{step.estimated_minutes} min</span>
             </>
           )}
         </div>
-        <div className="mb-3 h-px w-6 bg-gold-500" />
-        <h1 className="font-serif text-3xl leading-snug text-navy-900">{step.title}</h1>
+        <div className="mb-3 h-px w-8 bg-gold-400" />
+        <h1 className="font-serif text-3xl leading-snug text-navy-900 md:text-4xl">
+          {step.title}
+        </h1>
       </div>
 
       {/* Content */}
       {step.content_body && (
-        <article className="mb-2">
+        <article className="mb-2 border-b border-border pb-2">
           {renderContent(step.content_body)}
         </article>
       )}
@@ -148,30 +156,37 @@ export default async function StepPage({ params }: Props) {
         {prevStep ? (
           <Link
             href={`/spaces/${slug}/pathways/${pathwaySlug}/${prevStep.slug}`}
-            className="flex items-center gap-2 text-sm text-slate-400 hover:text-navy-700"
+            className="group flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-navy-700"
           >
             <span>←</span>
-            <span className="hidden sm:inline">{prevStep.title}</span>
+            <span className="hidden sm:inline group-hover:underline underline-offset-2">
+              {prevStep.title}
+            </span>
             <span className="sm:hidden">Previous</span>
           </Link>
         ) : (
-          <Link href={pathwayHref} className="text-sm text-slate-400 hover:text-navy-700">
-            ← Pathway
+          <Link href={pathwayHref} className="text-sm text-slate-400 hover:text-navy-700 transition-colors">
+            ← {pathwayTitle}
           </Link>
         )}
 
         {nextStep ? (
           <Link
             href={`/spaces/${slug}/pathways/${pathwaySlug}/${nextStep.slug}`}
-            className="flex items-center gap-2 text-sm text-slate-400 hover:text-navy-700"
+            className="group flex items-center gap-2 text-sm font-medium text-teal-600 transition-colors hover:text-teal-700"
           >
-            <span className="hidden sm:inline">{nextStep.title}</span>
+            <span className="hidden sm:inline group-hover:underline underline-offset-2">
+              {nextStep.title}
+            </span>
             <span className="sm:hidden">Next</span>
             <span>→</span>
           </Link>
         ) : (
-          <Link href={pathwayHref} className="text-sm text-teal-600 hover:underline">
-            Back to Pathway →
+          <Link
+            href={pathwayHref}
+            className="text-sm font-medium text-teal-600 hover:underline underline-offset-2"
+          >
+            Back to {pathwayTitle} →
           </Link>
         )}
       </div>

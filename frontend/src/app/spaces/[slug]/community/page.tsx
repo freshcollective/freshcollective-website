@@ -1,7 +1,6 @@
 import { getCommunityFeed } from '@/lib/serverApi'
 import PostCard from '@/components/community/PostCard'
 import CreatePostForm from '@/components/community/CreatePostForm'
-import PostTypeTag from '@/components/community/PostTypeTag'
 import type { PostSummary } from '@/types/platform'
 
 interface Props {
@@ -20,7 +19,7 @@ export default async function SpaceCommunityPage({ params }: Props) {
 
       {/* Intro */}
       <div className="mb-8">
-        <div className="mb-2 h-px w-6 bg-gold-500" />
+        <div className="mb-2 h-px w-8 bg-gold-400" />
         <h2 className="mb-2 font-serif text-2xl text-navy-900">Community</h2>
         <p className="text-sm leading-relaxed text-slate-500">
           A place to reflect, explore, and move through the work together.
@@ -30,7 +29,7 @@ export default async function SpaceCommunityPage({ params }: Props) {
 
       {/* Pinned posts */}
       {pinned.length > 0 && (
-        <section className="mb-8">
+        <section className="mb-6">
           <div className="flex flex-col gap-3">
             {pinned.map((p) => (
               <PostCard key={p.id} post={p} spaceSlug={slug} />
@@ -39,33 +38,38 @@ export default async function SpaceCommunityPage({ params }: Props) {
         </section>
       )}
 
-      {/* Divider + create form */}
-      {pinned.length > 0 && <div className="mb-8 h-px bg-border" />}
-
-      <section className="mb-6">
-        <CreatePostForm spaceSlug={slug} />
-      </section>
-
-      {/* Feed */}
+      {/* Feed or empty */}
       {feed.length > 0 ? (
-        <section>
-          <div className="flex flex-col gap-3">
-            {feed.map((p) => (
-              <PostCard key={p.id} post={p} spaceSlug={slug} />
-            ))}
-          </div>
-        </section>
+        <>
+          <section className="mb-6">
+            <div className="flex flex-col gap-3">
+              {feed.map((p) => (
+                <PostCard key={p.id} post={p} spaceSlug={slug} />
+              ))}
+            </div>
+          </section>
+          <div className="h-px bg-border mb-6" />
+          <section>
+            <CreatePostForm spaceSlug={slug} />
+          </section>
+        </>
       ) : (
-        !pinned.length && (
-          <div className="rounded-xl border border-border bg-surface px-7 py-8">
-            <p className="mb-1 font-serif text-lg text-navy-700">
-              Nothing here yet.
-            </p>
-            <p className="text-sm leading-relaxed text-slate-400">
-              Be the first to share a reflection or start a discussion.
-            </p>
-          </div>
-        )
+        <>
+          {!pinned.length && (
+            <div className="mb-6 rounded-xl border border-border bg-surface px-7 py-10 text-center">
+              <p className="mb-2 font-serif text-xl text-navy-800">
+                The conversation begins with you.
+              </p>
+              <p className="mx-auto max-w-sm text-sm leading-relaxed text-slate-400">
+                This is a space to share what you&apos;re noticing, ask what you&apos;re sitting with,
+                and respond when something touches you.
+              </p>
+            </div>
+          )}
+          <section>
+            <CreatePostForm spaceSlug={slug} />
+          </section>
+        </>
       )}
 
     </div>
