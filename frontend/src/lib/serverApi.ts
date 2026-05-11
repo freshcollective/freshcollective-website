@@ -50,6 +50,12 @@ export const getSteps = cache(async (spaceSlug: string, pathwaySlug: string) => 
   return res.json()
 })
 
+export const getSpaceEvent = cache(async (spaceSlug: string, eventId: string) => {
+  const res = await fetchWithSession(`/api/spaces/${spaceSlug}/events/${eventId}`)
+  if (!res.ok) return null
+  return res.json()
+})
+
 export const getSpacePathwaysProgress = cache(async (slug: string) => {
   const res = await fetchWithSession(`/api/spaces/${slug}/pathways-progress`)
   if (!res.ok) return []

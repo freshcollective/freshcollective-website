@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import type { EventSummary } from '@/types/platform'
 
 const LOCATION_LABEL: Record<string, string> = {
@@ -6,7 +7,7 @@ const LOCATION_LABEL: Record<string, string> = {
   async_recorded: 'Recorded',
 }
 
-function formatEventDate(isoString: string): { day: string; month: string; time: string } {
+export function formatEventDate(isoString: string): { day: string; month: string; time: string } {
   const d = new Date(isoString)
   return {
     day: d.toLocaleDateString('en-GB', { day: '2-digit' }),
@@ -15,12 +16,21 @@ function formatEventDate(isoString: string): { day: string; month: string; time:
   }
 }
 
-export default function EventCard({ event }: { event: EventSummary }) {
+interface EventCardProps {
+  event: EventSummary
+  spaceSlug: string
+}
+
+export default function EventCard({ event, spaceSlug }: EventCardProps) {
   const { day, month, time } = formatEventDate(event.starts_at)
   const locationLabel = LOCATION_LABEL[event.location_type] ?? event.location_type
+  const href = `/spaces/${spaceSlug}/events/${event.id}`
 
   return (
-    <div className="flex items-start gap-5 rounded-xl border border-border bg-surface p-5">
+    <Link
+      href={href}
+      className="group flex items-start gap-5 rounded-xl border border-border bg-surface p-5 transition-shadow hover:shadow-[var(--fc-shadow-card)]"
+    >
       {/* Date block */}
       <div className="shrink-0 text-center">
         <div className="font-serif text-2xl leading-none text-navy-900">{day}</div>
@@ -34,13 +44,19 @@ export default function EventCard({ event }: { event: EventSummary }) {
           </span>
           <span className="text-xs text-slate-400">{time} UTC</span>
         </div>
-        <p className="font-medium text-navy-900">{event.title}</p>
+        <p className="font-medium text-navy-900 group-hover:text-teal-700 transition-colors">
+          {event.title}
+        </p>
         {event.description && (
           <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-slate-500">
             {event.description.split('\n')[0]}
           </p>
         )}
       </div>
-    </div>
+
+      <span className="shrink-0 self-center text-slate-300 transition-colors group-hover:text-teal-400">
+        →
+      </span>
+    </Link>
   )
 }

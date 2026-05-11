@@ -98,7 +98,7 @@ export default async function SpacePage({ params }: Props) {
           {events.length > 0 ? (
             <div className="flex flex-col gap-3">
               {events.map((e) => (
-                <EventCard key={e.id} event={e} />
+                <EventCard key={e.id} event={e} spaceSlug={slug} />
               ))}
             </div>
           ) : (

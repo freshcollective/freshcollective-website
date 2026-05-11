@@ -76,6 +76,11 @@ export interface EventSummary {
   location_type: 'zoom' | 'in_person' | 'async_recorded'
 }
 
+export interface EventDetail extends EventSummary {
+  location_url: string | null
+  recording_url: string | null
+}
+
 export interface ContinueResponse {
   space_slug: string
   pathway_slug: string
