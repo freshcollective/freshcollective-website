@@ -55,6 +55,27 @@ export interface PathwayWithSteps {
   steps: StepSummary[]
 }
 
+export interface PathwayProgress {
+  id: string
+  slug: string
+  title: string
+  description: string | null
+  cover_image_url: string | null
+  status: 'draft' | 'active' | 'coming_soon' | 'archived'
+  position: number
+  step_count: number
+  completed_count: number
+}
+
+export interface EventSummary {
+  id: string
+  title: string
+  description: string | null
+  starts_at: string
+  ends_at: string | null
+  location_type: 'zoom' | 'in_person' | 'async_recorded'
+}
+
 export interface ContinueResponse {
   space_slug: string
   pathway_slug: string
