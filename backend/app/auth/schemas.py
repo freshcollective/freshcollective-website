@@ -64,6 +64,55 @@ class ResetPasswordRequest(BaseModel):
         return v
 
 
+class UpdateProfileRequest(BaseModel):
+    name: str | None = None
+    bio: str | None = None
+    display_name: str | None = None
+    is_public: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Name cannot be empty.")
+        if len(v) > 100:
+            raise ValueError("Name must be 100 characters or fewer.")
+        return v
+
+    @field_validator("bio")
+    @classmethod
+    def validate_bio(cls, v: str | None) -> str | None:
+        if v is not None and len(v) > 500:
+            raise ValueError("Bio must be 500 characters or fewer.")
+        return v
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if len(v) > 100:
+                raise ValueError("Display name must be 100 characters or fewer.")
+        return v
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        if len(v) > 72:
+            raise ValueError("Password must be 72 characters or fewer.")
+        return v
+
+
 class UserResponse(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -71,3 +120,13 @@ class UserResponse(BaseModel):
     email: str
     name: str | None
     role: str
+
+
+class ProfileResponse(BaseModel):
+    id: str
+    email: str
+    name: str | None
+    role: str
+    bio: str | None
+    display_name: str | None
+    is_public: bool

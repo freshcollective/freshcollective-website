@@ -9,12 +9,16 @@ from sqlalchemy.orm import Session
 from app.auth import service
 from app.auth.dependencies import SESSION_COOKIE, get_current_user
 from app.auth.schemas import (
+    ChangePasswordRequest,
     ForgotPasswordRequest,
     LoginRequest,
+    ProfileResponse,
     ResetPasswordRequest,
     SignupRequest,
+    UpdateProfileRequest,
     UserResponse,
 )
+from app.models.platform import CreatorProfile, Space, SpaceMembership
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
@@ -84,8 +88,114 @@ async def logout(response: Response) -> dict:
 
 
 @router.get("/me")
-async def me(current_user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse.model_validate(current_user)
+async def me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ProfileResponse:
+    cp = db.query(CreatorProfile).filter(CreatorProfile.user_id == current_user.id).first()
+    return ProfileResponse(
+        id=current_user.id,
+        email=current_user.email,
+        name=current_user.name,
+        role=current_user.role,
+        bio=cp.bio if cp else None,
+        display_name=cp.display_name if cp else None,
+        is_public=cp.is_public if cp else False,
+    )
+
+
+@router.patch("/me")
+async def update_me(
+    payload: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ProfileResponse:
+    if payload.name is not None:
+        current_user.name = payload.name
+
+    cp = db.query(CreatorProfile).filter(CreatorProfile.user_id == current_user.id).first()
+
+    profile_fields = {
+        k: v for k, v in {
+            "bio": payload.bio,
+            "display_name": payload.display_name,
+            "is_public": payload.is_public,
+        }.items() if v is not None
+    }
+
+    if profile_fields:
+        if cp is None:
+            from uuid import uuid4
+            cp = CreatorProfile(
+                id=str(uuid4()),
+                user_id=current_user.id,
+                bio=profile_fields.get("bio"),
+                display_name=profile_fields.get("display_name"),
+                is_public=profile_fields.get("is_public", False),
+            )
+            db.add(cp)
+        else:
+            for field, value in profile_fields.items():
+                setattr(cp, field, value)
+
+    db.commit()
+    db.refresh(current_user)
+    if cp:
+        db.refresh(cp)
+
+    return ProfileResponse(
+        id=current_user.id,
+        email=current_user.email,
+        name=current_user.name,
+        role=current_user.role,
+        bio=cp.bio if cp else None,
+        display_name=cp.display_name if cp else None,
+        is_public=cp.is_public if cp else False,
+    )
+
+
+@router.get("/me/memberships")
+async def get_memberships(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    rows = (
+        db.query(SpaceMembership, Space)
+        .join(Space, Space.id == SpaceMembership.space_id)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.status == "active",
+        )
+        .all()
+    )
+    return [
+        {
+            "space_id": space.id,
+            "space_name": space.name,
+            "space_slug": space.slug,
+            "role": membership.role.value if hasattr(membership.role, "value") else str(membership.role),
+            "joined_at": membership.joined_at.isoformat(),
+            "status": membership.status.value if hasattr(membership.status, "value") else str(membership.status),
+        }
+        for membership, space in rows
+    ]
+
+
+@router.post("/me/change-password")
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    from app.core.security import verify_password, hash_password
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+    current_user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    return {"message": "Password updated successfully."}
 
 
 @router.post("/forgot-password")
