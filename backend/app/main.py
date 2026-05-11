@@ -15,6 +15,7 @@ from app.spaces.routes import router as spaces_router, me_router
 from app.community.routes import router as community_router
 from app.members.routes import members_router, profiles_router
 from app.creator.routes import router as creator_router
+from app.uploads.routes import uploads_router
 from app.core.config import settings
 
 logging.basicConfig(
@@ -63,6 +64,7 @@ app.include_router(community_router)
 app.include_router(members_router)
 app.include_router(profiles_router)
 app.include_router(creator_router)
+app.include_router(uploads_router)
 
 
 # ---------------------------------------------------------------------------

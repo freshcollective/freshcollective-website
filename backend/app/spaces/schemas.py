@@ -2,6 +2,21 @@ from datetime import datetime
 from pydantic import BaseModel
 
 
+class StepResourceResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    resource_type: str
+    title: str
+    description: str | None
+    url: str | None
+    file_name: str | None
+    file_size: int | None
+    mime_type: str | None
+    position: int
+    is_downloadable: bool
+    created_at: datetime
+
+
 class PathwaySummary(BaseModel):
     model_config = {"from_attributes": True}
 

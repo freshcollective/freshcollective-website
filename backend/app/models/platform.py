@@ -338,6 +338,10 @@ class PathwayStep(Base):
     progress_records: Mapped[list["StepProgress"]] = relationship(
         "StepProgress", back_populates="step", cascade="all, delete-orphan"
     )
+    resources: Mapped[list["StepResource"]] = relationship(
+        "StepResource", back_populates="step", cascade="all, delete-orphan",
+        order_by="StepResource.position",
+    )
 
     __table_args__ = (
         UniqueConstraint("pathway_id", "slug", name="pathway_steps_pathway_slug_unique"),
@@ -421,6 +425,58 @@ class StepProgress(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "step_id", name="step_progress_user_step_unique"),
         Index("ix_step_progress_user_step", "user_id", "step_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Step Resources
+# ---------------------------------------------------------------------------
+
+class StepResource(Base):
+    """
+    Supplementary resources attached to a pathway step.
+    resource_type: link | video | audio | pdf | file
+    For uploaded files, url holds the relative path served by /api/uploads/{url}.
+    For external links, url holds the full external URL.
+    """
+
+    __tablename__ = "step_resources"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    step_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("pathway_steps.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # link | video | audio | pdf | file
+    resource_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="link", server_default="link"
+    )
+    url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    file_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    is_downloadable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    step: Mapped[PathwayStep] = relationship("PathwayStep", back_populates="resources")
+
+    __table_args__ = (
+        Index("ix_step_resources_step_position", "step_id", "position"),
     )
 
 

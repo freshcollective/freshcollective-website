@@ -283,3 +283,67 @@ class PostManageResponse(BaseModel):
     is_visible: bool
     created_at: datetime
     author_name: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Step Resources
+# ---------------------------------------------------------------------------
+
+class StepResourceCreateRequest(BaseModel):
+    title: str
+    description: str | None = None
+    resource_type: str = "link"
+    url: str
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Title is required.")
+        return v
+
+    @field_validator("resource_type")
+    @classmethod
+    def validate_resource_type(cls, v: str) -> str:
+        if v not in ("video", "audio", "link"):
+            raise ValueError("Invalid resource type. For links use: video, audio, or link.")
+        return v
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("URL is required.")
+        return v
+
+
+class StepResourceUpdateRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    url: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("URL cannot be empty.")
+        return v
+
+
+class StepResourceResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    resource_type: str
+    title: str
+    description: str | None
+    url: str | None
+    file_name: str | None
+    file_size: int | None
+    mime_type: str | None
+    position: int
+    is_downloadable: bool
+    created_at: datetime

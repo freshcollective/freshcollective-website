@@ -9,11 +9,12 @@ Permission model:
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_creator_user
 from app.core.database import get_db
+from app.core.storage import delete_file, save_file
 from app.creator.schemas import (
     EventCreateRequest,
     EventResponse,
@@ -28,6 +29,9 @@ from app.creator.schemas import (
     SpaceDetail,
     SpaceUpdateRequest,
     StepCreateRequest,
+    StepResourceCreateRequest,
+    StepResourceResponse,
+    StepResourceUpdateRequest,
     StepResponse,
     StepUpdateRequest,
     slugify,
@@ -39,6 +43,7 @@ from app.models.platform import (
     PathwayStep,
     Space,
     SpaceMembership,
+    StepResource,
 )
 from app.models.user import User
 from app.spaces.schemas import SpaceSummary
@@ -115,6 +120,26 @@ def _step_slug(pathway: Pathway, title: str, exclude_id: str | None, db: Session
         .all()
     ]
     return _unique_slug(slugify(title), existing)
+
+
+def _get_step(pathway: Pathway, step_slug: str, db: Session) -> PathwayStep:
+    step = db.query(PathwayStep).filter(
+        PathwayStep.pathway_id == pathway.id,
+        PathwayStep.slug == step_slug,
+    ).first()
+    if not step:
+        raise HTTPException(status_code=404, detail="Step not found.")
+    return step
+
+
+def _get_resource(step: PathwayStep, resource_id: str, db: Session) -> StepResource:
+    resource = db.query(StepResource).filter(
+        StepResource.id == resource_id,
+        StepResource.step_id == step.id,
+    ).first()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found.")
+    return resource
 
 
 # ---------------------------------------------------------------------------
@@ -451,6 +476,190 @@ def reorder_steps(
         db.query(PathwayStep).filter(
             PathwayStep.id == sid, PathwayStep.pathway_id == pathway.id
         ).update({"position": i})
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Step Resources
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/spaces/{slug}/pathways/{pathway_slug}/steps/{step_slug}/resources",
+    response_model=list[StepResourceResponse],
+)
+def list_step_resources(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[StepResource]:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    step = _get_step(pathway, step_slug, db)
+    return (
+        db.query(StepResource)
+        .filter(StepResource.step_id == step.id)
+        .order_by(StepResource.position)
+        .all()
+    )
+
+
+@router.post(
+    "/spaces/{slug}/pathways/{pathway_slug}/steps/{step_slug}/resources",
+    response_model=StepResourceResponse,
+    status_code=201,
+)
+def create_step_resource(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    body: StepResourceCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> StepResource:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    step = _get_step(pathway, step_slug, db)
+
+    max_pos = (
+        db.query(StepResource.position)
+        .filter(StepResource.step_id == step.id)
+        .order_by(StepResource.position.desc())
+        .first()
+    )
+    position = (max_pos[0] + 1) if max_pos else 0
+
+    resource = StepResource(
+        id=str(uuid4()),
+        step_id=step.id,
+        title=body.title,
+        description=body.description,
+        resource_type=body.resource_type,
+        url=body.url,
+        file_name=None,
+        file_size=None,
+        mime_type=None,
+        position=position,
+        is_downloadable=False,
+    )
+    db.add(resource)
+    db.commit()
+    db.refresh(resource)
+    return resource
+
+
+@router.post(
+    "/spaces/{slug}/pathways/{pathway_slug}/steps/{step_slug}/resources/upload",
+    response_model=StepResourceResponse,
+    status_code=201,
+)
+def upload_step_resource(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    title: str = Form(...),
+    description: str | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> StepResource:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    step = _get_step(pathway, step_slug, db)
+
+    try:
+        data = file.file.read()
+        rel_path, resource_type, size = save_file(
+            data=data,
+            original_name=file.filename or "upload",
+            mime_type=file.content_type or "application/octet-stream",
+            subdir=f"steps/{step.id}",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    max_pos = (
+        db.query(StepResource.position)
+        .filter(StepResource.step_id == step.id)
+        .order_by(StepResource.position.desc())
+        .first()
+    )
+    position = (max_pos[0] + 1) if max_pos else 0
+
+    resource = StepResource(
+        id=str(uuid4()),
+        step_id=step.id,
+        title=title.strip(),
+        description=description.strip() if description else None,
+        resource_type=resource_type,
+        url=rel_path,
+        file_name=file.filename,
+        file_size=size,
+        mime_type=file.content_type,
+        position=position,
+        is_downloadable=True,
+    )
+    db.add(resource)
+    db.commit()
+    db.refresh(resource)
+    return resource
+
+
+@router.patch(
+    "/spaces/{slug}/pathways/{pathway_slug}/steps/{step_slug}/resources/{resource_id}",
+    response_model=StepResourceResponse,
+)
+def update_step_resource(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    resource_id: str,
+    body: StepResourceUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> StepResource:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    step = _get_step(pathway, step_slug, db)
+    resource = _get_resource(step, resource_id, db)
+
+    update = body.model_dump(exclude_unset=True)
+    if "title" in update and update["title"] is not None:
+        resource.title = update["title"].strip()
+    if "description" in update:
+        resource.description = (update["description"] or "").strip() or None
+    if "url" in update and update["url"] is not None and resource.file_name is None:
+        # Only allow URL edits on link-type resources (not uploaded files)
+        resource.url = update["url"].strip() or None
+
+    db.commit()
+    db.refresh(resource)
+    return resource
+
+
+@router.delete(
+    "/spaces/{slug}/pathways/{pathway_slug}/steps/{step_slug}/resources/{resource_id}",
+    status_code=204,
+)
+def delete_step_resource(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    resource_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    step = _get_step(pathway, step_slug, db)
+    resource = _get_resource(step, resource_id, db)
+
+    # Clean up uploaded file if present
+    if resource.url and resource.file_name:
+        delete_file(resource.url)
+
+    db.delete(resource)
     db.commit()
 
 

@@ -14,6 +14,7 @@ from app.models.platform import (
     PathwayStep,
     Space,
     StepProgress,
+    StepResource,
 )
 from app.models.user import User
 from app.spaces.schemas import (
@@ -30,6 +31,7 @@ from app.spaces.schemas import (
     SpaceResponse,
     SpaceSummary,
     StepDetail,
+    StepResourceResponse,
     StepSummary,
 )
 
@@ -467,6 +469,28 @@ def save_notes(
 
     db.commit()
     return SaveNotesResponse(saved=True)
+
+
+@router.get(
+    "/{slug}/pathways/{pathway_slug}/steps/{step_slug}/resources",
+    response_model=list[StepResourceResponse],
+)
+def list_step_resources(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[StepResource]:
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    step = _get_step_or_404(pathway.id, step_slug, db)
+    return (
+        db.query(StepResource)
+        .filter(StepResource.step_id == step.id)
+        .order_by(StepResource.position)
+        .all()
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -53,3 +53,7 @@ venv/
 .yarn/unplugged
 .yarn/build-state.yml
 .yarn/install-state.gz
+
+# Uploaded files (local dev storage — replace with S3 in production)
+backend/uploads/*
+!backend/uploads/.gitkeep
