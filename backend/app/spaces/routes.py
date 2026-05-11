@@ -2,12 +2,14 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.models.platform import (
     Enrollment,
+    Event,
     Pathway,
     PathwayStep,
     Space,
@@ -18,6 +20,8 @@ from app.spaces.schemas import (
     CompleteStepRequest,
     CompleteStepResponse,
     ContinueResponse,
+    EventSummary,
+    PathwayProgress,
     PathwaySummary,
     PathwayWithSteps,
     SaveNotesRequest,
@@ -145,6 +149,80 @@ def list_pathways(
         db.query(Pathway)
         .filter(Pathway.space_id == space.id)
         .order_by(Pathway.position)
+        .all()
+    )
+
+
+@router.get("/{slug}/pathways-progress", response_model=list[PathwayProgress])
+def list_pathways_progress(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[PathwayProgress]:
+    """All pathways for a space, each annotated with this user's completion stats."""
+    space = _get_space_or_404(slug, db)
+    pathways = (
+        db.query(Pathway)
+        .filter(Pathway.space_id == space.id)
+        .order_by(Pathway.position)
+        .all()
+    )
+    pathway_ids = [p.id for p in pathways]
+    if not pathway_ids:
+        return []
+
+    step_counts: dict[str, int] = dict(
+        db.query(PathwayStep.pathway_id, func.count(PathwayStep.id))
+        .filter(PathwayStep.pathway_id.in_(pathway_ids))
+        .group_by(PathwayStep.pathway_id)
+        .all()
+    )
+
+    completed_counts: dict[str, int] = dict(
+        db.query(PathwayStep.pathway_id, func.count(PathwayStep.id))
+        .join(StepProgress, StepProgress.step_id == PathwayStep.id)
+        .filter(
+            PathwayStep.pathway_id.in_(pathway_ids),
+            StepProgress.user_id == current_user.id,
+            StepProgress.completed_at.isnot(None),
+        )
+        .group_by(PathwayStep.pathway_id)
+        .all()
+    )
+
+    return [
+        PathwayProgress(
+            id=p.id,
+            slug=p.slug,
+            title=p.title,
+            description=p.description,
+            cover_image_url=p.cover_image_url,
+            status=p.status.value if hasattr(p.status, "value") else str(p.status),
+            position=p.position,
+            step_count=step_counts.get(p.id, 0),
+            completed_count=completed_counts.get(p.id, 0),
+        )
+        for p in pathways
+    ]
+
+
+@router.get("/{slug}/events", response_model=list[EventSummary])
+def list_events(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[Event]:
+    """Upcoming published events for a space, limited to the next 3."""
+    space = _get_space_or_404(slug, db)
+    return (
+        db.query(Event)
+        .filter(
+            Event.space_id == space.id,
+            Event.is_published.is_(True),
+            Event.starts_at >= datetime.utcnow(),
+        )
+        .order_by(Event.starts_at)
+        .limit(3)
         .all()
     )
 

@@ -95,6 +95,31 @@ class SaveNotesResponse(BaseModel):
     saved: bool
 
 
+class PathwayProgress(BaseModel):
+    """Pathway summary enriched with the current user's completion stats."""
+
+    id: str
+    slug: str
+    title: str
+    description: str | None
+    cover_image_url: str | None = None
+    status: str
+    position: int
+    step_count: int
+    completed_count: int
+
+
+class EventSummary(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    title: str
+    description: str | None
+    starts_at: datetime
+    ends_at: datetime | None
+    location_type: str
+
+
 class ContinueResponse(BaseModel):
     space_slug: str
     pathway_slug: str
