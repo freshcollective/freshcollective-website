@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { getCommunityPost } from '@/lib/serverApi'
 import PostTypeTag from '@/components/community/PostTypeTag'
 import CreateCommentForm from '@/components/community/CreateCommentForm'
+import Avatar from '@/components/ui/Avatar'
 import type { PostDetail, CommentItem } from '@/types/platform'
 
 interface Props {
@@ -14,23 +15,10 @@ function formatDate(isoString: string): string {
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
-function Initials({ name }: { name: string }) {
-  const letters = name
-    .split(' ')
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('')
-  return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy-100 text-xs font-semibold text-navy-600">
-      {letters || '?'}
-    </div>
-  )
-}
-
 function CommentBlock({ comment }: { comment: CommentItem }) {
   return (
     <div className="flex gap-4 py-5 border-b border-border last:border-0">
-      <Initials name={comment.author.display_name} />
+      <Avatar name={comment.author.display_name} size="sm" />
       <div className="flex-1 min-w-0">
         <div className="mb-1 flex items-baseline gap-3">
           <span className="text-sm font-medium text-navy-800">
@@ -79,7 +67,7 @@ export default async function PostDetailPage({ params }: Props) {
           </h1>
         )}
         <div className="flex items-center gap-3">
-          <Initials name={post.author.display_name} />
+          <Avatar name={post.author.display_name} size="sm" />
           <div>
             <p className="text-sm font-medium text-navy-800">{post.author.display_name}</p>
             <p className="text-xs text-slate-400">{formatDate(post.created_at)}</p>

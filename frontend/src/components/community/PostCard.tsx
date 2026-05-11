@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import PostTypeTag from './PostTypeTag'
+import Avatar from '@/components/ui/Avatar'
 import type { PostSummary } from '@/types/platform'
 
 function formatPostDate(isoString: string): string {
@@ -10,19 +11,6 @@ function formatPostDate(isoString: string): string {
   if (diffDays === 1) return 'Yesterday'
   if (diffDays < 7) return `${diffDays} days ago`
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-}
-
-function Initials({ name }: { name: string }) {
-  const letters = name
-    .split(' ')
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('')
-  return (
-    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy-100 text-xs font-semibold text-navy-600">
-      {letters || '?'}
-    </div>
-  )
 }
 
 interface PostCardProps {
@@ -61,7 +49,7 @@ export default function PostCard({ post, spaceSlug }: PostCardProps) {
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Initials name={post.author.display_name} />
+          <Avatar name={post.author.display_name} size="sm" />
           <span className="text-xs text-slate-500">{post.author.display_name}</span>
         </div>
         <span className="text-xs text-slate-400">

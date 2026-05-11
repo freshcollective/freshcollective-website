@@ -81,6 +81,26 @@ export interface EventDetail extends EventSummary {
   recording_url: string | null
 }
 
+export interface MemberProfile {
+  id: string
+  display_name: string
+  avatar_url: string | null
+  space_role: 'learner' | 'moderator' | 'creator'
+  joined_at: string
+  bio: string | null
+  is_creator: boolean
+}
+
+export interface PublicProfile {
+  id: string
+  display_name: string
+  avatar_url: string | null
+  bio: string | null
+  is_creator: boolean
+  joined_platform: string
+  spaces_led: string[]
+}
+
 export interface PostAuthor {
   id: string
   name: string | null

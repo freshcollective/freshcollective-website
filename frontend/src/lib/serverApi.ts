@@ -50,6 +50,18 @@ export const getSteps = cache(async (spaceSlug: string, pathwaySlug: string) => 
   return res.json()
 })
 
+export const getSpaceMembers = cache(async (spaceSlug: string) => {
+  const res = await fetchWithSession(`/api/spaces/${spaceSlug}/members`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getPublicProfile = cache(async (userId: string) => {
+  const res = await fetchWithSession(`/api/profile/${userId}`)
+  if (!res.ok) return null
+  return res.json()
+})
+
 export const getCommunityFeed = cache(async (spaceSlug: string) => {
   const res = await fetchWithSession(`/api/spaces/${spaceSlug}/community`)
   if (!res.ok) return []
