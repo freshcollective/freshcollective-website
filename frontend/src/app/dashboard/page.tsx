@@ -4,9 +4,9 @@ import Container from '@/components/layout/Container'
 import LogoutButton from '@/components/layout/LogoutButton'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
-import { getSpace } from '@/lib/serverApi'
+import { getSpace, getContinue } from '@/lib/serverApi'
 import PathwayCard from '@/components/spaces/PathwayCard'
-import type { PathwaySummary } from '@/types/platform'
+import type { PathwaySummary, ContinueResponse } from '@/types/platform'
 
 interface User {
   id: string
@@ -32,14 +32,20 @@ async function getUser(): Promise<User | null> {
 }
 
 export default async function DashboardPage() {
-  const [user, space] = await Promise.all([
+  const [user, space, continueData] = await Promise.all([
     getUser(),
     getSpace('fresh-collective'),
+    getContinue(),
   ])
 
   const firstName = user?.name?.split(' ')[0] ?? 'there'
   const pathways: PathwaySummary[] = space?.pathways ?? []
   const realJourney = pathways.find((p) => p.slug === 'real-journey')
+  const next: ContinueResponse | null = continueData
+
+  const continueHref = next
+    ? `/spaces/${next.space_slug}/pathways/${next.pathway_slug}/${next.step_slug}`
+    : '/spaces/fresh-collective/pathways/real-journey'
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -60,12 +66,22 @@ export default async function DashboardPage() {
         <Container>
           <div className="mb-10">
             <div className="mb-4 h-px w-6 bg-gold-500" />
-            <h1 className="mb-3 font-serif text-4xl text-navy-900">Welcome back, {firstName}.</h1>
+            <h1 className="mb-6 font-serif text-4xl text-navy-900">Welcome back, {firstName}.</h1>
+
+            {/* Continue journey */}
             <Link
-              href="/spaces/fresh-collective"
-              className="inline-block rounded-full bg-teal-500 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-600"
+              href={continueHref}
+              className="group block max-w-lg rounded-xl border border-teal-200 bg-teal-50/60 p-5 transition-shadow hover:shadow-[var(--fc-shadow-card)]"
             >
-              Enter Fresh Collective →
+              <p className="mb-0.5 text-xs font-medium uppercase tracking-widest text-teal-600">
+                {next?.all_complete ? 'Journey complete' : 'Continue your journey'}
+              </p>
+              <p className="font-serif text-lg text-navy-900 group-hover:text-teal-700">
+                {next ? next.step_title : 'Begin the REAL Journey'}
+              </p>
+              {next && !next.all_complete && (
+                <p className="mt-1 text-xs text-slate-400">{next.pathway_title}</p>
+              )}
             </Link>
           </div>
 

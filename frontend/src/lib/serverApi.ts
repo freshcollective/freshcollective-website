@@ -29,3 +29,29 @@ export const getPathway = cache(async (spaceSlug: string, pathwaySlug: string) =
   if (!res.ok) return null
   return res.json()
 })
+
+export const getPathwayOverview = cache(async (spaceSlug: string, pathwaySlug: string) => {
+  const res = await fetchWithSession(`/api/spaces/${spaceSlug}/pathways/${pathwaySlug}/overview`)
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getStep = cache(async (spaceSlug: string, pathwaySlug: string, stepSlug: string) => {
+  const res = await fetchWithSession(
+    `/api/spaces/${spaceSlug}/pathways/${pathwaySlug}/steps/${stepSlug}`,
+  )
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getSteps = cache(async (spaceSlug: string, pathwaySlug: string) => {
+  const res = await fetchWithSession(`/api/spaces/${spaceSlug}/pathways/${pathwaySlug}/steps`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getContinue = cache(async () => {
+  const res = await fetchWithSession('/api/me/continue')
+  if (!res.ok) return null
+  return res.json()
+})
