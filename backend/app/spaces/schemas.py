@@ -120,6 +120,13 @@ class EventSummary(BaseModel):
     location_type: str
 
 
+class EventDetail(EventSummary):
+    """Full event including join/recording URLs, shown on the detail page."""
+
+    location_url: str | None
+    recording_url: str | None
+
+
 class ContinueResponse(BaseModel):
     space_slug: str
     pathway_slug: str

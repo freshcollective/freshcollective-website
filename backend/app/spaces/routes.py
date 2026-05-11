@@ -20,6 +20,7 @@ from app.spaces.schemas import (
     CompleteStepRequest,
     CompleteStepResponse,
     ContinueResponse,
+    EventDetail,
     EventSummary,
     PathwayProgress,
     PathwaySummary,
@@ -225,6 +226,29 @@ def list_events(
         .limit(3)
         .all()
     )
+
+
+@router.get("/{slug}/events/{event_id}", response_model=EventDetail)
+def get_event(
+    slug: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Event:
+    """Return a single published event by ID within a space."""
+    space = _get_space_or_404(slug, db)
+    event = (
+        db.query(Event)
+        .filter(
+            Event.id == event_id,
+            Event.space_id == space.id,
+            Event.is_published.is_(True),
+        )
+        .first()
+    )
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+    return event
 
 
 @router.get("/{slug}/pathways/{pathway_slug}", response_model=PathwaySummary)
