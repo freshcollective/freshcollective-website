@@ -1,5 +1,9 @@
 # Roadmap — Fresh Collective
 
+> **Version history**
+> v1 roadmap (original): single-creator platform — REAL Journey, Rooms, Heart.
+> v2 roadmap (current): Space-based multi-creator platform. Phases 0–2 are complete. Phase 3 onward is reframed around the Space architecture.
+
 Phases are ordered by dependency, not by date. No timelines are set. Build each phase in order and do not skip ahead.
 
 ---
@@ -9,142 +13,172 @@ Phases are ordered by dependency, not by date. No timelines are set. Build each 
 **Status:** Complete
 
 - Project documentation created
-- Product brief, design principles, platform structure, roadmap, and prompt library in place
+- Product brief, design principles, platform structure, roadmap, prompt library in place
 - CLAUDE.md and README.md set up
-- No app code yet
 
 ---
 
 ## Phase 1 — Framework Setup ✓
 
-**Status:** Complete (includes brand styling and layout system)
+**Status:** Complete
 
-**Goal:** A working Next.js project with the right configuration. No pages yet.
-
-- Initialise Next.js with TypeScript
-- Install and configure Tailwind CSS
-- Set up folder structure (see below)
-- Define design tokens (colours, spacing, typography) in Tailwind config
-- Set up path aliases (`@/components`, `@/lib`, etc.)
-- Configure ESLint and Prettier
-- Set up `npm run type-check` and `npm run build` scripts
-- Commit clean baseline
-
-**Folder structure (suggested):**
-```
-/src
-  /app             — Next.js App Router pages
-  /components      — Reusable UI components
-    /ui            — Primitive components (Button, Card, Input, etc.)
-    /layout        — Layout components (Header, Footer, Sidebar, etc.)
-    /sections      — Page-level section components
-  /lib             — Utilities, helpers, constants
-  /types           — TypeScript type definitions
-  /styles          — Global styles
-```
+- Next.js with TypeScript, Tailwind CSS, path aliases, ESLint
+- Design tokens (colours, spacing, typography) in Tailwind config
+- Folder structure: `/app`, `/components/ui`, `/components/layout`, `/components/sections`, `/lib`, `/types`
 
 ---
 
-## Phase 2 — Public Site
+## Phase 2 — Public Site ✓
 
-**Goal:** The public-facing pages a visitor sees before logging in.
+**Status:** Complete
 
 - Home page (`/`)
 - About page (`/about`)
-- REAL Journey sales page (`/real-journey`)
-- Membership sales page (`/membership`)
-- Login page (`/login`)
-- Sign up page (`/signup`)
-
-All pages should be fully responsive and match design principles. No auth or payments wired yet — use placeholder buttons and Stripe-ready structure comments.
+- REAL Journey sales page (`/real-journey`) — legacy, will evolve to Space landing
+- Membership sales page (`/membership`) — legacy, will evolve
+- Login, signup, forgot-password, reset-password pages
+- Multiple visual iterations toward calm, transformation-led aesthetic
 
 ---
 
-## Phase 3 — Member Area Foundation
+## Phase 2b — Auth System ✓
 
-**Goal:** A secure, navigable member area with a working dashboard shell.
+**Status:** Complete
 
-- Supabase authentication integration (login, signup, session management)
-- Protected route middleware (redirect to login if unauthenticated)
-- Member layout (sidebar or top nav, consistent across member pages)
-- Member dashboard page (welcome message, placeholder cards for next step, live call, prompts)
-- Profile / account page (basic account info, membership status)
-- Navigation linking all member pages
-
-No content yet — structure and shell only.
-
----
-
-## Phase 4 — REAL Journey
-
-**Goal:** A working, navigable REAL Journey experience for members.
-
-- Start Here overview page
-- Four phase pages: Recognise, Explore, Align, Lead
-- Each phase: short description, lessons/steps (even if placeholder), reflection prompt, integration action
-- Simple progress tracking (which phases completed)
-- "Return to REAL" flow — accessible from dashboard and navigation
-- Connect to dashboard "Continue REAL Journey" button
-
-Keep it bite-sized. Do not overbuild lesson content structure.
+- Local PostgreSQL authentication (fc_prod database)
+- FastAPI backend: bcrypt passwords, JWT sessions (httpOnly cookies, 7-day expiry)
+- Frontend route protection via `src/proxy.ts`
+- Login, signup, logout, forgot-password, reset-password flows
+- Password reset URL logged to console in dev (TODO: email in production)
+- User roles: `user` | `admin`
+- Admin sales pipeline: leads, opportunities, activities, tasks, subscription plans
 
 ---
 
-## Phase 5 — The Heart (Live Layer)
+## Phase 2c — Frontend/Backend Separation ✓
 
-**Goal:** A clear, welcoming Live Layer area.
+**Status:** Complete
 
-- The Heart overview page
-- Current monthly theme display
-- Upcoming live call card (date, time, Zoom link placeholder)
-- Live call calendar / list
-- Integration thread area (async post-call discussion)
-- Latest community prompt card
-
-The Heart should feel central. Build it as a first-class area, not an add-on.
+- Repo split into `frontend/` (Next.js) and `backend/` (FastAPI)
+- SQLAlchemy ORM + Alembic migrations
+- All DB operations through FastAPI backend
 
 ---
 
-## Phase 6 — The Rooms (Pathways)
+## Phase 3 — Space Architecture Foundation ← CURRENT
 
-**Goal:** The Rooms overview and the Growth Pathway fully built.
+**Status:** In progress
 
-- The Rooms overview page (three pathways: Growth live, Transformation + Essence as Coming Soon)
-- Growth Pathway overview page
-- Three room pages: Self-awareness, Self-trust, Uniqueness
-- Each room: description, content placeholder, suggested next steps
-- Transformation and Essence: visible but clearly marked Coming Soon
+**Goal:** Evolve the platform foundation to support the Space-based multi-creator architecture. No major UI changes yet — focus on correct structure, models, and routes.
 
-Navigation should feel simple. Do not expose the full depth upfront.
+### 3a — Documentation update ✓
+- Product brief, platform structure, and roadmap updated to reflect Space architecture
+- REAL Journey repositioned as one Pathway within the Fresh Collective Space
+- Rooms → Pathways, The Heart → Community + Events
+
+### 3b — Backend domain model
+- Add `creator` to user roles (extend CHECK constraint via Alembic)
+- Add new platform entities: `spaces`, `space_memberships`, `pathways`, `pathway_steps`, `enrollments`, `step_progress`, `events`, `community_posts`, `post_comments`, `creator_profiles`
+- Alembic migration 003 (additive, no data loss)
+- Seed: Fresh Collective Space + 4 Pathways (REAL Journey, Growth, Transformation/Essence as coming_soon)
+
+### 3c — Auth role extension
+- Add `get_creator_user` dependency
+- Update `get_admin_user` to remain admin-only
+- Frontend proxy updated to protect `/spaces` and `/creator` routes
+
+### 3d — API route stubs
+- Space routes: `GET /api/spaces`, `GET /api/spaces/{slug}`
+- Creator routes: `GET /api/creator/spaces`
+- Pathway routes: `GET /api/spaces/{slug}/pathways`
+
+### 3e — Frontend route placeholders
+- `/spaces/[slug]` — placeholder page
+- `/spaces/[slug]/pathways` — placeholder
+- `/spaces/[slug]/community` — placeholder
+- `/spaces/[slug]/events` — placeholder
+- `/creator` — placeholder
 
 ---
 
-## Phase 7 — Community
+## Phase 4 — Learner Experience (Pathways)
 
-**Goal:** A simple, clean community area.
+**Goal:** A working, navigable Pathway experience inside a Space.
 
-- Community feed (most recent posts first)
-- Prompt cards (founder-created prompts)
-- Member reflection responses
-- Discussion threads (tied to live calls and REAL phases)
-- Clean posting UI (text post, reply)
+- Space overview page (home tab: progress, next step, community highlights, upcoming events)
+- Pathway overview page (step list with progress indicators)
+- Step page (content rendering, reflection input, mark complete)
+- Progress tracking (enrollment, step_progress records)
+- "Continue where you left off" deep link from dashboard
+- REAL Journey fully built as the first Pathway in the FC Space (4 phases as step groups)
 
-Keep it simple. No complex social graph, no likes/reactions in v1.
+Keep it bite-sized. One clear next step at all times.
+
+---
+
+## Phase 5 — Community + Events
+
+**Goal:** A clear, welcoming Community and Events experience within a Space.
+
+- Community feed (posts, prompts, reflections, discussions)
+- Founder/creator prompt posts
+- Event listing (upcoming live calls)
+- Event detail (date, time, Zoom link placeholder)
+- Recording archive (past events)
+
+Community should feel central — not an add-on.
+
+---
+
+## Phase 6 — Creator Studio (Internal, Lindsey only for v1)
+
+**Goal:** A working creator studio for managing the FC Space.
+
+- Creator dashboard (`/creator`)
+- Pathway management (create/edit pathways and steps)
+- Event management (create/edit events)
+- Community management (post prompts, pin posts)
+- Space settings (name, description, cover image)
+- Member view (who is enrolled, progress summary)
+
+This validates the creator tooling before opening to third-party creators.
+
+---
+
+## Phase 7 — Dashboard Evolution
+
+**Goal:** Update the learner dashboard to reflect the Space architecture.
+
+- Show enrolled Spaces
+- "Continue where you left off" (most recent Pathway, deep link to next Step)
+- Upcoming Events across all enrolled Spaces
+- Recent Community activity from enrolled Spaces
+- Onboarding state for new learners (direct to REAL Journey)
 
 ---
 
 ## Phase 8 — Payments
 
-**Goal:** Stripe integration for both entry paths.
+**Goal:** Stripe integration for Space/Pathway access.
 
-- Stripe product and price setup (REAL Journey standalone, Membership)
-- Checkout flow for REAL Journey purchase
-- Checkout flow for Membership purchase
-- Webhooks to update Supabase on successful payment
-- Post-purchase redirect and account creation
+- Stripe product and price setup
+- Space membership checkout (join FC Space)
+- Individual Pathway purchase (if applicable)
+- Webhooks to update access on successful payment
+- Post-purchase redirect and enrollment creation
 - Membership status checks on protected routes
 
-Mark all Stripe integration points clearly in the codebase during earlier phases so this is a clean drop-in.
+Mark all Stripe integration points clearly in the codebase during earlier phases.
+
+---
+
+## Phase 9 — Growth Pathway (Full Content)
+
+**Goal:** Growth Pathway fully built with content.
+
+- Self-awareness, Self-trust, Uniqueness rooms as Step groups within the Growth Pathway
+- Each Step: description, content placeholder, reflection prompt, suggested next steps
+- Navigation within the Pathway
 
 ---
 
@@ -152,11 +186,13 @@ Mark all Stripe integration points clearly in the codebase during earlier phases
 
 These are intentionally excluded from the initial build:
 
-- Transformation pathway (full content build)
-- Essence pathway (full content build)
-- Gamification, streaks, or achievement systems
-- Badges
-- Complex admin systems
-- Advanced analytics or reporting
+- Third-party creator onboarding and Space creation flow
+- Transformation and Essence Pathways (full content)
+- Public creator profiles and discovery
+- Cross-Space community feed
+- Per-Space subscription billing (separate from platform membership)
 - Native mobile app
-- Multi-contributor content (the founder is the sole architect for now)
+- Gamification, streaks, badges
+- AI features
+- Advanced analytics
+- Multi-contributor content within a Space
