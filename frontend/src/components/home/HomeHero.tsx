@@ -20,7 +20,7 @@ export default function HomeHero() {
         className="absolute inset-0 h-full w-full object-cover"
         style={{
           opacity: 0.58,
-          filter: 'saturate(0.58) brightness(1.05) contrast(0.88)',
+          filter: 'saturate(0.62) brightness(0.94) contrast(1.00)',
         }}
       >
         <source src="/videos/hero-waves.mp4" type="video/mp4" />
@@ -30,7 +30,7 @@ export default function HomeHero() {
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
-        style={{ background: 'rgba(250,250,248,0.20)' }}
+        style={{ background: 'rgba(250,250,248,0.10)' }}
       />
 
       {/* ── Left text-protection gradient ───────────────────────────────────── */}
