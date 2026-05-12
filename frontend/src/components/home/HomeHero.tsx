@@ -19,8 +19,8 @@ export default function HomeHero() {
         aria-hidden="true"
         className="absolute inset-0 h-full w-full object-cover"
         style={{
-          opacity: 0.58,
-          filter: 'saturate(0.62) brightness(0.94) contrast(1.00)',
+          opacity: 0.82,
+          filter: 'saturate(0.74) brightness(0.86) contrast(1.10)',
         }}
       >
         <source src="/videos/hero-waves.mp4" type="video/mp4" />
@@ -41,7 +41,7 @@ export default function HomeHero() {
         aria-hidden="true"
         style={{
           background:
-            'linear-gradient(100deg, rgba(232,235,231,0.78) 0%, rgba(232,235,231,0.44) 45%, rgba(232,235,231,0.08) 75%, transparent 100%)',
+            'linear-gradient(100deg, rgba(232,235,231,0.82) 0%, rgba(232,235,231,0.52) 28%, rgba(232,235,231,0.12) 50%, transparent 68%)',
         }}
       />
 
@@ -93,7 +93,7 @@ export default function HomeHero() {
         className="pointer-events-none absolute bottom-0 left-0 right-0 h-24"
         aria-hidden="true"
         style={{
-          background: 'linear-gradient(to bottom, transparent, rgba(232,235,231,0.45))',
+          background: 'linear-gradient(to bottom, transparent, rgba(232,235,231,0.22))',
         }}
       />
 
