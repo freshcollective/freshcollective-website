@@ -19,20 +19,30 @@ export default function HomeHero() {
         aria-hidden="true"
         className="absolute inset-0 h-full w-full object-cover"
         style={{
-          opacity: 0.32,
-          filter: 'saturate(0.60) brightness(1.08) contrast(0.90)',
+          opacity: 0.58,
+          filter: 'saturate(0.58) brightness(1.05) contrast(0.88)',
         }}
       >
         <source src="/videos/hero-waves.mp4" type="video/mp4" />
       </video>
 
-      {/* ── Integration overlay ──────────────────────────────────────────────── */}
-      {/* Blends the video back into the warm background so it reads as          */}
-      {/* texture rather than footage.                                            */}
+      {/* ── Tint overlay — light wash only, lets footage show through ───────── */}
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
-        style={{ background: 'rgba(250,250,248,0.46)' }}
+        style={{ background: 'rgba(250,250,248,0.20)' }}
+      />
+
+      {/* ── Left text-protection gradient ───────────────────────────────────── */}
+      {/* Darkens the content area enough to keep headlines readable without     */}
+      {/* suppressing the video on the right half of the hero.                   */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        aria-hidden="true"
+        style={{
+          background:
+            'linear-gradient(100deg, rgba(250,250,248,0.72) 0%, rgba(250,250,248,0.42) 45%, rgba(250,250,248,0.08) 75%, transparent 100%)',
+        }}
       />
 
       {/* ── Subtle grid ─────────────────────────────────────────────────────── */}
