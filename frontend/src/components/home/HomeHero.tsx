@@ -121,7 +121,7 @@ export default function HomeHero() {
             <br />
             <span
               style={{
-                background: 'linear-gradient(118deg, #38A09E 0%, #55B8B6 40%, #C9A83C 100%)',
+                background: 'linear-gradient(118deg, #1E7A78 0%, #7ECFCD 45%, #DDD5C4 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
