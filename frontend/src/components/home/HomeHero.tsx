@@ -104,7 +104,7 @@ export default function HomeHero() {
           <div className="mb-6 flex items-center gap-3">
             <div className="h-px w-8 bg-teal-400" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              A creator-led learning platform
+              Learning for what comes next
             </span>
           </div>
 
@@ -117,7 +117,7 @@ export default function HomeHero() {
               fontWeight: 660,
             }}
           >
-            Guided spaces for
+            Transformative learning,
             <br />
             <span
               style={{
@@ -127,17 +127,18 @@ export default function HomeHero() {
                 backgroundClip: 'text',
               }}
             >
-              people who learn differently.
+              built for real life.
             </span>
           </h1>
 
-          <p
-            className="mb-9 text-navy-600"
-            style={{ fontSize: '1.0625rem', lineHeight: '1.78', maxWidth: '500px' }}
-          >
-            Structured pathways. Live gatherings. Focused community.
-            Built by people who know the work — for people doing it.
-          </p>
+          <div className="mb-9" style={{ maxWidth: '500px' }}>
+            <p className="text-navy-600" style={{ fontSize: '1.0625rem', lineHeight: '1.78' }}>
+              Fresh Collective is a place for people exploring more intentional ways to live, lead, create, and grow.
+            </p>
+            <p className="mt-3 text-navy-500" style={{ fontSize: '1rem', lineHeight: '1.78' }}>
+              Guided pathways, live gatherings, and thoughtful communities designed to help new ideas become lived experience.
+            </p>
+          </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <Link

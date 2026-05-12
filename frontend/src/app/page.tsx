@@ -38,12 +38,12 @@ function TwoWaysIn() {
               className="mb-5 text-navy-950"
               style={{ fontSize: 'clamp(1.125rem, 1.75vw, 1.375rem)', letterSpacing: '-0.02em', lineHeight: '1.3', fontWeight: 620 }}
             >
-              Seeking thoughtful growth
+              Seeking a more intentional way to grow
             </p>
             <p className="mb-7 text-[15.5px] leading-[1.82] text-navy-500">
-              Join guided pathways built around real expertise. Attend live gatherings.
-              Participate in focused community. Learn at a pace that allows integration —
-              not just accumulation.
+              Find guided spaces built around genuine expertise and lived experience.
+              Attend live gatherings. Participate in a focused community. Learn at a
+              pace that lets ideas move from understanding into how you actually live.
             </p>
             <Link
               href="/spaces"
@@ -64,12 +64,12 @@ function TwoWaysIn() {
               className="mb-5 text-navy-950"
               style={{ fontSize: 'clamp(1.125rem, 1.75vw, 1.375rem)', letterSpacing: '-0.02em', lineHeight: '1.3', fontWeight: 620 }}
             >
-              Building something that matters
+              Building environments where people actually change
             </p>
             <p className="mb-7 text-[15.5px] leading-[1.82] text-navy-500">
-              Design intentional learning experiences around the work you know deeply.
-              Host live events. Gather a focused community. Build an environment where
-              people actually grow.
+              Design intentional learning spaces around the work you know deeply.
+              Host live gatherings. Build a community grounded in shared growth.
+              Create the kind of environment you always wished existed.
             </p>
             <Link
               href="/signup"
@@ -133,13 +133,14 @@ function Vision() {
 
           <div className="mt-10 space-y-5" style={{ maxWidth: '500px' }}>
             <p className="text-[16px] leading-[1.88]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Fresh Collective is a platform for educators, practitioners, and guides building
-              intentional learning spaces — and for people who want to grow in ways that
-              actually last.
+              Fresh Collective is a place for people who sense there are better ways to live,
+              lead, create, and grow — and want environments that help them move from
+              understanding to embodiment.
             </p>
             <p className="text-[15px] leading-[1.88]" style={{ color: 'rgba(255,255,255,0.26)' }}>
-              Not content libraries. Not endless courses. Structured environments where
-              learning happens in community — guided, grounded, and connected to real life.
+              Not content libraries. Not passive consumption. Structured environments where
+              learning happens in community — guided, grounded, and oriented toward what
+              comes next.
             </p>
           </div>
 
@@ -148,9 +149,9 @@ function Vision() {
             style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '2.5rem' }}
           >
             {[
-              { label: 'Thoughtful creators', sub: 'Building experiences around ideas that matter.' },
-              { label: 'Depth-seeking learners', sub: 'Growing in ways that last.' },
-              { label: 'Fresh ideas', sub: 'Given the space they need to develop.' },
+              { label: 'Educators and guides', sub: 'Building spaces where deep ideas become lived experience.' },
+              { label: 'Depth-seeking learners', sub: 'Finding environments where new ways of thinking can take hold.' },
+              { label: 'Emerging ways forward', sub: 'Explored with the structure and community they need to develop.' },
             ].map(({ label, sub }) => (
               <div key={label}>
                 <p
@@ -274,7 +275,7 @@ const FEATURED = [
   {
     slug: 'fresh-collective',
     name: 'Fresh Collective',
-    tagline: 'The founding space — built around the REAL Journey and a live monthly community.',
+    tagline: 'The founding space — structured pathways, live monthly gatherings, and an active learning community.',
     creator: 'Lindsey',
     isFlagship: true,
     color: '#38A09E',
