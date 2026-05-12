@@ -5,7 +5,7 @@ export default function HomeHero() {
   return (
     <section
       className="relative overflow-hidden"
-      style={{ background: '#FAFAF8' }}
+      style={{ background: '#E8EBE7' }}
     >
 
       {/* ── Video layer ──────────────────────────────────────────────────────── */}
@@ -30,7 +30,7 @@ export default function HomeHero() {
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
-        style={{ background: 'rgba(250,250,248,0.10)' }}
+        style={{ background: 'rgba(232,235,231,0.10)' }}
       />
 
       {/* ── Left text-protection gradient ───────────────────────────────────── */}
@@ -41,7 +41,7 @@ export default function HomeHero() {
         aria-hidden="true"
         style={{
           background:
-            'linear-gradient(100deg, rgba(250,250,248,0.72) 0%, rgba(250,250,248,0.42) 45%, rgba(250,250,248,0.08) 75%, transparent 100%)',
+            'linear-gradient(100deg, rgba(232,235,231,0.78) 0%, rgba(232,235,231,0.44) 45%, rgba(232,235,231,0.08) 75%, transparent 100%)',
         }}
       />
 
@@ -93,7 +93,7 @@ export default function HomeHero() {
         className="pointer-events-none absolute bottom-0 left-0 right-0 h-24"
         aria-hidden="true"
         style={{
-          background: 'linear-gradient(to bottom, transparent, rgba(253,252,249,0.80))',
+          background: 'linear-gradient(to bottom, transparent, rgba(232,235,231,0.45))',
         }}
       />
 
