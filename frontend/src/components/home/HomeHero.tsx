@@ -90,10 +90,10 @@ export default function HomeHero() {
 
       {/* ── Bottom fade — transitions hero into next section cleanly ─────────── */}
       <div
-        className="pointer-events-none absolute bottom-0 left-0 right-0 h-24"
+        className="pointer-events-none absolute bottom-0 left-0 right-0 h-48"
         aria-hidden="true"
         style={{
-          background: 'linear-gradient(to bottom, transparent, rgba(232,235,231,0.22))',
+          background: 'linear-gradient(to bottom, transparent, rgba(248,247,244,0.94))',
         }}
       />
 

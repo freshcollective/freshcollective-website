@@ -7,27 +7,28 @@ import HomeHero from '@/components/home/HomeHero'
 
 function TwoWaysIn() {
   return (
-    <section className="py-16 sm:py-24" style={{ background: '#FDFCF9' }}>
+    <section
+      className="py-12 sm:py-20"
+      style={{ background: 'linear-gradient(to bottom, #ECEAE7 0%, #F5F4F0 30%, #FDFCF9 100%)' }}
+    >
       <Container>
 
         <div className="mb-12">
-          <div className="mb-3 flex items-center gap-3">
-            <div className="h-px w-8 bg-teal-400" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              Who it&apos;s for
-            </span>
-          </div>
           <h2
             className="text-navy-950"
             style={{ fontSize: 'clamp(1.875rem, 3.5vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
           >
-            Two ways in.
+            Two kinds of forward.
+            <br />
+            <span style={{ color: 'rgba(12,24,38,0.28)' }}>
+              Growing, or building the conditions for growth.
+            </span>
           </h2>
         </div>
 
         <div
           className="grid gap-12 sm:grid-cols-2 sm:gap-0"
-          style={{ borderTop: '1px solid #EEEDE9', paddingTop: '3rem' }}
+          style={{ borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '3rem' }}
         >
 
           <div className="sm:pr-12 lg:pr-20">
@@ -41,9 +42,9 @@ function TwoWaysIn() {
               Seeking a more intentional way to grow
             </p>
             <p className="mb-7 text-[15.5px] leading-[1.82] text-navy-500">
-              Find guided collectives built around genuine expertise and lived experience.
-              Attend live gatherings. Participate in a focused community. Learn at a
-              pace that lets new ideas move from understanding into how you actually live.
+              Find guided collectives built around genuine expertise and lived
+              experience. Attend live gatherings. Participate in a focused community.
+              Learn at a pace that lets new ideas move into how you actually live.
             </p>
             <Link
               href="/spaces"
@@ -55,7 +56,7 @@ function TwoWaysIn() {
 
           <div
             className="sm:pl-12 lg:pl-20"
-            style={{ borderLeft: '1px solid #EEEDE9' }}
+            style={{ borderLeft: '1px solid rgba(0,0,0,0.06)' }}
           >
             <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#9A7420' }}>
               For creators
@@ -113,7 +114,7 @@ function Vision() {
           <div className="mb-8 flex items-center gap-3">
             <div className="h-px w-8 bg-teal-400/40" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-400/60">
-              What we&apos;re building
+              A different kind of learning
             </span>
           </div>
 
@@ -149,9 +150,9 @@ function Vision() {
             style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '2.5rem' }}
           >
             {[
-              { label: 'Educators and guides', sub: 'Building collectives where deep ideas become lived experience.' },
-              { label: 'Depth-seeking learners', sub: 'Finding environments where new ways of thinking can take hold.' },
-              { label: 'Emerging ways forward', sub: 'Explored with the structure and community they need to develop.' },
+              { label: 'Educators and practitioners', sub: 'Creating the environments their own growth demanded of them.' },
+              { label: 'People ready to live differently', sub: 'Finding structures that turn ideas into genuine change.' },
+              { label: 'Ideas that need room to develop', sub: 'Given depth, community, and the right conditions to take hold.' },
             ].map(({ label, sub }) => (
               <div key={label}>
                 <p
@@ -182,22 +183,44 @@ const CARD_STYLE = {
 
 function PlatformPreview() {
   return (
-    <section className="bg-white py-16 sm:py-20">
-      <Container>
+    <section className="relative overflow-hidden py-16 sm:py-24" style={{ background: '#FAFAF8' }}>
 
-        <div className="mb-8">
-          <div className="mb-3 flex items-center gap-3">
-            <div className="h-px w-8 bg-teal-400" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              Inside a collective
-            </span>
-          </div>
+      {/* Atmospheric orbs */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+        <div style={{
+          position: 'absolute', top: '-10%', right: '-8%',
+          width: '500px', height: '500px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(56,160,158,0.05) 0%, transparent 65%)',
+          filter: 'blur(60px)',
+        }} />
+        <div style={{
+          position: 'absolute', bottom: '-15%', left: '-5%',
+          width: '400px', height: '400px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(201,168,60,0.04) 0%, transparent 65%)',
+          filter: 'blur(70px)',
+        }} />
+      </div>
+
+      <Container className="relative">
+
+        <div className="mb-3 flex items-center gap-3">
+          <div className="h-px w-8 bg-teal-400" />
+          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
+            Inside a collective
+          </span>
+        </div>
+
+        <div className="mb-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <h2
             className="text-navy-950"
             style={{ fontSize: 'clamp(1.625rem, 2.75vw, 2.25rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
           >
-            What it actually looks like.
+            What participation looks like.
           </h2>
+          <p className="max-w-[380px] text-[14.5px] leading-[1.7] text-navy-400 sm:text-right">
+            A pathway to follow. A gathering to attend.
+            A community that holds you between sessions.
+          </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
@@ -264,6 +287,11 @@ function PlatformPreview() {
           </div>
 
         </div>
+
+        <p className="mt-8 text-[13px] text-navy-300" style={{ letterSpacing: '0.01em' }}>
+          Every collective is shaped differently by its creator — and comes with all three.
+        </p>
+
       </Container>
     </section>
   )
@@ -312,21 +340,25 @@ function FeaturedSpaces() {
               </span>
             </div>
             <h2
-              className="text-navy-950"
+              className="mb-3 text-navy-950"
               style={{ fontSize: 'clamp(1.625rem, 2.75vw, 2.25rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
             >
               Where the learning lives.
             </h2>
+            <p className="text-[14px] leading-[1.7] text-navy-400" style={{ maxWidth: '420px' }}>
+              Each led by a creator who has done the work — and built a structured
+              environment around it.
+            </p>
           </div>
           <Link
             href="/spaces"
-            className="hidden text-[13.5px] font-semibold text-teal-600 hover:underline underline-offset-2 sm:block"
+            className="hidden flex-shrink-0 text-[13.5px] font-semibold text-teal-600 hover:underline underline-offset-2 sm:block"
           >
             Explore all →
           </Link>
         </div>
 
-        <div className="divide-y" style={{ borderTop: '1px solid #EEEDE9', borderBottom: '1px solid #EEEDE9' }}>
+        <div className="divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)', borderTop: '1px solid rgba(0,0,0,0.05)', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
           {FEATURED.map(({ slug, name, tagline, creator, isFlagship, color }) => (
             <div key={slug} className="group flex items-center justify-between gap-6 py-6">
               <div className="flex items-start gap-4 min-w-0">
@@ -409,7 +441,7 @@ function FinalCTA() {
           </h2>
 
           <p className="mb-10 text-[15.5px] leading-[1.82]" style={{ color: 'rgba(255,255,255,0.40)' }}>
-            Join a collective — or build an intentional one of your own.
+            There&apos;s a collective for where you are now. Or build the one that doesn&apos;t exist yet.
           </p>
 
           <div className="flex flex-col items-center gap-4">
