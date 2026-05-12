@@ -30,7 +30,7 @@ export default function HomeHero() {
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
-        style={{ background: 'rgba(232,235,231,0.10)' }}
+        style={{ background: 'rgba(232,235,231,0.03)' }}
       />
 
       {/* ── Left text-protection gradient ───────────────────────────────────── */}
