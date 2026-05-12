@@ -10,12 +10,12 @@ const PILLARS = [
   {
     number: '02',
     heading: 'Learning with other people',
-    body: 'Every space includes live gatherings, community prompts, and a shared feed. The gap between understanding something and actually living it is almost always other people.',
+    body: 'Every collective includes live gatherings, community prompts, and a shared feed. The gap between understanding something and actually living it is almost always other people.',
   },
   {
     number: '03',
     heading: 'Led by someone who knows',
-    body: 'Spaces are built and run by creators who have done this work themselves. Not content libraries. Not algorithms. Real expertise shaped into a guided experience — start to finish.',
+    body: 'Collectives are built and run by creators who have done this work themselves. Not content libraries. Not algorithms. Real expertise shaped into a guided experience — start to finish.',
   },
 ]
 
@@ -78,7 +78,7 @@ export default function HowItWorks() {
               boxShadow: 'var(--fc-shadow-btn)',
             }}
           >
-            Explore Spaces
+            Explore Collectives
           </Link>
           <Link
             href="/about"

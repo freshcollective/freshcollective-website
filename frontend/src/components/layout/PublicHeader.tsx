@@ -58,7 +58,7 @@ export default async function PublicHeader() {
         {/* Nav — desktop */}
         <nav aria-label="Main" className="hidden flex-1 items-center justify-center gap-8 md:flex">
           {[
-            { href: '/spaces', label: 'Explore Spaces' },
+            { href: '/spaces', label: 'Explore Collectives' },
             { href: '/about',  label: 'About' },
           ].map(({ href, label }) => (
             <Link

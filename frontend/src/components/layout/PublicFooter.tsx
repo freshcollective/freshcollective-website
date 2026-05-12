@@ -24,14 +24,14 @@ export default function PublicFooter() {
               </span>
             </div>
             <p className="max-w-[300px] text-[14px] leading-[1.75] text-navy-400">
-              Guided spaces for growth that lasts — structured pathways, live community,
-              and creator-led experiences.
+              Creator-led collectives for transformative growth — structured pathways,
+              live gatherings, and intentional community.
             </p>
           </div>
 
           <nav aria-label="Footer" className="flex flex-wrap gap-x-8 gap-y-2.5 pt-1">
             {[
-              { href: '/spaces', label: 'Explore Spaces' },
+              { href: '/spaces', label: 'Explore Collectives' },
               { href: '/about',  label: 'About' },
               { href: '/login',  label: 'Log in' },
               { href: '/signup', label: 'Join' },

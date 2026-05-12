@@ -41,15 +41,15 @@ function TwoWaysIn() {
               Seeking a more intentional way to grow
             </p>
             <p className="mb-7 text-[15.5px] leading-[1.82] text-navy-500">
-              Find guided spaces built around genuine expertise and lived experience.
+              Find guided collectives built around genuine expertise and lived experience.
               Attend live gatherings. Participate in a focused community. Learn at a
-              pace that lets ideas move from understanding into how you actually live.
+              pace that lets new ideas move from understanding into how you actually live.
             </p>
             <Link
               href="/spaces"
               className="text-[14px] font-semibold text-teal-600 transition-colors hover:underline underline-offset-2"
             >
-              Explore Spaces →
+              Explore Collectives →
             </Link>
           </div>
 
@@ -67,7 +67,7 @@ function TwoWaysIn() {
               Building environments where people actually change
             </p>
             <p className="mb-7 text-[15.5px] leading-[1.82] text-navy-500">
-              Design intentional learning spaces around the work you know deeply.
+              Design an intentional collective around the work you know deeply.
               Host live gatherings. Build a community grounded in shared growth.
               Create the kind of environment you always wished existed.
             </p>
@@ -149,7 +149,7 @@ function Vision() {
             style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '2.5rem' }}
           >
             {[
-              { label: 'Educators and guides', sub: 'Building spaces where deep ideas become lived experience.' },
+              { label: 'Educators and guides', sub: 'Building collectives where deep ideas become lived experience.' },
               { label: 'Depth-seeking learners', sub: 'Finding environments where new ways of thinking can take hold.' },
               { label: 'Emerging ways forward', sub: 'Explored with the structure and community they need to develop.' },
             ].map(({ label, sub }) => (
@@ -189,7 +189,7 @@ function PlatformPreview() {
           <div className="mb-3 flex items-center gap-3">
             <div className="h-px w-8 bg-teal-400" />
             <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              Inside a space
+              Inside a collective
             </span>
           </div>
           <h2
@@ -308,7 +308,7 @@ function FeaturedSpaces() {
             <div className="mb-3 flex items-center gap-3">
               <div className="h-px w-8 bg-teal-400" />
               <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-                Spaces
+                Collectives
               </span>
             </div>
             <h2
@@ -403,13 +403,13 @@ function FinalCTA() {
               color: '#ffffff',
             }}
           >
-            Find your space.
+            Find your collective.
             <br />
             <span style={{ color: 'rgba(255,255,255,0.30)' }}>Or build one.</span>
           </h2>
 
           <p className="mb-10 text-[15.5px] leading-[1.82]" style={{ color: 'rgba(255,255,255,0.40)' }}>
-            Join a guided learning space — or create an intentional one of your own.
+            Join a collective — or build an intentional one of your own.
           </p>
 
           <div className="flex flex-col items-center gap-4">
@@ -421,14 +421,14 @@ function FinalCTA() {
                 boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
               }}
             >
-              Explore Spaces
+              Explore Collectives
             </Link>
             <Link
               href="/signup"
               className="text-[13.5px] font-medium transition-opacity hover:opacity-60"
               style={{ color: 'rgba(255,255,255,0.32)' }}
             >
-              or Create a Space →
+              or Build a Collective →
             </Link>
           </div>
 

@@ -163,7 +163,7 @@ export default async function SpacesPage() {
             <div className="mb-5 flex items-center gap-3">
               <div className="h-px w-8 bg-teal-400" />
               <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-                Learning spaces
+                Collectives
               </span>
             </div>
 
@@ -176,13 +176,13 @@ export default async function SpacesPage() {
                 fontWeight: 660,
               }}
             >
-              Explore spaces.
+              Explore collectives.
             </h1>
 
             <p className="text-[16px] leading-[1.82] text-navy-500" style={{ maxWidth: '500px' }}>
-              Each space is a creator-led learning environment — structured pathways,
-              live events, and community built into one intentional place.
-              Browse and find the one that fits where you are.
+              Each collective is a creator-led learning environment — structured pathways,
+              live gatherings, and an active community, built into one intentional place.
+              Find the one that fits where you are.
             </p>
 
           </div>

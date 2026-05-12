@@ -149,14 +149,14 @@ export default function HomeHero() {
                 boxShadow: '0 2px 18px rgba(56,160,158,0.38), 0 1px 3px rgba(0,0,0,0.08)',
               }}
             >
-              Explore Spaces
+              Explore Collectives
             </Link>
             <Link
               href="/signup"
               className="inline-flex items-center rounded-xl border bg-white/75 px-7 py-3.5 text-[15px] font-semibold text-navy-700 backdrop-blur-sm transition-all hover:bg-white hover:-translate-y-px"
               style={{ borderColor: '#D0D8E2' }}
             >
-              Create a Space
+              Build a Collective
             </Link>
           </div>
 

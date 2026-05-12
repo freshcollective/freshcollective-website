@@ -45,7 +45,7 @@ function FlagshipCard({ space }: { space: DisplaySpace }) {
                 className="rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]"
                 style={{ background: 'rgba(201,168,60,0.10)', color: '#9A7420' }}
               >
-                Flagship Space
+                Flagship Collective
               </span>
               {space.has_upcoming_event && (
                 <span className="flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-teal-600" style={{ background: 'rgba(56,160,158,0.07)' }}>
@@ -101,7 +101,7 @@ function FlagshipCard({ space }: { space: DisplaySpace }) {
             boxShadow: 'var(--fc-shadow-btn)',
           }}
         >
-          Explore Space
+          Explore Collective
           <span className="text-teal-100">→</span>
         </Link>
       </div>
@@ -181,7 +181,7 @@ function SpaceCard({ space }: { space: DisplaySpace }) {
             href={href}
             className="inline-flex items-center gap-1 text-[13px] font-semibold text-navy-700 transition-colors group-hover:text-navy-950"
           >
-            Explore Space
+            Explore Collective
             <span className="transition-transform group-hover:translate-x-0.5">→</span>
           </Link>
         </div>
@@ -247,7 +247,7 @@ export default function SpacesClient({ spaces }: { spaces: DisplaySpace[] }) {
           ) : (
             !showFlagship && (
               <div className="py-16 text-center">
-                <p className="text-[15px] text-navy-400">No spaces in this category yet.</p>
+                <p className="text-[15px] text-navy-400">No collectives in this category yet.</p>
               </div>
             )
           )}
