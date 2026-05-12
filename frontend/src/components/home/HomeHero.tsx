@@ -19,9 +19,8 @@ export default function HomeHero() {
         aria-hidden="true"
         className="absolute inset-0 h-full w-full object-cover"
         style={{
-          opacity: 0.18,
-          filter: 'saturate(0.55) brightness(1.15) contrast(0.92)',
-          // Slightly less visible on mobile where the crop changes composition
+          opacity: 0.32,
+          filter: 'saturate(0.60) brightness(1.08) contrast(0.90)',
         }}
       >
         <source src="/videos/hero-waves.mp4" type="video/mp4" />
@@ -33,7 +32,7 @@ export default function HomeHero() {
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
-        style={{ background: 'rgba(250,250,248,0.64)' }}
+        style={{ background: 'rgba(250,250,248,0.46)' }}
       />
 
       {/* ── Subtle grid ─────────────────────────────────────────────────────── */}
