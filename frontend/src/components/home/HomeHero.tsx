@@ -3,31 +3,62 @@ import Container from '@/components/layout/Container'
 
 export default function HomeHero() {
   return (
-    <section className="relative overflow-hidden" style={{ background: '#FAFAF8' }}>
+    <section
+      className="relative overflow-hidden"
+      style={{ background: '#FAFAF8' }}
+    >
 
-      {/* Subtle grid */}
+      {/* ── Video layer ──────────────────────────────────────────────────────── */}
+      {/* Sits at the very bottom of the stack. Purely atmospheric — not content. */}
+      <video
+        autoPlay
+        muted
+        loop
+        playsInline
+        preload="none"
+        aria-hidden="true"
+        className="absolute inset-0 h-full w-full object-cover"
+        style={{
+          opacity: 0.18,
+          filter: 'saturate(0.55) brightness(1.15) contrast(0.92)',
+          // Slightly less visible on mobile where the crop changes composition
+        }}
+      >
+        <source src="/videos/hero-waves.mp4" type="video/mp4" />
+      </video>
+
+      {/* ── Integration overlay ──────────────────────────────────────────────── */}
+      {/* Blends the video back into the warm background so it reads as          */}
+      {/* texture rather than footage.                                            */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        aria-hidden="true"
+        style={{ background: 'rgba(250,250,248,0.64)' }}
+      />
+
+      {/* ── Subtle grid ─────────────────────────────────────────────────────── */}
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
           backgroundImage:
-            'linear-gradient(rgba(12,24,38,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(12,24,38,0.025) 1px, transparent 1px)',
+            'linear-gradient(rgba(12,24,38,0.022) 1px, transparent 1px), linear-gradient(90deg, rgba(12,24,38,0.022) 1px, transparent 1px)',
           backgroundSize: '56px 56px',
         }}
       />
 
-      {/* Layered gradient atmosphere */}
+      {/* ── Layered gradient atmosphere ──────────────────────────────────────── */}
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         <div style={{
           position: 'absolute', top: '-25%', right: '-12%',
           width: '900px', height: '900px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(56,160,158,0.10) 0%, transparent 58%)',
+          background: 'radial-gradient(circle, rgba(56,160,158,0.11) 0%, transparent 58%)',
           filter: 'blur(72px)',
         }} />
         <div style={{
           position: 'absolute', bottom: '-15%', left: '-14%',
           width: '700px', height: '700px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(201,168,60,0.07) 0%, transparent 58%)',
+          background: 'radial-gradient(circle, rgba(201,168,60,0.08) 0%, transparent 58%)',
           filter: 'blur(90px)',
         }} />
         <div style={{
@@ -38,16 +69,26 @@ export default function HomeHero() {
         }} />
       </div>
 
-      {/* Grain */}
+      {/* ── Grain overlay ───────────────────────────────────────────────────── */}
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
           backgroundImage: `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='300' height='300' filter='url(%23n)' opacity='0.035'/></svg>")`,
-          opacity: 0.8,
+          opacity: 0.9,
         }}
       />
 
+      {/* ── Bottom fade — transitions hero into next section cleanly ─────────── */}
+      <div
+        className="pointer-events-none absolute bottom-0 left-0 right-0 h-24"
+        aria-hidden="true"
+        style={{
+          background: 'linear-gradient(to bottom, transparent, rgba(253,252,249,0.80))',
+        }}
+      />
+
+      {/* ── Content ─────────────────────────────────────────────────────────── */}
       <Container className="relative py-16 sm:py-24 lg:py-28">
         <div className="max-w-[660px]">
 
@@ -82,7 +123,7 @@ export default function HomeHero() {
           </h1>
 
           <p
-            className="mb-9 text-navy-500"
+            className="mb-9 text-navy-600"
             style={{ fontSize: '1.0625rem', lineHeight: '1.78', maxWidth: '500px' }}
           >
             Structured pathways. Live gatherings. Focused community.
@@ -95,14 +136,14 @@ export default function HomeHero() {
               className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:opacity-90 hover:-translate-y-px"
               style={{
                 background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                boxShadow: '0 2px 16px rgba(56,160,158,0.35), 0 1px 3px rgba(0,0,0,0.08)',
+                boxShadow: '0 2px 18px rgba(56,160,158,0.38), 0 1px 3px rgba(0,0,0,0.08)',
               }}
             >
               Explore Spaces
             </Link>
             <Link
               href="/signup"
-              className="inline-flex items-center rounded-xl border bg-white/70 px-7 py-3.5 text-[15px] font-semibold text-navy-700 backdrop-blur-sm transition-all hover:bg-white hover:-translate-y-px"
+              className="inline-flex items-center rounded-xl border bg-white/75 px-7 py-3.5 text-[15px] font-semibold text-navy-700 backdrop-blur-sm transition-all hover:bg-white hover:-translate-y-px"
               style={{ borderColor: '#D0D8E2' }}
             >
               Create a Space
