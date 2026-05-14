@@ -17,7 +17,7 @@ function DualIntent() {
         <div className="mb-14 sm:mb-16" style={{ maxWidth: '540px' }}>
           <p
             className="mb-7"
-            style={{ fontSize: '10.5px', fontWeight: 650, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(12,24,38,0.36)' }}
+            style={{ fontSize: '10.5px', fontWeight: 650, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(8,18,38,0.40)' }}
           >
             For learners and creators
           </p>
@@ -25,11 +25,11 @@ function DualIntent() {
             className="mb-6"
             style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.48', fontWeight: 640 }}
           >
-            <p style={{ color: 'rgba(12,24,38,0.92)' }}>Some people come to explore new ways of living, learning, and growing.</p>
-            <p className="mt-4" style={{ color: 'rgba(12,24,38,0.52)' }}>
+            <p style={{ color: '#08101E' }}>Some people come to explore new ways of living, learning, and growing.</p>
+            <p className="mt-4" style={{ color: 'rgba(8,18,38,0.58)' }}>
               Others come to build the kinds of environments they wish existed — spaces for conversation, practice, creativity, and real change.
             </p>
-            <p className="mt-4" style={{ color: 'rgba(12,24,38,0.32)' }}>Fresh Collective brings both together.</p>
+            <p className="mt-4" style={{ color: 'rgba(8,18,38,0.38)' }}>Fresh Collective brings both together.</p>
           </div>
           <div className="mt-8 flex flex-wrap gap-x-7 gap-y-2">
             <Link
@@ -42,7 +42,7 @@ function DualIntent() {
             <Link
               href="/signup"
               className="text-[14px] font-semibold transition-opacity hover:opacity-60"
-              style={{ color: 'rgba(12,24,38,0.42)' }}
+              style={{ color: 'rgba(8,18,38,0.40)' }}
             >
               Build a Collective →
             </Link>
@@ -53,157 +53,184 @@ function DualIntent() {
         <div className="grid gap-8 sm:grid-cols-2 sm:gap-10">
 
           {/* LEFT — Explore: participatory, reflective */}
-          <div className="relative hidden sm:block" style={{ height: '300px' }}>
+          <div className="relative hidden sm:block" style={{ height: '310px' }}>
 
-            {/* Pathway fragment */}
+            {/* Practice worksheet fragment — top left */}
             <div
-              className="absolute rounded-xl bg-white p-5"
+              className="absolute p-5"
               style={{
-                width: '210px', top: '0', left: '0',
-                transform: 'rotate(-2.5deg)',
-                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.13)',
-                border: '1px solid rgba(0,0,0,0.05)',
+                width: '200px', top: '0', left: '0',
+                background: '#FAF8F4',
+                borderRadius: '10px',
+                transform: 'rotate(-2.8deg)',
+                boxShadow: '0 1px 0 rgba(0,0,0,0.06), 0 10px 32px rgba(0,0,0,0.10)',
               }}
             >
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
-                Collective · Week 3
+              {/* teal marker stripe at top */}
+              <div style={{ height: '3px', width: '28px', background: '#42C7C6', borderRadius: '1px', marginBottom: '10px' }} />
+              <div className="mb-1" style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#38A09E' }}>
+                Week 3 · Practice
               </div>
-              <div className="mb-3 text-navy-950" style={{ fontSize: '13px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}>
-                What are you practising this week?
+              <div className="mb-4" style={{ fontSize: '12.5px', fontWeight: 600, color: '#0C1826', letterSpacing: '-0.02em', lineHeight: '1.42' }}>
+                What are you noticing this week?
               </div>
-              <div className="space-y-1.5">
-                <div className="h-1.5 rounded-full" style={{ background: '#E4E2DD' }} />
-                <div className="h-1.5 w-4/5 rounded-full" style={{ background: '#E4E2DD' }} />
+              {/* ruled lines */}
+              <div className="space-y-[9px]">
+                {[1, 0.9, 0.75].map((w, i) => (
+                  <div key={i} style={{ height: '1px', width: `${w * 100}%`, background: 'rgba(12,24,38,0.10)' }} />
+                ))}
               </div>
-              <div className="mt-4 flex gap-1">
-                <div className="h-1 flex-1 rounded-full" style={{ background: '#42C7C6' }} />
-                <div className="h-1 flex-1 rounded-full" style={{ background: '#42C7C6', opacity: 0.4 }} />
-                <div className="h-1 flex-1 rounded-full" style={{ background: '#E4E2DD' }} />
-                <div className="h-1 flex-1 rounded-full" style={{ background: '#E4E2DD' }} />
+              {/* teal progress marker */}
+              <div className="mt-4 flex gap-1.5">
+                {[true, true, false, false].map((filled, i) => (
+                  <div key={i} style={{ height: '2px', flex: 1, background: filled ? '#42C7C6' : 'rgba(12,24,38,0.10)', borderRadius: '1px' }} />
+                ))}
               </div>
             </div>
 
-            {/* Discussion / prompt fragment */}
+            {/* Reflection prompt — parchment, bottom centre */}
             <div
-              className="absolute rounded-xl p-5"
+              className="absolute p-5"
               style={{
-                width: '230px', bottom: '0', left: '50px',
-                background: '#F0EDE6',
-                transform: 'rotate(1.8deg)',
-                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 10px 36px rgba(0,0,0,0.12)',
+                width: '238px', bottom: '0', left: '44px',
+                background: '#EDE8DE',
+                borderRadius: '9px',
+                transform: 'rotate(2deg)',
+                boxShadow: '0 1px 0 rgba(0,0,0,0.06), 0 10px 32px rgba(0,0,0,0.11)',
               }}
             >
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'rgba(56,160,158,0.70)' }}>
+              <div className="mb-3" style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(38,140,138,0.75)' }}>
                 This month&apos;s prompt
               </div>
-              <div className="mb-3 text-navy-950" style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.58', letterSpacing: '-0.01em' }}>
+              <div
+                style={{
+                  fontSize: '13px', fontWeight: 500, lineHeight: '1.60', letterSpacing: '-0.01em', color: '#0C1826',
+                  borderBottom: '1px solid rgba(38,140,138,0.28)', paddingBottom: '8px', marginBottom: '10px',
+                }}
+              >
                 Where are you growing slowly — and is slow okay right now?
               </div>
-              <div className="space-y-1.5">
-                <div className="h-1.5 w-5/6 rounded-full" style={{ background: 'rgba(56,160,158,0.22)' }} />
-                <div className="h-1.5 w-3/5 rounded-full" style={{ background: 'rgba(56,160,158,0.22)' }} />
+              {/* ruled response lines */}
+              <div className="space-y-[8px]">
+                {[1, 0.82].map((w, i) => (
+                  <div key={i} style={{ height: '1px', width: `${w * 100}%`, background: 'rgba(38,140,138,0.18)' }} />
+                ))}
               </div>
             </div>
 
-            {/* Gathering snippet */}
+            {/* Live gathering note — top right, smaller */}
             <div
-              className="absolute rounded-xl p-4"
+              className="absolute p-4"
               style={{
-                width: '178px', top: '30px', right: '0',
-                background: '#ffffff',
-                border: '1px solid rgba(0,0,0,0.07)',
-                transform: 'rotate(1.2deg)',
-                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 8px 28px rgba(0,0,0,0.11)',
+                width: '160px', top: '22px', right: '0',
+                background: '#F6F4F0',
+                borderRadius: '8px',
+                transform: 'rotate(1.4deg)',
+                boxShadow: '0 1px 0 rgba(0,0,0,0.05), 0 6px 22px rgba(0,0,0,0.09)',
               }}
             >
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
-                Live Gathering
+              <div className="mb-2 flex items-center gap-1.5">
+                <div style={{ height: '5px', width: '5px', borderRadius: '50%', background: '#42C7C6', flexShrink: 0 }} />
+                <span style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E' }}>
+                  Live gathering
+                </span>
               </div>
-              <div className="mb-1 text-[13px] font-semibold text-navy-950">Monthly call</div>
-              <div className="text-[11.5px]" style={{ color: 'rgba(12,24,38,0.38)' }}>60 min · Open conversation</div>
-              <div
-                className="mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold"
-                style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                This week
-              </div>
+              <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#0C1826', marginBottom: '3px' }}>Monthly call</div>
+              <div style={{ fontSize: '11px', color: 'rgba(12,24,38,0.45)', lineHeight: '1.5' }}>60 min · open conversation</div>
+              <div style={{ marginTop: '10px', height: '1px', background: 'rgba(12,24,38,0.08)' }} />
+              <div style={{ marginTop: '8px', fontSize: '10px', color: 'rgba(56,160,158,0.80)', fontWeight: 600 }}>This week →</div>
             </div>
 
           </div>
 
           {/* RIGHT — Build: creator, constructive */}
-          <div className="relative hidden sm:block" style={{ height: '300px' }}>
+          <div className="relative hidden sm:block" style={{ height: '310px' }}>
 
-            {/* Curriculum / session plan */}
+            {/* Session arc — planning document, top right */}
             <div
-              className="absolute rounded-xl bg-white p-5"
+              className="absolute p-5"
               style={{
-                width: '228px', top: '0', right: '20px',
-                transform: 'rotate(2deg)',
-                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.13)',
-                border: '1px solid rgba(0,0,0,0.05)',
+                width: '224px', top: '0', right: '12px',
+                background: '#FAF9F5',
+                borderRadius: '10px',
+                transform: 'rotate(1.8deg)',
+                boxShadow: '0 1px 0 rgba(0,0,0,0.06), 0 10px 32px rgba(0,0,0,0.10)',
               }}
             >
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7420' }}>
-                Collective Plan
+              {/* gold marker stripe */}
+              <div style={{ height: '3px', width: '24px', background: '#D4B048', borderRadius: '1px', marginBottom: '10px' }} />
+              <div className="mb-1" style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#9A7420' }}>
+                Collective arc
               </div>
-              <div className="mb-3 text-navy-950" style={{ fontSize: '13px', fontWeight: 620, letterSpacing: '-0.02em' }}>
-                5-week arc
+              <div
+                style={{ fontSize: '13px', fontWeight: 620, color: '#0C1826', letterSpacing: '-0.02em', marginBottom: '12px',
+                  borderBottom: '1px solid rgba(180,140,30,0.22)', paddingBottom: '8px' }}
+              >
+                5-week structure
               </div>
-              <div className="space-y-2">
-                {['Introduction & orientation', 'Core practice: Week 1–2', 'Live Q&A + reflection', 'Integration session'].map((item, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <div
-                      className="h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: i < 2 ? '#D4B048' : '#E4E2DD' }}
-                    />
-                    <div className="text-[11px]" style={{ color: i < 2 ? 'rgba(12,24,38,0.70)' : 'rgba(12,24,38,0.30)' }}>
-                      {item}
-                    </div>
+              <div className="space-y-[9px]">
+                {[
+                  { label: 'Orientation & context', active: true },
+                  { label: 'Core practice: weeks 1–2', active: true },
+                  { label: 'Live session + reflection', active: false },
+                  { label: 'Integration & close', active: false },
+                ].map(({ label, active }, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <div style={{ height: '5px', width: '5px', borderRadius: '50%', background: active ? '#D4B048' : 'rgba(12,24,38,0.15)', marginTop: '4px', flexShrink: 0 }} />
+                    <span style={{ fontSize: '11px', color: active ? 'rgba(12,24,38,0.72)' : 'rgba(12,24,38,0.32)', lineHeight: '1.45' }}>{label}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Creator note */}
+            {/* Creator question — warm paper, bottom left */}
             <div
-              className="absolute rounded-xl p-5"
+              className="absolute p-5"
               style={{
-                width: '218px', bottom: '0', left: '0',
-                background: '#F5F0E4',
-                transform: 'rotate(-2.2deg)',
-                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 10px 36px rgba(0,0,0,0.12)',
+                width: '212px', bottom: '0', left: '0',
+                background: '#F3EDD9',
+                borderRadius: '9px',
+                transform: 'rotate(-2deg)',
+                boxShadow: '0 1px 0 rgba(0,0,0,0.06), 0 10px 32px rgba(0,0,0,0.11)',
               }}
             >
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7420' }}>
-                Creator note
+              {/* broad gold highlight bar — like highlighter over key text */}
+              <div style={{ height: '4px', width: '100%', background: 'rgba(212,176,72,0.30)', borderRadius: '1px', marginBottom: '10px' }} />
+              <div className="mb-2" style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#9A7420' }}>
+                Before I build this —
               </div>
-              <div className="text-navy-950" style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.60', letterSpacing: '-0.01em' }}>
-                What is the one shift I want people to make by the end of this?
+              <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.62', letterSpacing: '-0.01em', color: '#0C1826' }}>
+                What is the one shift I want people to make by the end?
               </div>
-              <div className="mt-3 space-y-1.5">
-                <div className="h-1.5 w-4/5 rounded-full" style={{ background: '#DFCA7A' }} />
-                <div className="h-1.5 w-2/3 rounded-full" style={{ background: '#DFCA7A' }} />
+              {/* ruled lines */}
+              <div className="mt-4 space-y-[9px]">
+                {[1, 0.78].map((w, i) => (
+                  <div key={i} style={{ height: '1px', width: `${w * 100}%`, background: 'rgba(180,140,30,0.28)' }} />
+                ))}
               </div>
             </div>
 
-            {/* Members fragment */}
+            {/* Cohort note — small, bottom right */}
             <div
-              className="absolute rounded-xl p-4"
+              className="absolute p-4"
               style={{
-                width: '170px', bottom: '40px', right: '0',
-                background: '#ffffff',
+                width: '158px', bottom: '38px', right: '0',
+                background: '#FAFAF7',
+                borderRadius: '8px',
                 border: '1px solid rgba(0,0,0,0.07)',
-                transform: 'rotate(1.5deg)',
-                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 8px 28px rgba(0,0,0,0.11)',
+                transform: 'rotate(1.6deg)',
+                boxShadow: '0 1px 0 rgba(0,0,0,0.05), 0 6px 22px rgba(0,0,0,0.09)',
               }}
             >
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: '#9A7420' }}>
-                Your Collective
+              <div className="mb-2 flex items-center gap-1.5">
+                <div style={{ height: '5px', width: '5px', borderRadius: '50%', background: '#D4B048', flexShrink: 0 }} />
+                <span style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#9A7420' }}>
+                  Your collective
+                </span>
               </div>
-              <div className="mb-1 text-[13px] font-semibold text-navy-950">12 members joined</div>
-              <div className="text-[11.5px]" style={{ color: 'rgba(12,24,38,0.38)' }}>Starting in 4 days</div>
+              <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#0C1826', marginBottom: '3px' }}>12 members joined</div>
+              <div style={{ height: '1px', background: 'rgba(12,24,38,0.08)', margin: '8px 0' }} />
+              <div style={{ fontSize: '11px', color: 'rgba(12,24,38,0.42)' }}>Starting in 4 days</div>
             </div>
 
           </div>
