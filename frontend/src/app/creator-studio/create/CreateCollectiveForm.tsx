@@ -15,6 +15,106 @@ const CATEGORIES = [
   'Other',
 ]
 
+// ---------------------------------------------------------------------------
+// Preview panel — static right-hand column
+// ---------------------------------------------------------------------------
+
+function PreviewPanel() {
+  return (
+    <div
+      className="flex flex-col rounded-2xl px-7 py-8"
+      style={{
+        background: 'linear-gradient(145deg, #071824 0%, #0B2B2A 100%)',
+        border: '1px solid rgba(56,160,158,0.14)',
+        boxShadow: '0 4px 32px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.04)',
+      }}
+    >
+      {/* Label */}
+      <p
+        className="mb-4 text-[9.5px] font-bold uppercase tracking-[0.22em]"
+        style={{ color: 'rgba(255,255,255,0.22)' }}
+      >
+        Your collective preview
+      </p>
+
+      {/* Headline */}
+      <p className="mb-2 font-serif text-[19px] leading-snug text-white">
+        A home for your work.
+      </p>
+      <p
+        className="mb-6 text-[12.5px] leading-relaxed"
+        style={{ color: 'rgba(255,255,255,0.42)' }}
+      >
+        As you shape the foundation, this becomes the place where your pathways,
+        gatherings, resources, and community will live.
+      </p>
+
+      {/* Mockup card */}
+      <div
+        className="rounded-xl px-4 py-4"
+        style={{
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.08)',
+        }}
+      >
+        {/* Name + status */}
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <span className="font-serif text-[14px] text-white">Your Collective</span>
+          <span
+            className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
+            style={{ background: 'rgba(56,160,158,0.20)', color: '#55B8B6' }}
+          >
+            Draft
+          </span>
+        </div>
+
+        {/* Preview rows */}
+        {(['Pathways', 'Live gatherings', 'Resources'] as const).map((label) => (
+          <div
+            key={label}
+            className="flex items-center gap-2.5 py-2.5"
+            style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+          >
+            <div
+              className="h-1.5 w-1.5 shrink-0 rounded-full"
+              style={{ background: 'rgba(56,160,158,0.45)' }}
+            />
+            <span className="flex-1 text-[12px]" style={{ color: 'rgba(255,255,255,0.36)' }}>
+              {label}
+            </span>
+            <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.16)' }}>
+              Not yet added
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Note */}
+      <div
+        className="mt-6 pt-6"
+        style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
+      >
+        <p className="mb-1.5 text-[12.5px] font-semibold" style={{ color: 'rgba(255,255,255,0.68)' }}>
+          Start private. Shape it slowly.
+        </p>
+        <p className="text-[12px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.34)' }}>
+          Add the foundation first. Then build the pathways, gatherings, resources, and
+          community around it.
+        </p>
+      </div>
+
+      {/* Footer hint */}
+      <p className="mt-auto pt-8 text-[11px]" style={{ color: 'rgba(255,255,255,0.18)' }}>
+        You can build this one step at a time.
+      </p>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Success state
+// ---------------------------------------------------------------------------
+
 function CheckIcon() {
   return (
     <svg width="22" height="16" viewBox="0 0 22 16" fill="none" aria-hidden="true">
@@ -73,6 +173,10 @@ function SuccessState({ name }: { name: string }) {
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
 
 export default function CreateCollectiveForm() {
   const router = useRouter()
@@ -144,17 +248,17 @@ export default function CreateCollectiveForm() {
 
   return (
     <div className="min-h-screen" style={{ background: '#F7F8FA' }}>
-      <div className="mx-auto max-w-2xl px-6 py-12">
+      <div className="mx-auto max-w-5xl px-6 py-12">
 
         {/* Page header */}
-        <div className="mb-8">
+        <div className="mb-10">
           <p
             className="mb-2 text-[10.5px] font-bold uppercase tracking-[0.20em]"
             style={{ color: '#38A09E' }}
           >
             Create your collective
           </p>
-          <h1 className="mb-2 font-serif text-2xl text-navy-900 md:text-3xl">
+          <h1 className="mb-2 font-serif text-2xl text-navy-900 md:text-[1.85rem]">
             Start with the foundation.
           </h1>
           <p className="text-[14px] leading-relaxed text-slate-400">
@@ -162,211 +266,207 @@ export default function CreateCollectiveForm() {
           </p>
         </div>
 
-        {/* Calm note */}
-        <div
-          className="mb-8 rounded-xl px-5 py-4"
-          style={{
-            background: 'rgba(56,160,158,0.06)',
-            border: '1px solid rgba(56,160,158,0.16)',
-          }}
-        >
-          <p className="mb-1 text-[13px] font-semibold" style={{ color: '#2d8a88' }}>
-            Your first collective starts as a draft.
-          </p>
-          <p className="text-[12.5px] leading-relaxed" style={{ color: '#4a9e9c' }}>
-            You can add pathways, gatherings, resources, and community once the foundation is in place.
-          </p>
-        </div>
+        {/* Two-column layout */}
+        <div className="grid gap-8 lg:grid-cols-[1fr,360px]">
 
-        {/* Form card */}
-        <div
-          className="rounded-2xl bg-white px-8 py-8"
-          style={{
-            border: '1px solid rgba(0,0,0,0.07)',
-            boxShadow: '0 2px 16px rgba(0,0,0,0.05)',
-          }}
-        >
-          <form onSubmit={handleSubmit} className="space-y-6">
+          {/* ── Left: form card ── */}
+          <div
+            className="rounded-2xl bg-white px-8 py-8"
+            style={{
+              border: '1px solid rgba(56,160,158,0.13)',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.07), 0 0 0 1px rgba(56,160,158,0.05)',
+            }}
+          >
+            <form onSubmit={handleSubmit} className="space-y-6">
 
-            {/* 1. Collective name */}
-            <div>
-              <label
-                htmlFor="collective-name"
-                className="mb-1.5 block text-[13px] font-semibold text-navy-900"
-              >
-                Collective name{' '}
-                <span aria-hidden="true" style={{ color: '#38A09E' }}>*</span>
-              </label>
-              <input
-                id="collective-name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Living Intentionally"
-                maxLength={200}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
-              />
-            </div>
-
-            {/* 2. Short tagline */}
-            <div>
-              <label
-                htmlFor="collective-tagline"
-                className="mb-1.5 block text-[13px] font-semibold text-navy-900"
-              >
-                Short tagline
-              </label>
-              <input
-                id="collective-tagline"
-                type="text"
-                value={tagline}
-                onChange={(e) => setTagline(e.target.value)}
-                placeholder="A guided collective for people ready to live with more clarity."
-                maxLength={300}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
-              />
-            </div>
-
-            {/* 3. Who is this for */}
-            <div>
-              <label
-                htmlFor="collective-who"
-                className="mb-1.5 block text-[13px] font-semibold text-navy-900"
-              >
-                Who is this for?
-              </label>
-              <textarea
-                id="collective-who"
-                value={whoFor}
-                onChange={(e) => setWhoFor(e.target.value)}
-                placeholder="Describe the people this collective is designed for."
-                rows={2}
-                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
-              />
-            </div>
-
-            {/* 4. What change */}
-            <div>
-              <label
-                htmlFor="collective-change"
-                className="mb-1.5 block text-[13px] font-semibold text-navy-900"
-              >
-                What change does this collective help people practise?
-              </label>
-              <textarea
-                id="collective-change"
-                value={whatChange}
-                onChange={(e) => setWhatChange(e.target.value)}
-                placeholder="What will people begin to see, feel, practise, or live differently?"
-                rows={2}
-                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
-              />
-            </div>
-
-            {/* 5. Category */}
-            <div>
-              <p className="mb-2 text-[13px] font-semibold text-navy-900">Category</p>
-              <div className="flex flex-wrap gap-1.5">
-                {CATEGORIES.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setCategory(cat === category ? '' : cat)}
-                    className="rounded-full border px-3 py-1 text-[12.5px] font-medium transition-all"
-                    style={{
-                      borderColor: category === cat ? '#38A09E' : '#e2e8f0',
-                      background: category === cat ? 'rgba(56,160,158,0.08)' : 'transparent',
-                      color: category === cat ? '#2d8a88' : '#94a3b8',
-                    }}
-                  >
-                    {cat}
-                  </button>
-                ))}
+              {/* 1. Collective name */}
+              <div>
+                <label
+                  htmlFor="collective-name"
+                  className="mb-1.5 block text-[13px] font-semibold text-navy-900"
+                >
+                  Collective name{' '}
+                  <span aria-hidden="true" style={{ color: '#38A09E' }}>*</span>
+                </label>
+                <input
+                  id="collective-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Living Intentionally"
+                  maxLength={200}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                />
               </div>
-              {/* TODO: persist category when Space model supports a category field */}
-            </div>
 
-            {/* 6. Start as */}
-            <div>
-              <p className="mb-2 text-[13px] font-semibold text-navy-900">Start as</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {(
-                  [
-                    {
-                      value: 'draft' as const,
-                      label: 'Draft',
-                      desc: 'Private while you build.',
-                    },
-                    {
-                      value: 'publish_later' as const,
-                      label: 'Publish when ready',
-                      desc: 'Open it when it is ready to hold people.',
-                    },
-                  ] as const
-                ).map((opt) => (
-                  <label
-                    key={opt.value}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 transition-all"
-                    style={{
-                      borderColor: startAs === opt.value ? 'rgba(56,160,158,0.36)' : '#e2e8f0',
-                      background: startAs === opt.value ? 'rgba(56,160,158,0.05)' : 'transparent',
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="start-as"
-                      value={opt.value}
-                      checked={startAs === opt.value}
-                      onChange={() => setStartAs(opt.value)}
-                      className="mt-0.5 accent-teal-500"
-                    />
-                    <div>
-                      <p className="text-[13px] font-medium text-navy-900">{opt.label}</p>
-                      <p className="mt-0.5 text-[12px] text-slate-400">{opt.desc}</p>
-                    </div>
-                  </label>
-                ))}
+              {/* 2. Short tagline */}
+              <div>
+                <label
+                  htmlFor="collective-tagline"
+                  className="mb-1.5 block text-[13px] font-semibold text-navy-900"
+                >
+                  Short tagline
+                </label>
+                <input
+                  id="collective-tagline"
+                  type="text"
+                  value={tagline}
+                  onChange={(e) => setTagline(e.target.value)}
+                  placeholder="A guided collective for people ready to live with more clarity."
+                  maxLength={300}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                />
               </div>
-              <p className="mt-2 text-[11.5px] text-slate-300">
-                All new collectives are created as private drafts.
-              </p>
-            </div>
 
-            {/* Error */}
-            {error && (
-              <p
-                className="rounded-lg px-4 py-3 text-[13px]"
-                style={{
-                  background: 'rgba(239,68,68,0.06)',
-                  color: '#dc2626',
-                  border: '1px solid rgba(239,68,68,0.18)',
-                }}
-              >
-                {error}
-              </p>
-            )}
+              {/* 3. Who is this for */}
+              <div>
+                <label
+                  htmlFor="collective-who"
+                  className="mb-1.5 block text-[13px] font-semibold text-navy-900"
+                >
+                  Who is this for?
+                </label>
+                <textarea
+                  id="collective-who"
+                  value={whoFor}
+                  onChange={(e) => setWhoFor(e.target.value)}
+                  placeholder="Describe the people this collective is designed for."
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                />
+              </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-5 pt-1">
-              <button
-                type="submit"
-                disabled={saving}
-                className="inline-flex items-center rounded-xl px-6 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-              >
-                {saving ? 'Creating…' : 'Create collective'}
-              </button>
-              <Link
-                href="/creator-studio"
-                className="text-[13px] text-slate-400 transition-colors hover:text-slate-600"
-              >
-                Back to Creator Studio
-              </Link>
-            </div>
+              {/* 4. What change */}
+              <div>
+                <label
+                  htmlFor="collective-change"
+                  className="mb-1.5 block text-[13px] font-semibold text-navy-900"
+                >
+                  What change does this collective help people practise?
+                </label>
+                <textarea
+                  id="collective-change"
+                  value={whatChange}
+                  onChange={(e) => setWhatChange(e.target.value)}
+                  placeholder="What will people begin to see, feel, practise, or live differently?"
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                />
+              </div>
 
-          </form>
+              {/* 5. Category */}
+              <div>
+                <p className="mb-2 text-[13px] font-semibold text-navy-900">Category</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {CATEGORIES.map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCategory(cat === category ? '' : cat)}
+                      className="rounded-full border px-3 py-1 text-[12.5px] font-medium transition-all"
+                      style={{
+                        borderColor: category === cat ? '#38A09E' : '#e2e8f0',
+                        background: category === cat ? 'rgba(56,160,158,0.08)' : 'transparent',
+                        color: category === cat ? '#2d8a88' : '#94a3b8',
+                      }}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+                {/* TODO: persist category when Space model supports a category field */}
+              </div>
+
+              {/* 6. Start as */}
+              <div>
+                <p className="mb-2 text-[13px] font-semibold text-navy-900">Start as</p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(
+                    [
+                      {
+                        value: 'draft' as const,
+                        label: 'Draft',
+                        desc: 'Private while you build.',
+                      },
+                      {
+                        value: 'publish_later' as const,
+                        label: 'Publish when ready',
+                        desc: 'Open it when it is ready to hold people.',
+                      },
+                    ] as const
+                  ).map((opt) => (
+                    <label
+                      key={opt.value}
+                      className="flex cursor-pointer items-start gap-3 rounded-lg border p-3.5 transition-all"
+                      style={{
+                        borderColor: startAs === opt.value ? 'rgba(56,160,158,0.36)' : '#e2e8f0',
+                        background: startAs === opt.value ? 'rgba(56,160,158,0.05)' : 'transparent',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="start-as"
+                        value={opt.value}
+                        checked={startAs === opt.value}
+                        onChange={() => setStartAs(opt.value)}
+                        className="mt-0.5 accent-teal-500"
+                      />
+                      <div>
+                        <p className="text-[13px] font-medium text-navy-900">{opt.label}</p>
+                        <p className="mt-0.5 text-[12px] text-slate-400">{opt.desc}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11.5px] text-slate-300">
+                  All new collectives are created as private drafts.
+                </p>
+              </div>
+
+              {/* Error */}
+              {error && (
+                <p
+                  className="rounded-lg px-4 py-3 text-[13px]"
+                  style={{
+                    background: 'rgba(239,68,68,0.06)',
+                    color: '#dc2626',
+                    border: '1px solid rgba(239,68,68,0.18)',
+                  }}
+                >
+                  {error}
+                </p>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-5 pt-1">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center rounded-xl px-6 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                  style={{
+                    background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                    boxShadow: '0 2px 14px rgba(56,160,158,0.30)',
+                  }}
+                >
+                  {saving ? 'Creating…' : 'Create collective'}
+                </button>
+                <Link
+                  href="/creator-studio"
+                  className="text-[13px] text-slate-400 transition-colors hover:text-slate-600"
+                >
+                  Back to Creator Studio
+                </Link>
+              </div>
+
+            </form>
+          </div>
+
+          {/* ── Right: preview panel ── */}
+          <div className="lg:sticky lg:top-8 lg:self-start">
+            <PreviewPanel />
+          </div>
+
         </div>
-
       </div>
     </div>
   )
