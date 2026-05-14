@@ -4,8 +4,8 @@ import Container from '@/components/layout/Container'
 export default function HomeHero() {
   return (
     <section
-      className="relative flex min-h-screen items-end overflow-hidden"
-      style={{ background: '#071014' }}
+      className="relative flex overflow-hidden"
+      style={{ background: '#071014', minHeight: 'clamp(560px, 70vh, 700px)' }}
     >
 
       {/* ── Video layer ──────────────────────────────────────────────────────── */}
@@ -31,7 +31,7 @@ export default function HomeHero() {
         aria-hidden="true"
         style={{
           background:
-            'linear-gradient(to bottom, rgba(7,16,20,0.42) 0%, rgba(7,16,20,0.22) 35%, rgba(7,16,20,0.62) 72%, rgba(7,16,20,0.90) 100%)',
+            'linear-gradient(to bottom, rgba(7,16,20,0.55) 0%, rgba(7,16,20,0.30) 40%, rgba(7,16,20,0.55) 80%, rgba(7,16,20,0.75) 100%)',
         }}
       />
 
@@ -55,7 +55,8 @@ export default function HomeHero() {
       />
 
       {/* ── Content ─────────────────────────────────────────────────────────── */}
-      <Container className="relative z-10 pb-32 pt-32 sm:pb-40 sm:pt-44 lg:pb-44">
+      <div className="relative z-10 w-full" style={{ paddingTop: 'clamp(7rem, 14vw, 10rem)', paddingBottom: 'clamp(4rem, 8vw, 6rem)' }}>
+      <Container>
         <div className="max-w-[680px]">
 
           <div className="mb-5 flex items-center gap-3">
@@ -139,6 +140,7 @@ export default function HomeHero() {
 
         </div>
       </Container>
+      </div>
 
     </section>
   )

@@ -8,13 +8,8 @@ import HomeHero from '@/components/home/HomeHero'
 function DualIntent() {
   return (
     <section
-      className="relative z-10 -mt-14 sm:-mt-20"
-      style={{
-        background: '#F5F3EF',
-        borderRadius: '28px 28px 0 0',
-        paddingTop: 'clamp(3.5rem, 8vw, 6rem)',
-        paddingBottom: 'clamp(3.5rem, 8vw, 5.5rem)',
-      }}
+      className="py-16 sm:py-24"
+      style={{ background: '#F5F3EF' }}
     >
       <Container>
         <div className="grid gap-12 sm:grid-cols-2 sm:gap-24">
