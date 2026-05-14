@@ -8,43 +8,78 @@ import HomeHero from '@/components/home/HomeHero'
 function DualIntent() {
   return (
     <section
-      className="py-16 sm:py-24"
+      className="py-20 sm:py-28"
       style={{ background: '#F5F3EF' }}
     >
       <Container>
-        <div className="grid gap-12 sm:grid-cols-2 sm:gap-24">
 
-          <div>
-            <div className="mb-5 h-px w-7" style={{ background: 'rgba(56,160,158,0.50)' }} />
-            <h2
-              className="mb-5 text-navy-950"
-              style={{ fontSize: 'clamp(1.4rem, 2.4vw, 2rem)', letterSpacing: '-0.035em', lineHeight: '1.14', fontWeight: 640 }}
+        {/* Section heading */}
+        <div className="mb-14 sm:mb-16 max-w-[600px]">
+          <h2
+            className="mb-4 text-navy-950"
+            style={{ fontSize: 'clamp(1.75rem, 3vw, 2.5rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
+          >
+            Two ways forward.
+          </h2>
+          <p
+            style={{ fontSize: '16px', lineHeight: '1.78', color: 'rgba(12,24,38,0.50)', maxWidth: '480px' }}
+          >
+            Join a collective shaped around what you&apos;re ready to explore — or build one around the work you&apos;re here to share.
+          </p>
+        </div>
+
+        {/* Columns */}
+        <div className="grid gap-0 sm:grid-cols-2" style={{ borderTop: '1px solid rgba(12,24,38,0.08)' }}>
+
+          <div
+            className="py-10 sm:py-12 sm:pr-16"
+            style={{ borderBottom: '1px solid rgba(12,24,38,0.06)' }}
+          >
+            <p
+              className="mb-4 text-navy-950"
+              style={{ fontSize: '11px', fontWeight: 650, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(56,160,158,0.80)' }}
             >
-              A more intentional<br />way to grow.
-            </h2>
-            <p className="text-[15px] leading-[1.84]" style={{ color: 'rgba(12,24,38,0.52)' }}>
-              Most growth happens by accident — in reaction to pressure, to loss,
-              to necessity. Fresh Collective offers something rarer: a structured
-              environment where growth is deliberate, paced, and yours to keep.
+              For people ready to grow
             </p>
+            <p className="mb-7 text-[15.5px] leading-[1.80]" style={{ color: 'rgba(12,24,38,0.56)' }}>
+              Find guided collectives built around real practice, shared conversation, and ideas that move into everyday life.
+            </p>
+            <Link
+              href="/spaces"
+              className="text-[14px] font-semibold transition-opacity hover:opacity-60"
+              style={{ color: '#38A09E', letterSpacing: '-0.01em' }}
+            >
+              Explore Collectives →
+            </Link>
           </div>
 
-          <div className="sm:pt-14">
-            <div className="mb-5 h-px w-7" style={{ background: 'rgba(212,176,72,0.50)' }} />
-            <h2
-              className="mb-5 text-navy-950"
-              style={{ fontSize: 'clamp(1.4rem, 2.4vw, 2rem)', letterSpacing: '-0.035em', lineHeight: '1.14', fontWeight: 640 }}
+          <div
+            className="py-10 sm:py-12 sm:pl-16"
+            style={{
+              borderLeft: '1px solid rgba(12,24,38,0.08)',
+              borderBottom: '1px solid rgba(12,24,38,0.06)',
+            }}
+          >
+            <p
+              className="mb-4"
+              style={{ fontSize: '11px', fontWeight: 650, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(140,100,30,0.75)' }}
             >
-              Environments where<br />people actually change.
-            </h2>
-            <p className="text-[15px] leading-[1.84]" style={{ color: 'rgba(12,24,38,0.52)' }}>
-              Information is abundant. What changes people is the right container —
-              the right questions, at the right time, with others moving through the
-              same thing. That is what we have built.
+              For people ready to guide
             </p>
+            <p className="mb-7 text-[15.5px] leading-[1.80]" style={{ color: 'rgba(12,24,38,0.56)' }}>
+              Build an intentional collective around your work, your questions, and the change you want to help people practise.
+            </p>
+            <Link
+              href="/signup"
+              className="text-[14px] font-semibold transition-opacity hover:opacity-60"
+              style={{ color: '#9A7420', letterSpacing: '-0.01em' }}
+            >
+              Build a Collective →
+            </Link>
           </div>
 
         </div>
+
       </Container>
     </section>
   )
