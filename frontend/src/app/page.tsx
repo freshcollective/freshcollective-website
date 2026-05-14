@@ -502,179 +502,216 @@ function EcosystemStatement() {
   )
 }
 
-/* ─── Fresh Ideas (dark) ────────────────────────────────────────────────────── */
+/* ─── Fresh Ideas (dark card) ───────────────────────────────────────────────── */
 
 function FreshIdeas() {
   return (
-    <section
-      className="relative overflow-hidden py-24 sm:py-32"
-      style={{ background: '#0C1F1F' }}
-    >
-      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div style={{
-          position: 'absolute', top: '-20%', right: '-10%',
-          width: '700px', height: '700px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(56,160,158,0.10) 0%, transparent 60%)',
-          filter: 'blur(80px)',
-        }} />
-      </div>
+    <section className="py-12 sm:py-20" style={{ background: '#FAFAF8' }}>
+      <Container>
+        {/* Wrapper — sm:pt-16 reserves space above the card for floating cards */}
+        <div className="relative sm:pt-16">
 
-      <Container className="relative">
-        <div className="grid items-center gap-14 sm:grid-cols-[55%_45%] sm:gap-10">
-
-          <div>
-            <div className="mb-8 flex items-center gap-3">
-              <div className="h-px w-8" style={{ background: 'rgba(85,184,182,0.35)' }} />
-              <span
-                className="text-[11px] font-semibold uppercase tracking-[0.14em]"
-                style={{ color: 'rgba(255,255,255,0.28)' }}
-              >
-                A different kind of learning
-              </span>
-            </div>
-
-            <h2
-              className="mb-8 text-white"
-              style={{ fontSize: 'clamp(2.25rem, 4.5vw, 4rem)', letterSpacing: '-0.04em', lineHeight: '1.07', fontWeight: 650 }}
-            >
-              Fresh ideas need
-              <br />
-              <span style={{ color: 'rgba(255,255,255,0.28)' }}>spaces to grow.</span>
-            </h2>
-
-            <p
-              className="mb-12 text-[16px] leading-[1.88]"
-              style={{ color: 'rgba(255,255,255,0.46)', maxWidth: '440px' }}
-            >
-              We do not believe in passive consumption. Inside Fresh Collective,
-              you are always in motion — reflecting, connecting, integrating — with
-              enough structure to hold you and enough space to breathe.
-            </p>
-
+          {/* ── Dark card ──────────────────────────────────────────────────── */}
+          <div
+            className="relative overflow-hidden"
+            style={{
+              borderRadius: '24px',
+              background: '#071824',
+              border: '1px solid rgba(255,255,255,0.07)',
+              boxShadow: '0 48px 120px rgba(0,0,0,0.30), 0 16px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.12)',
+            }}
+          >
+            {/* Teal radial glow — top right */}
             <div
-              className="grid grid-cols-3 gap-6"
-              style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '2.5rem' }}
-            >
-              {[
-                { stat: '4', label: 'REAL phases' },
-                { stat: '1×', label: 'Live call monthly', gold: true },
-                { stat: '∞', label: 'Your pace' },
-              ].map(({ stat, label, gold }) => (
-                <div key={label}>
-                  <div
-                    className="mb-1 font-semibold"
-                    style={{
-                      fontSize: 'clamp(1.75rem, 3vw, 2.5rem)',
-                      letterSpacing: '-0.04em',
-                      lineHeight: '1',
-                      color: gold ? '#D4B048' : 'rgba(255,255,255,0.88)',
-                    }}
-                  >
-                    {stat}
+              className="pointer-events-none absolute inset-0"
+              aria-hidden="true"
+              style={{
+                background: 'radial-gradient(ellipse 80% 60% at 90% -5%, rgba(56,160,158,0.22) 0%, transparent 65%)',
+              }}
+            />
+            {/* Subtle secondary glow — bottom left */}
+            <div
+              className="pointer-events-none absolute inset-0"
+              aria-hidden="true"
+              style={{
+                background: 'radial-gradient(ellipse 50% 55% at -5% 105%, rgba(56,160,158,0.09) 0%, transparent 60%)',
+              }}
+            />
+
+            <div style={{ padding: 'clamp(2.5rem, 5vw, 4rem)' }}>
+
+              {/* Eyebrow */}
+              <div className="mb-8 flex items-center gap-3">
+                <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.38)' }} />
+                <span style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.20em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)' }}>
+                  A different kind of space
+                </span>
+              </div>
+
+              {/* Heading */}
+              <h2
+                style={{
+                  fontSize: 'clamp(2.5rem, 4.5vw, 4.25rem)',
+                  letterSpacing: '-0.04em',
+                  lineHeight: '1.05',
+                  fontWeight: 660,
+                  marginBottom: '1.75rem',
+                  maxWidth: '640px',
+                }}
+              >
+                <span style={{ color: '#FFFFFF' }}>Fresh ideas need</span>
+                <br />
+                <span
+                  style={{
+                    backgroundImage: 'linear-gradient(90deg, #42C7C6 0%, #7FDAD9 35%, #D8F5F2 65%, #FFFFFF 90%)',
+                    WebkitBackgroundClip: 'text',
+                    backgroundClip: 'text',
+                    color: 'transparent',
+                  }}
+                >
+                  spaces to grow.
+                </span>
+              </h2>
+
+              {/* Body */}
+              <div style={{ maxWidth: '520px', marginBottom: '3.5rem' }}>
+                <p
+                  style={{
+                    fontSize: 'clamp(0.9375rem, 1.4vw, 1.0625rem)',
+                    lineHeight: '1.82',
+                    color: 'rgba(255,255,255,0.52)',
+                    marginBottom: '1.125rem',
+                  }}
+                >
+                  Fresh Collective is built for ideas that are ready to move beyond content and become lived experience.
+                </p>
+                <p
+                  style={{
+                    fontSize: 'clamp(0.9375rem, 1.4vw, 1.0625rem)',
+                    lineHeight: '1.82',
+                    color: 'rgba(255,255,255,0.38)',
+                  }}
+                >
+                  Not passive courses. Not scattered communities. A connected ecosystem where learning has somewhere to land, deepen, and grow.
+                </p>
+              </div>
+
+              {/* Supporting points */}
+              <div
+                className="grid gap-8 sm:grid-cols-3"
+                style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '2.5rem' }}
+              >
+                {[
+                  { num: '01', title: 'Educators and practitioners', body: 'Creating the conditions their work needs.' },
+                  { num: '02', title: 'People ready to live differently', body: 'Finding structures that turn ideas into genuine change.' },
+                  { num: '03', title: 'Ideas that need room to develop', body: 'Given depth, community, and the right conditions to take root.' },
+                ].map(({ num, title, body }) => (
+                  <div key={num}>
+                    <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.20em', textTransform: 'uppercase' as const, color: 'rgba(85,184,182,0.55)', marginBottom: '0.75rem' }}>
+                      {num}
+                    </div>
+                    <div style={{ fontSize: '13.5px', fontWeight: 620, letterSpacing: '-0.02em', color: 'rgba(255,255,255,0.80)', lineHeight: '1.4', marginBottom: '0.5rem' }}>
+                      {title}
+                    </div>
+                    <div style={{ fontSize: '13px', lineHeight: '1.68', color: 'rgba(255,255,255,0.36)' }}>
+                      {body}
+                    </div>
                   </div>
-                  <div
-                    className="text-[12px] font-medium uppercase tracking-[0.10em]"
-                    style={{ color: 'rgba(255,255,255,0.28)' }}
-                  >
-                    {label}
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
+
             </div>
           </div>
 
-          {/* Documentary artifacts */}
-          <div className="relative hidden sm:block" style={{ height: '420px' }}>
+          {/* ── Floating cards — desktop only, bridge into top of dark card ── */}
+          <div className="pointer-events-none absolute inset-0 hidden sm:block" aria-hidden="true">
 
+            {/* Card 4: Collective signal — white, leftmost */}
             <div
-              className="absolute rounded-xl bg-white p-5"
+              className="absolute rounded-xl bg-white"
               style={{
-                width: '215px', bottom: '28px', left: '0',
-                transform: 'rotate(-3.5deg)',
-                boxShadow: '0 20px 60px rgba(0,0,0,0.50)',
+                width: '160px',
+                top: '6px',
+                right: '432px',
+                padding: '14px 15px',
+                transform: 'rotate(-2deg)',
+                border: '1px solid rgba(15,23,42,0.07)',
+                boxShadow: '0 6px 20px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05)',
               }}
             >
-              <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-600">
-                REAL Journey · Phase 1
+              <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '6px' }}>
+                Collective signal
               </div>
-              <div className="mb-3 text-navy-950" style={{ fontSize: '13.5px', fontWeight: 620, letterSpacing: '-0.02em' }}>
-                Recognise
-              </div>
-              <div className="space-y-1.5">
-                <div className="h-1.5 rounded-full" style={{ background: '#E8E8E5' }} />
-                <div className="h-1.5 w-4/5 rounded-full" style={{ background: '#E8E8E5' }} />
-                <div className="h-1.5 w-3/5 rounded-full" style={{ background: '#E8E8E5' }} />
-              </div>
-              <div className="mt-4 flex gap-1">
-                <div className="h-1 flex-1 rounded-full bg-teal-500" />
-                <div className="h-1 flex-1 rounded-full" style={{ background: '#E8E8E5' }} />
-                <div className="h-1 flex-1 rounded-full" style={{ background: '#E8E8E5' }} />
-                <div className="h-1 flex-1 rounded-full" style={{ background: '#E8E8E5' }} />
+              <div style={{ fontSize: '13px', fontWeight: 500, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: '1.4' }}>
+                12 members reflecting
               </div>
             </div>
 
+            {/* Card 1: Question prompt — white, center-left */}
             <div
-              className="absolute rounded-xl p-5"
+              className="absolute rounded-2xl bg-white"
               style={{
-                width: '225px', top: '38px', left: '72px',
-                background: '#F5F0E8',
+                width: '220px',
+                top: '12px',
+                right: '192px',
+                padding: '15px 16px',
+                transform: 'rotate(-2.5deg)',
+                border: '1px solid rgba(15,23,42,0.08)',
+                boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 3px 10px rgba(0,0,0,0.06)',
+              }}
+            >
+              <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '8px' }}>
+                Question prompt
+              </div>
+              <div style={{ fontSize: '12.5px', fontWeight: 500, lineHeight: '1.55', letterSpacing: '-0.01em', color: '#0F172A' }}>
+                &ldquo;What are you actually saying yes to?&rdquo;
+              </div>
+            </div>
+
+            {/* Card 3: Practice note — pale teal tint, below Card 1 */}
+            <div
+              className="absolute rounded-xl"
+              style={{
+                width: '184px',
+                top: '66px',
+                right: '212px',
+                padding: '13px 15px',
+                background: '#F4FAFA',
+                border: '1px solid rgba(56,160,158,0.18)',
                 transform: 'rotate(1.8deg)',
-                boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.08)',
               }}
             >
-              <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: '#9A7420' }}>
-                Monthly Prompt
+              <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: 'rgba(15,23,42,0.36)', marginBottom: '7px' }}>
+                Practice note
               </div>
-              <div className="mb-3 text-navy-950" style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.55', letterSpacing: '-0.01em' }}>
-                What would it feel like to stop carrying this alone?
-              </div>
-              <div className="space-y-1.5">
-                <div className="h-1.5 rounded-full" style={{ background: '#DFCA7A' }} />
-                <div className="h-1.5 w-5/6 rounded-full" style={{ background: '#DFCA7A' }} />
-                <div className="h-1.5 w-2/3 rounded-full" style={{ background: '#DFCA7A' }} />
+              <div style={{ fontSize: '12.5px', fontWeight: 500, lineHeight: '1.5', color: '#0F172A', letterSpacing: '-0.01em' }}>
+                One small experiment this week
               </div>
             </div>
 
+            {/* Card 2: Live call — dark, rightmost */}
             <div
-              className="absolute rounded-xl p-5"
+              className="absolute rounded-2xl"
               style={{
-                width: '198px', top: '8px', right: '8px',
-                background: '#0C1826',
-                border: '1px solid rgba(255,255,255,0.08)',
-                transform: 'rotate(-1.2deg)',
-                boxShadow: '0 24px 64px rgba(0,0,0,0.65)',
+                width: '170px',
+                top: '10px',
+                right: '10px',
+                padding: '14px 15px',
+                background: '#0D2232',
+                border: '1px solid rgba(255,255,255,0.10)',
+                transform: 'rotate(2deg)',
+                boxShadow: '0 20px 56px rgba(0,0,0,0.40), 0 4px 14px rgba(0,0,0,0.24)',
               }}
             >
-              <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-400">
-                Live Call
+              <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#55B8B6', marginBottom: '7px' }}>
+                Live call
               </div>
-              <div className="mb-0.5 text-[13.5px] font-semibold text-white">Monthly gathering</div>
-              <div className="mb-5 text-[11.5px]" style={{ color: 'rgba(255,255,255,0.35)' }}>60 min · Structured · Led</div>
-              <div
-                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold"
-                style={{ background: 'rgba(212,176,72,0.12)', color: '#D4B048' }}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                Upcoming
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#FFFFFF', letterSpacing: '-0.02em', lineHeight: '1.3', marginBottom: '3px' }}>
+                Monthly gathering
               </div>
-            </div>
-
-            <div
-              className="absolute rounded-xl p-4"
-              style={{
-                width: '172px', bottom: '18px', right: '4px',
-                background: 'rgba(255,255,255,0.08)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                transform: 'rotate(2.2deg)',
-                boxShadow: '0 12px 36px rgba(0,0,0,0.40)',
-              }}
-            >
-              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-300">
-                Community
-              </div>
-              <div className="text-[12px] leading-[1.65]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                Women in the same phase, at the same time.
+              <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.40)', letterSpacing: '-0.01em' }}>
+                7:30pm
               </div>
             </div>
 
