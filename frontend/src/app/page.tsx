@@ -172,7 +172,7 @@ function DualIntent() {
 
             <div className="mt-auto">
               <Link
-                href="/signup"
+                href="/for-creators"
                 className="inline-flex items-center text-[14.5px] font-bold transition-opacity hover:opacity-90"
                 style={{ color: '#8FE3E2' }}
               >
@@ -1122,7 +1122,7 @@ function FinalCTA() {
               </span>
 
               <Link
-                href="/signup"
+                href="/for-creators"
                 className="inline-flex items-center rounded-xl px-8 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px hover:bg-[#E8FAFA]"
                 style={{
                   background: '#ffffff',

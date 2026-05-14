@@ -122,7 +122,7 @@ export default function HomeHero() {
               Explore Collectives
             </Link>
             <Link
-              href="/signup"
+              href="/for-creators"
               className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px bg-white hover:bg-[#F6F6F6]"
               style={{
                 border: '1px solid rgba(255,255,255,0.12)',
