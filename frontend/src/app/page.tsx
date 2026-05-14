@@ -605,46 +605,148 @@ function FreshIdeas() {
 
 function TheWayWeFeelSection() {
   return (
-    <section className="py-16 sm:py-24" style={{ background: '#FAFAF8' }}>
+    <section className="py-20 sm:py-28" style={{ background: '#FFFFFF' }}>
       <Container>
 
-        <div className="mb-12 max-w-[560px]">
+        {/* ── Centred heading block ──────────────────────────────────────── */}
+        <div className="mb-16 sm:mb-20 text-center">
+
+          {/* Eyebrow */}
+          <div className="mb-6 flex items-center justify-center gap-3">
+            <div style={{ height: '1px', width: '1.5rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
+            <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E' }}>
+              The real shift
+            </span>
+            <div style={{ height: '1px', width: '1.5rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
+          </div>
+
+          {/* Heading */}
           <h2
-            className="text-navy-950"
-            style={{ fontSize: 'clamp(1.875rem, 3.75vw, 3.25rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
+            style={{
+              fontSize: 'clamp(2.25rem, 4vw, 3.75rem)',
+              letterSpacing: '-0.04em',
+              lineHeight: '1.08',
+              fontWeight: 660,
+              marginBottom: '1.5rem',
+            }}
           >
-            The way we feel changes<br />
-            <span style={{ color: 'rgba(12,24,38,0.30)' }}>what becomes possible.</span>
+            <span style={{ display: 'block', color: '#0F172A' }}>The way we feel changes</span>
+            <span
+              style={{
+                display: 'block',
+                backgroundImage: 'linear-gradient(95deg, #1D7E7C 0%, #38A09E 45%, #55C4C2 100%)',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent',
+              }}
+            >
+              what becomes possible.
+            </span>
           </h2>
+
+          {/* Supporting line */}
+          <p
+            style={{
+              fontSize: 'clamp(0.9375rem, 1.3vw, 1.0625rem)',
+              lineHeight: '1.78',
+              color: 'rgba(15,23,42,0.52)',
+              maxWidth: '480px',
+              margin: '0 auto',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            Growth lands differently when the body feels safe, the pace feels human, and the work has somewhere to go.
+          </p>
         </div>
 
-        <div className="grid gap-10 sm:grid-cols-3">
-          {[
-            {
-              rule: 'A more settled mind.',
-              body: 'When you have a framework for where you are and where you are headed, the noise quiets. Clarity is not a luxury — it is the starting point.',
-              accent: 'rgba(56,160,158,0.70)',
-            },
-            {
-              rule: 'In it with others, honestly.',
-              body: 'Not a curated highlight reel. Real people moving through real phases — with enough structure that the conversations go somewhere.',
-              accent: 'rgba(212,176,72,0.70)',
-              offset: true,
-            },
-            {
-              rule: 'A thread back to yourself.',
-              body: 'When life is full and loud, the REAL Journey gives you something to return to — a stable, consistent thread through all of it.',
-              accent: 'rgba(45,77,115,0.60)',
-            },
-          ].map(({ rule, body, accent, offset }) => (
-            <div key={rule} className={offset ? 'sm:pt-10' : ''}>
-              <div className="mb-5 h-px w-6" style={{ background: accent }} />
-              <p className="mb-3 text-navy-950" style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}>
-                {rule}
-              </p>
-              <p className="text-[15px] leading-[1.82] text-navy-500">{body}</p>
+        {/* ── Three tiles ───────────────────────────────────────────────── */}
+        <div className="grid gap-5 sm:grid-cols-3">
+
+          {/* Tile 1 — teal */}
+          <div
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid rgba(56,160,158,0.16)',
+              borderRadius: '20px',
+              padding: '2rem 2.25rem',
+              boxShadow: '0 2px 16px rgba(56,160,158,0.07), 0 1px 3px rgba(0,0,0,0.04)',
+            }}
+          >
+            <div
+              style={{
+                width: '36px', height: '36px', borderRadius: '50%',
+                background: 'rgba(56,160,158,0.10)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: '1.5rem',
+              }}
+            >
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#38A09E' }} />
             </div>
-          ))}
+            <h3 style={{ fontSize: '18px', fontWeight: 650, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.3', marginBottom: '0.75rem' }}>
+              A more settled mind.
+            </h3>
+            <p style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.65)', letterSpacing: '-0.01em' }}>
+              When you have a framework for where you are and where you are headed, the noise quiets. Clarity is not a luxury — it is the starting point.
+            </p>
+          </div>
+
+          {/* Tile 2 — gold, slight stagger */}
+          <div
+            className="sm:mt-6"
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid rgba(212,176,72,0.20)',
+              borderRadius: '20px',
+              padding: '2rem 2.25rem',
+              boxShadow: '0 2px 16px rgba(212,176,72,0.08), 0 1px 3px rgba(0,0,0,0.04)',
+            }}
+          >
+            <div
+              style={{
+                width: '36px', height: '36px', borderRadius: '50%',
+                background: 'rgba(212,176,72,0.12)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: '1.5rem',
+              }}
+            >
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#C4981A' }} />
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 650, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.3', marginBottom: '0.75rem' }}>
+              In it with others, honestly.
+            </h3>
+            <p style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.65)', letterSpacing: '-0.01em' }}>
+              Not a curated highlight reel. Real people moving through real phases — with enough structure that the conversations go somewhere.
+            </p>
+          </div>
+
+          {/* Tile 3 — navy */}
+          <div
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid rgba(30,51,84,0.10)',
+              borderRadius: '20px',
+              padding: '2rem 2.25rem',
+              boxShadow: '0 2px 12px rgba(30,51,84,0.06), 0 1px 3px rgba(0,0,0,0.04)',
+            }}
+          >
+            <div
+              style={{
+                width: '36px', height: '36px', borderRadius: '50%',
+                background: 'rgba(30,51,84,0.07)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                marginBottom: '1.5rem',
+              }}
+            >
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#1E3354' }} />
+            </div>
+            <h3 style={{ fontSize: '18px', fontWeight: 650, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.3', marginBottom: '0.75rem' }}>
+              A thread back to yourself.
+            </h3>
+            <p style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.65)', letterSpacing: '-0.01em' }}>
+              When life is full and loud, the REAL Journey gives you something to return to — a stable, consistent thread through all of it.
+            </p>
+          </div>
+
         </div>
 
       </Container>
