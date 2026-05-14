@@ -57,8 +57,8 @@ function DualIntent() {
           <div
             className="flex flex-col rounded-2xl p-8 sm:p-10"
             style={{
-              background: '#FFFFFF',
-              border: '1px solid rgba(15,23,42,0.09)',
+              background: '#F4FBFA',
+              border: '1px solid rgba(56,160,158,0.14)',
               boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.04), 0 16px 48px rgba(0,0,0,0.09)',
             }}
           >
@@ -120,8 +120,8 @@ function DualIntent() {
           <div
             className="flex flex-col rounded-2xl p-8 sm:p-10"
             style={{
-              background: '#FFFFFF',
-              border: '1px solid rgba(15,23,42,0.09)',
+              background: '#FFFBF2',
+              border: '1px solid rgba(212,176,72,0.18)',
               boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.04), 0 16px 48px rgba(0,0,0,0.09)',
             }}
           >
