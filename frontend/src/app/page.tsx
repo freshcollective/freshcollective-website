@@ -634,7 +634,7 @@ function TheWayWeFeelSection() {
             <span
               style={{
                 display: 'block',
-                backgroundImage: 'linear-gradient(95deg, #1D7E7C 0%, #38A09E 45%, #55C4C2 100%)',
+                backgroundImage: 'linear-gradient(100deg, #1BA7A5 0%, #42C7C6 38%, #8FE3E2 68%, #FFFFFF 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
@@ -757,117 +757,242 @@ function TheWayWeFeelSection() {
 /* ─── Where the Learning Lives ──────────────────────────────────────────────── */
 
 function WhereTheLearningLives() {
+  const features: { title: string; desc: string; iconBg: string; iconColor: string }[] = [
+    {
+      title: 'The REAL Journey',
+      desc: 'A clear pathway through Recognise, Explore, Align, and Lead.',
+      iconBg: 'rgba(56,160,158,0.12)',
+      iconColor: '#38A09E',
+    },
+    {
+      title: 'Live Layer',
+      desc: 'Monthly gatherings, community prompts, and shared conversation.',
+      iconBg: 'rgba(212,176,72,0.14)',
+      iconColor: '#C4981A',
+    },
+    {
+      title: 'Deepening Pathways',
+      desc: 'Focused rooms for Growth, Transformation, Essence, and what comes next.',
+      iconBg: 'rgba(56,160,158,0.12)',
+      iconColor: '#38A09E',
+    },
+    {
+      title: 'Practical Tools',
+      desc: 'Reflections, practices, and resources designed for real life.',
+      iconBg: 'rgba(56,160,158,0.12)',
+      iconColor: '#38A09E',
+    },
+    {
+      title: 'Community Rhythm',
+      desc: 'A place to return to, reconnect, and keep going with others.',
+      iconBg: 'rgba(56,160,158,0.12)',
+      iconColor: '#38A09E',
+    },
+  ]
+
   return (
-    <section className="py-16 sm:py-24" style={{ background: '#F5F0E8' }}>
+    <section className="py-20 sm:py-28" style={{ background: '#F3FAFA' }}>
       <Container>
+        <div className="grid items-center gap-12 sm:grid-cols-[45%_55%] sm:gap-16">
 
-        <div className="mb-10">
-          <div className="mb-3 flex items-center gap-3">
-            <div className="h-px w-8 bg-teal-500" style={{ opacity: 0.5 }} />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-600">
-              The structure
-            </span>
-          </div>
-          <h2
-            className="text-navy-950"
-            style={{ fontSize: 'clamp(1.75rem, 3.25vw, 2.75rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
-          >
-            Where the learning lives.
-          </h2>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-
+          {/* ── Visual panel ────────────────────────────────────────────────── */}
           <div
-            className="rounded-2xl p-7 sm:col-span-2 lg:col-span-1 lg:row-span-2"
+            className="relative overflow-hidden"
             style={{
-              background: '#ffffff',
-              border: '1px solid rgba(0,0,0,0.06)',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05)',
+              borderRadius: '20px',
+              background: 'linear-gradient(155deg, #0A1F20 0%, #0D2B2B 55%, #091C1C 100%)',
+              minHeight: '420px',
+              boxShadow: '0 24px 64px rgba(0,0,0,0.20), 0 4px 16px rgba(0,0,0,0.10)',
             }}
           >
+            {/* Teal glow */}
             <div
-              className="mb-4 select-none"
-              style={{ fontSize: '5.5rem', fontWeight: 650, lineHeight: '1', letterSpacing: '-0.06em', color: 'rgba(56,160,158,0.12)' }}
+              className="pointer-events-none absolute inset-0"
               aria-hidden="true"
-            >
-              01
+              style={{
+                background: 'radial-gradient(ellipse 80% 55% at 55% 15%, rgba(56,160,158,0.28) 0%, transparent 65%)',
+              }}
+            />
+
+            <div style={{ padding: '28px', position: 'relative' }}>
+
+              {/* Label badge */}
+              <div
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '7px',
+                  background: 'rgba(56,160,158,0.14)',
+                  border: '1px solid rgba(85,184,182,0.22)',
+                  borderRadius: '8px',
+                  padding: '5px 12px',
+                  marginBottom: '22px',
+                }}
+              >
+                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#42C7C6' }} />
+                <span style={{ fontSize: '10.5px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#7FDAD9' }}>
+                  Guided pathway
+                </span>
+              </div>
+
+              {/* REAL Journey card */}
+              <div
+                style={{
+                  background: 'rgba(255,255,255,0.06)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  borderRadius: '14px',
+                  padding: '18px 20px',
+                  marginBottom: '12px',
+                }}
+              >
+                <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase' as const, color: '#42C7C6', marginBottom: '12px' }}>
+                  REAL Journey
+                </div>
+                <div style={{ display: 'flex', gap: '7px', marginBottom: '14px' }}>
+                  {(['R', 'E', 'A', 'L'] as const).map((letter, i) => (
+                    <div
+                      key={letter}
+                      style={{
+                        flex: 1, height: '36px', borderRadius: '8px',
+                        background: i === 0 ? 'rgba(56,160,158,0.28)' : 'rgba(255,255,255,0.05)',
+                        border: `1px solid ${i === 0 ? 'rgba(56,160,158,0.40)' : 'rgba(255,255,255,0.06)'}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: i === 0 ? '#7FDAD9' : 'rgba(255,255,255,0.28)' }}>
+                        {letter}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.07)' }}>
+                  <div style={{ height: '3px', width: '28%', borderRadius: '2px', backgroundImage: 'linear-gradient(90deg, #38A09E, #55C4C2)' }} />
+                </div>
+              </div>
+
+              {/* Two smaller cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '12px',
+                    padding: '14px 15px',
+                  }}
+                >
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#D4B048', marginBottom: '6px' }}>
+                    Live Layer
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.55)', lineHeight: '1.5' }}>
+                    Monthly gathering
+                  </div>
+                </div>
+                <div
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '12px',
+                    padding: '14px 15px',
+                  }}
+                >
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: 'rgba(255,255,255,0.32)', marginBottom: '6px' }}>
+                    Practice
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.55)', lineHeight: '1.5' }}>
+                    One experiment this week
+                  </div>
+                </div>
+              </div>
+
             </div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-600">
-              Start Here
-            </p>
-            <h3 className="mb-4 text-navy-950" style={{ fontSize: '1.25rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}>
-              REAL Journey
-            </h3>
-            <p className="mb-6 text-[15px] leading-[1.82] text-navy-500">
-              Four phases — Recognise, Explore, Align, Lead. The foundation every member
-              begins with. Bite-sized. Stabilising. Something to return to, again and again.
-            </p>
-            <Link href="/real-journey" className="text-[13.5px] font-semibold text-teal-600 underline-offset-2 transition-opacity hover:opacity-70 hover:underline">
-              Learn more →
-            </Link>
           </div>
 
-          <div
-            className="rounded-2xl p-7"
-            style={{
-              background: '#ffffff',
-              border: '1px solid rgba(0,0,0,0.06)',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05)',
-            }}
-          >
-            <div
-              className="mb-4 select-none"
-              style={{ fontSize: '5.5rem', fontWeight: 650, lineHeight: '1', letterSpacing: '-0.06em', color: 'rgba(212,176,72,0.15)' }}
-              aria-hidden="true"
-            >
-              02
-            </div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: '#9A7420' }}>
-              The Heart
-            </p>
-            <h3 className="mb-3 text-navy-950" style={{ fontSize: '1.125rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}>
-              Live Layer
-            </h3>
-            <p className="mb-5 text-[15px] leading-[1.82] text-navy-500">
-              Monthly live calls. Community prompts. Integration threads.
-              The place where the membership comes alive.
-            </p>
-            <Link href="/membership" className="text-[13.5px] font-semibold underline-offset-2 transition-opacity hover:opacity-70 hover:underline" style={{ color: '#9A7420' }}>
-              Explore Membership →
-            </Link>
-          </div>
+          {/* ── Text + feature list ──────────────────────────────────────────── */}
+          <div>
 
-          <div
-            className="rounded-2xl p-7"
-            style={{
-              background: '#ffffff',
-              border: '1px solid rgba(0,0,0,0.06)',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05)',
-            }}
-          >
-            <div
-              className="mb-4 select-none"
-              style={{ fontSize: '5.5rem', fontWeight: 650, lineHeight: '1', letterSpacing: '-0.06em', color: 'rgba(30,51,84,0.10)' }}
-              aria-hidden="true"
-            >
-              03
+            {/* Eyebrow */}
+            <div className="mb-6 flex items-center gap-3">
+              <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
+              <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#38A09E' }}>
+                The structure
+              </span>
             </div>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-navy-400">
-              The Rooms
-            </p>
-            <h3 className="mb-3 text-navy-950" style={{ fontSize: '1.125rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}>
-              Deepening Pathways
-            </h3>
-            <p className="mb-5 text-[15px] leading-[1.82] text-navy-500">
-              Growth, Transformation, Essence. Once you have your foundation,
-              the pathways take you deeper — at your own pace.
-            </p>
-            <Link href="/membership" className="text-[13.5px] font-semibold text-navy-500 underline-offset-2 transition-opacity hover:opacity-70 hover:underline">
-              Explore Membership →
-            </Link>
-          </div>
 
+            {/* Heading */}
+            <h2
+              style={{
+                fontSize: 'clamp(1.75rem, 2.8vw, 2.75rem)',
+                letterSpacing: '-0.04em',
+                lineHeight: '1.1',
+                fontWeight: 660,
+                color: '#0F172A',
+                marginBottom: '1.25rem',
+              }}
+            >
+              Everything your collective needs to become{' '}
+              <span
+                style={{
+                  backgroundImage: 'linear-gradient(100deg, #1BA7A5 0%, #42C7C6 50%, #8FE3E2 100%)',
+                  WebkitBackgroundClip: 'text',
+                  backgroundClip: 'text',
+                  color: 'transparent',
+                }}
+              >
+                lived practice.
+              </span>
+            </h2>
+
+            {/* Supporting line */}
+            <p
+              style={{
+                fontSize: 'clamp(0.9375rem, 1.2vw, 1rem)',
+                lineHeight: '1.78',
+                color: 'rgba(15,23,42,0.54)',
+                marginBottom: '2rem',
+                letterSpacing: '-0.01em',
+                maxWidth: '420px',
+              }}
+            >
+              Fresh Collective brings together the structure, rhythm, and community that help ideas move from insight into everyday life.
+            </p>
+
+            {/* Feature rows */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {features.map(({ title, desc, iconBg, iconColor }) => (
+                <div
+                  key={title}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '14px',
+                    padding: '14px 16px',
+                    background: '#FFFFFF',
+                    border: '1px solid rgba(15,23,42,0.07)',
+                    borderRadius: '12px',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '32px', height: '32px', borderRadius: '8px',
+                      background: iconBg,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ width: '12px', height: '12px', borderRadius: '3px', background: iconColor }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '14px', fontWeight: 650, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: '1.3', marginBottom: '2px' }}>
+                      {title}
+                    </div>
+                    <div style={{ fontSize: '13px', color: 'rgba(15,23,42,0.56)', lineHeight: '1.55', letterSpacing: '-0.01em' }}>
+                      {desc}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+          </div>
         </div>
       </Container>
     </section>
