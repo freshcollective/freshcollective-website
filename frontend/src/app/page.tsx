@@ -9,7 +9,7 @@ function DualIntent() {
   return (
     <section
       className="py-16 sm:py-24"
-      style={{ background: '#F5F3EF' }}
+      style={{ background: '#FFFFFF' }}
     >
       <Container>
 
@@ -17,19 +17,19 @@ function DualIntent() {
         <div className="mb-14 sm:mb-16" style={{ maxWidth: '540px' }}>
           <p
             className="mb-7"
-            style={{ fontSize: '10.5px', fontWeight: 650, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(12,24,38,0.30)' }}
+            style={{ fontSize: '10.5px', fontWeight: 650, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(12,24,38,0.36)' }}
           >
             For learners and creators
           </p>
           <div
-            className="mb-6 text-navy-950"
+            className="mb-6"
             style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.48', fontWeight: 640 }}
           >
-            <p>Some people come to explore new ways of living, learning, and growing.</p>
-            <p className="mt-4" style={{ color: 'rgba(12,24,38,0.55)' }}>
+            <p style={{ color: 'rgba(12,24,38,0.92)' }}>Some people come to explore new ways of living, learning, and growing.</p>
+            <p className="mt-4" style={{ color: 'rgba(12,24,38,0.52)' }}>
               Others come to build the kinds of environments they wish existed — spaces for conversation, practice, creativity, and real change.
             </p>
-            <p className="mt-4" style={{ color: 'rgba(12,24,38,0.38)' }}>Fresh Collective brings both together.</p>
+            <p className="mt-4" style={{ color: 'rgba(12,24,38,0.32)' }}>Fresh Collective brings both together.</p>
           </div>
           <div className="mt-8 flex flex-wrap gap-x-7 gap-y-2">
             <Link
@@ -42,7 +42,7 @@ function DualIntent() {
             <Link
               href="/signup"
               className="text-[14px] font-semibold transition-opacity hover:opacity-60"
-              style={{ color: 'rgba(12,24,38,0.38)' }}
+              style={{ color: 'rgba(12,24,38,0.42)' }}
             >
               Build a Collective →
             </Link>
@@ -61,7 +61,8 @@ function DualIntent() {
               style={{
                 width: '210px', top: '0', left: '0',
                 transform: 'rotate(-2.5deg)',
-                boxShadow: '0 12px 40px rgba(0,0,0,0.09)',
+                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.13)',
+                border: '1px solid rgba(0,0,0,0.05)',
               }}
             >
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
@@ -89,7 +90,7 @@ function DualIntent() {
                 width: '230px', bottom: '0', left: '50px',
                 background: '#F0EDE6',
                 transform: 'rotate(1.8deg)',
-                boxShadow: '0 10px 36px rgba(0,0,0,0.08)',
+                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 10px 36px rgba(0,0,0,0.12)',
               }}
             >
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'rgba(56,160,158,0.70)' }}>
@@ -110,9 +111,9 @@ function DualIntent() {
               style={{
                 width: '178px', top: '30px', right: '0',
                 background: '#ffffff',
-                border: '1px solid rgba(0,0,0,0.05)',
+                border: '1px solid rgba(0,0,0,0.07)',
                 transform: 'rotate(1.2deg)',
-                boxShadow: '0 8px 28px rgba(0,0,0,0.07)',
+                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 8px 28px rgba(0,0,0,0.11)',
               }}
             >
               <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
@@ -140,7 +141,8 @@ function DualIntent() {
               style={{
                 width: '228px', top: '0', right: '20px',
                 transform: 'rotate(2deg)',
-                boxShadow: '0 12px 40px rgba(0,0,0,0.09)',
+                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.13)',
+                border: '1px solid rgba(0,0,0,0.05)',
               }}
             >
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7420' }}>
@@ -171,7 +173,7 @@ function DualIntent() {
                 width: '218px', bottom: '0', left: '0',
                 background: '#F5F0E4',
                 transform: 'rotate(-2.2deg)',
-                boxShadow: '0 10px 36px rgba(0,0,0,0.08)',
+                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 10px 36px rgba(0,0,0,0.12)',
               }}
             >
               <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7420' }}>
@@ -192,9 +194,9 @@ function DualIntent() {
               style={{
                 width: '170px', bottom: '40px', right: '0',
                 background: '#ffffff',
-                border: '1px solid rgba(0,0,0,0.05)',
+                border: '1px solid rgba(0,0,0,0.07)',
                 transform: 'rotate(1.5deg)',
-                boxShadow: '0 8px 28px rgba(0,0,0,0.07)',
+                boxShadow: '0 2px 0 rgba(0,0,0,0.04), 0 8px 28px rgba(0,0,0,0.11)',
               }}
             >
               <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: '#9A7420' }}>
