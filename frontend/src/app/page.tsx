@@ -508,189 +508,141 @@ function FreshIdeas() {
   return (
     <section className="py-12 sm:py-20" style={{ background: '#FAFAF8' }}>
       <Container>
-        {/* Wrapper — lg:pt-20 reserves space above the dark card for floating card row */}
-        <div className="relative lg:pt-20">
-
-          {/* ── Dark card ──────────────────────────────────────────────────── */}
+        <div
+          className="relative overflow-hidden"
+          style={{
+            borderRadius: '24px',
+            background: '#071824',
+            border: '1px solid rgba(255,255,255,0.07)',
+            boxShadow: '0 48px 120px rgba(0,0,0,0.30), 0 16px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.12)',
+          }}
+        >
+          {/* Teal radial glow — top right */}
           <div
-            className="relative overflow-hidden"
+            className="pointer-events-none absolute inset-0"
+            aria-hidden="true"
             style={{
-              borderRadius: '24px',
-              background: '#071824',
-              border: '1px solid rgba(255,255,255,0.07)',
-              boxShadow: '0 48px 120px rgba(0,0,0,0.30), 0 16px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.12)',
+              background: 'radial-gradient(ellipse 80% 60% at 90% -5%, rgba(56,160,158,0.22) 0%, transparent 65%)',
             }}
-          >
-            {/* Teal radial glow — top right */}
-            <div
-              className="pointer-events-none absolute inset-0"
-              aria-hidden="true"
+          />
+          {/* Secondary glow — bottom left */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            aria-hidden="true"
+            style={{
+              background: 'radial-gradient(ellipse 50% 55% at -5% 105%, rgba(56,160,158,0.09) 0%, transparent 60%)',
+            }}
+          />
+
+          <div style={{ padding: 'clamp(3rem, 5.5vw, 5rem)' }}>
+
+            {/* Eyebrow */}
+            <div className="mb-10 flex items-center gap-3">
+              <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.60)' }} />
+              <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.68)' }}>
+                A different kind of space
+              </span>
+            </div>
+
+            {/* Heading */}
+            <h2
               style={{
-                background: 'radial-gradient(ellipse 80% 60% at 90% -5%, rgba(56,160,158,0.22) 0%, transparent 65%)',
+                fontSize: 'clamp(2.5rem, 4.5vw, 4.25rem)',
+                letterSpacing: '-0.04em',
+                lineHeight: '1.05',
+                fontWeight: 660,
+                marginBottom: '2.25rem',
+                maxWidth: '640px',
               }}
-            />
-            {/* Subtle secondary glow — bottom left */}
-            <div
-              className="pointer-events-none absolute inset-0"
-              aria-hidden="true"
-              style={{
-                background: 'radial-gradient(ellipse 50% 55% at -5% 105%, rgba(56,160,158,0.09) 0%, transparent 60%)',
-              }}
-            />
-
-            <div style={{ padding: 'clamp(2.5rem, 5vw, 4rem)' }}>
-
-              {/* Eyebrow */}
-              <div className="mb-8 flex items-center gap-3">
-                <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.55)' }} />
-                <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.68)' }}>
-                  A different kind of space
-                </span>
-              </div>
-
-              {/* Heading */}
-              <h2
+            >
+              <span style={{ color: '#FFFFFF' }}>Fresh ideas need</span>
+              <br />
+              <span
                 style={{
-                  fontSize: 'clamp(2.5rem, 4.5vw, 4.25rem)',
-                  letterSpacing: '-0.04em',
-                  lineHeight: '1.05',
-                  fontWeight: 660,
-                  marginBottom: '1.75rem',
-                  maxWidth: '640px',
+                  backgroundImage: 'linear-gradient(90deg, #42C7C6 0%, #7FDAD9 35%, #D8F5F2 65%, #FFFFFF 90%)',
+                  WebkitBackgroundClip: 'text',
+                  backgroundClip: 'text',
+                  color: 'transparent',
                 }}
               >
-                <span style={{ color: '#FFFFFF' }}>Fresh ideas need</span>
-                <br />
-                <span
-                  style={{
-                    backgroundImage: 'linear-gradient(90deg, #42C7C6 0%, #7FDAD9 35%, #D8F5F2 65%, #FFFFFF 90%)',
-                    WebkitBackgroundClip: 'text',
-                    backgroundClip: 'text',
-                    color: 'transparent',
-                  }}
-                >
-                  spaces to grow.
-                </span>
-              </h2>
+                spaces to grow.
+              </span>
+            </h2>
 
-              {/* Body */}
-              <div style={{ maxWidth: '520px', marginBottom: '3.5rem' }}>
-                <p
-                  style={{
-                    fontSize: 'clamp(0.9375rem, 1.4vw, 1.0625rem)',
-                    lineHeight: '1.82',
-                    color: 'rgba(255,255,255,0.52)',
-                    marginBottom: '1.125rem',
-                  }}
-                >
-                  Fresh Collective is built for ideas that are ready to move beyond content and become lived experience.
-                </p>
-                <p
-                  style={{
-                    fontSize: 'clamp(0.9375rem, 1.4vw, 1.0625rem)',
-                    lineHeight: '1.82',
-                    color: 'rgba(255,255,255,0.38)',
-                  }}
-                >
-                  Not passive courses. Not scattered communities. A connected ecosystem where learning has somewhere to land, deepen, and grow.
-                </p>
-              </div>
-
-              {/* Supporting points */}
-              <div
-                className="grid gap-8 sm:grid-cols-3"
-                style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '2.5rem' }}
+            {/* Body */}
+            <div style={{ maxWidth: '560px', marginBottom: '4rem' }}>
+              <p
+                style={{
+                  fontSize: 'clamp(1rem, 1.5vw, 1.125rem)',
+                  lineHeight: '1.85',
+                  color: 'rgba(255,255,255,0.72)',
+                  marginBottom: '1.25rem',
+                  letterSpacing: '-0.01em',
+                }}
               >
-                {[
-                  { num: '01', title: 'Educators and practitioners', body: 'Creating the conditions their work needs.' },
-                  { num: '02', title: 'People ready to live differently', body: 'Finding structures that turn ideas into genuine change.' },
-                  { num: '03', title: 'Ideas that need room to develop', body: 'Given depth, community, and the right conditions to take root.' },
-                ].map(({ num, title, body }) => (
-                  <div key={num}>
-                    <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.20em', textTransform: 'uppercase' as const, color: 'rgba(85,184,182,0.55)', marginBottom: '0.75rem' }}>
-                      {num}
-                    </div>
-                    <div style={{ fontSize: '13.5px', fontWeight: 620, letterSpacing: '-0.02em', color: 'rgba(255,255,255,0.80)', lineHeight: '1.4', marginBottom: '0.5rem' }}>
-                      {title}
-                    </div>
-                    <div style={{ fontSize: '13px', lineHeight: '1.68', color: 'rgba(255,255,255,0.36)' }}>
-                      {body}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-            </div>
-          </div>
-
-          {/* ── Floating cards — horizontal row, lg+ only ─────────────────── */}
-          <div
-            className="absolute hidden lg:flex"
-            style={{ top: '16px', right: '0', gap: '15px' }}
-          >
-
-            {/* Card 1: Question prompt */}
-            <div
-              className="rounded-2xl bg-white
-                border border-[rgba(15,23,42,0.09)]
-                shadow-[0_8px_28px_rgba(0,0,0,0.10)]
-                transition-all duration-[210ms] ease-out cursor-default
-                hover:-translate-y-[5px] hover:bg-[#EFF9F9]
-                hover:border-[rgba(66,199,198,0.44)]
-                hover:shadow-[0_18px_50px_rgba(0,0,0,0.16)]"
-              style={{ width: '210px', minHeight: '112px', padding: '18px 20px', flexShrink: 0 }}
-            >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '10px' }}>
-                Question prompt
-              </div>
-              <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.58', letterSpacing: '-0.01em', color: '#0F172A' }}>
-                &ldquo;What are you actually saying yes to?&rdquo;
-              </div>
+                Fresh Collective is built for ideas that are ready to move beyond content and become lived experience.
+              </p>
+              <p
+                style={{
+                  fontSize: 'clamp(1rem, 1.5vw, 1.125rem)',
+                  lineHeight: '1.85',
+                  color: 'rgba(255,255,255,0.52)',
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                Not more noise. Not passive learning. A place where meaningful work can be held, practised, shared, and grown over time.
+              </p>
             </div>
 
-            {/* Card 2: Live call */}
+            {/* Principles */}
             <div
-              className="rounded-2xl bg-white
-                border border-[rgba(15,23,42,0.09)]
-                shadow-[0_8px_28px_rgba(0,0,0,0.10)]
-                transition-all duration-[210ms] ease-out cursor-default
-                hover:-translate-y-[5px] hover:bg-[#EFF9F9]
-                hover:border-[rgba(66,199,198,0.44)]
-                hover:shadow-[0_18px_50px_rgba(0,0,0,0.16)]"
-              style={{ width: '210px', minHeight: '112px', padding: '18px 20px', flexShrink: 0 }}
+              className="flex flex-col gap-0 sm:flex-row"
+              style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '2.5rem' }}
             >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '10px' }}>
-                Live call
-              </div>
-              <div style={{ fontSize: '14.5px', fontWeight: 600, letterSpacing: '-0.02em', lineHeight: '1.3', color: '#0F172A', marginBottom: '4px' }}>
-                Monthly gathering
-              </div>
-              <div style={{ fontSize: '12px', color: 'rgba(15,23,42,0.40)', letterSpacing: '-0.01em' }}>
-                7:30pm
-              </div>
-            </div>
-
-            {/* Card 3: Practice note */}
-            <div
-              className="rounded-2xl bg-[#F4FAFA]
-                border border-[rgba(56,160,158,0.22)]
-                shadow-[0_8px_24px_rgba(0,0,0,0.08)]
-                transition-all duration-[210ms] ease-out cursor-default
-                hover:-translate-y-[5px] hover:bg-[#EAF6F6]
-                hover:border-[rgba(66,199,198,0.44)]
-                hover:shadow-[0_18px_48px_rgba(0,0,0,0.13)]"
-              style={{ width: '210px', minHeight: '112px', padding: '18px 20px', flexShrink: 0 }}
-            >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '10px' }}>
-                Practice note
-              </div>
-              <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.58', letterSpacing: '-0.01em', color: '#0F172A' }}>
-                One small experiment this week
-              </div>
+              {[
+                'Held with structure',
+                'Practised in community',
+                'Given room to deepen',
+              ].map((label, i) => (
+                <div
+                  key={label}
+                  className="flex items-center gap-4 py-4 sm:py-0 sm:flex-1"
+                  style={{
+                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                    ...(i < 2 && { borderBottom: undefined }),
+                  }}
+                >
+                  {i > 0 && (
+                    <div
+                      className="hidden sm:block"
+                      style={{ width: '1px', height: '2rem', flexShrink: 0, background: 'rgba(255,255,255,0.08)', marginRight: '1rem' }}
+                    />
+                  )}
+                  <div
+                    style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      background: 'rgba(85,184,182,0.65)',
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 'clamp(0.875rem, 1.1vw, 0.9375rem)',
+                      fontWeight: 500,
+                      letterSpacing: '-0.02em',
+                      color: 'rgba(255,255,255,0.62)',
+                      lineHeight: '1.4',
+                    }}
+                  >
+                    {label}
+                  </span>
+                </div>
+              ))}
             </div>
 
           </div>
-
         </div>
       </Container>
     </section>
