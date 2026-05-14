@@ -750,11 +750,12 @@ function CreatorCTA() {
               <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#7FDAD9', marginBottom: '10px' }}>
                 Founding creator access
               </p>
-              <p style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 660, letterSpacing: '-0.03em', color: '#ffffff', lineHeight: 1.1, marginBottom: '6px' }}>
+              <p style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 660, letterSpacing: '-0.03em', color: '#ffffff', lineHeight: 1.1, marginBottom: '8px' }}>
                 14-day free trial
               </p>
-              <p style={{ fontSize: '14px', fontWeight: 400, color: 'rgba(255,255,255,0.45)', letterSpacing: '-0.01em' }}>
-                then $19/month
+              <p style={{ fontSize: '19px', fontWeight: 400, color: 'rgba(255,255,255,0.62)', letterSpacing: '-0.02em' }}>
+                then{' '}
+                <span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.80)' }}>$19/month</span>
               </p>
             </div>
 
