@@ -2,6 +2,14 @@ import Link from 'next/link'
 import { getCreatorSpaces, getCreatorPathways } from '@/lib/serverApi'
 import type { CreatorPathway } from '@/types/platform'
 
+const RESOURCE_TYPES = [
+  { label: 'Prompts', desc: 'Reflection questions or journalling starters' },
+  { label: 'Practices', desc: 'Exercises, rituals, or daily actions' },
+  { label: 'Links', desc: 'Articles, tools, or external references' },
+  { label: 'Files', desc: 'PDFs, worksheets, or downloadable guides' },
+  { label: 'Video', desc: 'Short explainers or recorded content' },
+]
+
 export default async function ResourcesPage() {
   const spaces = await getCreatorSpaces()
   const primarySpace = spaces[0] ?? null
@@ -22,18 +30,43 @@ export default async function ResourcesPage() {
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Resources</h1>
       </div>
 
+      {/* What resources are */}
       <div className="mb-6 rounded-xl border border-border bg-white p-6">
-        <p className="mb-2 font-serif text-base text-navy-900">Resources live on steps</p>
-        <p className="text-[13.5px] leading-relaxed text-slate-400">
-          Files, links, and downloadable resources are attached to individual steps within your
-          pathways. Open a step in the pathway editor to add or manage its resources.
+        <p className="mb-2 font-serif text-base text-navy-900">What resources are</p>
+        <p className="mb-5 text-[13.5px] leading-relaxed text-slate-400">
+          Resources are the tools, prompts, practices, links, and files that support the work
+          between sessions. They attach to individual steps within your pathways.
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {RESOURCE_TYPES.map(({ label, desc }) => (
+            <div key={label} className="flex items-start gap-2.5 rounded-lg p-3" style={{ background: '#F7F8FA' }}>
+              <div
+                className="mt-0.5 h-4 w-4 shrink-0 rounded"
+                style={{ background: 'rgba(56,160,158,0.18)' }}
+              />
+              <div>
+                <p className="text-[12.5px] font-medium text-navy-900">{label}</p>
+                <p className="text-[11.5px] text-slate-400">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* How to add */}
+      <div className="mb-6 rounded-xl border border-border bg-white px-6 py-5">
+        <p className="text-[13.5px] leading-relaxed text-slate-500">
+          To add a resource, open a step inside one of your pathways and use the resource
+          manager on that step.
         </p>
       </div>
 
+      {/* No collective yet */}
       {!primarySpace && (
         <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-4 text-sm text-slate-400">
-            Set up your space first to manage resources.
+          <p className="mb-1.5 font-serif text-base text-navy-900">No collective yet</p>
+          <p className="mb-5 text-sm text-slate-400">
+            Set up your collective first, then build pathways and add resources to each step.
           </p>
           <Link
             href="/creator"
@@ -45,25 +78,28 @@ export default async function ResourcesPage() {
         </div>
       )}
 
+      {/* No pathways yet */}
       {primarySpace && pathways.length === 0 && (
         <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-4 text-sm text-slate-400">
-            Create a pathway first, then add resources to its steps.
+          <p className="mb-1.5 font-serif text-base text-navy-900">No pathways yet.</p>
+          <p className="mb-5 text-sm text-slate-400">
+            Create a pathway and add steps to it, then attach resources to each step.
           </p>
           <Link
             href={`/creator/spaces/${primarySpace.slug}/pathways`}
             className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
-            Go to pathways
+            Create pathway
           </Link>
         </div>
       )}
 
+      {/* Pathway list for navigation */}
       {primarySpace && pathways.length > 0 && (
         <div>
           <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-            Your pathways
+            Add resources via a pathway step
           </p>
           <div className="space-y-2.5">
             {pathways.map((pathway) => (

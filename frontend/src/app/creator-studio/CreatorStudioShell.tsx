@@ -110,19 +110,19 @@ function SidebarInner({
       </nav>
 
       {/* Footer */}
-      <div className="px-5 py-4" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="px-5 py-5" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         <Link
           href="/dashboard"
-          className="mb-3 block text-[11.5px] transition-opacity hover:opacity-80"
-          style={{ color: 'rgba(255,255,255,0.34)' }}
+          className="mb-3 block text-[12px] transition-opacity hover:opacity-90"
+          style={{ color: 'rgba(255,255,255,0.52)' }}
         >
           ← Back to platform
         </Link>
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[11.5px]" style={{ color: 'rgba(255,255,255,0.38)' }}>
+          <span className="truncate text-[12px]" style={{ color: 'rgba(255,255,255,0.48)' }}>
             {user.name ?? user.email}
           </span>
-          <LogoutButton className="shrink-0 text-[11px] text-white/30 transition-colors hover:text-white" />
+          <LogoutButton className="shrink-0 text-[11.5px] text-white/40 transition-colors hover:text-white/80" />
         </div>
       </div>
 

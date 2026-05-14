@@ -19,10 +19,12 @@ export default async function SettingsPage() {
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Settings</h1>
       </div>
 
+      {/* No collective yet */}
       {!primarySpace && (
         <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-4 text-sm text-slate-400">
-            Set up your space first to access settings.
+          <p className="mb-1.5 font-serif text-base text-navy-900">No collective yet</p>
+          <p className="mb-5 text-sm text-slate-400">
+            Set up your collective first to access its settings.
           </p>
           <Link
             href="/creator"
@@ -35,21 +37,24 @@ export default async function SettingsPage() {
       )}
 
       {primarySpace && (
-        <>
-          <div className="mb-4 rounded-xl border border-border bg-white p-6">
-            <h2 className="mb-5 font-serif text-base text-navy-900">Space settings</h2>
-            <dl className="space-y-4">
+        <div className="space-y-4">
+
+          {/* Collective details */}
+          <div className="rounded-xl border border-border bg-white p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-serif text-base text-navy-900">Collective details</h2>
+              <Link
+                href={`/creator/spaces/${primarySpace.slug}`}
+                className="text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+              >
+                Edit →
+              </Link>
+            </div>
+            <dl className="space-y-3.5">
               {[
-                { label: 'Name', value: spaceDetail?.name ?? primarySpace.name },
-                {
-                  label: 'Tagline',
-                  value: spaceDetail?.tagline ?? primarySpace.tagline ?? '—',
-                },
-                { label: 'Status', value: primarySpace.status },
-                {
-                  label: 'Visibility',
-                  value: spaceDetail?.is_public ? 'Public' : 'Private',
-                },
+                { label: 'Name',        value: spaceDetail?.name ?? primarySpace.name },
+                { label: 'Tagline',     value: spaceDetail?.tagline ?? primarySpace.tagline ?? '—' },
+                { label: 'Status',      value: primarySpace.status },
               ].map(({ label, value }) => (
                 <div key={label} className="flex items-start gap-6">
                   <dt
@@ -64,13 +69,74 @@ export default async function SettingsPage() {
             </dl>
           </div>
 
-          <Link
-            href={`/creator/spaces/${primarySpace.slug}`}
-            className="inline-flex items-center rounded-lg border border-border bg-white px-5 py-3 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
-          >
-            Edit space settings →
-          </Link>
-        </>
+          {/* Visibility */}
+          <div className="rounded-xl border border-border bg-white p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-serif text-base text-navy-900">Visibility</h2>
+              <Link
+                href={`/creator/spaces/${primarySpace.slug}`}
+                className="text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+              >
+                Edit →
+              </Link>
+            </div>
+            <div className="flex items-start gap-6">
+              <dt
+                className="w-20 shrink-0 text-[12px] font-medium"
+                style={{ color: 'rgba(0,0,0,0.38)', paddingTop: '1px' }}
+              >
+                Access
+              </dt>
+              <dd className="text-[13.5px] text-navy-900">
+                {spaceDetail?.is_public ? 'Public — anyone can find and join' : 'Private — invite only'}
+              </dd>
+            </div>
+          </div>
+
+          {/* Pricing / access */}
+          <div className="rounded-xl border border-border bg-white p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-serif text-base text-navy-900">Pricing &amp; access</h2>
+              {/* TODO: link to Stripe configuration when billing is wired up */}
+            </div>
+            <div
+              className="rounded-lg px-5 py-4"
+              style={{ background: 'rgba(56,160,158,0.07)', border: '1px solid rgba(56,160,158,0.18)' }}
+            >
+              <p
+                className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.16em]"
+                style={{ color: '#38A09E' }}
+              >
+                Founding creator access
+              </p>
+              <p className="text-[15px] font-semibold text-navy-900">14-day free trial</p>
+              <p className="mt-0.5 text-[13px] text-slate-500">
+                then <span className="font-medium text-navy-900">$19/month</span>
+              </p>
+            </div>
+            <p className="mt-3 text-[12px] text-slate-400">
+              Member pricing and Stripe billing configuration coming soon.
+            </p>
+          </div>
+
+          {/* Creator profile */}
+          <div className="rounded-xl border border-border bg-white p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-serif text-base text-navy-900">Creator profile</h2>
+              <Link
+                href="/settings/profile"
+                className="text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+              >
+                Edit →
+              </Link>
+            </div>
+            <p className="text-[13.5px] text-slate-400">
+              Your public profile is visible to members in your collective. Keep it current so
+              people know who is leading the work.
+            </p>
+          </div>
+
+        </div>
       )}
 
     </div>

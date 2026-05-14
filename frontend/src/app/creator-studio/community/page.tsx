@@ -41,10 +41,12 @@ export default async function CommunityPage() {
         )}
       </div>
 
+      {/* No collective yet */}
       {!primarySpace && (
         <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-4 text-sm text-slate-400">
-            Set up your space first to see community posts.
+          <p className="mb-1.5 font-serif text-base text-navy-900">No collective yet</p>
+          <p className="mb-5 text-sm text-slate-400">
+            Set up your collective first, then you can post prompts and start conversations.
           </p>
           <Link
             href="/creator"
@@ -56,15 +58,24 @@ export default async function CommunityPage() {
         </div>
       )}
 
+      {/* Collective exists but no posts */}
       {primarySpace && posts.length === 0 && (
         <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-1.5 font-serif text-base text-navy-900">No posts yet</p>
-          <p className="text-sm text-slate-400">
-            Community activity will appear here once members start posting.
+          <p className="mb-1.5 font-serif text-base text-navy-900">No community posts yet.</p>
+          <p className="mb-5 text-sm text-slate-400">
+            Start with a simple prompt to invite reflection, conversation, or shared practice.
           </p>
+          <Link
+            href={`/creator/spaces/${primarySpace.slug}/community`}
+            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            Add community prompt
+          </Link>
         </div>
       )}
 
+      {/* Posts feed */}
       {posts.length > 0 && (
         <div className="space-y-3">
           {posts.map((post) => (

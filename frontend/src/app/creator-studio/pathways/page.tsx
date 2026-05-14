@@ -9,21 +9,6 @@ const STATUS_STYLE: Record<string, { bg: string; text: string }> = {
   archived:    { bg: 'rgba(0,0,0,0.06)',       text: '#cbd5e1' },
 }
 
-function EmptyState({ message, href, cta }: { message: string; href: string; cta: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-      <p className="mb-4 text-sm text-slate-400">{message}</p>
-      <Link
-        href={href}
-        className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-      >
-        {cta}
-      </Link>
-    </div>
-  )
-}
-
 export default async function PathwaysPage() {
   const spaces = await getCreatorSpaces()
   const primarySpace = spaces[0] ?? null
@@ -44,7 +29,7 @@ export default async function PathwaysPage() {
           </p>
           <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Pathways</h1>
         </div>
-        {primarySpace && (
+        {primarySpace && pathways.length > 0 && (
           <Link
             href={`/creator/spaces/${primarySpace.slug}/pathways`}
             className="shrink-0 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
@@ -54,22 +39,41 @@ export default async function PathwaysPage() {
         )}
       </div>
 
+      {/* No collective yet */}
       {!primarySpace && (
-        <EmptyState
-          message="Set up your space first before adding pathways."
-          href="/creator"
-          cta="Go to creator area"
-        />
+        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
+          <p className="mb-1.5 font-serif text-base text-navy-900">No collective yet</p>
+          <p className="mb-5 text-sm text-slate-400">
+            Set up your collective first, then build pathways within it.
+          </p>
+          <Link
+            href="/creator"
+            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            Go to creator area
+          </Link>
+        </div>
       )}
 
+      {/* Collective exists but no pathways */}
       {primarySpace && pathways.length === 0 && (
-        <EmptyState
-          message="No pathways yet. Create your first structured pathway to guide your collective members."
-          href={`/creator/spaces/${primarySpace.slug}/pathways`}
-          cta="Add first pathway"
-        />
+        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
+          <p className="mb-1.5 font-serif text-base text-navy-900">No pathways yet.</p>
+          <p className="mb-5 text-sm text-slate-400">
+            Create your first guided journey so people have a clear way through your work.
+          </p>
+          <Link
+            href={`/creator/spaces/${primarySpace.slug}/pathways`}
+            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            Create pathway
+          </Link>
+        </div>
       )}
 
+      {/* Pathway list */}
       {pathways.length > 0 && (
         <div className="space-y-3">
           {pathways.map((pathway) => {

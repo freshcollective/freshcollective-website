@@ -19,7 +19,7 @@ export default async function CreatorStudioOverviewPage() {
 
   const checklist = [
     {
-      label: 'Space created',
+      label: 'Collective created',
       done: !!primarySpace,
       href: '/creator',
     },
@@ -34,18 +34,19 @@ export default async function CreatorStudioOverviewPage() {
       href: primarySpace ? `/creator/spaces/${primarySpace.slug}/events/new` : '/creator',
     },
     {
-      label: 'Space published',
+      label: 'Collective published',
       done: primarySpace?.status === 'active',
       href: primarySpace ? `/creator/spaces/${primarySpace.slug}` : '/creator',
     },
   ]
 
   const allDone = checklist.every((c) => c.done)
+  const isEarlyStage = primarySpace && pathways.length === 0
 
   return (
     <div className="max-w-4xl px-8 py-8 md:px-10 md:py-10">
 
-      {/* Header */}
+      {/* Page header */}
       <div className="mb-8">
         <p
           className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
@@ -54,32 +55,90 @@ export default async function CreatorStudioOverviewPage() {
           Creator Studio
         </p>
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">
-          {primarySpace ? primarySpace.name : 'Your Studio'}
+          Welcome to your Creator Studio.
         </h1>
-        {primarySpace?.tagline && (
-          <p className="mt-1.5 text-sm text-slate-400">{primarySpace.tagline}</p>
-        )}
+        <p className="mt-2 text-[14px] text-slate-400">
+          Build, shape, and manage the collective you wish existed.
+        </p>
       </div>
 
-      {/* No space yet */}
+      {/* Empty state — no collective yet */}
       {!primarySpace && (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-2 font-serif text-lg text-navy-900">Create your collective</p>
-          <p className="mb-5 text-sm text-slate-400">
-            You haven't set up a space yet. Head to the creator area to get started.
-          </p>
-          <Link
-            href="/creator"
-            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-          >
-            Go to creator area →
-          </Link>
+        <div
+          className="mb-6 overflow-hidden rounded-xl border"
+          style={{
+            borderColor: 'rgba(56,160,158,0.20)',
+            background: 'linear-gradient(135deg, #071824 0%, #073B3A 100%)',
+          }}
+        >
+          <div className="px-8 py-10">
+            <p
+              className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
+              style={{ color: '#55B8B6' }}
+            >
+              Get started
+            </p>
+            <p className="mb-3 font-serif text-xl text-white">Create your first collective.</p>
+            <p className="mb-6 max-w-md text-[13.5px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              Start by giving your work a home. You can add pathways, gatherings, resources, and
+              community once the foundation is in place.
+            </p>
+            {/* TODO: wire to collective creation API when available. Currently routed to legacy creator area. */}
+            <Link
+              href="/creator"
+              className="inline-flex items-center rounded-lg px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            >
+              Create collective
+            </Link>
+          </div>
         </div>
       )}
 
       {primarySpace && (
         <>
+          {/* Next step card */}
+          {!allDone && (
+            <div
+              className="mb-6 rounded-xl border px-7 py-6"
+              style={{
+                borderColor: 'rgba(56,160,158,0.18)',
+                background: 'linear-gradient(135deg, #071824 0%, #073B3A 100%)',
+              }}
+            >
+              <p
+                className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em]"
+                style={{ color: '#55B8B6' }}
+              >
+                {isEarlyStage ? 'Getting started' : 'Next step'}
+              </p>
+              <p className="mb-2 font-serif text-xl text-white">
+                {isEarlyStage
+                  ? 'Start with your collective foundation.'
+                  : 'Your collective is taking shape.'}
+              </p>
+              <p
+                className="mb-5 max-w-md text-[13.5px] leading-relaxed"
+                style={{ color: 'rgba(255,255,255,0.55)' }}
+              >
+                {isEarlyStage
+                  ? 'Name your collective, describe who it is for, and define the change your work helps people practise.'
+                  : 'Keep building the pathways, gatherings, and resources that will help people move through the work.'}
+              </p>
+              <Link
+                href={
+                  isEarlyStage
+                    ? `/creator/spaces/${primarySpace.slug}`
+                    : `/creator/spaces/${primarySpace.slug}/pathways`
+                }
+                className="inline-flex items-center rounded-lg px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              >
+                {isEarlyStage ? 'Set up collective' : 'Continue building'}
+              </Link>
+            </div>
+          )}
+
           {/* Stats */}
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
@@ -95,14 +154,17 @@ export default async function CreatorStudioOverviewPage() {
             ))}
           </div>
 
-          {/* Setup checklist */}
+          {/* Condensed checklist */}
           {!allDone && (
             <div className="mb-6 rounded-xl border border-border bg-white p-6">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-serif text-base text-navy-900">Getting started</h2>
-                <span className="text-[12px] text-slate-400">
-                  {checklist.filter((c) => c.done).length}/{checklist.length} complete
-                </span>
+                <h2 className="font-serif text-base text-navy-900">Setup progress</h2>
+                <Link
+                  href="/creator-studio/setup"
+                  className="text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+                >
+                  Full checklist →
+                </Link>
               </div>
               <ul className="space-y-3">
                 {checklist.map(({ label, done, href }) => (
@@ -130,7 +192,7 @@ export default async function CreatorStudioOverviewPage() {
                     </div>
                     <span
                       className="flex-1 text-[13.5px]"
-                      style={{ color: done ? 'rgba(0,0,0,0.38)' : '#1e293b' }}
+                      style={{ color: done ? 'rgba(0,0,0,0.36)' : '#1e293b' }}
                     >
                       {label}
                     </span>
@@ -152,18 +214,20 @@ export default async function CreatorStudioOverviewPage() {
           <div className="grid gap-3 sm:grid-cols-3">
             {[
               {
-                label: 'Manage pathways',
-                desc: `${pathways.length} pathway${pathways.length !== 1 ? 's' : ''}`,
+                label: 'Build pathways',
+                desc: pathways.length > 0
+                  ? `${pathways.length} pathway${pathways.length !== 1 ? 's' : ''}`
+                  : 'No pathways yet',
                 href: `/creator/spaces/${primarySpace.slug}/pathways`,
               },
               {
-                label: 'Schedule gathering',
-                desc: upcoming.length > 0 ? `${upcoming.length} coming up` : 'No upcoming events',
+                label: 'Schedule a gathering',
+                desc: upcoming.length > 0 ? `${upcoming.length} coming up` : 'No upcoming gatherings',
                 href: `/creator/spaces/${primarySpace.slug}/events/new`,
               },
               {
-                label: 'View community',
-                desc: 'Posts and discussions',
+                label: 'Engage community',
+                desc: 'Posts, prompts, and discussion',
                 href: `/creator/spaces/${primarySpace.slug}/community`,
               },
             ].map(({ label, desc, href }) => (

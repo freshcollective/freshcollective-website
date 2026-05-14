@@ -14,21 +14,6 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
-function EmptyState({ message, href, cta }: { message: string; href: string; cta: string }) {
-  return (
-    <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-      <p className="mb-4 text-sm text-slate-400">{message}</p>
-      <Link
-        href={href}
-        className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-      >
-        {cta}
-      </Link>
-    </div>
-  )
-}
-
 function EventCard({
   event,
   spaceSlug,
@@ -67,7 +52,7 @@ function EventCard({
             className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
             style={{ background: 'rgba(0,0,0,0.05)', color: '#94a3b8' }}
           >
-            {event.location_type.replace('_', ' ')}
+            {event.location_type.replace(/_/g, ' ')}
           </span>
           {!event.is_published && (
             <span
@@ -114,30 +99,50 @@ export default async function GatheringsPage() {
             >
               + Schedule
             </Link>
-            <Link
-              href={`/creator/spaces/${primarySpace.slug}/events`}
-              className="rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
-            >
-              Manage →
-            </Link>
+            {events.length > 0 && (
+              <Link
+                href={`/creator/spaces/${primarySpace.slug}/events`}
+                className="rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+              >
+                Manage →
+              </Link>
+            )}
           </div>
         )}
       </div>
 
+      {/* No collective yet */}
       {!primarySpace && (
-        <EmptyState
-          message="Set up your space first before scheduling gatherings."
-          href="/creator"
-          cta="Go to creator area"
-        />
+        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
+          <p className="mb-1.5 font-serif text-base text-navy-900">No collective yet</p>
+          <p className="mb-5 text-sm text-slate-400">
+            Set up your collective first, then schedule gatherings within it.
+          </p>
+          <Link
+            href="/creator"
+            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            Go to creator area
+          </Link>
+        </div>
       )}
 
+      {/* Collective exists but no gatherings */}
       {primarySpace && events.length === 0 && (
-        <EmptyState
-          message="No gatherings yet. Schedule your first live event to connect with your collective."
-          href={`/creator/spaces/${primarySpace.slug}/events/new`}
-          cta="Schedule first gathering"
-        />
+        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
+          <p className="mb-1.5 font-serif text-base text-navy-900">No gatherings scheduled.</p>
+          <p className="mb-5 text-sm text-slate-400">
+            Add a live session, circle, workshop, Q&A, or community touchpoint.
+          </p>
+          <Link
+            href={`/creator/spaces/${primarySpace.slug}/events/new`}
+            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            Schedule gathering
+          </Link>
+        </div>
       )}
 
       {upcoming.length > 0 && (
