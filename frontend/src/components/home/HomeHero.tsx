@@ -55,27 +55,27 @@ export default function HomeHero() {
       />
 
       {/* ── Content ─────────────────────────────────────────────────────────── */}
-      <Container className="relative z-10 pb-20 pt-36 sm:pb-28 sm:pt-44 lg:pb-32">
-        <div className="max-w-[780px]">
+      <Container className="relative z-10 pb-32 pt-32 sm:pb-40 sm:pt-44 lg:pb-44">
+        <div className="max-w-[680px]">
 
-          <div className="mb-7 flex items-center gap-3">
+          <div className="mb-5 flex items-center gap-3">
             <div
-              className="h-px w-8 shrink-0"
-              style={{ background: 'rgba(212,176,72,0.55)' }}
+              className="h-px w-6 shrink-0"
+              style={{ background: 'rgba(212,176,72,0.45)' }}
             />
             <span
-              className="text-[11px] font-semibold uppercase tracking-[0.18em]"
-              style={{ color: 'rgba(255,255,255,0.42)' }}
+              className="text-[10.5px] font-semibold uppercase tracking-[0.20em]"
+              style={{ color: 'rgba(255,255,255,0.32)' }}
             >
               Fresh Collective
             </span>
           </div>
 
           <h1
-            className="mb-9"
+            className="mb-7"
             style={{
               fontSize: 'clamp(2.75rem, 6vw, 5.5rem)',
-              lineHeight: '1.02',
+              lineHeight: '1.03',
               letterSpacing: '-0.04em',
               fontWeight: 660,
               color: '#ffffff',
@@ -93,18 +93,18 @@ export default function HomeHero() {
             >
               live, learn, create,
             </span>
-            <span className="block" style={{ color: 'rgba(255,255,255,0.90)' }}>
+            <span className="block" style={{ color: 'rgba(255,255,255,0.88)' }}>
               and lead.
             </span>
           </h1>
 
           <p
-            className="mb-10"
+            className="mb-9"
             style={{
-              fontSize: 'clamp(1rem, 1.5vw, 1.125rem)',
-              lineHeight: '1.78',
-              color: 'rgba(255,255,255,0.50)',
-              maxWidth: '480px',
+              fontSize: 'clamp(1rem, 1.4vw, 1.0625rem)',
+              lineHeight: '1.80',
+              color: 'rgba(255,255,255,0.46)',
+              maxWidth: '420px',
               letterSpacing: '-0.01em',
             }}
           >

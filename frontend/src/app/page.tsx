@@ -8,36 +8,41 @@ import HomeHero from '@/components/home/HomeHero'
 function DualIntent() {
   return (
     <section
-      className="py-16 sm:py-24"
-      style={{ background: 'linear-gradient(to bottom, #ECEAE7 0%, #F5F4F0 40%, #FDFCF9 100%)' }}
+      className="relative z-10 -mt-14 sm:-mt-20"
+      style={{
+        background: '#F5F3EF',
+        borderRadius: '28px 28px 0 0',
+        paddingTop: 'clamp(3.5rem, 8vw, 6rem)',
+        paddingBottom: 'clamp(3.5rem, 8vw, 5.5rem)',
+      }}
     >
       <Container>
-        <div className="grid gap-14 sm:grid-cols-2 sm:gap-20">
+        <div className="grid gap-12 sm:grid-cols-2 sm:gap-24">
 
           <div>
-            <div className="mb-5 h-px w-8" style={{ background: 'rgba(56,160,158,0.55)' }} />
+            <div className="mb-5 h-px w-7" style={{ background: 'rgba(56,160,158,0.50)' }} />
             <h2
               className="mb-5 text-navy-950"
-              style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2.125rem)', letterSpacing: '-0.035em', lineHeight: '1.12', fontWeight: 650 }}
+              style={{ fontSize: 'clamp(1.4rem, 2.4vw, 2rem)', letterSpacing: '-0.035em', lineHeight: '1.14', fontWeight: 640 }}
             >
               A more intentional<br />way to grow.
             </h2>
-            <p className="text-[15.5px] leading-[1.82] text-navy-500">
+            <p className="text-[15px] leading-[1.84]" style={{ color: 'rgba(12,24,38,0.52)' }}>
               Most growth happens by accident — in reaction to pressure, to loss,
               to necessity. Fresh Collective offers something rarer: a structured
               environment where growth is deliberate, paced, and yours to keep.
             </p>
           </div>
 
-          <div className="sm:pt-12">
-            <div className="mb-5 h-px w-8" style={{ background: 'rgba(212,176,72,0.55)' }} />
+          <div className="sm:pt-14">
+            <div className="mb-5 h-px w-7" style={{ background: 'rgba(212,176,72,0.50)' }} />
             <h2
               className="mb-5 text-navy-950"
-              style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2.125rem)', letterSpacing: '-0.035em', lineHeight: '1.12', fontWeight: 650 }}
+              style={{ fontSize: 'clamp(1.4rem, 2.4vw, 2rem)', letterSpacing: '-0.035em', lineHeight: '1.14', fontWeight: 640 }}
             >
               Environments where<br />people actually change.
             </h2>
-            <p className="text-[15.5px] leading-[1.82] text-navy-500">
+            <p className="text-[15px] leading-[1.84]" style={{ color: 'rgba(12,24,38,0.52)' }}>
               Information is abundant. What changes people is the right container —
               the right questions, at the right time, with others moving through the
               same thing. That is what we have built.
