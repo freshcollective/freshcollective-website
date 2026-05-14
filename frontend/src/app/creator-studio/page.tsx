@@ -1,15 +1,18 @@
 import Link from 'next/link'
-import { getCreatorSpaces, getCreatorPathways, getCreatorEvents } from '@/lib/serverApi'
-import type { CreatorPathway, CreatorEvent } from '@/types/platform'
+import { getCreatorSpaces, getActiveCreatorSpace, getCreatorPathways, getCreatorEvents } from '@/lib/serverApi'
+import { MAX_COLLECTIVES_FOR_FOUNDING_CREATOR } from '@/lib/creatorPlan'
+import type { CreatorPathway, CreatorEvent, SpaceSummary } from '@/types/platform'
 
 export default async function CreatorStudioOverviewPage() {
-  const spaces = await getCreatorSpaces()
-  const primarySpace = spaces[0] ?? null
+  const [spaces, activeSpace]: [SpaceSummary[], SpaceSummary | null] = await Promise.all([
+    getCreatorSpaces(),
+    getActiveCreatorSpace(),
+  ])
 
-  const [pathways, events]: [CreatorPathway[], CreatorEvent[]] = primarySpace
+  const [pathways, events]: [CreatorPathway[], CreatorEvent[]] = activeSpace
     ? await Promise.all([
-        getCreatorPathways(primarySpace.slug),
-        getCreatorEvents(primarySpace.slug),
+        getCreatorPathways(activeSpace.slug),
+        getCreatorEvents(activeSpace.slug),
       ])
     : [[], []]
 
@@ -20,28 +23,29 @@ export default async function CreatorStudioOverviewPage() {
   const checklist = [
     {
       label: 'Collective created',
-      done: !!primarySpace,
-      href: '/creator',
+      done: !!activeSpace,
+      href: '/creator-studio/create',
     },
     {
       label: 'First pathway added',
       done: pathways.length > 0,
-      href: primarySpace ? `/creator/spaces/${primarySpace.slug}/pathways` : '/creator',
+      href: activeSpace ? `/creator/spaces/${activeSpace.slug}/pathways` : '/creator-studio/create',
     },
     {
       label: 'First gathering scheduled',
       done: events.length > 0,
-      href: primarySpace ? `/creator/spaces/${primarySpace.slug}/events/new` : '/creator',
+      href: activeSpace ? `/creator/spaces/${activeSpace.slug}/events/new` : '/creator-studio/create',
     },
     {
       label: 'Collective published',
-      done: primarySpace?.status === 'active',
-      href: primarySpace ? `/creator/spaces/${primarySpace.slug}` : '/creator',
+      done: activeSpace?.status === 'active',
+      href: activeSpace ? `/creator/spaces/${activeSpace.slug}` : '/creator-studio/create',
     },
   ]
 
   const allDone = checklist.every((c) => c.done)
-  const isEarlyStage = primarySpace && pathways.length === 0
+  const isEarlyStage = activeSpace && pathways.length === 0
+  const atLimit = spaces.length >= MAX_COLLECTIVES_FOR_FOUNDING_CREATOR
 
   return (
     <div className="max-w-4xl px-8 py-8 md:px-10 md:py-10">
@@ -63,7 +67,7 @@ export default async function CreatorStudioOverviewPage() {
       </div>
 
       {/* Empty state — no collective yet */}
-      {!primarySpace && (
+      {!activeSpace && (
         <div
           className="mb-6 overflow-hidden rounded-xl border"
           style={{
@@ -80,8 +84,8 @@ export default async function CreatorStudioOverviewPage() {
             </p>
             <p className="mb-3 font-serif text-xl text-white">Create your first collective.</p>
             <p className="mb-6 max-w-md text-[13.5px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Start by giving your work a home. You can add pathways, gatherings, resources, and
-              community once the foundation is in place.
+              Start by giving your work a home. You can create up to{' '}
+              {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives with Founding Creator access.
             </p>
             <Link
               href="/creator-studio/create"
@@ -94,7 +98,7 @@ export default async function CreatorStudioOverviewPage() {
         </div>
       )}
 
-      {primarySpace && (
+      {activeSpace && (
         <>
           {/* Next step card */}
           {!allDone && (
@@ -127,8 +131,8 @@ export default async function CreatorStudioOverviewPage() {
               <Link
                 href={
                   isEarlyStage
-                    ? `/creator/spaces/${primarySpace.slug}`
-                    : `/creator/spaces/${primarySpace.slug}/pathways`
+                    ? `/creator/spaces/${activeSpace.slug}`
+                    : `/creator/spaces/${activeSpace.slug}/pathways`
                 }
                 className="inline-flex items-center rounded-lg px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
@@ -210,24 +214,24 @@ export default async function CreatorStudioOverviewPage() {
           )}
 
           {/* Quick actions */}
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="mb-8 grid gap-3 sm:grid-cols-3">
             {[
               {
                 label: 'Build pathways',
                 desc: pathways.length > 0
                   ? `${pathways.length} pathway${pathways.length !== 1 ? 's' : ''}`
                   : 'No pathways yet',
-                href: `/creator/spaces/${primarySpace.slug}/pathways`,
+                href: `/creator/spaces/${activeSpace.slug}/pathways`,
               },
               {
                 label: 'Schedule a gathering',
                 desc: upcoming.length > 0 ? `${upcoming.length} coming up` : 'No upcoming gatherings',
-                href: `/creator/spaces/${primarySpace.slug}/events/new`,
+                href: `/creator/spaces/${activeSpace.slug}/events/new`,
               },
               {
                 label: 'Engage community',
                 desc: 'Posts, prompts, and discussion',
-                href: `/creator/spaces/${primarySpace.slug}/community`,
+                href: `/creator/spaces/${activeSpace.slug}/community`,
               },
             ].map(({ label, desc, href }) => (
               <Link
@@ -244,6 +248,86 @@ export default async function CreatorStudioOverviewPage() {
           </div>
         </>
       )}
+
+      {/* Your collectives */}
+      <div className="rounded-xl border border-border bg-white p-6">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="font-serif text-base text-navy-900">Your collectives</h2>
+          {!atLimit ? (
+            <Link
+              href="/creator-studio/create"
+              className="text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+            >
+              + Create new collective
+            </Link>
+          ) : (
+            <span className="text-[11.5px] text-slate-400">
+              {spaces.length} of {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives used
+            </span>
+          )}
+        </div>
+
+        {spaces.length === 0 ? (
+          <p className="text-[13px] text-slate-400">
+            No collectives yet.{' '}
+            <Link href="/creator-studio/create" className="text-teal-600 hover:text-teal-700">
+              Create your first →
+            </Link>
+          </p>
+        ) : (
+          <div className="space-y-2.5">
+            {spaces.map((s) => (
+              <div
+                key={s.id}
+                className="flex items-center gap-4 rounded-lg border p-4"
+                style={{
+                  borderColor: s.slug === activeSpace?.slug ? 'rgba(56,160,158,0.25)' : '#e2e8f0',
+                  background: s.slug === activeSpace?.slug ? 'rgba(56,160,158,0.04)' : 'transparent',
+                }}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-[14px] font-medium text-navy-900">{s.name}</p>
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
+                      style={{
+                        background: s.status === 'active' ? 'rgba(56,160,158,0.10)' : 'rgba(0,0,0,0.05)',
+                        color: s.status === 'active' ? '#38A09E' : '#94a3b8',
+                      }}
+                    >
+                      {s.status}
+                    </span>
+                    {s.slug === activeSpace?.slug && (
+                      <span className="text-[10.5px] text-teal-500">Active</span>
+                    )}
+                  </div>
+                  {s.tagline && (
+                    <p className="mt-0.5 truncate text-[12px] text-slate-400">{s.tagline}</p>
+                  )}
+                </div>
+                <Link
+                  href={`/creator/spaces/${s.slug}`}
+                  className="shrink-0 text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+                >
+                  Manage →
+                </Link>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!atLimit && spaces.length > 0 && (
+          <p className="mt-4 text-[11.5px] text-slate-300">
+            Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
+          </p>
+        )}
+        {atLimit && (
+          <p className="mt-4 text-[11.5px] text-slate-400">
+            Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
+            Creator Plus is coming soon.
+          </p>
+        )}
+      </div>
 
     </div>
   )

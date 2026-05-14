@@ -1,9 +1,8 @@
 import Link from 'next/link'
-import { getCreatorSpaces, getCreatorSpace } from '@/lib/serverApi'
+import { getActiveCreatorSpace, getCreatorSpace } from '@/lib/serverApi'
 
 export default async function SettingsPage() {
-  const spaces = await getCreatorSpaces()
-  const primarySpace = spaces[0] ?? null
+  const primarySpace = await getActiveCreatorSpace()
   const spaceDetail = primarySpace ? await getCreatorSpace(primarySpace.slug) : null
 
   return (
@@ -113,9 +112,12 @@ export default async function SettingsPage() {
               <p className="mt-0.5 text-[13px] text-slate-500">
                 then <span className="font-medium text-navy-900">$19/month</span>
               </p>
+              <p className="mt-1.5 text-[12px] text-slate-500">
+                Includes up to 2 collectives
+              </p>
             </div>
             <p className="mt-3 text-[12px] text-slate-400">
-              Member pricing and Stripe billing configuration coming soon.
+              Creator Plus for additional collectives is coming soon.
             </p>
           </div>
 

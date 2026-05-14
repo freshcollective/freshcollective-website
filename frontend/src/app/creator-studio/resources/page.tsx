@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { getCreatorSpaces, getCreatorPathways } from '@/lib/serverApi'
+import { getActiveCreatorSpace, getCreatorPathways } from '@/lib/serverApi'
 import type { CreatorPathway } from '@/types/platform'
 
 const RESOURCE_TYPES = [
@@ -11,8 +11,7 @@ const RESOURCE_TYPES = [
 ]
 
 export default async function ResourcesPage() {
-  const spaces = await getCreatorSpaces()
-  const primarySpace = spaces[0] ?? null
+  const primarySpace = await getActiveCreatorSpace()
   const pathways: CreatorPathway[] = primarySpace
     ? await getCreatorPathways(primarySpace.slug)
     : []

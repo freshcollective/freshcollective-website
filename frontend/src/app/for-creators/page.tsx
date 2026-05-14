@@ -118,7 +118,7 @@ function CreatorHero() {
               style={{ fontSize: '13px', color: 'rgba(255,255,255,0.36)', letterSpacing: '-0.01em' }}
             >
               Founding creator access:{' '}
-              <span style={{ color: 'rgba(255,255,255,0.58)', fontWeight: 500 }}>14-day free trial, then $19/month.</span>
+              <span style={{ color: 'rgba(255,255,255,0.58)', fontWeight: 500 }}>14-day free trial, then $19/month. Includes up to 2 collectives.</span>
             </p>
 
           </div>
@@ -756,6 +756,9 @@ function CreatorCTA() {
               <p style={{ fontSize: '19px', fontWeight: 400, color: 'rgba(255,255,255,0.62)', letterSpacing: '-0.02em' }}>
                 then{' '}
                 <span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.80)' }}>$19/month</span>
+              </p>
+              <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.42)', marginTop: '8px', letterSpacing: '-0.01em' }}>
+                Includes up to 2 collectives
               </p>
             </div>
 

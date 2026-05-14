@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
-import { getMe, getCreatorSpaces } from '@/lib/serverApi'
+import { getMe, getCreatorSpaces, ACTIVE_SPACE_COOKIE } from '@/lib/serverApi'
 import CreatorStudioShell from './CreatorStudioShell'
 import type { SpaceSummary } from '@/types/platform'
 
@@ -19,10 +19,11 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
   }
 
   const spaces: SpaceSummary[] = await getCreatorSpaces()
-  const primarySpace = spaces[0] ?? null
+  const activeSlug = cookieStore.get(ACTIVE_SPACE_COOKIE)?.value
+  const activeSpace = (activeSlug ? spaces.find(s => s.slug === activeSlug) : null) ?? spaces[0] ?? null
 
   return (
-    <CreatorStudioShell user={profile} primarySpace={primarySpace}>
+    <CreatorStudioShell user={profile} spaces={spaces} activeSpace={activeSpace}>
       {children}
     </CreatorStudioShell>
   )

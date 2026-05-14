@@ -941,11 +941,15 @@ function GoodQuestions() {
     },
     {
       q: 'What is the cost?',
-      a: 'Pricing depends on the collective you join. Some collectives may be free, while others may be paid depending on what is included. For creators, founding creator access includes a 14-day free trial, then starts at $19/month so you can begin building your own collective simply.',
+      a: 'Pricing depends on the collective you join. Some collectives may be free, while others may be paid depending on what is included. For creators, founding creator access includes a 14-day free trial, then starts at $19/month. It includes up to 2 collectives, so you can build more than one learning environment under the same account.',
     },
     {
       q: 'What does it cost to create a collective?',
-      a: 'Founding creator access includes a 14-day free trial, then starts at $19/month. This gives you a simple way to begin building your first collective while the platform grows.',
+      a: 'Founding creator access includes a 14-day free trial, then starts at $19/month. It includes up to 2 collectives, so you can build more than one learning environment under the same account.',
+    },
+    {
+      q: 'Can I build more than one collective?',
+      a: 'Yes. Founding Creator access includes up to 2 collectives under one account. If you need more, Creator Plus is planned for creators who want to run multiple collectives.',
     },
   ]
 

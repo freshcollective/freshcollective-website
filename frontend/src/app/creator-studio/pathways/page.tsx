@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { getCreatorSpaces, getCreatorPathways } from '@/lib/serverApi'
+import { getActiveCreatorSpace, getCreatorPathways } from '@/lib/serverApi'
 import type { CreatorPathway } from '@/types/platform'
 
 const STATUS_STYLE: Record<string, { bg: string; text: string }> = {
@@ -10,8 +10,7 @@ const STATUS_STYLE: Record<string, { bg: string; text: string }> = {
 }
 
 export default async function PathwaysPage() {
-  const spaces = await getCreatorSpaces()
-  const primarySpace = spaces[0] ?? null
+  const primarySpace = await getActiveCreatorSpace()
   const pathways: CreatorPathway[] = primarySpace
     ? await getCreatorPathways(primarySpace.slug)
     : []

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { getCreatorSpaces, getCreatorEvents } from '@/lib/serverApi'
+import { getActiveCreatorSpace, getCreatorEvents } from '@/lib/serverApi'
 import type { CreatorEvent } from '@/types/platform'
 
 function formatDate(iso: string) {
@@ -69,8 +69,7 @@ function EventCard({
 }
 
 export default async function GatheringsPage() {
-  const spaces = await getCreatorSpaces()
-  const primarySpace = spaces[0] ?? null
+  const primarySpace = await getActiveCreatorSpace()
   const events: CreatorEvent[] = primarySpace ? await getCreatorEvents(primarySpace.slug) : []
 
   const now = new Date()

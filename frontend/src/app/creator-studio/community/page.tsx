@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { getCreatorSpaces, getCreatorPosts } from '@/lib/serverApi'
+import { getActiveCreatorSpace, getCreatorPosts } from '@/lib/serverApi'
 import type { CreatorPost } from '@/types/platform'
 
 function formatDate(iso: string) {
@@ -14,8 +14,7 @@ const POST_TYPE_LABEL: Record<string, string> = {
 }
 
 export default async function CommunityPage() {
-  const spaces = await getCreatorSpaces()
-  const primarySpace = spaces[0] ?? null
+  const primarySpace = await getActiveCreatorSpace()
   const posts: CreatorPost[] = primarySpace ? await getCreatorPosts(primarySpace.slug) : []
 
   return (

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { getCreatorSpaces, getCreatorPathways, getCreatorEvents } from '@/lib/serverApi'
+import { getActiveCreatorSpace, getCreatorPathways, getCreatorEvents } from '@/lib/serverApi'
 import type { CreatorPathway, CreatorEvent } from '@/types/platform'
 
 type StepStatus = 'not_started' | 'in_progress' | 'complete'
@@ -11,8 +11,7 @@ const STATUS_CONFIG: Record<StepStatus, { label: string; bg: string; color: stri
 }
 
 export default async function SetupPage() {
-  const spaces = await getCreatorSpaces()
-  const primarySpace = spaces[0] ?? null
+  const primarySpace = await getActiveCreatorSpace()
 
   const [pathways, events]: [CreatorPathway[], CreatorEvent[]] = primarySpace
     ? await Promise.all([

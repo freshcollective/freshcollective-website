@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import LogoutButton from '@/components/layout/LogoutButton'
+import { MAX_COLLECTIVES_FOR_FOUNDING_CREATOR } from '@/lib/creatorPlan'
 import type { SpaceSummary } from '@/types/platform'
 
 interface User {
@@ -16,7 +17,8 @@ interface User {
 interface Props {
   children: React.ReactNode
   user: User
-  primarySpace: SpaceSummary | null
+  spaces: SpaceSummary[]
+  activeSpace: SpaceSummary | null
 }
 
 const NAV_ITEMS = [
@@ -29,14 +31,111 @@ const NAV_ITEMS = [
   { href: '/creator-studio/settings',    label: 'Settings' },
 ]
 
+// ---------------------------------------------------------------------------
+// Collective switcher — sets a cookie and refreshes the server components
+// ---------------------------------------------------------------------------
+
+function CollectiveSwitcher({
+  spaces,
+  activeSpace,
+}: {
+  spaces: SpaceSummary[]
+  activeSpace: SpaceSummary | null
+}) {
+  const router = useRouter()
+  const atLimit = spaces.length >= MAX_COLLECTIVES_FOR_FOUNDING_CREATOR
+
+  function switchTo(slug: string) {
+    document.cookie = `fc_creator_space=${slug}; path=/; max-age=86400`
+    router.refresh()
+  }
+
+  return (
+    <div className="mt-3.5">
+      {spaces.length > 0 && (
+        <>
+          <p
+            className="mb-1.5 text-[9px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: 'rgba(255,255,255,0.22)' }}
+          >
+            Current collective
+          </p>
+          <div className="space-y-0.5">
+            {spaces.map((s) => {
+              const isActive = s.slug === activeSpace?.slug
+              return (
+                <button
+                  key={s.slug}
+                  type="button"
+                  onClick={() => switchTo(s.slug)}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors"
+                  style={{
+                    background: isActive ? 'rgba(56,160,158,0.16)' : 'transparent',
+                  }}
+                >
+                  <span
+                    className="flex-1 truncate text-[12px] font-medium leading-tight"
+                    style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.50)' }}
+                  >
+                    {s.name}
+                  </span>
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide"
+                    style={{
+                      background:
+                        s.status === 'active'
+                          ? 'rgba(56,160,158,0.22)'
+                          : 'rgba(255,255,255,0.07)',
+                      color:
+                        s.status === 'active'
+                          ? '#55B8B6'
+                          : 'rgba(255,255,255,0.32)',
+                    }}
+                  >
+                    {s.status}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </>
+      )}
+
+      {/* Create / limit */}
+      <div className="mt-2">
+        {!atLimit ? (
+          <Link
+            href="/creator-studio/create"
+            className="flex items-center gap-1 text-[11px] transition-opacity hover:opacity-80"
+            style={{ color: 'rgba(56,160,158,0.75)' }}
+          >
+            <span aria-hidden="true" className="text-[13px] leading-none">+</span>
+            Create new collective
+          </Link>
+        ) : (
+          <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.26)' }}>
+            {spaces.length} of {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives used
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar inner (shared between desktop and mobile)
+// ---------------------------------------------------------------------------
+
 function SidebarInner({
   user,
-  primarySpace,
+  spaces,
+  activeSpace,
   pathname,
   onNavClick,
 }: {
   user: User
-  primarySpace: SpaceSummary | null
+  spaces: SpaceSummary[]
+  activeSpace: SpaceSummary | null
   pathname: string
   onNavClick?: () => void
 }) {
@@ -47,7 +146,7 @@ function SidebarInner({
   return (
     <div className="flex h-full flex-col" style={{ background: '#071824' }}>
 
-      {/* Logo + space name */}
+      {/* Logo + space name + switcher */}
       <div className="px-5 py-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
         <Link href="/creator-studio" className="flex items-center gap-2.5" onClick={onNavClick}>
           <div
@@ -63,26 +162,8 @@ function SidebarInner({
             Creator Studio
           </span>
         </Link>
-        {primarySpace && (
-          <div className="mt-3 flex items-center gap-2 overflow-hidden">
-            <span className="truncate text-[11.5px]" style={{ color: 'rgba(255,255,255,0.42)' }}>
-              {primarySpace.name}
-            </span>
-            <span
-              className="shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide"
-              style={{
-                background: primarySpace.status === 'active'
-                  ? 'rgba(56,160,158,0.22)'
-                  : 'rgba(255,255,255,0.08)',
-                color: primarySpace.status === 'active'
-                  ? '#55B8B6'
-                  : 'rgba(255,255,255,0.36)',
-              }}
-            >
-              {primarySpace.status}
-            </span>
-          </div>
-        )}
+
+        <CollectiveSwitcher spaces={spaces} activeSpace={activeSpace} />
       </div>
 
       {/* Nav */}
@@ -130,7 +211,11 @@ function SidebarInner({
   )
 }
 
-export default function CreatorStudioShell({ children, user, primarySpace }: Props) {
+// ---------------------------------------------------------------------------
+// Shell
+// ---------------------------------------------------------------------------
+
+export default function CreatorStudioShell({ children, user, spaces, activeSpace }: Props) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -142,7 +227,12 @@ export default function CreatorStudioShell({ children, user, primarySpace }: Pro
         className="hidden w-[220px] shrink-0 md:block"
         style={{ position: 'sticky', top: 0, height: '100vh' }}
       >
-        <SidebarInner user={user} primarySpace={primarySpace} pathname={pathname} />
+        <SidebarInner
+          user={user}
+          spaces={spaces}
+          activeSpace={activeSpace}
+          pathname={pathname}
+        />
       </aside>
 
       {/* Mobile overlay + drawer */}
@@ -156,7 +246,8 @@ export default function CreatorStudioShell({ children, user, primarySpace }: Pro
           <aside className="fixed inset-y-0 left-0 z-50 w-64 md:hidden">
             <SidebarInner
               user={user}
-              primarySpace={primarySpace}
+              spaces={spaces}
+              activeSpace={activeSpace}
               pathname={pathname}
               onNavClick={() => setMobileOpen(false)}
             />

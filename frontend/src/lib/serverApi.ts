@@ -2,7 +2,9 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { PublicSpaceCard } from '@/types/platform'
+import type { PublicSpaceCard, SpaceSummary } from '@/types/platform'
+
+export const ACTIVE_SPACE_COOKIE = 'fc_creator_space'
 
 async function fetchWithSession(path: string): Promise<Response> {
   const cookieStore = await cookies()
@@ -129,6 +131,18 @@ export const getCreatorSpaces = cache(async () => {
   const res = await fetchWithSession('/api/creator/spaces')
   if (!res.ok) return []
   return res.json()
+})
+
+export const getActiveCreatorSpace = cache(async (): Promise<SpaceSummary | null> => {
+  const spaces: SpaceSummary[] = await getCreatorSpaces()
+  if (!spaces.length) return null
+  const cookieStore = await cookies()
+  const slug = cookieStore.get(ACTIVE_SPACE_COOKIE)?.value
+  if (slug) {
+    const found = spaces.find(s => s.slug === slug)
+    if (found) return found
+  }
+  return spaces[0]
 })
 
 export const getCreatorSpace = cache(async (slug: string) => {

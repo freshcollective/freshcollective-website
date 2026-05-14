@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { MAX_COLLECTIVES_FOR_FOUNDING_CREATOR } from '@/lib/creatorPlan'
 
 const CATEGORIES = [
   'Intentional living',
@@ -248,10 +249,50 @@ function SuccessState({ name }: { name: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Limit reached state
+// ---------------------------------------------------------------------------
+
+function LimitReached() {
+  return (
+    <div
+      className="flex min-h-[70vh] flex-col items-center justify-center px-8 py-16 text-center"
+      style={{ background: '#F7F8FA' }}
+    >
+      <div
+        className="mb-6 flex h-14 w-14 items-center justify-center rounded-full"
+        style={{
+          background: 'rgba(0,0,0,0.05)',
+          border: '1.5px solid rgba(0,0,0,0.10)',
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <circle cx="10" cy="10" r="8.5" stroke="#94a3b8" strokeWidth="1.5" />
+          <path d="M10 6v4.5" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" />
+          <circle cx="10" cy="13.5" r="0.75" fill="#94a3b8" />
+        </svg>
+      </div>
+      <h2 className="mb-3 font-serif text-2xl text-navy-900">
+        You have used your {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} included collectives.
+      </h2>
+      <p className="mb-8 max-w-[400px] text-[14px] leading-relaxed text-slate-400">
+        Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
+        Creator Plus for additional collectives is coming soon.
+      </p>
+      <Link
+        href="/creator-studio"
+        className="rounded-xl border border-slate-200 bg-white px-7 py-3 text-[14px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+      >
+        Back to Creator Studio
+      </Link>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function CreateCollectiveForm() {
+export default function CreateCollectiveForm({ existingCount }: { existingCount: number }) {
   const router = useRouter()
 
   const [name, setName] = useState('')
@@ -317,6 +358,7 @@ export default function CreateCollectiveForm() {
     }
   }
 
+  if (existingCount >= MAX_COLLECTIVES_FOR_FOUNDING_CREATOR) return <LimitReached />
   if (success) return <SuccessState name={name} />
 
   return (
@@ -351,6 +393,9 @@ export default function CreateCollectiveForm() {
           </h1>
           <p className="text-[13.5px] leading-relaxed text-slate-400">
             Give your collective enough shape to begin. You can refine everything later.
+          </p>
+          <p className="mt-2 text-[12px] text-slate-400">
+            Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
           </p>
         </div>
 
