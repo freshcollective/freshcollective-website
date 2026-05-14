@@ -86,7 +86,7 @@ export default function HomeHero() {
             <span
               className="block"
               style={{
-                backgroundImage: 'linear-gradient(to right, #42C7C6 0%, #8FE3E2 55%, #FFFFFF 100%)',
+                backgroundImage: 'linear-gradient(100deg, #42C7C6 0%, #7FDAD9 28%, #D8F5F2 55%, #FFFFFF 78%, #FFFFFF 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
