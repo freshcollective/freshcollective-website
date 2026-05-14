@@ -84,18 +84,15 @@ export default function HomeHero() {
           >
             <span className="block">Exploring better ways to</span>
             <span
-              className="block"
               style={{
-                background: 'linear-gradient(108deg, #5ABFBD 0%, #7FCFCD 40%, #D4B048 100%)',
+                background: 'linear-gradient(108deg, #5ABFBD 0%, #7FCFCD 45%, #D4B048 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
               }}
             >
-              live, learn, create,
-            </span>
-            <span className="block" style={{ color: 'rgba(255,255,255,0.88)' }}>
-              and lead.
+              <span className="block">live, learn, create,</span>
+              <span className="block">and lead.</span>
             </span>
           </h1>
 
