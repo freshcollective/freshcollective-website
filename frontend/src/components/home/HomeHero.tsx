@@ -107,8 +107,7 @@ export default function HomeHero() {
               letterSpacing: '-0.01em',
             }}
           >
-            A membership for people exploring more intentional ways to grow —
-            with structure, community, and depth that lasts.
+            Creator-led collectives where new ideas are explored, practised, and lived.
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
