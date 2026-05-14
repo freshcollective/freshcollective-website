@@ -508,8 +508,8 @@ function FreshIdeas() {
   return (
     <section className="py-12 sm:py-20" style={{ background: '#FAFAF8' }}>
       <Container>
-        {/* Wrapper — sm:pt-16 reserves space above the card for floating cards */}
-        <div className="relative sm:pt-16">
+        {/* Wrapper — lg:pt-20 reserves space above the dark card for floating card row */}
+        <div className="relative lg:pt-20">
 
           {/* ── Dark card ──────────────────────────────────────────────────── */}
           <div
@@ -543,7 +543,7 @@ function FreshIdeas() {
               {/* Eyebrow */}
               <div className="mb-8 flex items-center gap-3">
                 <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.55)' }} />
-                <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.58)' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.68)' }}>
                   A different kind of space
                 </span>
               </div>
@@ -623,22 +623,24 @@ function FreshIdeas() {
             </div>
           </div>
 
-          {/* ── Floating cards — desktop only, 3-card cluster top-right ───── */}
-          {/* pointer-events enabled so hover states work */}
-          <div className="absolute inset-0 hidden sm:block" aria-hidden="true">
+          {/* ── Floating cards — horizontal row, lg+ only ─────────────────── */}
+          <div
+            className="absolute hidden lg:flex"
+            style={{ top: '16px', right: '0', gap: '15px' }}
+          >
 
-            {/* Card 1: Question prompt — white, left of cluster */}
+            {/* Card 1: Question prompt */}
             <div
-              className="absolute rounded-2xl bg-white rotate-[-1deg]
+              className="rounded-2xl bg-white
                 border border-[rgba(15,23,42,0.09)]
-                shadow-[0_12px_40px_rgba(0,0,0,0.11),0_3px_10px_rgba(0,0,0,0.06)]
-                transition-all duration-200 ease-out cursor-default
-                hover:-translate-y-1 hover:bg-[#EFF9F9]
-                hover:border-[rgba(66,199,198,0.42)]
-                hover:shadow-[0_22px_56px_rgba(0,0,0,0.16),0_5px_14px_rgba(0,0,0,0.08)]"
-              style={{ width: '242px', top: '4px', right: '206px', padding: '16px 18px' }}
+                shadow-[0_8px_28px_rgba(0,0,0,0.10)]
+                transition-all duration-[210ms] ease-out cursor-default
+                hover:-translate-y-[5px] hover:bg-[#EFF9F9]
+                hover:border-[rgba(66,199,198,0.44)]
+                hover:shadow-[0_18px_50px_rgba(0,0,0,0.16)]"
+              style={{ width: '210px', minHeight: '112px', padding: '18px 20px', flexShrink: 0 }}
             >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '9px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '10px' }}>
                 Question prompt
               </div>
               <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.58', letterSpacing: '-0.01em', color: '#0F172A' }}>
@@ -646,43 +648,43 @@ function FreshIdeas() {
               </div>
             </div>
 
-            {/* Card 2: Live call — dark, top-right */}
+            {/* Card 2: Live call */}
             <div
-              className="absolute rounded-2xl bg-[#0D2232] rotate-[1deg]
-                border border-white/10
-                shadow-[0_20px_56px_rgba(0,0,0,0.38),0_4px_14px_rgba(0,0,0,0.22)]
-                transition-all duration-200 ease-out cursor-default
-                hover:-translate-y-1 hover:bg-[#0F2A3C]
-                hover:border-[rgba(66,199,198,0.38)]
-                hover:shadow-[0_30px_72px_rgba(0,0,0,0.50),0_8px_20px_rgba(0,0,0,0.28)]"
-              style={{ width: '186px', top: '0px', right: '6px', padding: '15px 17px' }}
+              className="rounded-2xl bg-white
+                border border-[rgba(15,23,42,0.09)]
+                shadow-[0_8px_28px_rgba(0,0,0,0.10)]
+                transition-all duration-[210ms] ease-out cursor-default
+                hover:-translate-y-[5px] hover:bg-[#EFF9F9]
+                hover:border-[rgba(66,199,198,0.44)]
+                hover:shadow-[0_18px_50px_rgba(0,0,0,0.16)]"
+              style={{ width: '210px', minHeight: '112px', padding: '18px 20px', flexShrink: 0 }}
             >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase' as const, color: '#55B8B6', marginBottom: '8px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '10px' }}>
                 Live call
               </div>
-              <div style={{ fontSize: '14.5px', fontWeight: 600, color: '#FFFFFF', letterSpacing: '-0.02em', lineHeight: '1.3', marginBottom: '4px' }}>
+              <div style={{ fontSize: '14.5px', fontWeight: 600, letterSpacing: '-0.02em', lineHeight: '1.3', color: '#0F172A', marginBottom: '4px' }}>
                 Monthly gathering
               </div>
-              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.40)', letterSpacing: '-0.01em' }}>
+              <div style={{ fontSize: '12px', color: 'rgba(15,23,42,0.40)', letterSpacing: '-0.01em' }}>
                 7:30pm
               </div>
             </div>
 
-            {/* Card 3: Practice note — pale teal, below Card 2 */}
+            {/* Card 3: Practice note */}
             <div
-              className="absolute rounded-xl bg-[#F4FAFA]
-                border border-[rgba(56,160,158,0.20)]
-                shadow-[0_8px_28px_rgba(0,0,0,0.08)]
-                transition-all duration-200 ease-out cursor-default
-                hover:-translate-y-1 hover:bg-[#EAF6F6]
-                hover:border-[rgba(66,199,198,0.45)]
-                hover:shadow-[0_16px_44px_rgba(0,0,0,0.13)]"
-              style={{ width: '186px', top: '78px', right: '6px', padding: '14px 17px' }}
+              className="rounded-2xl bg-[#F4FAFA]
+                border border-[rgba(56,160,158,0.22)]
+                shadow-[0_8px_24px_rgba(0,0,0,0.08)]
+                transition-all duration-[210ms] ease-out cursor-default
+                hover:-translate-y-[5px] hover:bg-[#EAF6F6]
+                hover:border-[rgba(66,199,198,0.44)]
+                hover:shadow-[0_18px_48px_rgba(0,0,0,0.13)]"
+              style={{ width: '210px', minHeight: '112px', padding: '18px 20px', flexShrink: 0 }}
             >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase' as const, color: 'rgba(15,23,42,0.38)', marginBottom: '8px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '10px' }}>
                 Practice note
               </div>
-              <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.52', color: '#0F172A', letterSpacing: '-0.01em' }}>
+              <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.58', letterSpacing: '-0.01em', color: '#0F172A' }}>
                 One small experiment this week
               </div>
             </div>
