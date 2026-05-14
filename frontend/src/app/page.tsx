@@ -25,7 +25,7 @@ function DualIntent() {
             <p style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 650, color: '#0F172A' }}>
               Some people come to explore new ways of{' '}
               <span style={{
-                backgroundImage: 'linear-gradient(to right, #38A09E 0%, #55C4C2 100%)',
+                backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
@@ -36,7 +36,7 @@ function DualIntent() {
             <p className="mt-4" style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 650, color: '#0F172A' }}>
               Others come to build spaces for{' '}
               <span style={{
-                backgroundImage: 'linear-gradient(to right, #38A09E 0%, #55C4C2 100%)',
+                backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
@@ -120,25 +120,25 @@ function DualIntent() {
           <div
             className="flex flex-col rounded-2xl p-8 sm:p-10"
             style={{
-              background: '#FFFBF2',
-              border: '1px solid rgba(212,176,72,0.18)',
+              background: '#F6F8FB',
+              border: '1px solid rgba(15,23,42,0.09)',
               boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.04), 0 16px 48px rgba(0,0,0,0.09)',
             }}
           >
             {/* Icon */}
             <div
               className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl"
-              style={{ background: 'rgba(212,176,72,0.12)' }}
+              style={{ background: 'rgba(15,23,42,0.07)' }}
             >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
-                <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
-                <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
-                <path d="M14 11.5v5M11.5 14h5" stroke="#C4981A" strokeWidth="1.5" strokeLinecap="round"/>
+                <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#1E3654" strokeWidth="1.5" strokeLinejoin="round"/>
+                <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#1E3654" strokeWidth="1.5" strokeLinejoin="round"/>
+                <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#1E3654" strokeWidth="1.5" strokeLinejoin="round"/>
+                <path d="M14 11.5v5M11.5 14h5" stroke="#1E3654" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
             </div>
 
-            <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#B8891A', marginBottom: '6px' }}>
+            <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#1E3654', marginBottom: '6px' }}>
               For creators
             </p>
             <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
@@ -158,7 +158,7 @@ function DualIntent() {
                 <div key={num} className="flex gap-4">
                   <div
                     className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-                    style={{ background: 'rgba(212,176,72,0.12)', color: '#B8891A' }}
+                    style={{ background: 'rgba(15,23,42,0.07)', color: '#1E3654' }}
                   >
                     {num}
                   </div>
@@ -174,7 +174,7 @@ function DualIntent() {
               <Link
                 href="/signup"
                 className="inline-flex items-center text-[14.5px] font-bold transition-opacity hover:opacity-70"
-                style={{ color: '#B8891A' }}
+                style={{ color: '#1E3654' }}
               >
                 Build a Collective →
               </Link>
@@ -215,12 +215,12 @@ function EcosystemStatement() {
           <h2 style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 660, color: '#0F172A', marginBottom: '16px' }}>
             Fresh Collective is an{' '}
             <span style={{
-              backgroundImage: 'linear-gradient(to right, #38A09E 0%, #55C4C2 100%)',
+              backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
               WebkitBackgroundClip: 'text',
               backgroundClip: 'text',
               color: 'transparent',
             }}>
-              Eco-system.
+              ecosystem.
             </span>
           </h2>
           <p style={{ fontSize: '16px', lineHeight: '1.78', color: 'rgba(15,23,42,0.58)' }}>
@@ -297,17 +297,17 @@ function EcosystemStatement() {
 
             {/* Panel 2 — Pathway progress */}
             <div className="order-2 sm:order-1" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
-              <PanelChrome title="The REAL Journey" />
+              <PanelChrome title="Guided Pathway" />
               <div style={{ background: '#fff', display: 'flex', minHeight: '280px' }}>
                 {/* Left sidebar — step list */}
                 <div style={{ width: '42%', borderRight: '1px solid rgba(15,23,42,0.07)', padding: '16px' }}>
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(15,23,42,0.35)', marginBottom: '12px' }}>Phases</div>
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(15,23,42,0.35)', marginBottom: '12px' }}>Modules</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {[
-                      { label: 'Recognise', done: true, active: false },
-                      { label: 'Explore', done: true, active: false },
-                      { label: 'Align', done: false, active: true },
-                      { label: 'Lead', done: false, active: false },
+                      { label: 'Week 1', done: true, active: false },
+                      { label: 'Week 2', done: true, active: false },
+                      { label: 'Week 3', done: false, active: true },
+                      { label: 'Week 4', done: false, active: false },
                     ].map(({ label, done, active }) => (
                       <div key={label} className="flex items-center gap-2.5" style={{ padding: '7px 8px', borderRadius: '6px', background: active ? 'rgba(56,160,158,0.08)' : 'transparent' }}>
                         <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, background: done ? '#38A09E' : active ? 'rgba(56,160,158,0.15)' : 'rgba(15,23,42,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -322,13 +322,13 @@ function EcosystemStatement() {
                     <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(15,23,42,0.08)' }}>
                       <div style={{ width: '50%', height: '100%', borderRadius: '2px', background: 'linear-gradient(to right, #38A09E, #55C4C2)' }} />
                     </div>
-                    <div style={{ fontSize: '10px', color: '#38A09E', fontWeight: 600, marginTop: '5px' }}>Phase 2 of 4</div>
+                    <div style={{ fontSize: '10px', color: '#38A09E', fontWeight: 600, marginTop: '5px' }}>Module 2 of 4</div>
                   </div>
                 </div>
                 {/* Right — lesson content */}
                 <div style={{ flex: 1, padding: '16px' }}>
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '6px' }}>Current · Align</div>
-                  <div style={{ fontSize: '13.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '10px', lineHeight: '1.35' }}>What does alignment actually feel like for you?</div>
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '6px' }}>Current · Week 3</div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '10px', lineHeight: '1.35' }}>What shifts when you slow down and notice?</div>
                   <div style={{ fontSize: '11.5px', color: 'rgba(15,23,42,0.52)', lineHeight: '1.62', marginBottom: '14px' }}>
                     Reflect on a moment when a decision felt completely right — not exciting, just settled. What was present?
                   </div>
@@ -455,7 +455,7 @@ function EcosystemStatement() {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {[
-                      { name: 'The REAL Journey', steps: '4 phases', status: 'Published', dot: '#38A09E' },
+                      { name: 'Living with Intention', steps: '4 modules', status: 'Published', dot: '#38A09E' },
                       { name: 'Deep Work Essentials', steps: '6 lessons', status: 'Published', dot: '#38A09E' },
                       { name: 'Creative Practice', steps: '5 lessons', status: 'Draft', dot: '#C4981A' },
                     ].map(({ name, steps, status, dot }) => (
@@ -632,7 +632,7 @@ function TheWayWeFeelSection() {
             <span
               style={{
                 display: 'block',
-                backgroundImage: 'linear-gradient(100deg, #1BA7A5 0%, #42C7C6 38%, #8FE3E2 68%, #FFFFFF 100%)',
+                backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
@@ -667,32 +667,32 @@ function TheWayWeFeelSection() {
 function WhereTheLearningLives() {
   const features: { title: string; desc: string; iconBg: string; iconColor: string }[] = [
     {
-      title: 'The REAL Journey',
-      desc: 'A clear pathway through Recognise, Explore, Align, and Lead.',
+      title: 'Guided pathways',
+      desc: 'Structured journeys that move people from insight into practice.',
       iconBg: 'rgba(56,160,158,0.12)',
       iconColor: '#38A09E',
     },
     {
-      title: 'Live Layer',
-      desc: 'Monthly gatherings, community prompts, and shared conversation.',
-      iconBg: 'rgba(212,176,72,0.14)',
-      iconColor: '#C4981A',
-    },
-    {
-      title: 'Deepening Pathways',
-      desc: 'Focused rooms for Growth, Transformation, Essence, and what comes next.',
+      title: 'Live rhythm',
+      desc: 'Gatherings, prompts, and shared touchpoints that keep people connected.',
       iconBg: 'rgba(56,160,158,0.12)',
       iconColor: '#38A09E',
     },
     {
-      title: 'Practical Tools',
-      desc: 'Reflections, practices, and resources designed for real life.',
+      title: 'Focused rooms',
+      desc: 'Dedicated areas for deeper learning, reflection, resources, and practice.',
       iconBg: 'rgba(56,160,158,0.12)',
       iconColor: '#38A09E',
     },
     {
-      title: 'Community Rhythm',
-      desc: 'A place to return to, reconnect, and keep going with others.',
+      title: 'Practical tools',
+      desc: 'Reflections, exercises, and resources designed to land in real life.',
+      iconBg: 'rgba(56,160,158,0.12)',
+      iconColor: '#38A09E',
+    },
+    {
+      title: 'Community rhythm',
+      desc: 'A place to return to, reconnect, and keep moving with others.',
       iconBg: 'rgba(56,160,158,0.12)',
       iconColor: '#38A09E',
     },
@@ -741,7 +741,7 @@ function WhereTheLearningLives() {
                 </span>
               </div>
 
-              {/* REAL Journey card */}
+              {/* Pathway progress card */}
               <div
                 style={{
                   background: 'rgba(255,255,255,0.06)',
@@ -752,12 +752,12 @@ function WhereTheLearningLives() {
                 }}
               >
                 <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase' as const, color: '#42C7C6', marginBottom: '12px' }}>
-                  REAL Journey
+                  Current pathway
                 </div>
                 <div style={{ display: 'flex', gap: '7px', marginBottom: '14px' }}>
-                  {(['R', 'E', 'A', 'L'] as const).map((letter, i) => (
+                  {(['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4'] as const).map((label, i) => (
                     <div
-                      key={letter}
+                      key={label}
                       style={{
                         flex: 1, height: '36px', borderRadius: '8px',
                         background: i === 0 ? 'rgba(56,160,158,0.28)' : 'rgba(255,255,255,0.05)',
@@ -765,8 +765,8 @@ function WhereTheLearningLives() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}
                     >
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: i === 0 ? '#7FDAD9' : 'rgba(255,255,255,0.28)' }}>
-                        {letter}
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: i === 0 ? '#7FDAD9' : 'rgba(255,255,255,0.28)' }}>
+                        {label}
                       </span>
                     </div>
                   ))}
@@ -838,7 +838,7 @@ function WhereTheLearningLives() {
               Everything your collective needs to become{' '}
               <span
                 style={{
-                  backgroundImage: 'linear-gradient(100deg, #1BA7A5 0%, #42C7C6 50%, #8FE3E2 100%)',
+                  backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
                   WebkitBackgroundClip: 'text',
                   backgroundClip: 'text',
                   color: 'transparent',
@@ -971,7 +971,7 @@ function GoodQuestions() {
               <span
                 style={{
                   display: 'block',
-                  backgroundImage: 'linear-gradient(100deg, #1BA7A5 0%, #42C7C6 38%, #8FE3E2 68%, #FFFFFF 100%)',
+                  backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
                   WebkitBackgroundClip: 'text',
                   backgroundClip: 'text',
                   color: 'transparent',

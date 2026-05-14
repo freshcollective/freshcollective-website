@@ -7,7 +7,7 @@ export default function PublicFooter() {
       className="relative"
       style={{
         background:
-          'radial-gradient(circle at 20% 0%, rgba(66,199,198,0.13) 0%, transparent 34%), linear-gradient(180deg, #071824 0%, #050B14 100%)',
+          'radial-gradient(circle at 18% 0%, rgba(66,199,198,0.22) 0%, transparent 38%), linear-gradient(180deg, #071824 0%, #050B14 100%)',
         borderTop: '1px solid rgba(255,255,255,0.09)',
       }}
     >
