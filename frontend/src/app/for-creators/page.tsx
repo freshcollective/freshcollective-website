@@ -117,8 +117,8 @@ function CreatorHero() {
               className="mt-5"
               style={{ fontSize: '13px', color: 'rgba(255,255,255,0.36)', letterSpacing: '-0.01em' }}
             >
-              Founding creator access from{' '}
-              <span style={{ color: 'rgba(255,255,255,0.58)', fontWeight: 500 }}>$19/month.</span>
+              Founding creator access:{' '}
+              <span style={{ color: 'rgba(255,255,255,0.58)', fontWeight: 500 }}>14-day free trial, then $19/month.</span>
             </p>
 
           </div>
@@ -747,12 +747,14 @@ function CreatorCTA() {
                 padding: '20px 32px',
               }}
             >
-              <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#7FDAD9', marginBottom: '8px' }}>
+              <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#7FDAD9', marginBottom: '10px' }}>
                 Founding creator access
               </p>
-              <p style={{ fontSize: 'clamp(2.25rem, 4vw, 3rem)', fontWeight: 660, letterSpacing: '-0.04em', color: '#ffffff', lineHeight: 1 }}>
-                $19
-                <span style={{ fontSize: '1.125rem', fontWeight: 500, color: 'rgba(255,255,255,0.45)', letterSpacing: '-0.01em' }}>/month</span>
+              <p style={{ fontSize: 'clamp(1.5rem, 3vw, 2rem)', fontWeight: 660, letterSpacing: '-0.03em', color: '#ffffff', lineHeight: 1.1, marginBottom: '6px' }}>
+                14-day free trial
+              </p>
+              <p style={{ fontSize: '14px', fontWeight: 400, color: 'rgba(255,255,255,0.45)', letterSpacing: '-0.01em' }}>
+                then $19/month
               </p>
             </div>
 
