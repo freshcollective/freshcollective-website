@@ -232,7 +232,7 @@ function EcosystemStatement() {
         <div className="space-y-20 sm:space-y-28">
 
           {/* ROW 1 — Collectives: text left, visual right */}
-          <div className="grid items-center gap-12 sm:grid-cols-[42%_58%] sm:gap-16">
+          <div className="grid items-center gap-12 sm:grid-cols-[42fr_58fr] sm:gap-16">
             <div>
               <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -293,7 +293,7 @@ function EcosystemStatement() {
           </div>
 
           {/* ROW 2 — Pathways: visual left, text right */}
-          <div className="grid items-center gap-12 sm:grid-cols-[58%_42%] sm:gap-16">
+          <div className="grid items-center gap-12 sm:grid-cols-[58fr_42fr] sm:gap-16">
 
             {/* Panel 2 — Pathway progress */}
             <div className="order-2 sm:order-1" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
@@ -358,7 +358,7 @@ function EcosystemStatement() {
           </div>
 
           {/* ROW 3 — Gatherings: text left, visual right */}
-          <div className="grid items-center gap-12 sm:grid-cols-[42%_58%] sm:gap-16">
+          <div className="grid items-center gap-12 sm:grid-cols-[42fr_58fr] sm:gap-16">
             <div>
               <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -422,7 +422,7 @@ function EcosystemStatement() {
           </div>
 
           {/* ROW 4 — Creator tools: visual left, text right */}
-          <div className="grid items-center gap-12 sm:grid-cols-[58%_42%] sm:gap-16">
+          <div className="grid items-center gap-12 sm:grid-cols-[58fr_42fr] sm:gap-16">
 
             {/* Panel 4 — Creator workspace */}
             <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
@@ -701,7 +701,7 @@ function WhereTheLearningLives() {
   return (
     <section className="py-20 sm:py-28" style={{ background: '#F3FAFA' }}>
       <Container>
-        <div className="grid items-center gap-12 sm:grid-cols-[45%_55%] sm:gap-16">
+        <div className="grid items-center gap-12 sm:grid-cols-[45fr_55fr] sm:gap-16">
 
           {/* ── Visual panel ────────────────────────────────────────────────── */}
           <div
@@ -948,7 +948,7 @@ function GoodQuestions() {
   return (
     <section className="py-20 sm:py-28" style={{ background: '#FFFFFF' }}>
       <Container>
-        <div className="grid gap-12 sm:grid-cols-[38%_62%] sm:gap-16">
+        <div className="grid gap-12 sm:grid-cols-[38fr_62fr] sm:gap-16">
 
           {/* Left: heading */}
           <div>
