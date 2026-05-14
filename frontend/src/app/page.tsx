@@ -33,8 +33,16 @@ function DualIntent() {
                 living, learning, and growing.
               </span>
             </p>
-            <p className="mt-4" style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 640, color: 'rgba(15,23,42,0.60)' }}>
-              Others come to build the kinds of environments they wish existed — spaces for conversation, practice, creativity, and real change.
+            <p className="mt-4" style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 650, color: '#0F172A' }}>
+              Others come to build spaces for{' '}
+              <span style={{
+                backgroundImage: 'linear-gradient(to right, #38A09E 0%, #55C4C2 100%)',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent',
+              }}>
+                conversation, practice, creativity, and real change.
+              </span>
             </p>
             <p className="mt-5" style={{ fontSize: 'clamp(0.9rem, 1.4vw, 1rem)', color: 'rgba(15,23,42,0.42)', letterSpacing: '-0.01em', lineHeight: '1.5' }}>
               Fresh Collective brings both together.
