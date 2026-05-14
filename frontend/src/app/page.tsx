@@ -982,14 +982,15 @@ function GoodQuestions() {
             </h2>
           </div>
 
-          {/* Right: accordion — max-width keeps it from bleeding to the edge */}
-          <div className="flex flex-col gap-3" style={{ maxWidth: '640px' }}>
+          {/* Right: accordion */}
+          <div className="flex flex-col gap-3 pr-2 sm:pr-8">
             {qa.map(({ q, a }) => (
               <details
                 key={q}
-                className="group rounded-2xl border border-[rgba(15,23,42,0.08)] bg-white
-                  shadow-[0_1px_4px_rgba(0,0,0,0.04)]
-                  open:border-[rgba(56,160,158,0.28)] open:shadow-[0_4px_20px_rgba(56,160,158,0.07)]"
+                className="group rounded-2xl border border-[rgba(66,199,198,0.14)] bg-[#F7FCFC]
+                  shadow-[0_1px_6px_rgba(0,0,0,0.06)]
+                  hover:bg-[#F1FAFA]
+                  open:border-[rgba(56,160,158,0.32)] open:shadow-[0_4px_24px_rgba(56,160,158,0.09)]"
               >
                 <summary className="flex cursor-pointer list-none select-none items-center justify-between gap-4 px-6 py-5">
                   <span style={{ fontSize: '15px', fontWeight: 620, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: '1.4' }}>
@@ -1029,79 +1030,117 @@ function GoodQuestions() {
 
 function FinalCTA() {
   return (
-    <section
-      className="relative overflow-hidden py-24 sm:py-32"
-      style={{ background: '#060C17' }}
-    >
-      {/* Teal glow from below */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        aria-hidden="true"
-        style={{
-          background: 'radial-gradient(ellipse 80% 55% at 50% 110%, rgba(56,160,158,0.14) 0%, transparent 65%)',
-        }}
-      />
+    <section className="py-20 sm:py-28" style={{ background: '#FAFAF8' }}>
+      <Container>
 
-      <Container className="relative">
-        <div className="mx-auto max-w-[520px] text-center">
+        {/* Card */}
+        <div
+          className="relative overflow-hidden"
+          style={{
+            borderRadius: '28px',
+            background: '#071824',
+            border: '1px solid rgba(255,255,255,0.07)',
+            boxShadow: '0 8px 48px rgba(0,0,0,0.28), 0 2px 12px rgba(0,0,0,0.18)',
+            padding: 'clamp(3rem, 5.5vw, 5.5rem) clamp(2rem, 6vw, 5rem)',
+          }}
+        >
 
-          <div className="mx-auto mb-10 h-px w-10" style={{ background: 'rgba(212,176,72,0.35)' }} />
-
-          <h2
-            className="mb-6"
+          {/* Teal radial glow — top-centre */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            aria-hidden="true"
             style={{
-              fontSize: 'clamp(2.25rem, 4.5vw, 4rem)',
-              letterSpacing: '-0.04em',
-              lineHeight: '1.07',
-              fontWeight: 650,
-              color: '#ffffff',
+              background: 'radial-gradient(ellipse 75% 55% at 50% -10%, rgba(56,160,158,0.18) 0%, transparent 65%)',
             }}
-          >
-            Find your collective.
-            <br />
-            <span
+          />
+
+          {/* Content */}
+          <div className="relative z-10 flex flex-col items-center text-center">
+
+            {/* Gold rule */}
+            <div className="mb-8 h-px w-10" style={{ background: 'rgba(212,176,72,0.40)' }} />
+
+            <h2
+              className="mb-5"
               style={{
-                background: 'linear-gradient(108deg, #7FCFCD 0%, #D4B048 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
+                fontSize: 'clamp(2.5rem, 5vw, 4.25rem)',
+                letterSpacing: '-0.04em',
+                lineHeight: '1.06',
+                fontWeight: 660,
               }}
             >
-              Or build one.
-            </span>
-          </h2>
+              <span style={{ display: 'block', color: '#ffffff' }}>Find your collective.</span>
+              <span
+                style={{
+                  display: 'block',
+                  backgroundImage: 'linear-gradient(100deg, #42C7C6 0%, #7FDAD9 30%, #D8F5F2 58%, #FFFFFF 82%, #FFFFFF 100%)',
+                  WebkitBackgroundClip: 'text',
+                  backgroundClip: 'text',
+                  color: 'transparent',
+                }}
+              >
+                Or build one.
+              </span>
+            </h2>
 
-          <p
-            className="mb-10 text-[15.5px] leading-[1.82]"
-            style={{ color: 'rgba(255,255,255,0.58)' }}
-          >
-            There&apos;s a collective for where you are now.
-            Or build the one that doesn&apos;t exist yet.
-          </p>
-
-          <div className="flex flex-col items-center gap-4">
-            <Link
-              href="/spaces"
-              className="inline-flex items-center rounded-xl px-9 py-4 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90"
+            <p
+              className="mb-10"
               style={{
-                background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
+                fontSize: 'clamp(0.9375rem, 1.3vw, 1rem)',
+                lineHeight: '1.80',
+                color: 'rgba(255,255,255,0.52)',
+                maxWidth: '400px',
+                letterSpacing: '-0.01em',
               }}
             >
-              Explore Collectives
-            </Link>
-            <Link
-              href="/signup"
-              className="text-[13.5px] font-medium transition-opacity hover:opacity-80"
-              style={{ color: 'rgba(255,255,255,0.48)' }}
-            >
-              or Build a Collective →
-            </Link>
+              There&apos;s a collective for where you are now.
+              Or build the one that doesn&apos;t exist yet.
+            </p>
+
+            {/* Buttons */}
+            <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+              <Link
+                href="/spaces"
+                className="inline-flex items-center rounded-xl px-8 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90"
+                style={{
+                  background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                  boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
+                }}
+              >
+                Explore Collectives
+              </Link>
+
+              <span
+                style={{
+                  fontSize: '13px',
+                  color: 'rgba(255,255,255,0.30)',
+                  letterSpacing: '0.02em',
+                  userSelect: 'none',
+                }}
+              >
+                or
+              </span>
+
+              <Link
+                href="/signup"
+                className="inline-flex items-center rounded-xl px-8 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px hover:bg-[#E8FAFA]"
+                style={{
+                  background: '#ffffff',
+                  color: '#38A09E',
+                  border: '1px solid rgba(56,160,158,0.22)',
+                  boxShadow: '0 2px 12px rgba(0,0,0,0.14)',
+                }}
+              >
+                Build a Collective
+              </Link>
+            </div>
+
+            {/* Gold rule */}
+            <div className="mt-10 h-px w-10" style={{ background: 'rgba(212,176,72,0.40)' }} />
+
           </div>
-
-          <div className="mx-auto mt-10 h-px w-10" style={{ background: 'rgba(212,176,72,0.35)' }} />
-
         </div>
+
       </Container>
     </section>
   )
