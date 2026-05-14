@@ -14,7 +14,7 @@ function DualIntent() {
       <Container>
 
         {/* Copy block */}
-        <div className="mb-14 sm:mb-16" style={{ maxWidth: '540px' }}>
+        <div className="mb-12 sm:mb-14" style={{ maxWidth: '540px' }}>
           <p
             className="mb-7"
             style={{ fontSize: '10.5px', fontWeight: 650, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(8,18,38,0.40)' }}
@@ -31,208 +31,133 @@ function DualIntent() {
             </p>
             <p className="mt-4" style={{ color: 'rgba(8,18,38,0.38)' }}>Fresh Collective brings both together.</p>
           </div>
-          <div className="mt-8 flex flex-wrap gap-x-7 gap-y-2">
-            <Link
-              href="/spaces"
-              className="text-[14px] font-semibold transition-opacity hover:opacity-60"
-              style={{ color: '#38A09E' }}
-            >
-              Explore Collectives →
-            </Link>
-            <Link
-              href="/signup"
-              className="text-[14px] font-semibold transition-opacity hover:opacity-60"
-              style={{ color: 'rgba(8,18,38,0.40)' }}
-            >
-              Build a Collective →
-            </Link>
-          </div>
         </div>
 
-        {/* Artifact compositions */}
-        <div className="grid gap-8 sm:grid-cols-2 sm:gap-10">
+        {/* Cards */}
+        <div className="grid gap-5 sm:grid-cols-2 sm:gap-6">
 
-          {/* LEFT — Explore: participatory, reflective */}
-          <div className="relative hidden sm:block" style={{ height: '310px' }}>
-
-            {/* Practice worksheet fragment — top left */}
+          {/* CARD 1 — Learners */}
+          <div
+            className="flex flex-col rounded-2xl p-8 sm:p-10"
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid rgba(0,0,0,0.08)',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.07)',
+            }}
+          >
+            {/* Icon */}
             <div
-              className="absolute p-5"
-              style={{
-                width: '200px', top: '0', left: '0',
-                background: '#FAF8F4',
-                borderRadius: '10px',
-                transform: 'rotate(-2.8deg)',
-                boxShadow: '0 1px 0 rgba(0,0,0,0.06), 0 10px 32px rgba(0,0,0,0.10)',
-              }}
+              className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl"
+              style={{ background: 'rgba(56,160,158,0.10)' }}
             >
-              {/* teal marker stripe at top */}
-              <div style={{ height: '3px', width: '28px', background: '#42C7C6', borderRadius: '1px', marginBottom: '10px' }} />
-              <div className="mb-1" style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#38A09E' }}>
-                Week 3 · Practice
-              </div>
-              <div className="mb-4" style={{ fontSize: '12.5px', fontWeight: 600, color: '#0C1826', letterSpacing: '-0.02em', lineHeight: '1.42' }}>
-                What are you noticing this week?
-              </div>
-              {/* ruled lines */}
-              <div className="space-y-[9px]">
-                {[1, 0.9, 0.75].map((w, i) => (
-                  <div key={i} style={{ height: '1px', width: `${w * 100}%`, background: 'rgba(12,24,38,0.10)' }} />
-                ))}
-              </div>
-              {/* teal progress marker */}
-              <div className="mt-4 flex gap-1.5">
-                {[true, true, false, false].map((filled, i) => (
-                  <div key={i} style={{ height: '2px', flex: 1, background: filled ? '#42C7C6' : 'rgba(12,24,38,0.10)', borderRadius: '1px' }} />
-                ))}
-              </div>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <circle cx="10" cy="8" r="3.5" stroke="#38A09E" strokeWidth="1.5"/>
+                <path d="M3 17c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
             </div>
 
-            {/* Reflection prompt — parchment, bottom centre */}
-            <div
-              className="absolute p-5"
-              style={{
-                width: '238px', bottom: '0', left: '44px',
-                background: '#EDE8DE',
-                borderRadius: '9px',
-                transform: 'rotate(2deg)',
-                boxShadow: '0 1px 0 rgba(0,0,0,0.06), 0 10px 32px rgba(0,0,0,0.11)',
-              }}
-            >
-              <div className="mb-3" style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(38,140,138,0.75)' }}>
-                This month&apos;s prompt
-              </div>
-              <div
-                style={{
-                  fontSize: '13px', fontWeight: 500, lineHeight: '1.60', letterSpacing: '-0.01em', color: '#0C1826',
-                  borderBottom: '1px solid rgba(38,140,138,0.28)', paddingBottom: '8px', marginBottom: '10px',
-                }}
+            <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '6px' }}>
+              For learners
+            </p>
+            <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
+              Collectives to join
+            </h3>
+            <p className="mb-8" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(8,18,38,0.56)' }}>
+              Discover new ideas and ways of living, leading, and creating with others on the same path.
+            </p>
+
+            <div className="mb-8 space-y-5">
+              {[
+                { num: '1', heading: 'Meaningful conversations', body: 'Engage in thoughtful dialogue and shared learning.' },
+                { num: '2', heading: 'Practical tools and practices', body: 'Access resources and practices for real life.' },
+              ].map(({ num, heading, body }) => (
+                <div key={num} className="flex gap-4">
+                  <div
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+                    style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
+                  >
+                    {num}
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '13.5px', fontWeight: 630, color: '#08101E', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
+                    <p style={{ fontSize: '13px', color: 'rgba(8,18,38,0.52)', lineHeight: '1.6' }}>{body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-auto">
+              <Link
+                href="/spaces"
+                className="inline-flex items-center text-[14px] font-semibold transition-opacity hover:opacity-70"
+                style={{ color: '#38A09E' }}
               >
-                Where are you growing slowly — and is slow okay right now?
-              </div>
-              {/* ruled response lines */}
-              <div className="space-y-[8px]">
-                {[1, 0.82].map((w, i) => (
-                  <div key={i} style={{ height: '1px', width: `${w * 100}%`, background: 'rgba(38,140,138,0.18)' }} />
-                ))}
-              </div>
+                Explore Collectives →
+              </Link>
             </div>
-
-            {/* Live gathering note — top right, smaller */}
-            <div
-              className="absolute p-4"
-              style={{
-                width: '160px', top: '22px', right: '0',
-                background: '#F6F4F0',
-                borderRadius: '8px',
-                transform: 'rotate(1.4deg)',
-                boxShadow: '0 1px 0 rgba(0,0,0,0.05), 0 6px 22px rgba(0,0,0,0.09)',
-              }}
-            >
-              <div className="mb-2 flex items-center gap-1.5">
-                <div style={{ height: '5px', width: '5px', borderRadius: '50%', background: '#42C7C6', flexShrink: 0 }} />
-                <span style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E' }}>
-                  Live gathering
-                </span>
-              </div>
-              <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#0C1826', marginBottom: '3px' }}>Monthly call</div>
-              <div style={{ fontSize: '11px', color: 'rgba(12,24,38,0.45)', lineHeight: '1.5' }}>60 min · open conversation</div>
-              <div style={{ marginTop: '10px', height: '1px', background: 'rgba(12,24,38,0.08)' }} />
-              <div style={{ marginTop: '8px', fontSize: '10px', color: 'rgba(56,160,158,0.80)', fontWeight: 600 }}>This week →</div>
-            </div>
-
           </div>
 
-          {/* RIGHT — Build: creator, constructive */}
-          <div className="relative hidden sm:block" style={{ height: '310px' }}>
-
-            {/* Session arc — planning document, top right */}
+          {/* CARD 2 — Creators */}
+          <div
+            className="flex flex-col rounded-2xl p-8 sm:p-10"
+            style={{
+              background: '#FFFFFF',
+              border: '1px solid rgba(0,0,0,0.08)',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.07)',
+            }}
+          >
+            {/* Icon */}
             <div
-              className="absolute p-5"
-              style={{
-                width: '224px', top: '0', right: '12px',
-                background: '#FAF9F5',
-                borderRadius: '10px',
-                transform: 'rotate(1.8deg)',
-                boxShadow: '0 1px 0 rgba(0,0,0,0.06), 0 10px 32px rgba(0,0,0,0.10)',
-              }}
+              className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl"
+              style={{ background: 'rgba(212,176,72,0.12)' }}
             >
-              {/* gold marker stripe */}
-              <div style={{ height: '3px', width: '24px', background: '#D4B048', borderRadius: '1px', marginBottom: '10px' }} />
-              <div className="mb-1" style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#9A7420' }}>
-                Collective arc
-              </div>
-              <div
-                style={{ fontSize: '13px', fontWeight: 620, color: '#0C1826', letterSpacing: '-0.02em', marginBottom: '12px',
-                  borderBottom: '1px solid rgba(180,140,30,0.22)', paddingBottom: '8px' }}
-              >
-                5-week structure
-              </div>
-              <div className="space-y-[9px]">
-                {[
-                  { label: 'Orientation & context', active: true },
-                  { label: 'Core practice: weeks 1–2', active: true },
-                  { label: 'Live session + reflection', active: false },
-                  { label: 'Integration & close', active: false },
-                ].map(({ label, active }, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <div style={{ height: '5px', width: '5px', borderRadius: '50%', background: active ? '#D4B048' : 'rgba(12,24,38,0.15)', marginTop: '4px', flexShrink: 0 }} />
-                    <span style={{ fontSize: '11px', color: active ? 'rgba(12,24,38,0.72)' : 'rgba(12,24,38,0.32)', lineHeight: '1.45' }}>{label}</span>
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5"/>
+                <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5"/>
+                <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5"/>
+                <rect x="11" y="11" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeDasharray="1.5 1.5"/>
+              </svg>
+            </div>
+
+            <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#B8891A', marginBottom: '6px' }}>
+              For creators
+            </p>
+            <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
+              Create your own collective
+            </h3>
+            <p className="mb-8" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(8,18,38,0.56)' }}>
+              Spread your ideas with people who are craving a different way of living, leading, and exploring life.
+            </p>
+
+            <div className="mb-8 space-y-5">
+              {[
+                { num: '1', heading: 'Build your space', body: 'Design your collective around your purpose and vision.' },
+                { num: '2', heading: 'Gather and guide people', body: 'Bring the right people together around what matters.' },
+              ].map(({ num, heading, body }) => (
+                <div key={num} className="flex gap-4">
+                  <div
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+                    style={{ background: 'rgba(212,176,72,0.12)', color: '#B8891A' }}
+                  >
+                    {num}
                   </div>
-                ))}
-              </div>
+                  <div>
+                    <p style={{ fontSize: '13.5px', fontWeight: 630, color: '#08101E', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
+                    <p style={{ fontSize: '13px', color: 'rgba(8,18,38,0.52)', lineHeight: '1.6' }}>{body}</p>
+                  </div>
+                </div>
+              ))}
             </div>
 
-            {/* Creator question — warm paper, bottom left */}
-            <div
-              className="absolute p-5"
-              style={{
-                width: '212px', bottom: '0', left: '0',
-                background: '#F3EDD9',
-                borderRadius: '9px',
-                transform: 'rotate(-2deg)',
-                boxShadow: '0 1px 0 rgba(0,0,0,0.06), 0 10px 32px rgba(0,0,0,0.11)',
-              }}
-            >
-              {/* broad gold highlight bar — like highlighter over key text */}
-              <div style={{ height: '4px', width: '100%', background: 'rgba(212,176,72,0.30)', borderRadius: '1px', marginBottom: '10px' }} />
-              <div className="mb-2" style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#9A7420' }}>
-                Before I build this —
-              </div>
-              <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.62', letterSpacing: '-0.01em', color: '#0C1826' }}>
-                What is the one shift I want people to make by the end?
-              </div>
-              {/* ruled lines */}
-              <div className="mt-4 space-y-[9px]">
-                {[1, 0.78].map((w, i) => (
-                  <div key={i} style={{ height: '1px', width: `${w * 100}%`, background: 'rgba(180,140,30,0.28)' }} />
-                ))}
-              </div>
+            <div className="mt-auto">
+              <Link
+                href="/signup"
+                className="inline-flex items-center text-[14px] font-semibold transition-opacity hover:opacity-70"
+                style={{ color: '#B8891A' }}
+              >
+                Build a Collective →
+              </Link>
             </div>
-
-            {/* Cohort note — small, bottom right */}
-            <div
-              className="absolute p-4"
-              style={{
-                width: '158px', bottom: '38px', right: '0',
-                background: '#FAFAF7',
-                borderRadius: '8px',
-                border: '1px solid rgba(0,0,0,0.07)',
-                transform: 'rotate(1.6deg)',
-                boxShadow: '0 1px 0 rgba(0,0,0,0.05), 0 6px 22px rgba(0,0,0,0.09)',
-              }}
-            >
-              <div className="mb-2 flex items-center gap-1.5">
-                <div style={{ height: '5px', width: '5px', borderRadius: '50%', background: '#D4B048', flexShrink: 0 }} />
-                <span style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#9A7420' }}>
-                  Your collective
-                </span>
-              </div>
-              <div style={{ fontSize: '12.5px', fontWeight: 600, color: '#0C1826', marginBottom: '3px' }}>12 members joined</div>
-              <div style={{ height: '1px', background: 'rgba(12,24,38,0.08)', margin: '8px 0' }} />
-              <div style={{ fontSize: '11px', color: 'rgba(12,24,38,0.42)' }}>Starting in 4 days</div>
-            </div>
-
           </div>
 
         </div>
