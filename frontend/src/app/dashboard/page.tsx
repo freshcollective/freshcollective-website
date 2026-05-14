@@ -167,6 +167,36 @@ export default async function DashboardPage() {
 
           </div>
 
+          {/* Creator Studio — visible to creators/admins */}
+          {(user?.role === 'creator' || user?.role === 'admin') && (
+            <section className="mt-4">
+              <Link
+                href="/creator-studio"
+                className="group block rounded-xl border border-border bg-surface px-7 py-5 transition-all hover:border-teal-200 hover:shadow-[var(--fc-shadow-card)]"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="mb-0.5 text-xs font-semibold uppercase tracking-widest text-teal-600">
+                      Creator
+                    </p>
+                    <p className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                      Creator Studio
+                    </p>
+                    <p className="mt-1 text-sm text-slate-400">
+                      Manage your collective, pathways, and gatherings.
+                    </p>
+                  </div>
+                  <span
+                    className="shrink-0 text-teal-500 opacity-0 transition-opacity group-hover:opacity-100"
+                    aria-hidden="true"
+                  >
+                    →
+                  </span>
+                </div>
+              </Link>
+            </section>
+          )}
+
           {/* Logout — tucked away at bottom */}
           <div className="mt-12 border-t border-border pt-6 flex justify-end">
             <LogoutButton className="text-xs text-slate-400 hover:text-slate-600 transition-colors" />
