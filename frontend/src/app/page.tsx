@@ -23,9 +23,17 @@ function DualIntent() {
           </p>
           <div className="mb-6">
             <p style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 650, color: '#0F172A' }}>
-              Some people come to explore new ways of living, learning, and growing.
+              Some people come to explore new ways of{' '}
+              <span style={{
+                backgroundImage: 'linear-gradient(to right, #38A09E 0%, #55C4C2 100%)',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent',
+              }}>
+                living, learning, and growing.
+              </span>
             </p>
-            <p className="mt-4" style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 640, color: 'rgba(15,23,42,0.62)' }}>
+            <p className="mt-4" style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 640, color: 'rgba(15,23,42,0.60)' }}>
               Others come to build the kinds of environments they wish existed — spaces for conversation, practice, creativity, and real change.
             </p>
             <p className="mt-5" style={{ fontSize: 'clamp(0.9rem, 1.4vw, 1rem)', color: 'rgba(15,23,42,0.42)', letterSpacing: '-0.01em', lineHeight: '1.5' }}>
@@ -63,9 +71,11 @@ function DualIntent() {
             <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
               Collectives to join
             </h3>
-            <p className="mb-8" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.62)' }}>
+            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.62)' }}>
               Discover new ideas and ways of living, leading, and creating with others on the same path.
             </p>
+
+            <div className="mb-6" style={{ height: '1px', background: 'rgba(15,23,42,0.07)' }} />
 
             <div className="mb-8 space-y-5">
               {[
@@ -90,7 +100,7 @@ function DualIntent() {
             <div className="mt-auto">
               <Link
                 href="/spaces"
-                className="inline-flex items-center text-[14px] font-semibold transition-opacity hover:opacity-70"
+                className="inline-flex items-center text-[14.5px] font-bold transition-opacity hover:opacity-70"
                 style={{ color: '#38A09E' }}
               >
                 Explore Collectives →
@@ -126,9 +136,11 @@ function DualIntent() {
             <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
               Create your own collective
             </h3>
-            <p className="mb-8" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.62)' }}>
+            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.62)' }}>
               Spread your ideas with people who are craving a different way of living, leading, and exploring life.
             </p>
+
+            <div className="mb-6" style={{ height: '1px', background: 'rgba(15,23,42,0.07)' }} />
 
             <div className="mb-8 space-y-5">
               {[
@@ -153,7 +165,7 @@ function DualIntent() {
             <div className="mt-auto">
               <Link
                 href="/signup"
-                className="inline-flex items-center text-[14px] font-semibold transition-opacity hover:opacity-70"
+                className="inline-flex items-center text-[14.5px] font-bold transition-opacity hover:opacity-70"
                 style={{ color: '#B8891A' }}
               >
                 Build a Collective →
