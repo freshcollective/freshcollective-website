@@ -542,8 +542,8 @@ function FreshIdeas() {
 
               {/* Eyebrow */}
               <div className="mb-8 flex items-center gap-3">
-                <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.38)' }} />
-                <span style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.20em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)' }}>
+                <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.55)' }} />
+                <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.58)' }}>
                   A different kind of space
                 </span>
               </div>
@@ -623,95 +623,67 @@ function FreshIdeas() {
             </div>
           </div>
 
-          {/* ── Floating cards — desktop only, bridge into top of dark card ── */}
-          <div className="pointer-events-none absolute inset-0 hidden sm:block" aria-hidden="true">
+          {/* ── Floating cards — desktop only, 3-card cluster top-right ───── */}
+          {/* pointer-events enabled so hover states work */}
+          <div className="absolute inset-0 hidden sm:block" aria-hidden="true">
 
-            {/* Card 4: Collective signal — white, leftmost */}
+            {/* Card 1: Question prompt — white, left of cluster */}
             <div
-              className="absolute rounded-xl bg-white"
-              style={{
-                width: '160px',
-                top: '6px',
-                right: '432px',
-                padding: '14px 15px',
-                transform: 'rotate(-2deg)',
-                border: '1px solid rgba(15,23,42,0.07)',
-                boxShadow: '0 6px 20px rgba(0,0,0,0.08), 0 2px 6px rgba(0,0,0,0.05)',
-              }}
+              className="absolute rounded-2xl bg-white rotate-[-1deg]
+                border border-[rgba(15,23,42,0.09)]
+                shadow-[0_12px_40px_rgba(0,0,0,0.11),0_3px_10px_rgba(0,0,0,0.06)]
+                transition-all duration-200 ease-out cursor-default
+                hover:-translate-y-1 hover:bg-[#EFF9F9]
+                hover:border-[rgba(66,199,198,0.42)]
+                hover:shadow-[0_22px_56px_rgba(0,0,0,0.16),0_5px_14px_rgba(0,0,0,0.08)]"
+              style={{ width: '242px', top: '4px', right: '206px', padding: '16px 18px' }}
             >
-              <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '6px' }}>
-                Collective signal
-              </div>
-              <div style={{ fontSize: '13px', fontWeight: 500, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: '1.4' }}>
-                12 members reflecting
-              </div>
-            </div>
-
-            {/* Card 1: Question prompt — white, center-left */}
-            <div
-              className="absolute rounded-2xl bg-white"
-              style={{
-                width: '220px',
-                top: '12px',
-                right: '192px',
-                padding: '15px 16px',
-                transform: 'rotate(-2.5deg)',
-                border: '1px solid rgba(15,23,42,0.08)',
-                boxShadow: '0 12px 40px rgba(0,0,0,0.12), 0 3px 10px rgba(0,0,0,0.06)',
-              }}
-            >
-              <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '8px' }}>
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase' as const, color: '#38A09E', marginBottom: '9px' }}>
                 Question prompt
               </div>
-              <div style={{ fontSize: '12.5px', fontWeight: 500, lineHeight: '1.55', letterSpacing: '-0.01em', color: '#0F172A' }}>
+              <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.58', letterSpacing: '-0.01em', color: '#0F172A' }}>
                 &ldquo;What are you actually saying yes to?&rdquo;
               </div>
             </div>
 
-            {/* Card 3: Practice note — pale teal tint, below Card 1 */}
+            {/* Card 2: Live call — dark, top-right */}
             <div
-              className="absolute rounded-xl"
-              style={{
-                width: '184px',
-                top: '66px',
-                right: '212px',
-                padding: '13px 15px',
-                background: '#F4FAFA',
-                border: '1px solid rgba(56,160,158,0.18)',
-                transform: 'rotate(1.8deg)',
-                boxShadow: '0 8px 28px rgba(0,0,0,0.08)',
-              }}
+              className="absolute rounded-2xl bg-[#0D2232] rotate-[1deg]
+                border border-white/10
+                shadow-[0_20px_56px_rgba(0,0,0,0.38),0_4px_14px_rgba(0,0,0,0.22)]
+                transition-all duration-200 ease-out cursor-default
+                hover:-translate-y-1 hover:bg-[#0F2A3C]
+                hover:border-[rgba(66,199,198,0.38)]
+                hover:shadow-[0_30px_72px_rgba(0,0,0,0.50),0_8px_20px_rgba(0,0,0,0.28)]"
+              style={{ width: '186px', top: '0px', right: '6px', padding: '15px 17px' }}
             >
-              <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: 'rgba(15,23,42,0.36)', marginBottom: '7px' }}>
-                Practice note
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase' as const, color: '#55B8B6', marginBottom: '8px' }}>
+                Live call
               </div>
-              <div style={{ fontSize: '12.5px', fontWeight: 500, lineHeight: '1.5', color: '#0F172A', letterSpacing: '-0.01em' }}>
-                One small experiment this week
+              <div style={{ fontSize: '14.5px', fontWeight: 600, color: '#FFFFFF', letterSpacing: '-0.02em', lineHeight: '1.3', marginBottom: '4px' }}>
+                Monthly gathering
+              </div>
+              <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.40)', letterSpacing: '-0.01em' }}>
+                7:30pm
               </div>
             </div>
 
-            {/* Card 2: Live call — dark, rightmost */}
+            {/* Card 3: Practice note — pale teal, below Card 2 */}
             <div
-              className="absolute rounded-2xl"
-              style={{
-                width: '170px',
-                top: '10px',
-                right: '10px',
-                padding: '14px 15px',
-                background: '#0D2232',
-                border: '1px solid rgba(255,255,255,0.10)',
-                transform: 'rotate(2deg)',
-                boxShadow: '0 20px 56px rgba(0,0,0,0.40), 0 4px 14px rgba(0,0,0,0.24)',
-              }}
+              className="absolute rounded-xl bg-[#F4FAFA]
+                border border-[rgba(56,160,158,0.20)]
+                shadow-[0_8px_28px_rgba(0,0,0,0.08)]
+                transition-all duration-200 ease-out cursor-default
+                hover:-translate-y-1 hover:bg-[#EAF6F6]
+                hover:border-[rgba(66,199,198,0.45)]
+                hover:shadow-[0_16px_44px_rgba(0,0,0,0.13)]"
+              style={{ width: '186px', top: '78px', right: '6px', padding: '14px 17px' }}
             >
-              <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#55B8B6', marginBottom: '7px' }}>
-                Live call
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase' as const, color: 'rgba(15,23,42,0.38)', marginBottom: '8px' }}>
+                Practice note
               </div>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: '#FFFFFF', letterSpacing: '-0.02em', lineHeight: '1.3', marginBottom: '3px' }}>
-                Monthly gathering
-              </div>
-              <div style={{ fontSize: '11.5px', color: 'rgba(255,255,255,0.40)', letterSpacing: '-0.01em' }}>
-                7:30pm
+              <div style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.52', color: '#0F172A', letterSpacing: '-0.01em' }}>
+                One small experiment this week
               </div>
             </div>
 
