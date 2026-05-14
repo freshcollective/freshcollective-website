@@ -570,12 +570,12 @@ function FreshIdeas() {
             </h2>
 
             {/* Body */}
-            <div style={{ maxWidth: '560px', marginBottom: '4rem' }}>
+            <div style={{ maxWidth: '560px' }}>
               <p
                 style={{
                   fontSize: 'clamp(1rem, 1.5vw, 1.125rem)',
                   lineHeight: '1.85',
-                  color: 'rgba(255,255,255,0.72)',
+                  color: 'rgba(255,255,255,0.88)',
                   marginBottom: '1.25rem',
                   letterSpacing: '-0.01em',
                 }}
@@ -586,60 +586,12 @@ function FreshIdeas() {
                 style={{
                   fontSize: 'clamp(1rem, 1.5vw, 1.125rem)',
                   lineHeight: '1.85',
-                  color: 'rgba(255,255,255,0.52)',
+                  color: 'rgba(255,255,255,0.72)',
                   letterSpacing: '-0.01em',
                 }}
               >
                 Not more noise. Not passive learning. A place where meaningful work can be held, practised, shared, and grown over time.
               </p>
-            </div>
-
-            {/* Principles */}
-            <div
-              className="flex flex-col gap-0 sm:flex-row"
-              style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '2.5rem' }}
-            >
-              {[
-                'Held with structure',
-                'Practised in community',
-                'Given room to deepen',
-              ].map((label, i) => (
-                <div
-                  key={label}
-                  className="flex items-center gap-4 py-4 sm:py-0 sm:flex-1"
-                  style={{
-                    borderBottom: '1px solid rgba(255,255,255,0.05)',
-                    ...(i < 2 && { borderBottom: undefined }),
-                  }}
-                >
-                  {i > 0 && (
-                    <div
-                      className="hidden sm:block"
-                      style={{ width: '1px', height: '2rem', flexShrink: 0, background: 'rgba(255,255,255,0.08)', marginRight: '1rem' }}
-                    />
-                  )}
-                  <div
-                    style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      flexShrink: 0,
-                      background: 'rgba(85,184,182,0.65)',
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontSize: 'clamp(0.875rem, 1.1vw, 0.9375rem)',
-                      fontWeight: 500,
-                      letterSpacing: '-0.02em',
-                      color: 'rgba(255,255,255,0.62)',
-                      lineHeight: '1.4',
-                    }}
-                  >
-                    {label}
-                  </span>
-                </div>
-              ))}
             </div>
 
           </div>
