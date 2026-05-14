@@ -8,78 +8,52 @@ import HomeHero from '@/components/home/HomeHero'
 function DualIntent() {
   return (
     <section
-      className="py-20 sm:py-28"
+      className="py-16 sm:py-20"
       style={{ background: '#F5F3EF' }}
     >
       <Container>
+        <div style={{ maxWidth: '560px' }}>
 
-        {/* Section heading */}
-        <div className="mb-14 sm:mb-16 max-w-[600px]">
-          <h2
-            className="mb-4 text-navy-950"
-            style={{ fontSize: 'clamp(1.75rem, 3vw, 2.5rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
-          >
-            Two ways forward.
-          </h2>
           <p
-            style={{ fontSize: '16px', lineHeight: '1.78', color: 'rgba(12,24,38,0.50)', maxWidth: '480px' }}
+            className="mb-8"
+            style={{ fontSize: '10.5px', fontWeight: 650, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(12,24,38,0.32)' }}
           >
-            Join a collective shaped around what you&apos;re ready to explore — or build one around the work you&apos;re here to share.
+            For learners and creators
           </p>
-        </div>
 
-        {/* Columns */}
-        <div className="grid gap-0 sm:grid-cols-2" style={{ borderTop: '1px solid rgba(12,24,38,0.08)' }}>
-
-          <div
-            className="py-10 sm:py-12 sm:pr-16"
-            style={{ borderBottom: '1px solid rgba(12,24,38,0.06)' }}
+          <h2
+            className="mb-6 text-navy-950"
+            style={{ fontSize: 'clamp(1.6rem, 2.8vw, 2.25rem)', letterSpacing: '-0.04em', lineHeight: '1.12', fontWeight: 650 }}
           >
-            <p
-              className="mb-4 text-navy-950"
-              style={{ fontSize: '11px', fontWeight: 650, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(56,160,158,0.80)' }}
-            >
-              For people ready to grow
-            </p>
-            <p className="mb-7 text-[15.5px] leading-[1.80]" style={{ color: 'rgba(12,24,38,0.56)' }}>
-              Find guided collectives built around real practice, shared conversation, and ideas that move into everyday life.
-            </p>
+            Some come to explore.<br />Some come to build.
+          </h2>
+
+          <p
+            className="mb-9"
+            style={{ fontSize: '15.5px', lineHeight: '1.82', color: 'rgba(12,24,38,0.52)' }}
+          >
+            Fresh Collective brings both together — people with ideas worth sharing,
+            and people ready to practise new ways of living, learning, creating, and leading.
+          </p>
+
+          <div className="flex flex-wrap gap-x-7 gap-y-3">
             <Link
               href="/spaces"
               className="text-[14px] font-semibold transition-opacity hover:opacity-60"
-              style={{ color: '#38A09E', letterSpacing: '-0.01em' }}
+              style={{ color: '#38A09E' }}
             >
               Explore Collectives →
             </Link>
-          </div>
-
-          <div
-            className="py-10 sm:py-12 sm:pl-16"
-            style={{
-              borderLeft: '1px solid rgba(12,24,38,0.08)',
-              borderBottom: '1px solid rgba(12,24,38,0.06)',
-            }}
-          >
-            <p
-              className="mb-4"
-              style={{ fontSize: '11px', fontWeight: 650, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(140,100,30,0.75)' }}
-            >
-              For people ready to guide
-            </p>
-            <p className="mb-7 text-[15.5px] leading-[1.80]" style={{ color: 'rgba(12,24,38,0.56)' }}>
-              Build an intentional collective around your work, your questions, and the change you want to help people practise.
-            </p>
             <Link
               href="/signup"
               className="text-[14px] font-semibold transition-opacity hover:opacity-60"
-              style={{ color: '#9A7420', letterSpacing: '-0.01em' }}
+              style={{ color: 'rgba(12,24,38,0.40)' }}
             >
               Build a Collective →
             </Link>
           </div>
 
         </div>
-
       </Container>
     </section>
   )
