@@ -120,35 +120,35 @@ function DualIntent() {
           <div
             className="flex flex-col rounded-2xl p-8 sm:p-10"
             style={{
-              background: '#F6F8FB',
-              border: '1px solid rgba(15,23,42,0.09)',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.04), 0 16px 48px rgba(0,0,0,0.09)',
+              background: 'linear-gradient(145deg, #073B3A 0%, #062F35 100%)',
+              border: '1px solid rgba(66,199,198,0.22)',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.22)',
             }}
           >
             {/* Icon */}
             <div
               className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl"
-              style={{ background: 'rgba(15,23,42,0.07)' }}
+              style={{ background: 'rgba(255,255,255,0.10)' }}
             >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#1E3654" strokeWidth="1.5" strokeLinejoin="round"/>
-                <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#1E3654" strokeWidth="1.5" strokeLinejoin="round"/>
-                <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#1E3654" strokeWidth="1.5" strokeLinejoin="round"/>
-                <path d="M14 11.5v5M11.5 14h5" stroke="#1E3654" strokeWidth="1.5" strokeLinecap="round"/>
+                <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#8FE3E2" strokeWidth="1.5" strokeLinejoin="round"/>
+                <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#8FE3E2" strokeWidth="1.5" strokeLinejoin="round"/>
+                <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#8FE3E2" strokeWidth="1.5" strokeLinejoin="round"/>
+                <path d="M14 11.5v5M11.5 14h5" stroke="#8FE3E2" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
             </div>
 
-            <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#1E3654', marginBottom: '6px' }}>
+            <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#8FE3E2', marginBottom: '6px' }}>
               For creators
             </p>
-            <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
+            <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: 'rgba(255,255,255,0.92)', lineHeight: '1.2' }}>
               Create your own collective
             </h3>
-            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.62)' }}>
+            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(255,255,255,0.64)' }}>
               Spread your ideas with people who are craving a different way of living, leading, and exploring life.
             </p>
 
-            <div className="mb-6" style={{ height: '1px', background: 'rgba(15,23,42,0.07)' }} />
+            <div className="mb-6" style={{ height: '1px', background: 'rgba(255,255,255,0.14)' }} />
 
             <div className="mb-8 space-y-5">
               {[
@@ -158,13 +158,13 @@ function DualIntent() {
                 <div key={num} className="flex gap-4">
                   <div
                     className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-                    style={{ background: 'rgba(15,23,42,0.07)', color: '#1E3654' }}
+                    style={{ background: 'rgba(255,255,255,0.10)', color: '#8FE3E2' }}
                   >
                     {num}
                   </div>
                   <div>
-                    <p style={{ fontSize: '13.5px', fontWeight: 630, color: '#08101E', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
-                    <p style={{ fontSize: '13px', color: 'rgba(15,23,42,0.56)', lineHeight: '1.6' }}>{body}</p>
+                    <p style={{ fontSize: '13.5px', fontWeight: 630, color: 'rgba(255,255,255,0.90)', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
+                    <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.52)', lineHeight: '1.6' }}>{body}</p>
                   </div>
                 </div>
               ))}
@@ -173,8 +173,8 @@ function DualIntent() {
             <div className="mt-auto">
               <Link
                 href="/signup"
-                className="inline-flex items-center text-[14.5px] font-bold transition-opacity hover:opacity-70"
-                style={{ color: '#1E3654' }}
+                className="inline-flex items-center text-[14.5px] font-bold transition-opacity hover:opacity-90"
+                style={{ color: '#8FE3E2' }}
               >
                 Build a Collective →
               </Link>
