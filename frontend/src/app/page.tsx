@@ -3,81 +3,466 @@ import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import HomeHero from '@/components/home/HomeHero'
 
-/* ─── Two Ways In ───────────────────────────────────────────────────────────── */
+/* ─── Dual Intent ───────────────────────────────────────────────────────────── */
 
-function TwoWaysIn() {
+function DualIntent() {
   return (
     <section
-      className="py-12 sm:py-20"
-      style={{ background: 'linear-gradient(to bottom, #ECEAE7 0%, #F5F4F0 30%, #FDFCF9 100%)' }}
+      className="py-20 sm:py-28"
+      style={{ background: 'linear-gradient(to bottom, #ECEAE7 0%, #F5F4F0 40%, #FDFCF9 100%)' }}
     >
       <Container>
+        <div className="grid gap-16 sm:grid-cols-2 sm:gap-20">
 
-        <div className="mb-12">
+          <div>
+            <div
+              className="mb-5 h-px w-8"
+              style={{ background: 'rgba(56,160,158,0.55)' }}
+            />
+            <h2
+              className="mb-5 text-navy-950"
+              style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2.125rem)', letterSpacing: '-0.035em', lineHeight: '1.12', fontWeight: 650 }}
+            >
+              A more intentional<br />way to grow.
+            </h2>
+            <p className="text-[15.5px] leading-[1.82] text-navy-500">
+              Most growth happens by accident — in reaction to pressure, to loss,
+              to necessity. Fresh Collective offers something rarer: a structured
+              environment where growth is deliberate, paced, and yours to keep.
+            </p>
+          </div>
+
+          <div className="sm:pt-14">
+            <div
+              className="mb-5 h-px w-8"
+              style={{ background: 'rgba(212,176,72,0.55)' }}
+            />
+            <h2
+              className="mb-5 text-navy-950"
+              style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2.125rem)', letterSpacing: '-0.035em', lineHeight: '1.12', fontWeight: 650 }}
+            >
+              Environments where<br />people actually change.
+            </h2>
+            <p className="text-[15.5px] leading-[1.82] text-navy-500">
+              Information is abundant. What changes people is the right container —
+              the right questions, at the right time, with others moving through the
+              same thing. That is what we have built.
+            </p>
+          </div>
+
+        </div>
+      </Container>
+    </section>
+  )
+}
+
+/* ─── Ecosystem Statement ───────────────────────────────────────────────────── */
+
+function EcosystemStatement() {
+  return (
+    <section
+      className="py-20 sm:py-24"
+      style={{ background: '#FDFCF9', borderTop: '1px solid rgba(0,0,0,0.04)' }}
+    >
+      <Container>
+        <div className="max-w-[680px]">
+          <h2
+            className="mb-6 text-navy-950"
+            style={{ fontSize: 'clamp(2rem, 4vw, 3.5rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
+          >
+            Not a product.{' '}
+            <span style={{ color: 'rgba(12,24,38,0.28)', fontStyle: 'italic' }}>
+              An ecosystem.
+            </span>
+          </h2>
+          <p className="text-[16px] leading-[1.82] text-navy-500" style={{ maxWidth: '520px' }}>
+            One foundation. A live community layer. Deepening pathways — designed to
+            work together as a connected system, not as separate courses you buy and forget.
+          </p>
+        </div>
+      </Container>
+    </section>
+  )
+}
+
+/* ─── Fresh Ideas (dark) ────────────────────────────────────────────────────── */
+
+function FreshIdeas() {
+  return (
+    <section
+      className="relative overflow-hidden py-24 sm:py-32"
+      style={{ background: '#0C1F1F' }}
+    >
+      {/* Atmospheric glow */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+        <div style={{
+          position: 'absolute', top: '-20%', right: '-10%',
+          width: '700px', height: '700px', borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(56,160,158,0.10) 0%, transparent 60%)',
+          filter: 'blur(80px)',
+        }} />
+      </div>
+
+      <Container className="relative">
+        <div className="grid items-center gap-14 sm:grid-cols-[55%_45%] sm:gap-10">
+
+          {/* Left */}
+          <div>
+            <div className="mb-8 flex items-center gap-3">
+              <div className="h-px w-8" style={{ background: 'rgba(85,184,182,0.35)' }} />
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'rgba(255,255,255,0.28)' }}>
+                A different kind of learning
+              </span>
+            </div>
+
+            <h2
+              className="mb-8 text-white"
+              style={{ fontSize: 'clamp(2.25rem, 4.5vw, 4rem)', letterSpacing: '-0.04em', lineHeight: '1.07', fontWeight: 650 }}
+            >
+              Fresh ideas need
+              <br />
+              <span style={{ color: 'rgba(255,255,255,0.28)' }}>spaces to grow.</span>
+            </h2>
+
+            <p
+              className="mb-12 text-[16px] leading-[1.88]"
+              style={{ color: 'rgba(255,255,255,0.46)', maxWidth: '440px' }}
+            >
+              We do not believe in passive consumption. Inside Fresh Collective,
+              you are always in motion — reflecting, connecting, integrating — with
+              enough structure to hold you and enough space to breathe.
+            </p>
+
+            <div
+              className="grid grid-cols-3 gap-6"
+              style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '2.5rem' }}
+            >
+              {[
+                { stat: '4', label: 'REAL phases' },
+                { stat: '1×', label: 'Live call monthly', gold: true },
+                { stat: '∞', label: 'Your pace' },
+              ].map(({ stat, label, gold }) => (
+                <div key={label}>
+                  <div
+                    className="mb-1 font-semibold"
+                    style={{
+                      fontSize: 'clamp(1.75rem, 3vw, 2.5rem)',
+                      letterSpacing: '-0.04em',
+                      lineHeight: '1',
+                      color: gold ? '#D4B048' : 'rgba(255,255,255,0.88)',
+                    }}
+                  >
+                    {stat}
+                  </div>
+                  <div className="text-[12px] font-medium uppercase tracking-[0.10em]" style={{ color: 'rgba(255,255,255,0.28)' }}>
+                    {label}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right — documentary artifacts */}
+          <div className="relative hidden sm:block" style={{ height: '420px' }}>
+
+            {/* Artifact 1 — background, rotated left */}
+            <div
+              className="absolute rounded-xl bg-white p-5"
+              style={{
+                width: '215px',
+                bottom: '28px',
+                left: '0',
+                transform: 'rotate(-3.5deg)',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.50)',
+              }}
+            >
+              <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-600">
+                REAL Journey · Phase 1
+              </div>
+              <div
+                className="mb-3 text-navy-950"
+                style={{ fontSize: '13.5px', fontWeight: 620, letterSpacing: '-0.02em' }}
+              >
+                Recognise
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-1.5 rounded-full" style={{ background: '#E8E8E5' }} />
+                <div className="h-1.5 w-4/5 rounded-full" style={{ background: '#E8E8E5' }} />
+                <div className="h-1.5 w-3/5 rounded-full" style={{ background: '#E8E8E5' }} />
+              </div>
+              <div className="mt-4 flex gap-1">
+                <div className="h-1 flex-1 rounded-full bg-teal-500" />
+                <div className="h-1 flex-1 rounded-full" style={{ background: '#E8E8E5' }} />
+                <div className="h-1 flex-1 rounded-full" style={{ background: '#E8E8E5' }} />
+                <div className="h-1 flex-1 rounded-full" style={{ background: '#E8E8E5' }} />
+              </div>
+            </div>
+
+            {/* Artifact 2 — centre, slight right tilt */}
+            <div
+              className="absolute rounded-xl p-5"
+              style={{
+                width: '225px',
+                top: '38px',
+                left: '72px',
+                background: '#F5F0E8',
+                transform: 'rotate(1.8deg)',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
+              }}
+            >
+              <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: '#9A7420' }}>
+                Monthly Prompt
+              </div>
+              <div
+                className="mb-3 text-navy-950"
+                style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.55', letterSpacing: '-0.01em' }}
+              >
+                What would it feel like to stop carrying this alone?
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-1.5 rounded-full" style={{ background: '#DFCA7A' }} />
+                <div className="h-1.5 w-5/6 rounded-full" style={{ background: '#DFCA7A' }} />
+                <div className="h-1.5 w-2/3 rounded-full" style={{ background: '#DFCA7A' }} />
+              </div>
+            </div>
+
+            {/* Artifact 3 — top right, dark, front layer */}
+            <div
+              className="absolute rounded-xl p-5"
+              style={{
+                width: '198px',
+                top: '8px',
+                right: '8px',
+                background: '#0C1826',
+                border: '1px solid rgba(255,255,255,0.08)',
+                transform: 'rotate(-1.2deg)',
+                boxShadow: '0 24px 64px rgba(0,0,0,0.65)',
+              }}
+            >
+              <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-400">
+                Live Call
+              </div>
+              <div className="mb-0.5 text-[13.5px] font-semibold text-white">Monthly gathering</div>
+              <div className="mb-5 text-[11.5px]" style={{ color: 'rgba(255,255,255,0.35)' }}>60 min · Structured · Led</div>
+              <div
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-semibold"
+                style={{ background: 'rgba(212,176,72,0.12)', color: '#D4B048' }}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                Upcoming
+              </div>
+            </div>
+
+            {/* Artifact 4 — bottom right, glass */}
+            <div
+              className="absolute rounded-xl p-4"
+              style={{
+                width: '172px',
+                bottom: '18px',
+                right: '4px',
+                background: 'rgba(255,255,255,0.08)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                transform: 'rotate(2.2deg)',
+                boxShadow: '0 12px 36px rgba(0,0,0,0.40)',
+              }}
+            >
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-300">
+                Community
+              </div>
+              <div className="text-[12px] leading-[1.65]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                Women in the same phase, at the same time.
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </Container>
+    </section>
+  )
+}
+
+/* ─── The Way We Feel ───────────────────────────────────────────────────────── */
+
+function TheWayWeFeelSection() {
+  return (
+    <section className="py-20 sm:py-28" style={{ background: '#FAFAF8' }}>
+      <Container>
+
+        <div className="mb-14 max-w-[580px]">
           <h2
             className="text-navy-950"
-            style={{ fontSize: 'clamp(1.875rem, 3.5vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
+            style={{ fontSize: 'clamp(1.875rem, 3.75vw, 3.25rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
           >
-            Two kinds of forward.
-            <br />
-            <span style={{ color: 'rgba(12,24,38,0.28)' }}>
-              Growing, or building the conditions for growth.
-            </span>
+            The way we feel changes<br />
+            <span style={{ color: 'rgba(12,24,38,0.30)' }}>what becomes possible.</span>
           </h2>
         </div>
 
-        <div
-          className="grid gap-12 sm:grid-cols-2 sm:gap-0"
-          style={{ borderTop: '1px solid rgba(0,0,0,0.06)', paddingTop: '3rem' }}
-        >
+        <div className="grid gap-10 sm:grid-cols-3">
+          {[
+            {
+              rule: 'A more settled mind.',
+              body: 'When you have a framework for where you are and where you are headed, the noise quiets. Clarity is not a luxury — it is the starting point.',
+              accent: 'rgba(56,160,158,0.70)',
+            },
+            {
+              rule: 'In it with others, honestly.',
+              body: 'Not a curated highlight reel. Real people moving through real phases — with enough structure that the conversations go somewhere.',
+              accent: 'rgba(212,176,72,0.70)',
+              offset: true,
+            },
+            {
+              rule: 'A thread back to yourself.',
+              body: 'When life is full and loud, the REAL Journey gives you something to return to — a stable, consistent thread through all of it.',
+              accent: 'rgba(45,77,115,0.60)',
+            },
+          ].map(({ rule, body, accent, offset }) => (
+            <div key={rule} className={offset ? 'sm:pt-10' : ''}>
+              <div className="mb-5 h-px w-6" style={{ background: accent }} />
+              <p
+                className="mb-3 text-navy-950"
+                style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}
+              >
+                {rule}
+              </p>
+              <p className="text-[15px] leading-[1.82] text-navy-500">{body}</p>
+            </div>
+          ))}
+        </div>
 
-          <div className="sm:pr-12 lg:pr-20">
-            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              For learners
-            </p>
-            <p
-              className="mb-5 text-navy-950"
-              style={{ fontSize: 'clamp(1.125rem, 1.75vw, 1.375rem)', letterSpacing: '-0.02em', lineHeight: '1.3', fontWeight: 620 }}
+      </Container>
+    </section>
+  )
+}
+
+/* ─── Where the Learning Lives ──────────────────────────────────────────────── */
+
+function WhereTheLearningLives() {
+  return (
+    <section className="py-20 sm:py-28" style={{ background: '#F5F0E8' }}>
+      <Container>
+
+        <div className="mb-12">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="h-px w-8 bg-teal-500" style={{ opacity: 0.5 }} />
+            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-600">
+              The structure
+            </span>
+          </div>
+          <h2
+            className="text-navy-950"
+            style={{ fontSize: 'clamp(1.75rem, 3.25vw, 2.75rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
+          >
+            Where the learning lives.
+          </h2>
+        </div>
+
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+
+          {/* REAL Journey — featured */}
+          <div
+            className="rounded-2xl p-7 sm:col-span-2 lg:col-span-1 lg:row-span-2"
+            style={{
+              background: '#ffffff',
+              border: '1px solid rgba(0,0,0,0.06)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05)',
+            }}
+          >
+            <div
+              className="mb-4 select-none"
+              style={{ fontSize: '5.5rem', fontWeight: 650, lineHeight: '1', letterSpacing: '-0.06em', color: 'rgba(56,160,158,0.12)' }}
+              aria-hidden="true"
             >
-              Seeking a more intentional way to grow
+              01
+            </div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-600">
+              Start Here
             </p>
-            <p className="mb-7 text-[15.5px] leading-[1.82] text-navy-500">
-              Find guided collectives built around genuine expertise and lived
-              experience. Attend live gatherings. Participate in a focused community.
-              Learn at a pace that lets new ideas move into how you actually live.
+            <h3
+              className="mb-4 text-navy-950"
+              style={{ fontSize: '1.25rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}
+            >
+              REAL Journey
+            </h3>
+            <p className="mb-6 text-[15px] leading-[1.82] text-navy-500">
+              Four phases — Recognise, Explore, Align, Lead. The foundation every member
+              begins with. Bite-sized. Stabilising. Something to return to, again and again.
             </p>
             <Link
-              href="/spaces"
-              className="text-[14px] font-semibold text-teal-600 transition-colors hover:underline underline-offset-2"
+              href="/real-journey"
+              className="text-[13.5px] font-semibold text-teal-600 underline-offset-2 transition-opacity hover:opacity-70 hover:underline"
             >
-              Explore Collectives →
+              Learn more →
             </Link>
           </div>
 
+          {/* Live Layer */}
           <div
-            className="sm:pl-12 lg:pl-20"
-            style={{ borderLeft: '1px solid rgba(0,0,0,0.06)' }}
+            className="rounded-2xl p-7"
+            style={{
+              background: '#ffffff',
+              border: '1px solid rgba(0,0,0,0.06)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05)',
+            }}
           >
-            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#9A7420' }}>
-              For creators
-            </p>
-            <p
-              className="mb-5 text-navy-950"
-              style={{ fontSize: 'clamp(1.125rem, 1.75vw, 1.375rem)', letterSpacing: '-0.02em', lineHeight: '1.3', fontWeight: 620 }}
+            <div
+              className="mb-4 select-none"
+              style={{ fontSize: '5.5rem', fontWeight: 650, lineHeight: '1', letterSpacing: '-0.06em', color: 'rgba(212,176,72,0.15)' }}
+              aria-hidden="true"
             >
-              Building environments where people actually change
+              02
+            </div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: '#9A7420' }}>
+              The Heart
             </p>
-            <p className="mb-7 text-[15.5px] leading-[1.82] text-navy-500">
-              Design an intentional collective around the work you know deeply.
-              Host live gatherings. Build a community grounded in shared growth.
-              Create the kind of environment you always wished existed.
-            </p>
-            <Link
-              href="/signup"
-              className="text-[14px] font-semibold transition-colors hover:underline underline-offset-2"
-              style={{ color: '#9A7420' }}
+            <h3
+              className="mb-3 text-navy-950"
+              style={{ fontSize: '1.125rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}
             >
-              Start Building →
+              Live Layer
+            </h3>
+            <p className="mb-5 text-[15px] leading-[1.82] text-navy-500">
+              Monthly live calls. Community prompts. Integration threads.
+              The place where the membership comes alive.
+            </p>
+            <Link href="/membership" className="text-[13.5px] font-semibold underline-offset-2 transition-opacity hover:opacity-70 hover:underline" style={{ color: '#9A7420' }}>
+              Explore Membership →
+            </Link>
+          </div>
+
+          {/* Deepening Pathways */}
+          <div
+            className="rounded-2xl p-7"
+            style={{
+              background: '#ffffff',
+              border: '1px solid rgba(0,0,0,0.06)',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05)',
+            }}
+          >
+            <div
+              className="mb-4 select-none"
+              style={{ fontSize: '5.5rem', fontWeight: 650, lineHeight: '1', letterSpacing: '-0.06em', color: 'rgba(30,51,84,0.10)' }}
+              aria-hidden="true"
+            >
+              03
+            </div>
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-navy-400">
+              The Rooms
+            </p>
+            <h3
+              className="mb-3 text-navy-950"
+              style={{ fontSize: '1.125rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}
+            >
+              Deepening Pathways
+            </h3>
+            <p className="mb-5 text-[15px] leading-[1.82] text-navy-500">
+              Growth, Transformation, Essence. Once you have your foundation,
+              the pathways take you deeper — at your own pace.
+            </p>
+            <Link href="/membership" className="text-[13.5px] font-semibold text-navy-500 underline-offset-2 transition-opacity hover:opacity-70 hover:underline">
+              Explore Membership →
             </Link>
           </div>
 
@@ -87,83 +472,77 @@ function TwoWaysIn() {
   )
 }
 
-/* ─── Vision (emotional centre — dark) ─────────────────────────────────────── */
+/* ─── What Gets Made ────────────────────────────────────────────────────────── */
 
-function Vision() {
+function WhatGetsMade() {
+  const items = [
+    {
+      label: 'Reflection',
+      heading: 'A cleaner sense of what is actually true.',
+      body: 'The REAL Journey is designed to interrupt the loop — to help you see what has been running in the background so you can choose something different.',
+      accent: '#38A09E',
+    },
+    {
+      label: 'Connection',
+      heading: 'A community that does not require performance.',
+      body: 'Live calls and integration threads create a space where showing up honestly is the norm — not the exception.',
+      accent: '#BF9830',
+    },
+    {
+      label: 'Direction',
+      heading: 'A sense of what the next phase actually looks like.',
+      body: 'Each pathway in The Rooms builds on your foundation and points toward something concrete — growth, transformation, or a deeper sense of self.',
+      accent: '#38A09E',
+    },
+    {
+      label: 'Continuity',
+      heading: 'Something to return to when life gets loud.',
+      body: 'The structure stays. Your REAL Journey, your community, your pathways — still there when you are ready to come back.',
+      accent: '#7FCFCD',
+    },
+  ]
+
   return (
-    <section className="relative overflow-hidden py-24 sm:py-32" style={{ background: '#060C17' }}>
+    <section className="py-20 sm:py-28" style={{ background: '#FDFCF9' }}>
+      <Container>
+        <div className="grid items-start gap-14 sm:grid-cols-[42%_58%] sm:gap-16">
 
-      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div style={{
-          position: 'absolute', top: '-20%', right: '-5%',
-          width: '700px', height: '700px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(56,160,158,0.08) 0%, transparent 60%)',
-          filter: 'blur(80px)',
-        }} />
-        <div style={{
-          position: 'absolute', bottom: '-15%', left: '-8%',
-          width: '600px', height: '600px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(201,168,60,0.05) 0%, transparent 60%)',
-          filter: 'blur(100px)',
-        }} />
-      </div>
-
-      <Container className="relative">
-        <div className="max-w-[680px]">
-
-          <div className="mb-8 flex items-center gap-3">
-            <div className="h-px w-8 bg-teal-400/40" />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-400/60">
-              A different kind of learning
-            </span>
-          </div>
-
-          <h2
-            style={{
-              fontSize: 'clamp(2.25rem, 4.5vw, 4rem)',
-              letterSpacing: '-0.04em',
-              lineHeight: '1.07',
-              fontWeight: 650,
-              color: '#ffffff',
-            }}
-          >
-            Fresh ideas need
-            <br />
-            <span style={{ color: 'rgba(255,255,255,0.30)' }}>spaces to grow.</span>
-          </h2>
-
-          <div className="mt-10 space-y-5" style={{ maxWidth: '500px' }}>
-            <p className="text-[16px] leading-[1.88]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              Fresh Collective is a place for people who sense there are better ways to live,
-              lead, create, and grow — and want environments that help them move from
-              understanding to embodiment.
+          <div className="sm:sticky sm:top-24">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'rgba(12,24,38,0.35)' }}>
+              What you get
             </p>
-            <p className="text-[15px] leading-[1.88]" style={{ color: 'rgba(255,255,255,0.26)' }}>
-              Not content libraries. Not passive consumption. Structured environments where
-              learning happens in community — guided, grounded, and oriented toward what
-              comes next.
+            <h2
+              className="mb-5 text-navy-950"
+              style={{ fontSize: 'clamp(1.75rem, 3vw, 2.625rem)', letterSpacing: '-0.04em', lineHeight: '1.10', fontWeight: 650 }}
+            >
+              What gets made when people have the right container.
+            </h2>
+            <p className="text-[15.5px] leading-[1.82] text-navy-500">
+              Not information. Not another thing to consume and forget.
+              Real movement. Clarity that stays. Connections that matter.
             </p>
           </div>
 
-          <div
-            className="mt-14 grid grid-cols-1 gap-6 sm:grid-cols-3 sm:gap-8"
-            style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '2.5rem' }}
-          >
-            {[
-              { label: 'Educators and practitioners', sub: 'Creating the environments their own growth demanded of them.' },
-              { label: 'People ready to live differently', sub: 'Finding structures that turn ideas into genuine change.' },
-              { label: 'Ideas that need room to develop', sub: 'Given depth, community, and the right conditions to take hold.' },
-            ].map(({ label, sub }) => (
-              <div key={label}>
-                <p
-                  className="mb-1.5 font-semibold"
-                  style={{ color: 'rgba(255,255,255,0.70)', fontSize: '0.9375rem', letterSpacing: '-0.01em' }}
-                >
+          <div className="space-y-4">
+            {items.map(({ label, heading, body, accent }) => (
+              <div
+                key={label}
+                className="rounded-xl p-6"
+                style={{
+                  borderLeft: `2px solid ${accent}`,
+                  background: '#F5F7FA',
+                }}
+              >
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'rgba(12,24,38,0.38)' }}>
                   {label}
                 </p>
-                <p style={{ color: 'rgba(255,255,255,0.24)', fontSize: '13px', lineHeight: '1.65' }}>
-                  {sub}
+                <p
+                  className="mb-2 text-navy-950"
+                  style={{ fontSize: '15px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}
+                >
+                  {heading}
                 </p>
+                <p className="text-[14.5px] leading-[1.82] text-navy-500">{body}</p>
               </div>
             ))}
           </div>
@@ -174,233 +553,129 @@ function Vision() {
   )
 }
 
-/* ─── Platform Preview (compact — 3 items) ──────────────────────────────────── */
+/* ─── Conditions ────────────────────────────────────────────────────────────── */
 
-const CARD_STYLE = {
-  border: '1px solid rgba(0,0,0,0.07)',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 6px 18px rgba(0,0,0,0.04)',
-}
-
-function PlatformPreview() {
+function Conditions() {
   return (
-    <section className="relative overflow-hidden py-16 sm:py-24" style={{ background: '#FAFAF8' }}>
+    <section
+      className="py-20 sm:py-28"
+      style={{ background: '#F5F4F0', borderTop: '1px solid rgba(0,0,0,0.04)' }}
+    >
+      <Container>
 
-      {/* Atmospheric orbs */}
-      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div style={{
-          position: 'absolute', top: '-10%', right: '-8%',
-          width: '500px', height: '500px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(56,160,158,0.05) 0%, transparent 65%)',
-          filter: 'blur(60px)',
-        }} />
-        <div style={{
-          position: 'absolute', bottom: '-15%', left: '-5%',
-          width: '400px', height: '400px', borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(201,168,60,0.04) 0%, transparent 65%)',
-          filter: 'blur(70px)',
-        }} />
-      </div>
-
-      <Container className="relative">
-
-        <div className="mb-3 flex items-center gap-3">
-          <div className="h-px w-8 bg-teal-400" />
-          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-            Inside a collective
-          </span>
-        </div>
-
-        <div className="mb-10 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-14 max-w-[560px]">
           <h2
             className="text-navy-950"
-            style={{ fontSize: 'clamp(1.625rem, 2.75vw, 2.25rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
+            style={{ fontSize: 'clamp(1.875rem, 3.5vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
           >
-            What participation looks like.
+            The conditions matter<br />
+            <span style={{ color: 'rgba(12,24,38,0.28)', fontStyle: 'italic' }}>
+              as much as the content.
+            </span>
           </h2>
-          <p className="max-w-[380px] text-[14.5px] leading-[1.7] text-navy-400 sm:text-right">
-            A pathway to follow. A gathering to attend.
-            A community that holds you between sessions.
-          </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-
-          {/* Pathway */}
-          <div className="rounded-2xl bg-white p-5" style={CARD_STYLE}>
-            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.1em] text-teal-600">Pathway · Step 3 of 12</p>
-            <p className="mb-3 text-[13.5px] font-semibold text-navy-950">The REAL Journey</p>
-            <div className="mb-3 h-0.5 rounded-full bg-navy-100">
-              <div className="h-0.5 w-1/4 rounded-full bg-teal-400" />
+        <div className="grid gap-10 sm:grid-cols-3">
+          {[
+            {
+              num: '01',
+              heading: 'A pace that does not break you.',
+              body: 'Everything inside Fresh Collective is designed to be returned to — not raced through. There is no urgency here. The structure holds.',
+              numColor: 'rgba(56,160,158,0.25)',
+            },
+            {
+              num: '02',
+              heading: 'People building the same things.',
+              body: 'You are not dropped into a general community. You are alongside people working through the same phases, the same questions, the same moments.',
+              numColor: 'rgba(212,176,72,0.30)',
+              offset: true,
+            },
+            {
+              num: '03',
+              heading: 'A leader who has been there.',
+              body: 'Fresh Collective was built from the inside out — by someone who has moved through these phases herself, not just observed them.',
+              numColor: 'rgba(30,51,84,0.20)',
+            },
+          ].map(({ num, heading, body, numColor, offset }) => (
+            <div key={num} className={offset ? 'sm:pt-10' : ''}>
+              <div
+                className="mb-5 select-none"
+                style={{ fontSize: '4.5rem', fontWeight: 650, lineHeight: '1', letterSpacing: '-0.06em', color: numColor }}
+                aria-hidden="true"
+              >
+                {num}
+              </div>
+              <p
+                className="mb-3 text-navy-950"
+                style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}
+              >
+                {heading}
+              </p>
+              <p className="text-[15px] leading-[1.82] text-navy-500">{body}</p>
             </div>
-            <div className="space-y-2">
-              {['Coming home to yourself', 'Your energy baseline', 'The patterns keeping you stuck'].map((t, i) => (
-                <div key={t} className="flex items-center gap-2">
-                  <div
-                    className={`h-3.5 w-3.5 flex-shrink-0 rounded-full text-[8px] font-bold flex items-center justify-center ${i === 0 ? 'bg-teal-500 text-white' : 'bg-navy-50 text-navy-300'}`}
-                    style={{ border: i === 0 ? 'none' : '1px solid #E2E8F0' }}
-                  >
-                    {i === 0 ? '✓' : i + 1}
-                  </div>
-                  <span className={`text-[11.5px] ${i === 0 ? 'text-navy-300 line-through' : 'text-navy-700'}`}>{t}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Event */}
-          <div className="rounded-2xl bg-white p-5" style={CARD_STYLE}>
-            <div className="mb-3 flex items-center gap-2">
-              <div className="h-1.5 w-1.5 rounded-full bg-teal-400" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-teal-600">Live event</span>
-            </div>
-            <p className="mb-0.5 text-[13.5px] font-semibold text-navy-950">Monthly gathering — June</p>
-            <p className="mb-4 text-[11.5px] text-navy-400">First Thursday · 7:30 pm AEST</p>
-            <div className="mb-3 rounded-xl p-3" style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.09)' }}>
-              <p className="mb-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-teal-700">This month</p>
-              <p className="text-[12px] font-semibold text-navy-900">What are you actually saying yes to?</p>
-            </div>
-            <p className="text-[11px] text-navy-400">42 attending</p>
-          </div>
-
-          {/* Community */}
-          <div className="rounded-2xl bg-white p-5" style={CARD_STYLE}>
-            <div className="mb-3">
-              <span className="rounded-lg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]" style={{ background: 'rgba(56,160,158,0.07)', color: '#2E8584' }}>
-                Community prompt
-              </span>
-            </div>
-            <p className="mb-4 text-[13px] font-medium leading-[1.55] text-navy-800">
-              What shifted for you this week — even something small?
-            </p>
-            <div className="space-y-2">
-              {[
-                { c: '#55B8B6', t: 'I stopped apologising before asking for help.' },
-                { c: '#AAE1E0', t: 'Noticed I was bracing — chose to stay open.' },
-              ].map(({ c, t }, i) => (
-                <div key={i} className="flex items-start gap-2 rounded-lg p-2" style={{ background: '#F5F7FA' }}>
-                  <div className="mt-0.5 h-4 w-4 flex-shrink-0 rounded-full border-2 border-white" style={{ background: c }} />
-                  <p className="text-[11px] leading-[1.55] text-navy-600">{t}</p>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-[11px] text-navy-400">23 responses · 3 hrs ago</p>
-          </div>
-
+          ))}
         </div>
-
-        <p className="mt-8 text-[13px] text-navy-300" style={{ letterSpacing: '0.01em' }}>
-          Every collective is shaped differently by its creator — and comes with all three.
-        </p>
 
       </Container>
     </section>
   )
 }
 
-/* ─── Featured Spaces ───────────────────────────────────────────────────────── */
+/* ─── Good Questions ────────────────────────────────────────────────────────── */
 
-const FEATURED = [
-  {
-    slug: 'fresh-collective',
-    name: 'Fresh Collective',
-    tagline: 'The founding space — structured pathways, live monthly gatherings, and an active learning community.',
-    creator: 'Lindsey',
-    isFlagship: true,
-    color: '#38A09E',
-  },
-  {
-    slug: 'the-creative-thread',
-    name: 'The Creative Thread',
-    tagline: 'For makers, writers, and visual artists building a sustainable creative practice.',
-    creator: 'Priya Mehta',
-    isFlagship: false,
-    color: '#C06B3A',
-  },
-  {
-    slug: 'letters-to-myself',
-    name: 'Letters to Myself',
-    tagline: 'A reflective journaling practice for people in it for the long game.',
-    creator: 'Caitlin Marsh',
-    isFlagship: false,
-    color: '#B8922A',
-  },
-]
+function GoodQuestions() {
+  const qa = [
+    {
+      q: 'What if I am already overwhelmed?',
+      a: 'That is exactly the right time to start. The REAL Journey is designed for people who are already full — structured to be light enough to actually do, even when everything else is heavy.',
+    },
+    {
+      q: 'Is this another online course I will not finish?',
+      a: 'Fresh Collective is not built around consumption. It is built around consistency — short touchpoints, a live layer, and a community that keeps you moving even when motivation is low.',
+    },
+    {
+      q: 'What is the difference between the REAL Journey and full membership?',
+      a: 'The REAL Journey is the foundation — four phases, your own pace. Full membership adds the live layer (monthly calls, community prompts) and access to The Rooms. Both are meaningful starting points.',
+    },
+    {
+      q: 'How much time do I need each week?',
+      a: 'The REAL Journey is designed around bite-sized sessions. The monthly live call is 60 minutes. Most members find 30–60 minutes a week is enough to stay connected and moving.',
+    },
+  ]
 
-function FeaturedSpaces() {
   return (
-    <section className="py-16 sm:py-24" style={{ background: '#FDFCF9' }}>
+    <section className="py-20 sm:py-28" style={{ background: '#FDFCF9' }}>
       <Container>
+        <div className="grid gap-14 sm:grid-cols-[38%_62%] sm:gap-16">
 
-        <div className="mb-10 flex items-end justify-between">
           <div>
-            <div className="mb-3 flex items-center gap-3">
-              <div className="h-px w-8 bg-teal-400" />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-                Collectives
-              </span>
-            </div>
             <h2
-              className="mb-3 text-navy-950"
-              style={{ fontSize: 'clamp(1.625rem, 2.75vw, 2.25rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 650 }}
+              className="text-navy-950"
+              style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.14', fontWeight: 650 }}
             >
-              Where the learning lives.
+              Good questions deserve honest answers.
             </h2>
-            <p className="text-[14px] leading-[1.7] text-navy-400" style={{ maxWidth: '420px' }}>
-              Each led by a creator who has done the work — and built a structured
-              environment around it.
-            </p>
           </div>
-          <Link
-            href="/spaces"
-            className="hidden flex-shrink-0 text-[13.5px] font-semibold text-teal-600 hover:underline underline-offset-2 sm:block"
-          >
-            Explore all →
-          </Link>
-        </div>
 
-        <div className="divide-y" style={{ borderColor: 'rgba(0,0,0,0.05)', borderTop: '1px solid rgba(0,0,0,0.05)', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
-          {FEATURED.map(({ slug, name, tagline, creator, isFlagship, color }) => (
-            <div key={slug} className="group flex items-center justify-between gap-6 py-6">
-              <div className="flex items-start gap-4 min-w-0">
-                <div
-                  className="mt-1 h-7 w-1 flex-shrink-0 rounded-full"
-                  style={{ background: color }}
-                />
-                <div className="min-w-0">
-                  <div className="mb-0.5 flex flex-wrap items-center gap-2">
-                    <p className="text-[15px] font-semibold text-navy-950">{name}</p>
-                    {isFlagship && (
-                      <span
-                        className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em]"
-                        style={{ background: 'rgba(201,168,60,0.10)', color: '#9A7420' }}
-                      >
-                        Flagship
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[13.5px] leading-[1.6] text-navy-400 line-clamp-1">{tagline}</p>
-                  <p className="mt-0.5 text-[12px] text-navy-300">by {creator}</p>
-                </div>
-              </div>
-              <Link
-                href={isFlagship ? '/spaces/fresh-collective' : '/spaces'}
-                className="hidden flex-shrink-0 text-[13px] font-semibold text-navy-400 transition-colors group-hover:text-navy-700 sm:block"
+          <div>
+            {qa.map(({ q, a }, i) => (
+              <div
+                key={q}
+                className="py-7"
+                style={{ borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.05)' }}
               >
-                Explore →
-              </Link>
-            </div>
-          ))}
-        </div>
+                <p
+                  className="mb-3 text-navy-950"
+                  style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}
+                >
+                  {q}
+                </p>
+                <p className="text-[15px] leading-[1.82] text-navy-500">{a}</p>
+              </div>
+            ))}
+          </div>
 
-        <div className="mt-6 sm:hidden">
-          <Link
-            href="/spaces"
-            className="text-[14px] font-semibold text-teal-600 hover:underline underline-offset-2"
-          >
-            Explore all spaces →
-          </Link>
         </div>
-
       </Container>
     </section>
   )
@@ -411,43 +686,60 @@ function FeaturedSpaces() {
 function FinalCTA() {
   return (
     <section
-      className="relative overflow-hidden py-24 sm:py-32"
+      className="relative overflow-hidden py-28 sm:py-36"
       style={{ background: '#060C17' }}
     >
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
-          background: 'radial-gradient(ellipse 80% 60% at 50% 100%, rgba(56,160,158,0.12) 0%, transparent 70%)',
+          background: 'radial-gradient(ellipse 80% 60% at 50% 100%, rgba(56,160,158,0.10) 0%, transparent 70%)',
         }}
       />
 
       <Container className="relative">
-        <div className="mx-auto max-w-[520px] text-center">
+        <div className="mx-auto max-w-[500px] text-center">
+
+          <div
+            className="mx-auto mb-10 h-px w-10"
+            style={{ background: 'rgba(212,176,72,0.30)' }}
+          />
 
           <h2
-            className="mb-6"
+            className="mb-7 text-white"
             style={{
-              fontSize: 'clamp(2.25rem, 4vw, 3.5rem)',
+              fontSize: 'clamp(2.25rem, 4.5vw, 4rem)',
               letterSpacing: '-0.04em',
-              lineHeight: '1.08',
+              lineHeight: '1.07',
               fontWeight: 650,
-              color: '#ffffff',
             }}
           >
             Find your collective.
             <br />
-            <span style={{ color: 'rgba(255,255,255,0.30)' }}>Or build one.</span>
+            <span
+              style={{
+                background: 'linear-gradient(108deg, #5ABFBD 0%, #D4B048 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              Or build one.
+            </span>
           </h2>
 
-          <p className="mb-10 text-[15.5px] leading-[1.82]" style={{ color: 'rgba(255,255,255,0.40)' }}>
-            There&apos;s a collective for where you are now. Or build the one that doesn&apos;t exist yet.
+          <p
+            className="mb-10 text-[15.5px] leading-[1.82]"
+            style={{ color: 'rgba(255,255,255,0.38)' }}
+          >
+            There&apos;s a collective for where you are now.
+            Or build the one that doesn&apos;t exist yet.
           </p>
 
           <div className="flex flex-col items-center gap-4">
             <Link
               href="/spaces"
-              className="inline-flex items-center rounded-xl px-9 py-4 text-[15px] font-semibold text-white transition-all hover:opacity-90 hover:-translate-y-px"
+              className="inline-flex items-center rounded-xl px-9 py-4 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90"
               style={{
                 background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
                 boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
@@ -458,12 +750,16 @@ function FinalCTA() {
             <Link
               href="/signup"
               className="text-[13.5px] font-medium transition-opacity hover:opacity-60"
-              style={{ color: 'rgba(255,255,255,0.32)' }}
+              style={{ color: 'rgba(255,255,255,0.30)' }}
             >
               or Build a Collective →
             </Link>
           </div>
 
+          <div
+            className="mx-auto mt-10 h-px w-10"
+            style={{ background: 'rgba(212,176,72,0.30)' }}
+          />
         </div>
       </Container>
     </section>
@@ -474,12 +770,16 @@ function FinalCTA() {
 
 export default function Home() {
   return (
-    <SiteShell>
+    <SiteShell heroHeader>
       <HomeHero />
-      <TwoWaysIn />
-      <Vision />
-      <PlatformPreview />
-      <FeaturedSpaces />
+      <DualIntent />
+      <EcosystemStatement />
+      <FreshIdeas />
+      <TheWayWeFeelSection />
+      <WhereTheLearningLives />
+      <WhatGetsMade />
+      <Conditions />
+      <GoodQuestions />
       <FinalCTA />
     </SiteShell>
   )
