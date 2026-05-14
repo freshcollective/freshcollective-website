@@ -920,6 +920,10 @@ function GoodQuestions() {
       a: 'No. Fresh Collective is built around practice, rhythm, and community — not passive consumption. You are not here to race through content. You are here to let the work land.',
     },
     {
+      q: 'What types of collectives are available to join?',
+      a: 'Fresh Collective is designed for collectives centred around intentional growth, creativity, leadership, wellbeing, embodiment, learning, and new ways of living. As the platform grows, you will be able to explore different collectives and choose the ones that feel most relevant to where you are.',
+    },
+    {
       q: 'What is the difference between a collective and a pathway?',
       a: 'A collective is the wider learning environment. A pathway is a structured journey inside it. You can join a collective for the community, the rhythm, the live gatherings, and the pathways that help you go deeper.',
     },
@@ -931,12 +935,20 @@ function GoodQuestions() {
       q: 'Can I build my own collective?',
       a: 'Yes. Fresh Collective is also for creators, educators, practitioners, and guides who want to build intentional learning environments around their work.',
     },
+    {
+      q: 'How do I create my own collective?',
+      a: 'You can create a collective around your work, ideas, practice, or area of expertise. A collective can include pathways, resources, live gatherings, prompts, and community conversation. The creator experience is designed to help you build a thoughtful learning environment, not just upload content.',
+    },
+    {
+      q: 'What is the cost?',
+      a: 'Pricing will depend on the collective. Some may be free, some may be paid, and some may include different access options depending on what is included. Each collective will clearly show its pricing before you join.',
+    },
   ]
 
   return (
-    <section className="py-20 sm:py-28" style={{ background: '#FAFAF8' }}>
+    <section className="py-20 sm:py-28" style={{ background: '#FFFFFF' }}>
       <Container>
-        <div className="grid gap-12 sm:grid-cols-[40%_60%] sm:gap-16">
+        <div className="grid gap-12 sm:grid-cols-[38%_62%] sm:gap-16">
 
           {/* Left: heading */}
           <div>
@@ -953,7 +965,6 @@ function GoodQuestions() {
                 letterSpacing: '-0.04em',
                 lineHeight: '1.1',
                 fontWeight: 660,
-                marginBottom: '1.25rem',
               }}
             >
               <span style={{ display: 'block', color: '#0F172A' }}>Good questions deserve</span>
@@ -969,14 +980,10 @@ function GoodQuestions() {
                 honest answers.
               </span>
             </h2>
-
-            <p style={{ fontSize: '15px', lineHeight: '1.75', color: 'rgba(15,23,42,0.52)', letterSpacing: '-0.01em', maxWidth: '280px' }}>
-              Start with what you need to know. Open what matters, skip what does not.
-            </p>
           </div>
 
-          {/* Right: accordion */}
-          <div className="flex flex-col gap-3">
+          {/* Right: accordion — max-width keeps it from bleeding to the edge */}
+          <div className="flex flex-col gap-3" style={{ maxWidth: '640px' }}>
             {qa.map(({ q, a }) => (
               <details
                 key={q}
