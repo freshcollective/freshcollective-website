@@ -17,19 +17,20 @@ function DualIntent() {
         <div className="mb-12 sm:mb-14" style={{ maxWidth: '540px' }}>
           <p
             className="mb-7"
-            style={{ fontSize: '10.5px', fontWeight: 650, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(8,18,38,0.40)' }}
+            style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E' }}
           >
             For learners and creators
           </p>
-          <div
-            className="mb-6"
-            style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.48', fontWeight: 640 }}
-          >
-            <p style={{ color: '#08101E' }}>Some people come to explore new ways of living, learning, and growing.</p>
-            <p className="mt-4" style={{ color: 'rgba(8,18,38,0.58)' }}>
+          <div className="mb-6">
+            <p style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 650, color: '#0F172A' }}>
+              Some people come to explore new ways of living, learning, and growing.
+            </p>
+            <p className="mt-4" style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 640, color: 'rgba(15,23,42,0.62)' }}>
               Others come to build the kinds of environments they wish existed — spaces for conversation, practice, creativity, and real change.
             </p>
-            <p className="mt-4" style={{ color: 'rgba(8,18,38,0.38)' }}>Fresh Collective brings both together.</p>
+            <p className="mt-5" style={{ fontSize: 'clamp(0.9rem, 1.4vw, 1rem)', color: 'rgba(15,23,42,0.42)', letterSpacing: '-0.01em', lineHeight: '1.5' }}>
+              Fresh Collective brings both together.
+            </p>
           </div>
         </div>
 
@@ -41,8 +42,8 @@ function DualIntent() {
             className="flex flex-col rounded-2xl p-8 sm:p-10"
             style={{
               background: '#FFFFFF',
-              border: '1px solid rgba(0,0,0,0.08)',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.07)',
+              border: '1px solid rgba(15,23,42,0.09)',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.04), 0 16px 48px rgba(0,0,0,0.09)',
             }}
           >
             {/* Icon */}
@@ -51,8 +52,8 @@ function DualIntent() {
               style={{ background: 'rgba(56,160,158,0.10)' }}
             >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <circle cx="10" cy="8" r="3.5" stroke="#38A09E" strokeWidth="1.5"/>
-                <path d="M3 17c0-3.314 3.134-6 7-6s7 2.686 7 6" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
+                <circle cx="10" cy="7.5" r="3" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M4 16.5c0-2.761 2.686-5 6-5s6 2.239 6 5" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
             </div>
 
@@ -62,7 +63,7 @@ function DualIntent() {
             <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
               Collectives to join
             </h3>
-            <p className="mb-8" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(8,18,38,0.56)' }}>
+            <p className="mb-8" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.62)' }}>
               Discover new ideas and ways of living, leading, and creating with others on the same path.
             </p>
 
@@ -80,7 +81,7 @@ function DualIntent() {
                   </div>
                   <div>
                     <p style={{ fontSize: '13.5px', fontWeight: 630, color: '#08101E', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
-                    <p style={{ fontSize: '13px', color: 'rgba(8,18,38,0.52)', lineHeight: '1.6' }}>{body}</p>
+                    <p style={{ fontSize: '13px', color: 'rgba(15,23,42,0.56)', lineHeight: '1.6' }}>{body}</p>
                   </div>
                 </div>
               ))}
@@ -102,8 +103,8 @@ function DualIntent() {
             className="flex flex-col rounded-2xl p-8 sm:p-10"
             style={{
               background: '#FFFFFF',
-              border: '1px solid rgba(0,0,0,0.08)',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.07)',
+              border: '1px solid rgba(15,23,42,0.09)',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.04), 0 16px 48px rgba(0,0,0,0.09)',
             }}
           >
             {/* Icon */}
@@ -112,10 +113,10 @@ function DualIntent() {
               style={{ background: 'rgba(212,176,72,0.12)' }}
             >
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5"/>
-                <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5"/>
-                <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5"/>
-                <rect x="11" y="11" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeDasharray="1.5 1.5"/>
+                <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
+                <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
+                <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
+                <path d="M14 11.5v5M11.5 14h5" stroke="#C4981A" strokeWidth="1.5" strokeLinecap="round"/>
               </svg>
             </div>
 
@@ -125,7 +126,7 @@ function DualIntent() {
             <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
               Create your own collective
             </h3>
-            <p className="mb-8" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(8,18,38,0.56)' }}>
+            <p className="mb-8" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.62)' }}>
               Spread your ideas with people who are craving a different way of living, leading, and exploring life.
             </p>
 
@@ -143,7 +144,7 @@ function DualIntent() {
                   </div>
                   <div>
                     <p style={{ fontSize: '13.5px', fontWeight: 630, color: '#08101E', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
-                    <p style={{ fontSize: '13px', color: 'rgba(8,18,38,0.52)', lineHeight: '1.6' }}>{body}</p>
+                    <p style={{ fontSize: '13px', color: 'rgba(15,23,42,0.56)', lineHeight: '1.6' }}>{body}</p>
                   </div>
                 </div>
               ))}
