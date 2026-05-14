@@ -33,7 +33,7 @@ export default async function SetupPage() {
       label: 'Create your collective',
       desc: 'Set the name, tagline, description, and who it is for.',
       status: primarySpace ? 'complete' : 'not_started',
-      href: '/creator',
+      href: '/creator-studio/create',
     },
     {
       label: 'Shape your first pathway',

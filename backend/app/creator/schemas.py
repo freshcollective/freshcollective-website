@@ -19,6 +19,22 @@ def slugify(text: str) -> str:
 # Space
 # ---------------------------------------------------------------------------
 
+class SpaceCreateRequest(BaseModel):
+    name: str
+    tagline: str | None = None
+    description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name cannot be empty.")
+        if len(v) > 200:
+            raise ValueError("Name must be 200 characters or fewer.")
+        return v
+
+
 class SpaceUpdateRequest(BaseModel):
     name: str | None = None
     tagline: str | None = None

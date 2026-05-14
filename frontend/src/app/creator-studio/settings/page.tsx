@@ -27,11 +27,11 @@ export default async function SettingsPage() {
             Set up your collective first to access its settings.
           </p>
           <Link
-            href="/creator"
+            href="/creator-studio/create"
             className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
-            Go to creator area
+            Create collective
           </Link>
         </div>
       )}

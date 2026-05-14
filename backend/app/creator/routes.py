@@ -26,6 +26,7 @@ from app.creator.schemas import (
     PostManageResponse,
     PostUpdateRequest,
     ReorderRequest,
+    SpaceCreateRequest,
     SpaceDetail,
     SpaceUpdateRequest,
     StepCreateRequest,
@@ -166,6 +167,30 @@ def list_my_spaces(
     )
     seen = {s.id for s in owned}
     return owned + [s for s in membered if s.id not in seen]
+
+
+@router.post("/spaces", response_model=SpaceDetail, status_code=201)
+def create_space(
+    body: SpaceCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> Space:
+    existing_slugs = [slug for (slug,) in db.query(Space.slug).all()]
+    slug = _unique_slug(slugify(body.name), existing_slugs)
+    space = Space(
+        id=str(uuid4()),
+        slug=slug,
+        name=body.name.strip(),
+        tagline=body.tagline.strip() if body.tagline else None,
+        description=body.description.strip() if body.description else None,
+        creator_id=current_user.id,
+        is_public=False,
+        status="draft",
+    )
+    db.add(space)
+    db.commit()
+    db.refresh(space)
+    return space
 
 
 @router.get("/spaces/{slug}", response_model=SpaceDetail)

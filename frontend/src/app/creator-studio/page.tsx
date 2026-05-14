@@ -83,9 +83,8 @@ export default async function CreatorStudioOverviewPage() {
               Start by giving your work a home. You can add pathways, gatherings, resources, and
               community once the foundation is in place.
             </p>
-            {/* TODO: wire to collective creation API when available. Currently routed to legacy creator area. */}
             <Link
-              href="/creator"
+              href="/creator-studio/create"
               className="inline-flex items-center rounded-lg px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
               style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
             >
