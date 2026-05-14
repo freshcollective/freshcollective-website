@@ -8,35 +8,30 @@ import HomeHero from '@/components/home/HomeHero'
 function DualIntent() {
   return (
     <section
-      className="py-16 sm:py-20"
+      className="py-16 sm:py-24"
       style={{ background: '#F5F3EF' }}
     >
       <Container>
-        <div style={{ maxWidth: '560px' }}>
 
+        {/* Copy block */}
+        <div className="mb-14 sm:mb-16" style={{ maxWidth: '540px' }}>
           <p
-            className="mb-8"
-            style={{ fontSize: '10.5px', fontWeight: 650, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(12,24,38,0.32)' }}
+            className="mb-7"
+            style={{ fontSize: '10.5px', fontWeight: 650, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(12,24,38,0.30)' }}
           >
             For learners and creators
           </p>
-
-          <h2
+          <div
             className="mb-6 text-navy-950"
-            style={{ fontSize: 'clamp(1.6rem, 2.8vw, 2.25rem)', letterSpacing: '-0.04em', lineHeight: '1.12', fontWeight: 650 }}
+            style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.48', fontWeight: 640 }}
           >
-            Some come to explore.<br />Some come to build.
-          </h2>
-
-          <p
-            className="mb-9"
-            style={{ fontSize: '15.5px', lineHeight: '1.82', color: 'rgba(12,24,38,0.52)' }}
-          >
-            Fresh Collective brings both together — people with ideas worth sharing,
-            and people ready to practise new ways of living, learning, creating, and leading.
-          </p>
-
-          <div className="flex flex-wrap gap-x-7 gap-y-3">
+            <p>Some people come to explore new ways of living, learning, and growing.</p>
+            <p className="mt-4" style={{ color: 'rgba(12,24,38,0.55)' }}>
+              Others come to build the kinds of environments they wish existed — spaces for conversation, practice, creativity, and real change.
+            </p>
+            <p className="mt-4" style={{ color: 'rgba(12,24,38,0.38)' }}>Fresh Collective brings both together.</p>
+          </div>
+          <div className="mt-8 flex flex-wrap gap-x-7 gap-y-2">
             <Link
               href="/spaces"
               className="text-[14px] font-semibold transition-opacity hover:opacity-60"
@@ -47,13 +42,172 @@ function DualIntent() {
             <Link
               href="/signup"
               className="text-[14px] font-semibold transition-opacity hover:opacity-60"
-              style={{ color: 'rgba(12,24,38,0.40)' }}
+              style={{ color: 'rgba(12,24,38,0.38)' }}
             >
               Build a Collective →
             </Link>
           </div>
+        </div>
+
+        {/* Artifact compositions */}
+        <div className="grid gap-8 sm:grid-cols-2 sm:gap-10">
+
+          {/* LEFT — Explore: participatory, reflective */}
+          <div className="relative hidden sm:block" style={{ height: '300px' }}>
+
+            {/* Pathway fragment */}
+            <div
+              className="absolute rounded-xl bg-white p-5"
+              style={{
+                width: '210px', top: '0', left: '0',
+                transform: 'rotate(-2.5deg)',
+                boxShadow: '0 12px 40px rgba(0,0,0,0.09)',
+              }}
+            >
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                Collective · Week 3
+              </div>
+              <div className="mb-3 text-navy-950" style={{ fontSize: '13px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}>
+                What are you practising this week?
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-1.5 rounded-full" style={{ background: '#E4E2DD' }} />
+                <div className="h-1.5 w-4/5 rounded-full" style={{ background: '#E4E2DD' }} />
+              </div>
+              <div className="mt-4 flex gap-1">
+                <div className="h-1 flex-1 rounded-full" style={{ background: '#42C7C6' }} />
+                <div className="h-1 flex-1 rounded-full" style={{ background: '#42C7C6', opacity: 0.4 }} />
+                <div className="h-1 flex-1 rounded-full" style={{ background: '#E4E2DD' }} />
+                <div className="h-1 flex-1 rounded-full" style={{ background: '#E4E2DD' }} />
+              </div>
+            </div>
+
+            {/* Discussion / prompt fragment */}
+            <div
+              className="absolute rounded-xl p-5"
+              style={{
+                width: '230px', bottom: '0', left: '50px',
+                background: '#F0EDE6',
+                transform: 'rotate(1.8deg)',
+                boxShadow: '0 10px 36px rgba(0,0,0,0.08)',
+              }}
+            >
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'rgba(56,160,158,0.70)' }}>
+                This month&apos;s prompt
+              </div>
+              <div className="mb-3 text-navy-950" style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.58', letterSpacing: '-0.01em' }}>
+                Where are you growing slowly — and is slow okay right now?
+              </div>
+              <div className="space-y-1.5">
+                <div className="h-1.5 w-5/6 rounded-full" style={{ background: 'rgba(56,160,158,0.22)' }} />
+                <div className="h-1.5 w-3/5 rounded-full" style={{ background: 'rgba(56,160,158,0.22)' }} />
+              </div>
+            </div>
+
+            {/* Gathering snippet */}
+            <div
+              className="absolute rounded-xl p-4"
+              style={{
+                width: '178px', top: '30px', right: '0',
+                background: '#ffffff',
+                border: '1px solid rgba(0,0,0,0.05)',
+                transform: 'rotate(1.2deg)',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.07)',
+              }}
+            >
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
+                Live Gathering
+              </div>
+              <div className="mb-1 text-[13px] font-semibold text-navy-950">Monthly call</div>
+              <div className="text-[11.5px]" style={{ color: 'rgba(12,24,38,0.38)' }}>60 min · Open conversation</div>
+              <div
+                className="mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold"
+                style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                This week
+              </div>
+            </div>
+
+          </div>
+
+          {/* RIGHT — Build: creator, constructive */}
+          <div className="relative hidden sm:block" style={{ height: '300px' }}>
+
+            {/* Curriculum / session plan */}
+            <div
+              className="absolute rounded-xl bg-white p-5"
+              style={{
+                width: '228px', top: '0', right: '20px',
+                transform: 'rotate(2deg)',
+                boxShadow: '0 12px 40px rgba(0,0,0,0.09)',
+              }}
+            >
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7420' }}>
+                Collective Plan
+              </div>
+              <div className="mb-3 text-navy-950" style={{ fontSize: '13px', fontWeight: 620, letterSpacing: '-0.02em' }}>
+                5-week arc
+              </div>
+              <div className="space-y-2">
+                {['Introduction & orientation', 'Core practice: Week 1–2', 'Live Q&A + reflection', 'Integration session'].map((item, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <div
+                      className="h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{ background: i < 2 ? '#D4B048' : '#E4E2DD' }}
+                    />
+                    <div className="text-[11px]" style={{ color: i < 2 ? 'rgba(12,24,38,0.70)' : 'rgba(12,24,38,0.30)' }}>
+                      {item}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Creator note */}
+            <div
+              className="absolute rounded-xl p-5"
+              style={{
+                width: '218px', bottom: '0', left: '0',
+                background: '#F5F0E4',
+                transform: 'rotate(-2.2deg)',
+                boxShadow: '0 10px 36px rgba(0,0,0,0.08)',
+              }}
+            >
+              <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7420' }}>
+                Creator note
+              </div>
+              <div className="text-navy-950" style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.60', letterSpacing: '-0.01em' }}>
+                What is the one shift I want people to make by the end of this?
+              </div>
+              <div className="mt-3 space-y-1.5">
+                <div className="h-1.5 w-4/5 rounded-full" style={{ background: '#DFCA7A' }} />
+                <div className="h-1.5 w-2/3 rounded-full" style={{ background: '#DFCA7A' }} />
+              </div>
+            </div>
+
+            {/* Members fragment */}
+            <div
+              className="absolute rounded-xl p-4"
+              style={{
+                width: '170px', bottom: '40px', right: '0',
+                background: '#ffffff',
+                border: '1px solid rgba(0,0,0,0.05)',
+                transform: 'rotate(1.5deg)',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.07)',
+              }}
+            >
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: '#9A7420' }}>
+                Your Collective
+              </div>
+              <div className="mb-1 text-[13px] font-semibold text-navy-950">12 members joined</div>
+              <div className="text-[11.5px]" style={{ color: 'rgba(12,24,38,0.38)' }}>Starting in 4 days</div>
+            </div>
+
+          </div>
 
         </div>
+
       </Container>
     </section>
   )
