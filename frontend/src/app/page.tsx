@@ -913,48 +913,102 @@ function GoodQuestions() {
   const qa = [
     {
       q: 'What if I am already overwhelmed?',
-      a: 'That is exactly the right time to start. The REAL Journey is designed for people who are already full — structured to be light enough to actually do, even when everything else is heavy.',
+      a: 'That is exactly the right time to start. Fresh Collective is designed to be light enough to enter gently, while still giving you structure, rhythm, and something steady to return to.',
     },
     {
       q: 'Is this another online course I will not finish?',
-      a: 'Fresh Collective is not built around consumption. It is built around consistency — short touchpoints, a live layer, and a community that keeps you moving even when motivation is low.',
+      a: 'No. Fresh Collective is built around practice, rhythm, and community — not passive consumption. You are not here to race through content. You are here to let the work land.',
     },
     {
-      q: 'What is the difference between the REAL Journey and full membership?',
-      a: 'The REAL Journey is the foundation — four phases, your own pace. Full membership adds the live layer and access to The Rooms. Both are meaningful starting points.',
+      q: 'What is the difference between a collective and a pathway?',
+      a: 'A collective is the wider learning environment. A pathway is a structured journey inside it. You can join a collective for the community, the rhythm, the live gatherings, and the pathways that help you go deeper.',
     },
     {
       q: 'How much time do I need each week?',
-      a: 'The REAL Journey is designed around bite-sized sessions. The monthly live call is 60 minutes. Most members find 30–60 minutes a week is enough to stay connected and moving.',
+      a: 'Enough to stay connected, not enough to overwhelm you. Most pathways are designed around small, steady touchpoints that can fit into real life.',
+    },
+    {
+      q: 'Can I build my own collective?',
+      a: 'Yes. Fresh Collective is also for creators, educators, practitioners, and guides who want to build intentional learning environments around their work.',
     },
   ]
 
   return (
-    <section className="py-16 sm:py-24" style={{ background: '#FDFCF9' }}>
+    <section className="py-20 sm:py-28" style={{ background: '#FAFAF8' }}>
       <Container>
-        <div className="grid gap-12 sm:grid-cols-[38%_62%] sm:gap-16">
+        <div className="grid gap-12 sm:grid-cols-[40%_60%] sm:gap-16">
 
+          {/* Left: heading */}
           <div>
+            <div className="mb-6 flex items-center gap-3">
+              <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
+              <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E' }}>
+                Questions
+              </span>
+            </div>
+
             <h2
-              className="text-navy-950"
-              style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.14', fontWeight: 650 }}
+              style={{
+                fontSize: 'clamp(1.875rem, 3vw, 2.875rem)',
+                letterSpacing: '-0.04em',
+                lineHeight: '1.1',
+                fontWeight: 660,
+                marginBottom: '1.25rem',
+              }}
             >
-              Good questions deserve honest answers.
+              <span style={{ display: 'block', color: '#0F172A' }}>Good questions deserve</span>
+              <span
+                style={{
+                  display: 'block',
+                  backgroundImage: 'linear-gradient(100deg, #1BA7A5 0%, #42C7C6 38%, #8FE3E2 68%, #FFFFFF 100%)',
+                  WebkitBackgroundClip: 'text',
+                  backgroundClip: 'text',
+                  color: 'transparent',
+                }}
+              >
+                honest answers.
+              </span>
             </h2>
+
+            <p style={{ fontSize: '15px', lineHeight: '1.75', color: 'rgba(15,23,42,0.52)', letterSpacing: '-0.01em', maxWidth: '280px' }}>
+              Start with what you need to know. Open what matters, skip what does not.
+            </p>
           </div>
 
-          <div>
-            {qa.map(({ q, a }, i) => (
-              <div
+          {/* Right: accordion */}
+          <div className="flex flex-col gap-3">
+            {qa.map(({ q, a }) => (
+              <details
                 key={q}
-                className="py-6"
-                style={{ borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.05)' }}
+                className="group rounded-2xl border border-[rgba(15,23,42,0.08)] bg-white
+                  shadow-[0_1px_4px_rgba(0,0,0,0.04)]
+                  open:border-[rgba(56,160,158,0.28)] open:shadow-[0_4px_20px_rgba(56,160,158,0.07)]"
               >
-                <p className="mb-2.5 text-navy-950" style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}>
-                  {q}
-                </p>
-                <p className="text-[15px] leading-[1.82] text-navy-500">{a}</p>
-              </div>
+                <summary className="flex cursor-pointer list-none select-none items-center justify-between gap-4 px-6 py-5">
+                  <span style={{ fontSize: '15px', fontWeight: 620, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: '1.4' }}>
+                    {q}
+                  </span>
+                  <div
+                    className="shrink-0 transition-transform duration-200 group-open:rotate-180"
+                    style={{
+                      width: '28px', height: '28px', borderRadius: '50%',
+                      background: 'rgba(56,160,158,0.09)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M2.5 4.5L6 8L9.5 4.5" stroke="#38A09E" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                </summary>
+                <div style={{ padding: '0 1.5rem 1.25rem' }}>
+                  <div style={{ height: '1px', background: 'rgba(56,160,158,0.12)', marginBottom: '1rem' }} />
+                  <p style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.60)', letterSpacing: '-0.01em' }}>
+                    {a}
+                  </p>
+                </div>
+              </details>
             ))}
           </div>
 
