@@ -5,9 +5,13 @@ export default function PublicFooter() {
   return (
     <footer
       className="relative"
-      style={{ background: '#060C17', borderTop: '1px solid rgba(255,255,255,0.05)' }}
+      style={{
+        background:
+          'radial-gradient(circle at 20% 0%, rgba(66,199,198,0.13) 0%, transparent 34%), linear-gradient(180deg, #071824 0%, #050B14 100%)',
+        borderTop: '1px solid rgba(255,255,255,0.09)',
+      }}
     >
-      <Container className="py-12 md:py-16">
+      <Container className="py-14 md:py-18">
 
         <div className="grid gap-10 md:grid-cols-[1fr_auto] md:items-start">
 
@@ -17,13 +21,19 @@ export default function PublicFooter() {
                 className="flex h-6 w-6 items-center justify-center rounded-md"
                 style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
               >
-                <div className="h-[10px] w-[10px] rounded-sm bg-white" style={{ opacity: 0.9 }} />
+                <div className="h-[10px] w-[10px] rounded-sm bg-white" style={{ opacity: 0.92 }} />
               </div>
-              <span className="text-[15px] font-semibold tracking-[-0.02em] text-white">
+              <span
+                className="text-[15px] font-semibold tracking-[-0.02em]"
+                style={{ color: 'rgba(255,255,255,0.90)' }}
+              >
                 Fresh Collective
               </span>
             </div>
-            <p className="max-w-[300px] text-[14px] leading-[1.75] text-navy-400">
+            <p
+              className="max-w-[300px] text-[14px] leading-[1.78]"
+              style={{ color: 'rgba(255,255,255,0.52)' }}
+            >
               Creator-led collectives for transformative growth — structured pathways,
               live gatherings, and intentional community.
             </p>
@@ -40,7 +50,7 @@ export default function PublicFooter() {
                 key={href}
                 href={href}
                 className="text-[13px] transition-colors hover:text-white"
-                style={{ color: 'rgba(255,255,255,0.35)' }}
+                style={{ color: 'rgba(255,255,255,0.50)' }}
               >
                 {label}
               </Link>
@@ -51,9 +61,9 @@ export default function PublicFooter() {
 
         <div
           className="mt-10 flex items-center justify-between pt-6"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}
+          style={{ borderTop: '1px solid rgba(255,255,255,0.09)' }}
         >
-          <p className="text-[12px]" style={{ color: 'rgba(255,255,255,0.20)' }}>
+          <p className="text-[12px]" style={{ color: 'rgba(255,255,255,0.28)' }}>
             © {new Date().getFullYear()} Fresh Collective. All rights reserved.
           </p>
         </div>
