@@ -8,17 +8,14 @@ import HomeHero from '@/components/home/HomeHero'
 function DualIntent() {
   return (
     <section
-      className="py-20 sm:py-28"
+      className="py-16 sm:py-24"
       style={{ background: 'linear-gradient(to bottom, #ECEAE7 0%, #F5F4F0 40%, #FDFCF9 100%)' }}
     >
       <Container>
-        <div className="grid gap-16 sm:grid-cols-2 sm:gap-20">
+        <div className="grid gap-14 sm:grid-cols-2 sm:gap-20">
 
           <div>
-            <div
-              className="mb-5 h-px w-8"
-              style={{ background: 'rgba(56,160,158,0.55)' }}
-            />
+            <div className="mb-5 h-px w-8" style={{ background: 'rgba(56,160,158,0.55)' }} />
             <h2
               className="mb-5 text-navy-950"
               style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2.125rem)', letterSpacing: '-0.035em', lineHeight: '1.12', fontWeight: 650 }}
@@ -32,11 +29,8 @@ function DualIntent() {
             </p>
           </div>
 
-          <div className="sm:pt-14">
-            <div
-              className="mb-5 h-px w-8"
-              style={{ background: 'rgba(212,176,72,0.55)' }}
-            />
+          <div className="sm:pt-12">
+            <div className="mb-5 h-px w-8" style={{ background: 'rgba(212,176,72,0.55)' }} />
             <h2
               className="mb-5 text-navy-950"
               style={{ fontSize: 'clamp(1.5rem, 2.5vw, 2.125rem)', letterSpacing: '-0.035em', lineHeight: '1.12', fontWeight: 650 }}
@@ -61,13 +55,13 @@ function DualIntent() {
 function EcosystemStatement() {
   return (
     <section
-      className="py-20 sm:py-24"
+      className="py-16 sm:py-20"
       style={{ background: '#FDFCF9', borderTop: '1px solid rgba(0,0,0,0.04)' }}
     >
       <Container>
         <div className="max-w-[680px]">
           <h2
-            className="mb-6 text-navy-950"
+            className="mb-5 text-navy-950"
             style={{ fontSize: 'clamp(2rem, 4vw, 3.5rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
           >
             Not a product.{' '}
@@ -75,7 +69,7 @@ function EcosystemStatement() {
               An ecosystem.
             </span>
           </h2>
-          <p className="text-[16px] leading-[1.82] text-navy-500" style={{ maxWidth: '520px' }}>
+          <p className="text-[16px] leading-[1.82] text-navy-500" style={{ maxWidth: '500px' }}>
             One foundation. A live community layer. Deepening pathways — designed to
             work together as a connected system, not as separate courses you buy and forget.
           </p>
@@ -93,7 +87,6 @@ function FreshIdeas() {
       className="relative overflow-hidden py-24 sm:py-32"
       style={{ background: '#0C1F1F' }}
     >
-      {/* Atmospheric glow */}
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
         <div style={{
           position: 'absolute', top: '-20%', right: '-10%',
@@ -106,11 +99,13 @@ function FreshIdeas() {
       <Container className="relative">
         <div className="grid items-center gap-14 sm:grid-cols-[55%_45%] sm:gap-10">
 
-          {/* Left */}
           <div>
             <div className="mb-8 flex items-center gap-3">
               <div className="h-px w-8" style={{ background: 'rgba(85,184,182,0.35)' }} />
-              <span className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'rgba(255,255,255,0.28)' }}>
+              <span
+                className="text-[11px] font-semibold uppercase tracking-[0.14em]"
+                style={{ color: 'rgba(255,255,255,0.28)' }}
+              >
                 A different kind of learning
               </span>
             </div>
@@ -154,7 +149,10 @@ function FreshIdeas() {
                   >
                     {stat}
                   </div>
-                  <div className="text-[12px] font-medium uppercase tracking-[0.10em]" style={{ color: 'rgba(255,255,255,0.28)' }}>
+                  <div
+                    className="text-[12px] font-medium uppercase tracking-[0.10em]"
+                    style={{ color: 'rgba(255,255,255,0.28)' }}
+                  >
                     {label}
                   </div>
                 </div>
@@ -162,16 +160,13 @@ function FreshIdeas() {
             </div>
           </div>
 
-          {/* Right — documentary artifacts */}
+          {/* Documentary artifacts */}
           <div className="relative hidden sm:block" style={{ height: '420px' }}>
 
-            {/* Artifact 1 — background, rotated left */}
             <div
               className="absolute rounded-xl bg-white p-5"
               style={{
-                width: '215px',
-                bottom: '28px',
-                left: '0',
+                width: '215px', bottom: '28px', left: '0',
                 transform: 'rotate(-3.5deg)',
                 boxShadow: '0 20px 60px rgba(0,0,0,0.50)',
               }}
@@ -179,10 +174,7 @@ function FreshIdeas() {
               <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-teal-600">
                 REAL Journey · Phase 1
               </div>
-              <div
-                className="mb-3 text-navy-950"
-                style={{ fontSize: '13.5px', fontWeight: 620, letterSpacing: '-0.02em' }}
-              >
+              <div className="mb-3 text-navy-950" style={{ fontSize: '13.5px', fontWeight: 620, letterSpacing: '-0.02em' }}>
                 Recognise
               </div>
               <div className="space-y-1.5">
@@ -198,13 +190,10 @@ function FreshIdeas() {
               </div>
             </div>
 
-            {/* Artifact 2 — centre, slight right tilt */}
             <div
               className="absolute rounded-xl p-5"
               style={{
-                width: '225px',
-                top: '38px',
-                left: '72px',
+                width: '225px', top: '38px', left: '72px',
                 background: '#F5F0E8',
                 transform: 'rotate(1.8deg)',
                 boxShadow: '0 20px 60px rgba(0,0,0,0.45)',
@@ -213,10 +202,7 @@ function FreshIdeas() {
               <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: '#9A7420' }}>
                 Monthly Prompt
               </div>
-              <div
-                className="mb-3 text-navy-950"
-                style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.55', letterSpacing: '-0.01em' }}
-              >
+              <div className="mb-3 text-navy-950" style={{ fontSize: '13px', fontWeight: 500, lineHeight: '1.55', letterSpacing: '-0.01em' }}>
                 What would it feel like to stop carrying this alone?
               </div>
               <div className="space-y-1.5">
@@ -226,13 +212,10 @@ function FreshIdeas() {
               </div>
             </div>
 
-            {/* Artifact 3 — top right, dark, front layer */}
             <div
               className="absolute rounded-xl p-5"
               style={{
-                width: '198px',
-                top: '8px',
-                right: '8px',
+                width: '198px', top: '8px', right: '8px',
                 background: '#0C1826',
                 border: '1px solid rgba(255,255,255,0.08)',
                 transform: 'rotate(-1.2deg)',
@@ -253,13 +236,10 @@ function FreshIdeas() {
               </div>
             </div>
 
-            {/* Artifact 4 — bottom right, glass */}
             <div
               className="absolute rounded-xl p-4"
               style={{
-                width: '172px',
-                bottom: '18px',
-                right: '4px',
+                width: '172px', bottom: '18px', right: '4px',
                 background: 'rgba(255,255,255,0.08)',
                 backdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255,255,255,0.12)',
@@ -287,10 +267,10 @@ function FreshIdeas() {
 
 function TheWayWeFeelSection() {
   return (
-    <section className="py-20 sm:py-28" style={{ background: '#FAFAF8' }}>
+    <section className="py-16 sm:py-24" style={{ background: '#FAFAF8' }}>
       <Container>
 
-        <div className="mb-14 max-w-[580px]">
+        <div className="mb-12 max-w-[560px]">
           <h2
             className="text-navy-950"
             style={{ fontSize: 'clamp(1.875rem, 3.75vw, 3.25rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
@@ -321,10 +301,7 @@ function TheWayWeFeelSection() {
           ].map(({ rule, body, accent, offset }) => (
             <div key={rule} className={offset ? 'sm:pt-10' : ''}>
               <div className="mb-5 h-px w-6" style={{ background: accent }} />
-              <p
-                className="mb-3 text-navy-950"
-                style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}
-              >
+              <p className="mb-3 text-navy-950" style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}>
                 {rule}
               </p>
               <p className="text-[15px] leading-[1.82] text-navy-500">{body}</p>
@@ -341,10 +318,10 @@ function TheWayWeFeelSection() {
 
 function WhereTheLearningLives() {
   return (
-    <section className="py-20 sm:py-28" style={{ background: '#F5F0E8' }}>
+    <section className="py-16 sm:py-24" style={{ background: '#F5F0E8' }}>
       <Container>
 
-        <div className="mb-12">
+        <div className="mb-10">
           <div className="mb-3 flex items-center gap-3">
             <div className="h-px w-8 bg-teal-500" style={{ opacity: 0.5 }} />
             <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-600">
@@ -359,9 +336,8 @@ function WhereTheLearningLives() {
           </h2>
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 
-          {/* REAL Journey — featured */}
           <div
             className="rounded-2xl p-7 sm:col-span-2 lg:col-span-1 lg:row-span-2"
             style={{
@@ -380,25 +356,18 @@ function WhereTheLearningLives() {
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-600">
               Start Here
             </p>
-            <h3
-              className="mb-4 text-navy-950"
-              style={{ fontSize: '1.25rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}
-            >
+            <h3 className="mb-4 text-navy-950" style={{ fontSize: '1.25rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}>
               REAL Journey
             </h3>
             <p className="mb-6 text-[15px] leading-[1.82] text-navy-500">
               Four phases — Recognise, Explore, Align, Lead. The foundation every member
               begins with. Bite-sized. Stabilising. Something to return to, again and again.
             </p>
-            <Link
-              href="/real-journey"
-              className="text-[13.5px] font-semibold text-teal-600 underline-offset-2 transition-opacity hover:opacity-70 hover:underline"
-            >
+            <Link href="/real-journey" className="text-[13.5px] font-semibold text-teal-600 underline-offset-2 transition-opacity hover:opacity-70 hover:underline">
               Learn more →
             </Link>
           </div>
 
-          {/* Live Layer */}
           <div
             className="rounded-2xl p-7"
             style={{
@@ -417,10 +386,7 @@ function WhereTheLearningLives() {
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: '#9A7420' }}>
               The Heart
             </p>
-            <h3
-              className="mb-3 text-navy-950"
-              style={{ fontSize: '1.125rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}
-            >
+            <h3 className="mb-3 text-navy-950" style={{ fontSize: '1.125rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}>
               Live Layer
             </h3>
             <p className="mb-5 text-[15px] leading-[1.82] text-navy-500">
@@ -432,7 +398,6 @@ function WhereTheLearningLives() {
             </Link>
           </div>
 
-          {/* Deepening Pathways */}
           <div
             className="rounded-2xl p-7"
             style={{
@@ -451,10 +416,7 @@ function WhereTheLearningLives() {
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-navy-400">
               The Rooms
             </p>
-            <h3
-              className="mb-3 text-navy-950"
-              style={{ fontSize: '1.125rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}
-            >
+            <h3 className="mb-3 text-navy-950" style={{ fontSize: '1.125rem', fontWeight: 650, letterSpacing: '-0.03em', lineHeight: '1.25' }}>
               Deepening Pathways
             </h3>
             <p className="mb-5 text-[15px] leading-[1.82] text-navy-500">
@@ -472,98 +434,17 @@ function WhereTheLearningLives() {
   )
 }
 
-/* ─── What Gets Made ────────────────────────────────────────────────────────── */
-
-function WhatGetsMade() {
-  const items = [
-    {
-      label: 'Reflection',
-      heading: 'A cleaner sense of what is actually true.',
-      body: 'The REAL Journey is designed to interrupt the loop — to help you see what has been running in the background so you can choose something different.',
-      accent: '#38A09E',
-    },
-    {
-      label: 'Connection',
-      heading: 'A community that does not require performance.',
-      body: 'Live calls and integration threads create a space where showing up honestly is the norm — not the exception.',
-      accent: '#BF9830',
-    },
-    {
-      label: 'Direction',
-      heading: 'A sense of what the next phase actually looks like.',
-      body: 'Each pathway in The Rooms builds on your foundation and points toward something concrete — growth, transformation, or a deeper sense of self.',
-      accent: '#38A09E',
-    },
-    {
-      label: 'Continuity',
-      heading: 'Something to return to when life gets loud.',
-      body: 'The structure stays. Your REAL Journey, your community, your pathways — still there when you are ready to come back.',
-      accent: '#7FCFCD',
-    },
-  ]
-
-  return (
-    <section className="py-20 sm:py-28" style={{ background: '#FDFCF9' }}>
-      <Container>
-        <div className="grid items-start gap-14 sm:grid-cols-[42%_58%] sm:gap-16">
-
-          <div className="sm:sticky sm:top-24">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'rgba(12,24,38,0.35)' }}>
-              What you get
-            </p>
-            <h2
-              className="mb-5 text-navy-950"
-              style={{ fontSize: 'clamp(1.75rem, 3vw, 2.625rem)', letterSpacing: '-0.04em', lineHeight: '1.10', fontWeight: 650 }}
-            >
-              What gets made when people have the right container.
-            </h2>
-            <p className="text-[15.5px] leading-[1.82] text-navy-500">
-              Not information. Not another thing to consume and forget.
-              Real movement. Clarity that stays. Connections that matter.
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            {items.map(({ label, heading, body, accent }) => (
-              <div
-                key={label}
-                className="rounded-xl p-6"
-                style={{
-                  borderLeft: `2px solid ${accent}`,
-                  background: '#F5F7FA',
-                }}
-              >
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'rgba(12,24,38,0.38)' }}>
-                  {label}
-                </p>
-                <p
-                  className="mb-2 text-navy-950"
-                  style={{ fontSize: '15px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}
-                >
-                  {heading}
-                </p>
-                <p className="text-[14.5px] leading-[1.82] text-navy-500">{body}</p>
-              </div>
-            ))}
-          </div>
-
-        </div>
-      </Container>
-    </section>
-  )
-}
-
 /* ─── Conditions ────────────────────────────────────────────────────────────── */
 
 function Conditions() {
   return (
     <section
-      className="py-20 sm:py-28"
+      className="py-16 sm:py-24"
       style={{ background: '#F5F4F0', borderTop: '1px solid rgba(0,0,0,0.04)' }}
     >
       <Container>
 
-        <div className="mb-14 max-w-[560px]">
+        <div className="mb-12 max-w-[560px]">
           <h2
             className="text-navy-950"
             style={{ fontSize: 'clamp(1.875rem, 3.5vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
@@ -605,10 +486,7 @@ function Conditions() {
               >
                 {num}
               </div>
-              <p
-                className="mb-3 text-navy-950"
-                style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}
-              >
+              <p className="mb-3 text-navy-950" style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}>
                 {heading}
               </p>
               <p className="text-[15px] leading-[1.82] text-navy-500">{body}</p>
@@ -635,7 +513,7 @@ function GoodQuestions() {
     },
     {
       q: 'What is the difference between the REAL Journey and full membership?',
-      a: 'The REAL Journey is the foundation — four phases, your own pace. Full membership adds the live layer (monthly calls, community prompts) and access to The Rooms. Both are meaningful starting points.',
+      a: 'The REAL Journey is the foundation — four phases, your own pace. Full membership adds the live layer and access to The Rooms. Both are meaningful starting points.',
     },
     {
       q: 'How much time do I need each week?',
@@ -644,9 +522,9 @@ function GoodQuestions() {
   ]
 
   return (
-    <section className="py-20 sm:py-28" style={{ background: '#FDFCF9' }}>
+    <section className="py-16 sm:py-24" style={{ background: '#FDFCF9' }}>
       <Container>
-        <div className="grid gap-14 sm:grid-cols-[38%_62%] sm:gap-16">
+        <div className="grid gap-12 sm:grid-cols-[38%_62%] sm:gap-16">
 
           <div>
             <h2
@@ -661,13 +539,10 @@ function GoodQuestions() {
             {qa.map(({ q, a }, i) => (
               <div
                 key={q}
-                className="py-7"
+                className="py-6"
                 style={{ borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.05)' }}
               >
-                <p
-                  className="mb-3 text-navy-950"
-                  style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}
-                >
+                <p className="mb-2.5 text-navy-950" style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}>
                   {q}
                 </p>
                 <p className="text-[15px] leading-[1.82] text-navy-500">{a}</p>
@@ -686,39 +561,38 @@ function GoodQuestions() {
 function FinalCTA() {
   return (
     <section
-      className="relative overflow-hidden py-28 sm:py-36"
+      className="relative overflow-hidden py-24 sm:py-32"
       style={{ background: '#060C17' }}
     >
+      {/* Teal glow from below */}
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
-          background: 'radial-gradient(ellipse 80% 60% at 50% 100%, rgba(56,160,158,0.10) 0%, transparent 70%)',
+          background: 'radial-gradient(ellipse 80% 55% at 50% 110%, rgba(56,160,158,0.14) 0%, transparent 65%)',
         }}
       />
 
       <Container className="relative">
-        <div className="mx-auto max-w-[500px] text-center">
+        <div className="mx-auto max-w-[520px] text-center">
 
-          <div
-            className="mx-auto mb-10 h-px w-10"
-            style={{ background: 'rgba(212,176,72,0.30)' }}
-          />
+          <div className="mx-auto mb-10 h-px w-10" style={{ background: 'rgba(212,176,72,0.35)' }} />
 
           <h2
-            className="mb-7 text-white"
+            className="mb-6"
             style={{
               fontSize: 'clamp(2.25rem, 4.5vw, 4rem)',
               letterSpacing: '-0.04em',
               lineHeight: '1.07',
               fontWeight: 650,
+              color: '#ffffff',
             }}
           >
             Find your collective.
             <br />
             <span
               style={{
-                background: 'linear-gradient(108deg, #5ABFBD 0%, #D4B048 100%)',
+                background: 'linear-gradient(108deg, #7FCFCD 0%, #D4B048 100%)',
                 WebkitBackgroundClip: 'text',
                 WebkitTextFillColor: 'transparent',
                 backgroundClip: 'text',
@@ -730,7 +604,7 @@ function FinalCTA() {
 
           <p
             className="mb-10 text-[15.5px] leading-[1.82]"
-            style={{ color: 'rgba(255,255,255,0.38)' }}
+            style={{ color: 'rgba(255,255,255,0.58)' }}
           >
             There&apos;s a collective for where you are now.
             Or build the one that doesn&apos;t exist yet.
@@ -749,17 +623,15 @@ function FinalCTA() {
             </Link>
             <Link
               href="/signup"
-              className="text-[13.5px] font-medium transition-opacity hover:opacity-60"
-              style={{ color: 'rgba(255,255,255,0.30)' }}
+              className="text-[13.5px] font-medium transition-opacity hover:opacity-80"
+              style={{ color: 'rgba(255,255,255,0.48)' }}
             >
               or Build a Collective →
             </Link>
           </div>
 
-          <div
-            className="mx-auto mt-10 h-px w-10"
-            style={{ background: 'rgba(212,176,72,0.30)' }}
-          />
+          <div className="mx-auto mt-10 h-px w-10" style={{ background: 'rgba(212,176,72,0.35)' }} />
+
         </div>
       </Container>
     </section>
@@ -777,7 +649,6 @@ export default function Home() {
       <FreshIdeas />
       <TheWayWeFeelSection />
       <WhereTheLearningLives />
-      <WhatGetsMade />
       <Conditions />
       <GoodQuestions />
       <FinalCTA />
