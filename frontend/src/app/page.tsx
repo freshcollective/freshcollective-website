@@ -605,11 +605,9 @@ function FreshIdeas() {
 
 function TheWayWeFeelSection() {
   return (
-    <section className="py-20 sm:py-28" style={{ background: '#FFFFFF' }}>
+    <section className="py-16 sm:py-20" style={{ background: '#FFFFFF' }}>
       <Container>
-
-        {/* ── Centred heading block ──────────────────────────────────────── */}
-        <div className="mb-16 sm:mb-20 text-center">
+        <div className="text-center">
 
           {/* Eyebrow */}
           <div className="mb-6 flex items-center justify-center gap-3">
@@ -657,98 +655,8 @@ function TheWayWeFeelSection() {
           >
             Growth lands differently when the body feels safe, the pace feels human, and the work has somewhere to go.
           </p>
-        </div>
-
-        {/* ── Three tiles ───────────────────────────────────────────────── */}
-        <div className="grid gap-5 sm:grid-cols-3">
-
-          {/* Tile 1 — teal */}
-          <div
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid rgba(56,160,158,0.16)',
-              borderRadius: '20px',
-              padding: '2rem 2.25rem',
-              boxShadow: '0 2px 16px rgba(56,160,158,0.07), 0 1px 3px rgba(0,0,0,0.04)',
-            }}
-          >
-            <div
-              style={{
-                width: '36px', height: '36px', borderRadius: '50%',
-                background: 'rgba(56,160,158,0.10)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                marginBottom: '1.5rem',
-              }}
-            >
-              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#38A09E' }} />
-            </div>
-            <h3 style={{ fontSize: '18px', fontWeight: 650, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.3', marginBottom: '0.75rem' }}>
-              A more settled mind.
-            </h3>
-            <p style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.65)', letterSpacing: '-0.01em' }}>
-              When you have a framework for where you are and where you are headed, the noise quiets. Clarity is not a luxury — it is the starting point.
-            </p>
-          </div>
-
-          {/* Tile 2 — gold, slight stagger */}
-          <div
-            className="sm:mt-6"
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid rgba(212,176,72,0.20)',
-              borderRadius: '20px',
-              padding: '2rem 2.25rem',
-              boxShadow: '0 2px 16px rgba(212,176,72,0.08), 0 1px 3px rgba(0,0,0,0.04)',
-            }}
-          >
-            <div
-              style={{
-                width: '36px', height: '36px', borderRadius: '50%',
-                background: 'rgba(212,176,72,0.12)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                marginBottom: '1.5rem',
-              }}
-            >
-              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#C4981A' }} />
-            </div>
-            <h3 style={{ fontSize: '18px', fontWeight: 650, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.3', marginBottom: '0.75rem' }}>
-              In it with others, honestly.
-            </h3>
-            <p style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.65)', letterSpacing: '-0.01em' }}>
-              Not a curated highlight reel. Real people moving through real phases — with enough structure that the conversations go somewhere.
-            </p>
-          </div>
-
-          {/* Tile 3 — navy */}
-          <div
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid rgba(30,51,84,0.10)',
-              borderRadius: '20px',
-              padding: '2rem 2.25rem',
-              boxShadow: '0 2px 12px rgba(30,51,84,0.06), 0 1px 3px rgba(0,0,0,0.04)',
-            }}
-          >
-            <div
-              style={{
-                width: '36px', height: '36px', borderRadius: '50%',
-                background: 'rgba(30,51,84,0.07)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                marginBottom: '1.5rem',
-              }}
-            >
-              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#1E3354' }} />
-            </div>
-            <h3 style={{ fontSize: '18px', fontWeight: 650, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.3', marginBottom: '0.75rem' }}>
-              A thread back to yourself.
-            </h3>
-            <p style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.65)', letterSpacing: '-0.01em' }}>
-              When life is full and loud, the REAL Journey gives you something to return to — a stable, consistent thread through all of it.
-            </p>
-          </div>
 
         </div>
-
       </Container>
     </section>
   )
@@ -999,71 +907,6 @@ function WhereTheLearningLives() {
   )
 }
 
-/* ─── Conditions ────────────────────────────────────────────────────────────── */
-
-function Conditions() {
-  return (
-    <section
-      className="py-16 sm:py-24"
-      style={{ background: '#F5F4F0', borderTop: '1px solid rgba(0,0,0,0.04)' }}
-    >
-      <Container>
-
-        <div className="mb-12 max-w-[560px]">
-          <h2
-            className="text-navy-950"
-            style={{ fontSize: 'clamp(1.875rem, 3.5vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
-          >
-            The conditions matter<br />
-            <span style={{ color: 'rgba(12,24,38,0.28)', fontStyle: 'italic' }}>
-              as much as the content.
-            </span>
-          </h2>
-        </div>
-
-        <div className="grid gap-10 sm:grid-cols-3">
-          {[
-            {
-              num: '01',
-              heading: 'A pace that does not break you.',
-              body: 'Everything inside Fresh Collective is designed to be returned to — not raced through. There is no urgency here. The structure holds.',
-              numColor: 'rgba(56,160,158,0.25)',
-            },
-            {
-              num: '02',
-              heading: 'People building the same things.',
-              body: 'You are not dropped into a general community. You are alongside people working through the same phases, the same questions, the same moments.',
-              numColor: 'rgba(212,176,72,0.30)',
-              offset: true,
-            },
-            {
-              num: '03',
-              heading: 'A leader who has been there.',
-              body: 'Fresh Collective was built from the inside out — by someone who has moved through these phases herself, not just observed them.',
-              numColor: 'rgba(30,51,84,0.20)',
-            },
-          ].map(({ num, heading, body, numColor, offset }) => (
-            <div key={num} className={offset ? 'sm:pt-10' : ''}>
-              <div
-                className="mb-5 select-none"
-                style={{ fontSize: '4.5rem', fontWeight: 650, lineHeight: '1', letterSpacing: '-0.06em', color: numColor }}
-                aria-hidden="true"
-              >
-                {num}
-              </div>
-              <p className="mb-3 text-navy-950" style={{ fontSize: '15.5px', fontWeight: 620, letterSpacing: '-0.02em', lineHeight: '1.4' }}>
-                {heading}
-              </p>
-              <p className="text-[15px] leading-[1.82] text-navy-500">{body}</p>
-            </div>
-          ))}
-        </div>
-
-      </Container>
-    </section>
-  )
-}
-
 /* ─── Good Questions ────────────────────────────────────────────────────────── */
 
 function GoodQuestions() {
@@ -1214,7 +1057,6 @@ export default function Home() {
       <FreshIdeas />
       <TheWayWeFeelSection />
       <WhereTheLearningLives />
-      <Conditions />
       <GoodQuestions />
       <FinalCTA />
     </SiteShell>
