@@ -113,6 +113,14 @@ function CreatorHero() {
               </Link>
             </div>
 
+            <p
+              className="mt-5"
+              style={{ fontSize: '13px', color: 'rgba(255,255,255,0.36)', letterSpacing: '-0.01em' }}
+            >
+              Founding creator access from{' '}
+              <span style={{ color: 'rgba(255,255,255,0.58)', fontWeight: 500 }}>$19/month.</span>
+            </p>
+
           </div>
         </Container>
       </div>
@@ -717,7 +725,7 @@ function CreatorCTA() {
             </h2>
 
             <p
-              className="mb-10"
+              className="mb-8"
               style={{
                 fontSize: 'clamp(0.9375rem, 1.3vw, 1rem)',
                 lineHeight: '1.80',
@@ -726,8 +734,27 @@ function CreatorCTA() {
                 letterSpacing: '-0.01em',
               }}
             >
-              Start with the work you know matters. Fresh Collective gives it a place to grow.
+              Start simple. Build your first collective around the work you know matters.
             </p>
+
+            {/* Pricing block */}
+            <div
+              className="mb-8 flex flex-col items-center"
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(66,199,198,0.18)',
+                borderRadius: '16px',
+                padding: '20px 32px',
+              }}
+            >
+              <p style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#7FDAD9', marginBottom: '8px' }}>
+                Founding creator access
+              </p>
+              <p style={{ fontSize: 'clamp(2.25rem, 4vw, 3rem)', fontWeight: 660, letterSpacing: '-0.04em', color: '#ffffff', lineHeight: 1 }}>
+                $19
+                <span style={{ fontSize: '1.125rem', fontWeight: 500, color: 'rgba(255,255,255,0.45)', letterSpacing: '-0.01em' }}>/month</span>
+              </p>
+            </div>
 
             <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
               <Link
