@@ -188,29 +188,203 @@ function DualIntent() {
   )
 }
 
-/* ─── Ecosystem Statement ───────────────────────────────────────────────────── */
+/* ─── Ecosystem Features ─────────────────────────────────────────────────────── */
 
 function EcosystemStatement() {
   return (
-    <section
-      className="py-16 sm:py-20"
-      style={{ background: '#FDFCF9', borderTop: '1px solid rgba(0,0,0,0.04)' }}
-    >
+    <section className="py-20 sm:py-28" style={{ background: '#FAFAF8' }}>
       <Container>
-        <div className="max-w-[680px]">
-          <h2
-            className="mb-5 text-navy-950"
-            style={{ fontSize: 'clamp(2rem, 4vw, 3.5rem)', letterSpacing: '-0.04em', lineHeight: '1.08', fontWeight: 650 }}
-          >
-            Not a product.{' '}
-            <span style={{ color: 'rgba(12,24,38,0.28)', fontStyle: 'italic' }}>
-              An ecosystem.
+
+        {/* Centred heading */}
+        <div className="mx-auto mb-20 max-w-[640px] text-center">
+          <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '16px' }}>
+            Platform
+          </p>
+          <h2 style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 660, color: '#0F172A', marginBottom: '16px' }}>
+            Fresh Collective is an{' '}
+            <span style={{
+              backgroundImage: 'linear-gradient(to right, #38A09E 0%, #55C4C2 100%)',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              color: 'transparent',
+            }}>
+              Eco-system.
             </span>
           </h2>
-          <p className="text-[16px] leading-[1.82] text-navy-500" style={{ maxWidth: '500px' }}>
-            One foundation. A live community layer. Deepening pathways — designed to
-            work together as a connected system, not as separate courses you buy and forget.
+          <p style={{ fontSize: '16px', lineHeight: '1.78', color: 'rgba(15,23,42,0.58)' }}>
+            A connected platform for guided collectives, practical pathways, live gatherings, and creator-led learning experiences.
           </p>
+        </div>
+
+        {/* Feature rows */}
+        <div className="space-y-16 sm:space-y-24">
+
+          {/* ROW 1 — Collectives: text left, visual right */}
+          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
+            <div>
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <circle cx="7" cy="7" r="2.5" stroke="#38A09E" strokeWidth="1.5"/>
+                  <circle cx="13" cy="7" r="2.5" stroke="#38A09E" strokeWidth="1.5"/>
+                  <path d="M2 16c0-2.21 2.239-4 5-4s5 1.79 5 4" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
+                  <path d="M13 12c1.5 0 5 .9 5 4" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '10px' }}>
+                Collectives to join
+              </h3>
+              <p style={{ fontSize: '15px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+                Find guided learning communities built around real practice, shared conversation, and new ways of living, leading, creating, and growing.
+              </p>
+            </div>
+            <div
+              className="rounded-2xl p-6"
+              style={{ background: '#fff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08)' }}
+            >
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '8px' }}>Collective</div>
+              <div style={{ fontSize: '15px', fontWeight: 660, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '4px' }}>Living Intentionally</div>
+              <div style={{ fontSize: '12.5px', color: 'rgba(15,23,42,0.50)', lineHeight: '1.55', marginBottom: '14px' }}>Explore how to slow down, reflect, and build a life that actually fits.</div>
+              <div className="flex items-center gap-3 mb-4">
+                <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.45)' }}>24 members</div>
+                <div style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'rgba(15,23,42,0.20)' }} />
+                <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.45)' }}>6 pathways</div>
+              </div>
+              <div style={{ height: '1px', background: 'rgba(15,23,42,0.07)', marginBottom: '14px' }} />
+              <div className="flex items-center gap-2">
+                <div className="flex h-5 w-5 items-center justify-center rounded-full" style={{ background: 'rgba(56,160,158,0.12)' }}>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#38A09E' }} />
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: '#38A09E' }}>Live gathering · This week</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ROW 2 — Pathways: visual left, text right */}
+          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
+            <div
+              className="order-2 sm:order-1 rounded-2xl p-6"
+              style={{ background: '#fff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08)' }}
+            >
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '8px' }}>Pathway</div>
+              <div style={{ fontSize: '15px', fontWeight: 660, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '14px' }}>The REAL Journey</div>
+              <div className="space-y-2 mb-4">
+                {[
+                  { label: 'Recognise', done: true },
+                  { label: 'Explore', done: true },
+                  { label: 'Align', done: false },
+                  { label: 'Lead', done: false },
+                ].map(({ label, done }) => (
+                  <div key={label} className="flex items-center gap-3">
+                    <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, background: done ? '#38A09E' : 'rgba(15,23,42,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {done && <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3l2 2 4-4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    </div>
+                    <span style={{ fontSize: '12.5px', color: done ? '#0F172A' : 'rgba(15,23,42,0.40)', fontWeight: done ? 580 : 400 }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ height: '1px', background: 'rgba(15,23,42,0.07)', marginBottom: '12px' }} />
+              <div style={{ fontSize: '11px', color: 'rgba(15,23,42,0.45)' }}>Phase 2 of 4 · In progress</div>
+              <div className="mt-3" style={{ height: '4px', borderRadius: '2px', background: 'rgba(15,23,42,0.08)' }}>
+                <div style={{ width: '50%', height: '100%', borderRadius: '2px', background: '#38A09E' }} />
+              </div>
+            </div>
+            <div className="order-1 sm:order-2">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="M4 10h12M10 4l6 6-6 6" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '10px' }}>
+                Pathways that turn ideas into practice
+              </h3>
+              <p style={{ fontSize: '15px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+                Move through structured learning journeys with lessons, reflections, tools, and gentle progress that helps ideas land in real life.
+              </p>
+            </div>
+          </div>
+
+          {/* ROW 3 — Gatherings: text left, visual right */}
+          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
+            <div>
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <rect x="3" y="4" width="14" height="13" rx="2" stroke="#38A09E" strokeWidth="1.5"/>
+                  <path d="M3 8h14M7 2v3M13 2v3" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '10px' }}>
+                Live gatherings and community rhythm
+              </h3>
+              <p style={{ fontSize: '15px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+                Join conversations, prompts, and live sessions that create connection, accountability, and shared momentum.
+              </p>
+            </div>
+            <div
+              className="rounded-2xl p-6"
+              style={{ background: '#fff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08)' }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E' }}>Live Gathering</div>
+                <div style={{ fontSize: '10px', fontWeight: 600, color: '#fff', background: '#38A09E', borderRadius: '999px', padding: '2px 8px' }}>This month</div>
+              </div>
+              <div style={{ fontSize: '14.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '4px' }}>Monthly open call</div>
+              <div style={{ fontSize: '12px', color: 'rgba(15,23,42,0.48)', marginBottom: '14px' }}>60 min · structured · led</div>
+              <div style={{ height: '1px', background: 'rgba(15,23,42,0.07)', marginBottom: '12px' }} />
+              <div style={{ fontSize: '12px', fontWeight: 580, color: '#0F172A', marginBottom: '6px' }}>Community prompt this week:</div>
+              <div style={{ fontSize: '12.5px', color: 'rgba(15,23,42,0.58)', lineHeight: '1.55', fontStyle: 'italic' }}>
+                "What would you do if you stopped waiting to feel ready?"
+              </div>
+              <div className="mt-4 flex items-center gap-1.5">
+                {[1,2,3].map(i => (
+                  <div key={i} style={{ width: '20px', height: '20px', borderRadius: '50%', background: `rgba(56,160,158,${0.15 + i*0.08})`, border: '1.5px solid #fff' }} />
+                ))}
+                <span style={{ fontSize: '11px', color: 'rgba(15,23,42,0.45)', marginLeft: '4px' }}>+18 members joined</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ROW 4 — Creator tools: visual left, text right */}
+          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
+            <div
+              className="rounded-2xl p-6"
+              style={{ background: '#fff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08)' }}
+            >
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#B8891A', marginBottom: '8px' }}>Creator Tools</div>
+              <div style={{ fontSize: '14.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '14px' }}>Your collective workspace</div>
+              <div className="space-y-2">
+                {[
+                  { label: 'Pathway editor', icon: '→' },
+                  { label: 'Event manager', icon: '→' },
+                  { label: 'Community posts', icon: '→' },
+                  { label: 'Resources & files', icon: '→' },
+                ].map(({ label, icon }) => (
+                  <div key={label} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.06)' }}>
+                    <span style={{ fontSize: '12.5px', color: '#0F172A', fontWeight: 540 }}>{label}</span>
+                    <span style={{ fontSize: '12px', color: 'rgba(180,140,30,0.70)' }}>{icon}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ height: '1px', background: 'rgba(15,23,42,0.07)', margin: '14px 0' }} />
+              <div style={{ fontSize: '11px', fontWeight: 600, color: '#B8891A' }}>3 active pathways · 2 upcoming events</div>
+            </div>
+            <div>
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'rgba(212,176,72,0.12)' }}>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
+                  <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
+                  <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
+                  <path d="M14 11.5v5M11.5 14h5" stroke="#C4981A" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '10px' }}>
+                Tools for creators
+              </h3>
+              <p style={{ fontSize: '15px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+                Build your own collective with pathways, events, posts, resources, and the structure to guide people through meaningful change.
+              </p>
+            </div>
+          </div>
+
         </div>
       </Container>
     </section>
