@@ -86,7 +86,7 @@ export default function HomeHero() {
             <span
               className="block"
               style={{
-                backgroundImage: 'linear-gradient(108deg, #5ABFBD 0%, #7FCFCD 45%, #D4B048 100%)',
+                backgroundImage: 'linear-gradient(to right, #42C7C6 0%, #8FE3E2 55%, #FFFFFF 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
@@ -124,12 +124,11 @@ export default function HomeHero() {
             </Link>
             <Link
               href="/signup"
-              className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px"
+              className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px bg-white hover:bg-[#F6F6F6]"
               style={{
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: 'rgba(255,255,255,0.07)',
-                backdropFilter: 'blur(8px)',
-                color: 'rgba(255,255,255,0.75)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                color: '#0F172A',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.30)',
               }}
             >
               Build a Collective
