@@ -14,7 +14,7 @@ function DualIntent() {
       <Container>
 
         {/* Copy block */}
-        <div className="mb-12 sm:mb-14" style={{ maxWidth: '540px' }}>
+        <div className="mb-12 sm:mb-14" style={{ maxWidth: '620px' }}>
           <p
             className="mb-7"
             style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E' }}
