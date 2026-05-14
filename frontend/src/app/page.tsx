@@ -190,6 +190,18 @@ function DualIntent() {
 
 /* ─── Ecosystem Features ─────────────────────────────────────────────────────── */
 
+/* Shared chrome bar for all mockup panels */
+function PanelChrome({ title }: { title: string }) {
+  return (
+    <div className="flex items-center gap-2 px-4" style={{ height: '38px', background: '#EDEEF1', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
+      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#F87171' }} />
+      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#FBBF24' }} />
+      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#34D399' }} />
+      <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.40)', marginLeft: '10px', letterSpacing: '0.01em' }}>{title}</span>
+    </div>
+  )
+}
+
 function EcosystemStatement() {
   return (
     <section className="py-20 sm:py-28" style={{ background: '#FAFAF8' }}>
@@ -217,12 +229,12 @@ function EcosystemStatement() {
         </div>
 
         {/* Feature rows */}
-        <div className="space-y-16 sm:space-y-24">
+        <div className="space-y-20 sm:space-y-28">
 
           {/* ROW 1 — Collectives: text left, visual right */}
-          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
+          <div className="grid items-center gap-12 sm:grid-cols-[42%_58%] sm:gap-16">
             <div>
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
+              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <circle cx="7" cy="7" r="2.5" stroke="#38A09E" strokeWidth="1.5"/>
                   <circle cx="13" cy="7" r="2.5" stroke="#38A09E" strokeWidth="1.5"/>
@@ -230,145 +242,244 @@ function EcosystemStatement() {
                   <path d="M13 12c1.5 0 5 .9 5 4" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
               </div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '10px' }}>
+              <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
                 Collectives to join
               </h3>
-              <p style={{ fontSize: '15px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
                 Find guided learning communities built around real practice, shared conversation, and new ways of living, leading, creating, and growing.
               </p>
             </div>
-            <div
-              className="rounded-2xl p-6"
-              style={{ background: '#fff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08)' }}
-            >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '8px' }}>Collective</div>
-              <div style={{ fontSize: '15px', fontWeight: 660, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '4px' }}>Living Intentionally</div>
-              <div style={{ fontSize: '12.5px', color: 'rgba(15,23,42,0.50)', lineHeight: '1.55', marginBottom: '14px' }}>Explore how to slow down, reflect, and build a life that actually fits.</div>
-              <div className="flex items-center gap-3 mb-4">
-                <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.45)' }}>24 members</div>
-                <div style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'rgba(15,23,42,0.20)' }} />
-                <div style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.45)' }}>6 pathways</div>
-              </div>
-              <div style={{ height: '1px', background: 'rgba(15,23,42,0.07)', marginBottom: '14px' }} />
-              <div className="flex items-center gap-2">
-                <div className="flex h-5 w-5 items-center justify-center rounded-full" style={{ background: 'rgba(56,160,158,0.12)' }}>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#38A09E' }} />
+
+            {/* Panel 1 — Collective browse */}
+            <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
+              <PanelChrome title="Explore Collectives" />
+              <div style={{ background: '#fff', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Hero collective card */}
+                <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.07)' }}>
+                  <div style={{ height: '64px', background: 'linear-gradient(135deg, #0D2B2B 0%, #1A4A4A 50%, #38A09E 100%)', position: 'relative', padding: '14px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                    <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', marginBottom: '3px' }}>Creator-led Collective</div>
+                    <div style={{ fontSize: '14px', fontWeight: 660, color: '#fff', letterSpacing: '-0.02em' }}>Living Intentionally</div>
+                  </div>
+                  <div style={{ padding: '12px 16px', background: '#fff' }}>
+                    <div style={{ fontSize: '12px', color: 'rgba(15,23,42,0.52)', lineHeight: '1.55', marginBottom: '10px' }}>Slow down, reflect, and build a life that actually fits.</div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.45)' }}>24 members</span>
+                        <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'rgba(15,23,42,0.20)', display: 'inline-block' }} />
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.45)' }}>3 pathways</span>
+                      </div>
+                      <div className="flex items-center gap-1.5" style={{ background: 'rgba(56,160,158,0.08)', borderRadius: '999px', padding: '3px 8px' }}>
+                        <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#38A09E' }} />
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#38A09E' }}>Live this week</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <span style={{ fontSize: '11px', fontWeight: 600, color: '#38A09E' }}>Live gathering · This week</span>
+                {/* Two smaller collective cards */}
+                <div className="grid gap-2.5" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                  {[
+                    { name: 'Deep Work Practice', count: '18', accent: '#38A09E' },
+                    { name: 'Creative Leadership', count: '31', accent: '#C4981A' },
+                  ].map(({ name, count, accent }) => (
+                    <div key={name} style={{ borderRadius: '8px', border: '1px solid rgba(15,23,42,0.07)', padding: '12px', background: '#FAFAF8' }}>
+                      <div style={{ width: '20px', height: '3px', borderRadius: '2px', background: accent, marginBottom: '8px', opacity: 0.7 }} />
+                      <div style={{ fontSize: '11.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.01em', marginBottom: '4px', lineHeight: '1.3' }}>{name}</div>
+                      <div style={{ fontSize: '10.5px', color: 'rgba(15,23,42,0.40)' }}>{count} members</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
           {/* ROW 2 — Pathways: visual left, text right */}
-          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
-            <div
-              className="order-2 sm:order-1 rounded-2xl p-6"
-              style={{ background: '#fff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08)' }}
-            >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '8px' }}>Pathway</div>
-              <div style={{ fontSize: '15px', fontWeight: 660, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '14px' }}>The REAL Journey</div>
-              <div className="space-y-2 mb-4">
-                {[
-                  { label: 'Recognise', done: true },
-                  { label: 'Explore', done: true },
-                  { label: 'Align', done: false },
-                  { label: 'Lead', done: false },
-                ].map(({ label, done }) => (
-                  <div key={label} className="flex items-center gap-3">
-                    <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, background: done ? '#38A09E' : 'rgba(15,23,42,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {done && <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3l2 2 4-4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                    </div>
-                    <span style={{ fontSize: '12.5px', color: done ? '#0F172A' : 'rgba(15,23,42,0.40)', fontWeight: done ? 580 : 400 }}>{label}</span>
+          <div className="grid items-center gap-12 sm:grid-cols-[58%_42%] sm:gap-16">
+
+            {/* Panel 2 — Pathway progress */}
+            <div className="order-2 sm:order-1" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
+              <PanelChrome title="The REAL Journey" />
+              <div style={{ background: '#fff', display: 'flex', minHeight: '280px' }}>
+                {/* Left sidebar — step list */}
+                <div style={{ width: '42%', borderRight: '1px solid rgba(15,23,42,0.07)', padding: '16px' }}>
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(15,23,42,0.35)', marginBottom: '12px' }}>Phases</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {[
+                      { label: 'Recognise', done: true, active: false },
+                      { label: 'Explore', done: true, active: false },
+                      { label: 'Align', done: false, active: true },
+                      { label: 'Lead', done: false, active: false },
+                    ].map(({ label, done, active }) => (
+                      <div key={label} className="flex items-center gap-2.5" style={{ padding: '7px 8px', borderRadius: '6px', background: active ? 'rgba(56,160,158,0.08)' : 'transparent' }}>
+                        <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, background: done ? '#38A09E' : active ? 'rgba(56,160,158,0.15)' : 'rgba(15,23,42,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {done && <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3l2 2 4-4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                        </div>
+                        <span style={{ fontSize: '12px', color: done ? '#0F172A' : active ? '#38A09E' : 'rgba(15,23,42,0.38)', fontWeight: active ? 640 : done ? 540 : 400 }}>{label}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div style={{ height: '1px', background: 'rgba(15,23,42,0.07)', marginBottom: '12px' }} />
-              <div style={{ fontSize: '11px', color: 'rgba(15,23,42,0.45)' }}>Phase 2 of 4 · In progress</div>
-              <div className="mt-3" style={{ height: '4px', borderRadius: '2px', background: 'rgba(15,23,42,0.08)' }}>
-                <div style={{ width: '50%', height: '100%', borderRadius: '2px', background: '#38A09E' }} />
+                  <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(15,23,42,0.07)' }}>
+                    <div style={{ fontSize: '10px', color: 'rgba(15,23,42,0.40)', marginBottom: '6px' }}>Overall progress</div>
+                    <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(15,23,42,0.08)' }}>
+                      <div style={{ width: '50%', height: '100%', borderRadius: '2px', background: 'linear-gradient(to right, #38A09E, #55C4C2)' }} />
+                    </div>
+                    <div style={{ fontSize: '10px', color: '#38A09E', fontWeight: 600, marginTop: '5px' }}>Phase 2 of 4</div>
+                  </div>
+                </div>
+                {/* Right — lesson content */}
+                <div style={{ flex: 1, padding: '16px' }}>
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '6px' }}>Current · Align</div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '10px', lineHeight: '1.35' }}>What does alignment actually feel like for you?</div>
+                  <div style={{ fontSize: '11.5px', color: 'rgba(15,23,42,0.52)', lineHeight: '1.62', marginBottom: '14px' }}>
+                    Reflect on a moment when a decision felt completely right — not exciting, just settled. What was present?
+                  </div>
+                  <div style={{ borderRadius: '8px', padding: '10px 12px', background: '#F4FBFA', border: '1px solid rgba(56,160,158,0.14)', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#38A09E', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '5px' }}>Reflection prompt</div>
+                    <div style={{ fontSize: '11.5px', color: 'rgba(15,23,42,0.60)', lineHeight: '1.55', fontStyle: 'italic' }}>"What would I choose if I wasn't afraid of it being wrong?"</div>
+                  </div>
+                  <div style={{ height: '1px', background: 'rgba(15,23,42,0.06)', marginBottom: '10px' }} />
+                  <div style={{ fontSize: '11px', color: 'rgba(15,23,42,0.38)' }}>3 lessons · 1 reflection · Est. 20 min</div>
+                </div>
               </div>
             </div>
+
             <div className="order-1 sm:order-2">
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
+              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path d="M4 10h12M10 4l6 6-6 6" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '10px' }}>
+              <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
                 Pathways that turn ideas into practice
               </h3>
-              <p style={{ fontSize: '15px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
                 Move through structured learning journeys with lessons, reflections, tools, and gentle progress that helps ideas land in real life.
               </p>
             </div>
           </div>
 
           {/* ROW 3 — Gatherings: text left, visual right */}
-          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
+          <div className="grid items-center gap-12 sm:grid-cols-[42%_58%] sm:gap-16">
             <div>
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
+              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <rect x="3" y="4" width="14" height="13" rx="2" stroke="#38A09E" strokeWidth="1.5"/>
                   <path d="M3 8h14M7 2v3M13 2v3" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
               </div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '10px' }}>
+              <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
                 Live gatherings and community rhythm
               </h3>
-              <p style={{ fontSize: '15px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
                 Join conversations, prompts, and live sessions that create connection, accountability, and shared momentum.
               </p>
             </div>
-            <div
-              className="rounded-2xl p-6"
-              style={{ background: '#fff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08)' }}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E' }}>Live Gathering</div>
-                <div style={{ fontSize: '10px', fontWeight: 600, color: '#fff', background: '#38A09E', borderRadius: '999px', padding: '2px 8px' }}>This month</div>
-              </div>
-              <div style={{ fontSize: '14.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '4px' }}>Monthly open call</div>
-              <div style={{ fontSize: '12px', color: 'rgba(15,23,42,0.48)', marginBottom: '14px' }}>60 min · structured · led</div>
-              <div style={{ height: '1px', background: 'rgba(15,23,42,0.07)', marginBottom: '12px' }} />
-              <div style={{ fontSize: '12px', fontWeight: 580, color: '#0F172A', marginBottom: '6px' }}>Community prompt this week:</div>
-              <div style={{ fontSize: '12.5px', color: 'rgba(15,23,42,0.58)', lineHeight: '1.55', fontStyle: 'italic' }}>
-                "What would you do if you stopped waiting to feel ready?"
-              </div>
-              <div className="mt-4 flex items-center gap-1.5">
-                {[1,2,3].map(i => (
-                  <div key={i} style={{ width: '20px', height: '20px', borderRadius: '50%', background: `rgba(56,160,158,${0.15 + i*0.08})`, border: '1.5px solid #fff' }} />
-                ))}
-                <span style={{ fontSize: '11px', color: 'rgba(15,23,42,0.45)', marginLeft: '4px' }}>+18 members joined</span>
+
+            {/* Panel 3 — Gatherings & community */}
+            <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
+              <PanelChrome title="Community" />
+              <div style={{ background: '#fff', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* Event card */}
+                <div style={{ borderRadius: '10px', border: '1px solid rgba(56,160,158,0.18)', padding: '14px 16px', background: '#F4FBFA' }}>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '4px' }}>Live Gathering</div>
+                      <div style={{ fontSize: '14px', fontWeight: 650, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '2px' }}>Monthly open call</div>
+                      <div style={{ fontSize: '11px', color: 'rgba(15,23,42,0.50)' }}>60 min · structured · led</div>
+                    </div>
+                    <div style={{ borderRadius: '8px', padding: '6px 10px', background: '#38A09E', textAlign: 'center', flexShrink: 0 }}>
+                      <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff', lineHeight: 1 }}>14</div>
+                      <div style={{ fontSize: '9px', fontWeight: 600, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>May</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-3">
+                    {[1,2,3,4].map(i => (
+                      <div key={i} style={{ width: '22px', height: '22px', borderRadius: '50%', background: `rgba(56,160,158,${0.18 + i*0.07})`, border: '2px solid #fff', marginLeft: i > 1 ? '-6px' : 0 }} />
+                    ))}
+                    <span style={{ fontSize: '11px', color: 'rgba(15,23,42,0.45)', marginLeft: '8px' }}>+21 attending</span>
+                  </div>
+                </div>
+                {/* Community prompt thread */}
+                <div style={{ borderRadius: '10px', border: '1px solid rgba(15,23,42,0.07)', padding: '14px 16px', background: '#FAFAF8' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'rgba(15,23,42,0.38)', marginBottom: '8px' }}>This week's prompt</div>
+                  <div style={{ fontSize: '13px', color: '#0F172A', fontWeight: 540, lineHeight: '1.58', marginBottom: '10px', fontStyle: 'italic' }}>
+                    "What would you do if you stopped waiting to feel ready?"
+                  </div>
+                  <div style={{ height: '1px', background: 'rgba(15,23,42,0.06)', marginBottom: '10px' }} />
+                  {[
+                    { initials: 'SR', text: "I'd finally start the project I've been putting off for two years.", color: '#38A09E' },
+                    { initials: 'MK', text: "Honestly — I'd have that conversation I keep avoiding.", color: '#C4981A' },
+                  ].map(({ initials, text, color }) => (
+                    <div key={initials} className="flex items-start gap-2.5 mb-2 last:mb-0">
+                      <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: `${color}22`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <span style={{ fontSize: '8.5px', fontWeight: 700, color }}>{initials}</span>
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: 'rgba(15,23,42,0.58)', lineHeight: '1.55', paddingTop: '2px' }}>{text}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
           {/* ROW 4 — Creator tools: visual left, text right */}
-          <div className="grid items-center gap-10 sm:grid-cols-2 sm:gap-16">
-            <div
-              className="rounded-2xl p-6"
-              style={{ background: '#fff', border: '1px solid rgba(15,23,42,0.08)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 12px 40px rgba(0,0,0,0.08)' }}
-            >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#B8891A', marginBottom: '8px' }}>Creator Tools</div>
-              <div style={{ fontSize: '14.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '14px' }}>Your collective workspace</div>
-              <div className="space-y-2">
-                {[
-                  { label: 'Pathway editor', icon: '→' },
-                  { label: 'Event manager', icon: '→' },
-                  { label: 'Community posts', icon: '→' },
-                  { label: 'Resources & files', icon: '→' },
-                ].map(({ label, icon }) => (
-                  <div key={label} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ background: 'rgba(15,23,42,0.03)', border: '1px solid rgba(15,23,42,0.06)' }}>
-                    <span style={{ fontSize: '12.5px', color: '#0F172A', fontWeight: 540 }}>{label}</span>
-                    <span style={{ fontSize: '12px', color: 'rgba(180,140,30,0.70)' }}>{icon}</span>
+          <div className="grid items-center gap-12 sm:grid-cols-[58%_42%] sm:gap-16">
+
+            {/* Panel 4 — Creator workspace */}
+            <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
+              <PanelChrome title="Creator Workspace" />
+              <div style={{ background: '#fff', display: 'flex', minHeight: '280px' }}>
+                {/* Sidebar nav */}
+                <div style={{ width: '38%', borderRight: '1px solid rgba(15,23,42,0.07)', padding: '16px', background: '#FAFAF8' }}>
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(15,23,42,0.35)', marginBottom: '10px' }}>My Collective</div>
+                  {[
+                    { label: 'Pathways', active: true },
+                    { label: 'Events', active: false },
+                    { label: 'Community', active: false },
+                    { label: 'Resources', active: false },
+                  ].map(({ label, active }) => (
+                    <div key={label} style={{ padding: '7px 10px', borderRadius: '6px', marginBottom: '2px', background: active ? 'rgba(212,176,72,0.10)' : 'transparent', cursor: 'default' }}>
+                      <span style={{ fontSize: '12px', color: active ? '#B8891A' : 'rgba(15,23,42,0.48)', fontWeight: active ? 640 : 400 }}>{label}</span>
+                    </div>
+                  ))}
+                  <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(15,23,42,0.07)' }}>
+                    <div style={{ fontSize: '10px', color: 'rgba(15,23,42,0.38)', marginBottom: '4px' }}>Members</div>
+                    <div style={{ fontSize: '18px', fontWeight: 660, color: '#0F172A', letterSpacing: '-0.03em' }}>34</div>
+                    <div style={{ fontSize: '10px', color: '#38A09E', fontWeight: 600 }}>+3 this week</div>
                   </div>
-                ))}
+                </div>
+                {/* Main panel — pathway list */}
+                <div style={{ flex: 1, padding: '16px' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div style={{ fontSize: '12px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.01em' }}>Active Pathways</div>
+                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#B8891A', letterSpacing: '0.05em', cursor: 'default' }}>+ New</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {[
+                      { name: 'The REAL Journey', steps: '4 phases', status: 'Published', dot: '#38A09E' },
+                      { name: 'Deep Work Essentials', steps: '6 lessons', status: 'Published', dot: '#38A09E' },
+                      { name: 'Creative Practice', steps: '5 lessons', status: 'Draft', dot: '#C4981A' },
+                    ].map(({ name, steps, status, dot }) => (
+                      <div key={name} className="flex items-center justify-between" style={{ borderRadius: '7px', padding: '9px 11px', background: '#F8F8F6', border: '1px solid rgba(15,23,42,0.06)' }}>
+                        <div>
+                          <div style={{ fontSize: '12px', fontWeight: 580, color: '#0F172A', marginBottom: '2px' }}>{name}</div>
+                          <div style={{ fontSize: '10.5px', color: 'rgba(15,23,42,0.40)' }}>{steps}</div>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: dot }} />
+                          <span style={{ fontSize: '10.5px', color: 'rgba(15,23,42,0.50)', fontWeight: 500 }}>{status}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(15,23,42,0.06)' }}>
+                    <div style={{ fontSize: '10.5px', color: '#B8891A', fontWeight: 600 }}>2 upcoming events · Next: May 18</div>
+                  </div>
+                </div>
               </div>
-              <div style={{ height: '1px', background: 'rgba(15,23,42,0.07)', margin: '14px 0' }} />
-              <div style={{ fontSize: '11px', fontWeight: 600, color: '#B8891A' }}>3 active pathways · 2 upcoming events</div>
             </div>
+
             <div>
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'rgba(212,176,72,0.12)' }}>
+              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(212,176,72,0.12)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
                   <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
@@ -376,10 +487,10 @@ function EcosystemStatement() {
                   <path d="M14 11.5v5M11.5 14h5" stroke="#C4981A" strokeWidth="1.5" strokeLinecap="round"/>
                 </svg>
               </div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '10px' }}>
+              <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
                 Tools for creators
               </h3>
-              <p style={{ fontSize: '15px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
                 Build your own collective with pathways, events, posts, resources, and the structure to guide people through meaningful change.
               </p>
             </div>
