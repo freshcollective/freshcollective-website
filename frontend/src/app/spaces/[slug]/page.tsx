@@ -50,125 +50,209 @@ export default async function SpacePage({ params }: Props) {
   return (
     <div className="pb-16">
 
-      {/* ── Ecosystem snapshot: Journey feature + supporting snippets ── */}
+      {/* ── Your Journey — dark editorial outer section with three inner dark cards ── */}
       <section className="mb-10">
-        <div className="grid gap-4 lg:grid-cols-3">
-
-          {/* ── Your Journey — dark ocean panel, 2/3 width ── */}
-          <div
-            className="flex flex-col overflow-hidden rounded-2xl px-6 py-7 md:px-8 md:py-8 lg:col-span-2"
-            style={{
-              background:
-                'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
-                'radial-gradient(ellipse at 80% 20%, rgba(66,199,198,0.20), transparent 45%), ' +
-                'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0D4E4C 100%)',
-              backgroundSize: '22px 22px, auto, auto',
-            }}
-          >
-            {/* Gold accent line — no label here; ContinueCard provides its own pill */}
+        <div
+          className="overflow-hidden rounded-2xl px-6 py-7 md:px-8 md:py-8"
+          style={{
+            background:
+              'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
+              'radial-gradient(ellipse at 75% 15%, rgba(66,199,198,0.18), transparent 50%), ' +
+              'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0D4E4C 100%)',
+            backgroundSize: '22px 22px, auto, auto',
+          }}
+        >
+          {/* Section header */}
+          <div className="mb-5 flex items-center gap-2.5">
             <div
-              className="mb-4 h-[2px] w-6 rounded-full"
+              className="h-[2px] w-4 shrink-0 rounded-full"
               style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
             />
-            <ContinueCard
-              data={continueData}
-              progressPct={progressPct}
-              stepCount={continuedPathway?.step_count ?? 0}
-              completedCount={continuedPathway?.completed_count ?? 0}
-            />
+            <span
+              className="text-[10px] font-semibold uppercase tracking-[0.16em]"
+              style={{ color: '#42C7C6' }}
+            >
+              Your journey
+            </span>
           </div>
 
-          {/* Supporting snippets — 1/3 width, stacked */}
-          <div className="flex flex-col gap-3">
+          <div className="grid gap-3 lg:grid-cols-3">
 
-            {/* Next event snippet */}
-            {nextEvent && nextEventDate ? (
-              <Link
-                href={`/spaces/${slug}/events/${nextEvent.id}`}
-                className="group flex flex-1 flex-col rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
-                style={{ borderColor: 'rgba(56,160,158,0.18)' }}
-              >
-                <p className="mb-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
-                  Coming up
-                </p>
-                <div className="flex flex-1 items-start gap-3">
+            {/* Continue inner dark card — 2/3 width */}
+            <div className="lg:col-span-2">
+              <ContinueCard
+                data={continueData}
+                progressPct={progressPct}
+                stepCount={continuedPathway?.step_count ?? 0}
+                completedCount={continuedPathway?.completed_count ?? 0}
+              />
+            </div>
+
+            {/* Right column — Coming Up + Community inner dark cards */}
+            <div className="flex flex-col gap-3">
+
+              {/* Coming up inner dark card */}
+              {nextEvent && nextEventDate ? (
+                <Link
+                  href={`/spaces/${slug}/events/${nextEvent.id}`}
+                  className="group flex flex-1 flex-col overflow-hidden rounded-xl transition-all hover:brightness-110"
+                  style={{
+                    background: 'rgba(255,255,255,0.10)',
+                    border: '1px solid rgba(255,255,255,0.14)',
+                  }}
+                >
                   <div
-                    className="min-w-[40px] shrink-0 rounded-xl p-2 text-center"
-                    style={{ background: 'rgba(231,198,90,0.12)' }}
-                  >
-                    <div className="font-serif text-lg leading-none text-navy-900">{nextEventDate.day}</div>
-                    <div
-                      className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
-                      style={{ color: '#9A7A18' }}
+                    className="h-[3px] w-full"
+                    style={{ background: 'linear-gradient(90deg, rgba(231,198,90,0.85) 0%, rgba(231,198,90,0.3) 60%, transparent 100%)' }}
+                  />
+                  <div className="flex flex-1 flex-col p-4">
+                    <p
+                      className="mb-2.5 text-[10px] font-bold uppercase tracking-[0.14em]"
+                      style={{ color: 'rgba(231,198,90,0.85)' }}
                     >
-                      {nextEventDate.month}
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="line-clamp-2 text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                      {nextEvent.title}
+                      Coming up
                     </p>
-                    <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
+                    <div className="flex flex-1 items-start gap-3">
+                      <div
+                        className="min-w-[38px] shrink-0 rounded-lg p-1.5 text-center"
+                        style={{ background: 'rgba(231,198,90,0.15)' }}
+                      >
+                        <div className="font-serif text-base leading-none" style={{ color: '#FFFFFF' }}>
+                          {nextEventDate.day}
+                        </div>
+                        <div
+                          className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
+                          style={{ color: 'rgba(231,198,90,0.75)' }}
+                        >
+                          {nextEventDate.month}
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <p
+                          className="line-clamp-2 text-[13px] font-medium leading-snug transition-opacity group-hover:opacity-80"
+                          style={{ color: '#FFFFFF' }}
+                        >
+                          {nextEvent.title}
+                        </p>
+                        <p className="mt-0.5 text-[11px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                          {nextEventDate.time} UTC
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className="mt-3 text-[12px] font-semibold transition-opacity group-hover:opacity-80"
+                      style={{ color: '#6DD9D8' }}
+                    >
+                      View details →
+                    </span>
+                  </div>
+                </Link>
+              ) : (
+                <div
+                  className="flex flex-1 flex-col overflow-hidden rounded-xl"
+                  style={{
+                    background: 'rgba(255,255,255,0.07)',
+                    border: '1px solid rgba(255,255,255,0.10)',
+                  }}
+                >
+                  <div
+                    className="h-[3px] w-full"
+                    style={{ background: 'linear-gradient(90deg, rgba(231,198,90,0.6) 0%, transparent 100%)' }}
+                  />
+                  <div className="flex flex-1 flex-col p-4">
+                    <p
+                      className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em]"
+                      style={{ color: 'rgba(231,198,90,0.70)' }}
+                    >
+                      Coming up
+                    </p>
+                    <p className="flex-1 text-[13px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                      No upcoming sessions yet.
+                    </p>
                   </div>
                 </div>
-                <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                  View details →
-                </span>
-              </Link>
-            ) : (
-              <div
-                className="flex flex-1 flex-col rounded-2xl border p-4"
-                style={{ borderColor: 'rgba(56,160,158,0.14)', background: 'rgba(56,160,158,0.03)' }}
-              >
-                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-500">
-                  Coming up
-                </p>
-                <p className="flex-1 text-[13px] leading-relaxed text-slate-400">
-                  No upcoming sessions yet.
-                </p>
-              </div>
-            )}
+              )}
 
-            {/* Community snippet */}
-            {recentPosts[0] ? (
-              <Link
-                href={`/spaces/${slug}/community/${recentPosts[0].id}`}
-                className="group flex flex-1 flex-col rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                style={{ borderColor: 'rgba(56,160,158,0.15)' }}
-              >
-                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
-                  Community
-                </p>
-                {recentPosts[0].title ? (
-                  <p className="flex-1 font-serif text-[13px] leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                    {recentPosts[0].title}
-                  </p>
-                ) : (
-                  <p className="flex-1 line-clamp-2 text-[12px] leading-relaxed text-slate-600">
-                    {recentPosts[0].body.split('\n\n')[0]}
-                  </p>
-                )}
-                <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                  Join the conversation →
-                </span>
-              </Link>
-            ) : (
-              <Link
-                href={`/spaces/${slug}/community`}
-                className="group flex flex-1 flex-col rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                style={{ borderColor: 'rgba(56,160,158,0.15)' }}
-              >
-                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
-                  Community
-                </p>
-                <p className="flex-1 font-serif text-[13px] text-navy-700">
-                  The conversation begins with you.
-                </p>
-                <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                  Open community →
-                </span>
-              </Link>
-            )}
+              {/* Community inner dark card */}
+              {recentPosts[0] ? (
+                <Link
+                  href={`/spaces/${slug}/community/${recentPosts[0].id}`}
+                  className="group flex flex-1 flex-col overflow-hidden rounded-xl transition-all hover:brightness-110"
+                  style={{
+                    background: 'rgba(255,255,255,0.10)',
+                    border: '1px solid rgba(255,255,255,0.14)',
+                  }}
+                >
+                  <div
+                    className="h-[3px] w-full"
+                    style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 60%, transparent 100%)' }}
+                  />
+                  <div className="flex flex-1 flex-col p-4">
+                    <p
+                      className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em]"
+                      style={{ color: '#6DD9D8' }}
+                    >
+                      Community
+                    </p>
+                    {recentPosts[0].title ? (
+                      <p
+                        className="flex-1 font-serif text-[13px] leading-snug transition-opacity group-hover:opacity-80"
+                        style={{ color: '#FFFFFF' }}
+                      >
+                        {recentPosts[0].title}
+                      </p>
+                    ) : (
+                      <p
+                        className="flex-1 line-clamp-2 text-[12px] leading-relaxed"
+                        style={{ color: 'rgba(255,255,255,0.72)' }}
+                      >
+                        {recentPosts[0].body.split('\n\n')[0]}
+                      </p>
+                    )}
+                    <span
+                      className="mt-3 text-[12px] font-semibold transition-opacity group-hover:opacity-80"
+                      style={{ color: '#6DD9D8' }}
+                    >
+                      Join the conversation →
+                    </span>
+                  </div>
+                </Link>
+              ) : (
+                <Link
+                  href={`/spaces/${slug}/community`}
+                  className="group flex flex-1 flex-col overflow-hidden rounded-xl transition-all hover:brightness-110"
+                  style={{
+                    background: 'rgba(255,255,255,0.10)',
+                    border: '1px solid rgba(255,255,255,0.14)',
+                  }}
+                >
+                  <div
+                    className="h-[3px] w-full"
+                    style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 60%, transparent 100%)' }}
+                  />
+                  <div className="flex flex-1 flex-col p-4">
+                    <p
+                      className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em]"
+                      style={{ color: '#6DD9D8' }}
+                    >
+                      Community
+                    </p>
+                    <p
+                      className="flex-1 font-serif text-[13px]"
+                      style={{ color: 'rgba(255,255,255,0.72)' }}
+                    >
+                      The conversation begins with you.
+                    </p>
+                    <span
+                      className="mt-3 text-[12px] font-semibold transition-opacity group-hover:opacity-80"
+                      style={{ color: '#6DD9D8' }}
+                    >
+                      Open community →
+                    </span>
+                  </div>
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </section>

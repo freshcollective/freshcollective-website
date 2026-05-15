@@ -326,158 +326,257 @@ export default async function DashboardPage() {
               )}
             </div>
 
-            {/* ── Continue + live snippets ── */}
-            <div className="grid gap-4 lg:grid-cols-3">
+            {/* ── Your Journey — dark editorial outer section with three inner dark cards ── */}
+            <div
+              className="overflow-hidden rounded-2xl px-6 py-7 md:px-8 md:py-8"
+              style={{
+                background:
+                  'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
+                  'radial-gradient(ellipse at 75% 15%, rgba(66,199,198,0.18), transparent 50%), ' +
+                  'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0D4E4C 100%)',
+                backgroundSize: '22px 22px, auto, auto',
+              }}
+            >
+              {/* Section header */}
+              <div className="mb-5 flex items-center gap-2.5">
+                <div
+                  className="h-[2px] w-4 shrink-0 rounded-full"
+                  style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+                />
+                <span
+                  className="text-[10px] font-semibold uppercase tracking-[0.16em]"
+                  style={{ color: '#42C7C6' }}
+                >
+                  Your journey
+                </span>
+              </div>
 
-              {/* ── Continue journey — dark ocean card, 2/3 width ── */}
-              <Link
-                href={continueHref}
-                className="group relative block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-2xl lg:col-span-2"
-                style={{
-                  background:
-                    'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
-                    'radial-gradient(ellipse at 75% 25%, rgba(66,199,198,0.22), transparent 50%), ' +
-                    'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0D4E4C 100%)',
-                  backgroundSize: '22px 22px, auto, auto',
-                  boxShadow: '0 4px 24px rgba(0,0,0,0.22)',
-                }}
-              >
-                <div className="flex h-full flex-col px-6 py-6 md:px-7 md:py-7">
-                  {/* Gold accent line */}
+              <div className="grid gap-3 lg:grid-cols-3">
+
+                {/* ── Continue inner dark card — 2/3 width ── */}
+                <Link
+                  href={continueHref}
+                  className="group flex flex-col overflow-hidden rounded-xl transition-all hover:brightness-110 lg:col-span-2"
+                  style={{
+                    background: 'rgba(255,255,255,0.10)',
+                    border: '1px solid rgba(255,255,255,0.14)',
+                  }}
+                >
                   <div
-                    className="mb-3 h-[2px] w-5 rounded-full"
-                    style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+                    className="h-[3px] w-full"
+                    style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 60%, transparent 100%)' }}
                   />
-                  {/* Teal eyebrow */}
-                  <p
-                    className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]"
-                    style={{ color: '#42C7C6' }}
-                  >
-                    {continueData?.all_complete ? 'Journey complete' : 'Continue your journey'}
-                  </p>
-                  {/* Large serif step title in white */}
-                  <h3
-                    className="font-serif text-2xl leading-snug text-white transition-opacity group-hover:opacity-90 md:text-3xl"
-                  >
-                    {continueData ? continueData.step_title : 'Begin the REAL Journey'}
-                  </h3>
-                  {/* Pathway name */}
-                  {continueData && (
-                    <p className="mt-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                      {continueData.pathway_title}
-                    </p>
-                  )}
-                  {/* CTA pushed to bottom */}
-                  <div className="mt-auto pt-6">
+                  <div className="flex flex-1 flex-col p-5">
                     <span
-                      className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                      style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                      className="mb-3 inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+                      style={{ background: 'rgba(56,160,158,0.25)', color: '#6DD9D8' }}
                     >
-                      {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
+                      {continueData?.all_complete ? 'Journey complete' : continueData ? 'Continue your journey' : 'Begin your journey'}
                     </span>
-                  </div>
-                </div>
-              </Link>
-
-              {/* Live snippets */}
-              <div className="flex flex-col gap-4">
-
-                {/* Coming up */}
-                {nextEvent && nextEventDate ? (
-                  <Link
-                    href={`/spaces/fresh-collective/events/${nextEvent.id}`}
-                    className="group flex flex-1 flex-col rounded-2xl bg-white px-4 py-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                    style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
-                  >
-                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
-                      Coming up
-                    </p>
-                    <div className="flex flex-1 items-start gap-3">
-                      <div
-                        className="min-w-[40px] shrink-0 rounded-xl p-2 text-center"
-                        style={{ background: 'rgba(231,198,90,0.10)' }}
-                      >
-                        <div className="font-serif text-lg leading-none text-navy-900">
-                          {nextEventDate.day}
-                        </div>
-                        <div
-                          className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
-                          style={{ color: '#9A7A18' }}
-                        >
-                          {nextEventDate.month}
-                        </div>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="line-clamp-2 text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                          {nextEvent.title}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
-                      </div>
-                    </div>
-                    <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                      View details →
-                    </span>
-                  </Link>
-                ) : (
-                  <div
-                    className="flex flex-1 flex-col rounded-2xl bg-white px-4 py-4"
-                    style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
-                  >
-                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-500">
-                      Coming up
-                    </p>
-                    <p className="flex-1 text-[13px] text-slate-400">No upcoming events yet.</p>
-                    <Link
-                      href="/spaces/fresh-collective/events"
-                      className="mt-3 text-[12px] font-semibold text-teal-600 hover:underline"
+                    <p
+                      className="font-serif text-2xl leading-snug transition-opacity group-hover:opacity-80 md:text-3xl"
+                      style={{ color: '#FFFFFF' }}
                     >
-                      View all events →
-                    </Link>
-                  </div>
-                )}
-
-                {/* Community */}
-                {recentPost ? (
-                  <Link
-                    href={`/spaces/fresh-collective/community/${recentPost.id}`}
-                    className="group flex flex-1 flex-col rounded-2xl bg-white px-4 py-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                    style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
-                  >
-                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
-                      Community
+                      {continueData ? continueData.step_title : 'Begin the REAL Journey'}
                     </p>
-                    {recentPost.title ? (
-                      <p className="mb-1 flex-1 font-serif text-[14px] leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                        {recentPost.title}
-                      </p>
-                    ) : (
-                      <p className="mb-1 flex-1 line-clamp-2 text-[13px] leading-relaxed text-slate-600">
-                        {recentPost.body.split('\n\n')[0]}
+                    {continueData && (
+                      <p className="mt-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                        {continueData.pathway_title}
                       </p>
                     )}
-                    <p className="text-[11px] text-slate-400">{recentPost.author.display_name}</p>
-                    <span className="mt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                      Join the conversation →
-                    </span>
-                  </Link>
-                ) : (
-                  <Link
-                    href="/spaces/fresh-collective/community"
-                    className="group flex flex-1 flex-col rounded-2xl bg-white px-4 py-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                    style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
-                  >
-                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
-                      Community
-                    </p>
-                    <p className="flex-1 font-serif text-[14px] text-navy-700">
-                      The conversation begins with you.
-                    </p>
-                    <span className="mt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                      Open community →
-                    </span>
-                  </Link>
-                )}
+                    <div className="mt-auto pt-5">
+                      <span
+                        className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold transition-opacity group-hover:opacity-90"
+                        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)', color: '#FFFFFF' }}
+                      >
+                        {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
+                      </span>
+                    </div>
+                  </div>
+                </Link>
 
+                {/* Right column — Coming Up + Community inner dark cards */}
+                <div className="flex flex-col gap-3">
+
+                  {/* Coming up inner dark card */}
+                  {nextEvent && nextEventDate ? (
+                    <Link
+                      href={`/spaces/fresh-collective/events/${nextEvent.id}`}
+                      className="group flex flex-1 flex-col overflow-hidden rounded-xl transition-all hover:brightness-110"
+                      style={{
+                        background: 'rgba(255,255,255,0.10)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                      }}
+                    >
+                      <div
+                        className="h-[3px] w-full"
+                        style={{ background: 'linear-gradient(90deg, rgba(231,198,90,0.85) 0%, rgba(231,198,90,0.3) 60%, transparent 100%)' }}
+                      />
+                      <div className="flex flex-1 flex-col p-4">
+                        <p
+                          className="mb-2.5 text-[10px] font-bold uppercase tracking-[0.14em]"
+                          style={{ color: 'rgba(231,198,90,0.85)' }}
+                        >
+                          Coming up
+                        </p>
+                        <div className="flex flex-1 items-start gap-3">
+                          <div
+                            className="min-w-[38px] shrink-0 rounded-lg p-1.5 text-center"
+                            style={{ background: 'rgba(231,198,90,0.15)' }}
+                          >
+                            <div
+                              className="font-serif text-base leading-none"
+                              style={{ color: '#FFFFFF' }}
+                            >
+                              {nextEventDate.day}
+                            </div>
+                            <div
+                              className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
+                              style={{ color: 'rgba(231,198,90,0.75)' }}
+                            >
+                              {nextEventDate.month}
+                            </div>
+                          </div>
+                          <div className="min-w-0">
+                            <p
+                              className="line-clamp-2 text-[13px] font-medium leading-snug transition-opacity group-hover:opacity-80"
+                              style={{ color: '#FFFFFF' }}
+                            >
+                              {nextEvent.title}
+                            </p>
+                            <p
+                              className="mt-0.5 text-[11px]"
+                              style={{ color: 'rgba(255,255,255,0.45)' }}
+                            >
+                              {nextEventDate.time} UTC
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          className="mt-3 text-[12px] font-semibold transition-opacity group-hover:opacity-80"
+                          style={{ color: '#6DD9D8' }}
+                        >
+                          View details →
+                        </span>
+                      </div>
+                    </Link>
+                  ) : (
+                    <div
+                      className="flex flex-1 flex-col overflow-hidden rounded-xl"
+                      style={{
+                        background: 'rgba(255,255,255,0.07)',
+                        border: '1px solid rgba(255,255,255,0.10)',
+                      }}
+                    >
+                      <div
+                        className="h-[3px] w-full"
+                        style={{ background: 'linear-gradient(90deg, rgba(231,198,90,0.6) 0%, transparent 100%)' }}
+                      />
+                      <div className="flex flex-1 flex-col p-4">
+                        <p
+                          className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em]"
+                          style={{ color: 'rgba(231,198,90,0.70)' }}
+                        >
+                          Coming up
+                        </p>
+                        <p className="flex-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                          No upcoming events yet.
+                        </p>
+                        <Link
+                          href="/spaces/fresh-collective/events"
+                          className="mt-3 text-[12px] font-semibold"
+                          style={{ color: '#6DD9D8' }}
+                        >
+                          View all events →
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Community inner dark card */}
+                  {recentPost ? (
+                    <Link
+                      href={`/spaces/fresh-collective/community/${recentPost.id}`}
+                      className="group flex flex-1 flex-col overflow-hidden rounded-xl transition-all hover:brightness-110"
+                      style={{
+                        background: 'rgba(255,255,255,0.10)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                      }}
+                    >
+                      <div
+                        className="h-[3px] w-full"
+                        style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 60%, transparent 100%)' }}
+                      />
+                      <div className="flex flex-1 flex-col p-4">
+                        <p
+                          className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em]"
+                          style={{ color: '#6DD9D8' }}
+                        >
+                          Community
+                        </p>
+                        {recentPost.title ? (
+                          <p
+                            className="mb-1 flex-1 font-serif text-[14px] leading-snug transition-opacity group-hover:opacity-80"
+                            style={{ color: '#FFFFFF' }}
+                          >
+                            {recentPost.title}
+                          </p>
+                        ) : (
+                          <p
+                            className="mb-1 flex-1 line-clamp-2 text-[13px] leading-relaxed"
+                            style={{ color: 'rgba(255,255,255,0.72)' }}
+                          >
+                            {recentPost.body.split('\n\n')[0]}
+                          </p>
+                        )}
+                        <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
+                          {recentPost.author.display_name}
+                        </p>
+                        <span
+                          className="mt-2 text-[12px] font-semibold transition-opacity group-hover:opacity-80"
+                          style={{ color: '#6DD9D8' }}
+                        >
+                          Join the conversation →
+                        </span>
+                      </div>
+                    </Link>
+                  ) : (
+                    <Link
+                      href="/spaces/fresh-collective/community"
+                      className="group flex flex-1 flex-col overflow-hidden rounded-xl transition-all hover:brightness-110"
+                      style={{
+                        background: 'rgba(255,255,255,0.10)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                      }}
+                    >
+                      <div
+                        className="h-[3px] w-full"
+                        style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 60%, transparent 100%)' }}
+                      />
+                      <div className="flex flex-1 flex-col p-4">
+                        <p
+                          className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em]"
+                          style={{ color: '#6DD9D8' }}
+                        >
+                          Community
+                        </p>
+                        <p
+                          className="flex-1 font-serif text-[14px]"
+                          style={{ color: 'rgba(255,255,255,0.72)' }}
+                        >
+                          The conversation begins with you.
+                        </p>
+                        <span
+                          className="mt-2 text-[12px] font-semibold transition-opacity group-hover:opacity-80"
+                          style={{ color: '#6DD9D8' }}
+                        >
+                          Open community →
+                        </span>
+                      </div>
+                    </Link>
+                  )}
+
+                </div>
               </div>
             </div>
           </section>
