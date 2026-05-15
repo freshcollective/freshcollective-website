@@ -107,7 +107,7 @@ export default async function DashboardPage() {
         <Container>
 
           {/* ── Welcome ── */}
-          <div className="mb-10 flex items-start justify-between gap-6">
+          <div className="mb-8 flex items-start justify-between gap-6">
             <div>
               <div
                 className="mb-3 h-[2px] w-5"
@@ -136,8 +136,8 @@ export default async function DashboardPage() {
           {/* ══════════════════════════════════════════════════
               LAYER 1 — YOUR SPACES
           ══════════════════════════════════════════════════ */}
-          <section className="mb-12">
-            <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+          <section className="mb-10">
+            <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
               Your spaces
             </h2>
 
@@ -161,7 +161,7 @@ export default async function DashboardPage() {
                       style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                     >
                       {/* Cover */}
-                      <div className="relative overflow-hidden" style={{ height: '200px' }}>
+                      <div className="relative overflow-hidden" style={{ height: '168px' }}>
                         {hasImage ? (
                           <>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -225,17 +225,20 @@ export default async function DashboardPage() {
                         </span>
                       </div>
 
-                      {/* Footer — pathway/member counts */}
-                      {spaceCard && (spaceCard.pathway_count > 0 || spaceCard.member_count > 0) && (
-                        <div className="flex items-center gap-4 bg-white px-4 py-2.5 text-[12px] text-slate-400">
-                          {spaceCard.pathway_count > 0 && (
+                      {/* Footer — counts + CTA */}
+                      <div className="flex items-center justify-between gap-3 bg-white px-4 py-2.5">
+                        <div className="flex items-center gap-3 text-[12px] text-slate-400">
+                          {spaceCard?.pathway_count ? (
                             <span>{spaceCard.pathway_count} {spaceCard.pathway_count === 1 ? 'pathway' : 'pathways'}</span>
-                          )}
-                          {spaceCard.member_count > 0 && (
+                          ) : null}
+                          {spaceCard?.member_count ? (
                             <span>{spaceCard.member_count} {spaceCard.member_count === 1 ? 'member' : 'members'}</span>
-                          )}
+                          ) : null}
                         </div>
-                      )}
+                        <span className="shrink-0 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                          Open collective →
+                        </span>
+                      </div>
                     </Link>
                   )
                 })
@@ -253,7 +256,7 @@ export default async function DashboardPage() {
                       className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-xl"
                       style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                     >
-                      <div className="relative overflow-hidden" style={{ height: '200px' }}>
+                      <div className="relative overflow-hidden" style={{ height: '168px' }}>
                         {hasImage ? (
                           <>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -312,16 +315,19 @@ export default async function DashboardPage() {
                           Open →
                         </span>
                       </div>
-                      {spaceCard && (spaceCard.pathway_count > 0 || spaceCard.member_count > 0) && (
-                        <div className="flex items-center gap-4 bg-white px-4 py-2.5 text-[12px] text-slate-400">
-                          {spaceCard.pathway_count > 0 && (
+                      <div className="flex items-center justify-between gap-3 bg-white px-4 py-2.5">
+                        <div className="flex items-center gap-3 text-[12px] text-slate-400">
+                          {spaceCard?.pathway_count ? (
                             <span>{spaceCard.pathway_count} {spaceCard.pathway_count === 1 ? 'pathway' : 'pathways'}</span>
-                          )}
-                          {spaceCard.member_count > 0 && (
+                          ) : null}
+                          {spaceCard?.member_count ? (
                             <span>{spaceCard.member_count} {spaceCard.member_count === 1 ? 'member' : 'members'}</span>
-                          )}
+                          ) : null}
                         </div>
-                      )}
+                        <span className="shrink-0 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                          Open collective →
+                        </span>
+                      </div>
                     </Link>
                   )
                 })()
@@ -341,28 +347,33 @@ export default async function DashboardPage() {
                   boxShadow: CARD_SHADOW,
                 }}
               >
-                <div className="px-6 py-6">
-                  <div
-                    className="mb-3 h-[2px] w-5"
-                    style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
-                  />
-                  <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-600">
-                    {continueData?.all_complete ? 'Journey complete' : 'Continue your journey'}
-                  </p>
+                <div className="px-5 py-5">
+                  {/* Inline: gold accent + eyebrow */}
+                  <div className="mb-3 flex items-center gap-2.5">
+                    <div
+                      className="h-[2px] w-4 shrink-0"
+                      style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+                    />
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-teal-600">
+                      {continueData?.all_complete ? 'Journey complete' : 'Continue your journey'}
+                    </p>
+                  </div>
                   <h3 className="font-serif text-xl leading-snug text-navy-900 transition-colors group-hover:text-teal-700 md:text-2xl">
                     {continueData ? continueData.step_title : 'Begin the REAL Journey'}
                   </h3>
                   {continueData && (
                     <p className="mt-1 text-[13px] text-slate-400">{continueData.pathway_title}</p>
                   )}
-                  <div className="mt-5">
-                    <span
-                      className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                      style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                    >
-                      {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
-                    </span>
-                  </div>
+                  <div
+                    className="my-4 h-px"
+                    style={{ background: 'rgba(0,0,0,0.06)' }}
+                  />
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                  >
+                    {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
+                  </span>
                 </div>
               </Link>
 
@@ -470,99 +481,98 @@ export default async function DashboardPage() {
           </section>
 
           {/* ══════════════════════════════════════════════════
-              LAYER 2 — DISCOVER
-              Pale aqua — feels inviting, clearly exploratory
+              LAYERS 2 + 3 — DISCOVER and CREATOR TOOLS
+              Two-column grid on desktop when both are visible
           ══════════════════════════════════════════════════ */}
-          <section className="mb-12">
-            <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-              Discover
-            </h2>
-            <Link
-              href="/dashboard/explore"
-              className="group block max-w-xl overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
-              style={{
-                background:
-                  'radial-gradient(circle at 90% 10%, rgba(56,160,158,0.14) 0%, transparent 55%), ' +
-                  'linear-gradient(135deg, rgba(234,248,247,0.95) 0%, rgba(240,251,250,1.0) 100%)',
-                border: '1px solid rgba(56,160,158,0.22)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.03), 0 4px 16px rgba(56,160,158,0.07)',
-              }}
-            >
-              <div
-                className="h-[3px] w-full"
-                style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, transparent 100%)' }}
-              />
-              <div className="px-6 py-5">
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
-                  Discover
-                </p>
-                <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
-                  Explore collectives
-                </h3>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
-                  Find other guided spaces and communities to join.
-                </p>
-                <span
-                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                >
-                  Browse collectives →
-                </span>
-              </div>
-            </Link>
-          </section>
+          <div className={['grid gap-6 mb-10', isCreatorOrAdmin ? 'sm:grid-cols-2' : ''].join(' ')}>
 
-          {/* ══════════════════════════════════════════════════
-              LAYER 3 — CREATOR TOOLS (creator/admin only)
-              Dark navy header strip — feels like a tool/builder
-          ══════════════════════════════════════════════════ */}
-          {isCreatorOrAdmin && (
-            <section className="mb-12">
-              <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                Creator tools
+            {/* Discover — pale aqua, inviting and exploratory */}
+            <section>
+              <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Discover
               </h2>
               <Link
-                href="/creator-studio"
-                className="group block max-w-xl overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
-                style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+                href="/dashboard/explore"
+                className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                style={{
+                  background:
+                    'radial-gradient(circle at 90% 10%, rgba(56,160,158,0.14) 0%, transparent 55%), ' +
+                    'linear-gradient(135deg, rgba(234,248,247,0.95) 0%, rgba(240,251,250,1.0) 100%)',
+                  border: '1px solid rgba(56,160,158,0.22)',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.03), 0 4px 16px rgba(56,160,158,0.07)',
+                }}
               >
-                {/* Dark navy header strip with browser chrome */}
                 <div
-                  className="flex items-center gap-2 px-4 py-3"
-                  style={{
-                    background: 'linear-gradient(135deg, #071824 0%, #0C2D2C 100%)',
-                  }}
-                >
-                  <div className="flex gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(239,68,68,0.70)' }} />
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(234,179,8,0.70)' }} />
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(34,197,94,0.70)' }} />
-                  </div>
-                  <span className="ml-1 text-[11px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
-                    creator-studio
-                  </span>
-                </div>
-                {/* Card body */}
+                  className="h-[3px] w-full"
+                  style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, transparent 100%)' }}
+                />
                 <div className="px-6 py-5">
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
-                    Creator
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                    Discover
                   </p>
                   <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
-                    Creator Studio
+                    Explore collectives
                   </h3>
                   <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
-                    Build and manage your collectives, pathways, gatherings, and people.
+                    Find other guided spaces and communities to join.
                   </p>
                   <span
                     className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
                     style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
                   >
-                    Open Studio →
+                    Browse collectives →
                   </span>
                 </div>
               </Link>
             </section>
-          )}
+
+            {/* Creator tools — white, dark navy header, tool-like */}
+            {isCreatorOrAdmin && (
+              <section>
+                <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Creator tools
+                </h2>
+                <Link
+                  href="/creator-studio"
+                  className="group block overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                  style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+                >
+                  {/* Dark navy header strip with browser chrome */}
+                  <div
+                    className="flex items-center gap-2 px-4 py-3"
+                    style={{ background: 'linear-gradient(135deg, #071824 0%, #0C2D2C 100%)' }}
+                  >
+                    <div className="flex gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(239,68,68,0.70)' }} />
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(234,179,8,0.70)' }} />
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(34,197,94,0.70)' }} />
+                    </div>
+                    <span className="ml-1 text-[11px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
+                      creator-studio
+                    </span>
+                  </div>
+                  <div className="px-6 py-5">
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
+                      Creator
+                    </p>
+                    <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                      Creator Studio
+                    </h3>
+                    <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+                      Build and manage your collectives, pathways, gatherings, and people.
+                    </p>
+                    <span
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                      style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                    >
+                      Open Studio →
+                    </span>
+                  </div>
+                </Link>
+              </section>
+            )}
+
+          </div>
 
           {/* ── Footer ── */}
           <div className="border-t border-slate-100 pt-6">
