@@ -3,6 +3,7 @@ import Link from 'next/link'
 import Container from '@/components/layout/Container'
 import LogoutButton from '@/components/layout/LogoutButton'
 import Avatar from '@/components/ui/Avatar'
+import { GoldLabel, PillTag } from '@/components/ui/BrandLabel'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import { getContinue, getSpaceEvents, getMyMemberships, getCommunityFeed, getPublicSpaces } from '@/lib/serverApi'
@@ -124,9 +125,7 @@ export default async function DashboardPage() {
               LAYER 1 — YOUR SPACES
           ══════════════════════════════════════════════════ */}
           <section className="mb-8">
-            <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-              Your spaces
-            </h2>
+            <GoldLabel className="mb-4">Your spaces</GoldLabel>
 
             {/* ── Collective cards — image-led, card proportion ── */}
             <div className={[
@@ -335,15 +334,10 @@ export default async function DashboardPage() {
                 }}
               >
                 <div className="flex h-full flex-col px-5 py-4">
-                  {/* Inline: gold accent + eyebrow */}
-                  <div className="mb-2.5 flex items-center gap-2.5">
-                    <div
-                      className="h-[2px] w-4 shrink-0"
-                      style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
-                    />
-                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-teal-600">
+                  <div className="mb-2.5">
+                    <PillTag>
                       {continueData?.all_complete ? 'Journey complete' : 'Continue your journey'}
-                    </p>
+                    </PillTag>
                   </div>
                   <h3 className="font-serif text-xl leading-snug text-navy-900 transition-colors group-hover:text-teal-700 md:text-2xl">
                     {continueData ? continueData.step_title : 'Begin the REAL Journey'}
@@ -471,117 +465,73 @@ export default async function DashboardPage() {
 
           {/* ══════════════════════════════════════════════════
               LAYERS 2 + 3 — DISCOVER and CREATOR TOOLS
-              Two-column grid on desktop when both are visible
+              Two-column grid on desktop when both are visible.
+              Non-creator: single column, max-w-2xl so it feels intentional.
           ══════════════════════════════════════════════════ */}
-          <div className={['grid gap-6 mb-8', isCreatorOrAdmin ? 'sm:grid-cols-2' : ''].join(' ')}>
+          <div className={[
+            'mb-8 grid gap-6',
+            isCreatorOrAdmin ? 'sm:grid-cols-2' : 'max-w-2xl',
+          ].join(' ')}>
 
-            {/* Discover — pale aqua, inviting and exploratory */}
+            {/* ── Discover — pillar-card soft styling ── */}
             <section>
-              <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                Discover
-              </h2>
+              <GoldLabel className="mb-4">Discover</GoldLabel>
               <Link
                 href="/dashboard/explore"
                 className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
                 style={{
-                  background:
-                    'radial-gradient(circle at 90% 10%, rgba(56,160,158,0.14) 0%, transparent 55%), ' +
-                    'linear-gradient(135deg, rgba(234,248,247,0.95) 0%, rgba(240,251,250,1.0) 100%)',
-                  border: '1px solid rgba(56,160,158,0.22)',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.03), 0 4px 16px rgba(56,160,158,0.07)',
+                  background: 'linear-gradient(135deg, rgba(234,248,247,0.95) 0%, rgba(240,251,250,1.0) 100%)',
+                  border: '1px solid rgba(56,160,158,0.18)',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.03), 0 4px 20px rgba(56,160,158,0.06)',
                 }}
               >
-                <div
-                  className="h-[3px] w-full"
-                  style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, transparent 100%)' }}
-                />
-                {isCreatorOrAdmin ? (
-                  /* Vertical layout when in 2-col grid alongside Creator Tools */
-                  <div className="px-6 py-5">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
-                      Discover
-                    </p>
-                    <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
-                      Explore collectives
-                    </h3>
-                    <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
-                      Find other guided spaces and communities to join.
-                    </p>
-                    <span
-                      className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                      style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                    >
-                      Browse collectives →
-                    </span>
+                <div className="px-6 py-5">
+                  <div className="mb-3">
+                    <PillTag>Discover</PillTag>
                   </div>
-                ) : (
-                  /* Horizontal split when card is full-width (member-only view) */
-                  <div className="flex items-stretch">
-                    <div className="flex-1 px-6 py-5">
-                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
-                        Discover
-                      </p>
-                      <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
-                        Explore collectives
-                      </h3>
-                      <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
-                        Find other guided spaces and communities to join.
-                      </p>
-                      <span
-                        className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                      >
-                        Browse collectives →
-                      </span>
-                    </div>
-                    <div
-                      className="hidden w-48 shrink-0 flex-col items-center justify-center gap-3 sm:flex"
-                      style={{
-                        borderLeft: '1px solid rgba(56,160,158,0.15)',
-                        background: 'linear-gradient(135deg, rgba(56,160,158,0.06) 0%, rgba(56,160,158,0.16) 100%)',
-                      }}
-                    >
-                      <div className="font-serif text-5xl leading-none" style={{ color: 'rgba(56,160,158,0.28)' }}>
-                        →
-                      </div>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E', opacity: 0.6 }}>
-                        Explore all
-                      </p>
-                    </div>
-                  </div>
-                )}
+                  <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                    Explore collectives
+                  </h3>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+                    Find other guided spaces and communities to join.
+                  </p>
+                  <span
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                  >
+                    Browse collectives →
+                  </span>
+                </div>
               </Link>
             </section>
 
-            {/* Creator tools — white, dark navy header, tool-like */}
+            {/* ── Creator tools — dark header chrome, builder feel ── */}
             {isCreatorOrAdmin && (
               <section>
-                <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  Creator tools
-                </h2>
+                <GoldLabel className="mb-4">Creator tools</GoldLabel>
                 <Link
                   href="/creator-studio"
                   className="group block overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
                   style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                 >
-                  {/* Dark navy header strip with browser chrome */}
+                  {/* Dark ocean header strip — browser chrome feel */}
                   <div
                     className="flex items-center gap-2 px-4 py-3"
                     style={{ background: 'linear-gradient(135deg, #071824 0%, #0C2D2C 100%)' }}
                   >
                     <div className="flex gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(239,68,68,0.70)' }} />
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(234,179,8,0.70)' }} />
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(34,197,94,0.70)' }} />
+                      <span className="h-2 w-2 rounded-full" style={{ background: 'rgba(239,68,68,0.60)' }} />
+                      <span className="h-2 w-2 rounded-full" style={{ background: 'rgba(234,179,8,0.60)' }} />
+                      <span className="h-2 w-2 rounded-full" style={{ background: 'rgba(34,197,94,0.60)' }} />
                     </div>
-                    <span className="ml-1 text-[11px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
+                    <span className="ml-2 text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
                       creator-studio
                     </span>
                   </div>
                   <div className="px-6 py-5">
-                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
-                      Creator
-                    </p>
+                    <div className="mb-3">
+                      <PillTag>Creator</PillTag>
+                    </div>
                     <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
                       Creator Studio
                     </h3>

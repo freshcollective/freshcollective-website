@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { GoldLabel } from '@/components/ui/BrandLabel'
 import {
   getContinue,
   getSpacePathwaysProgress,
@@ -134,8 +135,8 @@ export default async function SpacePage({ params }: Props) {
             {recentPosts[0] ? (
               <Link
                 href={`/spaces/${slug}/community/${recentPosts[0].id}`}
-                className="group flex flex-1 flex-col rounded-2xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
-                style={{ background: 'rgba(234,248,247,0.60)', borderColor: 'rgba(56,160,158,0.18)' }}
+                className="group flex flex-1 flex-col rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                style={{ borderColor: 'rgba(56,160,158,0.15)' }}
               >
                 <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
                   Community
@@ -156,8 +157,8 @@ export default async function SpacePage({ params }: Props) {
             ) : (
               <Link
                 href={`/spaces/${slug}/community`}
-                className="group flex flex-1 flex-col rounded-2xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
-                style={{ background: 'rgba(234,248,247,0.60)', borderColor: 'rgba(56,160,158,0.18)' }}
+                className="group flex flex-1 flex-col rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
+                style={{ borderColor: 'rgba(56,160,158,0.15)' }}
               >
                 <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
                   Community
@@ -177,10 +178,8 @@ export default async function SpacePage({ params }: Props) {
       {/* ── Pathways shelf — no divider, just spacing ── */}
       {activePathways.length > 0 && (
         <section className="mb-10">
-          <div className="mb-4 flex items-baseline justify-between">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-teal-600">
-              Pathways
-            </p>
+          <div className="mb-4 flex items-center justify-between">
+            <GoldLabel variant="teal">Pathways</GoldLabel>
             <Link
               href={`/spaces/${slug}/pathways`}
               className="text-xs text-teal-600 hover:underline"
@@ -208,9 +207,7 @@ export default async function SpacePage({ params }: Props) {
             border: '1px solid rgba(56,160,158,0.12)',
           }}
         >
-          <p className="mb-5 text-[10px] font-bold uppercase tracking-[0.18em] text-teal-600">
-            Live layer
-          </p>
+          <GoldLabel variant="teal" className="mb-5">Live + Community</GoldLabel>
           <div className="grid gap-8 lg:grid-cols-2">
 
             {/* Live experiences column */}

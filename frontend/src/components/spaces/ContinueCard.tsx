@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { PillTag } from '@/components/ui/BrandLabel'
 import type { ContinueResponse } from '@/types/platform'
 
 interface ContinueCardProps {
@@ -31,14 +32,18 @@ export default function ContinueCard({
   return (
     <Link
       href={href}
-      className="group block rounded-2xl border bg-white px-7 py-6 transition-all hover:-translate-y-0.5 hover:shadow-lg"
-      style={{ borderColor: 'rgba(56,160,158,0.20)', borderLeft: '3px solid #38A09E' }}
+      className="group block rounded-2xl border bg-white px-7 py-6 transition-all hover:-translate-y-0.5 hover:shadow-xl"
+      style={{
+        borderColor: 'rgba(56,160,158,0.20)',
+        borderLeft: '3px solid #38A09E',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+      }}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex-1 min-w-0">
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#38A09E' }}>
-            {label}
-          </p>
+          <div className="mb-2">
+            <PillTag>{label}</PillTag>
+          </div>
           <p className="mb-1 font-serif text-xl text-navy-900 group-hover:text-teal-700 transition-colors">
             {data ? data.step_title : 'Welcome to the REAL Journey'}
           </p>
