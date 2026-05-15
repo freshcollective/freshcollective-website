@@ -116,7 +116,10 @@ export default async function SpacePage({ params }: Props) {
               )}
             </div>
           ) : (
-            <div className="rounded-xl border border-border bg-surface px-6 py-6">
+            <div
+              className="rounded-2xl border bg-white px-6 py-6"
+              style={{ borderColor: 'rgba(166,126,30,0.15)', borderLeft: '3px solid rgba(166,126,30,0.30)' }}
+            >
               <p className="mb-1 font-serif text-base text-navy-700">
                 Nothing scheduled yet.
               </p>
@@ -145,7 +148,7 @@ export default async function SpacePage({ params }: Props) {
                 <Link
                   key={post.id}
                   href={`/spaces/${slug}/community/${post.id}`}
-                  className="group block rounded-xl border border-border bg-surface px-5 py-4 transition-all hover:border-slate-200 hover:shadow-[var(--fc-shadow-card)]"
+                  className="group block rounded-2xl border border-border bg-white px-5 py-4 transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
                 >
                   {post.title ? (
                     <p className="mb-1 font-serif text-sm text-navy-800 group-hover:text-teal-700 transition-colors leading-snug">
@@ -169,7 +172,7 @@ export default async function SpacePage({ params }: Props) {
               ))}
             </div>
           ) : (
-            <div className="rounded-xl border border-border bg-surface px-5 py-6">
+            <div className="rounded-2xl border border-border bg-white px-5 py-6">
               <p className="mb-1 font-serif text-base text-navy-700">
                 The conversation begins with you.
               </p>

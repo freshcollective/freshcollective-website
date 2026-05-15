@@ -29,7 +29,8 @@ export default function EventCard({ event, spaceSlug }: EventCardProps) {
   return (
     <Link
       href={href}
-      className="group flex items-start gap-5 rounded-xl border border-border bg-surface p-5 transition-shadow hover:shadow-[var(--fc-shadow-card)]"
+      className="group flex items-start gap-5 rounded-2xl border bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
+      style={{ borderColor: 'rgba(166,126,30,0.20)', borderLeft: '3px solid var(--color-gold-400)' }}
     >
       {/* Date block */}
       <div className="shrink-0 text-center">

@@ -29,10 +29,17 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
   return (
     <div
       className={[
-        'flex flex-col rounded-xl border p-5',
-        isComingSoon ? 'border-border opacity-55' : 'border-border bg-surface',
+        'flex flex-col overflow-hidden rounded-2xl border',
+        isComingSoon ? 'border-border opacity-55' : 'border-border bg-white transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md',
       ].join(' ')}
     >
+      {!isComingSoon && (
+        <div
+          className="h-[3px] w-full shrink-0"
+          style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 100%)' }}
+        />
+      )}
+      <div className="flex flex-1 flex-col p-5">
       <h3
         className={[
           'mb-1.5 font-serif text-lg',
@@ -72,15 +79,21 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
           <Link
             href={href}
             className={[
-              'inline-block rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
+              'inline-block rounded-full px-4 py-1.5 text-sm font-semibold transition-colors',
               pathway.completed_count >= pathway.step_count && pathway.step_count > 0
-                ? 'border border-navy-200 text-navy-600 hover:border-navy-400'
-                : 'bg-teal-500 text-white hover:bg-teal-600',
+                ? 'border border-teal-200 text-teal-700 hover:border-teal-400'
+                : 'text-white hover:opacity-90',
             ].join(' ')}
+            style={
+              !(pathway.completed_count >= pathway.step_count && pathway.step_count > 0)
+                ? { background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }
+                : undefined
+            }
           >
             {ctaLabel}
           </Link>
         )}
+      </div>
       </div>
     </div>
   )

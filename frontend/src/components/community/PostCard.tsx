@@ -25,7 +25,7 @@ export default function PostCard({ post, spaceSlug }: PostCardProps) {
   return (
     <Link
       href={href}
-      className="group block rounded-xl border border-border bg-surface px-6 py-5 transition-shadow hover:shadow-[var(--fc-shadow-card)]"
+      className="group block rounded-2xl border border-border bg-white px-6 py-5 transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
     >
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">

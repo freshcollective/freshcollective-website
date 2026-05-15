@@ -13,10 +13,17 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
   return (
     <div
       className={[
-        'rounded-xl border bg-surface p-6',
-        isComingSoon ? 'border-border opacity-60' : 'border-border shadow-[var(--fc-shadow-card)]',
+        'overflow-hidden rounded-2xl border',
+        isComingSoon ? 'border-border bg-surface opacity-60' : 'border-border bg-white transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md',
       ].join(' ')}
     >
+      {!isComingSoon && (
+        <div
+          className="h-[3px] w-full"
+          style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 100%)' }}
+        />
+      )}
+      <div className="p-6">
       <h3
         className={[
           'mb-2 font-serif text-xl',
@@ -35,11 +42,13 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
       ) : (
         <Link
           href={href}
-          className="inline-block rounded-full bg-teal-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-600"
+          className="inline-block rounded-full px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
         >
           Start
         </Link>
       )}
+      </div>
     </div>
   )
 }

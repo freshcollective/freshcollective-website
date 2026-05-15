@@ -44,7 +44,7 @@ export default function SpaceNav({ spaceSlug }: SpaceNavProps) {
                 className={[
                   'inline-block shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
                   isActive(tab)
-                    ? 'border-teal-500 text-navy-900'
+                    ? 'border-teal-500 text-teal-700 font-semibold'
                     : 'border-transparent text-slate-500 hover:text-navy-700',
                 ].join(' ')}
               >
