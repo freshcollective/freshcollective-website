@@ -41,6 +41,9 @@ function parseDateBlock(isoString: string) {
   }
 }
 
+const CARD_BORDER = '1px solid rgba(0,0,0,0.07)'
+const CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.05)'
+
 export default async function DashboardPage() {
   const [user, continueData, events, memberships, communityPosts]: [
     User | null,
@@ -70,438 +73,389 @@ export default async function DashboardPage() {
   const activeMemberships = memberships.filter((m) => m.status === 'active')
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col" style={{ background: '#FAFAF8' }}>
 
-      {/* ── Navigation bar ── */}
-      <header
-        className="border-b border-border bg-surface py-3.5"
-        style={{ borderTop: '2px solid #38A09E' }}
-      >
+      {/* ── Top navigation ── */}
+      <header className="border-b border-slate-100 bg-white py-3.5" style={{ borderTop: '2px solid #38A09E' }}>
         <Container className="flex items-center justify-between">
           <span className="font-serif text-xl text-navy-900">Fresh Collective</span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Link
               href="/settings"
-              className="rounded-lg px-3 py-2 text-sm text-slate-500 transition-colors hover:text-navy-700"
+              className="text-sm text-slate-500 transition-colors hover:text-navy-700"
             >
               Settings
             </Link>
             <Link
               href="/settings/profile"
-              className="ml-1 flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-50"
+              className="flex items-center rounded-lg px-1.5 py-1 transition-colors hover:bg-slate-50"
               aria-label="Your profile"
             >
               <Avatar name={displayName} size="sm" />
             </Link>
+            <LogoutButton className="text-sm text-slate-400 transition-colors hover:text-slate-600" />
           </div>
         </Container>
       </header>
 
-      <main className="flex-1 py-8">
+      <main className="flex-1 py-10">
         <Container>
 
-          {/* ── Compact welcome strip ── */}
-          <div
-            className="mb-5 overflow-hidden rounded-2xl px-7 py-5 md:py-6"
-            style={{
-              background:
-                'radial-gradient(rgba(66,199,198,0.08) 1px, transparent 1px), ' +
-                'radial-gradient(ellipse at 88% 25%, rgba(66,199,198,0.30), transparent 50%), ' +
-                'linear-gradient(135deg, #071824 0%, #073B3A 50%, #0F5E5C 100%)',
-              backgroundSize: '22px 22px, auto, auto',
-            }}
-          >
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <div
-                  className="mb-3 h-[2px] w-6 rounded-full"
-                  style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
-                />
-                <h1 className="font-serif text-2xl md:text-3xl" style={{ color: '#FFFFFF' }}>
-                  Welcome back, {firstName}.
-                </h1>
-                <p className="mt-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.60)' }}>
-                  Ready to continue where you left off?
-                </p>
-              </div>
+          {/* ── Welcome ── */}
+          <div className="mb-10 flex items-start justify-between gap-6">
+            <div>
               <div
-                className="hidden shrink-0 items-center justify-center rounded-2xl sm:flex"
-                style={{
-                  width: '48px',
-                  height: '48px',
-                  background: 'rgba(66,199,198,0.12)',
-                  border: '1px solid rgba(66,199,198,0.22)',
-                }}
-              >
-                <div
-                  className="h-5 w-5 rounded-md"
-                  style={{ background: 'linear-gradient(135deg, #42C7C6, #55B8B6)' }}
-                />
-              </div>
+                className="mb-3 h-[2px] w-5"
+                style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+              />
+              <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
+                Welcome back, {firstName}.
+              </h1>
+              <p className="mt-2 text-[14px] text-slate-500">
+                Ready to continue where you left off?
+              </p>
+            </div>
+            <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
+              <Avatar name={displayName} size="md" />
+              {isCreatorOrAdmin && (
+                <span
+                  className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  style={{ background: 'rgba(56,160,158,0.10)', color: '#2E8584' }}
+                >
+                  Creator
+                </span>
+              )}
             </div>
           </div>
 
-          {/* ── Ecosystem board ── */}
-          <div
-            className="mb-6 overflow-hidden rounded-3xl"
-            style={{
-              background:
-                'radial-gradient(rgba(56,160,158,0.06) 1px, transparent 1px), ' +
-                'linear-gradient(135deg, rgba(234,248,247,0.90) 0%, rgba(240,251,250,0.95) 55%, rgba(252,252,250,0.98) 100%)',
-              backgroundSize: '20px 20px, auto',
-              border: '1px solid rgba(56,160,158,0.14)',
-            }}
-          >
-            <div className="p-5 sm:p-6">
+          {/* ══════════════════════════════════════════════════
+              LAYER 1 — YOUR SPACES
+          ══════════════════════════════════════════════════ */}
+          <section className="mb-12">
+            <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Your spaces
+            </h2>
 
-              {/* ── Bento: journey feature + live snippets ── */}
-              <div className="mb-5 grid gap-4 lg:grid-cols-3">
-
-                {/* Your Journey — dark featured card, 2/3 width */}
-                <Link
-                  href={continueHref}
-                  className="group relative overflow-hidden rounded-2xl lg:col-span-2"
-                  style={{
-                    background:
-                      'radial-gradient(rgba(66,199,198,0.09) 1px, transparent 1px), ' +
-                      'radial-gradient(ellipse at 80% 20%, rgba(66,199,198,0.22), transparent 45%), ' +
-                      'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0D4E4C 100%)',
-                    backgroundSize: '22px 22px, auto, auto',
-                  }}
-                >
-                  <div className="flex flex-col justify-between p-6 sm:p-7">
-                    <div>
+            {/* My collectives */}
+            <div className={[
+              'mb-4 grid gap-4',
+              activeMemberships.length > 1 ? 'sm:grid-cols-2' : '',
+            ].join(' ')}>
+              {activeMemberships.length > 0 ? (
+                activeMemberships.map((m) => {
+                  const cs = getCollectiveCoverStyle(m.space_slug)
+                  return (
+                    <Link
+                      key={m.space_id}
+                      href={`/spaces/${m.space_slug}`}
+                      className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                      style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+                    >
                       <div
-                        className="mb-3 h-[2px] w-5 rounded-full"
-                        style={{ background: '#E7C65A' }}
-                      />
-                      <p
-                        className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em]"
-                        style={{ color: '#42C7C6' }}
-                      >
-                        {continueData?.all_complete ? 'Journey complete' : 'Your journey'}
-                      </p>
-                      <h2
-                        className="mb-1.5 font-serif text-xl leading-snug transition-opacity group-hover:opacity-90 sm:text-2xl"
-                        style={{ color: '#FFFFFF' }}
-                      >
-                        {continueData ? continueData.step_title : 'Begin the REAL Journey'}
-                      </h2>
-                      {continueData && (
-                        <p className="mb-1 text-[12px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                          {continueData.pathway_title}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Progress track */}
-                    <div className="mt-5">
-                      <div
-                        className="mb-4 h-px w-full"
-                        style={{ background: 'rgba(255,255,255,0.08)' }}
-                      />
-                      <span
-                        className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold transition-opacity group-hover:opacity-80"
+                        className="relative"
                         style={{
-                          background: 'rgba(66,199,198,0.18)',
-                          border: '1px solid rgba(66,199,198,0.35)',
-                          color: '#FFFFFF',
+                          paddingBottom: '38%',
+                          background: cs.background,
+                          backgroundSize: cs.backgroundSize ?? 'auto',
                         }}
                       >
-                        {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-
-                {/* Right column — stacked snippets */}
-                <div className="flex flex-col gap-4">
-
-                  {/* Coming up */}
-                  {nextEvent && nextEventDate ? (
-                    <Link
-                      href={`/spaces/fresh-collective/events/${nextEvent.id}`}
-                      className="group flex flex-1 flex-col rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
-                      style={{ borderColor: 'rgba(56,160,158,0.18)' }}
-                    >
-                      <p className="mb-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
-                        Coming up
-                      </p>
-                      <div className="flex flex-1 items-start gap-3">
-                        <div
-                          className="min-w-[40px] shrink-0 rounded-xl p-2 text-center"
-                          style={{ background: 'rgba(231,198,90,0.10)' }}
-                        >
-                          <div className="font-serif text-lg leading-none text-navy-900">
-                            {nextEventDate.day}
-                          </div>
-                          <div
-                            className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
-                            style={{ color: '#9A7A18' }}
+                        <div className="absolute inset-x-0 bottom-0 p-4">
+                          <p
+                            className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em]"
+                            style={{ color: cs.labelColor }}
                           >
-                            {nextEventDate.month}
-                          </div>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="line-clamp-2 text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                            {nextEvent.title}
+                            Collective
                           </p>
-                          <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
-                        </div>
-                      </div>
-                      <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                        View details →
-                      </span>
-                    </Link>
-                  ) : (
-                    <div
-                      className="flex flex-1 flex-col rounded-2xl border p-4"
-                      style={{
-                        borderColor: 'rgba(56,160,158,0.14)',
-                        background: 'rgba(255,255,255,0.60)',
-                      }}
-                    >
-                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-500">
-                        Coming up
-                      </p>
-                      <p className="flex-1 font-serif text-[14px] text-slate-400">
-                        No upcoming events yet.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Community */}
-                  {recentPost ? (
-                    <Link
-                      href={`/spaces/fresh-collective/community/${recentPost.id}`}
-                      className="group flex flex-1 flex-col rounded-2xl border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                      style={{ borderColor: 'rgba(56,160,158,0.18)' }}
-                    >
-                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
-                        Community
-                      </p>
-                      {recentPost.title ? (
-                        <p className="mb-1 flex-1 font-serif text-[13px] leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                          {recentPost.title}
-                        </p>
-                      ) : (
-                        <p className="mb-1 flex-1 line-clamp-2 text-[12px] leading-relaxed text-slate-600">
-                          {recentPost.body.split('\n\n')[0]}
-                        </p>
-                      )}
-                      <p className="text-[10px] text-slate-400">{recentPost.author.display_name}</p>
-                      <span className="mt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                        Join the conversation →
-                      </span>
-                    </Link>
-                  ) : (
-                    <Link
-                      href="/spaces/fresh-collective/community"
-                      className="group flex flex-1 flex-col rounded-2xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
-                      style={{
-                        borderColor: 'rgba(56,160,158,0.18)',
-                        background: 'rgba(234,248,247,0.60)',
-                      }}
-                    >
-                      <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
-                        Community
-                      </p>
-                      <p className="flex-1 font-serif text-[14px] text-navy-700">
-                        The conversation begins with you.
-                      </p>
-                      <span className="mt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                        Open community →
-                      </span>
-                    </Link>
-                  )}
-
-                </div>
-              </div>
-
-              {/* ── My collectives — visual tile strip ── */}
-              <div className="mb-5">
-                <div className="mb-2.5 flex items-center justify-between">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                    My collectives
-                  </p>
-                  <Link href="/dashboard/explore" className="text-[11px] text-teal-600 hover:underline">
-                    Explore more →
-                  </Link>
-                </div>
-
-                {activeMemberships.length > 0 ? (
-                  <div className={[
-                    'grid gap-3',
-                    activeMemberships.length === 1 ? '' : 'sm:grid-cols-2',
-                  ].join(' ')}>
-                    {activeMemberships.map((m) => {
-                      const cs = getCollectiveCoverStyle(m.space_slug)
-                      return (
-                        <Link
-                          key={m.space_id}
-                          href={`/spaces/${m.space_slug}`}
-                          className="group block overflow-hidden rounded-xl shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                        >
-                          <div
-                            className="relative flex items-end justify-between px-5 py-5"
-                            style={{
-                              background: cs.background,
-                              backgroundSize: cs.backgroundSize ?? 'auto',
-                              minHeight: '80px',
-                            }}
+                          <p
+                            className="font-serif text-xl leading-tight transition-opacity group-hover:opacity-90"
+                            style={{ color: cs.titleColor }}
                           >
-                            <div>
-                              <p
-                                className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em]"
-                                style={{ color: cs.labelColor }}
-                              >
-                                Collective
-                              </p>
-                              <p
-                                className="font-serif text-[17px] leading-tight transition-opacity group-hover:opacity-90"
-                                style={{ color: cs.titleColor }}
-                              >
-                                {m.space_name}
-                              </p>
-                            </div>
-                            <span
-                              className="shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-semibold opacity-0 transition-all group-hover:opacity-100"
-                              style={{
-                                color: cs.isDark ? '#FFFFFF' : '#073B3A',
-                                borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
-                                background: cs.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(56,160,158,0.10)',
-                              }}
-                            >
-                              Enter →
-                            </span>
-                          </div>
-                        </Link>
-                      )
-                    })}
-                  </div>
-                ) : (
-                  /* Fallback: no memberships yet */
-                  (() => {
-                    const cs = getCollectiveCoverStyle('fresh-collective')
-                    return (
-                      <Link
-                        href="/spaces/fresh-collective"
-                        className="group block overflow-hidden rounded-xl shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                      >
-                        <div
-                          className="relative flex items-end justify-between px-5 py-5"
+                            {m.space_name}
+                          </p>
+                        </div>
+                        <span
+                          className="absolute right-3 top-3 rounded-lg border px-3 py-1.5 text-[12px] font-semibold opacity-0 transition-all group-hover:opacity-100"
                           style={{
-                            background: cs.background,
-                            backgroundSize: cs.backgroundSize ?? 'auto',
-                            minHeight: '80px',
+                            color: cs.isDark ? '#FFFFFF' : '#073B3A',
+                            borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
+                            background: cs.isDark ? 'rgba(0,0,0,0.30)' : 'rgba(56,160,158,0.10)',
                           }}
                         >
-                          <div>
-                            <p
-                              className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em]"
-                              style={{ color: cs.labelColor }}
-                            >
-                              Your collective
-                            </p>
-                            <p
-                              className="font-serif text-[17px] leading-tight transition-opacity group-hover:opacity-90"
-                              style={{ color: cs.titleColor }}
-                            >
-                              Fresh Collective
-                            </p>
-                          </div>
-                          <span
-                            className="shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-semibold opacity-0 transition-all group-hover:opacity-100"
-                            style={{
-                              color: cs.isDark ? '#FFFFFF' : '#073B3A',
-                              borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
-                              background: cs.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(56,160,158,0.10)',
-                            }}
+                          Open →
+                        </span>
+                      </div>
+                    </Link>
+                  )
+                })
+              ) : (
+                /* Fallback — not yet joined, show fresh-collective */
+                (() => {
+                  const cs = getCollectiveCoverStyle('fresh-collective')
+                  return (
+                    <Link
+                      href="/spaces/fresh-collective"
+                      className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                      style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+                    >
+                      <div
+                        className="relative"
+                        style={{
+                          paddingBottom: '38%',
+                          background: cs.background,
+                          backgroundSize: cs.backgroundSize ?? 'auto',
+                        }}
+                      >
+                        <div className="absolute inset-x-0 bottom-0 p-4">
+                          <p
+                            className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em]"
+                            style={{ color: cs.labelColor }}
                           >
-                            Enter →
-                          </span>
+                            Your collective
+                          </p>
+                          <p
+                            className="font-serif text-xl leading-tight transition-opacity group-hover:opacity-90"
+                            style={{ color: cs.titleColor }}
+                          >
+                            Fresh Collective
+                          </p>
                         </div>
-                      </Link>
-                    )
-                  })()
-                )}
-              </div>
+                        <span
+                          className="absolute right-3 top-3 rounded-lg border px-3 py-1.5 text-[12px] font-semibold opacity-0 transition-all group-hover:opacity-100"
+                          style={{
+                            color: cs.isDark ? '#FFFFFF' : '#073B3A',
+                            borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
+                            background: cs.isDark ? 'rgba(0,0,0,0.30)' : 'rgba(56,160,158,0.10)',
+                          }}
+                        >
+                          Open →
+                        </span>
+                      </div>
+                    </Link>
+                  )
+                })()
+              )}
+            </div>
 
-              {/* ── Secondary actions: Explore + Creator Studio ── */}
-              <div className={[
-                'grid gap-4',
-                isCreatorOrAdmin ? 'sm:grid-cols-2' : '',
-              ].join(' ')}>
+            {/* Continue journey + live snippets */}
+            <div className="grid gap-4 lg:grid-cols-3">
 
-                {/* Explore collectives — pale aqua discovery card */}
-                <Link
-                  href="/dashboard/explore"
-                  className="group block overflow-hidden rounded-2xl bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                  style={{ border: '1px solid rgba(56,160,158,0.22)' }}
-                >
+              {/* Continue — main action card */}
+              <Link
+                href={continueHref}
+                className="group block overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg lg:col-span-2"
+                style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+              >
+                <div className="px-6 py-6">
                   <div
-                    className="h-[3px] w-full"
-                    style={{
-                      background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, rgba(255,255,255,0) 100%)',
-                    }}
+                    className="mb-3 h-[2px] w-5"
+                    style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
                   />
-                  <div className="px-5 py-4">
-                    <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
-                      Discover
-                    </p>
-                    <p className="font-serif text-[17px] text-navy-900 transition-colors group-hover:text-teal-700">
-                      Explore collectives
-                    </p>
-                    <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">
-                      Find other guided spaces and communities to join.
-                    </p>
-                    <span className="mt-3 inline-flex text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                      Browse all →
+                  <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-600">
+                    {continueData?.all_complete ? 'Journey complete' : 'Continue your journey'}
+                  </p>
+                  <h3 className="font-serif text-xl leading-snug text-navy-900 md:text-2xl">
+                    {continueData ? continueData.step_title : 'Begin the REAL Journey'}
+                  </h3>
+                  {continueData && (
+                    <p className="mt-1 text-[13px] text-slate-400">{continueData.pathway_title}</p>
+                  )}
+                  <div className="mt-5">
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                      style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                    >
+                      {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
                     </span>
                   </div>
-                </Link>
+                </div>
+              </Link>
 
-                {/* Creator Studio — browser-window card */}
-                {isCreatorOrAdmin && (
+              {/* Live snippets — stacked */}
+              <div className="flex flex-col gap-4">
+
+                {/* Coming up */}
+                {nextEvent && nextEventDate ? (
                   <Link
-                    href="/creator-studio"
-                    className="group block overflow-hidden rounded-2xl bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
-                    style={{ border: '1px solid rgba(0,0,0,0.08)' }}
+                    href={`/spaces/fresh-collective/events/${nextEvent.id}`}
+                    className="group flex flex-1 flex-col rounded-2xl bg-white px-4 py-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                    style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                   >
-                    {/* Browser chrome */}
-                    <div
-                      className="flex items-center gap-1.5 border-b px-4 py-2.5"
-                      style={{ background: '#F8F9FA', borderColor: 'rgba(0,0,0,0.07)' }}
+                    <p className="mb-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
+                      Coming up
+                    </p>
+                    <div className="flex flex-1 items-start gap-3">
+                      <div
+                        className="min-w-[40px] shrink-0 rounded-xl p-2 text-center"
+                        style={{ background: 'rgba(231,198,90,0.10)' }}
+                      >
+                        <div className="font-serif text-lg leading-none text-navy-900">
+                          {nextEventDate.day}
+                        </div>
+                        <div
+                          className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
+                          style={{ color: '#9A7A18' }}
+                        >
+                          {nextEventDate.month}
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="line-clamp-2 text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
+                          {nextEvent.title}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
+                      </div>
+                    </div>
+                    <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                      View details →
+                    </span>
+                  </Link>
+                ) : (
+                  <div
+                    className="flex flex-1 flex-col rounded-2xl bg-white px-4 py-4"
+                    style={{ border: CARD_BORDER }}
+                  >
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-500">
+                      Coming up
+                    </p>
+                    <p className="flex-1 text-[13px] text-slate-400">
+                      No upcoming events yet.
+                    </p>
+                    <Link
+                      href="/spaces/fresh-collective/events"
+                      className="mt-3 text-[12px] font-semibold text-teal-600 hover:underline"
                     >
-                      <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                      <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
-                      <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
-                      <span className="ml-2 text-[11px] text-slate-400">creator-studio</span>
-                    </div>
-                    <div className="px-5 py-4">
-                      <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
-                        Creator
+                      View all events →
+                    </Link>
+                  </div>
+                )}
+
+                {/* Community */}
+                {recentPost ? (
+                  <Link
+                    href={`/spaces/fresh-collective/community/${recentPost.id}`}
+                    className="group flex flex-1 flex-col rounded-2xl bg-white px-4 py-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                    style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+                  >
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
+                      Community
+                    </p>
+                    {recentPost.title ? (
+                      <p className="mb-1 flex-1 font-serif text-[14px] leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
+                        {recentPost.title}
                       </p>
-                      <p className="font-serif text-[17px] text-navy-900 transition-colors group-hover:text-teal-700">
-                        Creator Studio
+                    ) : (
+                      <p className="mb-1 flex-1 line-clamp-2 text-[13px] leading-relaxed text-slate-600">
+                        {recentPost.body.split('\n\n')[0]}
                       </p>
-                      <p className="mt-1 text-[12.5px] text-slate-400">
-                        Manage your collective, pathways, and gatherings.
-                      </p>
-                      <span className="mt-3 inline-flex text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                        Open Studio →
-                      </span>
-                    </div>
+                    )}
+                    <p className="text-[11px] text-slate-400">{recentPost.author.display_name}</p>
+                    <span className="mt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                      Join the conversation →
+                    </span>
+                  </Link>
+                ) : (
+                  <Link
+                    href="/spaces/fresh-collective/community"
+                    className="group flex flex-1 flex-col rounded-2xl bg-white px-4 py-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                    style={{ border: CARD_BORDER }}
+                  >
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
+                      Community
+                    </p>
+                    <p className="flex-1 font-serif text-[14px] text-navy-700">
+                      The conversation begins with you.
+                    </p>
+                    <span className="mt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                      Open community →
+                    </span>
                   </Link>
                 )}
 
               </div>
-
             </div>
-          </div>
+          </section>
 
-          {/* ── Footer: logout ── */}
-          <div className="flex justify-end">
+          {/* ══════════════════════════════════════════════════
+              LAYER 2 — DISCOVER
+          ══════════════════════════════════════════════════ */}
+          <section className="mb-12">
+            <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Discover
+            </h2>
+            <Link
+              href="/dashboard/explore"
+              className="group block max-w-xl overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
+              style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+            >
+              <div
+                className="h-[3px] w-full"
+                style={{
+                  background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, transparent 100%)',
+                }}
+              />
+              <div className="px-6 py-5">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                  Discover
+                </p>
+                <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                  Explore collectives
+                </h3>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+                  Find other guided spaces and communities to join.
+                </p>
+                <span
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                >
+                  Browse collectives →
+                </span>
+              </div>
+            </Link>
+          </section>
+
+          {/* ══════════════════════════════════════════════════
+              LAYER 3 — CREATOR TOOLS (creator/admin only)
+          ══════════════════════════════════════════════════ */}
+          {isCreatorOrAdmin && (
+            <section className="mb-12">
+              <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                Creator tools
+              </h2>
+              <Link
+                href="/creator-studio"
+                className="group block max-w-xl overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+              >
+                {/* Browser chrome */}
+                <div className="flex items-center gap-1.5 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
+                  <span className="ml-2 text-[11px] text-slate-400">creator-studio</span>
+                </div>
+                <div className="px-6 py-5">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
+                    Creator
+                  </p>
+                  <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                    Creator Studio
+                  </h3>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+                    Build and manage your collectives, pathways, gatherings, and people.
+                  </p>
+                  <span
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                  >
+                    Open Studio →
+                  </span>
+                </div>
+              </Link>
+            </section>
+          )}
+
+          {/* ── Footer ── */}
+          <div className="border-t border-slate-100 pt-6">
             <LogoutButton className="text-xs text-slate-400 transition-colors hover:text-slate-600" />
           </div>
 
