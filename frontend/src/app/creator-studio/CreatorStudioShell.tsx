@@ -102,21 +102,35 @@ function CollectiveSwitcher({
                   >
                     {s.name}
                   </span>
-                  <span
-                    className="shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
-                    style={{
-                      background:
-                        s.status === 'active'
-                          ? 'rgba(66,199,198,0.28)'
-                          : 'rgba(255,255,255,0.08)',
-                      color:
-                        s.status === 'active'
-                          ? '#8DE8E6'
-                          : 'rgba(255,255,255,0.58)',
-                    }}
-                  >
-                    {s.status === 'active' ? 'Active' : 'Draft'}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
+                      style={{
+                        background:
+                          s.status === 'active'
+                            ? 'rgba(66,199,198,0.28)'
+                            : 'rgba(255,255,255,0.08)',
+                        color:
+                          s.status === 'active'
+                            ? '#8DE8E6'
+                            : 'rgba(255,255,255,0.58)',
+                      }}
+                    >
+                      {s.status === 'active' ? 'Active' : 'Draft'}
+                    </span>
+                    {isActive && (
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
+                        style={{
+                          background: 'rgba(141,232,230,0.12)',
+                          border: '1px solid rgba(141,232,230,0.35)',
+                          color: '#8DE8E6',
+                        }}
+                      >
+                        Current
+                      </span>
+                    )}
+                  </div>
                 </button>
               )
             })}

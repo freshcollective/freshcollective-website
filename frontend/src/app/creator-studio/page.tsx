@@ -125,7 +125,7 @@ export default async function CreatorStudioOverviewPage() {
         ) : (
           <>
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <span className="text-[20px] font-semibold text-navy-900">{activeSpace.name}</span>
+              <span className="font-sans text-[20px] font-semibold text-navy-900">{activeSpace.name}</span>
               <span
                 className="rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide"
                 style={{
