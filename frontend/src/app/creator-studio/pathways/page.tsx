@@ -28,13 +28,21 @@ function statusLabel(status: string) {
 
 function accessLabel(p: CreatorPathway): string {
   if (p.access_type === 'included') return 'Included'
-  if ((p.access_type === 'one_time' || p.access_type === 'subscription') && p.price_cents) {
-    const dollars = p.price_cents / 100
-    const formatted = Number.isInteger(dollars) ? `${dollars}` : dollars.toFixed(2)
-    const currency = p.currency ?? 'AUD'
-    return p.access_type === 'subscription'
-      ? `$${formatted} ${currency}/mo`
-      : `$${formatted} ${currency}`
+  if (p.access_type === 'one_time') {
+    if (p.price_cents) {
+      const dollars = p.price_cents / 100
+      const formatted = Number.isInteger(dollars) ? `${dollars}` : dollars.toFixed(2)
+      return `$${formatted} ${p.currency ?? 'AUD'}`
+    }
+    return 'Paid (one-off)'
+  }
+  if (p.access_type === 'subscription') {
+    if (p.price_cents) {
+      const dollars = p.price_cents / 100
+      const formatted = Number.isInteger(dollars) ? `${dollars}` : dollars.toFixed(2)
+      return `$${formatted} ${p.currency ?? 'AUD'}/mo`
+    }
+    return 'Paid (monthly)'
   }
   return 'Free'
 }

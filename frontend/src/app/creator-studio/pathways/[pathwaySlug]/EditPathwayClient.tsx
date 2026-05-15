@@ -304,8 +304,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
     return true
   }
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleSave() {
     setError(null)
     setPriceError(null)
     setSaved(false)
@@ -367,7 +366,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
   }
 
   return (
-    <form onSubmit={handleSave} className="space-y-6">
+    <div className="space-y-6">
 
       {/* Title */}
       <div>
@@ -451,18 +450,12 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
         </p>
       )}
 
-      {/* Save button */}
-      <div className="flex items-center justify-between border-t border-border pt-5">
+      {/* Save */}
+      <div className="flex justify-end border-t border-border pt-5">
         <button
           type="button"
-          onClick={() => router.push('/creator-studio/pathways')}
-          className="text-[14px] text-slate-500 transition-colors hover:text-navy-900"
-        >
-          ← Back to Pathways
-        </button>
-        <button
-          type="submit"
           disabled={loading || !title.trim()}
+          onClick={handleSave}
           className="rounded-xl px-6 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
         >
@@ -470,7 +463,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
         </button>
       </div>
 
-      {/* ── Pathway structure ── */}
+      {/* ── Pathway structure — separate section below details ── */}
       <div className="rounded-2xl border border-border bg-white p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
@@ -535,6 +528,6 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
         )}
       </div>
 
-    </form>
+    </div>
   )
 }
