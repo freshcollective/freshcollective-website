@@ -35,19 +35,18 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
     <div
       className="relative overflow-hidden rounded-3xl px-7 py-8"
       style={{
-        background: 'linear-gradient(145deg, #071824 0%, #0A2C2B 65%, #071F1E 100%)',
-        border: '1px solid rgba(56,160,158,0.16)',
-        boxShadow:
-          '0 8px 48px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.04)',
+        background: 'linear-gradient(135deg, #0F7C7A 0%, #0A5759 48%, #06363F 100%)',
+        border: '1px solid rgba(255,255,255,0.12)',
+        boxShadow: '0 8px 48px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.10)',
       }}
     >
-      {/* Atmospheric teal glow */}
+      {/* Soft white glow top-left */}
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
           background:
-            'radial-gradient(ellipse 80% 55% at 20% 20%, rgba(56,160,158,0.20) 0%, transparent 60%)',
+            'radial-gradient(circle at 20% 0%, rgba(255,255,255,0.18), transparent 32%)',
         }}
       />
 
@@ -61,7 +60,7 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
           />
           <p
             className="text-[9.5px] font-bold uppercase tracking-[0.22em]"
-            style={{ color: 'rgba(255,255,255,0.26)' }}
+            style={{ color: 'rgba(255,255,255,0.70)' }}
           >
             Live preview
           </p>
@@ -73,7 +72,7 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
         </p>
         <p
           className="mb-7 text-[12.5px] leading-relaxed"
-          style={{ color: 'rgba(255,255,255,0.38)' }}
+          style={{ color: 'rgba(255,255,255,0.78)' }}
         >
           As you add the foundation, this preview becomes the first outline of the
           experience you are building.
@@ -83,8 +82,8 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
         <div
           className="rounded-2xl px-5 py-5"
           style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'rgba(255,255,255,0.12)',
+            border: '1px solid rgba(255,255,255,0.20)',
           }}
         >
           {/* Name + Draft badge */}
@@ -107,7 +106,7 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
           <p
             className="mb-4 text-[11.5px] leading-relaxed transition-opacity duration-300"
             style={{
-              color: 'rgba(255,255,255,0.36)',
+              color: 'rgba(255,255,255,0.82)',
               opacity: tagline.trim() ? 1 : 0.55,
             }}
           >
@@ -134,7 +133,7 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
             <div
               key={label}
               className="flex items-center gap-2.5 py-2.5"
-              style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+              style={{ borderTop: '1px solid rgba(255,255,255,0.14)' }}
             >
               <div
                 className="h-1.5 w-1.5 shrink-0 rounded-full"
@@ -142,13 +141,13 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
               />
               <span
                 className="flex-1 text-[11.5px]"
-                style={{ color: 'rgba(255,255,255,0.30)' }}
+                style={{ color: 'rgba(255,255,255,0.80)' }}
               >
                 {label}
               </span>
               <span
                 className="text-[10px]"
-                style={{ color: 'rgba(255,255,255,0.14)' }}
+                style={{ color: 'rgba(255,255,255,0.55)' }}
               >
                 Not yet added
               </span>
@@ -159,7 +158,7 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
         {/* Divider + note */}
         <div
           className="mt-6 pt-6"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
+          style={{ borderTop: '1px solid rgba(255,255,255,0.16)' }}
         >
           <p
             className="mb-1.5 text-[12.5px] font-semibold"
@@ -169,14 +168,14 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
           </p>
           <p
             className="text-[12px] leading-relaxed"
-            style={{ color: 'rgba(255,255,255,0.30)' }}
+            style={{ color: 'rgba(255,255,255,0.72)' }}
           >
             Add the foundation first. Then build the pathways, gatherings, resources,
             and community around it.
           </p>
         </div>
 
-        <p className="mt-6 text-[11px]" style={{ color: 'rgba(255,255,255,0.16)' }}>
+        <p className="mt-6 text-[11px]" style={{ color: 'rgba(255,255,255,0.58)' }}>
           You can build this one step at a time.
         </p>
 

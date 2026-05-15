@@ -56,7 +56,7 @@ function CollectiveSwitcher({
         <>
           <p
             className="mb-1.5 text-[9px] font-bold uppercase tracking-[0.18em]"
-            style={{ color: 'rgba(255,255,255,0.22)' }}
+            style={{ color: 'rgba(255,255,255,0.50)' }}
           >
             Current collective
           </p>
@@ -75,7 +75,7 @@ function CollectiveSwitcher({
                 >
                   <span
                     className="flex-1 truncate text-[12px] font-medium leading-tight"
-                    style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.50)' }}
+                    style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.70)' }}
                   >
                     {s.name}
                   </span>
@@ -89,7 +89,7 @@ function CollectiveSwitcher({
                       color:
                         s.status === 'active'
                           ? '#55B8B6'
-                          : 'rgba(255,255,255,0.32)',
+                          : 'rgba(255,255,255,0.55)',
                     }}
                   >
                     {s.status}
@@ -107,13 +107,13 @@ function CollectiveSwitcher({
           <Link
             href="/creator-studio/create"
             className="flex items-center gap-1 text-[11px] transition-opacity hover:opacity-80"
-            style={{ color: 'rgba(56,160,158,0.75)' }}
+            style={{ color: '#55B8B6' }}
           >
             <span aria-hidden="true" className="text-[13px] leading-none">+</span>
             Create new collective
           </Link>
         ) : (
-          <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.26)' }}>
+          <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.52)' }}>
             {spaces.length} of {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives used
           </p>
         )}
@@ -178,7 +178,7 @@ function SidebarInner({
                   onClick={onNavClick}
                   className="flex items-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors"
                   style={{
-                    color: active ? '#ffffff' : 'rgba(255,255,255,0.46)',
+                    color: active ? '#ffffff' : 'rgba(255,255,255,0.68)',
                     background: active ? 'rgba(56,160,158,0.16)' : 'transparent',
                   }}
                 >
@@ -195,15 +195,15 @@ function SidebarInner({
         <Link
           href="/dashboard"
           className="mb-3 block text-[12px] transition-opacity hover:opacity-90"
-          style={{ color: 'rgba(255,255,255,0.52)' }}
+          style={{ color: 'rgba(255,255,255,0.65)' }}
         >
           ← Back to platform
         </Link>
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[12px]" style={{ color: 'rgba(255,255,255,0.48)' }}>
+          <span className="truncate text-[12px]" style={{ color: 'rgba(255,255,255,0.62)' }}>
             {user.name ?? user.email}
           </span>
-          <LogoutButton className="shrink-0 text-[11.5px] text-white/40 transition-colors hover:text-white/80" />
+          <LogoutButton className="shrink-0 text-[11.5px] text-white/60 transition-colors hover:text-white/90" />
         </div>
       </div>
 
