@@ -61,7 +61,7 @@ export default async function CreatorStudioOverviewPage() {
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">
           Welcome to your Creator Studio.
         </h1>
-        <p className="mt-2 text-[14px] text-slate-400">
+        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
           Build, shape, and manage the collective you wish existed.
         </p>
       </div>
@@ -78,18 +78,18 @@ export default async function CreatorStudioOverviewPage() {
           <div className="px-8 py-10">
             <p
               className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
-              style={{ color: '#55B8B6' }}
+              style={{ color: '#8DE8E6' }}
             >
               Get started
             </p>
             <p className="mb-3 font-serif text-xl text-white">Create your first collective.</p>
-            <p className="mb-6 max-w-md text-[13.5px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
+            <p className="mb-6 max-w-md text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.75)' }}>
               Start by giving your work a home. You can create up to{' '}
               {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives with Founding Creator access.
             </p>
             <Link
               href="/creator-studio/create"
-              className="inline-flex items-center rounded-lg px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="inline-flex items-center rounded-lg px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
               style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
             >
               Create collective
@@ -111,7 +111,7 @@ export default async function CreatorStudioOverviewPage() {
             >
               <p
                 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em]"
-                style={{ color: '#55B8B6' }}
+                style={{ color: '#8DE8E6' }}
               >
                 {isEarlyStage ? 'Getting started' : 'Next step'}
               </p>
@@ -121,8 +121,8 @@ export default async function CreatorStudioOverviewPage() {
                   : 'Your collective is taking shape.'}
               </p>
               <p
-                className="mb-5 max-w-md text-[13.5px] leading-relaxed"
-                style={{ color: 'rgba(255,255,255,0.55)' }}
+                className="mb-5 max-w-md text-[14px] leading-relaxed"
+                style={{ color: 'rgba(255,255,255,0.75)' }}
               >
                 {isEarlyStage
                   ? 'Name your collective, describe who it is for, and define the change your work helps people practise.'
@@ -134,7 +134,7 @@ export default async function CreatorStudioOverviewPage() {
                     ? `/creator/spaces/${activeSpace.slug}`
                     : `/creator/spaces/${activeSpace.slug}/pathways`
                 }
-                className="inline-flex items-center rounded-lg px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+                className="inline-flex items-center rounded-lg px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
               >
                 {isEarlyStage ? 'Set up collective' : 'Continue building'}
@@ -152,7 +152,7 @@ export default async function CreatorStudioOverviewPage() {
             ].map(({ label, value }) => (
               <div key={label} className="rounded-xl border border-border bg-white p-4">
                 <p className="font-serif text-2xl text-navy-900">{value}</p>
-                <p className="mt-0.5 text-[12px] text-slate-400">{label}</p>
+                <p className="mt-0.5 text-[13px] text-slate-500">{label}</p>
               </div>
             ))}
           </div>
@@ -161,10 +161,10 @@ export default async function CreatorStudioOverviewPage() {
           {!allDone && (
             <div className="mb-6 rounded-xl border border-border bg-white p-6">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-serif text-base text-navy-900">Setup progress</h2>
+                <h2 className="text-[17px] font-semibold text-navy-900">Setup progress</h2>
                 <Link
                   href="/creator-studio/setup"
-                  className="text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+                  className="text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
                 >
                   Full checklist →
                 </Link>
@@ -194,7 +194,7 @@ export default async function CreatorStudioOverviewPage() {
                       )}
                     </div>
                     <span
-                      className="flex-1 text-[13.5px]"
+                      className="flex-1 text-[14px]"
                       style={{ color: done ? 'rgba(0,0,0,0.36)' : '#1e293b' }}
                     >
                       {label}
@@ -202,7 +202,7 @@ export default async function CreatorStudioOverviewPage() {
                     {!done && (
                       <Link
                         href={href}
-                        className="text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+                        className="text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
                       >
                         Do this →
                       </Link>
@@ -242,7 +242,7 @@ export default async function CreatorStudioOverviewPage() {
                 <p className="text-[14px] font-medium text-navy-900 transition-colors group-hover:text-teal-700">
                   {label}
                 </p>
-                <p className="mt-1 text-[12px] text-slate-400">{desc}</p>
+                <p className="mt-1 text-[13px] text-slate-500">{desc}</p>
               </Link>
             ))}
           </div>
@@ -252,23 +252,23 @@ export default async function CreatorStudioOverviewPage() {
       {/* Your collectives */}
       <div className="rounded-xl border border-border bg-white p-6">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="font-serif text-base text-navy-900">Your collectives</h2>
+          <h2 className="text-[17px] font-semibold text-navy-900">Your collectives</h2>
           {!atLimit ? (
             <Link
               href="/creator-studio/create"
-              className="text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+              className="text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
             >
               + Create new collective
             </Link>
           ) : (
-            <span className="text-[11.5px] text-slate-400">
+            <span className="text-[12px] text-slate-500">
               {spaces.length} of {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives used
             </span>
           )}
         </div>
 
         {spaces.length === 0 ? (
-          <p className="text-[13px] text-slate-400">
+          <p className="text-[14px] text-slate-500">
             No collectives yet.{' '}
             <Link href="/creator-studio/create" className="text-teal-600 hover:text-teal-700">
               Create your first →
@@ -289,7 +289,7 @@ export default async function CreatorStudioOverviewPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-[14px] font-medium text-navy-900">{s.name}</p>
                     <span
-                      className="rounded-full px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
+                      className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
                       style={{
                         background: s.status === 'active' ? 'rgba(56,160,158,0.10)' : 'rgba(0,0,0,0.05)',
                         color: s.status === 'active' ? '#38A09E' : '#94a3b8',
@@ -298,16 +298,16 @@ export default async function CreatorStudioOverviewPage() {
                       {s.status}
                     </span>
                     {s.slug === activeSpace?.slug && (
-                      <span className="text-[10.5px] text-teal-500">Active</span>
+                      <span className="text-[11px] font-medium text-teal-500">Active</span>
                     )}
                   </div>
                   {s.tagline && (
-                    <p className="mt-0.5 truncate text-[12px] text-slate-400">{s.tagline}</p>
+                    <p className="mt-0.5 truncate text-[13px] text-slate-500">{s.tagline}</p>
                   )}
                 </div>
                 <Link
                   href={`/creator/spaces/${s.slug}`}
-                  className="shrink-0 text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+                  className="shrink-0 text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
                 >
                   Manage →
                 </Link>
@@ -317,12 +317,12 @@ export default async function CreatorStudioOverviewPage() {
         )}
 
         {!atLimit && spaces.length > 0 && (
-          <p className="mt-4 text-[11.5px] text-slate-300">
+          <p className="mt-4 text-[12px] text-slate-400">
             Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
           </p>
         )}
         {atLimit && (
-          <p className="mt-4 text-[11.5px] text-slate-400">
+          <p className="mt-4 text-[12px] text-slate-500">
             Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
             Creator Plus is coming soon.
           </p>

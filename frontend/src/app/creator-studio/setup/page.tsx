@@ -89,10 +89,10 @@ export default async function SetupPage() {
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">
           Set up your collective.
         </h1>
-        <p className="mt-2 text-[14px] text-slate-400">
+        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
           Start with the foundations, then build the rhythm around your work.
         </p>
-        <p className="mt-1 text-[12px] text-slate-300">
+        <p className="mt-1.5 text-[13px] text-slate-400">
           {doneCount} of {checklist.length} complete
         </p>
       </div>
@@ -103,7 +103,7 @@ export default async function SetupPage() {
           return (
             <div
               key={label}
-              className="flex items-start gap-4 rounded-xl border bg-white p-5"
+              className="flex items-start gap-4 rounded-2xl border bg-white p-5"
               style={{
                 borderColor:
                   status === 'complete'
@@ -142,20 +142,20 @@ export default async function SetupPage() {
               </div>
 
               <div className="flex-1">
-                <div className="mb-1 flex flex-wrap items-center gap-2.5">
-                  <p className="text-[14px] font-medium text-navy-900">{label}</p>
+                <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
+                  <p className="text-[15px] font-medium text-navy-900">{label}</p>
                   <span
-                    className="rounded-full px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
+                    className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
                     style={{ background: cfg.bg, color: cfg.color }}
                   >
                     {cfg.label}
                   </span>
                 </div>
-                <p className="text-[12.5px] leading-relaxed text-slate-400">{desc}</p>
+                <p className="text-[13.5px] leading-relaxed text-slate-500">{desc}</p>
                 {status !== 'complete' && (
                   <Link
                     href={href}
-                    className="mt-3 inline-block text-[12.5px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+                    className="mt-3 inline-block text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
                   >
                     {status === 'in_progress' ? 'Continue →' : 'Start this step →'}
                   </Link>

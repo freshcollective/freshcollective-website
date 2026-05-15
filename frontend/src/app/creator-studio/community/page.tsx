@@ -29,11 +29,14 @@ export default async function CommunityPage() {
             Creator Studio
           </p>
           <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Community</h1>
+          <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
+            Create prompts and conversations that help people stay connected to the work.
+          </p>
         </div>
         {primarySpace && (
           <Link
             href={`/creator/spaces/${primarySpace.slug}/community`}
-            className="shrink-0 rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+            className="mt-1 shrink-0 rounded-xl border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
           >
             Manage →
           </Link>
@@ -42,14 +45,14 @@ export default async function CommunityPage() {
 
       {/* No collective yet */}
       {!primarySpace && (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-1.5 font-serif text-base text-navy-900">No collective yet</p>
-          <p className="mb-5 text-sm text-slate-400">
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
+          <p className="mb-2 text-[16px] font-semibold text-navy-900">No collective yet</p>
+          <p className="mb-6 text-[14px] leading-relaxed text-slate-500">
             Set up your collective first, then you can post prompts and start conversations.
           </p>
           <Link
             href="/creator-studio/create"
-            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="inline-flex items-center rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
             Create collective
@@ -59,14 +62,14 @@ export default async function CommunityPage() {
 
       {/* Collective exists but no posts */}
       {primarySpace && posts.length === 0 && (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-1.5 font-serif text-base text-navy-900">No community posts yet.</p>
-          <p className="mb-5 text-sm text-slate-400">
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
+          <p className="mb-2 text-[16px] font-semibold text-navy-900">No community posts yet.</p>
+          <p className="mb-6 text-[14px] leading-relaxed text-slate-500">
             Start with a simple prompt to invite reflection, conversation, or shared practice.
           </p>
           <Link
             href={`/creator/spaces/${primarySpace.slug}/community`}
-            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="inline-flex items-center rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
             Add community prompt
@@ -78,7 +81,7 @@ export default async function CommunityPage() {
       {posts.length > 0 && (
         <div className="space-y-3">
           {posts.map((post) => (
-            <div key={post.id} className="rounded-xl border border-border bg-white p-5">
+            <div key={post.id} className="rounded-2xl border border-border bg-white p-5">
               <div className="mb-2.5 flex items-start justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <span
@@ -88,20 +91,20 @@ export default async function CommunityPage() {
                     {POST_TYPE_LABEL[post.post_type] ?? post.post_type}
                   </span>
                   {post.is_pinned && (
-                    <span className="text-[11px] text-slate-400">Pinned</span>
+                    <span className="text-[12px] text-slate-400">Pinned</span>
                   )}
                 </div>
-                <span className="shrink-0 text-[11.5px] text-slate-400">
+                <span className="shrink-0 text-[12px] text-slate-400">
                   {formatDate(post.created_at)}
                 </span>
               </div>
               {post.title && (
-                <p className="mb-1 font-medium text-navy-900">{post.title}</p>
+                <p className="mb-1.5 text-[15px] font-medium text-navy-900">{post.title}</p>
               )}
-              <p className="line-clamp-2 text-[13.5px] leading-relaxed text-slate-500">
+              <p className="line-clamp-2 text-[14px] leading-relaxed text-slate-500">
                 {post.body}
               </p>
-              <p className="mt-2 text-[11.5px] text-slate-400">by {post.author_name}</p>
+              <p className="mt-2 text-[12px] text-slate-400">by {post.author_name}</p>
             </div>
           ))}
         </div>

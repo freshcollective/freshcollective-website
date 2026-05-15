@@ -26,31 +26,31 @@ function EventCard({
   return (
     <Link
       href={`/creator/spaces/${spaceSlug}/events/${event.id}`}
-      className="group flex items-start gap-4 rounded-xl border border-border bg-white p-5 transition-all hover:border-teal-200 hover:shadow-sm"
+      className="group flex items-start gap-4 rounded-2xl border border-border bg-white p-5 transition-all hover:border-teal-200 hover:shadow-sm"
       style={{ opacity: isPast ? 0.65 : 1 }}
     >
       <div
-        className="shrink-0 rounded-lg p-2 text-center"
-        style={{ background: 'rgba(56,160,158,0.08)', minWidth: '48px' }}
+        className="shrink-0 rounded-xl p-2 text-center"
+        style={{ background: 'rgba(56,160,158,0.08)', minWidth: '52px' }}
       >
-        <p className="text-[18px] font-bold leading-none text-navy-900">
+        <p className="text-[20px] font-bold leading-none text-navy-900">
           {new Date(event.starts_at).getDate()}
         </p>
-        <p className="text-[10px] font-medium uppercase tracking-wide text-teal-600">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-600">
           {new Date(event.starts_at).toLocaleDateString('en-GB', { month: 'short' })}
         </p>
       </div>
       <div className="min-w-0 flex-1">
-        <p className="font-medium text-navy-900 transition-colors group-hover:text-teal-700">
+        <p className="text-[15px] font-medium text-navy-900 transition-colors group-hover:text-teal-700">
           {event.title}
         </p>
-        <p className="mt-0.5 text-[12px] text-slate-400">
+        <p className="mt-0.5 text-[13px] text-slate-500">
           {formatDate(event.starts_at)} · {formatTime(event.starts_at)}
         </p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <span
             className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
-            style={{ background: 'rgba(0,0,0,0.05)', color: '#94a3b8' }}
+            style={{ background: 'rgba(0,0,0,0.05)', color: '#64748b' }}
           >
             {event.location_type.replace(/_/g, ' ')}
           </span>
@@ -88,12 +88,15 @@ export default async function GatheringsPage() {
             Creator Studio
           </p>
           <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Gatherings</h1>
+          <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
+            Schedule live sessions, circles, workshops, or community touchpoints.
+          </p>
         </div>
         {primarySpace && (
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="mt-1 flex shrink-0 items-center gap-3">
             <Link
               href={`/creator/spaces/${primarySpace.slug}/events/new`}
-              className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="rounded-xl px-4 py-2 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
               style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
             >
               + Schedule
@@ -101,7 +104,7 @@ export default async function GatheringsPage() {
             {events.length > 0 && (
               <Link
                 href={`/creator/spaces/${primarySpace.slug}/events`}
-                className="rounded-lg border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+                className="rounded-xl border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
               >
                 Manage →
               </Link>
@@ -112,14 +115,14 @@ export default async function GatheringsPage() {
 
       {/* No collective yet */}
       {!primarySpace && (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-1.5 font-serif text-base text-navy-900">No collective yet</p>
-          <p className="mb-5 text-sm text-slate-400">
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
+          <p className="mb-2 text-[16px] font-semibold text-navy-900">No collective yet</p>
+          <p className="mb-6 text-[14px] leading-relaxed text-slate-500">
             Set up your collective first, then schedule gatherings within it.
           </p>
           <Link
             href="/creator-studio/create"
-            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="inline-flex items-center rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
             Create collective
@@ -129,14 +132,14 @@ export default async function GatheringsPage() {
 
       {/* Collective exists but no gatherings */}
       {primarySpace && events.length === 0 && (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-1.5 font-serif text-base text-navy-900">No gatherings scheduled.</p>
-          <p className="mb-5 text-sm text-slate-400">
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
+          <p className="mb-2 text-[16px] font-semibold text-navy-900">No gatherings scheduled.</p>
+          <p className="mb-6 text-[14px] leading-relaxed text-slate-500">
             Add a live session, circle, workshop, Q&A, or community touchpoint.
           </p>
           <Link
             href={`/creator/spaces/${primarySpace.slug}/events/new`}
-            className="inline-flex items-center rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="inline-flex items-center rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
             Schedule gathering
@@ -146,7 +149,10 @@ export default async function GatheringsPage() {
 
       {upcoming.length > 0 && (
         <section className="mb-8">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+          <p
+            className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]"
+            style={{ color: '#38A09E' }}
+          >
             Upcoming
           </p>
           <div className="space-y-3">
@@ -159,7 +165,7 @@ export default async function GatheringsPage() {
 
       {past.length > 0 && (
         <section>
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             Past
           </p>
           <div className="space-y-3">
