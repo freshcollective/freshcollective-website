@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getPathwayOverview } from '@/lib/serverApi'
+import { getPathwayCoverStyle } from '@/lib/coverArt'
 import type { PathwayWithSteps, StepSummary } from '@/types/platform'
 
 interface Props {
@@ -13,21 +14,6 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
   exercise: 'Exercise',
   video: 'Watch',
   audio: 'Listen',
-}
-
-// Deterministic cover gradient
-const COVERS = [
-  'linear-gradient(135deg, #073B3A 0%, #0F5E5C 100%)',
-  'linear-gradient(135deg, #071824 0%, #073B3A 100%)',
-  'linear-gradient(135deg, #0F5E5C 0%, #38A09E 100%)',
-  'linear-gradient(135deg, #062F35 0%, #0A5759 100%)',
-  'linear-gradient(135deg, #0A5759 0%, #2d9096 100%)',
-]
-
-function coverGradient(slug: string): string {
-  let h = 0
-  for (let i = 0; i < slug.length; i++) h = ((h << 5) - h + slug.charCodeAt(i)) | 0
-  return COVERS[Math.abs(h) % COVERS.length]
 }
 
 function StepRow({
@@ -92,6 +78,8 @@ export default async function PathwayDetailPage({ params }: Props) {
 
   if (!pathway) notFound()
 
+  const cs = getPathwayCoverStyle(pathwaySlug)
+
   const progressPct =
     pathway.step_count > 0
       ? Math.round((pathway.completed_count / pathway.step_count) * 100)
@@ -111,26 +99,33 @@ export default async function PathwayDetailPage({ params }: Props) {
         ← All Pathways
       </Link>
 
-      {/* Visual pathway banner — light gradient, dark text */}
+      {/* ── Pathway hero banner ── */}
       <div
-        className="mb-6 overflow-hidden rounded-2xl border border-teal-100"
-        style={{ background: coverGradient(pathwaySlug) }}
+        className="mb-6 overflow-hidden rounded-2xl"
+        style={{
+          background: cs.background,
+          backgroundSize: cs.backgroundSize ?? 'auto',
+        }}
       >
-        <div
-          className="px-7 py-8"
-          style={{
-            background:
-              'radial-gradient(circle at 90% 10%, rgba(56,160,158,0.18), transparent 40%), ' +
-              'radial-gradient(circle at 10% 85%, rgba(66,199,198,0.10), transparent 30%)',
-          }}
-        >
+        <div className="px-7 py-10 md:px-9 md:py-12">
           <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
+          <p
+            className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
+            style={{ color: cs.labelColor }}
+          >
             Pathway
           </p>
-          <h2 className="font-serif text-2xl text-navy-900 md:text-3xl">{pathway.title}</h2>
+          <h2
+            className="font-serif text-2xl md:text-3xl"
+            style={{ color: cs.titleColor }}
+          >
+            {pathway.title}
+          </h2>
           {pathway.description && (
-            <p className="mt-2 max-w-md text-[14px] leading-relaxed text-slate-600">
+            <p
+              className="mt-2.5 max-w-md text-[14px] leading-relaxed"
+              style={{ color: cs.isDark ? 'rgba(255,255,255,0.72)' : '#64748B' }}
+            >
               {pathway.description}
             </p>
           )}

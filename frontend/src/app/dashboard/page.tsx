@@ -6,6 +6,7 @@ import Avatar from '@/components/ui/Avatar'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
 import { getContinue, getSpaceEvents } from '@/lib/serverApi'
+import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import type { ContinueResponse, EventSummary } from '@/types/platform'
 
 interface User {
@@ -100,48 +101,62 @@ export default async function DashboardPage() {
             </p>
           </div>
 
-          {/* ── Your space (featured collective card — the one deep-teal element) ── */}
-          <section className="mb-4">
-            <Link
-              href="/spaces/fresh-collective"
-              className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-xl"
-              style={{
-                background:
-                  'radial-gradient(circle at 88% 15%, rgba(66,199,198,0.22), transparent 40%), ' +
-                  'linear-gradient(135deg, #073B3A 0%, #0d4f4d 50%, #062F35 100%)',
-              }}
-            >
-              <div className="px-7 py-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p
-                      className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]"
-                      style={{ color: 'rgba(255,255,255,0.60)' }}
-                    >
-                      Your space
-                    </p>
-                    <p className="font-serif text-2xl text-white transition-opacity group-hover:opacity-90">
-                      Fresh Collective
-                    </p>
-                    <p
-                      className="mt-1.5 text-[14px] leading-snug"
-                      style={{ color: 'rgba(255,255,255,0.75)' }}
-                    >
-                      {continueData && !continueData.all_complete
-                        ? `Next: ${continueData.step_title}`
-                        : 'Your home for guided learning and reflection.'}
-                    </p>
-                  </div>
-                  <span
-                    className="shrink-0 rounded-lg border px-4 py-2 text-[13px] font-semibold text-white opacity-0 transition-all group-hover:opacity-100"
-                    style={{ borderColor: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.12)' }}
+          {/* ── Your space — visual collective tile ── */}
+          {(() => {
+            const cs = getCollectiveCoverStyle('fresh-collective')
+            return (
+              <section className="mb-4">
+                <Link
+                  href="/spaces/fresh-collective"
+                  className="group block overflow-hidden rounded-2xl shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-xl"
+                >
+                  {/* Cover art area */}
+                  <div
+                    className="relative px-7 py-10 md:py-12"
+                    style={{
+                      background: cs.background,
+                      backgroundSize: cs.backgroundSize ?? 'auto',
+                    }}
                   >
-                    Enter →
-                  </span>
-                </div>
-              </div>
-            </Link>
-          </section>
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <p
+                          className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
+                          style={{ color: cs.labelColor }}
+                        >
+                          Your space
+                        </p>
+                        <p
+                          className="font-serif text-2xl transition-opacity group-hover:opacity-90"
+                          style={{ color: cs.titleColor }}
+                        >
+                          Fresh Collective
+                        </p>
+                        <p
+                          className="mt-1.5 text-[13px] leading-snug"
+                          style={{ color: cs.isDark ? 'rgba(255,255,255,0.68)' : '#64748B' }}
+                        >
+                          {continueData && !continueData.all_complete
+                            ? `Next: ${continueData.step_title}`
+                            : 'Your home for guided learning and reflection.'}
+                        </p>
+                      </div>
+                      <span
+                        className="shrink-0 rounded-lg border px-4 py-2 text-[13px] font-semibold opacity-0 transition-all group-hover:opacity-100"
+                        style={{
+                          color: cs.isDark ? '#FFFFFF' : '#073B3A',
+                          borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
+                          background: cs.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(56,160,158,0.10)',
+                        }}
+                      >
+                        Enter →
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              </section>
+            )
+          })()}
 
           {/* ── Two-column: Continue + Coming up ── */}
           <div className="mb-4 grid gap-4 sm:grid-cols-2">
