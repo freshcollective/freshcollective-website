@@ -39,6 +39,7 @@ class SpaceResponse(BaseModel):
     description: str | None
     is_public: bool
     status: str
+    cover_image_url: str | None = None
     pathways: list[PathwaySummary] = []
 
 
@@ -88,6 +89,7 @@ class PathwayWithSteps(BaseModel):
     slug: str
     title: str
     description: str | None
+    cover_image_url: str | None = None
     status: str
     step_count: int
     completed_count: int

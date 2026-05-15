@@ -355,6 +355,7 @@ def list_pathways(
             "title": p.title,
             "description": p.description,
             "practice_body": p.practice_body,
+            "cover_image_url": p.cover_image_url,
             "status": p.status.value if hasattr(p.status, "value") else str(p.status),
             "access_type": p.access_type,
             "price_cents": p.price_cents,
@@ -385,6 +386,7 @@ def get_pathway(
         "title": pathway.title,
         "description": pathway.description,
         "practice_body": pathway.practice_body,
+        "cover_image_url": pathway.cover_image_url,
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
         "access_type": pathway.access_type,
         "price_cents": pathway.price_cents,
@@ -435,8 +437,9 @@ def create_pathway(
     db.refresh(pathway)
     return {
         **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
-                                             "access_type", "price_cents", "currency", "billing_interval",
-                                             "is_sequential", "position", "updated_at", "created_at"]},
+                                             "cover_image_url", "access_type", "price_cents", "currency",
+                                             "billing_interval", "is_sequential", "position",
+                                             "updated_at", "created_at"]},
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
         "step_count": 0,
     }
@@ -475,8 +478,42 @@ def update_pathway(
     step_count = db.query(PathwayStep).filter(PathwayStep.pathway_id == pathway.id).count()
     return {
         **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
-                                             "access_type", "price_cents", "currency", "billing_interval",
-                                             "is_sequential", "position", "updated_at", "created_at"]},
+                                             "cover_image_url", "access_type", "price_cents", "currency",
+                                             "billing_interval", "is_sequential", "position",
+                                             "updated_at", "created_at"]},
+        "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
+        "step_count": step_count,
+    }
+
+
+@router.post("/spaces/{slug}/pathways/{pathway_slug}/cover", response_model=PathwayResponse)
+async def upload_pathway_cover(
+    slug: str,
+    pathway_slug: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    filename = file.filename or "cover.jpg"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ("jpg", "jpeg", "png"):
+        raise HTTPException(status_code=400, detail="Only JPG and PNG images are allowed.")
+    data = await file.read()
+    if pathway.cover_image_url:
+        old_rel = pathway.cover_image_url.removeprefix("/api/uploads/")
+        delete_file(old_rel)
+    rel_path, _, _ = save_file(data, filename, file.content_type or "image/jpeg", "pathway-covers")
+    pathway.cover_image_url = f"/api/uploads/{rel_path}"
+    db.commit()
+    db.refresh(pathway)
+    step_count = db.query(PathwayStep).filter(PathwayStep.pathway_id == pathway.id).count()
+    return {
+        **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
+                                             "cover_image_url", "access_type", "price_cents", "currency",
+                                             "billing_interval", "is_sequential", "position",
+                                             "updated_at", "created_at"]},
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
         "step_count": step_count,
     }

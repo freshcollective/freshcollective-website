@@ -143,6 +143,7 @@ class PathwayResponse(BaseModel):
     title: str
     description: str | None
     practice_body: str | None = None
+    cover_image_url: str | None = None
     status: str
     access_type: str = "free"
     price_cents: int | None = None

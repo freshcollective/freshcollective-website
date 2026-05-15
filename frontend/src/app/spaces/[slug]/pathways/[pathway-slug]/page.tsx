@@ -101,30 +101,50 @@ export default async function PathwayDetailPage({ params }: Props) {
 
       {/* ── Pathway hero banner ── */}
       <div
-        className="mb-6 overflow-hidden rounded-2xl"
+        className="relative mb-6 overflow-hidden rounded-2xl"
         style={{
           background: cs.background,
           backgroundSize: cs.backgroundSize ?? 'auto',
         }}
       >
-        <div className="px-7 py-10 md:px-9 md:py-12">
+        {/* Uploaded cover image — layers over CSS gradient */}
+        {pathway.cover_image_url && (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={pathway.cover_image_url}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  'linear-gradient(135deg, rgba(7,24,36,0.75) 0%, rgba(7,56,58,0.58) 100%)',
+              }}
+            />
+          </>
+        )}
+
+        <div className="relative px-7 py-10 md:px-9 md:py-12">
           <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
           <p
             className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
-            style={{ color: cs.labelColor }}
+            style={{ color: pathway.cover_image_url ? 'rgba(255,255,255,0.65)' : cs.labelColor }}
           >
             Pathway
           </p>
           <h2
             className="font-serif text-2xl md:text-3xl"
-            style={{ color: cs.titleColor }}
+            style={{ color: pathway.cover_image_url ? '#FFFFFF' : cs.titleColor }}
           >
             {pathway.title}
           </h2>
           {pathway.description && (
             <p
               className="mt-2.5 max-w-md text-[14px] leading-relaxed"
-              style={{ color: cs.isDark ? 'rgba(255,255,255,0.72)' : '#64748B' }}
+              style={{ color: (pathway.cover_image_url || cs.isDark) ? 'rgba(255,255,255,0.72)' : '#64748B' }}
             >
               {pathway.description}
             </p>

@@ -286,6 +286,14 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
   const [steps, setSteps]               = useState<CreatorStep[]>(initialSteps)
   const [addingStep, setAddingStep]     = useState(false)
 
+  // Cover image upload state
+  const [coverUrl, setCoverUrl]         = useState<string | null>(pathway.cover_image_url ?? null)
+  const [coverPreview, setCoverPreview] = useState<string | null>(null)
+  const [coverFile, setCoverFile]       = useState<File | null>(null)
+  const [coverUploading, setCoverUploading] = useState(false)
+  const [coverError, setCoverError]     = useState<string | null>(null)
+  const [coverSaved, setCoverSaved]     = useState(false)
+
   const isPaid = accessType === 'one_time' || accessType === 'subscription'
 
   function validate(): boolean {
@@ -461,6 +469,103 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
         >
           {loading ? 'Saving…' : 'Save changes'}
         </button>
+      </div>
+
+      {/* ── Pathway cover ── */}
+      <div className="rounded-2xl border border-border bg-white p-6">
+        <h2 className="mb-1 text-[16px] font-semibold text-navy-900">Pathway cover</h2>
+        <p className="mb-4 text-[13px] text-slate-500">
+          Add a visual cover so this pathway feels distinct and easy to recognise.
+        </p>
+
+        {/* Preview */}
+        {(coverPreview ?? coverUrl) && (
+          <div className="mb-4 overflow-hidden rounded-xl" style={{ maxWidth: 320 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={coverPreview ?? coverUrl!}
+              alt="Pathway cover preview"
+              className="w-full object-cover"
+              style={{ aspectRatio: '16/9' }}
+            />
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="cursor-pointer rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-navy-900 transition-colors hover:border-teal-300 hover:text-teal-700">
+            {coverUrl || coverPreview ? 'Replace image' : 'Choose image'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              className="sr-only"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null
+                setCoverFile(f)
+                setCoverError(null)
+                setCoverSaved(false)
+                if (f) {
+                  const reader = new FileReader()
+                  reader.onload = (ev) => setCoverPreview(ev.target?.result as string)
+                  reader.readAsDataURL(f)
+                } else {
+                  setCoverPreview(null)
+                }
+              }}
+            />
+          </label>
+
+          {coverFile && (
+            <button
+              type="button"
+              disabled={coverUploading}
+              onClick={async () => {
+                if (!coverFile) return
+                setCoverUploading(true)
+                setCoverError(null)
+                setCoverSaved(false)
+                const form = new FormData()
+                form.append('file', coverFile)
+                try {
+                  const res = await fetch(
+                    apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/cover`),
+                    { method: 'POST', credentials: 'include', body: form },
+                  )
+                  if (!res.ok) {
+                    const body = await res.json().catch(() => ({}))
+                    setCoverError(typeof body.detail === 'string' ? body.detail : 'Upload failed.')
+                    return
+                  }
+                  const data = await res.json()
+                  setCoverUrl(data.cover_image_url ?? null)
+                  setCoverPreview(null)
+                  setCoverFile(null)
+                  setCoverSaved(true)
+                  startTransition(() => { router.refresh() })
+                  setTimeout(() => setCoverSaved(false), 3000)
+                } catch {
+                  setCoverError('Upload failed. Please try again.')
+                } finally {
+                  setCoverUploading(false)
+                }
+              }}
+              className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            >
+              {coverUploading ? 'Uploading…' : 'Upload'}
+            </button>
+          )}
+
+          <p className="text-[11px] text-slate-400">JPG or PNG · Wide image recommended (16:9)</p>
+        </div>
+
+        {coverError && (
+          <p className="mt-2 text-[12px] text-red-600">{coverError}</p>
+        )}
+        {coverSaved && (
+          <p className="mt-2 text-[12px] font-medium" style={{ color: '#38A09E' }}>
+            Cover image saved.
+          </p>
+        )}
       </div>
 
       {/* ── Pathway structure — separate section below details ── */}

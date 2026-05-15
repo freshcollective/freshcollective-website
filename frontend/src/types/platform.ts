@@ -16,6 +16,7 @@ export interface SpaceResponse {
   description: string | null
   is_public: boolean
   status: string
+  cover_image_url: string | null
   pathways: PathwaySummary[]
 }
 
@@ -49,6 +50,7 @@ export interface PathwayWithSteps {
   slug: string
   title: string
   description: string | null
+  cover_image_url: string | null
   status: string
   step_count: number
   completed_count: number
@@ -172,6 +174,7 @@ export interface CreatorPathway {
   title: string
   description: string | null
   practice_body: string | null
+  cover_image_url: string | null
   status: 'draft' | 'active' | 'coming_soon' | 'archived'
   access_type: 'free' | 'included' | 'one_time' | 'subscription'
   price_cents: number | null

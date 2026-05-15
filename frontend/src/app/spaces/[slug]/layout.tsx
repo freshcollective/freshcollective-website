@@ -35,8 +35,9 @@ export default async function SpaceLayout({ children, params }: Props) {
       </header>
 
       {/* ── Collective identity band — dark ocean with texture ── */}
+      {/* Always render the CSS gradient; uploaded image layers on top of it. */}
       <div
-        className="px-6 py-10 md:px-10 md:py-12"
+        className="relative overflow-hidden px-6 py-10 md:px-10 md:py-12"
         style={{
           background:
             'radial-gradient(rgba(66,199,198,0.08) 1px, transparent 1px), ' +
@@ -46,11 +47,39 @@ export default async function SpaceLayout({ children, params }: Props) {
           backgroundSize: '22px 22px, auto, auto, auto',
         }}
       >
-        <div className="mx-auto max-w-6xl">
+        {/* Uploaded banner image — overlays the CSS gradient */}
+        {space.cover_image_url && (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={space.cover_image_url}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            {/* Dark scrim so white text stays readable over any photo */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  'linear-gradient(135deg, rgba(7,24,36,0.78) 0%, rgba(7,56,58,0.62) 100%)',
+              }}
+            />
+          </>
+        )}
+
+        {/* Text content — relative so it layers above image/scrim */}
+        <div className="relative mx-auto max-w-6xl">
           <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
-          <h1 className="font-serif text-3xl text-white md:text-4xl">{space.name}</h1>
+          {/* Inline style used deliberately to guarantee white text regardless of Tailwind specificity */}
+          <h1
+            className="font-serif text-3xl md:text-4xl"
+            style={{ color: '#FFFFFF' }}
+          >
+            {space.name}
+          </h1>
           {space.tagline && (
-            <p className="mt-1.5 text-[14px]" style={{ color: 'rgba(255,255,255,0.68)' }}>
+            <p className="mt-1.5 text-[14px]" style={{ color: 'rgba(255,255,255,0.70)' }}>
               {space.tagline}
             </p>
           )}

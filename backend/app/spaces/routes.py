@@ -374,6 +374,7 @@ def get_pathway_overview(
         slug=pathway.slug,
         title=pathway.title,
         description=pathway.description,
+        cover_image_url=pathway.cover_image_url,
         status=pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
         step_count=len(steps),
         completed_count=len(completed),
