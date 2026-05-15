@@ -4,46 +4,58 @@ import { useState, useMemo } from 'react'
 import type { MemberProfile } from '@/types/platform'
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Constants & helpers
 // ---------------------------------------------------------------------------
 
 const ROLE_LABEL: Record<string, string> = {
-  creator: 'Leader',
+  creator:   'Leader',
   moderator: 'Moderator',
-  learner: 'Member',
+  learner:   'Member',
+}
+
+// TODO: Replace with m.status once a creator-specific members endpoint exposes
+// membership status (invited / paused / completed / removed). Currently
+// /api/spaces/{slug}/members only returns active members.
+function memberStatus(_m: MemberProfile): string {
+  return 'active'
 }
 
 function roleBadgeStyle(role: string): { background: string; color: string } {
   if (role === 'creator')   return { background: 'rgba(14,116,144,0.10)',  color: '#0e7470' }
-  if (role === 'moderator') return { background: 'rgba(99,102,241,0.08)',  color: '#6366f1' }
-  return                           { background: 'rgba(56,160,158,0.08)',  color: '#38A09E' }
+  if (role === 'moderator') return { background: 'rgba(99,102,241,0.09)',  color: '#6366f1' }
+  return                           { background: 'rgba(56,160,158,0.09)',  color: '#38A09E' }
+}
+
+const STATUS_STYLE: Record<string, { background: string; color: string }> = {
+  active:    { background: 'rgba(56,160,158,0.10)',  color: '#38A09E' },
+  invited:   { background: 'rgba(234,179,8,0.12)',   color: '#a16207' },
+  paused:    { background: 'rgba(148,163,184,0.15)', color: '#64748b' },
+  completed: { background: 'rgba(99,102,241,0.10)',  color: '#6366f1' },
+  removed:   { background: 'rgba(239,68,68,0.08)',   color: '#dc2626' },
+}
+
+function statusStyle(s: string) {
+  return STATUS_STYLE[s] ?? STATUS_STYLE.active
 }
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
+    day: 'numeric', month: 'short', year: 'numeric',
   })
 }
 
 function initials(name: string) {
-  return name
-    .split(' ')
-    .slice(0, 2)
-    .map((p) => p[0] ?? '')
-    .join('')
-    .toUpperCase()
+  return name.split(' ').slice(0, 2).map((p) => p[0] ?? '').join('').toUpperCase()
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Small reusable pieces
 // ---------------------------------------------------------------------------
 
 function Avatar({ name }: { name: string }) {
   return (
     <div
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
       style={{ background: 'rgba(56,160,158,0.12)', color: '#38A09E' }}
     >
       {initials(name)}
@@ -53,128 +65,142 @@ function Avatar({ name }: { name: string }) {
 
 function RoleBadge({ role }: { role: string }) {
   return (
-    <span
-      className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-      style={roleBadgeStyle(role)}
-    >
+    <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={roleBadgeStyle(role)}>
       {ROLE_LABEL[role] ?? role}
     </span>
   )
 }
 
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize"
+      style={statusStyle(status)}
+    >
+      {status}
+    </span>
+  )
+}
+
+function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-1">{children}</div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
-// Person detail panel (inline expand)
+// Detail panel
 // ---------------------------------------------------------------------------
 
-function PersonDetail({
+function DetailPanel({
   person,
   onClose,
 }: {
   person: MemberProfile
   onClose: () => void
 }) {
-  const bStyle = roleBadgeStyle(person.space_role)
+  const status = memberStatus(person)
 
   return (
-    <div className="border-b border-border bg-slate-50/60 px-5 py-5">
-      <div className="grid gap-6 sm:grid-cols-2">
+    <div className="rounded-2xl border border-border bg-white">
 
-        {/* Left column */}
-        <div className="space-y-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Name</p>
-            <p className="mt-0.5 text-[14px] text-navy-900">{person.display_name}</p>
-          </div>
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
-            <div className="mt-1">
-              <span
-                className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-                style={bStyle}
-              >
-                {ROLE_LABEL[person.space_role] ?? person.space_role}
-              </span>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Joined</p>
-            <p className="mt-0.5 text-[14px] text-navy-900">{formatDate(person.joined_at)}</p>
-          </div>
-
-          {person.bio && (
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bio</p>
-              <p className="mt-0.5 text-[13px] leading-relaxed text-slate-600">{person.bio}</p>
-            </div>
-          )}
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Email</p>
-            {/* TODO: Expose email via a creator-only members endpoint */}
-            <p className="mt-0.5 text-[13px] italic text-slate-400">Not available in this view</p>
-          </div>
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
-            <span
-              className="mt-1 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-              style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}
-            >
-              Active
-            </span>
-            {/* TODO: Surface paused/invited/removed statuses once creator endpoint exposes them */}
-          </div>
-        </div>
-
-        {/* Right column */}
-        <div className="space-y-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              Current pathway
-            </p>
-            {/* TODO: Connect to enrollment data (/api/spaces/{slug}/members/{id}/enrollments) */}
-            <p className="mt-0.5 text-[13px] italic text-slate-400">Not tracked yet</p>
-          </div>
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              Last activity
-            </p>
-            {/* TODO: Connect to step_progress data to compute last active date */}
-            <p className="mt-0.5 text-[13px] italic text-slate-400">Not tracked yet</p>
-          </div>
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Tags</p>
-            {/* TODO: Add a tags/labels model to space_membership or a join table */}
-            <p className="mt-0.5 text-[13px] italic text-slate-400">No tags yet</p>
-          </div>
-
-          <div>
-            <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              Private creator notes
-            </p>
-            <p className="mb-1.5 text-[11px] text-slate-400">Only you can see these notes.</p>
-            {/* TODO: Persist notes to backend — add a creator_member_notes table or
-                store in space_membership.metadata JSON column */}
-            <textarea
-              rows={3}
-              disabled
-              placeholder="Note saving coming soon…"
-              className="w-full cursor-not-allowed resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-400 placeholder-slate-300 outline-none"
-            />
-          </div>
-        </div>
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <h2 className="text-[15px] font-semibold text-navy-900">Member details</h2>
+        <button
+          onClick={onClose}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+          aria-label="Close"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
       </div>
 
-      <button
-        onClick={onClose}
-        className="mt-4 text-[12px] font-medium text-teal-600 transition-colors hover:text-teal-700"
-      >
-        Close ↑
-      </button>
+      <div className="space-y-5 px-5 py-5">
+
+        {/* Person identity */}
+        <div className="flex items-center gap-3">
+          <Avatar name={person.display_name} />
+          <div>
+            <p className="text-[15px] font-semibold text-navy-900">{person.display_name}</p>
+            {/* TODO: Expose email via a creator-only members endpoint */}
+            <p className="mt-0.5 text-[12px] italic text-slate-400">Email not available in this view</p>
+          </div>
+        </div>
+
+        {/* Status + Role side by side */}
+        <div className="flex flex-wrap gap-5">
+          <FieldRow label="Status">
+            <StatusBadge status={status} />
+            {/* TODO: Surface paused/invited/removed once creator endpoint exposes membership status */}
+          </FieldRow>
+          <FieldRow label="Role">
+            <RoleBadge role={person.space_role} />
+          </FieldRow>
+        </div>
+
+        {/* Joined */}
+        <FieldRow label="Joined">
+          <p className="text-[14px] text-navy-900">{formatDate(person.joined_at)}</p>
+        </FieldRow>
+
+        {/* Bio (if present) */}
+        {person.bio && (
+          <FieldRow label="Bio">
+            <p className="text-[13px] leading-relaxed text-slate-600">{person.bio}</p>
+          </FieldRow>
+        )}
+
+        {/* Current pathway */}
+        <FieldRow label="Current pathway">
+          {/* TODO: Connect to enrollment data (/api/spaces/{slug}/members/{id}/enrollments) */}
+          <p className="text-[13px] italic text-slate-400">Not tracked yet</p>
+        </FieldRow>
+
+        {/* Last activity */}
+        <FieldRow label="Last activity">
+          {/* TODO: Aggregate from step_progress to compute last active date per member */}
+          <p className="text-[13px] italic text-slate-400">Not tracked yet</p>
+        </FieldRow>
+
+        {/* Tags */}
+        <FieldRow label="Tags">
+          {/* TODO: Add a tags/labels model to space_membership or a separate join table */}
+          <p className="text-[13px] italic text-slate-400">No tags yet</p>
+          <button
+            disabled
+            title="Tag saving coming soon"
+            className="mt-2 cursor-not-allowed rounded-full border border-dashed border-slate-300 px-2.5 py-0.5 text-[11px] font-medium text-slate-400 transition-colors hover:border-teal-300 hover:text-teal-500"
+          >
+            + Add tag
+          </button>
+        </FieldRow>
+
+        {/* Divider */}
+        <div className="border-t border-border" />
+
+        {/* Private creator notes */}
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Private creator notes
+          </p>
+          <p className="mb-2 mt-0.5 text-[11px] text-slate-400">Only you can see these notes.</p>
+          {/* TODO: Persist private creator notes when member notes API is available. */}
+          <textarea
+            rows={4}
+            disabled
+            placeholder="Add a private note about this person..."
+            className="w-full cursor-not-allowed resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-400 placeholder-slate-300 outline-none"
+          />
+          <p className="mt-1.5 text-[11px] text-slate-400">Note saving coming soon.</p>
+        </div>
+
+      </div>
     </div>
   )
 }
@@ -184,10 +210,11 @@ function PersonDetail({
 // ---------------------------------------------------------------------------
 
 function InviteModal({ onClose }: { onClose: () => void }) {
-  const [name, setName]     = useState('')
-  const [email, setEmail]   = useState('')
-  const [note, setNote]     = useState('')
-  const [sent, setSent]     = useState(false)
+  const [name, setName]   = useState('')
+  const [email, setEmail] = useState('')
+  const [role, setRole]   = useState('learner')
+  const [note, setNote]   = useState('')
+  const [sent, setSent]   = useState(false)
 
   return (
     <>
@@ -196,6 +223,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
         onClick={onClose}
       />
       <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl">
+
         {sent ? (
           <div className="py-4 text-center">
             <div
@@ -203,13 +231,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
               style={{ background: 'rgba(56,160,158,0.10)' }}
             >
               <svg width="20" height="16" viewBox="0 0 20 16" fill="none" aria-hidden="true">
-                <path
-                  d="M2 8l5 5L18 2"
-                  stroke="#38A09E"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+                <path d="M2 8l5 5L18 2" stroke="#38A09E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
             <p className="text-[16px] font-semibold text-navy-900">Invite queued</p>
@@ -239,12 +261,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
                 aria-label="Close"
               >
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-                  <path
-                    d="M1 1l12 12M13 1L1 13"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
+                  <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               </button>
             </div>
@@ -262,9 +279,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
               </div>
 
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                  Email address
-                </label>
+                <label className="mb-1 block text-[12px] font-semibold text-slate-600">Email address</label>
                 <input
                   type="email"
                   value={email}
@@ -272,6 +287,19 @@ function InviteModal({ onClose }: { onClose: () => void }) {
                   placeholder="jane@example.com"
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
                 />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-[12px] font-semibold text-slate-600">Role</label>
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
+                >
+                  <option value="learner">Member</option>
+                  <option value="moderator">Moderator</option>
+                  <option value="creator">Leader</option>
+                </select>
               </div>
 
               <div>
@@ -290,10 +318,8 @@ function InviteModal({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="mt-6 flex items-center justify-between gap-3">
-              <p className="text-[11px] text-slate-400">
-                {/* TODO: Connect invite flow to backend/email service. */}
-                Invite emails are not yet sent.
-              </p>
+              {/* TODO: Connect invite flow to backend/email service. */}
+              <p className="text-[11px] text-slate-400">Invite emails are not yet sent.</p>
               <button
                 disabled={!email.trim()}
                 onClick={() => setSent(true)}
@@ -311,7 +337,138 @@ function InviteModal({ onClose }: { onClose: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Main client component
+// People list (table + mobile cards)
+// ---------------------------------------------------------------------------
+
+const COL_DESKTOP = '1fr 100px 110px 130px'
+
+function PeopleList({
+  filtered,
+  totalCount,
+  statusFilter,
+  selected,
+  onSelect,
+  onInvite,
+}: {
+  filtered: MemberProfile[]
+  totalCount: number
+  statusFilter: string
+  selected: MemberProfile | null
+  onSelect: (m: MemberProfile) => void
+  onInvite: () => void
+}) {
+  if (filtered.length === 0) {
+    return (
+      <div className="px-6 py-14 text-center">
+        {totalCount === 0 ? (
+          <>
+            <p className="mb-1 text-[15px] font-semibold text-navy-900">No people yet.</p>
+            <p className="mb-5 text-[14px] leading-relaxed text-slate-500">
+              Invite your first person when you are ready to open this collective.
+            </p>
+            <button
+              onClick={onInvite}
+              className="rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            >
+              Invite person
+            </button>
+          </>
+        ) : statusFilter !== 'all' && statusFilter !== 'active' ? (
+          <>
+            <p className="text-[14px] text-slate-500">
+              No members with <span className="font-medium capitalize">{statusFilter}</span> status.
+            </p>
+            {/* TODO: Surface invited/paused/completed/removed once creator endpoint exposes all statuses */}
+            <p className="mt-1 text-[13px] italic text-slate-400">
+              Status tracking beyond Active is coming soon.
+            </p>
+          </>
+        ) : (
+          <p className="text-[14px] text-slate-400">No people match your search.</p>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      {/* Column headers */}
+      <div
+        className="hidden border-b border-border px-5 py-2.5 sm:grid"
+        style={{ gridTemplateColumns: COL_DESKTOP }}
+      >
+        {['Person', 'Status', 'Role', 'Joined'].map((h) => (
+          <p key={h} className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            {h}
+          </p>
+        ))}
+      </div>
+
+      <ul>
+        {filtered.map((m, i) => {
+          const isLast     = i === filtered.length - 1
+          const isSelected = selected?.id === m.id
+          const status     = memberStatus(m)
+
+          return (
+            <li key={m.id}>
+              <button
+                onClick={() => onSelect(m)}
+                className={`w-full cursor-pointer text-left transition-colors ${
+                  !isLast ? 'border-b border-border' : ''
+                } ${
+                  isSelected
+                    ? 'bg-teal-50/50'
+                    : 'hover:bg-teal-50/30'
+                }`}
+                style={isSelected ? { borderLeft: '2px solid rgba(56,160,158,0.50)' } : {}}
+              >
+                {/* Desktop row */}
+                <div
+                  className="hidden items-center gap-3 px-5 py-3.5 sm:grid"
+                  style={{ gridTemplateColumns: COL_DESKTOP }}
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar name={m.display_name} />
+                    <div className="min-w-0">
+                      <p className="truncate text-[14px] font-medium text-navy-900">
+                        {m.display_name}
+                      </p>
+                      {/* TODO: Show email once creator endpoint exposes it */}
+                      <p className="truncate text-[12px] italic text-slate-400">
+                        Email not available
+                      </p>
+                    </div>
+                  </div>
+                  <StatusBadge status={status} />
+                  <RoleBadge role={m.space_role} />
+                  <span className="text-[13px] text-slate-500">{formatDate(m.joined_at)}</span>
+                </div>
+
+                {/* Mobile card */}
+                <div className="flex items-start gap-3 px-5 py-4 sm:hidden">
+                  <Avatar name={m.display_name} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14px] font-medium text-navy-900">{m.display_name}</p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <StatusBadge status={status} />
+                      <RoleBadge role={m.space_role} />
+                    </div>
+                    <p className="mt-1 text-[12px] text-slate-400">{formatDate(m.joined_at)}</p>
+                  </div>
+                </div>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main export
 // ---------------------------------------------------------------------------
 
 interface Props {
@@ -319,11 +476,22 @@ interface Props {
   spaceName: string
 }
 
+// Status options — all statuses shown; backend currently only returns 'active'
+const STATUS_OPTIONS = [
+  { value: 'all',       label: 'All statuses' },
+  { value: 'active',    label: 'Active' },
+  // TODO: Filter by these once creator endpoint exposes all membership statuses
+  { value: 'invited',   label: 'Invited' },
+  { value: 'paused',    label: 'Paused' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'removed',   label: 'Removed' },
+]
+
 export default function PeopleClient({ members, spaceName }: Props) {
-  const [search, setSearch]         = useState('')
-  const [roleFilter, setRoleFilter] = useState('all')
-  const [selected, setSelected]     = useState<MemberProfile | null>(null)
-  const [inviteOpen, setInviteOpen] = useState(false)
+  const [search, setSearch]           = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [selected, setSelected]       = useState<MemberProfile | null>(null)
+  const [inviteOpen, setInviteOpen]   = useState(false)
 
   const now = new Date()
   const newThisMonth = members.filter((m) => {
@@ -333,20 +501,23 @@ export default function PeopleClient({ members, spaceName }: Props) {
 
   const filtered = useMemo(() => {
     let list = members
-    if (roleFilter !== 'all') list = list.filter((m) => m.space_role === roleFilter)
+    // All current members have status 'active'; non-active filters return empty (future-ready)
+    if (statusFilter !== 'all') {
+      list = list.filter(() => statusFilter === 'active')
+    }
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter((m) => m.display_name.toLowerCase().includes(q))
     }
     return list
-  }, [members, roleFilter, search])
+  }, [members, statusFilter, search])
 
-  function toggleSelected(m: MemberProfile) {
+  function handleSelect(m: MemberProfile) {
     setSelected((prev) => (prev?.id === m.id ? null : m))
   }
 
   return (
-    <div className="max-w-5xl space-y-6 px-8 py-8 md:px-10 md:py-10">
+    <div className="max-w-6xl space-y-6 px-8 py-8 md:px-10 md:py-10">
 
       {/* ── Header ── */}
       <div>
@@ -365,11 +536,11 @@ export default function PeopleClient({ members, spaceName }: Props) {
       {/* ── Stats row ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: 'Total people',    value: members.length },
-          { label: 'Active members',  value: members.length },
+          { label: 'Total people',   value: members.length },
+          { label: 'Active members', value: members.length },
           // TODO: Surface invited count once invitation table/endpoint exists
-          { label: 'Invited',         value: 0 },
-          { label: 'New this month',  value: newThisMonth },
+          { label: 'Invited',        value: 0 },
+          { label: 'New this month', value: newThisMonth },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-xl border border-border bg-white p-4">
             <p className="font-serif text-2xl text-navy-900">{value}</p>
@@ -378,126 +549,63 @@ export default function PeopleClient({ members, spaceName }: Props) {
         ))}
       </div>
 
-      {/* ── Main card ── */}
-      <div className="rounded-2xl border border-border bg-white">
+      {/* ── Main area: list + detail panel ── */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
 
-        {/* Search + filter bar */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
-          <input
-            type="text"
-            placeholder="Search by name…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="min-w-[160px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
+        {/* List card */}
+        <div className="min-w-0 flex-1 rounded-2xl border border-border bg-white">
+
+          {/* Toolbar */}
+          <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
+            <input
+              type="text"
+              placeholder="Search by name…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="min-w-[140px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            {/* TODO: Add filter by pathway once enrollment data is available */}
+            {/* TODO: Add filter by tag once tags model exists */}
+            <button
+              onClick={() => setInviteOpen(true)}
+              className="ml-auto shrink-0 rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            >
+              Invite person
+            </button>
+          </div>
+
+          {/* List */}
+          <PeopleList
+            filtered={filtered}
+            totalCount={members.length}
+            statusFilter={statusFilter}
+            selected={selected}
+            onSelect={handleSelect}
+            onInvite={() => setInviteOpen(true)}
           />
-          <select
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
-          >
-            <option value="all">All roles</option>
-            <option value="learner">Members</option>
-            <option value="moderator">Moderators</option>
-            <option value="creator">Leaders</option>
-          </select>
-          {/* TODO: Add filter by pathway once enrollment data is available */}
-          {/* TODO: Add filter by tag once tags model exists */}
-          <button
-            onClick={() => setInviteOpen(true)}
-            className="ml-auto shrink-0 rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-          >
-            Invite person
-          </button>
         </div>
 
-        {/* People list */}
-        {filtered.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <p className="text-[14px] text-slate-400">
-              {members.length === 0
-                ? 'No people in this collective yet.'
-                : 'No people match your search.'}
-            </p>
-          </div>
-        ) : (
-          <div>
-            {/* Column headers — desktop only */}
-            <div
-              className="hidden border-b border-border px-5 py-2.5 sm:grid"
-              style={{ gridTemplateColumns: '1fr 130px 150px' }}
-            >
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Name</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Joined</p>
-            </div>
-
-            <ul>
-              {filtered.map((m, i) => {
-                const isLast     = i === filtered.length - 1
-                const isSelected = selected?.id === m.id
-
-                return (
-                  <li key={m.id}>
-                    {/* Row button */}
-                    <button
-                      onClick={() => toggleSelected(m)}
-                      className={`w-full cursor-pointer text-left transition-colors ${
-                        !isLast || isSelected ? 'border-b border-border' : ''
-                      } ${isSelected ? 'bg-teal-50/40' : 'hover:bg-slate-50'}`}
-                    >
-                      {/* Desktop row */}
-                      <div
-                        className="hidden items-center gap-3 px-5 py-3.5 sm:grid"
-                        style={{ gridTemplateColumns: '1fr 130px 150px' }}
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <Avatar name={m.display_name} />
-                          <span className="truncate text-[14px] font-medium text-navy-900">
-                            {m.display_name}
-                          </span>
-                        </div>
-                        <RoleBadge role={m.space_role} />
-                        <span className="text-[13px] text-slate-500">
-                          {formatDate(m.joined_at)}
-                        </span>
-                      </div>
-
-                      {/* Mobile card */}
-                      <div className="flex items-start gap-3 px-5 py-4 sm:hidden">
-                        <Avatar name={m.display_name} />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[14px] font-medium text-navy-900">
-                            {m.display_name}
-                          </p>
-                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                            <RoleBadge role={m.space_role} />
-                            <span className="text-[12px] text-slate-400">
-                              {formatDate(m.joined_at)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-
-                    {/* Inline detail panel */}
-                    {isSelected && (
-                      <PersonDetail
-                        person={m}
-                        onClose={() => setSelected(null)}
-                      />
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
+        {/* Detail panel — right side on lg+, stacked below on mobile */}
+        {selected && (
+          <div className="w-full lg:w-[300px] lg:shrink-0 xl:w-[320px]">
+            <DetailPanel person={selected} onClose={() => setSelected(null)} />
           </div>
         )}
       </div>
 
       {/* ── Privacy note ── */}
-      <p className="text-[12px] text-slate-400">
-        <span className="font-medium text-slate-500">Private to creator admins.</span>{' '}
+      <p className="text-[13px] text-slate-500">
+        <span className="font-medium">Private to creator admins.</span>{' '}
         Use member information respectfully and only for managing this collective.
       </p>
 
