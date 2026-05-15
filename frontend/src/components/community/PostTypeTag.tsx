@@ -1,5 +1,5 @@
 const TYPE_STYLES: Record<string, string> = {
-  announcement: 'bg-gold-100 text-gold-800',
+  announcement: 'bg-teal-900/10 text-teal-800',
   prompt:       'bg-teal-50 text-teal-700',
   reflection:   'bg-navy-50 text-navy-600',
   discussion:   'bg-slate-100 text-slate-600',

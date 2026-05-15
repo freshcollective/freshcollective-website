@@ -46,7 +46,7 @@ export default async function SpaceMembersPage({ params }: Props) {
             ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-border bg-surface px-6 py-8 text-center">
+          <div className="rounded-2xl border border-teal-100 bg-white px-6 py-8 text-center">
             <p className="text-sm text-slate-400">No members yet — be the first to join.</p>
           </div>
         )}

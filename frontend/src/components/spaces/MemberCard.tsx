@@ -27,7 +27,7 @@ export default function MemberCard({ member }: MemberCardProps) {
   return (
     <Link
       href={`/profile/${member.id}`}
-      className="group block rounded-xl border border-border bg-surface px-5 py-5 transition-shadow hover:shadow-[var(--fc-shadow-card)]"
+      className="group block rounded-2xl border border-border bg-white px-5 py-5 transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-sm"
     >
       <div className="flex items-start gap-4">
         <Avatar name={member.display_name} avatarUrl={member.avatar_url} size="md" />

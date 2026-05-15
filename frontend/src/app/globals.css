@@ -2,7 +2,7 @@
 @import "../styles/tokens.css";
 
 @theme {
-  --color-background: #F5F7FA;
+  --color-background: #F7FBFA;
   --color-surface:    #FFFFFF;
 
   --color-navy-950: #0C1826;

@@ -15,6 +15,21 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
   audio: 'Listen',
 }
 
+// Deterministic cover gradient
+const COVERS = [
+  'linear-gradient(135deg, #073B3A 0%, #0F5E5C 100%)',
+  'linear-gradient(135deg, #071824 0%, #073B3A 100%)',
+  'linear-gradient(135deg, #0F5E5C 0%, #38A09E 100%)',
+  'linear-gradient(135deg, #062F35 0%, #0A5759 100%)',
+  'linear-gradient(135deg, #0A5759 0%, #2d9096 100%)',
+]
+
+function coverGradient(slug: string): string {
+  let h = 0
+  for (let i = 0; i < slug.length; i++) h = ((h << 5) - h + slug.charCodeAt(i)) | 0
+  return COVERS[Math.abs(h) % COVERS.length]
+}
+
 function StepRow({
   step,
   spaceSlug,
@@ -32,8 +47,10 @@ function StepRow({
     <Link
       href={href}
       className={[
-        'group flex items-start gap-4 rounded-xl border px-5 py-4 transition-shadow hover:shadow-[var(--fc-shadow-card)]',
-        step.is_completed ? 'border-teal-200 bg-teal-50/40' : 'border-border bg-surface',
+        'group flex items-start gap-4 rounded-2xl border px-5 py-4 transition-all hover:-translate-y-0.5 hover:shadow-sm',
+        step.is_completed
+          ? 'border-teal-200 bg-teal-50/40 hover:border-teal-300'
+          : 'border-border bg-white hover:border-teal-200',
       ].join(' ')}
     >
       <div
@@ -41,7 +58,7 @@ function StepRow({
           'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
           step.is_completed
             ? 'bg-teal-500 text-white'
-            : 'bg-navy-50 text-navy-400',
+            : 'bg-teal-50 text-teal-600',
         ].join(' ')}
       >
         {step.is_completed ? '✓' : index + 1}
@@ -62,7 +79,7 @@ function StepRow({
         </div>
       </div>
 
-      <span className="shrink-0 text-slate-300 transition-colors group-hover:text-teal-500">
+      <span className="shrink-0 self-center text-slate-300 transition-colors group-hover:text-teal-500">
         →
       </span>
     </Link>
@@ -89,16 +106,37 @@ export default async function PathwayDetailPage({ params }: Props) {
     <div className="max-w-2xl">
       <Link
         href={`/spaces/${slug}/pathways`}
-        className="mb-6 inline-block text-sm text-slate-400 hover:text-navy-700"
+        className="mb-6 inline-block text-sm text-slate-400 transition-colors hover:text-teal-600"
       >
         ← All Pathways
       </Link>
 
-      <div className="mb-2 h-px w-6 bg-gold-500" />
-      <h2 className="mb-2 font-serif text-3xl text-navy-900">{pathway.title}</h2>
-      {pathway.description && (
-        <p className="mb-6 text-sm leading-relaxed text-slate-500">{pathway.description}</p>
-      )}
+      {/* Visual pathway banner */}
+      <div
+        className="mb-6 overflow-hidden rounded-2xl"
+        style={{ background: coverGradient(pathwaySlug) }}
+      >
+        <div
+          className="px-7 py-8"
+          style={{ background: 'radial-gradient(ellipse at 85% 15%, rgba(255,255,255,0.06) 0%, transparent 55%)' }}
+        >
+          <div
+            className="mb-3 h-[2px] w-8"
+            style={{ background: 'rgba(255,255,255,0.35)' }}
+          />
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
+            style={{ color: 'rgba(255,255,255,0.55)' }}>
+            Pathway
+          </p>
+          <h2 className="font-serif text-2xl text-white md:text-3xl">{pathway.title}</h2>
+          {pathway.description && (
+            <p className="mt-2 max-w-md text-[14px] leading-relaxed"
+              style={{ color: 'rgba(255,255,255,0.72)' }}>
+              {pathway.description}
+            </p>
+          )}
+        </div>
+      </div>
 
       {pathway.step_count > 0 && (
         <div className="mb-8">
@@ -106,7 +144,7 @@ export default async function PathwayDetailPage({ params }: Props) {
             <span>{pathway.completed_count} of {pathway.step_count} steps complete</span>
             <span>{progressPct}%</span>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-navy-100">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
             <div
               className="h-full rounded-full bg-teal-500 transition-all"
               style={{ width: `${progressPct}%` }}
@@ -119,7 +157,8 @@ export default async function PathwayDetailPage({ params }: Props) {
         <div className="mb-8">
           <Link
             href={continueHref}
-            className="inline-block rounded-full bg-teal-500 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-600"
+            className="inline-block rounded-full px-5 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
             {pathway.completed_count === 0 ? 'Begin' : pathway.completed_count >= pathway.step_count ? 'Review' : 'Continue'}
           </Link>
@@ -127,7 +166,7 @@ export default async function PathwayDetailPage({ params }: Props) {
       )}
 
       {pathway.steps.length === 0 ? (
-        <div className="rounded-xl border border-border bg-surface p-6 text-sm text-slate-500">
+        <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-slate-500">
           Steps for this pathway are coming soon.
         </div>
       ) : (

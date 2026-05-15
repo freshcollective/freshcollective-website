@@ -19,7 +19,7 @@ export default async function SpaceCommunityPage({ params }: Props) {
 
       {/* Intro */}
       <div className="mb-8">
-        <div className="mb-2 h-px w-8 bg-gold-400" />
+        <div className="mb-2 h-[2px] w-8 rounded-full bg-teal-400" />
         <h2 className="mb-2 font-serif text-2xl text-navy-900">Community</h2>
         <p className="text-sm leading-relaxed text-slate-500">
           A place to reflect, explore, and move through the work together.
@@ -56,7 +56,7 @@ export default async function SpaceCommunityPage({ params }: Props) {
       ) : (
         <>
           {!pinned.length && (
-            <div className="mb-6 rounded-xl border border-border bg-surface px-7 py-10 text-center">
+            <div className="mb-6 rounded-2xl border border-teal-100 bg-white px-7 py-10 text-center">
               <p className="mb-2 font-serif text-xl text-navy-800">
                 The conversation begins with you.
               </p>

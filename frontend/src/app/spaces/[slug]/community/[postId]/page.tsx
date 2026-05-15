@@ -93,7 +93,7 @@ export default async function PostDetailPage({ params }: Props) {
         </h2>
 
         {post.comments.length > 0 ? (
-          <div className="mb-2 rounded-xl border border-border bg-surface px-5 divide-border">
+          <div className="mb-2 rounded-2xl border border-teal-100 bg-white px-5 divide-y divide-border">
             {post.comments.map((c) => (
               <CommentBlock key={c.id} comment={c} />
             ))}

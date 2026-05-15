@@ -12,7 +12,7 @@ export default async function SpaceEventsPage({ params }: Props) {
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-2 h-px w-6 bg-gold-500" />
+      <div className="mb-2 h-[2px] w-8 rounded-full bg-teal-400" />
       <h2 className="mb-2 font-serif text-2xl text-navy-900">Live Experiences</h2>
       <p className="mb-8 text-sm leading-relaxed text-slate-500">
         Live calls, workshops, and integration sessions. These are moments to gather,
@@ -26,7 +26,7 @@ export default async function SpaceEventsPage({ params }: Props) {
           ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-surface px-7 py-8">
+        <div className="rounded-2xl border border-teal-100 bg-white px-7 py-8">
           <p className="mb-1 font-serif text-lg text-navy-700">
             No upcoming sessions yet.
           </p>

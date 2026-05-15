@@ -60,7 +60,7 @@ export default function StepActions({
 
       {/* Reflection space */}
       <div className="mb-8">
-        <div className="mb-1 h-px w-6 bg-gold-400" />
+        <div className="mb-1 h-[2px] w-6 rounded-full bg-teal-400" />
         <label className="mb-1 block font-serif text-lg text-navy-800" htmlFor="step-notes">
           Your reflection
         </label>

@@ -54,7 +54,7 @@ export default async function DashboardPage() {
       {/* ── Top navigation bar ── */}
       <header
         className="border-b border-border bg-surface py-3.5"
-        style={{ borderTop: '2px solid var(--color-gold-500)' }}
+        style={{ borderTop: '2px solid #38A09E' }}
       >
         <Container className="flex items-center justify-between">
           <span className="font-serif text-lg text-navy-900">Fresh Collective</span>
@@ -174,11 +174,10 @@ export default async function DashboardPage() {
               <Link
                 href={`/spaces/fresh-collective/events/${nextEvent.id}`}
                 className="group flex flex-col rounded-2xl border bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                style={{ borderColor: 'rgba(166,126,30,0.20)', borderLeft: '3px solid var(--color-gold-400)' }}
+                style={{ borderColor: 'rgba(56,160,158,0.20)', borderLeft: '3px solid #55B8B6' }}
               >
                 <p
-                  className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                  style={{ color: 'var(--color-gold-500)' }}
+                  className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600"
                 >
                   Coming up
                 </p>
@@ -188,22 +187,16 @@ export default async function DashboardPage() {
                 <p className="mt-1.5 text-[12px] text-slate-400">
                   {formatEventDate(nextEvent.starts_at)}
                 </p>
-                <p
-                  className="mt-3 text-[12px] font-semibold"
-                  style={{ color: 'var(--color-gold-500)' }}
-                >
+                <p className="mt-3 text-[12px] font-semibold text-teal-600">
                   View details →
                 </p>
               </Link>
             ) : (
               <div
                 className="flex flex-col rounded-2xl border bg-white p-5"
-                style={{ borderColor: 'rgba(166,126,30,0.15)', borderLeft: '3px solid rgba(166,126,30,0.25)' }}
+                style={{ borderColor: 'rgba(56,160,158,0.15)', borderLeft: '3px solid rgba(56,160,158,0.30)' }}
               >
-                <p
-                  className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                  style={{ color: 'var(--color-gold-500)' }}
-                >
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-500">
                   Coming up
                 </p>
                 <p className="flex-1 font-serif text-[17px] text-slate-400">

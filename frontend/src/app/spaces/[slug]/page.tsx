@@ -14,9 +14,9 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
-function SectionLabel({ children, gold }: { children: React.ReactNode; gold?: boolean }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className={['mb-4 text-[10px] font-semibold uppercase tracking-[0.12em]', gold ? 'text-gold-600' : 'text-teal-600'].join(' ')}>
+    <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-teal-600">
       {children}
     </p>
   )
@@ -100,7 +100,7 @@ export default async function SpacePage({ params }: Props) {
 
         {/* Upcoming Events */}
         <section>
-          <SectionLabel gold>Live experiences</SectionLabel>
+          <SectionLabel>Live experiences</SectionLabel>
           {events.length > 0 ? (
             <div className="flex flex-col gap-3">
               {events.slice(0, 3).map((e) => (
@@ -118,7 +118,7 @@ export default async function SpacePage({ params }: Props) {
           ) : (
             <div
               className="rounded-2xl border bg-white px-6 py-6"
-              style={{ borderColor: 'rgba(166,126,30,0.15)', borderLeft: '3px solid rgba(166,126,30,0.30)' }}
+              style={{ borderColor: 'rgba(56,160,158,0.15)', borderLeft: '3px solid rgba(56,160,158,0.30)' }}
             >
               <p className="mb-1 font-serif text-base text-navy-700">
                 Nothing scheduled yet.
@@ -194,10 +194,10 @@ export default async function SpacePage({ params }: Props) {
       <Divider />
       <section>
         <div
-          className="rounded-xl border border-gold-200 px-6 py-5"
-          style={{ background: 'rgba(212,176,72,0.04)' }}
+          className="rounded-2xl border border-teal-100 px-6 py-5"
+          style={{ background: 'rgba(56,160,158,0.04)' }}
         >
-          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-700">
+          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-teal-600">
             A note
           </p>
           <p className="font-serif text-lg text-navy-900">

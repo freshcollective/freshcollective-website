@@ -20,7 +20,7 @@ export default async function ExploreCollectivesPage() {
       {/* ── Top navigation bar (matches dashboard) ── */}
       <header
         className="border-b border-border bg-surface py-3.5"
-        style={{ borderTop: '2px solid var(--color-gold-500)' }}
+        style={{ borderTop: '2px solid #38A09E' }}
       >
         <Container className="flex items-center justify-between">
           <Link

@@ -29,23 +29,24 @@ export default function EventCard({ event, spaceSlug }: EventCardProps) {
   return (
     <Link
       href={href}
-      className="group flex items-start gap-5 rounded-2xl border bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-      style={{ borderColor: 'rgba(166,126,30,0.20)', borderLeft: '3px solid var(--color-gold-400)' }}
+      className="group flex items-start gap-5 rounded-2xl border bg-white p-5 transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
+      style={{ borderColor: 'rgba(56,160,158,0.20)', borderLeft: '3px solid #38A09E' }}
     >
       {/* Date block */}
       <div className="shrink-0 text-center">
         <div className="font-serif text-2xl leading-none text-navy-900">{day}</div>
-        <div className="mt-0.5 text-xs font-medium uppercase tracking-wider text-gold-600">{month}</div>
+        <div className="mt-0.5 text-xs font-semibold uppercase tracking-wider text-teal-600">{month}</div>
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-medium text-teal-700">
+          <span className="rounded-full px-2.5 py-0.5 text-xs font-medium text-teal-700"
+            style={{ background: 'rgba(56,160,158,0.10)' }}>
             {locationLabel}
           </span>
           <span className="text-xs text-slate-400">{time} UTC</span>
         </div>
-        <p className="font-medium text-navy-900 group-hover:text-teal-700 transition-colors">
+        <p className="font-medium text-navy-900 transition-colors group-hover:text-teal-700">
           {event.title}
         </p>
         {event.description && (

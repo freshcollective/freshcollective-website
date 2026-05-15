@@ -96,12 +96,12 @@ export default async function EventDetailPage({ params }: Props) {
 
       {/* Header */}
       <div className="mb-8">
-        <div className="mb-3 h-px w-6 bg-gold-500" />
+        <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
         <h1 className="font-serif text-3xl leading-snug text-navy-900">{event.title}</h1>
       </div>
 
       {/* Date / time / location */}
-      <div className="mb-8 flex flex-col gap-2 rounded-xl border border-border bg-surface px-6 py-5">
+      <div className="mb-8 flex flex-col gap-2 rounded-2xl border border-teal-100 bg-white px-6 py-5">
         <div className="flex items-start gap-3">
           <span className="w-20 shrink-0 text-xs font-medium uppercase tracking-wider text-slate-400">Date</span>
           <span className="text-sm text-navy-800">{formatFullDate(event.starts_at)}</span>

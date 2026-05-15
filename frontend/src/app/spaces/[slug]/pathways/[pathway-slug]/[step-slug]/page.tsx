@@ -187,7 +187,7 @@ export default async function StepPage({ params }: Props) {
           <span>{completedCount} of {totalCount} complete</span>
           <span>Step {step.position} of {totalCount}</span>
         </div>
-        <div className="h-0.5 w-full overflow-hidden rounded-full bg-navy-100">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
           <div
             className="h-full rounded-full bg-teal-400 transition-all duration-500"
             style={{ width: `${totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%` }}
@@ -208,7 +208,7 @@ export default async function StepPage({ params }: Props) {
             </>
           )}
         </div>
-        <div className="mb-3 h-px w-8 bg-gold-400" />
+        <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
         <h1 className="font-serif text-3xl leading-snug text-navy-900 md:text-4xl">
           {step.title}
         </h1>
