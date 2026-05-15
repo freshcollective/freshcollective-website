@@ -166,11 +166,17 @@ export default async function PathwayDetailPage({ params }: Props) {
 
       {/* ── Locked pathway view ── */}
       {locked ? (
-        <div className="rounded-2xl border border-border bg-white p-6">
+        <div
+          className="rounded-2xl border bg-white p-6"
+          style={{ borderColor: 'rgba(56,160,158,0.20)' }}
+        >
           <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100">
+            <div
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+              style={{ background: 'rgba(56,160,158,0.08)' }}
+            >
               <svg
-                className="h-5 w-5 text-slate-400"
+                className="h-5 w-5 text-teal-500"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -182,26 +188,25 @@ export default async function PathwayDetailPage({ params }: Props) {
             </div>
             <div className="flex-1">
               <p className="font-serif text-[17px] text-navy-900">
-                This pathway requires access
+                {pathway.access_type === 'subscription'
+                  ? 'Monthly access required'
+                  : 'Individual access required'}
               </p>
               {priceLabel && (
                 <p className="mt-1 text-[14px] text-slate-500">
-                  Available for {priceLabel}
+                  Available for{' '}
+                  <span className="font-semibold text-navy-900">{priceLabel}</span>
                 </p>
               )}
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                {/* TODO: Route paid pathway unlock through checkout once Stripe is wired. */}
-                <button
-                  disabled
-                  className="rounded-full px-5 py-2 text-sm font-semibold text-white opacity-50 cursor-not-allowed"
-                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                  title="Payment access coming soon"
-                >
-                  {unlockLabel}
-                </button>
-                <span className="text-[12px] text-slate-400">
-                  Payment access coming soon.
-                </span>
+              {/* TODO: Route paid pathway unlock through checkout once Stripe is wired. */}
+              <div
+                className="mt-4 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-medium"
+                style={{ background: 'rgba(56,160,158,0.08)', color: '#073B3A' }}
+              >
+                <svg className="h-3.5 w-3.5 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Unlock access — coming soon
               </div>
             </div>
           </div>

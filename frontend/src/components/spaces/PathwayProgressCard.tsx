@@ -3,7 +3,6 @@ import PathwayCover from '@/components/ui/PathwayCover'
 import {
   isPathwayLocked,
   accessBadgeLabel,
-  unlockCtaLabel,
   formatPathwayPrice,
 } from '@/lib/pathwayAccess'
 import type { PathwayProgress } from '@/types/platform'
@@ -15,6 +14,7 @@ interface Props {
 
 export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
   const isComingSoon = pathway.status === 'coming_soon'
+  // TODO: Connect pathway purchase/access entitlement once checkout is wired.
   const locked = !isComingSoon && isPathwayLocked(pathway.access_type)
   const href = `/spaces/${spaceSlug}/pathways/${pathway.slug}`
 
@@ -27,33 +27,25 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
   const priceLabel = locked
     ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
     : null
-  const ctaUnlock = locked
-    ? unlockCtaLabel(pathway.access_type, pathway.price_cents, pathway.currency, pathway.billing_interval)
-    : null
 
-  const ctaLabel = isComingSoon
-    ? null
-    : locked
-      ? null
-      : pathway.step_count === 0
-        ? 'Explore'
-        : pathway.completed_count === 0
-          ? 'Begin'
-          : pathway.completed_count >= pathway.step_count
-            ? 'Review'
-            : 'Continue'
+  const ctaLabel =
+    pathway.step_count === 0
+      ? 'Explore'
+      : pathway.completed_count === 0
+        ? 'Begin'
+        : pathway.completed_count >= pathway.step_count
+          ? 'Review'
+          : 'Continue'
 
-  return (
-    <div
-      className={[
-        'group flex flex-col overflow-hidden rounded-2xl border border-border bg-white',
-        isComingSoon
-          ? 'opacity-70'
-          : locked
-            ? 'shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md hover:border-slate-200'
-            : 'shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-teal-200/60',
-      ].join(' ')}
-    >
+  const cardClass = [
+    'group flex flex-col overflow-hidden rounded-2xl border border-border bg-white',
+    isComingSoon
+      ? 'opacity-75'
+      : 'shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-teal-200/60',
+  ].join(' ')
+
+  const cardBody = (
+    <>
       {/* Visual cover — with lock icon overlay when locked */}
       <div className="relative">
         <PathwayCover
@@ -63,15 +55,11 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
           isComingSoon={isComingSoon}
         />
         {locked && (
-          <div className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 shadow-sm">
-            <svg
-              className="h-3.5 w-3.5 text-slate-500"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2.5}
-              aria-hidden="true"
-            >
+          <div
+            className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full shadow-sm"
+            style={{ background: 'rgba(255,255,255,0.92)' }}
+          >
+            <svg className="h-3.5 w-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
           </div>
@@ -104,9 +92,17 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
 
         <div className="mt-auto border-t border-border pt-3">
           {isComingSoon ? (
-            <span className="text-[11px] text-slate-400">Coming soon</span>
+            /* Coming soon state */
+            <div className="flex items-center gap-2">
+              <span
+                className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                style={{ background: 'rgba(148,163,184,0.12)', color: '#64748B' }}
+              >
+                Coming soon
+              </span>
+            </div>
           ) : locked ? (
-            /* Locked state */
+            /* Locked state — card is a Link so use spans */
             <div className="flex w-full items-center justify-between gap-3">
               {priceLabel && (
                 <span
@@ -116,20 +112,17 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
                   {priceLabel}
                 </span>
               )}
-              <div className="flex flex-col items-end gap-0.5 text-right">
-                {/* TODO: Connect pathway purchase/access entitlement once checkout is wired. */}
-                <button
-                  disabled
-                  className="text-[12px] font-semibold text-slate-400 cursor-not-allowed"
-                  title="Payment access coming soon"
-                >
-                  {ctaUnlock}
-                </button>
-                <span className="text-[10px] text-slate-300">Coming soon</span>
+              <div className="ml-auto text-right">
+                <span className="block text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
+                  Preview →
+                </span>
+                <span className="block text-[10px] text-slate-400 mt-0.5">
+                  Unlocking coming soon
+                </span>
               </div>
             </div>
           ) : (
-            /* Accessible state */
+            /* Accessible state — card is a Link so use spans */
             <div className="flex w-full items-center justify-between gap-3">
               {badgeLabel && (
                 <span
@@ -143,16 +136,23 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
                   {badgeLabel}
                 </span>
               )}
-              <Link
-                href={href}
-                className="ml-auto text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
-              >
+              <span className="ml-auto text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
                 {ctaLabel} →
-              </Link>
+              </span>
             </div>
           )}
         </div>
       </div>
-    </div>
+    </>
+  )
+
+  if (isComingSoon) {
+    return <div className={cardClass}>{cardBody}</div>
+  }
+
+  return (
+    <Link href={href} className={cardClass}>
+      {cardBody}
+    </Link>
   )
 }
