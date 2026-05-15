@@ -84,7 +84,7 @@ function CollectiveSwitcher({
           >
             Current collective
           </p>
-          <div className="space-y-0.5">
+          <div className="space-y-1">
             {spaces.map((s) => {
               const isActive = s.slug === activeSpace?.slug
               return (
@@ -92,17 +92,17 @@ function CollectiveSwitcher({
                   key={s.slug}
                   type="button"
                   onClick={() => switchTo(s.slug)}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-all ${
+                  className={`flex w-full flex-col rounded-lg px-3 py-2.5 text-left transition-all ${
                     isActive ? 'bg-white/[12%]' : 'hover:bg-white/[6%]'
                   }`}
                 >
                   <span
-                    className="flex-1 truncate text-[13px] font-medium leading-tight"
+                    className="w-full truncate text-[13px] font-medium leading-snug"
                     style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.80)' }}
                   >
                     {s.name}
                   </span>
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div className="mt-1.5 flex items-center gap-1">
                     <span
                       className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
                       style={{
@@ -301,7 +301,7 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden w-[232px] shrink-0 md:block"
+        className="hidden w-[248px] shrink-0 md:block"
         style={{ position: 'sticky', top: 0, height: '100vh' }}
       >
         <SidebarInner
