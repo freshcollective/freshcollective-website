@@ -242,6 +242,17 @@ export interface PublicSpaceCard {
   has_upcoming_event: boolean
 }
 
+export interface SpaceInvitation {
+  id: string
+  space_id: string
+  email: string
+  name: string | null
+  role: 'learner' | 'moderator' | 'creator'
+  note: string | null
+  invited_by_id: string
+  created_at: string
+}
+
 export interface ContinueResponse {
   space_slug: string
   pathway_slug: string

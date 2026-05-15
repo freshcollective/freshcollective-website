@@ -632,3 +632,52 @@ class PostComment(Base):
     __table_args__ = (
         Index("ix_post_comments_post_created", "post_id", "created_at"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Space Invitations
+# ---------------------------------------------------------------------------
+
+class SpaceInvitation(Base):
+    """
+    A creator-issued invitation for someone to join a Space.
+    Stored independently of SpaceMembership because the invitee may not
+    have a platform account yet. When they accept and create an account,
+    a SpaceMembership is created and the invitation can be deleted or
+    marked accepted by a future migration.
+    """
+
+    __tablename__ = "space_invitations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    space_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    email: Mapped[str] = mapped_column(String(254), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    role: Mapped[SpaceRole] = mapped_column(
+        # create_type=False — space_role_enum already exists in the database
+        SAEnum(SpaceRole, name="space_role_enum", create_type=False),
+        nullable=False,
+        default=SpaceRole.learner,
+        server_default="learner",
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invited_by_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+
+    space: Mapped[Space] = relationship("Space")
+
+    __table_args__ = (
+        UniqueConstraint("space_id", "email", name="space_invitations_space_email_unique"),
+        Index("ix_space_invitations_space_id", "space_id"),
+    )

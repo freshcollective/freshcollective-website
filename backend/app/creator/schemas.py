@@ -364,3 +364,48 @@ class StepResourceResponse(BaseModel):
     position: int
     is_downloadable: bool
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Space Invitations
+# ---------------------------------------------------------------------------
+
+class InvitationCreateRequest(BaseModel):
+    email: str
+    name: str | None = None
+    role: str = "learner"
+    note: str | None = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise ValueError("Enter a valid email address.")
+        return v
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if v not in ("learner", "moderator", "creator"):
+            raise ValueError("Invalid role. Must be learner, moderator, or creator.")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip() or None
+        return v
+
+
+class InvitationResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    space_id: str
+    email: str
+    name: str | None
+    role: str
+    note: str | None
+    invited_by_id: str
+    created_at: datetime

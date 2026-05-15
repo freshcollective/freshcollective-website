@@ -10,6 +10,7 @@ Permission model:
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_creator_user
@@ -19,6 +20,8 @@ from app.creator.schemas import (
     EventCreateRequest,
     EventResponse,
     EventUpdateRequest,
+    InvitationCreateRequest,
+    InvitationResponse,
     PathwayCreateRequest,
     PathwayResponse,
     PathwayUpdateRequest,
@@ -43,6 +46,7 @@ from app.models.platform import (
     Pathway,
     PathwayStep,
     Space,
+    SpaceInvitation,
     SpaceMembership,
     StepResource,
 )
@@ -246,6 +250,83 @@ async def upload_cover_image(
     db.commit()
     db.refresh(space)
     return space
+
+
+# ---------------------------------------------------------------------------
+# Invitations
+# ---------------------------------------------------------------------------
+
+@router.get("/spaces/{slug}/invitations", response_model=list[InvitationResponse])
+def list_invitations(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[InvitationResponse]:
+    space = _get_managed_space(slug, current_user, db)
+    invitations = (
+        db.query(SpaceInvitation)
+        .filter(SpaceInvitation.space_id == space.id)
+        .order_by(SpaceInvitation.created_at.desc())
+        .all()
+    )
+    return [InvitationResponse.model_validate(inv) for inv in invitations]
+
+
+@router.post("/spaces/{slug}/invitations", response_model=InvitationResponse, status_code=201)
+def create_invitation(
+    slug: str,
+    body: InvitationCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> InvitationResponse:
+    space = _get_managed_space(slug, current_user, db)
+
+    # Reject if email already belongs to an active member of this space
+    existing_member = (
+        db.query(SpaceMembership)
+        .join(User, User.id == SpaceMembership.user_id)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == "active",
+            func.lower(User.email) == body.email,  # body.email already lowercased
+        )
+        .first()
+    )
+    if existing_member:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This person is already a member of this collective.",
+        )
+
+    # Reject duplicate pending invitation
+    existing_invite = (
+        db.query(SpaceInvitation)
+        .filter(
+            SpaceInvitation.space_id == space.id,
+            SpaceInvitation.email == body.email,
+        )
+        .first()
+    )
+    if existing_invite:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This person has already been invited to this collective.",
+        )
+
+    # TODO: Send invitation email when email service is connected.
+    invitation = SpaceInvitation(
+        id=str(uuid4()),
+        space_id=space.id,
+        email=body.email,
+        name=body.name,
+        role=body.role,
+        note=body.note,
+        invited_by_id=current_user.id,
+    )
+    db.add(invitation)
+    db.commit()
+    db.refresh(invitation)
+    return InvitationResponse.model_validate(invitation)
 
 
 # ---------------------------------------------------------------------------

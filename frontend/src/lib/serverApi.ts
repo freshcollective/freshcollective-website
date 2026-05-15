@@ -187,6 +187,12 @@ export const getCreatorEvent = cache(async (slug: string, eventId: string) => {
   return res.json()
 })
 
+export const getCreatorInvitations = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/invitations`)
+  if (!res.ok) return []
+  return res.json()
+})
+
 export const getCreatorPosts = cache(async (slug: string) => {
   const res = await fetchWithSession(`/api/creator/spaces/${slug}/community`)
   if (!res.ok) return []
