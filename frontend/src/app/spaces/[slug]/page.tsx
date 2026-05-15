@@ -14,9 +14,9 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children, gold }: { children: React.ReactNode; gold?: boolean }) {
   return (
-    <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-700">
+    <p className={['mb-4 text-[10px] font-semibold uppercase tracking-[0.12em]', gold ? 'text-gold-600' : 'text-teal-600'].join(' ')}>
       {children}
     </p>
   )
@@ -100,7 +100,7 @@ export default async function SpacePage({ params }: Props) {
 
         {/* Upcoming Events */}
         <section>
-          <SectionLabel>Live experiences</SectionLabel>
+          <SectionLabel gold>Live experiences</SectionLabel>
           {events.length > 0 ? (
             <div className="flex flex-col gap-3">
               {events.slice(0, 3).map((e) => (

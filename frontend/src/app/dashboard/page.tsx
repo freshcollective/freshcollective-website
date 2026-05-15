@@ -50,6 +50,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
+
+      {/* ── Top navigation bar ── */}
       <header
         className="border-b border-border bg-surface py-3.5"
         style={{ borderTop: '2px solid var(--color-gold-500)' }}
@@ -81,28 +83,29 @@ export default async function DashboardPage() {
           <div
             className="mb-6 overflow-hidden rounded-2xl px-8 py-8 md:px-10 md:py-9"
             style={{
-              background: 'linear-gradient(135deg, #0d2533 0%, #173d50 55%, #10303e 100%)',
+              background: 'linear-gradient(135deg, #EAF7F7 0%, #F0FBFA 55%, #FAFAF8 100%)',
+              border: '1px solid rgba(56,160,158,0.18)',
             }}
           >
             <div
               className="mb-4 h-[2px] w-8"
-              style={{ background: 'linear-gradient(90deg, #C9A83C 0%, transparent 100%)' }}
+              style={{ background: 'linear-gradient(90deg, #38A09E 0%, transparent 100%)' }}
             />
-            <h1 className="font-serif text-3xl text-white md:text-4xl">
+            <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
               Welcome back, {firstName}.
             </h1>
-            <p className="mt-2 text-[15px]" style={{ color: 'rgba(255,255,255,0.48)' }}>
+            <p className="mt-2 text-[15px] text-slate-600">
               Ready to continue where you left off?
             </p>
           </div>
 
-          {/* ── Your space (featured collective card) ── */}
+          {/* ── Your space (featured collective card — the one deep-teal element) ── */}
           <section className="mb-4">
             <Link
               href="/spaces/fresh-collective"
               className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-xl"
               style={{
-                background: 'linear-gradient(135deg, #38A09E 0%, #2d9096 40%, #1e6a6e 100%)',
+                background: 'linear-gradient(135deg, #073B3A 0%, #0d4f4d 50%, #062F35 100%)',
               }}
             >
               <div className="px-7 py-6">
@@ -110,7 +113,7 @@ export default async function DashboardPage() {
                   <div>
                     <p
                       className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]"
-                      style={{ color: 'rgba(255,255,255,0.55)' }}
+                      style={{ color: 'rgba(255,255,255,0.60)' }}
                     >
                       Your space
                     </p>
@@ -119,7 +122,7 @@ export default async function DashboardPage() {
                     </p>
                     <p
                       className="mt-1.5 text-[14px] leading-snug"
-                      style={{ color: 'rgba(255,255,255,0.65)' }}
+                      style={{ color: 'rgba(255,255,255,0.75)' }}
                     >
                       {continueData && !continueData.all_complete
                         ? `Next: ${continueData.step_title}`
@@ -128,7 +131,7 @@ export default async function DashboardPage() {
                   </div>
                   <span
                     className="shrink-0 rounded-lg border px-4 py-2 text-[13px] font-semibold text-white opacity-0 transition-all group-hover:opacity-100"
-                    style={{ borderColor: 'rgba(255,255,255,0.30)', background: 'rgba(255,255,255,0.12)' }}
+                    style={{ borderColor: 'rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.12)' }}
                   >
                     Enter →
                   </span>
@@ -206,7 +209,7 @@ export default async function DashboardPage() {
                 <p className="flex-1 font-serif text-[17px] text-slate-400">
                   No upcoming events yet.
                 </p>
-                <p className="mt-3 text-[12px] text-slate-300">Check back soon.</p>
+                <p className="mt-3 text-[12px] text-slate-400">Check back soon.</p>
               </div>
             )}
           </div>
@@ -215,35 +218,28 @@ export default async function DashboardPage() {
           <section className="mb-4">
             <Link
               href="/dashboard/explore"
-              className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
+              className="group block overflow-hidden rounded-2xl border transition-all hover:-translate-y-0.5 hover:shadow-md"
               style={{
-                background: 'linear-gradient(135deg, #0d2533 0%, #172f3d 100%)',
-                border: '1px solid rgba(56,160,158,0.18)',
+                background: 'linear-gradient(135deg, #EAF7F7 0%, #F0FBFA 100%)',
+                borderColor: 'rgba(56,160,158,0.25)',
               }}
             >
               <div className="px-7 py-5">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p
-                      className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em]"
-                      style={{ color: 'rgba(141,232,230,0.60)' }}
-                    >
+                    <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
                       Discover
                     </p>
-                    <p className="font-serif text-xl text-white transition-opacity group-hover:opacity-85">
+                    <p className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
                       Explore collectives
                     </p>
-                    <p className="mt-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                    <p className="mt-1 text-[13px] text-slate-500">
                       Find other guided collectives, pathways, and communities you may want to join.
                     </p>
                   </div>
                   <span
-                    className="shrink-0 rounded-lg px-4 py-1.5 text-[12px] font-semibold transition-colors"
-                    style={{
-                      background: 'rgba(56,160,158,0.20)',
-                      color: '#8DE8E6',
-                      border: '1px solid rgba(56,160,158,0.30)',
-                    }}
+                    className="shrink-0 rounded-lg px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
                   >
                     Browse →
                   </span>
