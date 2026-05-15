@@ -1,8 +1,10 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import SpaceNav from '@/components/spaces/SpaceNav'
-import { getSpace } from '@/lib/serverApi'
+import CollectiveSwitcher from '@/components/spaces/CollectiveSwitcher'
+import { getSpace, getMe, getMyMemberships } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
+import type { SpaceMembership, UserProfile } from '@/types/platform'
 
 interface Props {
   children: React.ReactNode
@@ -11,7 +13,12 @@ interface Props {
 
 export default async function SpaceLayout({ children, params }: Props) {
   const { slug } = await params
-  const space = await getSpace(slug)
+
+  const [space, user, memberships]: [
+    Awaited<ReturnType<typeof getSpace>>,
+    UserProfile | null,
+    SpaceMembership[],
+  ] = await Promise.all([getSpace(slug), getMe(), getMyMemberships()])
 
   if (!space) notFound()
 
@@ -23,9 +30,12 @@ export default async function SpaceLayout({ children, params }: Props) {
       {/* ── Top navigation bar ── */}
       <header className="border-b border-border bg-surface py-3.5" style={{ borderTop: '2px solid #38A09E' }}>
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 md:px-10">
-          <Link href="/dashboard" className="font-serif text-lg text-navy-900 transition-colors hover:text-teal-600">
-            Fresh Collective
-          </Link>
+          <CollectiveSwitcher
+            memberships={memberships}
+            currentSlug={slug}
+            currentName={space.name}
+            userRole={user?.role ?? 'learner'}
+          />
           <div className="flex items-center gap-4">
             <Link href="/settings" className="text-sm text-slate-500 transition-colors hover:text-navy-700">
               Settings

@@ -274,6 +274,10 @@ def list_pathways_progress(
             position=p.position,
             step_count=step_counts.get(p.id, 0),
             completed_count=completed_counts.get(p.id, 0),
+            access_type=p.access_type.value if hasattr(p.access_type, "value") else str(p.access_type),
+            price_cents=p.price_cents,
+            currency=p.currency,
+            billing_interval=p.billing_interval,
         )
         for p in pathways
     ]
@@ -379,6 +383,10 @@ def get_pathway_overview(
         step_count=len(steps),
         completed_count=len(completed),
         steps=step_summaries,
+        access_type=pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type),
+        price_cents=pathway.price_cents,
+        currency=pathway.currency,
+        billing_interval=pathway.billing_interval,
     )
 
 

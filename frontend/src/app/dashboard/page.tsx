@@ -5,9 +5,9 @@ import LogoutButton from '@/components/layout/LogoutButton'
 import Avatar from '@/components/ui/Avatar'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
-import { getContinue, getSpaceEvents } from '@/lib/serverApi'
+import { getContinue, getSpaceEvents, getMyMemberships } from '@/lib/serverApi'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
-import type { ContinueResponse, EventSummary } from '@/types/platform'
+import type { ContinueResponse, EventSummary, SpaceMembership } from '@/types/platform'
 
 interface User {
   id: string
@@ -37,17 +37,75 @@ function formatEventDate(isoString: string): string {
   return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
 }
 
+function CollectiveTile({ membership }: { membership: SpaceMembership }) {
+  const cs = getCollectiveCoverStyle(membership.space_slug)
+  return (
+    <Link
+      href={`/spaces/${membership.space_slug}`}
+      className="group block overflow-hidden rounded-2xl shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
+    >
+      <div
+        className="relative px-6 py-8"
+        style={{
+          background: cs.background,
+          backgroundSize: cs.backgroundSize ?? 'auto',
+        }}
+      >
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p
+              className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
+              style={{ color: cs.labelColor }}
+            >
+              Collective
+            </p>
+            <p
+              className="font-serif text-xl leading-snug transition-opacity group-hover:opacity-90"
+              style={{ color: cs.titleColor }}
+            >
+              {membership.space_name}
+            </p>
+          </div>
+          <span
+            className="shrink-0 rounded-lg border px-3 py-1.5 text-[12px] font-semibold opacity-0 transition-all group-hover:opacity-100"
+            style={{
+              color: cs.isDark ? '#FFFFFF' : '#073B3A',
+              borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
+              background: cs.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(56,160,158,0.10)',
+            }}
+          >
+            Enter →
+          </span>
+        </div>
+      </div>
+    </Link>
+  )
+}
+
 export default async function DashboardPage() {
-  const [user, continueData, events]: [User | null, ContinueResponse | null, EventSummary[]] =
-    await Promise.all([getUser(), getContinue(), getSpaceEvents('fresh-collective')])
+  const [user, continueData, events, memberships]: [
+    User | null,
+    ContinueResponse | null,
+    EventSummary[],
+    SpaceMembership[],
+  ] = await Promise.all([
+    getUser(),
+    getContinue(),
+    getSpaceEvents('fresh-collective'),
+    getMyMemberships(),
+  ])
 
   const firstName = user?.name?.split(' ')[0] ?? 'there'
   const displayName = user?.name ?? firstName
+  const isCreatorOrAdmin = user?.role === 'creator' || user?.role === 'admin'
+
   const continueHref = continueData
     ? `/spaces/${continueData.space_slug}/pathways/${continueData.pathway_slug}/${continueData.step_slug}`
     : '/spaces/fresh-collective/pathways/real-journey/welcome'
 
   const nextEvent = events[0] ?? null
+
+  const activeMemberships = memberships.filter((m) => m.status === 'active')
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -80,7 +138,7 @@ export default async function DashboardPage() {
       <main className="flex-1 py-10">
         <Container>
 
-          {/* ── Welcome hero — soft aqua with subtle dot texture ── */}
+          {/* ── Welcome hero ── */}
           <div
             className="mb-6 overflow-hidden rounded-2xl px-8 py-8 md:px-10 md:py-9"
             style={{
@@ -101,65 +159,8 @@ export default async function DashboardPage() {
             </p>
           </div>
 
-          {/* ── Your space — visual collective tile ── */}
-          {(() => {
-            const cs = getCollectiveCoverStyle('fresh-collective')
-            return (
-              <section className="mb-4">
-                <Link
-                  href="/spaces/fresh-collective"
-                  className="group block overflow-hidden rounded-2xl shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-xl"
-                >
-                  {/* Cover art area */}
-                  <div
-                    className="relative px-7 py-10 md:py-12"
-                    style={{
-                      background: cs.background,
-                      backgroundSize: cs.backgroundSize ?? 'auto',
-                    }}
-                  >
-                    <div className="flex items-end justify-between gap-4">
-                      <div>
-                        <p
-                          className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
-                          style={{ color: cs.labelColor }}
-                        >
-                          Your space
-                        </p>
-                        <p
-                          className="font-serif text-2xl transition-opacity group-hover:opacity-90"
-                          style={{ color: cs.titleColor }}
-                        >
-                          Fresh Collective
-                        </p>
-                        <p
-                          className="mt-1.5 text-[13px] leading-snug"
-                          style={{ color: cs.isDark ? 'rgba(255,255,255,0.68)' : '#64748B' }}
-                        >
-                          {continueData && !continueData.all_complete
-                            ? `Next: ${continueData.step_title}`
-                            : 'Your home for guided learning and reflection.'}
-                        </p>
-                      </div>
-                      <span
-                        className="shrink-0 rounded-lg border px-4 py-2 text-[13px] font-semibold opacity-0 transition-all group-hover:opacity-100"
-                        style={{
-                          color: cs.isDark ? '#FFFFFF' : '#073B3A',
-                          borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
-                          background: cs.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(56,160,158,0.10)',
-                        }}
-                      >
-                        Enter →
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              </section>
-            )
-          })()}
-
           {/* ── Two-column: Continue + Coming up ── */}
-          <div className="mb-4 grid gap-4 sm:grid-cols-2">
+          <div className="mb-6 grid gap-4 sm:grid-cols-2">
 
             {/* Continue step */}
             <Link
@@ -179,10 +180,7 @@ export default async function DashboardPage() {
               {continueData && !continueData.all_complete && (
                 <p className="mt-1.5 text-[12px] text-slate-400">{continueData.pathway_title}</p>
               )}
-              <p
-                className="mt-3 text-[12px] font-semibold"
-                style={{ color: '#38A09E' }}
-              >
+              <p className="mt-3 text-[12px] font-semibold" style={{ color: '#38A09E' }}>
                 {continueData?.all_complete ? 'Review →' : 'Continue →'}
               </p>
             </Link>
@@ -194,9 +192,7 @@ export default async function DashboardPage() {
                 className="group flex flex-col rounded-2xl border bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
                 style={{ borderColor: 'rgba(56,160,158,0.20)', borderLeft: '3px solid #55B8B6' }}
               >
-                <p
-                  className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600"
-                >
+                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
                   Coming up
                 </p>
                 <p className="flex-1 font-serif text-[17px] leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
@@ -205,9 +201,7 @@ export default async function DashboardPage() {
                 <p className="mt-1.5 text-[12px] text-slate-400">
                   {formatEventDate(nextEvent.starts_at)}
                 </p>
-                <p className="mt-3 text-[12px] font-semibold text-teal-600">
-                  View details →
-                </p>
+                <p className="mt-3 text-[12px] font-semibold text-teal-600">View details →</p>
               </Link>
             ) : (
               <div
@@ -217,13 +211,83 @@ export default async function DashboardPage() {
                 <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-500">
                   Coming up
                 </p>
-                <p className="flex-1 font-serif text-[17px] text-slate-400">
-                  No upcoming events yet.
-                </p>
+                <p className="flex-1 font-serif text-[17px] text-slate-400">No upcoming events yet.</p>
                 <p className="mt-3 text-[12px] text-slate-400">Check back soon.</p>
               </div>
             )}
           </div>
+
+          {/* ── My collectives ── */}
+          {activeMemberships.length > 0 && (
+            <section className="mb-6">
+              <div className="mb-3 flex items-baseline justify-between">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  My collectives
+                </p>
+                <Link href="/dashboard/explore" className="text-xs text-teal-600 hover:underline">
+                  Explore more →
+                </Link>
+              </div>
+              <div className={[
+                'grid gap-4',
+                activeMemberships.length === 1 ? '' : 'sm:grid-cols-2',
+              ].join(' ')}>
+                {activeMemberships.map((m) => (
+                  <CollectiveTile key={m.space_id} membership={m} />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Fallback if no memberships fetched yet */}
+          {activeMemberships.length === 0 && (
+            <section className="mb-6">
+              {(() => {
+                const cs = getCollectiveCoverStyle('fresh-collective')
+                return (
+                  <Link
+                    href="/spaces/fresh-collective"
+                    className="group block overflow-hidden rounded-2xl shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-xl"
+                  >
+                    <div
+                      className="relative px-7 py-10 md:py-12"
+                      style={{
+                        background: cs.background,
+                        backgroundSize: cs.backgroundSize ?? 'auto',
+                      }}
+                    >
+                      <div className="flex items-end justify-between gap-4">
+                        <div>
+                          <p
+                            className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
+                            style={{ color: cs.labelColor }}
+                          >
+                            Your collective
+                          </p>
+                          <p
+                            className="font-serif text-2xl transition-opacity group-hover:opacity-90"
+                            style={{ color: cs.titleColor }}
+                          >
+                            Fresh Collective
+                          </p>
+                        </div>
+                        <span
+                          className="shrink-0 rounded-lg border px-4 py-2 text-[13px] font-semibold opacity-0 transition-all group-hover:opacity-100"
+                          style={{
+                            color: cs.isDark ? '#FFFFFF' : '#073B3A',
+                            borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
+                            background: cs.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(56,160,158,0.10)',
+                          }}
+                        >
+                          Enter →
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                )
+              })()}
+            </section>
+          )}
 
           {/* ── Explore collectives ── */}
           <section className="mb-4">
@@ -247,7 +311,7 @@ export default async function DashboardPage() {
                       Explore collectives
                     </p>
                     <p className="mt-1 text-[13px] text-slate-500">
-                      Find other guided collectives, pathways, and communities you may want to join.
+                      Find other guided collectives, pathways, and communities to join.
                     </p>
                   </div>
                   <span
@@ -262,7 +326,7 @@ export default async function DashboardPage() {
           </section>
 
           {/* ── Creator Studio ── */}
-          {(user?.role === 'creator' || user?.role === 'admin') && (
+          {isCreatorOrAdmin && (
             <section className="mb-4">
               <Link
                 href="/creator-studio"

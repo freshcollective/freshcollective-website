@@ -27,6 +27,10 @@ class PathwaySummary(BaseModel):
     cover_image_url: str | None = None
     status: str
     position: int
+    access_type: str = 'free'
+    price_cents: int | None = None
+    currency: str | None = None
+    billing_interval: str | None = None
 
 
 class SpaceResponse(BaseModel):
@@ -94,6 +98,10 @@ class PathwayWithSteps(BaseModel):
     step_count: int
     completed_count: int
     steps: list[StepSummary]
+    access_type: str = 'free'
+    price_cents: int | None = None
+    currency: str | None = None
+    billing_interval: str | None = None
 
 
 class CompleteStepRequest(BaseModel):
@@ -124,6 +132,10 @@ class PathwayProgress(BaseModel):
     position: int
     step_count: int
     completed_count: int
+    access_type: str = 'free'
+    price_cents: int | None = None
+    currency: str | None = None
+    billing_interval: str | None = None
 
 
 class EventSummary(BaseModel):

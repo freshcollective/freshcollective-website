@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { getPathwayOverview } from '@/lib/serverApi'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
+import { isPathwayLocked, unlockCtaLabel, formatPathwayPrice } from '@/lib/pathwayAccess'
 import type { PathwayWithSteps, StepSummary } from '@/types/platform'
 
 interface Props {
@@ -81,6 +82,8 @@ export default async function PathwayDetailPage({ params }: Props) {
 
   const cs = getPathwayCoverStyle(pathwaySlug)
   const coverImageUrl = resolveMediaUrl(pathway.cover_image_url)
+  const isComingSoon = pathway.status === 'coming_soon'
+  const locked = !isComingSoon && isPathwayLocked(pathway.access_type)
 
   const progressPct =
     pathway.step_count > 0
@@ -91,6 +94,13 @@ export default async function PathwayDetailPage({ params }: Props) {
   const continueHref = nextIncomplete
     ? `/spaces/${slug}/pathways/${pathwaySlug}/${nextIncomplete.slug}`
     : `/spaces/${slug}/pathways/${pathwaySlug}/${pathway.steps[0]?.slug}`
+
+  const priceLabel = locked
+    ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
+    : null
+  const unlockLabel = locked
+    ? unlockCtaLabel(pathway.access_type, pathway.price_cents, pathway.currency, pathway.billing_interval)
+    : null
 
   return (
     <div className="max-w-2xl">
@@ -135,7 +145,7 @@ export default async function PathwayDetailPage({ params }: Props) {
             className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
             style={{ color: coverImageUrl ? 'rgba(255,255,255,0.65)' : cs.labelColor }}
           >
-            Pathway
+            {isComingSoon ? 'Coming soon' : locked ? 'Pathway' : 'Pathway'}
           </p>
           <h2
             className="font-serif text-2xl md:text-3xl"
@@ -154,49 +164,101 @@ export default async function PathwayDetailPage({ params }: Props) {
         </div>
       </div>
 
-      {pathway.step_count > 0 && (
-        <div className="mb-8">
-          <div className="mb-1.5 flex items-baseline justify-between text-xs text-slate-400">
-            <span>{pathway.completed_count} of {pathway.step_count} steps complete</span>
-            <span>{progressPct}%</span>
-          </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
-            <div
-              className="h-full rounded-full bg-teal-500 transition-all"
-              style={{ width: `${progressPct}%` }}
-            />
+      {/* ── Locked pathway view ── */}
+      {locked ? (
+        <div className="rounded-2xl border border-border bg-white p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100">
+              <svg
+                className="h-5 w-5 text-slate-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+                aria-hidden="true"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="font-serif text-[17px] text-navy-900">
+                This pathway requires access
+              </p>
+              {priceLabel && (
+                <p className="mt-1 text-[14px] text-slate-500">
+                  Available for {priceLabel}
+                </p>
+              )}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {/* TODO: Route paid pathway unlock through checkout once Stripe is wired. */}
+                <button
+                  disabled
+                  className="rounded-full px-5 py-2 text-sm font-semibold text-white opacity-50 cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                  title="Payment access coming soon"
+                >
+                  {unlockLabel}
+                </button>
+                <span className="text-[12px] text-slate-400">
+                  Payment access coming soon.
+                </span>
+              </div>
+            </div>
           </div>
         </div>
-      )}
-
-      {pathway.steps.length > 0 && continueHref && (
-        <div className="mb-8">
-          <Link
-            href={continueHref}
-            className="inline-block rounded-full px-5 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-          >
-            {pathway.completed_count === 0 ? 'Begin' : pathway.completed_count >= pathway.step_count ? 'Review' : 'Continue'}
-          </Link>
-        </div>
-      )}
-
-      {pathway.steps.length === 0 ? (
+      ) : isComingSoon ? (
+        /* ── Coming soon view ── */
         <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-slate-500">
-          Steps for this pathway are coming soon.
+          This pathway is coming soon.
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {pathway.steps.map((step, i) => (
-            <StepRow
-              key={step.id}
-              step={step}
-              spaceSlug={slug}
-              pathwaySlug={pathwaySlug}
-              index={i}
-            />
-          ))}
-        </div>
+        /* ── Accessible pathway view ── */
+        <>
+          {pathway.step_count > 0 && (
+            <div className="mb-8">
+              <div className="mb-1.5 flex items-baseline justify-between text-xs text-slate-400">
+                <span>{pathway.completed_count} of {pathway.step_count} steps complete</span>
+                <span>{progressPct}%</span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
+                <div
+                  className="h-full rounded-full bg-teal-500 transition-all"
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {pathway.steps.length > 0 && continueHref && (
+            <div className="mb-8">
+              <Link
+                href={continueHref}
+                className="inline-block rounded-full px-5 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              >
+                {pathway.completed_count === 0 ? 'Begin' : pathway.completed_count >= pathway.step_count ? 'Review' : 'Continue'}
+              </Link>
+            </div>
+          )}
+
+          {pathway.steps.length === 0 ? (
+            <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-slate-500">
+              Steps for this pathway are coming soon.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {pathway.steps.map((step, i) => (
+                <StepRow
+                  key={step.id}
+                  step={step}
+                  spaceSlug={slug}
+                  pathwaySlug={pathwaySlug}
+                  index={i}
+                />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )

@@ -6,6 +6,10 @@ export interface PathwaySummary {
   cover_image_url: string | null
   status: 'draft' | 'active' | 'coming_soon' | 'archived'
   position: number
+  access_type: 'free' | 'included' | 'one_time' | 'subscription'
+  price_cents: number | null
+  currency: string | null
+  billing_interval: string | null
 }
 
 export interface SpaceResponse {
@@ -55,6 +59,10 @@ export interface PathwayWithSteps {
   step_count: number
   completed_count: number
   steps: StepSummary[]
+  access_type: 'free' | 'included' | 'one_time' | 'subscription'
+  price_cents: number | null
+  currency: string | null
+  billing_interval: string | null
 }
 
 export interface PathwayProgress {
@@ -67,6 +75,10 @@ export interface PathwayProgress {
   position: number
   step_count: number
   completed_count: number
+  access_type: 'free' | 'included' | 'one_time' | 'subscription'
+  price_cents: number | null
+  currency: string | null
+  billing_interval: string | null
 }
 
 export interface EventSummary {
