@@ -337,10 +337,8 @@ function InviteModal({ onClose }: { onClose: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// People list (table + mobile cards)
+// People list (card rows — no fixed-column table to avoid header collision)
 // ---------------------------------------------------------------------------
-
-const COL_DESKTOP = '1fr 100px 110px 130px'
 
 function PeopleList({
   filtered,
@@ -392,78 +390,59 @@ function PeopleList({
   }
 
   return (
-    <div>
-      {/* Column headers */}
-      <div
-        className="hidden border-b border-border px-5 py-2.5 sm:grid"
-        style={{ gridTemplateColumns: COL_DESKTOP }}
-      >
-        {['Person', 'Status', 'Role', 'Joined'].map((h) => (
-          <p key={h} className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            {h}
-          </p>
-        ))}
-      </div>
+    <ul>
+      {filtered.map((m, i) => {
+        const isLast     = i === filtered.length - 1
+        const isSelected = selected?.id === m.id
+        const status     = memberStatus(m)
 
-      <ul>
-        {filtered.map((m, i) => {
-          const isLast     = i === filtered.length - 1
-          const isSelected = selected?.id === m.id
-          const status     = memberStatus(m)
+        return (
+          <li key={m.id}>
+            <button
+              onClick={() => onSelect(m)}
+              className={`w-full cursor-pointer text-left transition-colors ${
+                !isLast ? 'border-b border-border' : ''
+              } ${isSelected ? 'bg-teal-50/50' : 'hover:bg-teal-50/30'}`}
+              style={
+                isSelected
+                  ? { borderLeft: '2px solid rgba(56,160,158,0.45)' }
+                  : undefined
+              }
+            >
+              <div className="flex items-center gap-4 px-5 py-4">
+                {/* Avatar */}
+                <Avatar name={m.display_name} />
 
-          return (
-            <li key={m.id}>
-              <button
-                onClick={() => onSelect(m)}
-                className={`w-full cursor-pointer text-left transition-colors ${
-                  !isLast ? 'border-b border-border' : ''
-                } ${
-                  isSelected
-                    ? 'bg-teal-50/50'
-                    : 'hover:bg-teal-50/30'
-                }`}
-                style={isSelected ? { borderLeft: '2px solid rgba(56,160,158,0.50)' } : {}}
-              >
-                {/* Desktop row */}
-                <div
-                  className="hidden items-center gap-3 px-5 py-3.5 sm:grid"
-                  style={{ gridTemplateColumns: COL_DESKTOP }}
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Avatar name={m.display_name} />
-                    <div className="min-w-0">
-                      <p className="truncate text-[14px] font-medium text-navy-900">
-                        {m.display_name}
-                      </p>
-                      {/* TODO: Show email once creator endpoint exposes it */}
-                      <p className="truncate text-[12px] italic text-slate-400">
-                        Email not available
-                      </p>
-                    </div>
-                  </div>
+                {/* Name + email */}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-medium text-navy-900">
+                    {m.display_name}
+                  </p>
+                  {/* TODO: Show email once creator endpoint exposes it */}
+                  <p className="mt-0.5 truncate text-[12px] italic text-slate-400">
+                    Email not available
+                  </p>
+                </div>
+
+                {/* Badges + date — wrap gracefully on narrow widths */}
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                   <StatusBadge status={status} />
                   <RoleBadge role={m.space_role} />
-                  <span className="text-[13px] text-slate-500">{formatDate(m.joined_at)}</span>
+                  <span className="hidden text-[12px] text-slate-400 sm:inline">
+                    {formatDate(m.joined_at)}
+                  </span>
                 </div>
+              </div>
 
-                {/* Mobile card */}
-                <div className="flex items-start gap-3 px-5 py-4 sm:hidden">
-                  <Avatar name={m.display_name} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[14px] font-medium text-navy-900">{m.display_name}</p>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                      <StatusBadge status={status} />
-                      <RoleBadge role={m.space_role} />
-                    </div>
-                    <p className="mt-1 text-[12px] text-slate-400">{formatDate(m.joined_at)}</p>
-                  </div>
-                </div>
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-    </div>
+              {/* Joined date on mobile (below the main row) */}
+              <p className="px-5 pb-3 text-[12px] text-slate-400 sm:hidden">
+                Joined {formatDate(m.joined_at)}
+              </p>
+            </button>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 
@@ -550,7 +529,9 @@ export default function PeopleClient({ members, spaceName }: Props) {
       </div>
 
       {/* ── Main area: list + detail panel ── */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+      {/* Side-by-side only at xl (1280px+) so the list has enough room.
+          Below xl the panel stacks underneath the list at full width. */}
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
 
         {/* List card */}
         <div className="min-w-0 flex-1 rounded-2xl border border-border bg-white">
@@ -595,9 +576,9 @@ export default function PeopleClient({ members, spaceName }: Props) {
           />
         </div>
 
-        {/* Detail panel — right side on lg+, stacked below on mobile */}
+        {/* Detail panel — right side at xl+, full-width card below on smaller screens */}
         {selected && (
-          <div className="w-full lg:w-[300px] lg:shrink-0 xl:w-[320px]">
+          <div className="w-full xl:w-[340px] xl:shrink-0">
             <DetailPanel person={selected} onClose={() => setSelected(null)} />
           </div>
         )}
