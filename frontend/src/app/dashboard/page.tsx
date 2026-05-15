@@ -5,9 +5,9 @@ import LogoutButton from '@/components/layout/LogoutButton'
 import Avatar from '@/components/ui/Avatar'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
-import { getContinue, getSpaceEvents, getMyMemberships } from '@/lib/serverApi'
+import { getContinue, getSpaceEvents, getMyMemberships, getCommunityFeed } from '@/lib/serverApi'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
-import type { ContinueResponse, EventSummary, SpaceMembership } from '@/types/platform'
+import type { ContinueResponse, EventSummary, SpaceMembership, PostSummary } from '@/types/platform'
 
 interface User {
   id: string
@@ -32,9 +32,13 @@ async function getUser(): Promise<User | null> {
   }
 }
 
-function formatEventDate(isoString: string): string {
+function parseDateBlock(isoString: string) {
   const d = new Date(isoString)
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+  return {
+    day: d.toLocaleDateString('en-GB', { day: '2-digit' }),
+    month: d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase(),
+    time: d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }),
+  }
 }
 
 function CollectiveTile({ membership }: { membership: SpaceMembership }) {
@@ -83,16 +87,18 @@ function CollectiveTile({ membership }: { membership: SpaceMembership }) {
 }
 
 export default async function DashboardPage() {
-  const [user, continueData, events, memberships]: [
+  const [user, continueData, events, memberships, communityPosts]: [
     User | null,
     ContinueResponse | null,
     EventSummary[],
     SpaceMembership[],
+    PostSummary[],
   ] = await Promise.all([
     getUser(),
     getContinue(),
     getSpaceEvents('fresh-collective'),
     getMyMemberships(),
+    getCommunityFeed('fresh-collective'),
   ])
 
   const firstName = user?.name?.split(' ')[0] ?? 'there'
@@ -104,7 +110,8 @@ export default async function DashboardPage() {
     : '/spaces/fresh-collective/pathways/real-journey/welcome'
 
   const nextEvent = events[0] ?? null
-
+  const nextEventDate = nextEvent ? parseDateBlock(nextEvent.starts_at) : null
+  const recentPost = communityPosts[0] ?? null
   const activeMemberships = memberships.filter((m) => m.status === 'active')
 
   return (
@@ -138,7 +145,7 @@ export default async function DashboardPage() {
       <main className="flex-1 py-10">
         <Container>
 
-          {/* ── Welcome hero ── TODO: hero background matches collective page dark ocean style */}
+          {/* ── Welcome hero ── */}
           <div
             className="mb-6 overflow-hidden rounded-2xl px-8 py-10 md:px-10 md:py-12"
             style={{
@@ -154,76 +161,147 @@ export default async function DashboardPage() {
               className="mb-4 h-[2px] w-8 rounded-full"
               style={{ background: 'linear-gradient(90deg, #42C7C6 0%, transparent 100%)' }}
             />
-            <h1
-              className="font-serif text-3xl md:text-4xl"
-              style={{ color: '#FFFFFF' }}
-            >
+            <h1 className="font-serif text-3xl md:text-4xl" style={{ color: '#FFFFFF' }}>
               Welcome back, {firstName}.
             </h1>
-            <p
-              className="mt-2 text-[15px]"
-              style={{ color: 'rgba(255,255,255,0.70)' }}
-            >
+            <p className="mt-2 text-[15px]" style={{ color: 'rgba(255,255,255,0.70)' }}>
               Ready to continue where you left off?
             </p>
           </div>
 
-          {/* ── Two-column: Continue + Coming up ── */}
-          <div className="mb-6 grid gap-4 sm:grid-cols-2">
+          {/* ── Ecosystem snapshot — bento grid ── */}
+          <div className="mb-6 grid gap-4 lg:grid-cols-3">
 
-            {/* Continue step */}
+            {/* Your Journey — featured dark card spanning 2 cols */}
             <Link
               href={continueHref}
-              className="group flex flex-col rounded-2xl border bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-              style={{ borderColor: 'rgba(56,160,158,0.20)', borderLeft: '3px solid #38A09E' }}
+              className="group relative overflow-hidden rounded-2xl lg:col-span-2"
+              style={{
+                background:
+                  'radial-gradient(rgba(66,199,198,0.09) 1px, transparent 1px), ' +
+                  'radial-gradient(ellipse at 80% 20%, rgba(66,199,198,0.22), transparent 45%), ' +
+                  'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0D4E4C 100%)',
+                backgroundSize: '22px 22px, auto, auto',
+              }}
             >
-              <p
-                className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                style={{ color: '#38A09E' }}
-              >
-                {continueData?.all_complete ? 'Journey complete' : 'Next step'}
-              </p>
-              <p className="flex-1 font-serif text-[17px] leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                {continueData ? continueData.step_title : 'Begin the REAL Journey'}
-              </p>
-              {continueData && !continueData.all_complete && (
-                <p className="mt-1.5 text-[12px] text-slate-400">{continueData.pathway_title}</p>
-              )}
-              <p className="mt-3 text-[12px] font-semibold" style={{ color: '#38A09E' }}>
-                {continueData?.all_complete ? 'Review →' : 'Continue →'}
-              </p>
+              <div className="p-7 pb-9">
+                <p
+                  className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em]"
+                  style={{ color: '#42C7C6' }}
+                >
+                  {continueData?.all_complete ? 'Journey complete' : 'Your journey'}
+                </p>
+                <h2
+                  className="mb-2 font-serif text-2xl leading-snug transition-opacity group-hover:opacity-90"
+                  style={{ color: '#FFFFFF' }}
+                >
+                  {continueData ? continueData.step_title : 'Begin the REAL Journey'}
+                </h2>
+                {continueData && (
+                  <p className="mb-5 text-[13px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                    {continueData.pathway_title}
+                  </p>
+                )}
+                <span
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold transition-opacity group-hover:opacity-80"
+                  style={{
+                    background: 'rgba(66,199,198,0.18)',
+                    border: '1px solid rgba(66,199,198,0.35)',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
+                </span>
+              </div>
             </Link>
 
-            {/* Coming up */}
-            {nextEvent ? (
-              <Link
-                href={`/spaces/fresh-collective/events/${nextEvent.id}`}
-                className="group flex flex-col rounded-2xl border bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
-                style={{ borderColor: 'rgba(56,160,158,0.20)', borderLeft: '3px solid #55B8B6' }}
-              >
-                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
-                  Coming up
-                </p>
-                <p className="flex-1 font-serif text-[17px] leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                  {nextEvent.title}
-                </p>
-                <p className="mt-1.5 text-[12px] text-slate-400">
-                  {formatEventDate(nextEvent.starts_at)}
-                </p>
-                <p className="mt-3 text-[12px] font-semibold text-teal-600">View details →</p>
-              </Link>
-            ) : (
-              <div
-                className="flex flex-col rounded-2xl border bg-white p-5"
-                style={{ borderColor: 'rgba(56,160,158,0.15)', borderLeft: '3px solid rgba(56,160,158,0.30)' }}
-              >
-                <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-500">
-                  Coming up
-                </p>
-                <p className="flex-1 font-serif text-[17px] text-slate-400">No upcoming events yet.</p>
-                <p className="mt-3 text-[12px] text-slate-400">Check back soon.</p>
-              </div>
-            )}
+            {/* Right column — Coming up + Community stacked */}
+            <div className="flex flex-col gap-4">
+
+              {/* Coming up */}
+              {nextEvent && nextEventDate ? (
+                <Link
+                  href={`/spaces/fresh-collective/events/${nextEvent.id}`}
+                  className="group flex flex-1 flex-col rounded-2xl border bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
+                  style={{ borderColor: 'rgba(56,160,158,0.18)' }}
+                >
+                  <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
+                    Coming up
+                  </p>
+                  <div className="flex flex-1 items-start gap-3">
+                    <div
+                      className="min-w-[44px] shrink-0 rounded-xl p-2 text-center"
+                      style={{ background: 'rgba(56,160,158,0.08)' }}
+                    >
+                      <div className="font-serif text-xl leading-none text-navy-900">{nextEventDate.day}</div>
+                      <div className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-teal-600">{nextEventDate.month}</div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
+                        {nextEvent.title}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
+                    </div>
+                  </div>
+                  <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                    View details →
+                  </span>
+                </Link>
+              ) : (
+                <div
+                  className="flex flex-1 flex-col rounded-2xl border p-5"
+                  style={{ borderColor: 'rgba(56,160,158,0.14)', background: 'rgba(56,160,158,0.03)' }}
+                >
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-500">
+                    Coming up
+                  </p>
+                  <p className="flex-1 font-serif text-[15px] text-slate-400">No upcoming events yet.</p>
+                  <p className="mt-2 text-[12px] text-slate-400">Check back soon.</p>
+                </div>
+              )}
+
+              {/* Community */}
+              {recentPost ? (
+                <Link
+                  href={`/spaces/fresh-collective/community/${recentPost.id}`}
+                  className="group flex flex-1 flex-col rounded-2xl border bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
+                  style={{ borderColor: 'rgba(56,160,158,0.18)' }}
+                >
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
+                    Community
+                  </p>
+                  {recentPost.title ? (
+                    <p className="mb-1 flex-1 font-serif text-[14px] leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
+                      {recentPost.title}
+                    </p>
+                  ) : (
+                    <p className="mb-1 flex-1 line-clamp-2 text-[13px] leading-relaxed text-slate-600">
+                      {recentPost.body.split('\n\n')[0]}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-slate-400">{recentPost.author.display_name}</p>
+                  <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                    Join the conversation →
+                  </span>
+                </Link>
+              ) : (
+                <Link
+                  href="/spaces/fresh-collective/community"
+                  className="group flex flex-1 flex-col rounded-2xl border p-5 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                  style={{ borderColor: 'rgba(56,160,158,0.18)', background: 'rgba(234,248,247,0.55)' }}
+                >
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
+                    Community
+                  </p>
+                  <p className="flex-1 font-serif text-[15px] text-navy-700">
+                    The conversation begins with you.
+                  </p>
+                  <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                    Open community →
+                  </span>
+                </Link>
+              )}
+            </div>
           </div>
 
           {/* ── My collectives ── */}
@@ -248,7 +326,7 @@ export default async function DashboardPage() {
             </section>
           )}
 
-          {/* Fallback if no memberships fetched yet */}
+          {/* Fallback if no memberships */}
           {activeMemberships.length === 0 && (
             <section className="mb-6">
               {(() => {
@@ -334,28 +412,40 @@ export default async function DashboardPage() {
             </Link>
           </section>
 
-          {/* ── Creator Studio ── */}
+          {/* ── Creator Studio — browser-window card ── */}
           {isCreatorOrAdmin && (
             <section className="mb-4">
               <Link
                 href="/creator-studio"
-                className="group block overflow-hidden rounded-2xl border border-border bg-white transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md"
+                className="group block overflow-hidden rounded-2xl border border-border bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md"
               >
-                <div className="h-[2px]" style={{ background: 'linear-gradient(90deg, #38A09E 0%, transparent 60%)' }} />
-                <div className="flex items-center justify-between gap-4 px-7 py-5">
-                  <div>
-                    <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
-                      Creator
-                    </p>
-                    <p className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
-                      Creator Studio
-                    </p>
-                    <p className="mt-1 text-[13px] text-slate-400">
-                      Manage your collective, pathways, and gatherings.
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-teal-500 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true">
-                    →
+                {/* Browser chrome dots */}
+                <div
+                  className="flex items-center gap-1.5 border-b border-border px-4 py-2.5"
+                  style={{ background: '#F8FAFA' }}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
+                  <span className="ml-3 text-[11px] text-slate-400">creator-studio</span>
+                </div>
+                {/* Card content */}
+                <div className="px-6 py-5">
+                  <div
+                    className="mb-4 h-[2px] w-6 rounded-full"
+                    style={{ background: 'linear-gradient(90deg, #38A09E, transparent)' }}
+                  />
+                  <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
+                    Creator
+                  </p>
+                  <p className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                    Creator Studio
+                  </p>
+                  <p className="mt-1 text-[13px] text-slate-400">
+                    Manage your collective, pathways, and gatherings.
+                  </p>
+                  <span className="mt-4 inline-flex text-[13px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                    Open Studio →
                   </span>
                 </div>
               </Link>

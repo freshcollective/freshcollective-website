@@ -62,13 +62,29 @@ export default async function SpacePage({ params }: Props) {
 
       {/* ── Continue Your Journey ─────────────────────────────────── */}
       <section className="mb-10">
-        <SectionLabel>Your journey</SectionLabel>
-        <ContinueCard
-          data={continueData}
-          progressPct={progressPct}
-          stepCount={continuedPathway?.step_count ?? 0}
-          completedCount={continuedPathway?.completed_count ?? 0}
-        />
+        <div
+          className="overflow-hidden rounded-2xl p-5 md:p-6"
+          style={{
+            background:
+              'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
+              'radial-gradient(ellipse at 80% 20%, rgba(66,199,198,0.20), transparent 45%), ' +
+              'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0D4E4C 100%)',
+            backgroundSize: '22px 22px, auto, auto',
+          }}
+        >
+          <p
+            className="mb-4 text-[10px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: '#42C7C6' }}
+          >
+            Your journey
+          </p>
+          <ContinueCard
+            data={continueData}
+            progressPct={progressPct}
+            stepCount={continuedPathway?.step_count ?? 0}
+            completedCount={continuedPathway?.completed_count ?? 0}
+          />
+        </div>
       </section>
 
       {/* ── Pathways ─────────────────────────────────────────────── */}
@@ -194,16 +210,32 @@ export default async function SpacePage({ params }: Props) {
       <Divider />
       <section>
         <div
-          className="rounded-2xl border border-teal-100 px-6 py-5"
-          style={{ background: 'rgba(56,160,158,0.04)' }}
+          className="overflow-hidden rounded-2xl px-7 py-8"
+          style={{
+            background:
+              'radial-gradient(rgba(66,199,198,0.06) 1px, transparent 1px), ' +
+              'radial-gradient(ellipse at 80% 20%, rgba(66,199,198,0.18), transparent 45%), ' +
+              'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0F5E5C 100%)',
+            backgroundSize: '22px 22px, auto, auto',
+          }}
         >
-          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-teal-600">
+          <div
+            className="mb-3 h-[2px] w-8 rounded-full"
+            style={{ background: 'linear-gradient(90deg, #42C7C6, transparent)' }}
+          />
+          <p
+            className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: '#42C7C6' }}
+          >
             A note
           </p>
-          <p className="font-serif text-lg text-navy-900">
+          <p className="font-serif text-xl" style={{ color: '#FFFFFF' }}>
             You are in the right place.
           </p>
-          <p className="mt-2 max-w-prose text-sm leading-relaxed text-slate-500">
+          <p
+            className="mt-2 max-w-prose text-[14px] leading-relaxed"
+            style={{ color: 'rgba(255,255,255,0.65)' }}
+          >
             This space is designed to grow with you. Start with the REAL Journey,
             return often, and let the structure hold you. Nothing here is about
             speed or perfection.

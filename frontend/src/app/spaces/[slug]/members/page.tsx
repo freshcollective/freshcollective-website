@@ -15,10 +15,20 @@ export default async function SpaceMembersPage({ params }: Props) {
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-8">
-        <div className="mb-2 h-[2px] w-8 rounded-full bg-teal-400" />
-        <h1 className="mb-2 font-serif text-2xl text-navy-900">Members</h1>
-        <p className="text-sm text-slate-500">
+      <div
+        className="mb-8 overflow-hidden rounded-2xl px-7 py-7"
+        style={{
+          background:
+            'radial-gradient(circle at 85% 15%, rgba(56,160,158,0.18), transparent 50%), ' +
+            'radial-gradient(rgba(56,160,158,0.06) 1px, transparent 1px), ' +
+            'linear-gradient(135deg, #EAF8F7 0%, #F0FBFA 60%, #FAFAF8 100%)',
+          backgroundSize: 'auto, 20px 20px, auto',
+          border: '1px solid rgba(56,160,158,0.14)',
+        }}
+      >
+        <div className="mb-2 h-[2px] w-8 rounded-full" style={{ background: 'linear-gradient(90deg, #38A09E, transparent)' }} />
+        <h1 className="mb-1.5 font-serif text-2xl text-navy-900">Members</h1>
+        <p className="text-[14px] text-slate-500">
           The people in this space — here to learn, reflect, and grow together.
         </p>
       </div>
