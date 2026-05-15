@@ -51,10 +51,19 @@ export default function CollectiveRow({
               color: space.status === 'active' ? '#38A09E' : '#94a3b8',
             }}
           >
-            {space.status}
+            {space.status === 'active' ? 'Active' : 'Draft'}
           </span>
           {isActive && (
-            <span className="text-[11px] font-medium text-teal-500">Active</span>
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(56,160,158,0.40)',
+                color: '#38A09E',
+              }}
+            >
+              Current
+            </span>
           )}
         </div>
         {space.tagline && (

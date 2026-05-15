@@ -115,7 +115,7 @@ function CollectiveSwitcher({
                           : 'rgba(255,255,255,0.58)',
                     }}
                   >
-                    {s.status}
+                    {s.status === 'active' ? 'Active' : 'Draft'}
                   </span>
                 </button>
               )
