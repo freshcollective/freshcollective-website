@@ -5,8 +5,9 @@ import {
   getCreatorPathways,
   getCreatorEvents,
   getCreatorPosts,
+  getSpaceMembers,
 } from '@/lib/serverApi'
-import type { CreatorSpaceDetail, CreatorPathway, CreatorEvent, CreatorPost } from '@/types/platform'
+import type { CreatorSpaceDetail, CreatorPathway, CreatorEvent, CreatorPost, MemberProfile } from '@/types/platform'
 
 export default async function CollectiveOverviewPage() {
   const primarySpace = await getActiveCreatorSpace()
@@ -31,16 +32,18 @@ export default async function CollectiveOverviewPage() {
     )
   }
 
-  const [detail, pathways, events, posts]: [
+  const [detail, pathways, events, posts, members]: [
     CreatorSpaceDetail | null,
     CreatorPathway[],
     CreatorEvent[],
     CreatorPost[],
+    MemberProfile[],
   ] = await Promise.all([
     getCreatorSpace(primarySpace.slug),
     getCreatorPathways(primarySpace.slug),
     getCreatorEvents(primarySpace.slug),
     getCreatorPosts(primarySpace.slug),
+    getSpaceMembers(primarySpace.slug),
   ])
 
   const space = detail ?? { ...primarySpace, description: null, is_public: false, cover_image_url: null }
@@ -111,12 +114,13 @@ export default async function CollectiveOverviewPage() {
       )}
 
       {/* Stats */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
         {[
-          { label: 'Pathways',  value: pathways.length },
-          { label: 'Published', value: activePathways.length },
+          { label: 'Pathways',   value: pathways.length },
+          { label: 'Published',  value: activePathways.length },
           { label: 'Gatherings', value: events.length },
-          { label: 'Posts',     value: posts.length },
+          { label: 'Posts',      value: posts.length },
+          { label: 'People',     value: members.length },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-xl border border-border bg-white p-4">
             <p className="font-serif text-2xl text-navy-900">{value}</p>
@@ -158,7 +162,7 @@ export default async function CollectiveOverviewPage() {
       )}
 
       {/* Quick actions */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {[
           {
             label: 'Build pathways',
@@ -174,6 +178,11 @@ export default async function CollectiveOverviewPage() {
             label: 'Community',
             desc: posts.length > 0 ? `${posts.length} post${posts.length !== 1 ? 's' : ''}` : 'No posts yet',
             href: '/creator-studio/community',
+          },
+          {
+            label: 'Manage people',
+            desc: members.length > 0 ? `${members.length} member${members.length !== 1 ? 's' : ''}` : 'No members yet',
+            href: '/creator-studio/people',
           },
           {
             label: 'Edit settings',
