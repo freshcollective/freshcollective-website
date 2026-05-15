@@ -51,12 +51,18 @@ function CollectiveSwitcher({
   }
 
   return (
-    <div className="mt-3.5">
+    <div className="mt-4">
       {spaces.length > 0 && (
-        <>
+        <div
+          className="rounded-xl p-3"
+          style={{
+            background: 'rgba(255,255,255,0.07)',
+            border: '1px solid rgba(255,255,255,0.11)',
+          }}
+        >
           <p
-            className="mb-1.5 text-[9px] font-bold uppercase tracking-[0.18em]"
-            style={{ color: 'rgba(255,255,255,0.50)' }}
+            className="mb-2 px-0.5 text-[10px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: 'rgba(255,255,255,0.55)' }}
           >
             Current collective
           </p>
@@ -68,28 +74,27 @@ function CollectiveSwitcher({
                   key={s.slug}
                   type="button"
                   onClick={() => switchTo(s.slug)}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors"
-                  style={{
-                    background: isActive ? 'rgba(56,160,158,0.16)' : 'transparent',
-                  }}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-all ${
+                    isActive ? 'bg-white/[12%]' : 'hover:bg-white/[6%]'
+                  }`}
                 >
                   <span
-                    className="flex-1 truncate text-[12px] font-medium leading-tight"
-                    style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.70)' }}
+                    className="flex-1 truncate text-[13px] font-medium leading-tight"
+                    style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.80)' }}
                   >
                     {s.name}
                   </span>
                   <span
-                    className="shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide"
+                    className="shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
                     style={{
                       background:
                         s.status === 'active'
-                          ? 'rgba(56,160,158,0.22)'
-                          : 'rgba(255,255,255,0.07)',
+                          ? 'rgba(66,199,198,0.28)'
+                          : 'rgba(255,255,255,0.08)',
                       color:
                         s.status === 'active'
-                          ? '#55B8B6'
-                          : 'rgba(255,255,255,0.55)',
+                          ? '#8DE8E6'
+                          : 'rgba(255,255,255,0.58)',
                     }}
                   >
                     {s.status}
@@ -98,22 +103,22 @@ function CollectiveSwitcher({
               )
             })}
           </div>
-        </>
+        </div>
       )}
 
       {/* Create / limit */}
-      <div className="mt-2">
+      <div className="mt-3">
         {!atLimit ? (
           <Link
             href="/creator-studio/create"
-            className="flex items-center gap-1 text-[11px] transition-opacity hover:opacity-80"
-            style={{ color: '#55B8B6' }}
+            className="flex items-center gap-1.5 text-[12px] font-medium transition-opacity hover:opacity-80"
+            style={{ color: '#8DE8E6' }}
           >
-            <span aria-hidden="true" className="text-[13px] leading-none">+</span>
+            <span aria-hidden="true" className="text-[14px] leading-none">+</span>
             Create new collective
           </Link>
         ) : (
-          <p className="text-[10px]" style={{ color: 'rgba(255,255,255,0.52)' }}>
+          <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.52)' }}>
             {spaces.length} of {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives used
           </p>
         )}
@@ -144,20 +149,36 @@ function SidebarInner({
   }
 
   return (
-    <div className="flex h-full flex-col" style={{ background: '#071824' }}>
+    <div
+      className="relative flex h-full flex-col overflow-hidden"
+      style={{
+        background: 'linear-gradient(180deg, #073B3A 0%, #062F35 45%, #051C27 100%)',
+      }}
+    >
+      {/* Subtle top glow */}
+      <div
+        className="pointer-events-none absolute inset-0 z-0"
+        aria-hidden="true"
+        style={{
+          background:
+            'radial-gradient(circle at 20% 0%, rgba(66,199,198,0.20), transparent 32%)',
+        }}
+      />
 
       {/* Logo + space name + switcher */}
-      <div className="px-5 py-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        <Link href="/creator-studio" className="flex items-center gap-2.5" onClick={onNavClick}>
+      <div
+        className="relative z-10 px-5 py-5"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.09)' }}
+      >
+        <Link href="/creator-studio" className="flex items-center gap-3" onClick={onNavClick}>
           <div
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
             style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
           >
-            <div className="h-[10px] w-[10px] rounded-sm bg-white" style={{ opacity: 0.92 }} />
+            <div className="h-[11px] w-[11px] rounded-sm bg-white" style={{ opacity: 0.92 }} />
           </div>
           <span
-            className="text-[14px] font-semibold tracking-[-0.02em]"
-            style={{ color: 'rgba(255,255,255,0.90)' }}
+            className="text-[15px] font-semibold tracking-[-0.02em] text-white"
           >
             Creator Studio
           </span>
@@ -167,8 +188,8 @@ function SidebarInner({
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3.5">
-        <ul className="space-y-px">
+      <nav className="relative z-10 flex-1 overflow-y-auto px-3 py-4">
+        <ul className="space-y-0.5">
           {NAV_ITEMS.map(({ href, label, exact }) => {
             const active = isActive(href, exact)
             return (
@@ -176,11 +197,11 @@ function SidebarInner({
                 <Link
                   href={href}
                   onClick={onNavClick}
-                  className="flex items-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors"
-                  style={{
-                    color: active ? '#ffffff' : 'rgba(255,255,255,0.68)',
-                    background: active ? 'rgba(56,160,158,0.16)' : 'transparent',
-                  }}
+                  className={`flex items-center rounded-xl px-4 py-2.5 text-[15px] font-medium transition-all ${
+                    active
+                      ? 'bg-white/[12%] text-white'
+                      : 'text-white/[72%] hover:bg-white/[8%] hover:text-white'
+                  }`}
                 >
                   {label}
                 </Link>
@@ -191,19 +212,22 @@ function SidebarInner({
       </nav>
 
       {/* Footer */}
-      <div className="px-5 py-5" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+      <div
+        className="relative z-10 px-5 py-5"
+        style={{ borderTop: '1px solid rgba(255,255,255,0.09)' }}
+      >
         <Link
           href="/dashboard"
-          className="mb-3 block text-[12px] transition-opacity hover:opacity-90"
-          style={{ color: 'rgba(255,255,255,0.65)' }}
+          className="mb-4 block text-[13px] font-medium transition-opacity hover:opacity-90"
+          style={{ color: 'rgba(255,255,255,0.68)' }}
         >
           ← Back to platform
         </Link>
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[12px]" style={{ color: 'rgba(255,255,255,0.62)' }}>
+          <span className="truncate text-[13px]" style={{ color: 'rgba(255,255,255,0.65)' }}>
             {user.name ?? user.email}
           </span>
-          <LogoutButton className="shrink-0 text-[11.5px] text-white/60 transition-colors hover:text-white/90" />
+          <LogoutButton className="shrink-0 text-[12px] text-white/60 transition-colors hover:text-white/90" />
         </div>
       </div>
 
@@ -224,7 +248,7 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
 
       {/* Desktop sidebar */}
       <aside
-        className="hidden w-[220px] shrink-0 md:block"
+        className="hidden w-[232px] shrink-0 md:block"
         style={{ position: 'sticky', top: 0, height: '100vh' }}
       >
         <SidebarInner
@@ -261,24 +285,26 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
         {/* Mobile topbar */}
         <div
           className="flex items-center justify-between px-4 py-3 md:hidden"
-          style={{ background: '#071824', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+          style={{
+            background: '#073B3A',
+            borderBottom: '1px solid rgba(255,255,255,0.09)',
+          }}
         >
-          <Link href="/creator-studio" className="flex items-center gap-2">
+          <Link href="/creator-studio" className="flex items-center gap-2.5">
             <div
-              className="flex h-5 w-5 items-center justify-center rounded"
+              className="flex h-6 w-6 items-center justify-center rounded-lg"
               style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
             >
-              <div className="h-[8px] w-[8px] rounded-sm bg-white" style={{ opacity: 0.92 }} />
+              <div className="h-[9px] w-[9px] rounded-sm bg-white" style={{ opacity: 0.92 }} />
             </div>
-            <span className="text-[13px] font-semibold" style={{ color: 'rgba(255,255,255,0.90)' }}>
+            <span className="text-[14px] font-semibold text-white">
               Creator Studio
             </span>
           </Link>
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded"
-            style={{ color: 'rgba(255,255,255,0.60)' }}
+            className="flex h-8 w-8 items-center justify-center rounded text-white/70 transition-colors hover:text-white"
             aria-label="Open navigation"
           >
             <svg width="18" height="14" fill="none" viewBox="0 0 18 14" aria-hidden="true">
