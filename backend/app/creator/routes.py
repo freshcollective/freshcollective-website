@@ -354,10 +354,16 @@ def list_pathways(
             "slug": p.slug,
             "title": p.title,
             "description": p.description,
+            "practice_body": p.practice_body,
             "status": p.status.value if hasattr(p.status, "value") else str(p.status),
+            "access_type": p.access_type,
+            "price_cents": p.price_cents,
+            "currency": p.currency,
+            "billing_interval": p.billing_interval,
             "is_sequential": p.is_sequential,
             "position": p.position,
             "step_count": step_count,
+            "updated_at": p.updated_at,
             "created_at": p.created_at,
         })
     return result
@@ -378,10 +384,16 @@ def get_pathway(
         "slug": pathway.slug,
         "title": pathway.title,
         "description": pathway.description,
+        "practice_body": pathway.practice_body,
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
+        "access_type": pathway.access_type,
+        "price_cents": pathway.price_cents,
+        "currency": pathway.currency,
+        "billing_interval": pathway.billing_interval,
         "is_sequential": pathway.is_sequential,
         "position": pathway.position,
         "step_count": step_count,
+        "updated_at": pathway.updated_at,
         "created_at": pathway.created_at,
     }
 
@@ -409,16 +421,25 @@ def create_pathway(
         slug=pslug,
         title=body.title.strip(),
         description=body.description,
+        practice_body=body.practice_body,
         status=body.status,
         is_sequential=body.is_sequential,
         position=position,
+        access_type=body.access_type,
+        price_cents=body.price_cents,
+        currency=body.currency,
+        billing_interval=body.billing_interval,
     )
     db.add(pathway)
     db.commit()
     db.refresh(pathway)
-    return {**{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "is_sequential", "position", "created_at"]},
-            "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
-            "step_count": 0}
+    return {
+        **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
+                                             "access_type", "price_cents", "currency", "billing_interval",
+                                             "is_sequential", "position", "updated_at", "created_at"]},
+        "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
+        "step_count": 0,
+    }
 
 
 @router.patch("/spaces/{slug}/pathways/{pathway_slug}", response_model=PathwayResponse)
@@ -432,21 +453,33 @@ def update_pathway(
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
 
-    if body.title is not None:
-        pathway.title = body.title.strip()
-    if body.description is not None:
-        pathway.description = body.description.strip() or None
-    if body.status is not None:
-        pathway.status = body.status
-    if body.is_sequential is not None:
-        pathway.is_sequential = body.is_sequential
+    updates = body.model_dump(exclude_unset=True)
+    for field, val in updates.items():
+        if field == "title" and val is not None:
+            pathway.title = val.strip()
+        elif field in ("description", "practice_body"):
+            setattr(pathway, field, (val.strip() or None) if val else None)
+        elif field == "status" and val is not None:
+            pathway.status = val
+        elif field == "is_sequential" and val is not None:
+            pathway.is_sequential = val
+        elif field == "access_type" and val is not None:
+            pathway.access_type = val
+        elif field in ("price_cents", "billing_interval"):
+            setattr(pathway, field, val)
+        elif field == "currency" and val is not None:
+            pathway.currency = val
 
     db.commit()
     db.refresh(pathway)
     step_count = db.query(PathwayStep).filter(PathwayStep.pathway_id == pathway.id).count()
-    return {**{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "is_sequential", "position", "created_at"]},
-            "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
-            "step_count": step_count}
+    return {
+        **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
+                                             "access_type", "price_cents", "currency", "billing_interval",
+                                             "is_sequential", "position", "updated_at", "created_at"]},
+        "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
+        "step_count": step_count,
+    }
 
 
 @router.post("/spaces/{slug}/pathways/reorder", status_code=204)

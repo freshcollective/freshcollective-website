@@ -79,8 +79,13 @@ class PathwayCreateRequest(BaseModel):
     title: str
     slug: str | None = None
     description: str | None = None
-    status: str = "active"
+    practice_body: str | None = None
+    status: str = "draft"
     is_sequential: bool = True
+    access_type: str = "free"
+    price_cents: int | None = None
+    currency: str = "AUD"
+    billing_interval: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -97,18 +102,37 @@ class PathwayCreateRequest(BaseModel):
             raise ValueError("Invalid status.")
         return v
 
+    @field_validator("access_type")
+    @classmethod
+    def validate_access_type(cls, v: str) -> str:
+        if v not in ("free", "included", "one_time", "subscription"):
+            raise ValueError("Invalid access type.")
+        return v
+
 
 class PathwayUpdateRequest(BaseModel):
     title: str | None = None
     description: str | None = None
+    practice_body: str | None = None
     status: str | None = None
     is_sequential: bool | None = None
+    access_type: str | None = None
+    price_cents: int | None = None
+    currency: str | None = None
+    billing_interval: str | None = None
 
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str | None) -> str | None:
         if v is not None and v not in ("draft", "active", "coming_soon", "archived"):
             raise ValueError("Invalid status.")
+        return v
+
+    @field_validator("access_type")
+    @classmethod
+    def validate_access_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("free", "included", "one_time", "subscription"):
+            raise ValueError("Invalid access type.")
         return v
 
 
@@ -118,10 +142,16 @@ class PathwayResponse(BaseModel):
     slug: str
     title: str
     description: str | None
+    practice_body: str | None = None
     status: str
+    access_type: str = "free"
+    price_cents: int | None = None
+    currency: str = "AUD"
+    billing_interval: str | None = None
     is_sequential: bool
     position: int
     step_count: int = 0
+    updated_at: datetime | None = None
     created_at: datetime
 
 

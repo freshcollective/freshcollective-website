@@ -171,10 +171,16 @@ export interface CreatorPathway {
   slug: string
   title: string
   description: string | null
+  practice_body: string | null
   status: 'draft' | 'active' | 'coming_soon' | 'archived'
+  access_type: 'free' | 'included' | 'one_time' | 'subscription'
+  price_cents: number | null
+  currency: string | null
+  billing_interval: string | null
   is_sequential: boolean
   position: number
   step_count: number
+  updated_at: string | null
   created_at: string
 }
 
