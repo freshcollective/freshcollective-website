@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
+import { resolveMediaUrl } from '@/lib/api'
 import type { PublicSpaceCard } from '@/types/platform'
 
 // ---------------------------------------------------------------------------
@@ -18,7 +19,8 @@ function CollectiveCard({
 }) {
   const href = `/spaces/${space.slug}`
   const cs = getCollectiveCoverStyle(space.slug)
-  const hasImage = Boolean(space.cover_image_url)
+  const resolvedImageUrl = resolveMediaUrl(space.cover_image_url)
+  const hasImage = Boolean(resolvedImageUrl)
 
   const titleColor = hasImage ? '#FFFFFF' : (cs.isDark ? '#FFFFFF' : '#152236')
   const taglineColor = hasImage
@@ -49,7 +51,7 @@ function CollectiveCard({
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={space.cover_image_url!}
+              src={resolvedImageUrl!}
               alt={space.name}
               className="absolute inset-0 h-full w-full object-cover"
             />

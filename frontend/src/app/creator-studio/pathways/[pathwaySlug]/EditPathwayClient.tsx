@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { CreatorPathway, CreatorStep } from '@/types/platform'
-import { apiUrl } from '@/lib/api'
+import { apiUrl, resolveMediaUrl } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
 // Access / Pricing selector (same options as create form)
@@ -479,11 +479,11 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
         </p>
 
         {/* Preview */}
-        {(coverPreview ?? coverUrl) && (
+        {(coverPreview ?? resolveMediaUrl(coverUrl)) && (
           <div className="mb-4 overflow-hidden rounded-xl" style={{ maxWidth: 320 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={coverPreview ?? coverUrl!}
+              src={coverPreview ?? resolveMediaUrl(coverUrl)!}
               alt="Pathway cover preview"
               className="w-full object-cover"
               style={{ aspectRatio: '16/9' }}

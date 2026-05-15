@@ -1,4 +1,5 @@
 import { getPathwayCoverStyle } from '@/lib/coverArt'
+import { resolveMediaUrl } from '@/lib/api'
 
 interface Props {
   slug: string
@@ -16,7 +17,8 @@ export default function PathwayCover({
   showLabel = true,
 }: Props) {
   const cs = getPathwayCoverStyle(slug)
-  const hasImage = Boolean(coverImageUrl)
+  const resolvedImageUrl = resolveMediaUrl(coverImageUrl)
+  const hasImage = Boolean(resolvedImageUrl)
 
   const titleColor = hasImage ? '#FFFFFF' : (isComingSoon ? '#152236' : cs.titleColor)
   const labelColor = hasImage ? 'rgba(255,255,255,0.70)' : (isComingSoon ? '#2E8584' : cs.labelColor)
@@ -44,7 +46,7 @@ export default function PathwayCover({
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={coverImageUrl!}
+            src={resolvedImageUrl!}
             alt={title}
             className="absolute inset-0 h-full w-full object-cover"
           />

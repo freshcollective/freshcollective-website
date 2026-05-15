@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import SpaceNav from '@/components/spaces/SpaceNav'
 import { getSpace } from '@/lib/serverApi'
+import { resolveMediaUrl } from '@/lib/api'
 
 interface Props {
   children: React.ReactNode
@@ -13,6 +14,8 @@ export default async function SpaceLayout({ children, params }: Props) {
   const space = await getSpace(slug)
 
   if (!space) notFound()
+
+  const spaceCoverUrl = resolveMediaUrl(space.cover_image_url)
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -48,11 +51,11 @@ export default async function SpaceLayout({ children, params }: Props) {
         }}
       >
         {/* Uploaded banner image — overlays the CSS gradient */}
-        {space.cover_image_url && (
+        {spaceCoverUrl && (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={space.cover_image_url}
+              src={spaceCoverUrl}
               alt=""
               aria-hidden="true"
               className="absolute inset-0 h-full w-full object-cover"

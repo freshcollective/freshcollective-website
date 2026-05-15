@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getPathwayOverview } from '@/lib/serverApi'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
+import { resolveMediaUrl } from '@/lib/api'
 import type { PathwayWithSteps, StepSummary } from '@/types/platform'
 
 interface Props {
@@ -79,6 +80,7 @@ export default async function PathwayDetailPage({ params }: Props) {
   if (!pathway) notFound()
 
   const cs = getPathwayCoverStyle(pathwaySlug)
+  const coverImageUrl = resolveMediaUrl(pathway.cover_image_url)
 
   const progressPct =
     pathway.step_count > 0
@@ -108,11 +110,11 @@ export default async function PathwayDetailPage({ params }: Props) {
         }}
       >
         {/* Uploaded cover image — layers over CSS gradient */}
-        {pathway.cover_image_url && (
+        {coverImageUrl && (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={pathway.cover_image_url}
+              src={coverImageUrl}
               alt=""
               aria-hidden="true"
               className="absolute inset-0 h-full w-full object-cover"
@@ -131,20 +133,20 @@ export default async function PathwayDetailPage({ params }: Props) {
           <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
           <p
             className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
-            style={{ color: pathway.cover_image_url ? 'rgba(255,255,255,0.65)' : cs.labelColor }}
+            style={{ color: coverImageUrl ? 'rgba(255,255,255,0.65)' : cs.labelColor }}
           >
             Pathway
           </p>
           <h2
             className="font-serif text-2xl md:text-3xl"
-            style={{ color: pathway.cover_image_url ? '#FFFFFF' : cs.titleColor }}
+            style={{ color: coverImageUrl ? '#FFFFFF' : cs.titleColor }}
           >
             {pathway.title}
           </h2>
           {pathway.description && (
             <p
               className="mt-2.5 max-w-md text-[14px] leading-relaxed"
-              style={{ color: (pathway.cover_image_url || cs.isDark) ? 'rgba(255,255,255,0.72)' : '#64748B' }}
+              style={{ color: (coverImageUrl || cs.isDark) ? 'rgba(255,255,255,0.72)' : '#64748B' }}
             >
               {pathway.description}
             </p>

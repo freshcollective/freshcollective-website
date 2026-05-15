@@ -13,6 +13,13 @@ export function apiUrl(path: string): string {
   return `${base}${path}`
 }
 
+export function resolveMediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null
+  if (path.startsWith('http')) return path
+  const base = (API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
+  return path.startsWith('/') ? `${base}${path}` : `${base}/${path}`
+}
+
 export interface ApiError {
   detail: string | { msg: string; type: string }[]
 }
