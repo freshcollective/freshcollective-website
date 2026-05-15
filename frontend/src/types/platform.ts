@@ -155,6 +155,17 @@ export interface SpaceMembership {
 // Creator Studio
 // ---------------------------------------------------------------------------
 
+export interface CreatorSpaceDetail {
+  id: string
+  slug: string
+  name: string
+  tagline: string | null
+  description: string | null
+  is_public: boolean
+  status: string
+  cover_image_url: string | null
+}
+
 export interface CreatorPathway {
   id: string
   slug: string

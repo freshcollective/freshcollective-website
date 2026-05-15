@@ -225,6 +225,29 @@ def update_space(
     return space
 
 
+@router.post("/spaces/{slug}/cover", response_model=SpaceDetail)
+async def upload_cover_image(
+    slug: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> Space:
+    space = _get_managed_space(slug, current_user, db)
+    filename = file.filename or "cover.jpg"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ("jpg", "jpeg", "png"):
+        raise HTTPException(status_code=400, detail="Only JPG and PNG images are allowed.")
+    data = await file.read()
+    if space.cover_image_url:
+        old_rel = space.cover_image_url.removeprefix("/api/uploads/")
+        delete_file(old_rel)
+    rel_path, _, _ = save_file(data, filename, file.content_type or "image/jpeg", "covers")
+    space.cover_image_url = f"/api/uploads/{rel_path}"
+    db.commit()
+    db.refresh(space)
+    return space
+
+
 # ---------------------------------------------------------------------------
 # Pathways
 # ---------------------------------------------------------------------------

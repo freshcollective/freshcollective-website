@@ -68,6 +68,7 @@ class SpaceDetail(BaseModel):
     description: str | None
     is_public: bool
     status: str
+    cover_image_url: str | None = None
 
 
 # ---------------------------------------------------------------------------

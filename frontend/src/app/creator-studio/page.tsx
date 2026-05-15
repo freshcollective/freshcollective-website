@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getCreatorSpaces, getActiveCreatorSpace, getCreatorPathways, getCreatorEvents } from '@/lib/serverApi'
 import { MAX_COLLECTIVES_FOR_FOUNDING_CREATOR } from '@/lib/creatorPlan'
 import type { CreatorPathway, CreatorEvent, SpaceSummary } from '@/types/platform'
+import CollectiveRow from './CollectiveRow'
 
 export default async function CreatorStudioOverviewPage() {
   const [spaces, activeSpace]: [SpaceSummary[], SpaceSummary | null] = await Promise.all([
@@ -277,41 +278,11 @@ export default async function CreatorStudioOverviewPage() {
         ) : (
           <div className="space-y-2.5">
             {spaces.map((s) => (
-              <div
+              <CollectiveRow
                 key={s.id}
-                className="flex items-center gap-4 rounded-lg border p-4"
-                style={{
-                  borderColor: s.slug === activeSpace?.slug ? 'rgba(56,160,158,0.25)' : '#e2e8f0',
-                  background: s.slug === activeSpace?.slug ? 'rgba(56,160,158,0.04)' : 'transparent',
-                }}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-[14px] font-medium text-navy-900">{s.name}</p>
-                    <span
-                      className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                      style={{
-                        background: s.status === 'active' ? 'rgba(56,160,158,0.10)' : 'rgba(0,0,0,0.05)',
-                        color: s.status === 'active' ? '#38A09E' : '#94a3b8',
-                      }}
-                    >
-                      {s.status}
-                    </span>
-                    {s.slug === activeSpace?.slug && (
-                      <span className="text-[11px] font-medium text-teal-500">Active</span>
-                    )}
-                  </div>
-                  {s.tagline && (
-                    <p className="mt-0.5 truncate text-[13px] text-slate-500">{s.tagline}</p>
-                  )}
-                </div>
-                <Link
-                  href={`/creator/spaces/${s.slug}`}
-                  className="shrink-0 text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
-                >
-                  Manage →
-                </Link>
-              </div>
+                space={s}
+                isActive={s.slug === activeSpace?.slug}
+              />
             ))}
           </div>
         )}
@@ -321,11 +292,32 @@ export default async function CreatorStudioOverviewPage() {
             Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
           </p>
         )}
+
         {atLimit && (
-          <p className="mt-4 text-[12px] text-slate-500">
-            Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
-            Creator Plus is coming soon.
-          </p>
+          <div
+            className="mt-4 rounded-xl p-4"
+            style={{
+              background: 'rgba(56,160,158,0.05)',
+              border: '1px solid rgba(56,160,158,0.16)',
+            }}
+          >
+            <p className="mb-0.5 text-[13px] font-semibold text-navy-900">
+              Need more than {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives?
+            </p>
+            <p className="mb-2 text-[12px] text-slate-500">
+              Creator Plus is coming soon for creators who want to run additional collectives under one account.
+            </p>
+            <span
+              className="inline-block rounded-lg px-3 py-1.5 text-[12px] font-medium"
+              style={{
+                background: 'rgba(56,160,158,0.10)',
+                color: '#38A09E',
+                cursor: 'default',
+              }}
+            >
+              Coming soon
+            </span>
+          </div>
         )}
       </div>
 

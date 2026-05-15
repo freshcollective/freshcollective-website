@@ -118,9 +118,14 @@ function CollectiveSwitcher({
             Create new collective
           </Link>
         ) : (
-          <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.52)' }}>
-            {spaces.length} of {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives used
-          </p>
+          <div>
+            <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              {spaces.length} of {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} used
+            </p>
+            <p className="mt-0.5 text-[10px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
+              Creator Plus coming soon
+            </p>
+          </div>
         )}
       </div>
     </div>
