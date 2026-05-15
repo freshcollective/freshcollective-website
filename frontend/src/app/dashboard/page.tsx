@@ -4,10 +4,10 @@ import Container from '@/components/layout/Container'
 import LogoutButton from '@/components/layout/LogoutButton'
 import Avatar from '@/components/ui/Avatar'
 import { SESSION_COOKIE } from '@/lib/session'
-import { apiUrl } from '@/lib/api'
-import { getContinue, getSpaceEvents, getMyMemberships, getCommunityFeed } from '@/lib/serverApi'
+import { apiUrl, resolveMediaUrl } from '@/lib/api'
+import { getContinue, getSpaceEvents, getMyMemberships, getCommunityFeed, getPublicSpaces } from '@/lib/serverApi'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
-import type { ContinueResponse, EventSummary, SpaceMembership, PostSummary } from '@/types/platform'
+import type { ContinueResponse, EventSummary, SpaceMembership, PostSummary, PublicSpaceCard } from '@/types/platform'
 
 interface User {
   id: string
@@ -45,18 +45,20 @@ const CARD_BORDER = '1px solid rgba(0,0,0,0.07)'
 const CARD_SHADOW = '0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.05)'
 
 export default async function DashboardPage() {
-  const [user, continueData, events, memberships, communityPosts]: [
+  const [user, continueData, events, memberships, communityPosts, publicSpaces]: [
     User | null,
     ContinueResponse | null,
     EventSummary[],
     SpaceMembership[],
     PostSummary[],
+    PublicSpaceCard[],
   ] = await Promise.all([
     getUser(),
     getContinue(),
     getSpaceEvents('fresh-collective'),
     getMyMemberships(),
     getCommunityFeed('fresh-collective'),
+    getPublicSpaces(),
   ])
 
   const firstName = user?.name?.split(' ')[0] ?? 'there'
@@ -71,6 +73,9 @@ export default async function DashboardPage() {
   const nextEventDate = nextEvent ? parseDateBlock(nextEvent.starts_at) : null
   const recentPost = communityPosts[0] ?? null
   const activeMemberships = memberships.filter((m) => m.status === 'active')
+
+  // Build a lookup so we can grab cover images and taglines for member collectives
+  const spaceCardBySlug = new Map(publicSpaces.map((s) => [s.slug, s]))
 
   return (
     <div className="flex min-h-screen flex-col" style={{ background: '#FAFAF8' }}>
@@ -115,7 +120,7 @@ export default async function DashboardPage() {
                 Ready to continue where you left off?
               </p>
             </div>
-            <div className="hidden shrink-0 flex-col items-end gap-1 sm:flex">
+            <div className="hidden shrink-0 flex-col items-end gap-1.5 sm:flex">
               <Avatar name={displayName} size="md" />
               {isCreatorOrAdmin && (
                 <span
@@ -136,114 +141,205 @@ export default async function DashboardPage() {
               Your spaces
             </h2>
 
-            {/* My collectives */}
+            {/* ── Collective cards — image-led, card proportion ── */}
             <div className={[
               'mb-4 grid gap-4',
               activeMemberships.length > 1 ? 'sm:grid-cols-2' : '',
             ].join(' ')}>
               {activeMemberships.length > 0 ? (
                 activeMemberships.map((m) => {
+                  const spaceCard = spaceCardBySlug.get(m.space_slug)
                   const cs = getCollectiveCoverStyle(m.space_slug)
+                  const resolvedImageUrl = resolveMediaUrl(spaceCard?.cover_image_url ?? null)
+                  const hasImage = Boolean(resolvedImageUrl)
+
                   return (
                     <Link
                       key={m.space_id}
                       href={`/spaces/${m.space_slug}`}
-                      className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                      className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-xl"
                       style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                     >
-                      <div
-                        className="relative"
-                        style={{
-                          paddingBottom: '38%',
-                          background: cs.background,
-                          backgroundSize: cs.backgroundSize ?? 'auto',
-                        }}
-                      >
+                      {/* Cover */}
+                      <div className="relative overflow-hidden" style={{ height: '200px' }}>
+                        {hasImage ? (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={resolvedImageUrl!}
+                              alt={m.space_name}
+                              className="h-full w-full object-cover"
+                            />
+                            <div
+                              className="absolute inset-0"
+                              style={{
+                                background:
+                                  'linear-gradient(to top, rgba(7,24,36,0.78) 0%, rgba(7,24,36,0.20) 50%, transparent 80%)',
+                              }}
+                            />
+                          </>
+                        ) : (
+                          <div
+                            className="absolute inset-0"
+                            style={{
+                              background: cs.background,
+                              backgroundSize: cs.backgroundSize ?? 'auto',
+                            }}
+                          />
+                        )}
+
+                        {/* Name + tagline */}
                         <div className="absolute inset-x-0 bottom-0 p-4">
                           <p
                             className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em]"
-                            style={{ color: cs.labelColor }}
+                            style={{ color: hasImage ? 'rgba(255,255,255,0.60)' : cs.labelColor }}
                           >
                             Collective
                           </p>
                           <p
                             className="font-serif text-xl leading-tight transition-opacity group-hover:opacity-90"
-                            style={{ color: cs.titleColor }}
+                            style={{ color: hasImage ? '#FFFFFF' : cs.titleColor }}
                           >
                             {m.space_name}
                           </p>
+                          {spaceCard?.tagline && (
+                            <p
+                              className="mt-0.5 line-clamp-1 text-[12px]"
+                              style={{ color: hasImage ? 'rgba(255,255,255,0.68)' : cs.labelColor }}
+                            >
+                              {spaceCard.tagline}
+                            </p>
+                          )}
                         </div>
+
+                        {/* Hover CTA */}
                         <span
                           className="absolute right-3 top-3 rounded-lg border px-3 py-1.5 text-[12px] font-semibold opacity-0 transition-all group-hover:opacity-100"
                           style={{
-                            color: cs.isDark ? '#FFFFFF' : '#073B3A',
-                            borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
-                            background: cs.isDark ? 'rgba(0,0,0,0.30)' : 'rgba(56,160,158,0.10)',
+                            color: '#FFFFFF',
+                            borderColor: 'rgba(255,255,255,0.35)',
+                            background: 'rgba(0,0,0,0.32)',
                           }}
                         >
                           Open →
                         </span>
                       </div>
+
+                      {/* Footer — pathway/member counts */}
+                      {spaceCard && (spaceCard.pathway_count > 0 || spaceCard.member_count > 0) && (
+                        <div className="flex items-center gap-4 bg-white px-4 py-2.5 text-[12px] text-slate-400">
+                          {spaceCard.pathway_count > 0 && (
+                            <span>{spaceCard.pathway_count} {spaceCard.pathway_count === 1 ? 'pathway' : 'pathways'}</span>
+                          )}
+                          {spaceCard.member_count > 0 && (
+                            <span>{spaceCard.member_count} {spaceCard.member_count === 1 ? 'member' : 'members'}</span>
+                          )}
+                        </div>
+                      )}
                     </Link>
                   )
                 })
               ) : (
                 /* Fallback — not yet joined, show fresh-collective */
                 (() => {
+                  const spaceCard = spaceCardBySlug.get('fresh-collective')
                   const cs = getCollectiveCoverStyle('fresh-collective')
+                  const resolvedImageUrl = resolveMediaUrl(spaceCard?.cover_image_url ?? null)
+                  const hasImage = Boolean(resolvedImageUrl)
+
                   return (
                     <Link
                       href="/spaces/fresh-collective"
-                      className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                      className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-xl"
                       style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                     >
-                      <div
-                        className="relative"
-                        style={{
-                          paddingBottom: '38%',
-                          background: cs.background,
-                          backgroundSize: cs.backgroundSize ?? 'auto',
-                        }}
-                      >
+                      <div className="relative overflow-hidden" style={{ height: '200px' }}>
+                        {hasImage ? (
+                          <>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={resolvedImageUrl!}
+                              alt="Fresh Collective"
+                              className="h-full w-full object-cover"
+                            />
+                            <div
+                              className="absolute inset-0"
+                              style={{
+                                background:
+                                  'linear-gradient(to top, rgba(7,24,36,0.78) 0%, rgba(7,24,36,0.20) 50%, transparent 80%)',
+                              }}
+                            />
+                          </>
+                        ) : (
+                          <div
+                            className="absolute inset-0"
+                            style={{
+                              background: cs.background,
+                              backgroundSize: cs.backgroundSize ?? 'auto',
+                            }}
+                          />
+                        )}
                         <div className="absolute inset-x-0 bottom-0 p-4">
                           <p
                             className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em]"
-                            style={{ color: cs.labelColor }}
+                            style={{ color: hasImage ? 'rgba(255,255,255,0.60)' : cs.labelColor }}
                           >
                             Your collective
                           </p>
                           <p
-                            className="font-serif text-xl leading-tight transition-opacity group-hover:opacity-90"
-                            style={{ color: cs.titleColor }}
+                            className="font-serif text-xl leading-tight"
+                            style={{ color: hasImage ? '#FFFFFF' : cs.titleColor }}
                           >
                             Fresh Collective
                           </p>
+                          {spaceCard?.tagline && (
+                            <p
+                              className="mt-0.5 line-clamp-1 text-[12px]"
+                              style={{ color: hasImage ? 'rgba(255,255,255,0.68)' : cs.labelColor }}
+                            >
+                              {spaceCard.tagline}
+                            </p>
+                          )}
                         </div>
                         <span
                           className="absolute right-3 top-3 rounded-lg border px-3 py-1.5 text-[12px] font-semibold opacity-0 transition-all group-hover:opacity-100"
                           style={{
-                            color: cs.isDark ? '#FFFFFF' : '#073B3A',
-                            borderColor: cs.isDark ? 'rgba(255,255,255,0.35)' : 'rgba(56,160,158,0.40)',
-                            background: cs.isDark ? 'rgba(0,0,0,0.30)' : 'rgba(56,160,158,0.10)',
+                            color: '#FFFFFF',
+                            borderColor: 'rgba(255,255,255,0.35)',
+                            background: 'rgba(0,0,0,0.32)',
                           }}
                         >
                           Open →
                         </span>
                       </div>
+                      {spaceCard && (spaceCard.pathway_count > 0 || spaceCard.member_count > 0) && (
+                        <div className="flex items-center gap-4 bg-white px-4 py-2.5 text-[12px] text-slate-400">
+                          {spaceCard.pathway_count > 0 && (
+                            <span>{spaceCard.pathway_count} {spaceCard.pathway_count === 1 ? 'pathway' : 'pathways'}</span>
+                          )}
+                          {spaceCard.member_count > 0 && (
+                            <span>{spaceCard.member_count} {spaceCard.member_count === 1 ? 'member' : 'members'}</span>
+                          )}
+                        </div>
+                      )}
                     </Link>
                   )
                 })()
               )}
             </div>
 
-            {/* Continue journey + live snippets */}
+            {/* ── Continue + live snippets ── */}
             <div className="grid gap-4 lg:grid-cols-3">
 
-              {/* Continue — main action card */}
+              {/* Continue journey — white card, teal left accent */}
               <Link
                 href={continueHref}
                 className="group block overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg lg:col-span-2"
-                style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+                style={{
+                  border: CARD_BORDER,
+                  borderLeft: '3px solid #38A09E',
+                  boxShadow: CARD_SHADOW,
+                }}
               >
                 <div className="px-6 py-6">
                   <div
@@ -253,7 +349,7 @@ export default async function DashboardPage() {
                   <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-600">
                     {continueData?.all_complete ? 'Journey complete' : 'Continue your journey'}
                   </p>
-                  <h3 className="font-serif text-xl leading-snug text-navy-900 md:text-2xl">
+                  <h3 className="font-serif text-xl leading-snug text-navy-900 transition-colors group-hover:text-teal-700 md:text-2xl">
                     {continueData ? continueData.step_title : 'Begin the REAL Journey'}
                   </h3>
                   {continueData && (
@@ -270,7 +366,7 @@ export default async function DashboardPage() {
                 </div>
               </Link>
 
-              {/* Live snippets — stacked */}
+              {/* Live snippets */}
               <div className="flex flex-col gap-4">
 
                 {/* Coming up */}
@@ -317,9 +413,7 @@ export default async function DashboardPage() {
                     <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-500">
                       Coming up
                     </p>
-                    <p className="flex-1 text-[13px] text-slate-400">
-                      No upcoming events yet.
-                    </p>
+                    <p className="flex-1 text-[13px] text-slate-400">No upcoming events yet.</p>
                     <Link
                       href="/spaces/fresh-collective/events"
                       className="mt-3 text-[12px] font-semibold text-teal-600 hover:underline"
@@ -377,6 +471,7 @@ export default async function DashboardPage() {
 
           {/* ══════════════════════════════════════════════════
               LAYER 2 — DISCOVER
+              Pale aqua — feels inviting, clearly exploratory
           ══════════════════════════════════════════════════ */}
           <section className="mb-12">
             <h2 className="mb-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
@@ -384,14 +479,18 @@ export default async function DashboardPage() {
             </h2>
             <Link
               href="/dashboard/explore"
-              className="group block max-w-xl overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
-              style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+              className="group block max-w-xl overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
+              style={{
+                background:
+                  'radial-gradient(circle at 90% 10%, rgba(56,160,158,0.14) 0%, transparent 55%), ' +
+                  'linear-gradient(135deg, rgba(234,248,247,0.95) 0%, rgba(240,251,250,1.0) 100%)',
+                border: '1px solid rgba(56,160,158,0.22)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03), 0 4px 16px rgba(56,160,158,0.07)',
+              }}
             >
               <div
                 className="h-[3px] w-full"
-                style={{
-                  background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, transparent 100%)',
-                }}
+                style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, transparent 100%)' }}
               />
               <div className="px-6 py-5">
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
@@ -415,6 +514,7 @@ export default async function DashboardPage() {
 
           {/* ══════════════════════════════════════════════════
               LAYER 3 — CREATOR TOOLS (creator/admin only)
+              Dark navy header strip — feels like a tool/builder
           ══════════════════════════════════════════════════ */}
           {isCreatorOrAdmin && (
             <section className="mb-12">
@@ -426,13 +526,23 @@ export default async function DashboardPage() {
                 className="group block max-w-xl overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
                 style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
               >
-                {/* Browser chrome */}
-                <div className="flex items-center gap-1.5 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
-                  <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />
-                  <span className="h-2.5 w-2.5 rounded-full bg-green-400" />
-                  <span className="ml-2 text-[11px] text-slate-400">creator-studio</span>
+                {/* Dark navy header strip with browser chrome */}
+                <div
+                  className="flex items-center gap-2 px-4 py-3"
+                  style={{
+                    background: 'linear-gradient(135deg, #071824 0%, #0C2D2C 100%)',
+                  }}
+                >
+                  <div className="flex gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(239,68,68,0.70)' }} />
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(234,179,8,0.70)' }} />
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'rgba(34,197,94,0.70)' }} />
+                  </div>
+                  <span className="ml-1 text-[11px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
+                    creator-studio
+                  </span>
                 </div>
+                {/* Card body */}
                 <div className="px-6 py-5">
                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
                     Creator
