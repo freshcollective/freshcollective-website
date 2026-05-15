@@ -294,17 +294,25 @@ function InviteModal({
         }),
       })
 
-      if (res.status === 409) {
-        const body = await res.json()
-        setError(
-          typeof body.detail === 'string'
-            ? body.detail
-            : 'This person already belongs to or has been invited to this collective.',
-        )
-        return
-      }
       if (!res.ok) {
-        setError('Something went wrong. Please try again.')
+        let detail: string | null = null
+        try {
+          const body = await res.json()
+          if (typeof body.detail === 'string') detail = body.detail
+          else if (Array.isArray(body.detail) && body.detail.length > 0) {
+            // Pydantic 422 validation error — extract first message
+            const first = body.detail[0]
+            detail = typeof first?.msg === 'string' ? first.msg : null
+          }
+        } catch { /* response not JSON */ }
+
+        if (res.status === 409) {
+          setError(detail ?? 'This person already belongs to or has been invited to this collective.')
+        } else if (res.status === 422 || res.status === 400) {
+          setError(detail ?? 'Enter a valid email address.')
+        } else {
+          setError(detail ?? 'Invite could not be created. Please try again.')
+        }
         return
       }
 
