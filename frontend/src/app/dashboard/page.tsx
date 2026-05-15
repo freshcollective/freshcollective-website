@@ -103,13 +103,13 @@ export default async function DashboardPage() {
         </Container>
       </header>
 
-      <main className="flex-1 py-10">
+      <main className="flex-1 py-8">
         <Container>
 
           {/* ── Welcome ── */}
           <div className="mb-6">
             <div
-              className="mb-3 h-[2px] w-5"
+              className="mb-2 h-[2px] w-5"
               style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
             />
             <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
@@ -334,7 +334,7 @@ export default async function DashboardPage() {
                   boxShadow: CARD_SHADOW,
                 }}
               >
-                <div className="px-5 py-4">
+                <div className="flex h-full flex-col px-5 py-4">
                   {/* Inline: gold accent + eyebrow */}
                   <div className="mb-2.5 flex items-center gap-2.5">
                     <div
@@ -351,16 +351,18 @@ export default async function DashboardPage() {
                   {continueData && (
                     <p className="mt-0.5 text-[13px] text-slate-400">{continueData.pathway_title}</p>
                   )}
-                  <div
-                    className="my-3 h-px"
-                    style={{ background: 'rgba(0,0,0,0.06)' }}
-                  />
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                  >
-                    {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
-                  </span>
+                  <div className="mt-auto pt-3">
+                    <div
+                      className="mb-3 h-px"
+                      style={{ background: 'rgba(0,0,0,0.06)' }}
+                    />
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                      style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                    >
+                      {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
+                    </span>
+                  </div>
                 </div>
               </Link>
 
@@ -374,7 +376,7 @@ export default async function DashboardPage() {
                     className="group flex flex-1 flex-col rounded-2xl bg-white px-4 py-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
                     style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                   >
-                    <p className="mb-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
+                    <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
                       Coming up
                     </p>
                     <div className="flex flex-1 items-start gap-3">
@@ -406,7 +408,7 @@ export default async function DashboardPage() {
                 ) : (
                   <div
                     className="flex flex-1 flex-col rounded-2xl bg-white px-4 py-4"
-                    style={{ border: CARD_BORDER }}
+                    style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                   >
                     <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-500">
                       Coming up
@@ -448,8 +450,8 @@ export default async function DashboardPage() {
                 ) : (
                   <Link
                     href="/spaces/fresh-collective/community"
-                    className="group flex flex-1 flex-col rounded-2xl bg-white px-4 py-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
-                    style={{ border: CARD_BORDER }}
+                    className="group flex flex-1 flex-col rounded-2xl bg-white px-4 py-4 transition-all hover:-translate-y-0.5 hover:shadow-md"
+                    style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                   >
                     <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-teal-600">
                       Community
@@ -493,9 +495,9 @@ export default async function DashboardPage() {
                   className="h-[3px] w-full"
                   style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, transparent 100%)' }}
                 />
-                {/* Horizontal split when card is full-width (non-creator); vertical when in 2-col grid */}
-                <div className={isCreatorOrAdmin ? 'px-6 py-5' : 'flex items-stretch'}>
-                  <div className={isCreatorOrAdmin ? '' : 'flex-1 px-6 py-5'}>
+                {isCreatorOrAdmin ? (
+                  /* Vertical layout when in 2-col grid alongside Creator Tools */
+                  <div className="px-6 py-5">
                     <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
                       Discover
                     </p>
@@ -512,9 +514,28 @@ export default async function DashboardPage() {
                       Browse collectives →
                     </span>
                   </div>
-                  {!isCreatorOrAdmin && (
+                ) : (
+                  /* Horizontal split when card is full-width (member-only view) */
+                  <div className="flex items-stretch">
+                    <div className="flex-1 px-6 py-5">
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                        Discover
+                      </p>
+                      <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                        Explore collectives
+                      </h3>
+                      <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+                        Find other guided spaces and communities to join.
+                      </p>
+                      <span
+                        className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                      >
+                        Browse collectives →
+                      </span>
+                    </div>
                     <div
-                      className="hidden w-52 shrink-0 flex-col items-center justify-center gap-3 sm:flex"
+                      className="hidden w-48 shrink-0 flex-col items-center justify-center gap-3 sm:flex"
                       style={{
                         borderLeft: '1px solid rgba(56,160,158,0.15)',
                         background: 'linear-gradient(135deg, rgba(56,160,158,0.06) 0%, rgba(56,160,158,0.16) 100%)',
@@ -527,8 +548,8 @@ export default async function DashboardPage() {
                         Explore all
                       </p>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </Link>
             </section>
 
