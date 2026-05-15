@@ -116,12 +116,7 @@ export default async function DashboardPage() {
         style={{ borderTop: '2px solid #38A09E' }}
       >
         <Container className="flex items-center justify-between">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand/fresh-collective-logo-teal-gold-white.png"
-            alt="Fresh Collective"
-            style={{ height: '30px', width: 'auto' }}
-          />
+          <span className="font-serif text-xl text-navy-900">Fresh Collective</span>
           <div className="flex items-center gap-2">
             <Link
               href="/settings"
@@ -143,23 +138,32 @@ export default async function DashboardPage() {
       <main className="flex-1 py-10">
         <Container>
 
-          {/* ── Welcome hero ── */}
+          {/* ── Welcome hero ── TODO: hero background matches collective page dark ocean style */}
           <div
-            className="mb-6 overflow-hidden rounded-2xl px-8 py-8 md:px-10 md:py-9"
+            className="mb-6 overflow-hidden rounded-2xl px-8 py-10 md:px-10 md:py-12"
             style={{
               background:
-                'radial-gradient(rgba(56,160,158,0.10) 1px, transparent 1px), ' +
-                'radial-gradient(circle at 88% 25%, rgba(66,199,198,0.18), transparent 38%), ' +
-                'linear-gradient(135deg, #F2FBFA 0%, #EAF8F7 50%, #FAFAF8 100%)',
-              backgroundSize: '22px 22px, 100% 100%, 100% 100%',
-              border: '1px solid rgba(56,160,158,0.15)',
+                'radial-gradient(rgba(66,199,198,0.08) 1px, transparent 1px), ' +
+                'radial-gradient(ellipse at 88% 25%, rgba(66,199,198,0.30), transparent 50%), ' +
+                'radial-gradient(ellipse at 12% 78%, rgba(56,160,158,0.18), transparent 45%), ' +
+                'linear-gradient(135deg, #071824 0%, #073B3A 50%, #0F5E5C 100%)',
+              backgroundSize: '22px 22px, auto, auto, auto',
             }}
           >
-            <div className="mb-4 h-[2px] w-8 rounded-full bg-teal-400" />
-            <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
+            <div
+              className="mb-4 h-[2px] w-8 rounded-full"
+              style={{ background: 'linear-gradient(90deg, #42C7C6 0%, transparent 100%)' }}
+            />
+            <h1
+              className="font-serif text-3xl md:text-4xl"
+              style={{ color: '#FFFFFF' }}
+            >
               Welcome back, {firstName}.
             </h1>
-            <p className="mt-2 text-[15px] text-slate-600">
+            <p
+              className="mt-2 text-[15px]"
+              style={{ color: 'rgba(255,255,255,0.70)' }}
+            >
               Ready to continue where you left off?
             </p>
           </div>

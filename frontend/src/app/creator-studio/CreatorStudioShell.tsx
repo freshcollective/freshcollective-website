@@ -210,18 +210,18 @@ function SidebarInner({
         className="relative z-10 px-5 py-5"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.09)' }}
       >
-        <Link href="/creator-studio" className="flex flex-col gap-2" onClick={onNavClick}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand/fresh-collective-logo-transparent-teal.png"
-            alt="Fresh Collective"
-            style={{ height: '26px', width: 'auto' }}
-          />
+        <Link href="/creator-studio" className="flex flex-col gap-1" onClick={onNavClick}>
+          <span
+            className="font-serif text-[18px] leading-tight"
+            style={{ color: '#FFFFFF' }}
+          >
+            Creator Studio
+          </span>
           <span
             className="text-[10px] font-bold uppercase tracking-[0.18em]"
             style={{ color: 'rgba(255,255,255,0.42)' }}
           >
-            Creator Studio
+            Fresh Collective
           </span>
         </Link>
 
@@ -347,18 +347,18 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
             borderBottom: '1px solid rgba(255,255,255,0.09)',
           }}
         >
-          <Link href="/creator-studio" className="flex items-center gap-2.5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/brand/fresh-collective-logo-transparent-teal.png"
-              alt="Fresh Collective"
-              style={{ height: '22px', width: 'auto' }}
-            />
+          <Link href="/creator-studio" className="flex flex-col">
             <span
-              className="text-[11px] font-semibold uppercase tracking-[0.12em]"
-              style={{ color: 'rgba(255,255,255,0.50)' }}
+              className="font-serif text-[16px] leading-tight"
+              style={{ color: '#FFFFFF' }}
             >
               Creator Studio
+            </span>
+            <span
+              className="text-[9px] font-bold uppercase tracking-[0.16em]"
+              style={{ color: 'rgba(255,255,255,0.42)' }}
+            >
+              Fresh Collective
             </span>
           </Link>
           <button

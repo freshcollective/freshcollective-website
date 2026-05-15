@@ -29,32 +29,38 @@ export default async function ExploreCollectivesPage() {
           >
             ← Dashboard
           </Link>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand/fresh-collective-logo-teal-gold-white.png"
-            alt="Fresh Collective"
-            style={{ height: '30px', width: 'auto' }}
-          />
+          <span className="font-serif text-xl text-navy-900">Fresh Collective</span>
           <span className="w-24" />
         </Container>
       </header>
 
-      {/* ── Page intro banner ── */}
+      {/* ── Page intro banner ── TODO: hero background matches collective page dark ocean style */}
       <div
-        className="border-b border-border px-6 py-8 md:px-10"
+        className="px-6 py-10 md:px-10 md:py-14"
         style={{
-          background: 'linear-gradient(135deg, #EAF7F7 0%, #F0FBFA 55%, #FAFAF8 100%)',
+          background:
+            'radial-gradient(rgba(66,199,198,0.08) 1px, transparent 1px), ' +
+            'radial-gradient(ellipse at 88% 25%, rgba(66,199,198,0.30), transparent 50%), ' +
+            'radial-gradient(ellipse at 12% 78%, rgba(56,160,158,0.18), transparent 45%), ' +
+            'linear-gradient(135deg, #071824 0%, #073B3A 50%, #0F5E5C 100%)',
+          backgroundSize: '22px 22px, auto, auto, auto',
         }}
       >
         <Container>
           <div
-            className="mb-3 h-[2px] w-8"
-            style={{ background: 'linear-gradient(90deg, #38A09E 0%, transparent 100%)' }}
+            className="mb-4 h-[2px] w-8"
+            style={{ background: 'linear-gradient(90deg, #42C7C6 0%, transparent 100%)' }}
           />
-          <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
+          <h1
+            className="font-serif text-3xl md:text-4xl"
+            style={{ color: '#FFFFFF' }}
+          >
             Explore collectives
           </h1>
-          <p className="mt-2 text-[15px] leading-relaxed text-slate-500">
+          <p
+            className="mt-2 text-[15px] leading-relaxed"
+            style={{ color: 'rgba(255,255,255,0.70)' }}
+          >
             Find guided spaces for learning, practice, conversation, and change.
           </p>
         </Container>
