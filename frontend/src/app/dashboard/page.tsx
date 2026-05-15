@@ -167,6 +167,31 @@ export default async function DashboardPage() {
 
           </div>
 
+          {/* Explore collectives */}
+          <section className="mt-4">
+            <Link
+              href="/dashboard/explore"
+              className="group block rounded-xl border border-border bg-surface px-7 py-5 transition-all hover:border-teal-200 hover:shadow-[var(--fc-shadow-card)]"
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="mb-0.5 text-xs font-semibold uppercase tracking-widest text-teal-600">
+                    Discover
+                  </p>
+                  <p className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                    Explore collectives
+                  </p>
+                  <p className="mt-1 text-sm text-slate-400">
+                    Find other guided collectives, pathways, and communities you may want to join.
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-lg border border-teal-200 px-4 py-1.5 text-[13px] font-medium text-teal-700 transition-colors group-hover:bg-teal-50">
+                  Browse collectives →
+                </span>
+              </div>
+            </Link>
+          </section>
+
           {/* Creator Studio — visible to creators/admins */}
           {(user?.role === 'creator' || user?.role === 'admin') && (
             <section className="mt-4">
