@@ -54,9 +54,9 @@ export default async function SpacePage({ params }: Props) {
       <section className="mb-10">
         <div className="grid gap-4 lg:grid-cols-3">
 
-          {/* Your Journey — dark feature card, 2/3 width */}
+          {/* ── Your Journey — dark ocean panel, 2/3 width ── */}
           <div
-            className="overflow-hidden rounded-2xl p-5 md:p-6 lg:col-span-2"
+            className="flex flex-col overflow-hidden rounded-2xl px-6 py-7 md:px-8 md:py-8 lg:col-span-2"
             style={{
               background:
                 'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
@@ -65,13 +65,11 @@ export default async function SpacePage({ params }: Props) {
               backgroundSize: '22px 22px, auto, auto',
             }}
           >
-            <div className="mb-3 h-[2px] w-6 rounded-full" style={{ background: '#E7C65A' }} />
-            <p
-              className="mb-4 text-[10px] font-bold uppercase tracking-[0.18em]"
-              style={{ color: '#42C7C6' }}
-            >
-              Your journey
-            </p>
+            {/* Gold accent line — no label here; ContinueCard provides its own pill */}
+            <div
+              className="mb-4 h-[2px] w-6 rounded-full"
+              style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+            />
             <ContinueCard
               data={continueData}
               progressPct={progressPct}

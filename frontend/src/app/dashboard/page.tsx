@@ -107,10 +107,16 @@ export default async function DashboardPage() {
       <main className="flex-1 py-8">
         <Container>
 
-          {/* ── Welcome ── */}
-          <div className="mb-6">
+          {/* ── Welcome — white card panel, elevated slightly above warm-white page ── */}
+          <div
+            className="mb-8 overflow-hidden rounded-2xl bg-white px-6 py-5 md:px-8 md:py-6"
+            style={{
+              boxShadow: '0 1px 4px rgba(0,0,0,0.04), 0 4px 20px rgba(0,0,0,0.06)',
+              border: '1px solid rgba(0,0,0,0.06)',
+            }}
+          >
             <div
-              className="mb-2 h-[2px] w-5"
+              className="mb-2 h-[2px] w-5 rounded-full"
               style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
             />
             <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
@@ -323,35 +329,48 @@ export default async function DashboardPage() {
             {/* ── Continue + live snippets ── */}
             <div className="grid gap-4 lg:grid-cols-3">
 
-              {/* Continue journey — white card, teal left accent */}
+              {/* ── Continue journey — dark ocean card, 2/3 width ── */}
               <Link
                 href={continueHref}
-                className="group block overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg lg:col-span-2"
+                className="group relative block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-2xl lg:col-span-2"
                 style={{
-                  border: CARD_BORDER,
-                  borderLeft: '3px solid #38A09E',
-                  boxShadow: CARD_SHADOW,
+                  background:
+                    'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
+                    'radial-gradient(ellipse at 75% 25%, rgba(66,199,198,0.22), transparent 50%), ' +
+                    'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0D4E4C 100%)',
+                  backgroundSize: '22px 22px, auto, auto',
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.22)',
                 }}
               >
-                <div className="flex h-full flex-col px-5 py-4">
-                  <div className="mb-2.5">
-                    <PillTag>
-                      {continueData?.all_complete ? 'Journey complete' : 'Continue your journey'}
-                    </PillTag>
-                  </div>
-                  <h3 className="font-serif text-xl leading-snug text-navy-900 transition-colors group-hover:text-teal-700 md:text-2xl">
+                <div className="flex h-full flex-col px-6 py-6 md:px-7 md:py-7">
+                  {/* Gold accent line */}
+                  <div
+                    className="mb-3 h-[2px] w-5 rounded-full"
+                    style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+                  />
+                  {/* Teal eyebrow */}
+                  <p
+                    className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]"
+                    style={{ color: '#42C7C6' }}
+                  >
+                    {continueData?.all_complete ? 'Journey complete' : 'Continue your journey'}
+                  </p>
+                  {/* Large serif step title in white */}
+                  <h3
+                    className="font-serif text-2xl leading-snug text-white transition-opacity group-hover:opacity-90 md:text-3xl"
+                  >
                     {continueData ? continueData.step_title : 'Begin the REAL Journey'}
                   </h3>
+                  {/* Pathway name */}
                   {continueData && (
-                    <p className="mt-0.5 text-[13px] text-slate-400">{continueData.pathway_title}</p>
+                    <p className="mt-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                      {continueData.pathway_title}
+                    </p>
                   )}
-                  <div className="mt-auto pt-3">
-                    <div
-                      className="mb-3 h-px"
-                      style={{ background: 'rgba(0,0,0,0.06)' }}
-                    />
+                  {/* CTA pushed to bottom */}
+                  <div className="mt-auto pt-6">
                     <span
-                      className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                      className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
                       style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
                     >
                       {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
@@ -473,30 +492,37 @@ export default async function DashboardPage() {
             isCreatorOrAdmin ? 'sm:grid-cols-2' : 'max-w-2xl',
           ].join(' ')}>
 
-            {/* ── Discover — pillar-card soft styling ── */}
+            {/* ── Discover — pillar-card style: solid pale mint, large faded accent ── */}
             <section>
               <GoldLabel className="mb-4">Discover</GoldLabel>
               <Link
                 href="/dashboard/explore"
-                className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
+                className="group relative block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(234,248,247,0.95) 0%, rgba(240,251,250,1.0) 100%)',
+                  background: '#EAF7F6',
                   border: '1px solid rgba(56,160,158,0.18)',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.03), 0 4px 20px rgba(56,160,158,0.06)',
                 }}
               >
-                <div className="px-6 py-5">
-                  <div className="mb-3">
-                    <PillTag>Discover</PillTag>
-                  </div>
+                {/* Large faded decorative element — mirrors the pillar-card number in the reference */}
+                <div
+                  className="pointer-events-none absolute right-4 top-2 select-none font-serif text-[96px] font-bold leading-none"
+                  style={{ color: 'rgba(56,160,158,0.10)' }}
+                  aria-hidden="true"
+                >
+                  →
+                </div>
+                <div className="relative px-6 py-6">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                    Discover
+                  </p>
                   <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
                     Explore collectives
                   </h3>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+                  <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
                     Find other guided spaces and communities to join.
                   </p>
                   <span
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                    className="mt-5 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
                     style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
                   >
                     Browse collectives →

@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { PillTag } from '@/components/ui/BrandLabel'
 import type { ContinueResponse } from '@/types/platform'
 
 interface ContinueCardProps {
@@ -10,6 +9,11 @@ interface ContinueCardProps {
   estimatedMinutes?: number | null
 }
 
+/**
+ * Renders journey progress content directly onto its parent background.
+ * Parent is expected to be a dark ocean panel — this component uses white/light
+ * text colours throughout so it reads clearly on dark.
+ */
 export default function ContinueCard({
   data,
   progressPct,
@@ -30,45 +34,59 @@ export default function ContinueCard({
   const cta = data?.all_complete ? 'Review' : completedCount === 0 ? 'Begin' : 'Continue'
 
   return (
-    <Link
-      href={href}
-      className="group block rounded-2xl border bg-white px-7 py-6 transition-all hover:-translate-y-0.5 hover:shadow-xl"
-      style={{
-        borderColor: 'rgba(56,160,158,0.20)',
-        borderLeft: '3px solid #38A09E',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
-      }}
-    >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex-1 min-w-0">
-          <div className="mb-2">
-            <PillTag>{label}</PillTag>
-          </div>
-          <p className="mb-1 font-serif text-xl text-navy-900 group-hover:text-teal-700 transition-colors">
+    <Link href={href} className="group block">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+
+        <div className="min-w-0 flex-1">
+          {/* Pill label — teal on dark bg */}
+          <span
+            className="mb-3 inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
+            style={{ background: 'rgba(56,160,158,0.25)', color: '#6DD9D8' }}
+          >
+            {label}
+          </span>
+
+          {/* Large serif step title in white */}
+          <p className="font-serif text-2xl leading-snug text-white transition-opacity group-hover:opacity-80 md:text-3xl">
             {data ? data.step_title : 'Welcome to the REAL Journey'}
           </p>
+
+          {/* Pathway name */}
           {data && (
-            <p className="text-sm text-slate-400">{data.pathway_title}</p>
+            <p className="mt-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.52)' }}>
+              {data.pathway_title}
+            </p>
           )}
 
+          {/* Progress */}
           {stepCount > 0 && (
-            <div className="mt-3">
-              <div className="mb-1.5 flex items-center gap-3 text-xs text-slate-400">
+            <div className="mt-4">
+              <div
+                className="mb-1.5 flex items-center gap-3 text-[11px]"
+                style={{ color: 'rgba(255,255,255,0.45)' }}
+              >
                 <span>{completedCount} of {stepCount} steps</span>
                 {estimatedMinutes && !data?.all_complete && (
                   <span>· ≈ {estimatedMinutes} min</span>
                 )}
               </div>
-              <div className="h-1.5 w-48 max-w-full overflow-hidden rounded-full bg-navy-100">
+              <div
+                className="h-1.5 w-48 max-w-full overflow-hidden rounded-full"
+                style={{ background: 'rgba(255,255,255,0.15)' }}
+              >
                 <div
-                  className="h-full rounded-full bg-teal-400 transition-all duration-500"
-                  style={{ width: `${progressPct}%` }}
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${progressPct}%`,
+                    background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 100%)',
+                  }}
                 />
               </div>
             </div>
           )}
         </div>
 
+        {/* CTA button */}
         <div className="shrink-0">
           <span
             className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition-opacity group-hover:opacity-90"
@@ -78,6 +96,7 @@ export default function ContinueCard({
             <span aria-hidden="true">→</span>
           </span>
         </div>
+
       </div>
     </Link>
   )
