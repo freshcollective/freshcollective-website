@@ -49,7 +49,7 @@ export default async function ExploreCollectivesPage() {
         <Container>
           <div
             className="mb-4 h-[2px] w-8"
-            style={{ background: 'linear-gradient(90deg, #42C7C6 0%, transparent 100%)' }}
+            style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
           />
           <h1
             className="font-serif text-3xl md:text-4xl"

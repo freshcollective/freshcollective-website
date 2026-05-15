@@ -72,6 +72,10 @@ export default async function SpacePage({ params }: Props) {
             backgroundSize: '22px 22px, auto, auto',
           }}
         >
+          <div
+            className="mb-3 h-[2px] w-6 rounded-full"
+            style={{ background: '#E7C65A' }}
+          />
           <p
             className="mb-4 text-[10px] font-bold uppercase tracking-[0.18em]"
             style={{ color: '#42C7C6' }}
@@ -221,7 +225,7 @@ export default async function SpacePage({ params }: Props) {
         >
           <div
             className="mb-3 h-[2px] w-8 rounded-full"
-            style={{ background: 'linear-gradient(90deg, #42C7C6, transparent)' }}
+            style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
           />
           <p
             className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.18em]"

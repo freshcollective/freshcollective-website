@@ -30,7 +30,7 @@ export default async function SpaceCommunityPage({ params }: Props) {
       >
         <div
           className="mb-3 h-[2px] w-8 rounded-full"
-          style={{ background: 'linear-gradient(90deg, #42C7C6, transparent)' }}
+          style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
         />
         <h2 className="font-serif text-2xl" style={{ color: '#FFFFFF' }}>Community</h2>
         <p className="mt-2 text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.65)' }}>

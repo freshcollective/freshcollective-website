@@ -159,7 +159,7 @@ export default async function DashboardPage() {
           >
             <div
               className="mb-4 h-[2px] w-8 rounded-full"
-              style={{ background: 'linear-gradient(90deg, #42C7C6 0%, transparent 100%)' }}
+              style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
             />
             <h1 className="font-serif text-3xl md:text-4xl" style={{ color: '#FFFFFF' }}>
               Welcome back, {firstName}.
@@ -185,6 +185,10 @@ export default async function DashboardPage() {
               }}
             >
               <div className="p-7 pb-9">
+                <div
+                  className="mb-3 h-[2px] w-6 rounded-full"
+                  style={{ background: '#E7C65A' }}
+                />
                 <p
                   className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em]"
                   style={{ color: '#42C7C6' }}
@@ -234,7 +238,7 @@ export default async function DashboardPage() {
                       style={{ background: 'rgba(56,160,158,0.08)' }}
                     >
                       <div className="font-serif text-xl leading-none text-navy-900">{nextEventDate.day}</div>
-                      <div className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-teal-600">{nextEventDate.month}</div>
+                      <div className="mt-0.5 text-[9px] font-bold uppercase tracking-wider" style={{ color: '#9A7A18' }}>{nextEventDate.month}</div>
                     </div>
                     <div className="min-w-0">
                       <p className="text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">

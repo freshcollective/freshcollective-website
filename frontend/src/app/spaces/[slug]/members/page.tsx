@@ -26,7 +26,7 @@ export default async function SpaceMembersPage({ params }: Props) {
           border: '1px solid rgba(56,160,158,0.14)',
         }}
       >
-        <div className="mb-2 h-[2px] w-8 rounded-full" style={{ background: 'linear-gradient(90deg, #38A09E, transparent)' }} />
+        <div className="mb-2 h-[2px] w-8 rounded-full" style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }} />
         <h1 className="mb-1.5 font-serif text-2xl text-navy-900">Members</h1>
         <p className="text-[14px] text-slate-500">
           The people in this space — here to learn, reflect, and grow together.
