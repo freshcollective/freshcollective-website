@@ -56,23 +56,23 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
         <div className="mb-5 flex items-center gap-2">
           <div
             className="h-1.5 w-1.5 rounded-full transition-colors duration-500"
-            style={{ background: hasName ? '#55B8B6' : 'rgba(255,255,255,0.18)' }}
+            style={{ background: hasName ? '#55B8B6' : 'rgba(255,255,255,0.30)' }}
           />
           <p
-            className="text-[9.5px] font-bold uppercase tracking-[0.22em]"
-            style={{ color: 'rgba(255,255,255,0.70)' }}
+            className="text-[11px] font-bold uppercase tracking-[0.20em]"
+            style={{ color: 'rgba(255,255,255,0.75)' }}
           >
             Live preview
           </p>
         </div>
 
         {/* Panel heading */}
-        <p className="mb-1.5 font-serif text-[18px] leading-snug text-white">
+        <p className="mb-2 text-[22px] font-semibold leading-snug text-white">
           Your collective is taking shape.
         </p>
         <p
-          className="mb-7 text-[12.5px] leading-relaxed"
-          style={{ color: 'rgba(255,255,255,0.78)' }}
+          className="mb-7 text-[15px] leading-relaxed"
+          style={{ color: 'rgba(255,255,255,0.82)' }}
         >
           As you add the foundation, this preview becomes the first outline of the
           experience you are building.
@@ -89,14 +89,14 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
           {/* Name + Draft badge */}
           <div className="mb-2 flex items-start justify-between gap-3">
             <span
-              className="font-serif text-[15px] leading-snug text-white transition-opacity duration-300"
-              style={{ opacity: hasName ? 1 : 0.40 }}
+              className="text-[17px] font-semibold leading-snug text-white transition-opacity duration-300"
+              style={{ opacity: hasName ? 1 : 0.45 }}
             >
               {displayName}
             </span>
             <span
-              className="mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
-              style={{ background: 'rgba(56,160,158,0.22)', color: '#55B8B6' }}
+              className="mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+              style={{ background: 'rgba(56,160,158,0.28)', color: '#a8e6e4' }}
             >
               Draft
             </span>
@@ -104,9 +104,9 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
 
           {/* Tagline */}
           <p
-            className="mb-4 text-[11.5px] leading-relaxed transition-opacity duration-300"
+            className="mb-4 text-[14px] leading-relaxed transition-opacity duration-300"
             style={{
-              color: 'rgba(255,255,255,0.82)',
+              color: 'rgba(255,255,255,0.85)',
               opacity: tagline.trim() ? 1 : 0.55,
             }}
           >
@@ -117,10 +117,10 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
           {category && (
             <div className="mb-3">
               <span
-                className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold"
+                className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
                 style={{
-                  background: 'rgba(56,160,158,0.16)',
-                  color: '#55B8B6',
+                  background: 'rgba(56,160,158,0.22)',
+                  color: '#a8e6e4',
                 }}
               >
                 {category}
@@ -137,16 +137,16 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
             >
               <div
                 className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={{ background: 'rgba(56,160,158,0.38)' }}
+                style={{ background: 'rgba(56,160,158,0.55)' }}
               />
               <span
-                className="flex-1 text-[11.5px]"
-                style={{ color: 'rgba(255,255,255,0.80)' }}
+                className="flex-1 text-[14px]"
+                style={{ color: 'rgba(255,255,255,0.85)' }}
               >
                 {label}
               </span>
               <span
-                className="text-[10px]"
+                className="text-[12px]"
                 style={{ color: 'rgba(255,255,255,0.55)' }}
               >
                 Not yet added
@@ -161,21 +161,21 @@ function PreviewPanel({ name, tagline, category }: PreviewPanelProps) {
           style={{ borderTop: '1px solid rgba(255,255,255,0.16)' }}
         >
           <p
-            className="mb-1.5 text-[12.5px] font-semibold"
-            style={{ color: 'rgba(255,255,255,0.65)' }}
+            className="mb-1.5 text-[14px] font-semibold"
+            style={{ color: 'rgba(255,255,255,0.90)' }}
           >
             Start private. Shape it slowly.
           </p>
           <p
-            className="text-[12px] leading-relaxed"
-            style={{ color: 'rgba(255,255,255,0.72)' }}
+            className="text-[13.5px] leading-relaxed"
+            style={{ color: 'rgba(255,255,255,0.75)' }}
           >
             Add the foundation first. Then build the pathways, gatherings, resources,
             and community around it.
           </p>
         </div>
 
-        <p className="mt-6 text-[11px]" style={{ color: 'rgba(255,255,255,0.58)' }}>
+        <p className="mt-5 text-[12px]" style={{ color: 'rgba(255,255,255,0.60)' }}>
           You can build this one step at a time.
         </p>
 
@@ -221,24 +221,24 @@ function SuccessState({ name }: { name: string }) {
         Your collective foundation is started.
       </h2>
       {name && (
-        <p className="mb-2 text-[13px] font-medium text-teal-600">
+        <p className="mb-2 text-[14px] font-medium text-teal-600">
           &ldquo;{name}&rdquo; is saved as a draft.
         </p>
       )}
-      <p className="mb-8 max-w-[420px] text-[14px] leading-relaxed text-slate-400">
+      <p className="mb-8 max-w-[420px] text-[15px] leading-relaxed text-slate-500">
         Next, shape the first pathway, gathering, and resources that will hold the experience.
       </p>
       <div className="flex flex-col gap-3 sm:flex-row">
         <Link
           href="/creator-studio/setup"
-          className="rounded-xl px-7 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+          className="rounded-xl px-7 py-3 text-[15px] font-semibold text-white transition-opacity hover:opacity-90"
           style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
         >
           Continue setup
         </Link>
         <Link
           href="/creator-studio"
-          className="rounded-xl border border-slate-200 bg-white px-7 py-3 text-[14px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+          className="rounded-xl border border-slate-200 bg-white px-7 py-3 text-[15px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
         >
           Go to Creator Studio
         </Link>
@@ -273,13 +273,13 @@ function LimitReached() {
       <h2 className="mb-3 font-serif text-2xl text-navy-900">
         You have used your {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} included collectives.
       </h2>
-      <p className="mb-8 max-w-[400px] text-[14px] leading-relaxed text-slate-400">
+      <p className="mb-8 max-w-[400px] text-[15px] leading-relaxed text-slate-500">
         Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
         Creator Plus for additional collectives is coming soon.
       </p>
       <Link
         href="/creator-studio"
-        className="rounded-xl border border-slate-200 bg-white px-7 py-3 text-[14px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+        className="rounded-xl border border-slate-200 bg-white px-7 py-3 text-[15px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
       >
         Back to Creator Studio
       </Link>
@@ -382,18 +382,18 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
         {/* Page header */}
         <div className="mb-8">
           <p
-            className="mb-2 text-[10px] font-bold uppercase tracking-[0.22em]"
+            className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em]"
             style={{ color: '#38A09E' }}
           >
             Create your collective
           </p>
-          <h1 className="mb-1.5 font-serif text-[1.75rem] leading-tight text-navy-900">
+          <h1 className="mb-2 font-serif text-[1.875rem] leading-tight text-navy-900 md:text-[2.375rem]">
             Start with the foundation.
           </h1>
-          <p className="text-[13.5px] leading-relaxed text-slate-400">
+          <p className="text-[16px] leading-relaxed" style={{ color: '#334155' }}>
             Give your collective enough shape to begin. You can refine everything later.
           </p>
-          <p className="mt-2 text-[12px] text-slate-400">
+          <p className="mt-2 text-[13px] text-slate-500">
             Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
           </p>
         </div>
@@ -417,16 +417,16 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
               style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}
             >
               <div>
-                <p className="mb-1 font-serif text-[16.5px] text-navy-900">
+                <p className="mb-1.5 text-[20px] font-semibold text-navy-900">
                   Collective foundation
                 </p>
-                <p className="text-[12.5px] leading-relaxed text-slate-400">
+                <p className="text-[15px] leading-relaxed text-slate-500">
                   Start with the essentials. These details help people understand what
                   your collective is for.
                 </p>
               </div>
               <span
-                className="mt-0.5 shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold"
+                className="mt-0.5 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold"
                 style={{
                   background: 'rgba(56,160,158,0.08)',
                   color: '#38A09E',
@@ -442,8 +442,8 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
               {/* ── Section 1: Name the work ── */}
               <div className="mb-7">
                 <p
-                  className="mb-4 text-[10px] font-bold uppercase tracking-[0.16em]"
-                  style={{ color: '#b0bec5' }}
+                  className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                  style={{ color: '#38A09E' }}
                 >
                   Name the work
                 </p>
@@ -451,7 +451,7 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                   <div>
                     <label
                       htmlFor="collective-name"
-                      className="mb-1.5 block text-[13px] font-semibold text-navy-900"
+                      className="mb-1.5 block text-[14px] font-semibold text-navy-900"
                     >
                       Collective name{' '}
                       <span aria-hidden="true" style={{ color: '#38A09E' }}>*</span>
@@ -463,13 +463,13 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                       onChange={(e) => setName(e.target.value)}
                       placeholder="e.g. Living Intentionally"
                       maxLength={200}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
                     />
                   </div>
                   <div>
                     <label
                       htmlFor="collective-tagline"
-                      className="mb-1.5 block text-[13px] font-semibold text-navy-900"
+                      className="mb-1.5 block text-[14px] font-semibold text-navy-900"
                     >
                       Short tagline
                     </label>
@@ -480,7 +480,7 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                       onChange={(e) => setTagline(e.target.value)}
                       placeholder="A guided collective for people ready to live with more clarity."
                       maxLength={300}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
                     />
                   </div>
                 </div>
@@ -491,8 +491,8 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
               {/* ── Section 2: Define the people and change ── */}
               <div className="mb-7">
                 <p
-                  className="mb-4 text-[10px] font-bold uppercase tracking-[0.16em]"
-                  style={{ color: '#b0bec5' }}
+                  className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                  style={{ color: '#38A09E' }}
                 >
                   Define the people and change
                 </p>
@@ -500,7 +500,7 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                   <div>
                     <label
                       htmlFor="collective-who"
-                      className="mb-1.5 block text-[13px] font-semibold text-navy-900"
+                      className="mb-1.5 block text-[14px] font-semibold text-navy-900"
                     >
                       Who is this for?
                     </label>
@@ -510,13 +510,13 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                       onChange={(e) => setWhoFor(e.target.value)}
                       placeholder="Describe the people this collective is designed for."
                       rows={2}
-                      className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                      className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
                     />
                   </div>
                   <div>
                     <label
                       htmlFor="collective-change"
-                      className="mb-1.5 block text-[13px] font-semibold text-navy-900"
+                      className="mb-1.5 block text-[14px] font-semibold text-navy-900"
                     >
                       What change does this collective help people practise?
                     </label>
@@ -526,7 +526,7 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                       onChange={(e) => setWhatChange(e.target.value)}
                       placeholder="What will people begin to see, feel, practise, or live differently?"
                       rows={2}
-                      className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-300 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                      className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
                     />
                   </div>
                 </div>
@@ -537,27 +537,27 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
               {/* ── Section 3: Set the starting point ── */}
               <div className="mb-6">
                 <p
-                  className="mb-4 text-[10px] font-bold uppercase tracking-[0.16em]"
-                  style={{ color: '#b0bec5' }}
+                  className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em]"
+                  style={{ color: '#38A09E' }}
                 >
                   Set the starting point
                 </p>
 
                 {/* Category */}
                 <div className="mb-6">
-                  <p className="mb-2.5 text-[13px] font-semibold text-navy-900">Category</p>
+                  <p className="mb-2.5 text-[14px] font-semibold text-navy-900">Category</p>
                   <div className="flex flex-wrap gap-1.5">
                     {CATEGORIES.map((cat) => (
                       <button
                         key={cat}
                         type="button"
                         onClick={() => setCategory(cat === category ? '' : cat)}
-                        className="rounded-full border px-3 py-1 text-[12px] font-medium transition-all hover:border-teal-300 hover:text-teal-600"
+                        className="rounded-full border px-3 py-1 text-[13px] font-medium transition-all hover:border-teal-300 hover:text-teal-600"
                         style={{
                           borderColor: category === cat ? '#38A09E' : '#e2e8f0',
                           background:
                             category === cat ? 'rgba(56,160,158,0.10)' : 'transparent',
-                          color: category === cat ? '#2d8a88' : '#94a3b8',
+                          color: category === cat ? '#2d8a88' : '#64748b',
                         }}
                       >
                         {cat}
@@ -569,7 +569,7 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
 
                 {/* Start as */}
                 <div>
-                  <p className="mb-2.5 text-[13px] font-semibold text-navy-900">Start as</p>
+                  <p className="mb-2.5 text-[14px] font-semibold text-navy-900">Start as</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {(
                       [
@@ -604,13 +604,13 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                           className="mt-0.5 accent-teal-500"
                         />
                         <div>
-                          <p className="text-[13px] font-medium text-navy-900">{opt.label}</p>
-                          <p className="mt-0.5 text-[12px] text-slate-400">{opt.desc}</p>
+                          <p className="text-[14px] font-medium text-navy-900">{opt.label}</p>
+                          <p className="mt-0.5 text-[13px] text-slate-500">{opt.desc}</p>
                         </div>
                       </label>
                     ))}
                   </div>
-                  <p className="mt-2 text-[11.5px] text-slate-300">
+                  <p className="mt-2 text-[12px] text-slate-400">
                     All new collectives are created as private drafts.
                   </p>
                 </div>
@@ -635,7 +635,7 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                 <button
                   type="submit"
                   disabled={saving}
-                  className="inline-flex items-center rounded-xl px-7 py-2.5 text-[14px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90 disabled:translate-y-0 disabled:opacity-60"
+                  className="inline-flex items-center rounded-xl px-7 py-2.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90 disabled:translate-y-0 disabled:opacity-60"
                   style={{
                     background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
                     boxShadow: '0 3px 18px rgba(56,160,158,0.36)',
@@ -645,7 +645,7 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                 </button>
                 <Link
                   href="/creator-studio"
-                  className="text-[13px] text-slate-400 transition-colors hover:text-slate-600"
+                  className="text-[13px] text-slate-500 transition-colors hover:text-slate-700"
                 >
                   Back to Creator Studio
                 </Link>
