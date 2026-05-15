@@ -275,14 +275,26 @@ function LimitReached() {
       </h2>
       <p className="mb-8 max-w-[400px] text-[15px] leading-relaxed text-slate-500">
         Founding Creator access includes up to {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} collectives.
-        Creator Plus for additional collectives is coming soon.
+        Creator Plus is coming soon for creators who need more room to build.
       </p>
-      <Link
-        href="/creator-studio"
-        className="rounded-xl border border-slate-200 bg-white px-7 py-3 text-[15px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
-      >
-        Back to Creator Studio
-      </Link>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <Link
+          href="/creator-studio"
+          className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-[14px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+        >
+          Back to Studio Home
+        </Link>
+        <span
+          className="rounded-xl px-6 py-2.5 text-[14px] font-medium"
+          style={{
+            background: 'rgba(56,160,158,0.10)',
+            color: '#38A09E',
+            cursor: 'default',
+          }}
+        >
+          Creator Plus coming soon
+        </span>
+      </div>
     </div>
   )
 }

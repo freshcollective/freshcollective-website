@@ -21,18 +21,36 @@ interface Props {
   activeSpace: SpaceSummary | null
 }
 
-const NAV_ITEMS = [
-  { href: '/creator-studio',             label: 'Overview',   exact: true },
-  { href: '/creator-studio/pathways',    label: 'Pathways' },
-  { href: '/creator-studio/gatherings',  label: 'Gatherings' },
-  { href: '/creator-studio/resources',   label: 'Resources' },
-  { href: '/creator-studio/community',   label: 'Community' },
-  { href: '/creator-studio/setup',       label: 'Setup' },
-  { href: '/creator-studio/settings',    label: 'Settings' },
+interface NavItem {
+  href: string
+  label: string
+  exact?: boolean
+}
+
+// Two-section nav structure
+const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
+  {
+    label: 'ACCOUNT',
+    items: [
+      { href: '/creator-studio', label: 'Studio Home', exact: true },
+    ],
+  },
+  {
+    label: 'CURRENT COLLECTIVE',
+    items: [
+      { href: '/creator-studio/collective', label: 'Collective Overview' },
+      { href: '/creator-studio/pathways',   label: 'Pathways' },
+      { href: '/creator-studio/gatherings', label: 'Gatherings' },
+      { href: '/creator-studio/resources',  label: 'Resources' },
+      { href: '/creator-studio/community',  label: 'Community' },
+      { href: '/creator-studio/setup',      label: 'Setup' },
+      { href: '/creator-studio/settings',   label: 'Settings' },
+    ],
+  },
 ]
 
 // ---------------------------------------------------------------------------
-// Collective switcher — sets a cookie and refreshes the server components
+// Collective switcher
 // ---------------------------------------------------------------------------
 
 function CollectiveSwitcher({
@@ -47,7 +65,7 @@ function CollectiveSwitcher({
 
   function switchTo(slug: string) {
     document.cookie = `fc_creator_space=${slug}; path=/; max-age=86400`
-    router.refresh()
+    router.push('/creator-studio/collective')
   }
 
   return (
@@ -153,6 +171,8 @@ function SidebarInner({
     return exact ? pathname === href : pathname.startsWith(href)
   }
 
+  const hasCollective = !!activeSpace
+
   return (
     <div
       className="relative flex h-full flex-col overflow-hidden"
@@ -182,9 +202,7 @@ function SidebarInner({
           >
             <div className="h-[11px] w-[11px] rounded-sm bg-white" style={{ opacity: 0.92 }} />
           </div>
-          <span
-            className="text-[15px] font-semibold tracking-[-0.02em] text-white"
-          >
+          <span className="text-[15px] font-semibold tracking-[-0.02em] text-white">
             Creator Studio
           </span>
         </Link>
@@ -194,26 +212,42 @@ function SidebarInner({
 
       {/* Nav */}
       <nav className="relative z-10 flex-1 overflow-y-auto px-3 py-4">
-        <ul className="space-y-0.5">
-          {NAV_ITEMS.map(({ href, label, exact }) => {
-            const active = isActive(href, exact)
-            return (
-              <li key={href}>
-                <Link
-                  href={href}
-                  onClick={onNavClick}
-                  className={`flex items-center rounded-xl px-4 py-2.5 text-[15px] font-medium transition-all ${
-                    active
-                      ? 'bg-white/[12%] text-white'
-                      : 'text-white/[72%] hover:bg-white/[8%] hover:text-white'
-                  }`}
-                >
-                  {label}
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
+        {NAV_SECTIONS.map(({ label, items }) => (
+          <div key={label} className="mb-5">
+            <p
+              className="mb-1.5 px-4 text-[9px] font-bold uppercase tracking-[0.18em]"
+              style={{ color: 'rgba(255,255,255,0.35)' }}
+            >
+              {label}
+            </p>
+            <ul className="space-y-0.5">
+              {items.map(({ href, label: itemLabel, exact }) => {
+                const active = isActive(href, exact)
+                // Dim collective-specific items when no collective is selected
+                const dimmed = label === 'CURRENT COLLECTIVE' && !hasCollective
+                return (
+                  <li key={href}>
+                    <Link
+                      href={dimmed ? '/creator-studio/create' : href}
+                      onClick={onNavClick}
+                      className={`flex items-center rounded-xl px-4 py-2.5 text-[15px] font-medium transition-all ${
+                        active
+                          ? 'bg-white/[12%] text-white'
+                          : dimmed
+                            ? 'cursor-default text-white/[35%]'
+                            : 'text-white/[72%] hover:bg-white/[8%] hover:text-white'
+                      }`}
+                      tabIndex={dimmed ? -1 : undefined}
+                      aria-disabled={dimmed}
+                    >
+                      {itemLabel}
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
 
       {/* Footer */}

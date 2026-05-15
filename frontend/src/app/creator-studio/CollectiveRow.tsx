@@ -14,8 +14,7 @@ export default function CollectiveRow({
 
   function open() {
     document.cookie = `fc_creator_space=${space.slug}; path=/; max-age=86400`
-    router.push('/creator-studio/settings')
-    router.refresh()
+    router.push('/creator-studio/collective')
   }
 
   return (
@@ -63,7 +62,7 @@ export default function CollectiveRow({
         )}
       </div>
       <span className="shrink-0 text-[13px] font-medium text-teal-600 transition-colors group-hover:text-teal-700">
-        Manage →
+        Open →
       </span>
     </div>
   )

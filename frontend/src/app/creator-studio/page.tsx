@@ -57,13 +57,13 @@ export default async function CreatorStudioOverviewPage() {
           className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
           style={{ color: '#38A09E' }}
         >
-          Creator Studio
+          Studio Home
         </p>
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">
           Welcome to your Creator Studio.
         </h1>
         <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
-          Build, shape, and manage the collective you wish existed.
+          All your collectives, at a glance. Select one to start building.
         </p>
       </div>
 
@@ -132,13 +132,13 @@ export default async function CreatorStudioOverviewPage() {
               <Link
                 href={
                   isEarlyStage
-                    ? `/creator/spaces/${activeSpace.slug}`
-                    : `/creator/spaces/${activeSpace.slug}/pathways`
+                    ? '/creator-studio/collective'
+                    : '/creator-studio/pathways'
                 }
                 className="inline-flex items-center rounded-lg px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
               >
-                {isEarlyStage ? 'Set up collective' : 'Continue building'}
+                {isEarlyStage ? 'Open collective' : 'Continue building'}
               </Link>
             </div>
           )}
@@ -218,21 +218,21 @@ export default async function CreatorStudioOverviewPage() {
           <div className="mb-8 grid gap-3 sm:grid-cols-3">
             {[
               {
+                label: 'Collective overview',
+                desc: 'Stats, next steps, and quick actions',
+                href: '/creator-studio/collective',
+              },
+              {
                 label: 'Build pathways',
                 desc: pathways.length > 0
                   ? `${pathways.length} pathway${pathways.length !== 1 ? 's' : ''}`
                   : 'No pathways yet',
-                href: `/creator/spaces/${activeSpace.slug}/pathways`,
-              },
-              {
-                label: 'Schedule a gathering',
-                desc: upcoming.length > 0 ? `${upcoming.length} coming up` : 'No upcoming gatherings',
-                href: `/creator/spaces/${activeSpace.slug}/events/new`,
+                href: '/creator-studio/pathways',
               },
               {
                 label: 'Engage community',
                 desc: 'Posts, prompts, and discussion',
-                href: `/creator/spaces/${activeSpace.slug}/community`,
+                href: '/creator-studio/community',
               },
             ].map(({ label, desc, href }) => (
               <Link
