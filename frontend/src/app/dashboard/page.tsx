@@ -107,36 +107,23 @@ export default async function DashboardPage() {
         <Container>
 
           {/* ── Welcome ── */}
-          <div className="mb-8 flex items-start justify-between gap-6">
-            <div>
-              <div
-                className="mb-3 h-[2px] w-5"
-                style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
-              />
-              <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
-                Welcome back, {firstName}.
-              </h1>
-              <p className="mt-2 text-[14px] text-slate-500">
-                Ready to continue where you left off?
-              </p>
-            </div>
-            <div className="hidden shrink-0 flex-col items-end gap-1.5 sm:flex">
-              <Avatar name={displayName} size="md" />
-              {isCreatorOrAdmin && (
-                <span
-                  className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                  style={{ background: 'rgba(56,160,158,0.10)', color: '#2E8584' }}
-                >
-                  Creator
-                </span>
-              )}
-            </div>
+          <div className="mb-6">
+            <div
+              className="mb-3 h-[2px] w-5"
+              style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+            />
+            <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
+              Welcome back, {firstName}.
+            </h1>
+            <p className="mt-1.5 text-[14px] text-slate-500">
+              Ready to continue where you left off?
+            </p>
           </div>
 
           {/* ══════════════════════════════════════════════════
               LAYER 1 — YOUR SPACES
           ══════════════════════════════════════════════════ */}
-          <section className="mb-10">
+          <section className="mb-8">
             <h2 className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
               Your spaces
             </h2>
@@ -347,9 +334,9 @@ export default async function DashboardPage() {
                   boxShadow: CARD_SHADOW,
                 }}
               >
-                <div className="px-5 py-5">
+                <div className="px-5 py-4">
                   {/* Inline: gold accent + eyebrow */}
-                  <div className="mb-3 flex items-center gap-2.5">
+                  <div className="mb-2.5 flex items-center gap-2.5">
                     <div
                       className="h-[2px] w-4 shrink-0"
                       style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
@@ -362,14 +349,14 @@ export default async function DashboardPage() {
                     {continueData ? continueData.step_title : 'Begin the REAL Journey'}
                   </h3>
                   {continueData && (
-                    <p className="mt-1 text-[13px] text-slate-400">{continueData.pathway_title}</p>
+                    <p className="mt-0.5 text-[13px] text-slate-400">{continueData.pathway_title}</p>
                   )}
                   <div
-                    className="my-4 h-px"
+                    className="my-3 h-px"
                     style={{ background: 'rgba(0,0,0,0.06)' }}
                   />
                   <span
-                    className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                    className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
                     style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
                   >
                     {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
@@ -484,7 +471,7 @@ export default async function DashboardPage() {
               LAYERS 2 + 3 — DISCOVER and CREATOR TOOLS
               Two-column grid on desktop when both are visible
           ══════════════════════════════════════════════════ */}
-          <div className={['grid gap-6 mb-10', isCreatorOrAdmin ? 'sm:grid-cols-2' : ''].join(' ')}>
+          <div className={['grid gap-6 mb-8', isCreatorOrAdmin ? 'sm:grid-cols-2' : ''].join(' ')}>
 
             {/* Discover — pale aqua, inviting and exploratory */}
             <section>
@@ -506,22 +493,41 @@ export default async function DashboardPage() {
                   className="h-[3px] w-full"
                   style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, transparent 100%)' }}
                 />
-                <div className="px-6 py-5">
-                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
-                    Discover
-                  </p>
-                  <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
-                    Explore collectives
-                  </h3>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
-                    Find other guided spaces and communities to join.
-                  </p>
-                  <span
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                  >
-                    Browse collectives →
-                  </span>
+                {/* Horizontal split when card is full-width (non-creator); vertical when in 2-col grid */}
+                <div className={isCreatorOrAdmin ? 'px-6 py-5' : 'flex items-stretch'}>
+                  <div className={isCreatorOrAdmin ? '' : 'flex-1 px-6 py-5'}>
+                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                      Discover
+                    </p>
+                    <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                      Explore collectives
+                    </h3>
+                    <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+                      Find other guided spaces and communities to join.
+                    </p>
+                    <span
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                      style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                    >
+                      Browse collectives →
+                    </span>
+                  </div>
+                  {!isCreatorOrAdmin && (
+                    <div
+                      className="hidden w-52 shrink-0 flex-col items-center justify-center gap-3 sm:flex"
+                      style={{
+                        borderLeft: '1px solid rgba(56,160,158,0.15)',
+                        background: 'linear-gradient(135deg, rgba(56,160,158,0.06) 0%, rgba(56,160,158,0.16) 100%)',
+                      }}
+                    >
+                      <div className="font-serif text-5xl leading-none" style={{ color: 'rgba(56,160,158,0.28)' }}>
+                        →
+                      </div>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E', opacity: 0.6 }}>
+                        Explore all
+                      </p>
+                    </div>
+                  )}
                 </div>
               </Link>
             </section>
