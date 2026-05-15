@@ -216,7 +216,10 @@ export default async function StepPage({ params }: Props) {
 
       {/* Content */}
       {step.content_body && (
-        <article className="mb-2 border-b border-border pb-2">
+        <article
+          className="mb-8 overflow-hidden rounded-2xl border px-7 py-6"
+          style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
+        >
           {renderContent(step.content_body)}
         </article>
       )}

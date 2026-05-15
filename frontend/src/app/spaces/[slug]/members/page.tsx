@@ -16,6 +16,7 @@ export default async function SpaceMembersPage({ params }: Props) {
   return (
     <div className="max-w-2xl">
       <div className="mb-8">
+        <div className="mb-2 h-[2px] w-8 rounded-full bg-teal-400" />
         <h1 className="mb-2 font-serif text-2xl text-navy-900">Members</h1>
         <p className="text-sm text-slate-500">
           The people in this space — here to learn, reflect, and grow together.

@@ -79,18 +79,19 @@ export default async function DashboardPage() {
       <main className="flex-1 py-10">
         <Container>
 
-          {/* ── Welcome hero ── */}
+          {/* ── Welcome hero — soft aqua with subtle dot texture ── */}
           <div
             className="mb-6 overflow-hidden rounded-2xl px-8 py-8 md:px-10 md:py-9"
             style={{
-              background: 'linear-gradient(135deg, #EAF7F7 0%, #F0FBFA 55%, #FAFAF8 100%)',
-              border: '1px solid rgba(56,160,158,0.18)',
+              background:
+                'radial-gradient(rgba(56,160,158,0.10) 1px, transparent 1px), ' +
+                'radial-gradient(circle at 88% 25%, rgba(66,199,198,0.18), transparent 38%), ' +
+                'linear-gradient(135deg, #F2FBFA 0%, #EAF8F7 50%, #FAFAF8 100%)',
+              backgroundSize: '22px 22px, 100% 100%, 100% 100%',
+              border: '1px solid rgba(56,160,158,0.15)',
             }}
           >
-            <div
-              className="mb-4 h-[2px] w-8"
-              style={{ background: 'linear-gradient(90deg, #38A09E 0%, transparent 100%)' }}
-            />
+            <div className="mb-4 h-[2px] w-8 rounded-full bg-teal-400" />
             <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
               Welcome back, {firstName}.
             </h1>
@@ -105,7 +106,9 @@ export default async function DashboardPage() {
               href="/spaces/fresh-collective"
               className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-xl"
               style={{
-                background: 'linear-gradient(135deg, #073B3A 0%, #0d4f4d 50%, #062F35 100%)',
+                background:
+                  'radial-gradient(circle at 88% 15%, rgba(66,199,198,0.22), transparent 40%), ' +
+                  'linear-gradient(135deg, #073B3A 0%, #0d4f4d 50%, #062F35 100%)',
               }}
             >
               <div className="px-7 py-6">
@@ -213,7 +216,9 @@ export default async function DashboardPage() {
               href="/dashboard/explore"
               className="group block overflow-hidden rounded-2xl border transition-all hover:-translate-y-0.5 hover:shadow-md"
               style={{
-                background: 'linear-gradient(135deg, #EAF7F7 0%, #F0FBFA 100%)',
+                background:
+                  'radial-gradient(circle at 20% 60%, rgba(66,199,198,0.12), transparent 35%), ' +
+                  'linear-gradient(135deg, #EAF8F7 0%, #F5FCFB 100%)',
                 borderColor: 'rgba(56,160,158,0.25)',
               }}
             >

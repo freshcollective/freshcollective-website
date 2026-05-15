@@ -111,27 +111,26 @@ export default async function PathwayDetailPage({ params }: Props) {
         ← All Pathways
       </Link>
 
-      {/* Visual pathway banner */}
+      {/* Visual pathway banner — light gradient, dark text */}
       <div
-        className="mb-6 overflow-hidden rounded-2xl"
+        className="mb-6 overflow-hidden rounded-2xl border border-teal-100"
         style={{ background: coverGradient(pathwaySlug) }}
       >
         <div
           className="px-7 py-8"
-          style={{ background: 'radial-gradient(ellipse at 85% 15%, rgba(255,255,255,0.06) 0%, transparent 55%)' }}
+          style={{
+            background:
+              'radial-gradient(circle at 90% 10%, rgba(56,160,158,0.18), transparent 40%), ' +
+              'radial-gradient(circle at 10% 85%, rgba(66,199,198,0.10), transparent 30%)',
+          }}
         >
-          <div
-            className="mb-3 h-[2px] w-8"
-            style={{ background: 'rgba(255,255,255,0.35)' }}
-          />
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em]"
-            style={{ color: 'rgba(255,255,255,0.55)' }}>
+          <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-600">
             Pathway
           </p>
-          <h2 className="font-serif text-2xl text-white md:text-3xl">{pathway.title}</h2>
+          <h2 className="font-serif text-2xl text-navy-900 md:text-3xl">{pathway.title}</h2>
           {pathway.description && (
-            <p className="mt-2 max-w-md text-[14px] leading-relaxed"
-              style={{ color: 'rgba(255,255,255,0.72)' }}>
+            <p className="mt-2 max-w-md text-[14px] leading-relaxed text-slate-600">
               {pathway.description}
             </p>
           )}

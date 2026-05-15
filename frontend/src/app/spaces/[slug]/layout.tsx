@@ -17,49 +17,39 @@ export default async function SpaceLayout({ children, params }: Props) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
 
-      {/* ── Deep teal collective header (nav + identity banner) ── */}
-      <div style={{ background: 'linear-gradient(180deg, #073B3A 0%, #0F5E5C 100%)' }}>
-
-        {/* Top nav row */}
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3.5 md:px-10">
-          <Link
-            href="/dashboard"
-            className="font-serif text-lg text-white transition-opacity hover:opacity-75"
-          >
+      {/* ── Top navigation bar ── */}
+      <header className="border-b border-border bg-surface py-3.5" style={{ borderTop: '2px solid #38A09E' }}>
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 md:px-10">
+          <Link href="/dashboard" className="font-serif text-lg text-navy-900 transition-colors hover:text-teal-600">
             Fresh Collective
           </Link>
           <div className="flex items-center gap-4">
-            <Link
-              href="/settings"
-              className="text-sm transition-colors hover:text-white"
-              style={{ color: 'rgba(255,255,255,0.65)' }}
-            >
+            <Link href="/settings" className="text-sm text-slate-500 transition-colors hover:text-navy-700">
               Settings
             </Link>
-            <Link
-              href="/dashboard"
-              className="text-sm transition-colors hover:text-white"
-              style={{ color: 'rgba(255,255,255,0.65)' }}
-            >
+            <Link href="/dashboard" className="text-sm text-slate-500 transition-colors hover:text-navy-700">
               ← Dashboard
             </Link>
           </div>
         </div>
+      </header>
 
-        {/* Collective identity band */}
-        <div
-          className="mx-auto max-w-6xl px-6 pb-8 pt-5 md:px-10"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.10)' }}
-        >
-          <div
-            className="mb-3 h-[2px] w-8"
-            style={{ background: 'rgba(255,255,255,0.35)' }}
-          />
-          <h1 className="font-serif text-3xl text-white md:text-4xl">{space.name}</h1>
+      {/* ── Collective identity banner — light aqua with subtle dot texture ── */}
+      <div
+        className="border-b border-teal-100 px-6 py-8 md:px-10"
+        style={{
+          background:
+            'radial-gradient(rgba(56,160,158,0.10) 1px, transparent 1px), ' +
+            'radial-gradient(circle at 85% 30%, rgba(66,199,198,0.18), transparent 40%), ' +
+            'linear-gradient(135deg, #EAF8F7 0%, #F5FCFB 55%, #FAFAF8 100%)',
+          backgroundSize: '22px 22px, 100% 100%, 100% 100%',
+        }}
+      >
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
+          <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">{space.name}</h1>
           {space.tagline && (
-            <p className="mt-1.5 text-[14px]" style={{ color: 'rgba(255,255,255,0.72)' }}>
-              {space.tagline}
-            </p>
+            <p className="mt-1.5 text-[14px] text-slate-500">{space.tagline}</p>
           )}
         </div>
       </div>
