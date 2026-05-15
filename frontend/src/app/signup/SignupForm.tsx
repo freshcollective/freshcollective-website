@@ -50,7 +50,14 @@ export default function SignupForm() {
       style={{ boxShadow: 'var(--fc-shadow-md)' }}
     >
       <div className="mb-8">
-        <div className="mb-4 h-px w-6 bg-gold-500" />
+        <div className="mb-5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/fresh-collective-logo-navy-gold-white.png"
+            alt="Fresh Collective"
+            style={{ height: '34px', width: 'auto' }}
+          />
+        </div>
         <h1 className="mb-2 font-serif text-3xl text-navy-900">Create your account.</h1>
         <p className="text-sm text-[#718096]">
           Already a member?{' '}

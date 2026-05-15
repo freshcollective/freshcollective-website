@@ -116,7 +116,12 @@ export default async function DashboardPage() {
         style={{ borderTop: '2px solid #38A09E' }}
       >
         <Container className="flex items-center justify-between">
-          <span className="font-serif text-lg text-navy-900">Fresh Collective</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/fresh-collective-logo-teal-gold-white.png"
+            alt="Fresh Collective"
+            style={{ height: '30px', width: 'auto' }}
+          />
           <div className="flex items-center gap-2">
             <Link
               href="/settings"

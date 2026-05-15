@@ -210,14 +210,17 @@ function SidebarInner({
         className="relative z-10 px-5 py-5"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.09)' }}
       >
-        <Link href="/creator-studio" className="flex items-center gap-3" onClick={onNavClick}>
-          <div
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-            style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
+        <Link href="/creator-studio" className="flex flex-col gap-2" onClick={onNavClick}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/fresh-collective-logo-transparent-teal.png"
+            alt="Fresh Collective"
+            style={{ height: '26px', width: 'auto' }}
+          />
+          <span
+            className="text-[10px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: 'rgba(255,255,255,0.42)' }}
           >
-            <div className="h-[11px] w-[11px] rounded-sm bg-white" style={{ opacity: 0.92 }} />
-          </div>
-          <span className="text-[15px] font-semibold tracking-[-0.02em] text-white">
             Creator Studio
           </span>
         </Link>
@@ -345,13 +348,16 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
           }}
         >
           <Link href="/creator-studio" className="flex items-center gap-2.5">
-            <div
-              className="flex h-6 w-6 items-center justify-center rounded-lg"
-              style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/brand/fresh-collective-logo-transparent-teal.png"
+              alt="Fresh Collective"
+              style={{ height: '22px', width: 'auto' }}
+            />
+            <span
+              className="text-[11px] font-semibold uppercase tracking-[0.12em]"
+              style={{ color: 'rgba(255,255,255,0.50)' }}
             >
-              <div className="h-[9px] w-[9px] rounded-sm bg-white" style={{ opacity: 0.92 }} />
-            </div>
-            <span className="text-[14px] font-semibold text-white">
               Creator Studio
             </span>
           </Link>

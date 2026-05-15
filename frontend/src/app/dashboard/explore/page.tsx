@@ -29,7 +29,12 @@ export default async function ExploreCollectivesPage() {
           >
             ← Dashboard
           </Link>
-          <span className="font-serif text-lg text-navy-900">Fresh Collective</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/fresh-collective-logo-teal-gold-white.png"
+            alt="Fresh Collective"
+            style={{ height: '30px', width: 'auto' }}
+          />
           <span className="w-24" />
         </Container>
       </header>
