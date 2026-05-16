@@ -333,44 +333,58 @@ export default async function DashboardPage() {
             <GoldLabel className="mb-4">Your journey</GoldLabel>
             <div className="grid gap-4 lg:grid-cols-3">
 
-              {/* Continue Journey — pale aqua pillar card, 2/3 width */}
+              {/* Continue Journey — dark feature card, 2/3 width */}
               <Link
                 href={continueHref}
-                className="group relative flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-md lg:col-span-2"
+                className="group flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-2xl lg:col-span-2"
                 style={{
-                  background: '#EAF7F6',
-                  border: '1px solid rgba(56,160,158,0.16)',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                  background:
+                    'radial-gradient(ellipse at 78% 18%, rgba(85,215,210,0.20) 0%, transparent 52%), ' +
+                    'radial-gradient(ellipse at 8% 88%, rgba(56,160,158,0.16) 0%, transparent 42%), ' +
+                    'linear-gradient(135deg, #071824 0%, #092B35 48%, #073B3A 100%)',
+                  border: '1px solid rgba(66,199,198,0.14)',
+                  boxShadow: '0 8px 40px rgba(7,24,36,0.32), 0 2px 8px rgba(0,0,0,0.16)',
                 }}
               >
-                {/* Large faint decorative arrow */}
-                <div
-                  className="pointer-events-none absolute right-5 top-4 select-none font-serif text-[80px] font-bold leading-none"
-                  style={{ color: 'rgba(56,160,158,0.08)' }}
-                  aria-hidden="true"
-                >
-                  →
-                </div>
-                {/* flex-1 so CTA is pushed to bottom regardless of card height */}
-                <div className="relative flex flex-1 flex-col px-6 py-6 md:px-7 md:py-7">
-                  <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                <div className="flex flex-1 flex-col px-7 py-7 md:px-8 md:py-8">
+                  {/* Soft gold accent line */}
+                  <div
+                    className="mb-4 h-[2px] w-6 rounded-full"
+                    style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+                  />
+                  {/* Teal eyebrow label */}
+                  <p
+                    className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]"
+                    style={{ color: '#55D7D2' }}
+                  >
                     {continueData?.all_complete
                       ? 'Journey complete'
                       : continueData
                         ? 'Continue your journey'
                         : 'Begin your journey'}
                   </p>
-                  <h3 className="font-serif text-2xl leading-snug text-navy-900 transition-colors group-hover:text-teal-700 md:text-3xl">
+                  {/* Step title — teal-to-white gradient text */}
+                  <h3
+                    className="font-serif text-2xl leading-snug transition-opacity group-hover:opacity-80 md:text-3xl"
+                    style={{
+                      background: 'linear-gradient(120deg, #55D7D2 0%, #FFFFFF 52%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                    }}
+                  >
                     {continueData ? continueData.step_title : 'Begin the REAL Journey'}
                   </h3>
+                  {/* Pathway name */}
                   {continueData && (
-                    <p className="mt-1.5 text-[13px] text-slate-500">
+                    <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.52)' }}>
                       {continueData.pathway_title}
                     </p>
                   )}
-                  <div className="mt-auto pt-5">
+                  {/* CTA pinned to bottom */}
+                  <div className="mt-auto pt-6">
                     <span
-                      className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                      className="inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
                       style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
                     >
                       {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
