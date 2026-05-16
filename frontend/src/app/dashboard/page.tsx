@@ -498,100 +498,74 @@ export default async function DashboardPage() {
             </div>
           </section>
 
-          {/* ══════════════════════════════════════════════════
-              LAYERS 2 + 3 — DISCOVER and CREATOR TOOLS
-              Two-column grid on desktop when both are visible.
-              Non-creator: single column, max-w-2xl so it feels intentional.
-          ══════════════════════════════════════════════════ */}
-          <div className={[
-            'mb-8 grid gap-6',
-            isCreatorOrAdmin ? 'sm:grid-cols-2' : 'max-w-2xl',
-          ].join(' ')}>
-
-            {/* ── Discover — pillar-card style: solid pale mint, large faded accent ── */}
-            <section>
-              <GoldLabel className="mb-4">Discover</GoldLabel>
-              <Link
-                href="/dashboard/explore"
-                className="group relative block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-lg"
-                style={{
-                  background: '#EAF7F6',
-                  border: '1px solid rgba(56,160,158,0.18)',
-                }}
+          {/* ── Discover ── */}
+          <section className="mb-8 max-w-2xl">
+            <GoldLabel className="mb-4">Discover</GoldLabel>
+            <Link
+              href="/dashboard/explore"
+              className="group relative block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-md"
+              style={{
+                background: '#EAF7F6',
+                border: '1px solid rgba(56,160,158,0.18)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+              }}
+            >
+              <div
+                className="pointer-events-none absolute right-4 top-2 select-none font-serif text-[96px] font-bold leading-none"
+                style={{ color: 'rgba(56,160,158,0.09)' }}
+                aria-hidden="true"
               >
-                {/* Large faded decorative element — mirrors the pillar-card number in the reference */}
-                <div
-                  className="pointer-events-none absolute right-4 top-2 select-none font-serif text-[96px] font-bold leading-none"
-                  style={{ color: 'rgba(56,160,158,0.10)' }}
-                  aria-hidden="true"
+                →
+              </div>
+              <div className="relative px-6 py-6">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                  Discover
+                </p>
+                <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
+                  Explore collectives
+                </h3>
+                <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
+                  Find other guided spaces and communities to join.
+                </p>
+                <span
+                  className="mt-5 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
                 >
-                  →
-                </div>
-                <div className="relative px-6 py-6">
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
-                    Discover
-                  </p>
+                  Browse collectives →
+                </span>
+              </div>
+            </Link>
+          </section>
+
+          {/* ── Creator tools — clean card, no chrome ── */}
+          {isCreatorOrAdmin && (
+            <section className="mb-8 max-w-2xl">
+              <GoldLabel className="mb-4">Creator tools</GoldLabel>
+              <Link
+                href="/creator-studio"
+                className="group block overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-md"
+                style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+              >
+                <div className="px-6 py-6">
+                  <div className="mb-3">
+                    <PillTag>Creator</PillTag>
+                  </div>
                   <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
-                    Explore collectives
+                    Creator Studio
                   </h3>
-                  <p className="mt-2 text-[13px] leading-relaxed text-slate-500">
-                    Find other guided spaces and communities to join.
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+                    Build and manage your collectives, pathways, gatherings, and people.
                   </p>
                   <span
-                    className="mt-5 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
                     style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
                   >
-                    Browse collectives →
+                    Open Studio →
                   </span>
                 </div>
               </Link>
             </section>
-
-            {/* ── Creator tools — dark header chrome, builder feel ── */}
-            {isCreatorOrAdmin && (
-              <section>
-                <GoldLabel className="mb-4">Creator tools</GoldLabel>
-                <Link
-                  href="/creator-studio"
-                  className="group block overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-lg"
-                  style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
-                >
-                  {/* Dark ocean header strip — browser chrome feel */}
-                  <div
-                    className="flex items-center gap-2 px-4 py-3"
-                    style={{ background: 'linear-gradient(135deg, #071824 0%, #0C2D2C 100%)' }}
-                  >
-                    <div className="flex gap-1.5">
-                      <span className="h-2 w-2 rounded-full" style={{ background: 'rgba(239,68,68,0.60)' }} />
-                      <span className="h-2 w-2 rounded-full" style={{ background: 'rgba(234,179,8,0.60)' }} />
-                      <span className="h-2 w-2 rounded-full" style={{ background: 'rgba(34,197,94,0.60)' }} />
-                    </div>
-                    <span className="ml-2 text-[11px]" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                      creator-studio
-                    </span>
-                  </div>
-                  <div className="px-6 py-5">
-                    <div className="mb-3">
-                      <PillTag>Creator</PillTag>
-                    </div>
-                    <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
-                      Creator Studio
-                    </h3>
-                    <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
-                      Build and manage your collectives, pathways, gatherings, and people.
-                    </p>
-                    <span
-                      className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                      style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                    >
-                      Open Studio →
-                    </span>
-                  </div>
-                </Link>
-              </section>
-            )}
-
-          </div>
+          )}
 
           {/* ── Footer ── */}
           <div className="border-t border-slate-100 pt-6">

@@ -25,7 +25,7 @@ export default async function SpaceLayout({ children, params }: Props) {
   const spaceCoverUrl = resolveMediaUrl(space.cover_image_url)
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col" style={{ background: '#FAFAF8' }}>
 
       {/* ── Top navigation bar ── */}
       <header className="border-b border-border bg-surface py-3.5" style={{ borderTop: '2px solid #38A09E' }}>
