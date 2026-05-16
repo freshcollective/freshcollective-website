@@ -333,16 +333,16 @@ export default async function DashboardPage() {
             <GoldLabel className="mb-4">Your journey</GoldLabel>
             <div className="grid gap-4 lg:grid-cols-3">
 
-              {/* Continue Journey — dark feature card, 2/3 width */}
+              {/* Continue Journey — flat navy feature card, 2/3 width */}
               <Link
                 href={continueHref}
                 className="group flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-2xl lg:col-span-2"
                 style={{
                   background:
-                    'radial-gradient(circle at 78% 20%, rgba(85,215,210,0.15) 0%, transparent 34%), ' +
-                    'linear-gradient(135deg, #071824 0%, #081F2B 48%, #092B35 100%)',
-                  border: '1px solid rgba(66,199,198,0.12)',
-                  boxShadow: '0 8px 40px rgba(7,24,36,0.32), 0 2px 8px rgba(0,0,0,0.16)',
+                    'radial-gradient(circle at 72% 18%, rgba(85,215,210,0.07) 0%, transparent 28%), ' +
+                    '#071824',
+                  border: '1px solid rgba(66,199,198,0.10)',
+                  boxShadow: '0 8px 40px rgba(7,24,36,0.36), 0 2px 8px rgba(0,0,0,0.18)',
                 }}
               >
                 <div className="flex flex-1 flex-col px-7 py-7 md:px-8 md:py-8">
@@ -351,7 +351,7 @@ export default async function DashboardPage() {
                     className="mb-4 h-[2px] w-6 rounded-full"
                     style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
                   />
-                  {/* Eyebrow label — soft white so it reads clearly on navy */}
+                  {/* Eyebrow label — soft white */}
                   <p
                     className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]"
                     style={{ color: 'rgba(255,255,255,0.72)' }}
@@ -362,21 +362,21 @@ export default async function DashboardPage() {
                         ? 'Continue your journey'
                         : 'Begin your journey'}
                   </p>
-                  {/* Step title — teal-to-white gradient text */}
-                  <h3
+                  {/* Step title — teal-to-white gradient, mostly white */}
+                  <p
                     className="font-serif text-2xl leading-snug transition-opacity group-hover:opacity-80 md:text-3xl"
                     style={{
-                      background: 'linear-gradient(120deg, #55D7D2 0%, #FFFFFF 52%)',
+                      background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 72%)',
                       WebkitBackgroundClip: 'text',
                       WebkitTextFillColor: 'transparent',
                       backgroundClip: 'text',
                     }}
                   >
                     {continueData ? continueData.step_title : 'Begin the REAL Journey'}
-                  </h3>
-                  {/* Pathway name */}
+                  </p>
+                  {/* Pathway name — soft white, not grey */}
                   {continueData && (
-                    <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.52)' }}>
+                    <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.68)' }}>
                       {continueData.pathway_title}
                     </p>
                   )}
@@ -406,7 +406,7 @@ export default async function DashboardPage() {
                       boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                     }}
                   >
-                    <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7A18' }}>
                       Coming up
                     </p>
                     <div className="flex flex-1 items-start gap-3">
@@ -443,7 +443,7 @@ export default async function DashboardPage() {
                       border: '1px solid rgba(231,198,90,0.22)',
                     }}
                   >
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7A18' }}>
                       Coming up
                     </p>
                     <p className="flex-1 text-[13px] leading-relaxed text-slate-400">
@@ -469,7 +469,7 @@ export default async function DashboardPage() {
                       boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                     }}
                   >
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#334155' }}>
                       Community
                     </p>
                     {recentPost.title ? (
@@ -496,7 +496,7 @@ export default async function DashboardPage() {
                       boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                     }}
                   >
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#334155' }}>
                       Community
                     </p>
                     <p className="flex-1 font-serif text-[14px] text-navy-900">

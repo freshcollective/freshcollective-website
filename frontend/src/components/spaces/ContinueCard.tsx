@@ -36,8 +36,8 @@ export default function ContinueCard({
       className={`group flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-2xl ${className}`}
       style={{
         background:
-          'radial-gradient(circle at 78% 20%, rgba(85,215,210,0.15) 0%, transparent 34%), ' +
-          'linear-gradient(135deg, #071824 0%, #081F2B 48%, #092B35 100%)',
+          'radial-gradient(circle at 72% 18%, rgba(85,215,210,0.07) 0%, transparent 28%), ' +
+          '#071824',
         border: '1px solid rgba(66,199,198,0.12)',
         boxShadow: '0 8px 40px rgba(7,24,36,0.32), 0 2px 8px rgba(0,0,0,0.16)',
       }}
@@ -61,7 +61,7 @@ export default function ContinueCard({
         <p
           className="font-serif text-2xl leading-snug transition-opacity group-hover:opacity-80 md:text-3xl"
           style={{
-            background: 'linear-gradient(120deg, #55D7D2 0%, #FFFFFF 52%)',
+            background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 72%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
@@ -72,7 +72,7 @@ export default function ContinueCard({
 
         {/* Pathway name — muted white */}
         {data && (
-          <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.52)' }}>
+          <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.68)' }}>
             {data.pathway_title}
           </p>
         )}
@@ -82,7 +82,7 @@ export default function ContinueCard({
           <div className="mt-4">
             <div
               className="mb-1.5 flex items-center gap-3 text-[11px]"
-              style={{ color: 'rgba(255,255,255,0.50)' }}
+              style={{ color: 'rgba(255,255,255,0.68)' }}
             >
               <span>{completedCount} of {stepCount} steps</span>
               {estimatedMinutes && !data?.all_complete && (

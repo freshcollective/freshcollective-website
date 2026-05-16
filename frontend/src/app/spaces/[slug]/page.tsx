@@ -80,7 +80,7 @@ export default async function SpacePage({ params }: Props) {
                   boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                 }}
               >
-                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7A18' }}>
                   Coming up
                 </p>
                 <div className="flex flex-1 items-start gap-3">
@@ -117,7 +117,7 @@ export default async function SpacePage({ params }: Props) {
                   border: '1px solid rgba(231,198,90,0.22)',
                 }}
               >
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7A18' }}>
                   Coming up
                 </p>
                 <p className="flex-1 text-[13px] leading-relaxed text-slate-400">
@@ -137,7 +137,7 @@ export default async function SpacePage({ params }: Props) {
                   boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                 }}
               >
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#334155' }}>
                   Community
                 </p>
                 {recentPosts[0].title ? (
@@ -163,7 +163,7 @@ export default async function SpacePage({ params }: Props) {
                   boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                 }}
               >
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
+                <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#334155' }}>
                   Community
                 </p>
                 <p className="flex-1 font-serif text-[13px] text-navy-900">
