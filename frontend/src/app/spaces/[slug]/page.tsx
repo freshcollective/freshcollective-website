@@ -76,7 +76,7 @@ export default async function SpacePage({ params }: Props) {
                 className="group flex flex-1 flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
                 style={{
                   background: '#FBF6E8',
-                  border: '1px solid rgba(231,198,90,0.24)',
+                  border: '1px solid rgba(231,198,90,0.35)',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                 }}
               >
@@ -105,7 +105,7 @@ export default async function SpacePage({ params }: Props) {
                     <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
                   </div>
                 </div>
-                <span className="mt-auto pt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                <span className="mt-auto pt-3 text-[12px] font-semibold transition-opacity group-hover:opacity-75" style={{ color: '#9A7A18' }}>
                   View details →
                 </span>
               </Link>
@@ -114,7 +114,7 @@ export default async function SpacePage({ params }: Props) {
                 className="flex flex-1 flex-col rounded-2xl p-5"
                 style={{
                   background: '#FBF6E8',
-                  border: '1px solid rgba(231,198,90,0.22)',
+                  border: '1px solid rgba(231,198,90,0.35)',
                 }}
               >
                 <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7A18' }}>
@@ -133,7 +133,7 @@ export default async function SpacePage({ params }: Props) {
                 className="group flex flex-1 flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
                 style={{
                   background: '#EEF2F5',
-                  border: '1px solid rgba(148,163,184,0.24)',
+                  border: '1px solid rgba(7,24,36,0.10)',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                 }}
               >
@@ -159,7 +159,7 @@ export default async function SpacePage({ params }: Props) {
                 className="group flex flex-1 flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
                 style={{
                   background: '#EEF2F5',
-                  border: '1px solid rgba(148,163,184,0.24)',
+                  border: '1px solid rgba(7,24,36,0.10)',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                 }}
               >

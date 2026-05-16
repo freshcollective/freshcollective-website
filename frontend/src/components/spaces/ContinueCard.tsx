@@ -36,7 +36,7 @@ export default function ContinueCard({
       className={`group flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-2xl ${className}`}
       style={{
         background:
-          'radial-gradient(circle at 72% 18%, rgba(85,215,210,0.07) 0%, transparent 28%), ' +
+          'radial-gradient(circle at 72% 18%, rgba(85,215,210,0.06) 0%, transparent 28%), ' +
           '#071824',
         border: '1px solid rgba(66,199,198,0.12)',
         boxShadow: '0 8px 40px rgba(7,24,36,0.32), 0 2px 8px rgba(0,0,0,0.16)',
@@ -52,16 +52,17 @@ export default function ContinueCard({
         {/* Label — soft white */}
         <p
           className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]"
-          style={{ color: 'rgba(255,255,255,0.72)' }}
+          style={{ color: 'rgba(255,255,255,0.78)' }}
         >
           {label}
         </p>
 
-        {/* Step title — teal-to-white gradient text */}
+        {/* Step title — sans-serif, teal-to-white gradient, more white than teal */}
         <p
-          className="font-serif text-2xl leading-snug transition-opacity group-hover:opacity-80 md:text-3xl"
+          className="font-sans font-semibold text-2xl leading-snug transition-opacity group-hover:opacity-80 md:text-3xl"
           style={{
-            background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 72%)',
+            letterSpacing: '-0.02em',
+            background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 75%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
@@ -72,7 +73,7 @@ export default function ContinueCard({
 
         {/* Pathway name — muted white */}
         {data && (
-          <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.68)' }}>
+          <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.72)' }}>
             {data.pathway_title}
           </p>
         )}

@@ -119,7 +119,15 @@ export default async function DashboardPage() {
               className="mb-2 h-[2px] w-5 rounded-full"
               style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
             />
-            <h1 className="font-serif text-3xl text-navy-900 md:text-4xl">
+            <h1
+              className="text-3xl md:text-4xl"
+              style={{
+                background: 'linear-gradient(90deg, #071824 0%, #0F5E5C 55%, #38A09E 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
               Welcome back, {firstName}.
             </h1>
             <p className="mt-1.5 text-[14px] text-slate-500">
@@ -339,7 +347,7 @@ export default async function DashboardPage() {
                 className="group flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-2xl lg:col-span-2"
                 style={{
                   background:
-                    'radial-gradient(circle at 72% 18%, rgba(85,215,210,0.07) 0%, transparent 28%), ' +
+                    'radial-gradient(circle at 72% 18%, rgba(85,215,210,0.06) 0%, transparent 28%), ' +
                     '#071824',
                   border: '1px solid rgba(66,199,198,0.10)',
                   boxShadow: '0 8px 40px rgba(7,24,36,0.36), 0 2px 8px rgba(0,0,0,0.18)',
@@ -354,7 +362,7 @@ export default async function DashboardPage() {
                   {/* Eyebrow label — soft white */}
                   <p
                     className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]"
-                    style={{ color: 'rgba(255,255,255,0.72)' }}
+                    style={{ color: 'rgba(255,255,255,0.78)' }}
                   >
                     {continueData?.all_complete
                       ? 'Journey complete'
@@ -362,11 +370,12 @@ export default async function DashboardPage() {
                         ? 'Continue your journey'
                         : 'Begin your journey'}
                   </p>
-                  {/* Step title — teal-to-white gradient, mostly white */}
+                  {/* Step title — sans-serif, teal-to-white gradient, more white than teal */}
                   <p
-                    className="font-serif text-2xl leading-snug transition-opacity group-hover:opacity-80 md:text-3xl"
+                    className="font-sans font-semibold text-2xl leading-snug transition-opacity group-hover:opacity-80 md:text-3xl"
                     style={{
-                      background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 72%)',
+                      letterSpacing: '-0.02em',
+                      background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 75%)',
                       WebkitBackgroundClip: 'text',
                       WebkitTextFillColor: 'transparent',
                       backgroundClip: 'text',
@@ -376,7 +385,7 @@ export default async function DashboardPage() {
                   </p>
                   {/* Pathway name — soft white, not grey */}
                   {continueData && (
-                    <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.68)' }}>
+                    <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.72)' }}>
                       {continueData.pathway_title}
                     </p>
                   )}
@@ -402,7 +411,7 @@ export default async function DashboardPage() {
                     className="group flex flex-1 flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
                     style={{
                       background: '#FBF6E8',
-                      border: '1px solid rgba(231,198,90,0.24)',
+                      border: '1px solid rgba(231,198,90,0.35)',
                       boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                     }}
                   >
@@ -431,7 +440,7 @@ export default async function DashboardPage() {
                         <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
                       </div>
                     </div>
-                    <span className="mt-auto pt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                    <span className="mt-auto pt-3 text-[12px] font-semibold transition-opacity group-hover:opacity-75" style={{ color: '#9A7A18' }}>
                       View details →
                     </span>
                   </Link>
@@ -440,7 +449,7 @@ export default async function DashboardPage() {
                     className="flex flex-1 flex-col rounded-2xl p-5"
                     style={{
                       background: '#FBF6E8',
-                      border: '1px solid rgba(231,198,90,0.22)',
+                      border: '1px solid rgba(231,198,90,0.35)',
                     }}
                   >
                     <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#9A7A18' }}>
@@ -451,7 +460,8 @@ export default async function DashboardPage() {
                     </p>
                     <Link
                       href="/spaces/fresh-collective/events"
-                      className="mt-auto pt-3 text-[12px] font-semibold text-teal-600 hover:underline"
+                      className="mt-auto pt-3 text-[12px] font-semibold hover:opacity-75"
+                      style={{ color: '#9A7A18' }}
                     >
                       View all events →
                     </Link>
@@ -465,7 +475,7 @@ export default async function DashboardPage() {
                     className="group flex flex-1 flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
                     style={{
                       background: '#EEF2F5',
-                      border: '1px solid rgba(148,163,184,0.24)',
+                      border: '1px solid rgba(7,24,36,0.10)',
                       boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                     }}
                   >
@@ -492,7 +502,7 @@ export default async function DashboardPage() {
                     className="group flex flex-1 flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
                     style={{
                       background: '#EEF2F5',
-                      border: '1px solid rgba(148,163,184,0.24)',
+                      border: '1px solid rgba(7,24,36,0.10)',
                       boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                     }}
                   >
