@@ -336,14 +336,14 @@ export default async function DashboardPage() {
               {/* Continue Journey — pale aqua pillar card, 2/3 width */}
               <Link
                 href={continueHref}
-                className="group relative block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-md lg:col-span-2"
+                className="group relative flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-md lg:col-span-2"
                 style={{
                   background: '#EAF7F6',
                   border: '1px solid rgba(56,160,158,0.16)',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                 }}
               >
-                {/* Large faint decorative arrow — mirrors the pillar-card number */}
+                {/* Large faint decorative arrow */}
                 <div
                   className="pointer-events-none absolute right-5 top-4 select-none font-serif text-[80px] font-bold leading-none"
                   style={{ color: 'rgba(56,160,158,0.08)' }}
@@ -351,7 +351,8 @@ export default async function DashboardPage() {
                 >
                   →
                 </div>
-                <div className="relative px-6 py-6 md:px-7 md:py-7">
+                {/* flex-1 so CTA is pushed to bottom regardless of card height */}
+                <div className="relative flex flex-1 flex-col px-6 py-6 md:px-7 md:py-7">
                   <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
                     {continueData?.all_complete
                       ? 'Journey complete'
@@ -367,59 +368,59 @@ export default async function DashboardPage() {
                       {continueData.pathway_title}
                     </p>
                   )}
-                  <span
-                    className="mt-5 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                  >
-                    {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
-                  </span>
+                  <div className="mt-auto pt-5">
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                      style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                    >
+                      {continueData?.all_complete ? 'Review' : continueData ? 'Continue' : 'Begin'} →
+                    </span>
+                  </div>
                 </div>
               </Link>
 
-              {/* Right column — Coming Up + Community */}
+              {/* Right column — Coming Up + Community, equal-height flex children */}
               <div className="flex flex-col gap-4">
 
-                {/* Coming up — pale cream pillar card */}
+                {/* Coming up — pale cream */}
                 {nextEvent && nextEventDate ? (
                   <Link
                     href={`/spaces/fresh-collective/events/${nextEvent.id}`}
-                    className="group relative flex flex-1 flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-md"
+                    className="group flex flex-1 flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
                     style={{
                       background: '#FBF6E8',
                       border: '1px solid rgba(231,198,90,0.24)',
                       boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                     }}
                   >
-                    <div className="relative flex flex-1 flex-col p-5">
-                      <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        Coming up
-                      </p>
-                      <div className="flex flex-1 items-start gap-3">
-                        <div
-                          className="min-w-[40px] shrink-0 rounded-xl p-2 text-center"
-                          style={{ background: 'rgba(231,198,90,0.14)' }}
-                        >
-                          <div className="font-serif text-base leading-none text-navy-900">
-                            {nextEventDate.day}
-                          </div>
-                          <div
-                            className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
-                            style={{ color: '#9A7A18' }}
-                          >
-                            {nextEventDate.month}
-                          </div>
+                    <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Coming up
+                    </p>
+                    <div className="flex flex-1 items-start gap-3">
+                      <div
+                        className="min-w-[40px] shrink-0 rounded-xl p-2 text-center"
+                        style={{ background: 'rgba(231,198,90,0.14)' }}
+                      >
+                        <div className="font-serif text-base leading-none text-navy-900">
+                          {nextEventDate.day}
                         </div>
-                        <div className="min-w-0">
-                          <p className="line-clamp-2 text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                            {nextEvent.title}
-                          </p>
-                          <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
+                        <div
+                          className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
+                          style={{ color: '#9A7A18' }}
+                        >
+                          {nextEventDate.month}
                         </div>
                       </div>
-                      <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                        View details →
-                      </span>
+                      <div className="min-w-0">
+                        <p className="line-clamp-2 text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
+                          {nextEvent.title}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
+                      </div>
                     </div>
+                    <span className="mt-auto pt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                      View details →
+                    </span>
                   </Link>
                 ) : (
                   <div
@@ -437,14 +438,14 @@ export default async function DashboardPage() {
                     </p>
                     <Link
                       href="/spaces/fresh-collective/events"
-                      className="mt-3 text-[12px] font-semibold text-teal-600 hover:underline"
+                      className="mt-auto pt-3 text-[12px] font-semibold text-teal-600 hover:underline"
                     >
                       View all events →
                     </Link>
                   </div>
                 )}
 
-                {/* Community — pale blue-grey pillar card */}
+                {/* Community — pale blue-grey */}
                 {recentPost ? (
                   <Link
                     href={`/spaces/fresh-collective/community/${recentPost.id}`}
@@ -468,7 +469,7 @@ export default async function DashboardPage() {
                       </p>
                     )}
                     <p className="mt-1 text-[11px] text-slate-400">{recentPost.author.display_name}</p>
-                    <span className="mt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                    <span className="mt-auto pt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
                       Join the conversation →
                     </span>
                   </Link>
@@ -488,7 +489,7 @@ export default async function DashboardPage() {
                     <p className="flex-1 font-serif text-[14px] text-navy-900">
                       The conversation begins with you.
                     </p>
-                    <span className="mt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                    <span className="mt-auto pt-2 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
                       Open community →
                     </span>
                   </Link>

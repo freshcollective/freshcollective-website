@@ -47,20 +47,20 @@ export default async function SpaceLayout({ children, params }: Props) {
         </div>
       </header>
 
-      {/* ── Collective identity band — dark ocean with texture ── */}
-      {/* Always render the CSS gradient; uploaded image layers on top of it. */}
+      {/* ── Collective identity band ── */}
       <div
-        className="relative overflow-hidden px-6 py-10 md:px-10 md:py-12"
+        className="relative overflow-hidden px-6 py-10 md:px-10 md:py-14"
         style={{
           background:
-            'radial-gradient(rgba(66,199,198,0.08) 1px, transparent 1px), ' +
-            'radial-gradient(ellipse at 88% 25%, rgba(66,199,198,0.30), transparent 50%), ' +
-            'radial-gradient(ellipse at 12% 78%, rgba(56,160,158,0.18), transparent 45%), ' +
-            'linear-gradient(135deg, #071824 0%, #073B3A 50%, #0F5E5C 100%)',
+            'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
+            'radial-gradient(ellipse at 78% 20%, rgba(66,199,198,0.38), transparent 48%), ' +
+            'radial-gradient(ellipse at 10% 80%, rgba(56,160,158,0.22), transparent 42%), ' +
+            'linear-gradient(135deg, #071824 0%, #092030 40%, #073B3A 100%)',
           backgroundSize: '22px 22px, auto, auto, auto',
+          boxShadow: '0 8px 40px rgba(7,24,36,0.28)',
         }}
       >
-        {/* Uploaded banner image — overlays the CSS gradient */}
+        {/* Uploaded banner image */}
         {spaceCoverUrl && (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -70,29 +70,37 @@ export default async function SpaceLayout({ children, params }: Props) {
               aria-hidden="true"
               className="absolute inset-0 h-full w-full object-cover"
             />
-            {/* Dark scrim so white text stays readable over any photo */}
+            {/* Scrim — slightly deeper on left so text is always readable */}
             <div
               className="absolute inset-0"
               style={{
                 background:
-                  'linear-gradient(135deg, rgba(7,24,36,0.78) 0%, rgba(7,56,58,0.62) 100%)',
+                  'linear-gradient(105deg, rgba(7,24,36,0.82) 0%, rgba(7,42,50,0.60) 55%, rgba(7,59,58,0.50) 100%)',
               }}
             />
           </>
         )}
 
-        {/* Text content — relative so it layers above image/scrim */}
+        {/* Text — layered above image/scrim */}
         <div className="relative mx-auto max-w-6xl">
-          <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
-          {/* Inline style used deliberately to guarantee white text regardless of Tailwind specificity */}
+          {/* Soft gold accent line */}
+          <div
+            className="mb-4 h-[2px] w-8 rounded-full"
+            style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+          />
           <h1
             className="font-serif text-3xl md:text-4xl"
-            style={{ color: '#FFFFFF' }}
+            style={spaceCoverUrl ? { color: '#FFFFFF' } : {
+              background: 'linear-gradient(120deg, #55D7D2 0%, #FFFFFF 55%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
           >
             {space.name}
           </h1>
           {space.tagline && (
-            <p className="mt-1.5 text-[14px]" style={{ color: 'rgba(255,255,255,0.70)' }}>
+            <p className="mt-2 text-[14px]" style={{ color: 'rgba(255,255,255,0.68)' }}>
               {space.tagline}
             </p>
           )}

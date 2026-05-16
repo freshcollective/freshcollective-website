@@ -55,60 +55,59 @@ export default async function SpacePage({ params }: Props) {
         <GoldLabel variant="teal" className="mb-4">Your journey</GoldLabel>
         <div className="grid gap-4 lg:grid-cols-3">
 
-          {/* Continue Journey — pale aqua pillar card, 2/3 width */}
-          <div className="lg:col-span-2">
+          {/* Continue Journey — flex-col wrapper so ContinueCard stretches to row height */}
+          <div className="flex flex-col lg:col-span-2">
             <ContinueCard
               data={continueData}
               progressPct={progressPct}
               stepCount={continuedPathway?.step_count ?? 0}
               completedCount={continuedPathway?.completed_count ?? 0}
+              className="flex-1"
             />
           </div>
 
-          {/* Right column — Coming Up + Community */}
+          {/* Right column — Coming Up + Community, equal-height flex children */}
           <div className="flex flex-col gap-4">
 
-            {/* Coming up — pale cream card */}
+            {/* Coming up — pale cream */}
             {nextEvent && nextEventDate ? (
               <Link
                 href={`/spaces/${slug}/events/${nextEvent.id}`}
-                className="group relative flex flex-1 flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-md"
+                className="group flex flex-1 flex-col rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-md"
                 style={{
                   background: '#FBF6E8',
                   border: '1px solid rgba(231,198,90,0.24)',
                   boxShadow: '0 1px 3px rgba(0,0,0,0.03)',
                 }}
               >
-                <div className="relative flex flex-1 flex-col p-5">
-                  <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    Coming up
-                  </p>
-                  <div className="flex flex-1 items-start gap-3">
-                    <div
-                      className="min-w-[40px] shrink-0 rounded-xl p-2 text-center"
-                      style={{ background: 'rgba(231,198,90,0.14)' }}
-                    >
-                      <div className="font-serif text-base leading-none text-navy-900">
-                        {nextEventDate.day}
-                      </div>
-                      <div
-                        className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
-                        style={{ color: '#9A7A18' }}
-                      >
-                        {nextEventDate.month}
-                      </div>
+                <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Coming up
+                </p>
+                <div className="flex flex-1 items-start gap-3">
+                  <div
+                    className="min-w-[40px] shrink-0 rounded-xl p-2 text-center"
+                    style={{ background: 'rgba(231,198,90,0.14)' }}
+                  >
+                    <div className="font-serif text-base leading-none text-navy-900">
+                      {nextEventDate.day}
                     </div>
-                    <div className="min-w-0">
-                      <p className="line-clamp-2 text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
-                        {nextEvent.title}
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
+                    <div
+                      className="mt-0.5 text-[9px] font-bold uppercase tracking-wider"
+                      style={{ color: '#9A7A18' }}
+                    >
+                      {nextEventDate.month}
                     </div>
                   </div>
-                  <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
-                    View details →
-                  </span>
+                  <div className="min-w-0">
+                    <p className="line-clamp-2 text-[13px] font-medium leading-snug text-navy-900 transition-colors group-hover:text-teal-700">
+                      {nextEvent.title}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">{nextEventDate.time} UTC</p>
+                  </div>
                 </div>
+                <span className="mt-auto pt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                  View details →
+                </span>
               </Link>
             ) : (
               <div
@@ -127,7 +126,7 @@ export default async function SpacePage({ params }: Props) {
               </div>
             )}
 
-            {/* Community — pale blue-grey card */}
+            {/* Community — pale blue-grey */}
             {recentPosts[0] ? (
               <Link
                 href={`/spaces/${slug}/community/${recentPosts[0].id}`}
@@ -150,7 +149,7 @@ export default async function SpacePage({ params }: Props) {
                     {recentPosts[0].body.split('\n\n')[0]}
                   </p>
                 )}
-                <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                <span className="mt-auto pt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
                   Join the conversation →
                 </span>
               </Link>
@@ -170,7 +169,7 @@ export default async function SpacePage({ params }: Props) {
                 <p className="flex-1 font-serif text-[13px] text-navy-900">
                   The conversation begins with you.
                 </p>
-                <span className="mt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                <span className="mt-auto pt-3 text-[12px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
                   Open community →
                 </span>
               </Link>
