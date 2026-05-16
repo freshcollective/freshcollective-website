@@ -339,10 +339,9 @@ export default async function DashboardPage() {
                 className="group flex flex-col overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-2xl lg:col-span-2"
                 style={{
                   background:
-                    'radial-gradient(ellipse at 78% 18%, rgba(85,215,210,0.20) 0%, transparent 52%), ' +
-                    'radial-gradient(ellipse at 8% 88%, rgba(56,160,158,0.16) 0%, transparent 42%), ' +
-                    'linear-gradient(135deg, #071824 0%, #092B35 48%, #073B3A 100%)',
-                  border: '1px solid rgba(66,199,198,0.14)',
+                    'radial-gradient(circle at 78% 20%, rgba(85,215,210,0.15) 0%, transparent 34%), ' +
+                    'linear-gradient(135deg, #071824 0%, #081F2B 48%, #092B35 100%)',
+                  border: '1px solid rgba(66,199,198,0.12)',
                   boxShadow: '0 8px 40px rgba(7,24,36,0.32), 0 2px 8px rgba(0,0,0,0.16)',
                 }}
               >
@@ -352,10 +351,10 @@ export default async function DashboardPage() {
                     className="mb-4 h-[2px] w-6 rounded-full"
                     style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
                   />
-                  {/* Teal eyebrow label */}
+                  {/* Eyebrow label — soft white so it reads clearly on navy */}
                   <p
                     className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]"
-                    style={{ color: '#55D7D2' }}
+                    style={{ color: 'rgba(255,255,255,0.72)' }}
                   >
                     {continueData?.all_complete
                       ? 'Journey complete'
