@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import type { StepSummary } from '@/types/platform'
+import type { PathwaySection, StepSummary } from '@/types/platform'
 
 // TODO: support grouped pathway sections/modules once step grouping is added
 // to the data model. For now the nav is a flat ordered list.
@@ -19,6 +19,7 @@ interface Props {
   pathwayTitle: string
   pathwayHref: string
   steps: StepSummary[]
+  sections: PathwaySection[]
   currentStepSlug: string
   spaceSlug: string
   pathwaySlug: string
@@ -119,6 +120,63 @@ function ProgressBar({
 }
 
 // ---------------------------------------------------------------------------
+// Collapsible section group
+// ---------------------------------------------------------------------------
+
+function SectionGroup({
+  section,
+  globalOffset,
+  currentStepSlug,
+  spaceSlug,
+  pathwaySlug,
+}: {
+  section: PathwaySection
+  globalOffset: number
+  currentStepSlug: string
+  spaceSlug: string
+  pathwaySlug: string
+}) {
+  const hasActiveStep = section.steps.some((s) => s.slug === currentStepSlug)
+  const [open, setOpen] = useState<boolean>(hasActiveStep || true)
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-3 py-1.5 text-left"
+      >
+        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+          {section.title}
+        </span>
+        <svg
+          className={`h-3 w-3 shrink-0 text-slate-300 transition-transform ${open ? '' : '-rotate-90'}`}
+          fill="none"
+          viewBox="0 0 12 12"
+          aria-hidden="true"
+        >
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <ul className="space-y-0.5">
+          {section.steps.map((step, i) => (
+            <StepNavItem
+              key={step.id}
+              step={step}
+              index={globalOffset + i}
+              isActive={step.slug === currentStepSlug}
+              href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/${step.slug}`}
+            />
+          ))}
+        </ul>
+      )}
+    </li>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -126,6 +184,7 @@ export default function PathwayStepNav({
   pathwayTitle,
   pathwayHref,
   steps,
+  sections,
   currentStepSlug,
   spaceSlug,
   pathwaySlug,
@@ -136,7 +195,51 @@ export default function PathwayStepNav({
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
   const currentIndex = steps.findIndex((s) => s.slug === currentStepSlug)
 
-  const stepList = (
+  const hasSections = sections.length > 0
+
+  // Unsectioned steps (steps with no section or pathway has no sections)
+  const sectionedStepIds = new Set(sections.flatMap((sec) => sec.steps.map((s) => s.id)))
+  const unsectionedSteps = steps.filter((s) => !sectionedStepIds.has(s.id))
+
+  // Build flat step list for rendering without sections, or compute offsets for sections
+  const buildSectionList = () => {
+    const items: React.ReactNode[] = []
+    let offset = 0
+
+    // Unsectioned steps at the top (if any)
+    if (unsectionedSteps.length > 0) {
+      unsectionedSteps.forEach((step, i) => {
+        items.push(
+          <StepNavItem
+            key={step.id}
+            step={step}
+            index={offset + i}
+            isActive={step.slug === currentStepSlug}
+            href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/${step.slug}`}
+          />
+        )
+      })
+      offset += unsectionedSteps.length
+    }
+
+    sections.forEach((sec) => {
+      items.push(
+        <SectionGroup
+          key={sec.id}
+          section={sec}
+          globalOffset={offset}
+          currentStepSlug={currentStepSlug}
+          spaceSlug={spaceSlug}
+          pathwaySlug={pathwaySlug}
+        />
+      )
+      offset += sec.steps.length
+    })
+
+    return items
+  }
+
+  const flatStepList = (
     <ul className="space-y-0.5">
       {steps.map((step, i) => (
         <StepNavItem
@@ -149,6 +252,10 @@ export default function PathwayStepNav({
       ))}
     </ul>
   )
+
+  const stepList = hasSections ? (
+    <ul className="space-y-1">{buildSectionList()}</ul>
+  ) : flatStepList
 
   return (
     <>

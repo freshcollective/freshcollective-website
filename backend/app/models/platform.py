@@ -315,6 +315,10 @@ class Pathway(Base):
         "PathwayStep", back_populates="pathway", cascade="all, delete-orphan",
         order_by="PathwayStep.position",
     )
+    sections: Mapped[list["PathwaySection"]] = relationship(
+        "PathwaySection", back_populates="pathway", cascade="all, delete-orphan",
+        order_by="PathwaySection.position",
+    )
     enrollments: Mapped[list["Enrollment"]] = relationship(
         "Enrollment", back_populates="pathway", cascade="all, delete-orphan"
     )
@@ -322,6 +326,40 @@ class Pathway(Base):
     __table_args__ = (
         UniqueConstraint("space_id", "slug", name="pathways_space_slug_unique"),
         Index("ix_pathways_space_position", "space_id", "position"),
+    )
+
+
+class PathwaySection(Base):
+    """A named module/section grouping steps within a Pathway."""
+
+    __tablename__ = "pathway_sections"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    pathway_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("pathways.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    pathway: Mapped[Pathway] = relationship("Pathway", back_populates="sections")
+    steps: Mapped[list["PathwayStep"]] = relationship(
+        "PathwayStep", back_populates="section", order_by="PathwayStep.position"
+    )
+
+    __table_args__ = (
+        Index("ix_pathway_sections_pathway_position", "pathway_id", "position"),
     )
 
 
@@ -358,6 +396,13 @@ class PathwayStep(Base):
     )
     # Display order within the Pathway
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Optional section grouping
+    section_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("pathway_sections.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )
@@ -369,6 +414,7 @@ class PathwayStep(Base):
     )
 
     pathway: Mapped[Pathway] = relationship("Pathway", back_populates="steps")
+    section: Mapped["PathwaySection | None"] = relationship("PathwaySection", back_populates="steps")
     progress_records: Mapped[list["StepProgress"]] = relationship(
         "StepProgress", back_populates="step", cascade="all, delete-orphan"
     )

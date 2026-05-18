@@ -86,6 +86,15 @@ class StepDetail(BaseModel):
     reflection_text: str | None
 
 
+class SectionWithSteps(BaseModel):
+    """A pathway section/module with its nested steps."""
+
+    id: str
+    title: str
+    position: int
+    steps: list[StepSummary]
+
+
 class PathwayWithSteps(BaseModel):
     """Pathway overview with ordered steps and progress summary."""
 
@@ -98,6 +107,7 @@ class PathwayWithSteps(BaseModel):
     step_count: int
     completed_count: int
     steps: list[StepSummary]
+    sections: list[SectionWithSteps] = []
     access_type: str = 'free'
     price_cents: int | None = None
     currency: str | None = None

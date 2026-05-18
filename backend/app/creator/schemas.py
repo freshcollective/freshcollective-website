@@ -161,6 +161,46 @@ class ReorderRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Sections
+# ---------------------------------------------------------------------------
+
+class SectionCreateRequest(BaseModel):
+    title: str
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Title is required.")
+        if len(v) > 200:
+            raise ValueError("Title must be 200 characters or fewer.")
+        return v
+
+
+class SectionUpdateRequest(BaseModel):
+    title: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Title cannot be empty.")
+        return v
+
+
+class SectionResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    pathway_id: str
+    title: str
+    position: int
+    created_at: datetime
+
+
+# ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
 
@@ -172,6 +212,7 @@ class StepCreateRequest(BaseModel):
     content_url: str | None = None
     estimated_minutes: int | None = None
     is_required: bool = True
+    section_id: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -196,6 +237,7 @@ class StepUpdateRequest(BaseModel):
     content_url: str | None = None
     estimated_minutes: int | None = None
     is_required: bool | None = None
+    section_id: str | None = None
 
     @field_validator("content_type")
     @classmethod
@@ -216,6 +258,7 @@ class StepResponse(BaseModel):
     estimated_minutes: int | None
     is_required: bool
     position: int
+    section_id: str | None = None
 
 
 # ---------------------------------------------------------------------------

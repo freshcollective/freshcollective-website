@@ -1,11 +1,11 @@
 import React from 'react'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getStep, getSteps, getPathway, getStepResources, getStepBlocks } from '@/lib/serverApi'
+import { getStep, getPathwayOverview, getStepResources, getStepBlocks } from '@/lib/serverApi'
 import StepActions from '@/components/spaces/StepActions'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import PathwayStepNav from '@/components/spaces/PathwayStepNav'
-import type { StepDetail, StepSummary, StepResource, StepBlock } from '@/types/platform'
+import type { PathwayWithSteps, StepDetail, StepSummary, StepResource, StepBlock } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string; 'step-slug': string }>
@@ -325,30 +325,30 @@ function StepResourceList({ resources }: { resources: StepResource[] }) {
 export default async function StepPage({ params }: Props) {
   const { slug, 'pathway-slug': pathwaySlug, 'step-slug': stepSlug } = await params
 
-  const [step, allSteps, pathway, resources, blocks]: [
+  const [step, overview, resources, blocks]: [
     StepDetail | null,
-    StepSummary[],
-    { title: string } | null,
+    PathwayWithSteps | null,
     StepResource[],
     StepBlock[],
   ] = await Promise.all([
     getStep(slug, pathwaySlug, stepSlug),
-    getSteps(slug, pathwaySlug),
-    getPathway(slug, pathwaySlug),
+    getPathwayOverview(slug, pathwaySlug),
     getStepResources(slug, pathwaySlug, stepSlug),
     getStepBlocks(slug, pathwaySlug, stepSlug),
   ])
 
   if (!step) notFound()
 
+  const allSteps: StepSummary[] = overview?.steps ?? []
   const currentIndex = allSteps.findIndex((s) => s.slug === stepSlug)
   const prevStep = currentIndex > 0 ? allSteps[currentIndex - 1] : null
   const nextStep = currentIndex < allSteps.length - 1 ? allSteps[currentIndex + 1] : null
 
   const pathwayHref = `/spaces/${slug}/pathways/${pathwaySlug}`
-  const pathwayTitle = pathway?.title ?? 'Pathway'
+  const pathwayTitle = overview?.title ?? 'Pathway'
   const completedCount = allSteps.filter((s) => s.is_completed).length
   const totalCount = allSteps.length
+  const sections = overview?.sections ?? []
 
   return (
     // Two-column layout: sidebar on left (desktop), collapsed nav on mobile.
@@ -358,11 +358,12 @@ export default async function StepPage({ params }: Props) {
     <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
 
       {/* ── Left: pathway step nav ── */}
-      <div className="lg:w-[268px] lg:shrink-0">
+      <div className="lg:w-[320px] lg:shrink-0">
         <PathwayStepNav
           pathwayTitle={pathwayTitle}
           pathwayHref={pathwayHref}
           steps={allSteps}
+          sections={sections}
           currentStepSlug={stepSlug}
           spaceSlug={slug}
           pathwaySlug={pathwaySlug}

@@ -12,6 +12,7 @@ from app.models.platform import (
     Enrollment,
     Event,
     Pathway,
+    PathwaySection,
     PathwayStep,
     PathwayStepBlock,
     Space,
@@ -31,6 +32,7 @@ from app.spaces.schemas import (
     PublicSpaceCard,
     SaveNotesRequest,
     SaveNotesResponse,
+    SectionWithSteps,
     SpaceResponse,
     SpaceSummary,
     StepDetail,
@@ -375,6 +377,30 @@ def get_pathway_overview(
         for s in steps
     ]
 
+    # Build section groupings (only if pathway has sections defined)
+    db_sections = (
+        db.query(PathwaySection)
+        .filter(PathwaySection.pathway_id == pathway.id)
+        .order_by(PathwaySection.position)
+        .all()
+    )
+    step_by_section: dict[str, list[StepSummary]] = {}
+    for summary in step_summaries:
+        raw = next((s for s in steps if s.id == summary.id), None)
+        sid = raw.section_id if raw else None
+        if sid:
+            step_by_section.setdefault(sid, []).append(summary)
+
+    sections = [
+        SectionWithSteps(
+            id=sec.id,
+            title=sec.title,
+            position=sec.position,
+            steps=step_by_section.get(sec.id, []),
+        )
+        for sec in db_sections
+    ]
+
     return PathwayWithSteps(
         id=pathway.id,
         slug=pathway.slug,
@@ -385,6 +411,7 @@ def get_pathway_overview(
         step_count=len(steps),
         completed_count=len(completed),
         steps=step_summaries,
+        sections=sections,
         access_type=pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type),
         price_cents=pathway.price_cents,
         currency=pathway.currency,

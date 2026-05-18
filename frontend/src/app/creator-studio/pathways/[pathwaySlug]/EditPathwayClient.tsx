@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import type { CreatorPathway, CreatorStep } from '@/types/platform'
+import type { CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
@@ -254,12 +254,155 @@ function AddStepForm({
 }
 
 // ---------------------------------------------------------------------------
+// Section manager
+// ---------------------------------------------------------------------------
+
+function SectionManager({
+  spaceSlug,
+  pathwaySlug,
+  sections,
+  setSections,
+}: {
+  spaceSlug: string
+  pathwaySlug: string
+  sections: CreatorSection[]
+  setSections: (s: CreatorSection[]) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+
+  async function handleAdd() {
+    if (!newTitle.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/sections`),
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ title: newTitle.trim() }) },
+      )
+      if (!res.ok) { setError('Could not add section.'); return }
+      const created: CreatorSection = await res.json()
+      setSections([...sections, created])
+      setNewTitle('')
+      setAdding(false)
+    } catch { setError('Could not add section.') }
+    finally { setSaving(false) }
+  }
+
+  async function handleEdit(id: string) {
+    if (!editTitle.trim()) return
+    const res = await fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/sections/${id}`),
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ title: editTitle.trim() }) },
+    )
+    if (!res.ok) return
+    const updated: CreatorSection = await res.json()
+    setSections(sections.map((s) => (s.id === id ? updated : s)))
+    setEditingId(null)
+  }
+
+  async function handleDelete(id: string) {
+    const res = await fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/sections/${id}`),
+      { method: 'DELETE', credentials: 'include' },
+    )
+    if (res.ok) setSections(sections.filter((s) => s.id !== id))
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-white p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-[16px] font-semibold text-navy-900">Sections</h2>
+          <p className="mt-0.5 text-[13px] text-slate-500">
+            Group steps into modules or phases.
+          </p>
+        </div>
+        {!adding && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:border-teal-300 hover:text-teal-700"
+          >
+            + Add section
+          </button>
+        )}
+      </div>
+
+      {sections.length === 0 && !adding && (
+        <p className="text-[13px] italic text-slate-400">No sections yet. Steps will appear as a flat list.</p>
+      )}
+
+      {sections.length > 0 && (
+        <ul className="mb-4 space-y-2">
+          {sections.map((sec) => (
+            <li key={sec.id} className="flex items-center gap-3 rounded-lg border border-border bg-slate-50 px-4 py-2.5">
+              {editingId === sec.id ? (
+                <>
+                  <input
+                    autoFocus
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleEdit(sec.id); if (e.key === 'Escape') setEditingId(null) }}
+                    className="flex-1 rounded-lg border border-slate-200 px-2 py-1 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+                  />
+                  <button type="button" onClick={() => handleEdit(sec.id)} className="text-[12px] font-semibold text-teal-700 hover:opacity-70">Save</button>
+                  <button type="button" onClick={() => setEditingId(null)} className="text-[12px] text-slate-400 hover:text-navy-900">Cancel</button>
+                </>
+              ) : (
+                <>
+                  <span className="flex-1 text-[14px] font-medium text-navy-900">{sec.title}</span>
+                  <button type="button" onClick={() => { setEditingId(sec.id); setEditTitle(sec.title) }} className="text-[12px] text-slate-400 transition-colors hover:text-teal-700">Edit</button>
+                  <button type="button" onClick={() => handleDelete(sec.id)} className="text-[12px] text-slate-400 transition-colors hover:text-red-500">Delete</button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {adding && (
+        <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
+          <input
+            autoFocus
+            type="text"
+            value={newTitle}
+            onChange={(e) => { setNewTitle(e.target.value); setError(null) }}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setAdding(false); setNewTitle('') } }}
+            placeholder="Section title, e.g. Week 1 — Foundation"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400"
+          />
+          {error && <p className="mt-1 text-[12px] text-red-600">{error}</p>}
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={saving || !newTitle.trim()}
+              onClick={handleAdd}
+              className="rounded-lg px-4 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            >
+              {saving ? 'Adding…' : 'Add section'}
+            </button>
+            <button type="button" onClick={() => { setAdding(false); setNewTitle('') }} className="text-[13px] text-slate-500 hover:text-navy-900">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main edit form
 // ---------------------------------------------------------------------------
 
 interface Props {
   pathway:   CreatorPathway
   steps:     CreatorStep[]
+  sections:  CreatorSection[]
   spaceSlug: string
 }
 
@@ -269,7 +412,7 @@ function centsToDisplay(cents: number | null): string {
   return Number.isInteger(dollars) ? `${dollars}` : dollars.toFixed(2)
 }
 
-export default function EditPathwayClient({ pathway, steps: initialSteps, spaceSlug }: Props) {
+export default function EditPathwayClient({ pathway, steps: initialSteps, sections: initialSections, spaceSlug }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
@@ -285,6 +428,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
   const [error, setError]               = useState<string | null>(null)
   const [priceError, setPriceError]     = useState<string | null>(null)
   const [steps, setSteps]               = useState<CreatorStep[]>(initialSteps)
+  const [sections, setSections]         = useState<CreatorSection[]>(initialSections)
   const [addingStep, setAddingStep]     = useState(false)
 
   // Cover image upload state
@@ -472,6 +616,14 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
         </button>
       </div>
 
+      {/* ── Sections ── */}
+      <SectionManager
+        spaceSlug={spaceSlug}
+        pathwaySlug={pathway.slug}
+        sections={sections}
+        setSections={setSections}
+      />
+
       {/* ── Pathway cover ── */}
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[16px] font-semibold text-navy-900">Pathway cover</h2>
@@ -589,7 +741,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
             {steps.map((step, i) => (
               <li
                 key={step.id}
-                className="flex items-center gap-3 rounded-lg border border-border bg-white px-4 py-3"
+                className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-white px-4 py-3"
               >
                 <span
                   className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
@@ -606,6 +758,25 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
                 >
                   {CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}
                 </span>
+                {sections.length > 0 && (
+                  <select
+                    value={step.section_id ?? ''}
+                    onChange={async (e) => {
+                      const newSectionId = e.target.value || null
+                      const res = await fetch(
+                        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}`),
+                        { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ section_id: newSectionId }) },
+                      )
+                      if (res.ok) setSteps(steps.map((s) => s.id === step.id ? { ...s, section_id: newSectionId } : s))
+                    }}
+                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-600 outline-none focus:border-teal-400"
+                  >
+                    <option value="">No section</option>
+                    {sections.map((sec) => (
+                      <option key={sec.id} value={sec.id}>{sec.title}</option>
+                    ))}
+                  </select>
+                )}
                 <Link
                   href={`/creator-studio/pathways/${pathway.slug}/steps/${step.slug}`}
                   className="shrink-0 text-[12px] font-medium text-teal-700 transition-opacity hover:opacity-70"

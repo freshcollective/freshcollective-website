@@ -49,6 +49,13 @@ export interface StepDetail extends StepSummary {
   reflection_text: string | null
 }
 
+export interface PathwaySection {
+  id: string
+  title: string
+  position: number
+  steps: StepSummary[]
+}
+
 export interface PathwayWithSteps {
   id: string
   slug: string
@@ -59,10 +66,19 @@ export interface PathwayWithSteps {
   step_count: number
   completed_count: number
   steps: StepSummary[]
+  sections: PathwaySection[]
   access_type: 'free' | 'included' | 'one_time' | 'subscription'
   price_cents: number | null
   currency: string | null
   billing_interval: string | null
+}
+
+export interface CreatorSection {
+  id: string
+  pathway_id: string
+  title: string
+  position: number
+  created_at: string
 }
 
 export interface PathwayProgress {
@@ -209,6 +225,7 @@ export interface CreatorStep {
   estimated_minutes: number | null
   is_required: boolean
   position: number
+  section_id: string | null
 }
 
 export interface CreatorEvent {

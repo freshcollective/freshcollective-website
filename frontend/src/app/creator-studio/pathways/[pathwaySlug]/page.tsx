@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getActiveCreatorSpace, getCreatorPathway, getCreatorSteps } from '@/lib/serverApi'
-import type { CreatorPathway, CreatorStep } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorPathway, getCreatorSections, getCreatorSteps } from '@/lib/serverApi'
+import type { CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
 import EditPathwayClient from './EditPathwayClient'
 
 interface Props {
@@ -29,9 +29,10 @@ export default async function EditPathwayPage({ params }: Props) {
     )
   }
 
-  const [pathway, steps]: [CreatorPathway | null, CreatorStep[]] = await Promise.all([
+  const [pathway, steps, sections]: [CreatorPathway | null, CreatorStep[], CreatorSection[]] = await Promise.all([
     getCreatorPathway(activeSpace.slug, pathwaySlug),
     getCreatorSteps(activeSpace.slug, pathwaySlug),
+    getCreatorSections(activeSpace.slug, pathwaySlug),
   ])
 
   if (!pathway) notFound()
@@ -59,6 +60,7 @@ export default async function EditPathwayPage({ params }: Props) {
       <EditPathwayClient
         pathway={pathway}
         steps={steps}
+        sections={sections}
         spaceSlug={activeSpace.slug}
       />
     </div>

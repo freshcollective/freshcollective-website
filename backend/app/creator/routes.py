@@ -33,6 +33,9 @@ from app.creator.schemas import (
     PostManageResponse,
     PostUpdateRequest,
     ReorderRequest,
+    SectionCreateRequest,
+    SectionResponse,
+    SectionUpdateRequest,
     SpaceCreateRequest,
     SpaceDetail,
     SpaceUpdateRequest,
@@ -53,6 +56,7 @@ from app.models.platform import (
     CreatorMediaAsset,
     Event,
     Pathway,
+    PathwaySection,
     PathwayStep,
     PathwayStepBlock,
     Space,
@@ -543,6 +547,117 @@ def reorder_pathways(
 
 
 # ---------------------------------------------------------------------------
+# Sections
+# ---------------------------------------------------------------------------
+
+@router.get("/spaces/{slug}/pathways/{pathway_slug}/sections", response_model=list[SectionResponse])
+def list_sections(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[PathwaySection]:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    return (
+        db.query(PathwaySection)
+        .filter(PathwaySection.pathway_id == pathway.id)
+        .order_by(PathwaySection.position)
+        .all()
+    )
+
+
+@router.post("/spaces/{slug}/pathways/{pathway_slug}/sections", response_model=SectionResponse, status_code=201)
+def create_section(
+    slug: str,
+    pathway_slug: str,
+    body: SectionCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> PathwaySection:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    max_pos = (
+        db.query(PathwaySection.position)
+        .filter(PathwaySection.pathway_id == pathway.id)
+        .order_by(PathwaySection.position.desc())
+        .first()
+    )
+    position = (max_pos[0] + 1) if max_pos else 0
+    section = PathwaySection(
+        id=str(uuid4()),
+        pathway_id=pathway.id,
+        title=body.title,
+        position=position,
+    )
+    db.add(section)
+    db.commit()
+    db.refresh(section)
+    return section
+
+
+@router.patch("/spaces/{slug}/pathways/{pathway_slug}/sections/{section_id}", response_model=SectionResponse)
+def update_section(
+    slug: str,
+    pathway_slug: str,
+    section_id: str,
+    body: SectionUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> PathwaySection:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    section = db.query(PathwaySection).filter(
+        PathwaySection.id == section_id, PathwaySection.pathway_id == pathway.id
+    ).first()
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found.")
+    if body.title is not None:
+        section.title = body.title
+    db.commit()
+    db.refresh(section)
+    return section
+
+
+@router.delete("/spaces/{slug}/pathways/{pathway_slug}/sections/{section_id}", status_code=204)
+def delete_section(
+    slug: str,
+    pathway_slug: str,
+    section_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    section = db.query(PathwaySection).filter(
+        PathwaySection.id == section_id, PathwaySection.pathway_id == pathway.id
+    ).first()
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found.")
+    # Unlink steps from this section before deleting
+    db.query(PathwayStep).filter(PathwayStep.section_id == section_id).update({"section_id": None})
+    db.delete(section)
+    db.commit()
+
+
+@router.post("/spaces/{slug}/pathways/{pathway_slug}/sections/reorder", status_code=204)
+def reorder_sections(
+    slug: str,
+    pathway_slug: str,
+    body: ReorderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    for i, sid in enumerate(body.ids):
+        db.query(PathwaySection).filter(
+            PathwaySection.id == sid, PathwaySection.pathway_id == pathway.id
+        ).update({"position": i})
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
 # Steps
 # ---------------------------------------------------------------------------
 
@@ -608,6 +723,7 @@ def create_step(
         estimated_minutes=body.estimated_minutes,
         is_required=body.is_required,
         position=position,
+        section_id=body.section_id,
     )
     db.add(step)
     db.commit()
@@ -646,6 +762,8 @@ def update_step(
         step.estimated_minutes = update["estimated_minutes"]
     if "is_required" in update and update["is_required"] is not None:
         step.is_required = update["is_required"]
+    if "section_id" in update:
+        step.section_id = update["section_id"]
 
     db.commit()
     db.refresh(step)

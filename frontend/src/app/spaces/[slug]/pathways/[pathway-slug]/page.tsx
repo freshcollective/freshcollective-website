@@ -250,7 +250,46 @@ export default async function PathwayDetailPage({ params }: Props) {
             <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-slate-500">
               Steps for this pathway are coming soon.
             </div>
+          ) : pathway.sections.length > 0 ? (
+            /* Section-grouped view */
+            <div className="flex flex-col gap-6">
+              {(() => {
+                const sectionedIds = new Set(pathway.sections.flatMap((s) => s.steps.map((st) => st.id)))
+                const unsectioned = pathway.steps.filter((s) => !sectionedIds.has(s.id))
+                let globalIndex = 0
+                const groups: React.ReactNode[] = []
+                if (unsectioned.length > 0) {
+                  groups.push(
+                    <div key="__unsectioned" className="flex flex-col gap-3">
+                      {unsectioned.map((step) => {
+                        const el = <StepRow key={step.id} step={step} spaceSlug={slug} pathwaySlug={pathwaySlug} index={globalIndex} />
+                        globalIndex++
+                        return el
+                      })}
+                    </div>
+                  )
+                }
+                pathway.sections.forEach((section) => {
+                  groups.push(
+                    <div key={section.id}>
+                      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                        {section.title}
+                      </p>
+                      <div className="flex flex-col gap-3">
+                        {section.steps.map((step) => {
+                          const el = <StepRow key={step.id} step={step} spaceSlug={slug} pathwaySlug={pathwaySlug} index={globalIndex} />
+                          globalIndex++
+                          return el
+                        })}
+                      </div>
+                    </div>
+                  )
+                })
+                return groups
+              })()}
+            </div>
           ) : (
+            /* Flat list (no sections) */
             <div className="flex flex-col gap-3">
               {pathway.steps.map((step, i) => (
                 <StepRow
