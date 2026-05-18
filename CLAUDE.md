@@ -35,6 +35,35 @@ Always read the relevant docs before writing code:
 - Reference docs by filename — do not re-explain the brief in prompts.
 - Cite the relevant doc section when making product decisions.
 
+## Dev Health Check
+
+If the frontend shows `ECONNREFUSED 127.0.0.1:8000`, the **backend process is not running** — this is never a code bug.
+
+Run the health check script at any time:
+
+```bash
+bash /home/lindsey/fc-production/scripts/health-check.sh
+```
+
+It checks:
+- Backend responding at `http://127.0.0.1:8000`
+- Frontend responding at `http://localhost:3000`
+- Alembic migration is at head
+
+**To start the backend manually:**
+```bash
+cd /home/lindsey/fc-production/backend
+.venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Or use the launcher: `~/.local/bin/fc-run-backend`
+
+**To run pending migrations:**
+```bash
+cd /home/lindsey/fc-production/backend
+.venv/bin/alembic upgrade head
+```
+
 ## After Code Changes (once the app exists)
 
 - Run `npm run type-check` after TypeScript changes.
