@@ -25,6 +25,10 @@ interface NavItem {
   href: string
   label: string
   exact?: boolean
+  // Also mark this item active when the pathname matches this pattern.
+  // Used so legacy /creator/spaces/[slug]/... routes highlight the correct
+  // sidebar item even though their URL doesn't start with /creator-studio/.
+  activeOnPath?: RegExp
 }
 
 // Two-section nav structure
@@ -39,14 +43,14 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     label: 'CURRENT COLLECTIVE',
     items: [
       { href: '/creator-studio/collective', label: 'Collective Overview' },
-      { href: '/creator-studio/pathways',   label: 'Pathways' },
-      { href: '/creator-studio/gatherings', label: 'Gatherings' },
+      { href: '/creator-studio/pathways',   label: 'Pathways',      activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/ },
+      { href: '/creator-studio/gatherings', label: 'Gatherings',    activeOnPath: /^\/creator\/spaces\/[^/]+\/events/ },
       { href: '/creator-studio/resources',  label: 'Resources' },
       { href: '/creator-studio/media',      label: 'Media Library' },
-      { href: '/creator-studio/community',  label: 'Community' },
+      { href: '/creator-studio/community',  label: 'Community',     activeOnPath: /^\/creator\/spaces\/[^/]+\/community/ },
       { href: '/creator-studio/people',     label: 'People' },
       { href: '/creator-studio/setup',      label: 'Setup' },
-      { href: '/creator-studio/settings',   label: 'Settings' },
+      { href: '/creator-studio/settings',   label: 'Settings',      activeOnPath: /^\/creator\/spaces\/[^/]+$/ },
     ],
   },
 ]
@@ -183,8 +187,11 @@ function SidebarInner({
   pathname: string
   onNavClick?: () => void
 }) {
-  function isActive(href: string, exact?: boolean) {
-    return exact ? pathname === href : pathname.startsWith(href)
+  function isActive(href: string, exact?: boolean, activeOnPath?: RegExp) {
+    if (exact) return pathname === href
+    if (pathname.startsWith(href)) return true
+    if (activeOnPath && activeOnPath.test(pathname)) return true
+    return false
   }
 
   const hasCollective = !!activeSpace
@@ -240,8 +247,8 @@ function SidebarInner({
               {label}
             </p>
             <ul className="space-y-0.5">
-              {items.map(({ href, label: itemLabel, exact }) => {
-                const active = isActive(href, exact)
+              {items.map(({ href, label: itemLabel, exact, activeOnPath }) => {
+                const active = isActive(href, exact, activeOnPath)
                 // Dim collective-specific items when no collective is selected
                 const dimmed = label === 'CURRENT COLLECTIVE' && !hasCollective
                 return (
