@@ -57,3 +57,7 @@ venv/
 # Uploaded files (local dev storage — replace with S3 in production)
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+# Runtime logs (never commit these)
+logs/
+*.log

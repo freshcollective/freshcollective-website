@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useTransition, useRef, useEffect } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { apiUrl, resolveMediaUrl } from '@/lib/api'
+import { apiUrl } from '@/lib/api'
 import type { StepBlock, StepBlockType, CreatorMediaAsset } from '@/types/platform'
 
 // ---------------------------------------------------------------------------
@@ -22,6 +22,8 @@ interface CreatorStepMin {
   title: string
   content_type: string
   content_body: string | null
+  estimated_minutes: number | null
+  is_required: boolean
 }
 
 interface Props {
@@ -30,6 +32,8 @@ interface Props {
   step: CreatorStepMin
   initialBlocks: StepBlock[]
   mediaAssets: CreatorMediaAsset[]
+  backHref?: string
+  backLabel?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -604,13 +608,48 @@ function BlockRow({
 // Main Editor
 // ---------------------------------------------------------------------------
 
-export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlocks, mediaAssets }: Props) {
+export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlocks, mediaAssets, backHref, backLabel }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [blocks, setBlocks] = useState<StepBlock[]>(initialBlocks)
   const [adding, setAdding] = useState(false)
 
+  // Step settings state
+  const [stepTitle, setStepTitle] = useState(step.title)
+  const [stepMinutes, setStepMinutes] = useState(step.estimated_minutes?.toString() ?? '')
+  const [stepRequired, setStepRequired] = useState(step.is_required)
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [settingsSaved, setSettingsSaved] = useState(false)
+
+  const stepUrl = apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}`)
   const baseUrl = apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}/blocks`)
+
+  const resolvedBackHref = backHref ?? `/creator-studio/pathways/${pathway.slug}`
+  const resolvedBackLabel = backLabel ?? '← Back to pathway'
+
+  async function saveStepSettings(e: React.FormEvent) {
+    e.preventDefault()
+    setSettingsSaving(true)
+    setSettingsSaved(false)
+    try {
+      const res = await fetch(stepUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          title: stepTitle.trim() || step.title,
+          estimated_minutes: stepMinutes ? parseInt(stepMinutes) : null,
+          is_required: stepRequired,
+        }),
+      })
+      if (res.ok) {
+        setSettingsSaved(true)
+        startTransition(() => router.refresh())
+      }
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
 
   async function addBlock(type: StepBlockType) {
     setAdding(true)
@@ -674,13 +713,73 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
         <div className="flex items-start justify-between gap-4">
           <h1 className="text-2xl text-navy-900 md:text-3xl">{step.title}</h1>
           <Link
-            href={`/creator-studio/pathways/${pathway.slug}`}
+            href={resolvedBackHref}
             className="shrink-0 text-[13px] font-medium text-slate-400 transition-colors hover:text-slate-600"
           >
-            ← Back to pathway
+            {resolvedBackLabel}
           </Link>
         </div>
       </div>
+
+      {/* Step settings */}
+      <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-6">
+        <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+          Step settings
+        </p>
+        <form onSubmit={saveStepSettings} className="flex flex-col gap-4">
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Title</label>
+            <input
+              value={stepTitle}
+              onChange={e => setStepTitle(e.target.value)}
+              required
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:outline-none focus:ring-1 focus:ring-teal-300"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-6">
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Est. minutes</label>
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={stepMinutes}
+                onChange={e => setStepMinutes(e.target.value)}
+                placeholder="—"
+                className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:outline-none focus:ring-1 focus:ring-teal-300"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={stepRequired}
+                onClick={() => setStepRequired(r => !r)}
+                className={`relative h-5 w-9 rounded-full transition-colors ${stepRequired ? 'bg-teal-500' : 'bg-slate-200'}`}
+              >
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${stepRequired ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </button>
+              <span className="text-[13px] text-slate-600">Required</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={settingsSaving}
+              className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ background: '#073B3A' }}
+            >
+              {settingsSaving ? 'Saving…' : 'Save settings'}
+            </button>
+            {settingsSaved && <span className="text-[12px] text-teal-600">Saved</span>}
+          </div>
+        </form>
+      </div>
+
+      {/* Content blocks label */}
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        Content blocks
+      </p>
 
       {/* Blocks */}
       <div className="space-y-3">

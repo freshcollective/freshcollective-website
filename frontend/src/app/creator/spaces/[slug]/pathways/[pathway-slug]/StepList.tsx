@@ -49,6 +49,7 @@ export default function StepList({
       setAddingTitle('')
       setAddingOpen(false)
       router.push(`/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/steps/${data.slug}`)
+      // Note: this route now renders the block editor
     } catch {
       // silent — user can retry
     } finally {
