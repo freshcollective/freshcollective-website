@@ -199,6 +199,12 @@ export const getCreatorPosts = cache(async (slug: string) => {
   return res.json()
 })
 
+export const getCreatorMedia = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/media`)
+  if (!res.ok) return []
+  return res.json()
+})
+
 export const getCreatorStepResources = cache(async (slug: string, pathwaySlug: string, stepSlug: string) => {
   const res = await fetchWithSession(
     `/api/creator/spaces/${slug}/pathways/${pathwaySlug}/steps/${stepSlug}/resources`,

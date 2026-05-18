@@ -79,6 +79,19 @@ class StepContentType(str, enum.Enum):
     audio = "audio"
 
 
+class MediaType(str, enum.Enum):
+    image = "image"
+    video = "video"
+    audio = "audio"
+    document = "document"
+    other = "other"
+
+
+class MediaStatus(str, enum.Enum):
+    active = "active"
+    archived = "archived"
+
+
 class EnrollmentStatus(str, enum.Enum):
     active = "active"
     paused = "paused"
@@ -687,4 +700,66 @@ class SpaceInvitation(Base):
     __table_args__ = (
         UniqueConstraint("space_id", "email", name="space_invitations_space_email_unique"),
         Index("ix_space_invitations_space_id", "space_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Media Library
+# ---------------------------------------------------------------------------
+
+class CreatorMediaAsset(Base):
+    """
+    A file uploaded by a creator to their collective's media library.
+
+    Files are stored on local disk (uploads/media/{space_slug}/) in V1.
+    TODO: Migrate to S3/Cloudflare R2 for production scale — follow the
+    same save_file → presigned PUT pattern described in core/storage.py.
+
+    Future join tables for attaching assets to content:
+        pathway_step_media   — step_id + asset_id + position
+        resource_media       — resource_id + asset_id
+        gathering_replay_media — event_id + asset_id
+    """
+
+    __tablename__ = "creator_media_assets"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    space_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    uploaded_by_user_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(500), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    file_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(200), nullable=False)
+    media_type: Mapped[MediaType] = mapped_column(
+        SAEnum(MediaType, name="media_type_enum", create_type=True),
+        nullable=False,
+    )
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    extension: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[MediaStatus] = mapped_column(
+        SAEnum(MediaStatus, name="media_status_enum", create_type=True),
+        nullable=False,
+        default=MediaStatus.active,
+        server_default="active",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )

@@ -235,6 +235,28 @@ export interface CreatorPost {
   author_name: string
 }
 
+export type MediaAssetType = 'image' | 'video' | 'audio' | 'document' | 'other'
+export type MediaAssetStatus = 'active' | 'archived'
+
+export interface CreatorMediaAsset {
+  id: string
+  space_id: string
+  uploaded_by_user_id: string
+  title: string
+  description: string | null
+  original_filename: string
+  stored_filename: string
+  storage_path: string
+  file_url: string
+  mime_type: string
+  media_type: MediaAssetType
+  file_size_bytes: number
+  extension: string
+  status: MediaAssetStatus
+  created_at: string
+  updated_at: string
+}
+
 export interface StepResource {
   id: string
   resource_type: 'video' | 'audio' | 'pdf' | 'file' | 'link'

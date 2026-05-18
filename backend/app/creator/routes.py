@@ -7,6 +7,7 @@ Permission model:
   OR has a creator/moderator membership in that space.
 """
 
+import pathlib
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -15,13 +16,15 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_creator_user
 from app.core.database import get_db
-from app.core.storage import delete_file, save_file
+from app.core.storage import delete_file, save_file, save_media_file
 from app.creator.schemas import (
     EventCreateRequest,
     EventResponse,
     EventUpdateRequest,
     InvitationCreateRequest,
     InvitationResponse,
+    MediaAssetResponse,
+    MediaAssetUpdateRequest,
     PathwayCreateRequest,
     PathwayResponse,
     PathwayUpdateRequest,
@@ -42,6 +45,7 @@ from app.creator.schemas import (
 )
 from app.models.platform import (
     CommunityPost,
+    CreatorMediaAsset,
     Event,
     Pathway,
     PathwayStep,
@@ -1134,3 +1138,125 @@ def delete_post(
         raise HTTPException(status_code=404, detail="Post not found.")
     db.delete(post)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Media Library
+# ---------------------------------------------------------------------------
+
+@router.get("/spaces/{slug}/media", response_model=list[MediaAssetResponse])
+def list_media(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[CreatorMediaAsset]:
+    """Return active media assets for the given space, newest first."""
+    space = _get_managed_space(slug, current_user, db)
+    return (
+        db.query(CreatorMediaAsset)
+        .filter(
+            CreatorMediaAsset.space_id == space.id,
+            CreatorMediaAsset.status == "active",
+        )
+        .order_by(CreatorMediaAsset.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/spaces/{slug}/media", response_model=MediaAssetResponse, status_code=201)
+async def upload_media(
+    slug: str,
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    description: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> CreatorMediaAsset:
+    """
+    Upload a file to the media library for the given space.
+
+    Files are organised under uploads/media/{space_slug}/.
+    // TODO: Move video storage/streaming to Mux, Cloudflare Stream, S3, or similar before production-scale use.
+    // TODO: protect private member resources behind authenticated access checks before production.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    data = await file.read()
+    original_name = file.filename or "upload"
+    mime = file.content_type or "application/octet-stream"
+
+    try:
+        storage_path, file_url, media_type, stored_filename, size = save_media_file(
+            data, original_name, mime, space.slug,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    ext = pathlib.Path(original_name).suffix.lower()
+    used_title = title.strip() if title.strip() else pathlib.Path(original_name).stem
+
+    asset = CreatorMediaAsset(
+        id=str(uuid4()),
+        space_id=space.id,
+        uploaded_by_user_id=current_user.id,
+        title=used_title,
+        description=description.strip() if description.strip() else None,
+        original_filename=original_name,
+        stored_filename=stored_filename,
+        storage_path=storage_path,
+        file_url=file_url,
+        mime_type=mime,
+        media_type=media_type,
+        file_size_bytes=size,
+        extension=ext,
+        status="active",
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+@router.patch("/spaces/{slug}/media/{media_id}", response_model=MediaAssetResponse)
+def update_media(
+    slug: str,
+    media_id: str,
+    body: MediaAssetUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> CreatorMediaAsset:
+    """Update title or description of a media asset."""
+    space = _get_managed_space(slug, current_user, db)
+    asset = db.query(CreatorMediaAsset).filter(
+        CreatorMediaAsset.id == media_id,
+        CreatorMediaAsset.space_id == space.id,
+    ).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Media asset not found.")
+    if body.title is not None:
+        asset.title = body.title
+    if body.description is not None:
+        asset.description = body.description or None
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+@router.patch("/spaces/{slug}/media/{media_id}/archive", response_model=MediaAssetResponse)
+def archive_media(
+    slug: str,
+    media_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> CreatorMediaAsset:
+    """Soft-archive a media asset. Hides from the active library."""
+    space = _get_managed_space(slug, current_user, db)
+    asset = db.query(CreatorMediaAsset).filter(
+        CreatorMediaAsset.id == media_id,
+        CreatorMediaAsset.space_id == space.id,
+    ).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Media asset not found.")
+    asset.status = "archived"
+    db.commit()
+    db.refresh(asset)
+    return asset

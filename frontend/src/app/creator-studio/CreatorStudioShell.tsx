@@ -42,6 +42,7 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       { href: '/creator-studio/pathways',   label: 'Pathways' },
       { href: '/creator-studio/gatherings', label: 'Gatherings' },
       { href: '/creator-studio/resources',  label: 'Resources' },
+      { href: '/creator-studio/media',      label: 'Media Library' },
       { href: '/creator-studio/community',  label: 'Community' },
       { href: '/creator-studio/people',     label: 'People' },
       { href: '/creator-studio/setup',      label: 'Setup' },

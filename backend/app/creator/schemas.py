@@ -440,3 +440,43 @@ class InvitationResponse(BaseModel):
     note: str | None
     invited_by_id: str
     created_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Media Library
+# ---------------------------------------------------------------------------
+
+class MediaAssetResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    space_id: str
+    uploaded_by_user_id: str
+    title: str
+    description: str | None
+    original_filename: str
+    stored_filename: str
+    storage_path: str
+    file_url: str
+    mime_type: str
+    media_type: str
+    file_size_bytes: int
+    extension: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MediaAssetUpdateRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Title cannot be empty.")
+            if len(v) > 300:
+                raise ValueError("Title must be 300 characters or fewer.")
+        return v
