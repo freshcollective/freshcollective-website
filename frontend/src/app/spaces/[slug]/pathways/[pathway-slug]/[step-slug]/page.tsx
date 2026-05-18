@@ -1,8 +1,8 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getStep, getSteps, getPathway, getStepResources } from '@/lib/serverApi'
+import { getStep, getSteps, getPathway, getStepResources, getStepBlocks } from '@/lib/serverApi'
 import StepActions from '@/components/spaces/StepActions'
-import type { StepDetail, StepSummary, StepResource } from '@/types/platform'
+import type { StepDetail, StepSummary, StepResource, StepBlock } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string; 'step-slug': string }>
@@ -70,6 +70,129 @@ function renderContent(body: string): React.ReactNode {
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+
+function resolveUrl(url: string): string {
+  return url.startsWith('http') ? url : `${API_BASE}/api/uploads/${url}`
+}
+
+function renderBlocks(blocks: StepBlock[]): React.ReactNode {
+  return blocks.map((block) => {
+    const { id, block_type: t } = block
+
+    if (t === 'divider') return <hr key={id} className="my-8 border-border" />
+
+    if (t === 'heading') return (
+      <h2 key={id} className="mt-8 mb-3 font-serif text-2xl text-navy-900">
+        {block.content}
+      </h2>
+    )
+
+    if (t === 'text' && block.content) return (
+      <div key={id}>{renderContent(block.content)}</div>
+    )
+
+    if (t === 'image') {
+      const src = block.media_asset ? resolveUrl(block.media_asset.file_url) : block.embed_url
+      if (!src) return null
+      return (
+        <figure key={id} className="my-6">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt={block.caption ?? ''} className="w-full rounded-xl" />
+          {block.caption && <figcaption className="mt-2 text-center text-[12px] text-slate-400">{block.caption}</figcaption>}
+        </figure>
+      )
+    }
+
+    if (t === 'video_embed' && block.embed_url) return (
+      <figure key={id} className="my-6">
+        <div className="aspect-video overflow-hidden rounded-xl bg-slate-100">
+          <iframe
+            src={block.embed_url.replace('watch?v=', 'embed/')}
+            className="h-full w-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+        {block.caption && <figcaption className="mt-2 text-center text-[12px] text-slate-400">{block.caption}</figcaption>}
+      </figure>
+    )
+
+    if (t === 'audio' && block.media_asset) return (
+      <figure key={id} className="my-6 rounded-xl border border-border bg-white p-4">
+        <audio controls className="w-full" src={resolveUrl(block.media_asset.file_url)} />
+        {block.caption && <figcaption className="mt-2 text-[12px] text-slate-400">{block.caption}</figcaption>}
+      </figure>
+    )
+
+    if (t === 'file_download' && block.media_asset) return (
+      <div key={id} className="my-4">
+        <a
+          href={resolveUrl(block.media_asset.file_url)}
+          download
+          className="inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-3 text-[14px] font-medium text-navy-900 transition-colors hover:border-teal-300 hover:text-teal-700"
+        >
+          <span>↓</span>
+          {block.label || block.media_asset.title}
+        </a>
+      </div>
+    )
+
+    if (t === 'link' && block.embed_url) return (
+      <div key={id} className="my-4">
+        <a
+          href={block.embed_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group flex items-start justify-between gap-4 rounded-xl border border-border bg-white px-4 py-3 transition-colors hover:border-teal-300"
+        >
+          <div>
+            <p className="text-[14px] font-medium text-navy-900 group-hover:underline underline-offset-2">
+              {block.label || block.embed_url}
+            </p>
+            {block.caption && <p className="mt-0.5 text-[12px] text-slate-500">{block.caption}</p>}
+          </div>
+          <span className="shrink-0 text-[12px] text-slate-400">↗</span>
+        </a>
+      </div>
+    )
+
+    if (t === 'reflection_prompt' && block.content) return (
+      <div
+        key={id}
+        className="my-6 rounded-xl border-l-4 border-teal-300 bg-teal-50 px-5 py-4"
+      >
+        <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-teal-600">Reflection</p>
+        <p className="text-[15px] leading-relaxed text-slate-700">{block.content}</p>
+      </div>
+    )
+
+    if (t === 'exercise' && block.content) return (
+      <div
+        key={id}
+        className="my-6 rounded-xl border border-slate-200 bg-white px-5 py-4"
+      >
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Exercise</p>
+        {renderContent(block.content)}
+      </div>
+    )
+
+    if (t === 'callout' && block.content) {
+      const style = block.label ?? 'info'
+      const bg = style === 'warning' ? 'rgba(234,179,8,0.10)' : style === 'tip' ? 'rgba(56,160,158,0.08)' : 'rgba(59,130,246,0.08)'
+      const accent = style === 'warning' ? '#92400e' : style === 'tip' ? '#0f766e' : '#1d4ed8'
+      return (
+        <div key={id} className="my-5 rounded-xl px-5 py-4" style={{ background: bg }}>
+          <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: accent }}>
+            {style.charAt(0).toUpperCase() + style.slice(1)}
+          </p>
+          <p className="text-[14px] leading-relaxed text-slate-700">{block.content}</p>
+        </div>
+      )
+    }
+
+    return null
+  })
+}
 
 const RESOURCE_GROUP: Record<string, string> = {
   video: 'Watch',
@@ -146,16 +269,18 @@ function StepResourceList({ resources }: { resources: StepResource[] }) {
 export default async function StepPage({ params }: Props) {
   const { slug, 'pathway-slug': pathwaySlug, 'step-slug': stepSlug } = await params
 
-  const [step, allSteps, pathway, resources]: [
+  const [step, allSteps, pathway, resources, blocks]: [
     StepDetail | null,
     StepSummary[],
     { title: string } | null,
     StepResource[],
+    StepBlock[],
   ] = await Promise.all([
     getStep(slug, pathwaySlug, stepSlug),
     getSteps(slug, pathwaySlug),
     getPathway(slug, pathwaySlug),
     getStepResources(slug, pathwaySlug, stepSlug),
+    getStepBlocks(slug, pathwaySlug, stepSlug),
   ])
 
   if (!step) notFound()
@@ -214,15 +339,22 @@ export default async function StepPage({ params }: Props) {
         </h1>
       </div>
 
-      {/* Content */}
-      {step.content_body && (
+      {/* Content — blocks take precedence over legacy content_body */}
+      {blocks.length > 0 ? (
+        <article
+          className="mb-8 overflow-hidden rounded-2xl border px-7 py-6"
+          style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
+        >
+          {renderBlocks(blocks)}
+        </article>
+      ) : step.content_body ? (
         <article
           className="mb-8 overflow-hidden rounded-2xl border px-7 py-6"
           style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
         >
           {renderContent(step.content_body)}
         </article>
-      )}
+      ) : null}
 
       {/* Notes + complete */}
       <StepActions

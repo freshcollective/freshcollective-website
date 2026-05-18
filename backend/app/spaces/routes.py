@@ -7,11 +7,13 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
+from app.creator.schemas import BlockMediaInfo, StepBlockResponse
 from app.models.platform import (
     Enrollment,
     Event,
     Pathway,
     PathwayStep,
+    PathwayStepBlock,
     Space,
     StepProgress,
     StepResource,
@@ -568,6 +570,29 @@ def list_step_resources(
         db.query(StepResource)
         .filter(StepResource.step_id == step.id)
         .order_by(StepResource.position)
+        .all()
+    )
+
+
+@router.get(
+    "/{slug}/pathways/{pathway_slug}/steps/{step_slug}/blocks",
+    response_model=list[StepBlockResponse],
+)
+def list_step_blocks(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[PathwayStepBlock]:
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    step = _get_step_or_404(pathway.id, step_slug, db)
+    return (
+        db.query(PathwayStepBlock)
+        .options(selectinload(PathwayStepBlock.media_asset))
+        .filter(PathwayStepBlock.step_id == step.id)
+        .order_by(PathwayStepBlock.position)
         .all()
     )
 

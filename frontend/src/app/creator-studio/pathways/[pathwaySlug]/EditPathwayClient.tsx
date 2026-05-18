@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { CreatorPathway, CreatorStep } from '@/types/platform'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
@@ -605,6 +606,12 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, spaceS
                 >
                   {CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}
                 </span>
+                <Link
+                  href={`/creator-studio/pathways/${pathway.slug}/steps/${step.slug}`}
+                  className="shrink-0 text-[12px] font-medium text-teal-700 transition-opacity hover:opacity-70"
+                >
+                  Edit content →
+                </Link>
               </li>
             ))}
           </ul>

@@ -304,3 +304,40 @@ export interface ContinueResponse {
   step_title: string
   all_complete: boolean
 }
+
+export type StepBlockType =
+  | 'heading'
+  | 'text'
+  | 'image'
+  | 'video_embed'
+  | 'audio'
+  | 'file_download'
+  | 'link'
+  | 'reflection_prompt'
+  | 'exercise'
+  | 'callout'
+  | 'divider'
+
+export interface StepBlockMedia {
+  id: string
+  title: string
+  file_url: string
+  media_type: MediaAssetType
+  mime_type: string
+  original_filename: string
+}
+
+export interface StepBlock {
+  id: string
+  step_id: string
+  block_type: StepBlockType
+  position: number
+  content: string | null
+  label: string | null
+  caption: string | null
+  embed_url: string | null
+  media_asset_id: string | null
+  media_asset: StepBlockMedia | null
+  created_at: string
+  updated_at: string
+}

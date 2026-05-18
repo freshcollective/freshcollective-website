@@ -1,0 +1,131 @@
+
+====================================
+Stopping FC Production
+Mon May 11 09:36:45 AM AEST 2026
+====================================
+
+No FC browser PID file found.
+Nothing running on port 3000.
+Nothing running on port 8000.
+Stopping related dev processes...
+
+FC Production stopped.
+
+====================================
+Stopping FC Production
+Mon May 11 09:40:05 AM AEST 2026
+====================================
+
+No FC browser PID file found.
+Nothing running on port 3000.
+Stopping process on port 8000: 298883
+298885
+Stopping related dev processes...
+
+FC Production stopped.
+
+====================================
+Stopping FC Production
+Mon May 11 09:42:16 AM AEST 2026
+====================================
+
+No FC browser PID file found.
+Stopping process on port 3000: 59852
+Stopping process on port 8000: 305256
+305258
+Stopping related dev processes...
+
+FC Production stopped.
+
+====================================
+Stopping FC Production
+Mon May 11 09:43:44 AM AEST 2026
+====================================
+
+No FC browser PID file found.
+Stopping process on port 3000: 313436
+Stopping process on port 8000: 312724
+312823
+Stopping related dev processes...
+
+FC Production stopped.
+
+====================================
+Stopping FC Production
+Mon May 11 09:54:18 AM AEST 2026
+====================================
+
+No FC browser PID file found.
+Nothing running on port 3000.
+Nothing running on port 8000.
+Stopping related dev processes...
+
+FC Production stopped.
+
+====================================
+Stopping FC Production
+Mon May 11 10:32:06 AM AEST 2026
+====================================
+
+No FC browser PID file found.
+Stopping process on port 3000: 319304
+Stopping process on port 8000: 324657
+324659
+Stopping related dev processes...
+
+====================================
+Stopping FC Production
+Mon May 11 03:49:08 PM AEST 2026
+====================================
+
+No FC browser PID file found.
+Stopping process on port 3000: 326490
+Stopping process on port 8000: 333422
+343917
+Stopping related dev processes...
+
+FC Production stopped.
+
+====================================
+Stopping FC Production
+Thu May 14 09:01:32 PM AEST 2026
+====================================
+
+No FC browser PID file found.
+
+Stopping dev server processes...
+  Sending TERM to (PIDs: 456114
+456128
+456129
+456141
+520914)...
+  Port 3000: clear.
+  Port 8000: clear.
+
+FC Production stopped.
+
+====================================
+Stopping FC Production
+Fri May 15 02:08:20 PM AEST 2026
+====================================
+
+No FC browser PID file found.
+
+Stopping dev server processes...
+  Port 3000: clear.
+  Port 8000: clear.
+
+FC Production stopped.
+
+====================================
+Stopping FC Production
+Fri May 15 02:11:32 PM AEST 2026
+====================================
+
+No FC browser PID file found.
+
+Stopping dev server processes...
+  Port 3000: clear.
+  Port 8000: clear.
+
+FC Production stopped.

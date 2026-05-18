@@ -480,3 +480,68 @@ class MediaAssetUpdateRequest(BaseModel):
             if len(v) > 300:
                 raise ValueError("Title must be 300 characters or fewer.")
         return v
+
+
+# ---------------------------------------------------------------------------
+# Step Blocks
+# ---------------------------------------------------------------------------
+
+VALID_BLOCK_TYPES = (
+    "heading", "text", "image", "video_embed", "audio",
+    "file_download", "link", "reflection_prompt", "exercise", "callout", "divider",
+)
+
+
+class BlockMediaInfo(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    title: str
+    file_url: str
+    media_type: str
+    mime_type: str
+    original_filename: str
+
+
+class StepBlockResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    step_id: str
+    block_type: str
+    position: int
+    content: str | None
+    label: str | None
+    caption: str | None
+    embed_url: str | None
+    media_asset_id: str | None
+    media_asset: BlockMediaInfo | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class StepBlockCreateRequest(BaseModel):
+    block_type: str
+    position: int | None = None
+    content: str | None = None
+    label: str | None = None
+    caption: str | None = None
+    embed_url: str | None = None
+    media_asset_id: str | None = None
+
+    @field_validator("block_type")
+    @classmethod
+    def validate_block_type(cls, v: str) -> str:
+        if v not in VALID_BLOCK_TYPES:
+            raise ValueError(f"Invalid block type. Must be one of: {', '.join(VALID_BLOCK_TYPES)}")
+        return v
+
+
+class StepBlockUpdateRequest(BaseModel):
+    content: str | None = None
+    label: str | None = None
+    caption: str | None = None
+    embed_url: str | None = None
+    media_asset_id: str | None = None
+
+
+class StepBlockReorderRequest(BaseModel):
+    ids: list[str]

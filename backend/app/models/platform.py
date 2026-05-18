@@ -92,6 +92,20 @@ class MediaStatus(str, enum.Enum):
     archived = "archived"
 
 
+class StepBlockType(str, enum.Enum):
+    heading = "heading"
+    text = "text"
+    image = "image"
+    video_embed = "video_embed"
+    audio = "audio"
+    file_download = "file_download"
+    link = "link"
+    reflection_prompt = "reflection_prompt"
+    exercise = "exercise"
+    callout = "callout"
+    divider = "divider"
+
+
 class EnrollmentStatus(str, enum.Enum):
     active = "active"
     paused = "paused"
@@ -361,6 +375,10 @@ class PathwayStep(Base):
     resources: Mapped[list["StepResource"]] = relationship(
         "StepResource", back_populates="step", cascade="all, delete-orphan",
         order_by="StepResource.position",
+    )
+    blocks: Mapped[list["PathwayStepBlock"]] = relationship(
+        "PathwayStepBlock", back_populates="step", cascade="all, delete-orphan",
+        order_by="PathwayStepBlock.position",
     )
 
     __table_args__ = (
@@ -762,4 +780,76 @@ class CreatorMediaAsset(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pathway Step Blocks
+# ---------------------------------------------------------------------------
+
+class PathwayStepBlock(Base):
+    """
+    A single content block within a PathwayStep, Notion-style.
+
+    Block types and their relevant columns:
+        heading          — content (text)
+        text             — content (markdown)
+        image            — media_asset_id OR embed_url (external), caption
+        video_embed      — embed_url (YouTube/Vimeo/Loom), caption
+        audio            — media_asset_id, caption
+        file_download    — media_asset_id, label
+        link             — embed_url (href), label, caption (description)
+        reflection_prompt — content (prompt text)
+        exercise         — content (instructions)
+        callout          — content (text), label (callout style: info|tip|warning)
+        divider          — no extra columns needed
+
+    position is zero-indexed within the step.
+    """
+
+    __tablename__ = "pathway_step_blocks"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    step_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("pathway_steps.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    block_type: Mapped[StepBlockType] = mapped_column(
+        SAEnum(StepBlockType, name="step_block_type_enum", create_type=True),
+        nullable=False,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Primary text content (heading text, markdown body, prompt, instructions, callout text)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Short label/title (callout style, link label, file download label)
+    label: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Caption shown below media or link blocks
+    caption: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # External URL (video embed, link href, external image)
+    embed_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # FK to media library asset (image, audio, file_download)
+    media_asset_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("creator_media_assets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    step: Mapped[PathwayStep] = relationship("PathwayStep", back_populates="blocks")
+    media_asset: Mapped["CreatorMediaAsset | None"] = relationship(
+        "CreatorMediaAsset", foreign_keys=[media_asset_id]
+    )
+
+    __table_args__ = (
+        Index("ix_pathway_step_blocks_step_position", "step_id", "position"),
     )
