@@ -477,6 +477,11 @@
   resolved "https://registry.npmjs.org/@tiptap/extension-code/-/extension-code-3.23.4.tgz"
   integrity sha512-C0TeRipMycUEBnV+Mzx6eLp/yZb6Vi/waP3Tkb0lO5/ikg7LWLB7AlmMunjIXEUcR/pJHID/aEh5PfJFpysUDg==
 
+"@tiptap/extension-color@^3.23.4":
+  version "3.23.4"
+  resolved "https://registry.npmjs.org/@tiptap/extension-color/-/extension-color-3.23.4.tgz"
+  integrity sha512-8phVTsRgvT+0wnDh+z6eIIa0IksVRnLKM2Av89vPHOFUhCt/bJdolAfXSC+eWqxjgoYOikzi5yk3QHYbGvOu1Q==
+
 "@tiptap/extension-document@^3.23.4":
   version "3.23.4"
   resolved "https://registry.npmjs.org/@tiptap/extension-document/-/extension-document-3.23.4.tgz"
@@ -492,6 +497,11 @@
   resolved "https://registry.npmjs.org/@tiptap/extension-floating-menu/-/extension-floating-menu-3.23.4.tgz"
   integrity sha512-eAc72bKM26yIPx0jsU8qdjE71vFNVu5R9jGbdItBMFc0SPLS4qY8g+8RJ+iWoLwbcSEpgooLS9D9sLfdAU+Tvw==
 
+"@tiptap/extension-font-family@^3.23.4":
+  version "3.23.4"
+  resolved "https://registry.npmjs.org/@tiptap/extension-font-family/-/extension-font-family-3.23.4.tgz"
+  integrity sha512-L9pNO9f2qWZwWG9PvVocu8nLoHeCpqKHE3pLx0eisP+o4aYSEIhVIJen2N9BNlElm+YznAGr+3NmUGBbamDQ8Q==
+
 "@tiptap/extension-gapcursor@^3.23.4":
   version "3.23.4"
   resolved "https://registry.npmjs.org/@tiptap/extension-gapcursor/-/extension-gapcursor-3.23.4.tgz"
@@ -506,6 +516,11 @@
   version "3.23.4"
   resolved "https://registry.npmjs.org/@tiptap/extension-heading/-/extension-heading-3.23.4.tgz"
   integrity sha512-8W9Hqi0J69Xbqg08nPf4xRMJXMccaKFAgUE1tvy5PAWJSQxOMwkKQXgZXxwe+80sOMUnV8qveBqUy/ODMPgAxQ==
+
+"@tiptap/extension-highlight@^3.23.4":
+  version "3.23.4"
+  resolved "https://registry.npmjs.org/@tiptap/extension-highlight/-/extension-highlight-3.23.4.tgz"
+  integrity sha512-OyCnpFpLRWg9sWlXVMIsvo2bpf4cp7Gdz5b57eceNsr4Cm5RcHtJTiziKO6kSrSYLWdoL4T9m3SNvF5/7ekx0g==
 
 "@tiptap/extension-horizontal-rule@^3.23.4":
   version "3.23.4"
@@ -558,6 +573,11 @@
   version "3.23.4"
   resolved "https://registry.npmjs.org/@tiptap/extension-strike/-/extension-strike-3.23.4.tgz"
   integrity sha512-Vnq5vW801zPbu1LtKeA5k4R241jY+hRjXeijYwIPxy15KzIiipY12518HiCf6/8kkRbMxgOfdYg9X4BRV3HV3g==
+
+"@tiptap/extension-text-style@^3.23.4", "@tiptap/extension-text-style@3.23.4":
+  version "3.23.4"
+  resolved "https://registry.npmjs.org/@tiptap/extension-text-style/-/extension-text-style-3.23.4.tgz"
+  integrity sha512-jb9PBkvqqn14ju37VMYOmmva9t9Th7vutoio9iB7etcu4XhL/4Z8rYPZmO+9+HLros2TQ/1JeCNZzc8LzcuBiA==
 
 "@tiptap/extension-text@^3.23.4":
   version "3.23.4"

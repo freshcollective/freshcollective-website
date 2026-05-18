@@ -5,8 +5,11 @@ import React from 'react'
 // ---------------------------------------------------------------------------
 
 interface TextMark {
-  type: 'bold' | 'italic' | 'underline' | 'link' | 'code' | string
-  attrs?: { href?: string; target?: string; rel?: string }
+  type: 'bold' | 'italic' | 'underline' | 'link' | 'code' | 'textStyle' | 'highlight' | string
+  attrs?: {
+    href?: string; target?: string; rel?: string
+    color?: string; fontFamily?: string
+  }
 }
 
 interface DocNode {
@@ -15,6 +18,21 @@ interface DocNode {
   content?: DocNode[]
   text?: string
   marks?: TextMark[]
+}
+
+// ---------------------------------------------------------------------------
+// Allowlists for safe style rendering
+// ---------------------------------------------------------------------------
+
+const ALLOWED_COLORS = new Set([
+  '#071824','#073B3A','#38A09E','#55D7D2','#E7C65A','#9A7A18','#334155','#64748B','#FFFFFF',
+])
+const ALLOWED_HIGHLIGHTS = new Set([
+  '#EAF7F6','#DDF4F2','#FBF6E8','#EEF2F5','#FFF9E8',
+])
+const ALLOWED_FONTS: Record<string, string> = {
+  'Georgia, serif': 'Georgia, serif',
+  'monospace': 'monospace',
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +74,20 @@ function applyMarks(text: string, marks: TextMark[] | undefined, key: string): R
           {node}
         </a>
       )
+    } else if (mark.type === 'textStyle') {
+      const style: React.CSSProperties = {}
+      const color = mark.attrs?.color?.toUpperCase()
+      if (color && ALLOWED_COLORS.has(color)) style.color = color
+      const font = mark.attrs?.fontFamily
+      if (font && ALLOWED_FONTS[font]) style.fontFamily = ALLOWED_FONTS[font]
+      if (Object.keys(style).length > 0) {
+        node = <span key={`${key}-ts`} style={style}>{node}</span>
+      }
+    } else if (mark.type === 'highlight') {
+      const color = mark.attrs?.color?.toUpperCase()
+      if (color && ALLOWED_HIGHLIGHTS.has(color)) {
+        node = <mark key={`${key}-hl`} style={{ backgroundColor: color, borderRadius: '2px', padding: '0 2px' }}>{node}</mark>
+      }
     }
   }
   return node
