@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { getStep, getSteps, getPathway, getStepResources, getStepBlocks } from '@/lib/serverApi'
 import StepActions from '@/components/spaces/StepActions'
 import RichTextRenderer from '@/components/RichTextRenderer'
+import PathwayStepNav from '@/components/spaces/PathwayStepNav'
 import type { StepDetail, StepSummary, StepResource, StepBlock } from '@/types/platform'
 
 interface Props {
@@ -350,124 +351,152 @@ export default async function StepPage({ params }: Props) {
   const totalCount = allSteps.length
 
   return (
-    <div className="mx-auto max-w-[680px]">
+    // Two-column layout: sidebar on left (desktop), collapsed nav on mobile.
+    // On mobile the flex-col means PathwayStepNav renders its collapsible button
+    // at the top before the step content. On desktop (lg:) it becomes a sticky
+    // left sidebar alongside the content column.
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
 
-      {/* Breadcrumb */}
-      <div className="mb-8 flex items-center gap-2 text-sm text-slate-400">
-        <Link href={pathwayHref} className="hover:text-navy-700 transition-colors">
-          {pathwayTitle}
-        </Link>
-        <span className="text-slate-200">/</span>
-        <span className="text-slate-500 line-clamp-1">{step.title}</span>
+      {/* ── Left: pathway step nav ── */}
+      <div className="lg:w-[268px] lg:shrink-0">
+        <PathwayStepNav
+          pathwayTitle={pathwayTitle}
+          pathwayHref={pathwayHref}
+          steps={allSteps}
+          currentStepSlug={stepSlug}
+          spaceSlug={slug}
+          pathwaySlug={pathwaySlug}
+          completedCount={completedCount}
+          totalCount={totalCount}
+        />
       </div>
 
-      {/* Progress strip */}
-      <div className="mb-10">
-        <div className="mb-2 flex items-baseline justify-between text-xs text-slate-400">
-          <span>{completedCount} of {totalCount} complete</span>
+      {/* ── Right: step content ── */}
+      <div className="min-w-0 flex-1">
+
+        {/* Breadcrumb */}
+        <div className="mb-8 flex items-center gap-2 text-sm text-slate-400">
+          <Link href={pathwayHref} className="transition-colors hover:text-navy-700">
+            {pathwayTitle}
+          </Link>
+          <span className="text-slate-200">/</span>
+          <span className="line-clamp-1 text-slate-500">{step.title}</span>
+        </div>
+
+        {/* Progress strip — shown on mobile only; desktop sidebar handles it */}
+        <div className="mb-10 lg:hidden">
+          <div className="mb-2 flex items-baseline justify-between text-xs text-slate-400">
+            <span>{completedCount} of {totalCount} complete</span>
+            <span>Step {step.position} of {totalCount}</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
+            <div
+              className="h-full rounded-full bg-teal-400 transition-all duration-500"
+              style={{ width: `${totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Step position label — desktop only (mobile has it in the collapsible button) */}
+        <div className="mb-10 hidden items-baseline justify-end text-xs text-slate-400 lg:flex">
           <span>Step {step.position} of {totalCount}</span>
         </div>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
-          <div
-            className="h-full rounded-full bg-teal-400 transition-all duration-500"
-            style={{ width: `${totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%` }}
-          />
-        </div>
-      </div>
 
-      {/* Step header */}
-      <div className="mb-10">
-        <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
-          <span className="font-medium uppercase tracking-wider">
-            {CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}
-          </span>
-          {step.estimated_minutes && (
-            <>
-              <span className="text-slate-200">·</span>
-              <span>{step.estimated_minutes} min</span>
-            </>
+        {/* Step header */}
+        <div className="mb-10">
+          <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
+            <span className="font-medium uppercase tracking-wider">
+              {CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}
+            </span>
+            {step.estimated_minutes && (
+              <>
+                <span className="text-slate-200">·</span>
+                <span>{step.estimated_minutes} min</span>
+              </>
+            )}
+          </div>
+          <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
+          <h1 className="font-serif text-3xl leading-snug text-navy-900 md:text-4xl">
+            {step.title}
+          </h1>
+        </div>
+
+        {/* Content — blocks take precedence over legacy content_body */}
+        {blocks.length > 0 ? (
+          <article
+            className="mb-8 overflow-hidden rounded-2xl border px-7 py-6"
+            style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
+          >
+            {renderBlocks(blocks)}
+          </article>
+        ) : step.content_body ? (
+          <article
+            className="mb-8 overflow-hidden rounded-2xl border px-7 py-6"
+            style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
+          >
+            {renderContent(step.content_body)}
+          </article>
+        ) : null}
+
+        {/* Notes + complete */}
+        <StepActions
+          spaceSlug={slug}
+          pathwaySlug={pathwaySlug}
+          stepSlug={stepSlug}
+          isCompleted={step.is_completed}
+          initialNotes={step.reflection_text}
+        />
+
+        {/* Resources */}
+        {resources.length > 0 && (
+          <section className="mt-10 border-t border-border pt-8">
+            <p className="mb-5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Resources for this step
+            </p>
+            <StepResourceList resources={resources} />
+          </section>
+        )}
+
+        {/* Prev / Next */}
+        <div className="mt-10 flex items-center justify-between border-t border-border pt-6">
+          {prevStep ? (
+            <Link
+              href={`/spaces/${slug}/pathways/${pathwaySlug}/${prevStep.slug}`}
+              className="group flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-navy-700"
+            >
+              <span>←</span>
+              <span className="hidden sm:inline underline-offset-2 group-hover:underline">
+                {prevStep.title}
+              </span>
+              <span className="sm:hidden">Previous</span>
+            </Link>
+          ) : (
+            <Link href={pathwayHref} className="text-sm text-slate-400 transition-colors hover:text-navy-700">
+              ← {pathwayTitle}
+            </Link>
+          )}
+
+          {nextStep ? (
+            <Link
+              href={`/spaces/${slug}/pathways/${pathwaySlug}/${nextStep.slug}`}
+              className="group flex items-center gap-2 text-sm font-medium text-teal-600 transition-colors hover:text-teal-700"
+            >
+              <span className="hidden sm:inline underline-offset-2 group-hover:underline">
+                {nextStep.title}
+              </span>
+              <span className="sm:hidden">Next</span>
+              <span>→</span>
+            </Link>
+          ) : (
+            <Link
+              href={pathwayHref}
+              className="text-sm font-medium text-teal-600 hover:underline underline-offset-2"
+            >
+              Back to {pathwayTitle} →
+            </Link>
           )}
         </div>
-        <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
-        <h1 className="font-serif text-3xl leading-snug text-navy-900 md:text-4xl">
-          {step.title}
-        </h1>
-      </div>
 
-      {/* Content — blocks take precedence over legacy content_body */}
-      {blocks.length > 0 ? (
-        <article
-          className="mb-8 overflow-hidden rounded-2xl border px-7 py-6"
-          style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
-        >
-          {renderBlocks(blocks)}
-        </article>
-      ) : step.content_body ? (
-        <article
-          className="mb-8 overflow-hidden rounded-2xl border px-7 py-6"
-          style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
-        >
-          {renderContent(step.content_body)}
-        </article>
-      ) : null}
-
-      {/* Notes + complete */}
-      <StepActions
-        spaceSlug={slug}
-        pathwaySlug={pathwaySlug}
-        stepSlug={stepSlug}
-        isCompleted={step.is_completed}
-        initialNotes={step.reflection_text}
-      />
-
-      {/* Resources */}
-      {resources.length > 0 && (
-        <section className="mt-10 border-t border-border pt-8">
-          <p className="mb-5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-            Resources for this step
-          </p>
-          <StepResourceList resources={resources} />
-        </section>
-      )}
-
-      {/* Prev / Next */}
-      <div className="mt-10 flex items-center justify-between border-t border-border pt-6">
-        {prevStep ? (
-          <Link
-            href={`/spaces/${slug}/pathways/${pathwaySlug}/${prevStep.slug}`}
-            className="group flex items-center gap-2 text-sm text-slate-400 transition-colors hover:text-navy-700"
-          >
-            <span>←</span>
-            <span className="hidden sm:inline group-hover:underline underline-offset-2">
-              {prevStep.title}
-            </span>
-            <span className="sm:hidden">Previous</span>
-          </Link>
-        ) : (
-          <Link href={pathwayHref} className="text-sm text-slate-400 hover:text-navy-700 transition-colors">
-            ← {pathwayTitle}
-          </Link>
-        )}
-
-        {nextStep ? (
-          <Link
-            href={`/spaces/${slug}/pathways/${pathwaySlug}/${nextStep.slug}`}
-            className="group flex items-center gap-2 text-sm font-medium text-teal-600 transition-colors hover:text-teal-700"
-          >
-            <span className="hidden sm:inline group-hover:underline underline-offset-2">
-              {nextStep.title}
-            </span>
-            <span className="sm:hidden">Next</span>
-            <span>→</span>
-          </Link>
-        ) : (
-          <Link
-            href={pathwayHref}
-            className="text-sm font-medium text-teal-600 hover:underline underline-offset-2"
-          >
-            Back to {pathwayTitle} →
-          </Link>
-        )}
       </div>
     </div>
   )
