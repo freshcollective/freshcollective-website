@@ -132,3 +132,56 @@ p { letter-spacing: -0.01em; }
   .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* Creator form helpers */
+.field-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+.field-input {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  padding: 0.5rem 0.75rem;
+  font-size: 13px;
+  color: #0f172a;
+  background: #fff;
+}
+.field-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(56,160,158,0.3);
+}
+
+/* TipTap prose styles */
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: #94a3b8;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.ProseMirror:focus { outline: none; }
+
+/* TipTap editor content styles */
+.rich-editor .ProseMirror {
+  font-size: 14px;
+  line-height: 1.75;
+  color: #0f172a;
+}
+.rich-editor .ProseMirror p { margin: 0.4rem 0; }
+.rich-editor .ProseMirror h2 { font-size: 1.2rem; font-weight: 700; margin: 0.8rem 0 0.3rem; color: #0a1628; }
+.rich-editor .ProseMirror h3 { font-size: 1.05rem; font-weight: 700; margin: 0.7rem 0 0.25rem; color: #0a1628; }
+.rich-editor .ProseMirror ul { list-style: disc; padding-left: 1.25rem; margin: 0.4rem 0; }
+.rich-editor .ProseMirror ol { list-style: decimal; padding-left: 1.25rem; margin: 0.4rem 0; }
+.rich-editor .ProseMirror li { margin: 0.15rem 0; }
+.rich-editor .ProseMirror blockquote { border-left: 3px solid #5BBFBD; padding-left: 0.75rem; color: #475569; font-style: italic; margin: 0.5rem 0; }
+.rich-editor .ProseMirror a { color: #0f766e; text-decoration: underline; }
+.rich-editor .ProseMirror strong { font-weight: 700; }
+.rich-editor .ProseMirror em { font-style: italic; }
+.rich-editor .ProseMirror u { text-decoration: underline; }
+.rich-editor .ProseMirror code { background: #f1f5f9; border-radius: 3px; padding: 0.1em 0.35em; font-size: 0.875em; font-family: ui-monospace, monospace; }

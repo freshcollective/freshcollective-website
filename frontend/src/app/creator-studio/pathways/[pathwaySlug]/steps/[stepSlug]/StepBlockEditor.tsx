@@ -1,29 +1,21 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import RichTextEditor from '@/components/creator/RichTextEditor'
+import RichTextRenderer from '@/components/RichTextRenderer'
 import type { StepBlock, StepBlockType, CreatorMediaAsset } from '@/types/platform'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface CreatorPathwayMin {
-  id: string
-  slug: string
-  title: string
-}
-
+interface CreatorPathwayMin { id: string; slug: string; title: string }
 interface CreatorStepMin {
-  id: string
-  slug: string
-  title: string
-  content_type: string
-  content_body: string | null
-  estimated_minutes: number | null
-  is_required: boolean
+  id: string; slug: string; title: string; content_type: string
+  content_body: string | null; estimated_minutes: number | null; is_required: boolean
 }
 
 interface Props {
@@ -40,34 +32,65 @@ interface Props {
 // Constants
 // ---------------------------------------------------------------------------
 
-const BLOCK_TYPE_OPTIONS: { value: StepBlockType; label: string; description: string }[] = [
-  { value: 'heading', label: 'Heading', description: 'A section title' },
-  { value: 'text', label: 'Text', description: 'Rich paragraph content' },
-  { value: 'image', label: 'Image', description: 'From media library or URL' },
-  { value: 'video_embed', label: 'Video', description: 'YouTube, Vimeo, or Loom' },
-  { value: 'audio', label: 'Audio', description: 'From media library' },
-  { value: 'file_download', label: 'File Download', description: 'Downloadable file from library' },
-  { value: 'link', label: 'Link', description: 'An external link with label' },
-  { value: 'reflection_prompt', label: 'Reflection Prompt', description: 'A question for the learner' },
-  { value: 'exercise', label: 'Exercise', description: 'A structured activity' },
-  { value: 'callout', label: 'Callout', description: 'Highlighted note or tip' },
-  { value: 'divider', label: 'Divider', description: 'Visual separator' },
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+
+const BLOCK_TYPE_OPTIONS: { value: StepBlockType; label: string; icon: string; description: string }[] = [
+  { value: 'heading',          icon: 'H',  label: 'Heading',          description: 'Section title' },
+  { value: 'text',             icon: '¶',  label: 'Text',             description: 'Rich paragraph content' },
+  { value: 'image',            icon: '🖼',  label: 'Image',            description: 'From Media Library' },
+  { value: 'video_embed',      icon: '▶',  label: 'Video embed',      description: 'YouTube, Vimeo, or Loom' },
+  { value: 'audio',            icon: '🔊', label: 'Audio',            description: 'From Media Library' },
+  { value: 'file_download',    icon: '↓',  label: 'File download',    description: 'Downloadable file' },
+  { value: 'link',             icon: '🔗', label: 'Link',             description: 'External link card' },
+  { value: 'reflection_prompt',icon: '💬', label: 'Reflection prompt',description: 'Question for the learner' },
+  { value: 'exercise',         icon: '✏', label: 'Exercise',          description: 'Structured activity' },
+  { value: 'callout',          icon: '!',  label: 'Callout',          description: 'Highlighted note or tip' },
+  { value: 'divider',          icon: '—',  label: 'Divider',          description: 'Visual separator' },
 ]
 
-const CALLOUT_STYLES = ['info', 'tip', 'warning']
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const CALLOUT_STYLES = [
+  { value: 'info',    label: 'Info',    color: 'rgba(59,130,246,0.09)',  accent: '#1d4ed8' },
+  { value: 'tip',     label: 'Tip',     color: 'rgba(56,160,158,0.09)', accent: '#0f766e' },
+  { value: 'warning', label: 'Warning', color: 'rgba(234,179,8,0.11)',  accent: '#92400e' },
+]
 
 function blockLabel(type: StepBlockType): string {
   return BLOCK_TYPE_OPTIONS.find(o => o.value === type)?.label ?? type
 }
 
-function calloutColor(style: string | null): string {
-  if (style === 'warning') return 'rgba(234,179,8,0.12)'
-  if (style === 'tip') return 'rgba(56,160,158,0.10)'
-  return 'rgba(59,130,246,0.10)'
+function blockIcon(type: StepBlockType): string {
+  return BLOCK_TYPE_OPTIONS.find(o => o.value === type)?.icon ?? '·'
+}
+
+function resolveAssetUrl(url: string): string {
+  return url.startsWith('http') ? url : `${API_BASE}/api/uploads/${url}`
+}
+
+function getEmbedUrl(raw: string): string | null {
+  if (!raw) return null
+  try {
+    const url = new URL(raw)
+    // YouTube
+    if (url.hostname.includes('youtube.com')) {
+      const id = url.searchParams.get('v')
+      return id ? `https://www.youtube.com/embed/${id}` : null
+    }
+    if (url.hostname.includes('youtu.be')) {
+      const id = url.pathname.slice(1)
+      return id ? `https://www.youtube.com/embed/${id}` : null
+    }
+    // Vimeo
+    if (url.hostname.includes('vimeo.com')) {
+      const id = url.pathname.split('/').filter(Boolean).pop()
+      return id ? `https://player.vimeo.com/video/${id}` : null
+    }
+    // Loom
+    if (url.hostname.includes('loom.com') && url.pathname.includes('/share/')) {
+      const id = url.pathname.split('/share/')[1]?.split('?')[0]
+      return id ? `https://www.loom.com/embed/${id}` : null
+    }
+  } catch {}
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -82,28 +105,38 @@ function AddBlockPicker({ onSelect }: { onSelect: (type: StepBlockType) => void 
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-[13px] font-medium text-slate-500 transition-colors hover:border-teal-400 hover:text-teal-700"
+        className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-4 py-2.5 text-[13px] font-medium text-slate-500 transition-colors hover:border-teal-400 hover:text-teal-700"
       >
-        + Add block
+        <span className="text-[16px] leading-none">+</span>
+        Add block
       </button>
+
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div
-            className="absolute left-0 top-full z-20 mt-1 w-72 rounded-xl border border-slate-200 bg-white shadow-lg"
-            style={{ maxHeight: '380px', overflowY: 'auto' }}
-          >
-            {BLOCK_TYPE_OPTIONS.map(opt => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => { onSelect(opt.value); setOpen(false) }}
-                className="flex w-full flex-col px-4 py-3 text-left transition-colors hover:bg-slate-50"
-              >
-                <span className="text-[13px] font-semibold text-navy-900">{opt.label}</span>
-                <span className="text-[11px] text-slate-400">{opt.description}</span>
-              </button>
-            ))}
+          <div className="absolute left-0 top-full z-20 mt-1.5 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+            <p className="border-b border-slate-100 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+              Add content block
+            </p>
+            <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+              {BLOCK_TYPE_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { onSelect(opt.value); setOpen(false) }}
+                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50"
+                >
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[13px]"
+                    style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}>
+                    {opt.icon}
+                  </span>
+                  <div>
+                    <p className="text-[13px] font-semibold text-navy-900">{opt.label}</p>
+                    <p className="text-[11px] text-slate-400">{opt.description}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </>
       )}
@@ -120,41 +153,185 @@ function MediaPicker({
   value,
   onChange,
   accept,
+  emptyMessage,
 }: {
   assets: CreatorMediaAsset[]
   value: string | null
   onChange: (id: string | null) => void
-  accept?: ('image' | 'audio' | 'document' | 'other' | 'video')[]
+  accept?: CreatorMediaAsset['media_type'][]
+  emptyMessage?: string
 }) {
-  const filtered = accept ? assets.filter(a => accept.includes(a.media_type)) : assets
+  const filtered = accept ? assets.filter(a => accept.includes(a.media_type) && a.status === 'active') : assets.filter(a => a.status === 'active')
   const selected = filtered.find(a => a.id === value) ?? null
+
+  if (filtered.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-200 p-3 text-center">
+        <p className="text-[12px] text-slate-400">{emptyMessage ?? 'No assets available.'}</p>
+        <Link href="/creator-studio/media" className="mt-1 block text-[12px] font-medium text-teal-600 hover:underline">
+          Open Media Library →
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div>
-      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        Media asset
-      </label>
       <select
         value={value ?? ''}
         onChange={e => onChange(e.target.value || null)}
-        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
+        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-1 focus:ring-teal-300"
       >
-        <option value="">— None selected —</option>
+        <option value="">— Select from Media Library —</option>
         {filtered.map(a => (
-          <option key={a.id} value={a.id}>{a.title} ({a.original_filename})</option>
+          <option key={a.id} value={a.id}>{a.title} · {a.original_filename}</option>
         ))}
       </select>
+
       {selected && (
-        <p className="mt-1 text-[11px] text-slate-400">
-          {selected.media_type} · {selected.mime_type}
-        </p>
+        <div className="mt-2 flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50 p-2">
+          {selected.media_type === 'image' && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={resolveAssetUrl(selected.file_url)}
+              alt={selected.title}
+              className="h-14 w-14 rounded object-cover"
+            />
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-[12px] font-medium text-navy-900">{selected.title}</p>
+            <p className="text-[11px] text-slate-400">{selected.original_filename} · {selected.media_type}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="ml-auto shrink-0 text-[11px] text-slate-400 hover:text-red-400"
+          >
+            ✕
+          </button>
+        </div>
       )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Block Edit Form (per type)
+// Block Preview (collapsed card)
+// ---------------------------------------------------------------------------
+
+function BlockPreview({ block, assets }: { block: StepBlock; assets: CreatorMediaAsset[] }) {
+  const asset = block.media_asset_id ? assets.find(a => a.id === block.media_asset_id) ?? block.media_asset : block.media_asset
+  const t = block.block_type
+
+  if (t === 'divider') return <hr className="border-slate-200" />
+
+  if (t === 'heading') return (
+    <p className="text-[16px] font-bold text-navy-900">
+      {block.content || <span className="italic text-slate-300">No heading text</span>}
+    </p>
+  )
+
+  if (t === 'text') return (
+    <div className="line-clamp-3 text-[14px] text-slate-600">
+      <RichTextRenderer content={block.content} />
+    </div>
+  )
+
+  if (t === 'image') {
+    const imgSrc = asset ? resolveAssetUrl(asset.file_url) : block.embed_url
+    return (
+      <div className="flex items-center gap-3">
+        {imgSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imgSrc} alt={block.caption ?? ''} className="h-16 w-20 rounded object-cover" />
+        ) : (
+          <div className="flex h-16 w-20 items-center justify-center rounded bg-slate-100 text-slate-400">🖼</div>
+        )}
+        <div>
+          {asset && <p className="text-[13px] font-medium text-navy-900">{asset.title}</p>}
+          {block.caption && <p className="text-[12px] text-slate-400">{block.caption}</p>}
+          {!asset && !imgSrc && <p className="text-[13px] italic text-slate-300">No image selected</p>}
+        </div>
+      </div>
+    )
+  }
+
+  if (t === 'video_embed') {
+    const embed = block.embed_url ? getEmbedUrl(block.embed_url) : null
+    return (
+      <div className="flex items-center gap-2 text-[13px] text-slate-600">
+        <span>▶</span>
+        {block.embed_url ? (
+          embed ? <span className="text-teal-700">{block.embed_url}</span> : <span className="text-slate-400">{block.embed_url}</span>
+        ) : (
+          <span className="italic text-slate-300">No URL set</span>
+        )}
+      </div>
+    )
+  }
+
+  if (t === 'audio') return (
+    <div className="flex items-center gap-2 text-[13px]">
+      <span>🔊</span>
+      {asset ? (
+        <span className="font-medium text-navy-900">{asset.title}</span>
+      ) : (
+        <span className="italic text-slate-300">No audio selected</span>
+      )}
+    </div>
+  )
+
+  if (t === 'file_download') return (
+    <div className="flex items-center gap-2 text-[13px]">
+      <span>↓</span>
+      {asset ? (
+        <><span className="font-medium text-navy-900">{asset.title}</span>{block.label && <span className="text-slate-400">· "{block.label}"</span>}</>
+      ) : (
+        <span className="italic text-slate-300">No file selected</span>
+      )}
+    </div>
+  )
+
+  if (t === 'link') return (
+    <div className="flex items-center gap-2 text-[13px]">
+      <span>🔗</span>
+      <span className="font-medium text-navy-900">{block.label || 'Link'}</span>
+      {block.embed_url && <span className="text-slate-400 truncate max-w-[200px]">→ {block.embed_url}</span>}
+      {!block.embed_url && <span className="italic text-slate-300">(no URL)</span>}
+    </div>
+  )
+
+  if (t === 'reflection_prompt') return (
+    <div className="text-[13px] italic text-slate-600">
+      <span className="mr-1 not-italic">💬</span>
+      <RichTextRenderer content={block.content} />
+    </div>
+  )
+
+  if (t === 'exercise') return (
+    <div className="text-[13px] text-slate-600">
+      <span className="mr-1">✏</span>
+      <RichTextRenderer content={block.content} />
+    </div>
+  )
+
+  if (t === 'callout') {
+    const style = CALLOUT_STYLES.find(s => s.value === (block.label ?? 'info')) ?? CALLOUT_STYLES[0]
+    return (
+      <div className="rounded-lg px-4 py-2.5" style={{ background: style.color }}>
+        <p className="mb-0.5 text-[10px] font-bold uppercase tracking-widest" style={{ color: style.accent }}>{style.label}</p>
+        <div className="text-[13px] text-slate-700 line-clamp-2">
+          <RichTextRenderer content={block.content} />
+        </div>
+      </div>
+    )
+  }
+
+  return null
+}
+
+// ---------------------------------------------------------------------------
+// Block Edit Form
 // ---------------------------------------------------------------------------
 
 function BlockEditForm({
@@ -166,7 +343,7 @@ function BlockEditForm({
 }: {
   block: StepBlock
   assets: CreatorMediaAsset[]
-  onSave: (patch: Partial<StepBlock>) => void
+  onSave: (patch: Record<string, unknown>) => void
   onCancel: () => void
   saving: boolean
 }) {
@@ -175,6 +352,9 @@ function BlockEditForm({
   const [caption, setCaption] = useState(block.caption ?? '')
   const [embedUrl, setEmbedUrl] = useState(block.embed_url ?? '')
   const [mediaAssetId, setMediaAssetId] = useState<string | null>(block.media_asset_id)
+
+  const t = block.block_type
+  const embedPreview = t === 'video_embed' && embedUrl ? getEmbedUrl(embedUrl) : null
 
   function handleSave() {
     onSave({
@@ -186,34 +366,49 @@ function BlockEditForm({
     })
   }
 
-  const t = block.block_type
-
   return (
-    <div className="mt-3 space-y-3 rounded-lg border border-teal-100 bg-teal-50/40 p-4">
+    <div className="mt-3 space-y-4 rounded-xl border border-teal-100 bg-teal-50/30 p-4">
 
       {/* heading */}
       {t === 'heading' && (
-        <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Heading text</label>
-          <input
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] font-semibold text-navy-900"
-            placeholder="Section heading…"
-          />
-        </div>
+        <>
+          <div>
+            <label className="field-label">Heading text</label>
+            <input
+              value={content}
+              onChange={e => setContent(e.target.value)}
+              className="field-input text-[18px] font-bold"
+              placeholder="Section heading…"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="field-label">Heading level</label>
+            <div className="flex gap-2">
+              {['H1', 'H2', 'H3'].map((h, idx) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => setLabel(`h${idx + 1}`)}
+                  className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${label === `h${idx + 1}` || (!label && idx === 1) ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-teal-300'}`}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
       {/* text */}
       {t === 'text' && (
         <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Content (Markdown supported)</label>
-          <textarea
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            rows={6}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-            placeholder="Write your content…"
+          <label className="field-label">Content</label>
+          <RichTextEditor
+            content={content}
+            onChange={setContent}
+            placeholder="Write your content… Bold, italic, lists, links all supported."
+            minRows={6}
           />
         </div>
       )}
@@ -221,24 +416,28 @@ function BlockEditForm({
       {/* image */}
       {t === 'image' && (
         <>
-          <MediaPicker assets={assets} value={mediaAssetId} onChange={setMediaAssetId} accept={['image']} />
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Or external image URL</label>
+            <label className="field-label">Image from Media Library</label>
+            <MediaPicker
+              assets={assets}
+              value={mediaAssetId}
+              onChange={setMediaAssetId}
+              accept={['image']}
+              emptyMessage="No images in this collective's Media Library yet."
+            />
+          </div>
+          <div>
+            <label className="field-label">Or external image URL</label>
             <input
               value={embedUrl}
               onChange={e => setEmbedUrl(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
+              className="field-input"
               placeholder="https://…"
             />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Caption (optional)</label>
-            <input
-              value={caption}
-              onChange={e => setCaption(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-              placeholder="Image description…"
-            />
+            <label className="field-label">Caption (optional)</label>
+            <input value={caption} onChange={e => setCaption(e.target.value)} className="field-input" placeholder="Describe the image…" />
           </div>
         </>
       )}
@@ -246,23 +445,33 @@ function BlockEditForm({
       {/* video_embed */}
       {t === 'video_embed' && (
         <>
+          {/* TODO: add proper production video hosting through Mux, Cloudflare Stream, S3, or similar before supporting direct uploaded videos. */}
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Video URL (YouTube, Vimeo, Loom)</label>
+            <label className="field-label">Video URL — YouTube, Vimeo, or Loom</label>
             <input
               value={embedUrl}
               onChange={e => setEmbedUrl(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-              placeholder="https://youtube.com/watch?v=…"
+              className="field-input"
+              placeholder="https://youtube.com/watch?v=… or https://vimeo.com/…"
+              autoFocus
             />
+            {embedUrl && !embedPreview && (
+              <p className="mt-1 text-[11px] text-amber-600">URL not recognised as YouTube, Vimeo, or Loom — will render as a link card for members.</p>
+            )}
           </div>
+          {embedPreview && (
+            <div className="overflow-hidden rounded-lg bg-black" style={{ aspectRatio: '16/9' }}>
+              <iframe
+                src={embedPreview}
+                className="h-full w-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          )}
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Caption (optional)</label>
-            <input
-              value={caption}
-              onChange={e => setCaption(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-              placeholder="Video description…"
-            />
+            <label className="field-label">Caption (optional)</label>
+            <input value={caption} onChange={e => setCaption(e.target.value)} className="field-input" placeholder="Video description…" />
           </div>
         </>
       )}
@@ -270,15 +479,22 @@ function BlockEditForm({
       {/* audio */}
       {t === 'audio' && (
         <>
-          <MediaPicker assets={assets} value={mediaAssetId} onChange={setMediaAssetId} accept={['audio']} />
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Caption (optional)</label>
-            <input
-              value={caption}
-              onChange={e => setCaption(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-              placeholder="Audio description…"
+            <label className="field-label">Audio from Media Library</label>
+            <MediaPicker
+              assets={assets}
+              value={mediaAssetId}
+              onChange={setMediaAssetId}
+              accept={['audio']}
+              emptyMessage="No audio files in this collective's Media Library yet."
             />
+          </div>
+          {mediaAssetId && assets.find(a => a.id === mediaAssetId) && (
+            <audio controls className="w-full" src={resolveAssetUrl(assets.find(a => a.id === mediaAssetId)!.file_url)} />
+          )}
+          <div>
+            <label className="field-label">Caption (optional)</label>
+            <input value={caption} onChange={e => setCaption(e.target.value)} className="field-input" placeholder="Audio description…" />
           </div>
         </>
       )}
@@ -286,15 +502,19 @@ function BlockEditForm({
       {/* file_download */}
       {t === 'file_download' && (
         <>
-          <MediaPicker assets={assets} value={mediaAssetId} onChange={setMediaAssetId} accept={['document', 'other', 'audio', 'image']} />
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Button label (optional)</label>
-            <input
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-              placeholder="Download workbook"
+            <label className="field-label">File from Media Library</label>
+            <MediaPicker
+              assets={assets}
+              value={mediaAssetId}
+              onChange={setMediaAssetId}
+              accept={['document', 'other', 'audio', 'image']}
+              emptyMessage="No files in this collective's Media Library yet."
             />
+          </div>
+          <div>
+            <label className="field-label">Button label (optional)</label>
+            <input value={label} onChange={e => setLabel(e.target.value)} className="field-input" placeholder="Download workbook" />
           </div>
         </>
       )}
@@ -303,31 +523,16 @@ function BlockEditForm({
       {t === 'link' && (
         <>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">URL</label>
-            <input
-              value={embedUrl}
-              onChange={e => setEmbedUrl(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-              placeholder="https://…"
-            />
+            <label className="field-label">URL</label>
+            <input value={embedUrl} onChange={e => setEmbedUrl(e.target.value)} className="field-input" placeholder="https://…" autoFocus />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Link label</label>
-            <input
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-              placeholder="Visit resource"
-            />
+            <label className="field-label">Link label</label>
+            <input value={label} onChange={e => setLabel(e.target.value)} className="field-input" placeholder="Visit resource" />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Description (optional)</label>
-            <input
-              value={caption}
-              onChange={e => setCaption(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-              placeholder="Short description of the link…"
-            />
+            <label className="field-label">Description (optional)</label>
+            <input value={caption} onChange={e => setCaption(e.target.value)} className="field-input" placeholder="Short description…" />
           </div>
         </>
       )}
@@ -335,13 +540,12 @@ function BlockEditForm({
       {/* reflection_prompt */}
       {t === 'reflection_prompt' && (
         <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Reflection question</label>
-          <textarea
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            rows={3}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
+          <label className="field-label">Reflection question</label>
+          <RichTextEditor
+            content={content}
+            onChange={setContent}
             placeholder="What did you notice about…"
+            minRows={3}
           />
         </div>
       )}
@@ -349,13 +553,12 @@ function BlockEditForm({
       {/* exercise */}
       {t === 'exercise' && (
         <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Exercise instructions</label>
-          <textarea
-            value={content}
-            onChange={e => setContent(e.target.value)}
-            rows={5}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
+          <label className="field-label">Exercise instructions</label>
+          <RichTextEditor
+            content={content}
+            onChange={setContent}
             placeholder="Step-by-step instructions…"
+            minRows={5}
           />
         </div>
       )}
@@ -364,25 +567,27 @@ function BlockEditForm({
       {t === 'callout' && (
         <>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Style</label>
-            <select
-              value={label || 'info'}
-              onChange={e => setLabel(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-            >
+            <label className="field-label">Style</label>
+            <div className="flex gap-2">
               {CALLOUT_STYLES.map(s => (
-                <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => setLabel(s.value)}
+                  className={`rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors ${(label || 'info') === s.value ? 'border-teal-500 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-teal-300'}`}
+                >
+                  {s.label}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Callout text</label>
-            <textarea
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              rows={3}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900"
-              placeholder="Important note…"
+            <label className="field-label">Callout text</label>
+            <RichTextEditor
+              content={content}
+              onChange={setContent}
+              placeholder="Important note for learners…"
+              minRows={3}
             />
           </div>
         </>
@@ -390,10 +595,11 @@ function BlockEditForm({
 
       {/* divider — no fields */}
       {t === 'divider' && (
-        <p className="text-[13px] text-slate-400 italic">Divider block — no content to edit.</p>
+        <p className="text-[13px] italic text-slate-400">Divider — no content needed.</p>
       )}
 
-      <div className="flex gap-2 pt-1">
+      {/* Save / Cancel */}
+      <div className="flex items-center gap-2 border-t border-teal-100 pt-3">
         <button
           type="button"
           onClick={handleSave}
@@ -401,7 +607,7 @@ function BlockEditForm({
           className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           style={{ background: '#38A09E' }}
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? 'Saving…' : 'Save block'}
         </button>
         <button
           type="button"
@@ -417,90 +623,6 @@ function BlockEditForm({
 }
 
 // ---------------------------------------------------------------------------
-// Block Preview (collapsed view)
-// ---------------------------------------------------------------------------
-
-function BlockPreview({ block }: { block: StepBlock }) {
-  const t = block.block_type
-
-  if (t === 'divider') return <hr className="border-slate-200" />
-
-  if (t === 'heading') return (
-    <p className="text-[18px] font-bold text-navy-900">{block.content || <span className="italic text-slate-300">No heading text</span>}</p>
-  )
-
-  if (t === 'text') return (
-    <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-slate-700">
-      {block.content ? block.content.slice(0, 200) + (block.content.length > 200 ? '…' : '') : <span className="italic text-slate-300">No content</span>}
-    </p>
-  )
-
-  if (t === 'image') return (
-    <div className="flex items-center gap-3">
-      {block.media_asset ? (
-        <p className="text-[13px] text-slate-600">📷 {block.media_asset.title}</p>
-      ) : block.embed_url ? (
-        <p className="text-[13px] text-slate-600">📷 External: {block.embed_url.slice(0, 60)}…</p>
-      ) : (
-        <p className="text-[13px] italic text-slate-300">No image selected</p>
-      )}
-      {block.caption && <span className="text-[11px] text-slate-400">· {block.caption}</span>}
-    </div>
-  )
-
-  if (t === 'video_embed') return (
-    <p className="text-[13px] text-slate-600">
-      🎬 {block.embed_url ? block.embed_url : <span className="italic text-slate-300">No URL set</span>}
-      {block.caption && ` · ${block.caption}`}
-    </p>
-  )
-
-  if (t === 'audio') return (
-    <p className="text-[13px] text-slate-600">
-      🔊 {block.media_asset ? block.media_asset.title : <span className="italic text-slate-300">No audio selected</span>}
-    </p>
-  )
-
-  if (t === 'file_download') return (
-    <p className="text-[13px] text-slate-600">
-      📎 {block.media_asset ? block.media_asset.title : <span className="italic text-slate-300">No file selected</span>}
-      {block.label && ` · "${block.label}"`}
-    </p>
-  )
-
-  if (t === 'link') return (
-    <p className="text-[13px] text-slate-600">
-      🔗 {block.label || 'Link'}{block.embed_url ? ` → ${block.embed_url.slice(0, 50)}` : <span className="italic text-slate-300"> (no URL)</span>}
-    </p>
-  )
-
-  if (t === 'reflection_prompt') return (
-    <p className="text-[13px] italic text-slate-600">
-      💬 {block.content ? `"${block.content.slice(0, 120)}…"` : <span className="not-italic text-slate-300">No prompt text</span>}
-    </p>
-  )
-
-  if (t === 'exercise') return (
-    <p className="text-[13px] text-slate-600">
-      ✏️ {block.content ? block.content.slice(0, 120) : <span className="italic text-slate-300">No instructions</span>}
-    </p>
-  )
-
-  if (t === 'callout') return (
-    <div
-      className="rounded-lg p-3"
-      style={{ background: calloutColor(block.label) }}
-    >
-      <p className="text-[13px] text-slate-700">
-        {block.content || <span className="italic text-slate-300">No callout text</span>}
-      </p>
-    </div>
-  )
-
-  return null
-}
-
-// ---------------------------------------------------------------------------
 // Block Row
 // ---------------------------------------------------------------------------
 
@@ -509,6 +631,7 @@ function BlockRow({
   index,
   total,
   assets,
+  initialEditing,
   onMoveUp,
   onMoveDown,
   onDelete,
@@ -518,15 +641,16 @@ function BlockRow({
   index: number
   total: number
   assets: CreatorMediaAsset[]
+  initialEditing?: boolean
   onMoveUp: () => void
   onMoveDown: () => void
   onDelete: () => void
-  onUpdate: (patch: Partial<StepBlock>) => Promise<void>
+  onUpdate: (patch: Record<string, unknown>) => Promise<void>
 }) {
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(initialEditing ?? false)
   const [saving, setSaving] = useState(false)
 
-  async function handleSave(patch: Partial<StepBlock>) {
+  async function handleSave(patch: Record<string, unknown>) {
     setSaving(true)
     await onUpdate(patch)
     setSaving(false)
@@ -534,41 +658,41 @@ function BlockRow({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white">
+    <div className={`rounded-xl border bg-white transition-shadow ${editing ? 'border-teal-200 shadow-sm' : 'border-slate-200'}`}>
       <div className="flex items-start gap-3 p-4">
-        {/* move controls */}
-        <div className="flex flex-col gap-0.5 pt-0.5">
+
+        {/* Reorder controls */}
+        <div className="flex shrink-0 flex-col gap-1 pt-0.5">
           <button
             type="button"
             onClick={onMoveUp}
             disabled={index === 0}
-            className="flex h-5 w-5 items-center justify-center rounded text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-500 disabled:opacity-20"
+            className="flex h-6 w-6 items-center justify-center rounded text-[12px] text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-20"
             title="Move up"
-          >
-            ↑
-          </button>
+          >↑</button>
           <button
             type="button"
             onClick={onMoveDown}
             disabled={index === total - 1}
-            className="flex h-5 w-5 items-center justify-center rounded text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-500 disabled:opacity-20"
+            className="flex h-6 w-6 items-center justify-center rounded text-[12px] text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600 disabled:opacity-20"
             title="Move down"
-          >
-            ↓
-          </button>
+          >↓</button>
         </div>
 
-        {/* content */}
+        {/* Content */}
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex items-center gap-2">
             <span
-              className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+              className="flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
               style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
             >
+              <span>{blockIcon(block.block_type)}</span>
               {blockLabel(block.block_type)}
             </span>
           </div>
-          <BlockPreview block={block} />
+
+          {!editing && <BlockPreview block={block} assets={assets} />}
+
           {editing && (
             <BlockEditForm
               block={block}
@@ -580,8 +704,8 @@ function BlockRow({
           )}
         </div>
 
-        {/* actions */}
-        <div className="flex shrink-0 items-center gap-2">
+        {/* Actions */}
+        <div className="flex shrink-0 items-center gap-1.5">
           {!editing && (
             <button
               type="button"
@@ -594,9 +718,10 @@ function BlockRow({
           <button
             type="button"
             onClick={onDelete}
-            className="rounded-lg border border-red-100 px-3 py-1.5 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-50 hover:text-red-600"
+            className="rounded-lg border border-transparent px-2 py-1.5 text-[12px] text-slate-300 transition-colors hover:border-red-100 hover:bg-red-50 hover:text-red-500"
+            title="Delete block"
           >
-            Delete
+            ✕
           </button>
         </div>
       </div>
@@ -613,8 +738,9 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
   const [, startTransition] = useTransition()
   const [blocks, setBlocks] = useState<StepBlock[]>(initialBlocks)
   const [adding, setAdding] = useState(false)
+  const [newBlockId, setNewBlockId] = useState<string | null>(null)
 
-  // Step settings state
+  // Step settings
   const [stepTitle, setStepTitle] = useState(step.title)
   const [stepMinutes, setStepMinutes] = useState(step.estimated_minutes?.toString() ?? '')
   const [stepRequired, setStepRequired] = useState(step.is_required)
@@ -622,7 +748,7 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
   const [settingsSaved, setSettingsSaved] = useState(false)
 
   const stepUrl = apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}`)
-  const baseUrl = apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}/blocks`)
+  const blocksUrl = apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}/blocks`)
 
   const resolvedBackHref = backHref ?? `/creator-studio/pathways/${pathway.slug}`
   const resolvedBackLabel = backLabel ?? '← Back to pathway'
@@ -654,36 +780,39 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
   async function addBlock(type: StepBlockType) {
     setAdding(true)
     try {
-      const res = await fetch(baseUrl, {
+      const res = await fetch(blocksUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ block_type: type }),
         credentials: 'include',
+        body: JSON.stringify({ block_type: type }),
       })
       if (!res.ok) return
       const block: StepBlock = await res.json()
       setBlocks(prev => [...prev, block])
+      setNewBlockId(block.id)
     } finally {
       setAdding(false)
     }
   }
 
-  async function updateBlock(blockId: string, patch: Partial<StepBlock>) {
-    const res = await fetch(`${baseUrl}/${blockId}`, {
+  const updateBlock = useCallback(async (blockId: string, patch: Record<string, unknown>) => {
+    const res = await fetch(`${blocksUrl}/${blockId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
       credentials: 'include',
+      body: JSON.stringify(patch),
     })
     if (!res.ok) return
     const updated: StepBlock = await res.json()
     setBlocks(prev => prev.map(b => b.id === blockId ? updated : b))
-  }
+    if (newBlockId === blockId) setNewBlockId(null)
+  }, [blocksUrl, newBlockId])
 
   async function deleteBlock(blockId: string) {
     if (!confirm('Delete this block?')) return
-    await fetch(`${baseUrl}/${blockId}`, { method: 'DELETE', credentials: 'include' })
+    await fetch(`${blocksUrl}/${blockId}`, { method: 'DELETE', credentials: 'include' })
     setBlocks(prev => prev.filter(b => b.id !== blockId))
+    if (newBlockId === blockId) setNewBlockId(null)
   }
 
   async function moveBlock(index: number, direction: 'up' | 'down') {
@@ -692,12 +821,11 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
     if (swapIdx < 0 || swapIdx >= newBlocks.length) return
     ;[newBlocks[index], newBlocks[swapIdx]] = [newBlocks[swapIdx], newBlocks[index]]
     setBlocks(newBlocks)
-
-    await fetch(`${baseUrl}/reorder`, {
+    await fetch(`${blocksUrl}/reorder`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: newBlocks.map(b => b.id) }),
       credentials: 'include',
+      body: JSON.stringify({ ids: newBlocks.map(b => b.id) }),
     })
     startTransition(() => router.refresh())
   }
@@ -705,30 +833,23 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
   return (
     <div className="max-w-3xl px-8 py-8 md:px-10 md:py-10">
 
-      {/* Header */}
-      <div className="mb-6">
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
-          Creator Studio · {pathway.title}
+      {/* Breadcrumb / back */}
+      <div className="mb-5">
+        <Link href={resolvedBackHref} className="text-[12px] font-medium text-slate-400 transition-colors hover:text-slate-600">
+          {resolvedBackLabel}
+        </Link>
+        <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
+          {pathway.title}
         </p>
-        <div className="flex items-start justify-between gap-4">
-          <h1 className="text-2xl text-navy-900 md:text-3xl">{step.title}</h1>
-          <Link
-            href={resolvedBackHref}
-            className="shrink-0 text-[13px] font-medium text-slate-400 transition-colors hover:text-slate-600"
-          >
-            {resolvedBackLabel}
-          </Link>
-        </div>
+        <h1 className="mt-0.5 text-2xl text-navy-900 md:text-3xl">{stepTitle || step.title}</h1>
       </div>
 
-      {/* Step settings */}
-      <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-6">
-        <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-          Step settings
-        </p>
+      {/* Step settings card */}
+      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6">
+        <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Step settings</p>
         <form onSubmit={saveStepSettings} className="flex flex-col gap-4">
           <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Title</label>
+            <label className="field-label">Step title</label>
             <input
               value={stepTitle}
               onChange={e => setStepTitle(e.target.value)}
@@ -736,20 +857,18 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:outline-none focus:ring-1 focus:ring-teal-300"
             />
           </div>
-          <div className="flex flex-wrap items-center gap-6">
+          <div className="flex flex-wrap items-end gap-6">
             <div>
-              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Est. minutes</label>
+              <label className="field-label">Estimated minutes</label>
               <input
-                type="number"
-                min={1}
-                max={999}
+                type="number" min={1} max={999}
                 value={stepMinutes}
                 onChange={e => setStepMinutes(e.target.value)}
                 placeholder="—"
                 className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:outline-none focus:ring-1 focus:ring-teal-300"
               />
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pb-0.5">
               <button
                 type="button"
                 role="switch"
@@ -771,47 +890,48 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
             >
               {settingsSaving ? 'Saving…' : 'Save settings'}
             </button>
-            {settingsSaved && <span className="text-[12px] text-teal-600">Saved</span>}
+            {settingsSaved && <span className="text-[12px] text-teal-600">Saved ✓</span>}
           </div>
         </form>
       </div>
 
-      {/* Content blocks label */}
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-        Content blocks
-      </p>
+      {/* Content blocks card */}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+        <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Content blocks</p>
 
-      {/* Blocks */}
-      <div className="space-y-3">
-        {blocks.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
-            <p className="mb-1 text-[14px] font-semibold text-navy-900">No content blocks yet</p>
-            <p className="text-[13px] text-slate-400">Add your first block below to start building this step.</p>
-          </div>
-        )}
+        <div className="space-y-3">
+          {blocks.length === 0 && (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
+              <p className="mb-1 text-[15px] font-semibold text-navy-900">No content blocks yet</p>
+              <p className="text-[13px] text-slate-400">
+                Start building this step by adding your first content block below.
+              </p>
+            </div>
+          )}
 
-        {blocks.map((block, i) => (
-          <BlockRow
-            key={block.id}
-            block={block}
-            index={i}
-            total={blocks.length}
-            assets={mediaAssets}
-            onMoveUp={() => moveBlock(i, 'up')}
-            onMoveDown={() => moveBlock(i, 'down')}
-            onDelete={() => deleteBlock(block.id)}
-            onUpdate={(patch) => updateBlock(block.id, patch)}
-          />
-        ))}
-      </div>
+          {blocks.map((block, i) => (
+            <BlockRow
+              key={block.id}
+              block={block}
+              index={i}
+              total={blocks.length}
+              assets={mediaAssets}
+              initialEditing={block.id === newBlockId}
+              onMoveUp={() => moveBlock(i, 'up')}
+              onMoveDown={() => moveBlock(i, 'down')}
+              onDelete={() => deleteBlock(block.id)}
+              onUpdate={(patch) => updateBlock(block.id, patch)}
+            />
+          ))}
+        </div>
 
-      {/* Add block */}
-      <div className="mt-4">
-        {adding ? (
-          <p className="text-[13px] text-slate-400">Adding block…</p>
-        ) : (
-          <AddBlockPicker onSelect={addBlock} />
-        )}
+        <div className="mt-4">
+          {adding ? (
+            <p className="text-[13px] text-slate-400">Adding block…</p>
+          ) : (
+            <AddBlockPicker onSelect={addBlock} />
+          )}
+        </div>
       </div>
 
     </div>

@@ -1,7 +1,9 @@
+import React from 'react'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getStep, getSteps, getPathway, getStepResources, getStepBlocks } from '@/lib/serverApi'
 import StepActions from '@/components/spaces/StepActions'
+import RichTextRenderer from '@/components/RichTextRenderer'
 import type { StepDetail, StepSummary, StepResource, StepBlock } from '@/types/platform'
 
 interface Props {
@@ -75,20 +77,47 @@ function resolveUrl(url: string): string {
   return url.startsWith('http') ? url : `${API_BASE}/api/uploads/${url}`
 }
 
+function getVideoEmbed(url: string): string | null {
+  try {
+    const u = new URL(url)
+    if (u.hostname.includes('youtube.com')) {
+      const id = u.searchParams.get('v')
+      return id ? `https://www.youtube.com/embed/${id}` : null
+    }
+    if (u.hostname.includes('youtu.be')) {
+      const id = u.pathname.slice(1)
+      return id ? `https://www.youtube.com/embed/${id}` : null
+    }
+    if (u.hostname.includes('vimeo.com')) {
+      const id = u.pathname.split('/').filter(Boolean).pop()
+      return id ? `https://player.vimeo.com/video/${id}` : null
+    }
+    if (u.hostname.includes('loom.com') && u.pathname.includes('/share/')) {
+      const id = u.pathname.split('/share/')[1]?.split('?')[0]
+      return id ? `https://www.loom.com/embed/${id}` : null
+    }
+  } catch {}
+  return null
+}
+
 function renderBlocks(blocks: StepBlock[]): React.ReactNode {
   return blocks.map((block) => {
     const { id, block_type: t } = block
 
     if (t === 'divider') return <hr key={id} className="my-8 border-border" />
 
-    if (t === 'heading') return (
-      <h2 key={id} className="mt-8 mb-3 font-serif text-2xl text-navy-900">
-        {block.content}
-      </h2>
-    )
+    if (t === 'heading') {
+      const level = block.label === 'h1' ? 'h2' : block.label === 'h3' ? 'h3' : 'h2'
+      const cls = level === 'h3'
+        ? 'mt-7 mb-2 font-serif text-xl text-navy-900'
+        : 'mt-8 mb-3 font-serif text-2xl text-navy-900'
+      return React.createElement(level, { key: id, className: cls }, block.content)
+    }
 
     if (t === 'text' && block.content) return (
-      <div key={id}>{renderContent(block.content)}</div>
+      <div key={id}>
+        <RichTextRenderer content={block.content} />
+      </div>
     )
 
     if (t === 'image') {
@@ -103,36 +132,62 @@ function renderBlocks(blocks: StepBlock[]): React.ReactNode {
       )
     }
 
-    if (t === 'video_embed' && block.embed_url) return (
-      <figure key={id} className="my-6">
-        <div className="aspect-video overflow-hidden rounded-xl bg-slate-100">
-          <iframe
-            src={block.embed_url.replace('watch?v=', 'embed/')}
-            className="h-full w-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-        </div>
-        {block.caption && <figcaption className="mt-2 text-center text-[12px] text-slate-400">{block.caption}</figcaption>}
-      </figure>
-    )
+    if (t === 'video_embed' && block.embed_url) {
+      const embedSrc = getVideoEmbed(block.embed_url)
+      return (
+        <figure key={id} className="my-6">
+          {embedSrc ? (
+            <div className="aspect-video overflow-hidden rounded-xl bg-slate-100">
+              <iframe
+                src={embedSrc}
+                className="h-full w-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          ) : (
+            <a
+              href={block.embed_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center gap-3 rounded-xl border border-border bg-white px-4 py-3 hover:border-teal-300"
+            >
+              <span className="text-slate-400">▶</span>
+              <span className="text-[14px] font-medium text-navy-900 group-hover:underline">
+                {block.caption || block.embed_url}
+              </span>
+              <span className="ml-auto text-[12px] text-slate-400">↗</span>
+            </a>
+          )}
+          {embedSrc && block.caption && (
+            <figcaption className="mt-2 text-center text-[12px] text-slate-400">{block.caption}</figcaption>
+          )}
+        </figure>
+      )
+    }
 
-    if (t === 'audio' && block.media_asset) return (
-      <figure key={id} className="my-6 rounded-xl border border-border bg-white p-4">
-        <audio controls className="w-full" src={resolveUrl(block.media_asset.file_url)} />
-        {block.caption && <figcaption className="mt-2 text-[12px] text-slate-400">{block.caption}</figcaption>}
-      </figure>
-    )
+    if (t === 'audio') {
+      const asset = block.media_asset
+      if (!asset) return null
+      return (
+        <figure key={id} className="my-6 rounded-xl border border-border bg-white p-4">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Audio</p>
+          <audio controls className="w-full" src={resolveUrl(asset.file_url)} />
+          {block.caption && <figcaption className="mt-2 text-[12px] text-slate-400">{block.caption}</figcaption>}
+        </figure>
+      )
+    }
 
     if (t === 'file_download' && block.media_asset) return (
       <div key={id} className="my-4">
         <a
           href={resolveUrl(block.media_asset.file_url)}
           download
-          className="inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-3 text-[14px] font-medium text-navy-900 transition-colors hover:border-teal-300 hover:text-teal-700"
+          className="group inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-3 text-[14px] font-medium text-navy-900 transition-colors hover:border-teal-300 hover:text-teal-700"
         >
           <span>↓</span>
           {block.label || block.media_asset.title}
+          <span className="ml-1 text-[11px] font-normal text-slate-400">{block.media_asset.original_filename}</span>
         </a>
       </div>
     )
@@ -161,8 +216,8 @@ function renderBlocks(blocks: StepBlock[]): React.ReactNode {
         key={id}
         className="my-6 rounded-xl border-l-4 border-teal-300 bg-teal-50 px-5 py-4"
       >
-        <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-teal-600">Reflection</p>
-        <p className="text-[15px] leading-relaxed text-slate-700">{block.content}</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-teal-600">Reflection</p>
+        <RichTextRenderer content={block.content} />
       </div>
     )
 
@@ -172,7 +227,7 @@ function renderBlocks(blocks: StepBlock[]): React.ReactNode {
         className="my-6 rounded-xl border border-slate-200 bg-white px-5 py-4"
       >
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Exercise</p>
-        {renderContent(block.content)}
+        <RichTextRenderer content={block.content} />
       </div>
     )
 
@@ -185,7 +240,7 @@ function renderBlocks(blocks: StepBlock[]): React.ReactNode {
           <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: accent }}>
             {style.charAt(0).toUpperCase() + style.slice(1)}
           </p>
-          <p className="text-[14px] leading-relaxed text-slate-700">{block.content}</p>
+          <RichTextRenderer content={block.content} />
         </div>
       )
     }
