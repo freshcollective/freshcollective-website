@@ -33,8 +33,13 @@ export function parseRichContent(content: string | null): Record<string, unknown
   }
 }
 
+// Only allow #rgb or #rrggbb — reject everything else (rgb(), url(), expressions, etc.)
+function isValidHex(value: string): boolean {
+  return /^#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?$/.test(value.trim())
+}
+
 // ---------------------------------------------------------------------------
-// Approved palettes
+// Palettes
 // ---------------------------------------------------------------------------
 
 const TEXT_COLORS = [
@@ -60,12 +65,14 @@ const HIGHLIGHT_COLORS = [
 ]
 
 const FONT_FAMILIES = [
-  { label: 'Default', value: '' },
-  { label: 'Serif',   value: 'Georgia, serif' },
-  { label: 'Mono',    value: 'monospace' },
+  { label: 'Default',       value: '' },
+  { label: 'Serif',         value: 'Georgia, serif' },
+  { label: 'Classic Serif', value: 'Times New Roman, serif' },
+  { label: 'Clean Sans',    value: 'Arial, sans-serif' },
+  { label: 'Modern Sans',   value: 'Helvetica, Arial, sans-serif' },
+  { label: 'Rounded',       value: 'Trebuchet MS, sans-serif' },
+  { label: 'Mono',          value: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' },
 ]
-
-const EMOJIS = ['✨','🌿','🦋','💛','🔥','🌙','🌊','🧭','📝','💡','🙌','💫','🌱','🧘‍♀️','🎧','📌','✅']
 
 // ---------------------------------------------------------------------------
 // Toolbar button
@@ -103,16 +110,20 @@ function ToolBtn({
 
 // ---------------------------------------------------------------------------
 // Popover wrapper
+// align='left'  → panel opens left-aligned (default, good for left-side controls)
+// align='right' → panel opens right-aligned (prevents clipping for right-side controls)
 // ---------------------------------------------------------------------------
 
 function Popover({
   trigger,
   children,
   width = 'w-40',
+  align = 'left',
 }: {
   trigger: React.ReactNode
   children: React.ReactNode
   width?: string
+  align?: 'left' | 'right'
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -126,6 +137,8 @@ function Popover({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
+  const posClass = align === 'right' ? 'right-0' : 'left-0'
+
   return (
     <div className="relative" ref={ref}>
       <div
@@ -138,7 +151,7 @@ function Popover({
       </div>
       {open && (
         <div
-          className={`absolute left-0 top-full z-50 mt-1 rounded-lg border border-slate-200 bg-white p-2 shadow-lg ${width}`}
+          className={`absolute ${posClass} top-full z-50 mt-1 rounded-lg border border-slate-200 bg-white p-2 shadow-lg ${width}`}
           onMouseDown={(e) => e.preventDefault()}
         >
           {children}
@@ -181,6 +194,54 @@ function ColorDots({
         />
       ))}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Color picker section: preset dots + custom <input type="color">
+// The color input needs stopPropagation on mousedown because the popover
+// content wrapper calls e.preventDefault() to keep editor focus, which would
+// otherwise block the native browser color picker dialog from opening.
+// ---------------------------------------------------------------------------
+
+function ColorPickerSection({
+  label,
+  colors,
+  current,
+  onSelect,
+  bordered,
+}: {
+  label: string
+  colors: { label: string; value: string }[]
+  current: string
+  onSelect: (v: string) => void
+  bordered?: boolean
+}) {
+  // Safe fallback for <input type="color"> which requires a 6-digit hex
+  const pickerValue = isValidHex(current) ? (current.length === 4 ? current + current.slice(1) : current) : '#000000'
+
+  return (
+    <>
+      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+      <ColorDots colors={colors} current={current} onSelect={onSelect} bordered={bordered} />
+      <div className="mt-2 border-t border-slate-100 pt-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-slate-400">Custom</span>
+          <input
+            type="color"
+            value={pickerValue}
+            onMouseDown={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              const val = e.target.value
+              if (isValidHex(val)) onSelect(val)
+            }}
+            className="h-5 w-8 cursor-pointer rounded border border-slate-200 bg-transparent p-0"
+            title="Pick custom colour"
+          />
+          <span className="font-mono text-[10px] text-slate-400">{current || '—'}</span>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -228,14 +289,18 @@ export default function RichTextEditor({ content, onChange, placeholder, minRows
     editor?.chain().focus().unsetLink().run()
   }
 
-  const currentColor = (editor.getAttributes('textStyle').color as string) ?? ''
-  const currentHighlight = (editor.getAttributes('highlight').color as string) ?? ''
-  const currentFont = (editor.getAttributes('textStyle').fontFamily as string) ?? ''
+  const currentColor     = (editor.getAttributes('textStyle').color     as string) ?? ''
+  const currentHighlight = (editor.getAttributes('highlight').color     as string) ?? ''
+  const currentFont      = (editor.getAttributes('textStyle').fontFamily as string) ?? ''
+  const currentFontLabel = FONT_FAMILIES.find((f) => f.value === currentFont)?.label ?? 'Aa'
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-100 bg-slate-50 px-2 py-1.5">
+    // overflow-visible so popovers are not clipped by the container boundary.
+    // Rounded corners are applied to the toolbar and editor area separately.
+    <div className="rounded-lg border border-slate-200 bg-white">
+
+      {/* Toolbar — rounded-t-lg keeps bg-slate-50 clipped to rounded corners */}
+      <div className="flex flex-wrap items-center gap-0.5 rounded-t-lg border-b border-slate-100 bg-slate-50 px-2 py-1.5">
 
         {/* Text */}
         <ToolBtn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="Bold">
@@ -259,7 +324,7 @@ export default function RichTextEditor({ content, onChange, placeholder, minRows
 
         <span className="mx-1 h-4 w-px bg-slate-200" />
 
-        {/* Insert */}
+        {/* Insert — link only; emojis are typed/pasted natively via the OS picker */}
         <ToolBtn
           onClick={() => editor.isActive('link') ? removeLink() : addLink()}
           active={editor.isActive('link')}
@@ -268,69 +333,40 @@ export default function RichTextEditor({ content, onChange, placeholder, minRows
           🔗
         </ToolBtn>
 
-        <Popover
-          trigger={
-            <button
-              type="button"
-              title="Insert emoji"
-              className="flex h-7 w-7 items-center justify-center rounded text-[13px] text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
-            >
-              😊
-            </button>
-          }
-          width="w-52"
-        >
-          <div className="flex flex-wrap gap-1">
-            {EMOJIS.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  editor.chain().focus().insertContent(emoji).run()
-                }}
-                className="flex h-7 w-7 items-center justify-center rounded text-base hover:bg-slate-100"
-                title={emoji}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        </Popover>
-
         <span className="mx-1 h-4 w-px bg-slate-200" />
 
-        {/* Style — text color */}
+        {/* Style — text colour */}
         <Popover
           trigger={
             <button
               type="button"
-              title="Text color"
+              title="Text colour"
               className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-bold text-slate-600 transition-colors hover:bg-slate-100"
             >
               <span style={{ borderBottom: `3px solid ${currentColor || '#334155'}`, lineHeight: 1 }}>A</span>
             </button>
           }
-          width="w-44"
+          width="w-48"
         >
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Text color</p>
-          <ColorDots
+          <ColorPickerSection
+            label="Text colour"
             colors={TEXT_COLORS}
             current={currentColor}
+            bordered
             onSelect={(v) => {
               if (v) editor.chain().focus().setColor(v).run()
               else editor.chain().focus().unsetColor().run()
             }}
-            bordered
           />
         </Popover>
 
-        {/* Style — highlight */}
+        {/* Style — highlight — align right to prevent clipping */}
         <Popover
+          align="right"
           trigger={
             <button
               type="button"
-              title="Highlight color"
+              title="Highlight colour"
               className="flex h-7 w-7 items-center justify-center rounded text-[11px] font-bold transition-colors hover:bg-slate-100"
             >
               <span
@@ -341,10 +377,10 @@ export default function RichTextEditor({ content, onChange, placeholder, minRows
               </span>
             </button>
           }
-          width="w-44"
+          width="w-48"
         >
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Highlight</p>
-          <ColorDots
+          <ColorPickerSection
+            label="Highlight"
             colors={HIGHLIGHT_COLORS}
             current={currentHighlight}
             onSelect={(v) => {
@@ -354,19 +390,22 @@ export default function RichTextEditor({ content, onChange, placeholder, minRows
           />
         </Popover>
 
-        {/* Style — font family */}
+        {/* Style — font family — align right to prevent clipping */}
         <Popover
+          align="right"
           trigger={
             <button
               type="button"
-              title="Font family"
+              title="Font style"
               className="flex h-7 items-center justify-center gap-0.5 rounded px-1.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-100"
             >
-              {currentFont === 'Georgia, serif' ? 'Serif' : currentFont === 'monospace' ? 'Mono' : 'Aa'}
-              <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor"><path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>
+              {currentFontLabel}
+              <svg className="h-3 w-3" viewBox="0 0 12 12" fill="currentColor">
+                <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+              </svg>
             </button>
           }
-          width="w-32"
+          width="w-40"
         >
           <div className="flex flex-col gap-0.5">
             {FONT_FAMILIES.map((f) => (
@@ -398,7 +437,7 @@ export default function RichTextEditor({ content, onChange, placeholder, minRows
 
       {/* Editor area */}
       <div
-        className="rich-editor px-4 py-3"
+        className="rich-editor rounded-b-lg px-4 py-3"
         style={{ minHeight: `${minRows * 1.6}rem` }}
       >
         <EditorContent editor={editor} />

@@ -21,18 +21,24 @@ interface DocNode {
 }
 
 // ---------------------------------------------------------------------------
-// Allowlists for safe style rendering
+// Safety validation
 // ---------------------------------------------------------------------------
 
-const ALLOWED_COLORS = new Set([
-  '#071824','#073B3A','#38A09E','#55D7D2','#E7C65A','#9A7A18','#334155','#64748B','#FFFFFF',
-])
-const ALLOWED_HIGHLIGHTS = new Set([
-  '#EAF7F6','#DDF4F2','#FBF6E8','#EEF2F5','#FFF9E8',
-])
+// Accept #rgb and #rrggbb only — block rgb(), hsl(), url(), expressions, etc.
+function isSafeHex(value: string | undefined): value is string {
+  if (!value) return false
+  return /^#[0-9A-Fa-f]{3}([0-9A-Fa-f]{3})?$/.test(value.trim())
+}
+
+// Explicit allowlist for font families — unknown values are silently ignored
 const ALLOWED_FONTS: Record<string, string> = {
-  'Georgia, serif': 'Georgia, serif',
-  'monospace': 'monospace',
+  'Georgia, serif':                                                    'Georgia, serif',
+  'Times New Roman, serif':                                            'Times New Roman, serif',
+  'Arial, sans-serif':                                                 'Arial, sans-serif',
+  'Helvetica, Arial, sans-serif':                                      'Helvetica, Arial, sans-serif',
+  'Trebuchet MS, sans-serif':                                          'Trebuchet MS, sans-serif',
+  'monospace':                                                         'monospace',
+  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace':  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
 }
 
 // ---------------------------------------------------------------------------
@@ -63,11 +69,14 @@ function applyMarks(text: string, marks: TextMark[] | undefined, key: string): R
     } else if (mark.type === 'code') {
       node = <code key={`${key}-c`} className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.85em]">{node}</code>
     } else if (mark.type === 'link') {
+      const href = mark.attrs?.href ?? '#'
+      // Only allow http/https/mailto — strip javascript: and data: URIs
+      const safeSrc = /^(https?:|mailto:)/.test(href) ? href : '#'
       node = (
         <a
           key={`${key}-a`}
-          href={mark.attrs?.href ?? '#'}
-          target={mark.attrs?.target ?? '_blank'}
+          href={safeSrc}
+          target="_blank"
           rel="noopener noreferrer"
           className="text-teal-700 underline underline-offset-2 hover:opacity-80"
         >
@@ -76,16 +85,16 @@ function applyMarks(text: string, marks: TextMark[] | undefined, key: string): R
       )
     } else if (mark.type === 'textStyle') {
       const style: React.CSSProperties = {}
-      const color = mark.attrs?.color?.toUpperCase()
-      if (color && ALLOWED_COLORS.has(color)) style.color = color
+      const color = mark.attrs?.color
+      if (isSafeHex(color)) style.color = color
       const font = mark.attrs?.fontFamily
       if (font && ALLOWED_FONTS[font]) style.fontFamily = ALLOWED_FONTS[font]
       if (Object.keys(style).length > 0) {
         node = <span key={`${key}-ts`} style={style}>{node}</span>
       }
     } else if (mark.type === 'highlight') {
-      const color = mark.attrs?.color?.toUpperCase()
-      if (color && ALLOWED_HIGHLIGHTS.has(color)) {
+      const color = mark.attrs?.color
+      if (isSafeHex(color)) {
         node = <mark key={`${key}-hl`} style={{ backgroundColor: color, borderRadius: '2px', padding: '0 2px' }}>{node}</mark>
       }
     }
