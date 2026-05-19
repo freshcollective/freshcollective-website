@@ -227,7 +227,15 @@ function PathwayAccessSection({
       )}
 
       {!loading && items && items.length === 0 && (
-        <p className="text-[13px] italic text-slate-400">No pathways in this collective yet.</p>
+        <div className="space-y-1">
+          <p className="text-[13px] font-medium text-slate-500">No pathway access yet.</p>
+          <p className="text-[12px] text-slate-400">
+            This person has not started, purchased, or been granted access to any pathways yet.
+          </p>
+          <p className="text-[12px] text-slate-400">
+            Free and included pathways will appear here once the member starts them.
+          </p>
+        </div>
       )}
 
       {!loading && items && items.length > 0 && (

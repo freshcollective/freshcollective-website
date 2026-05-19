@@ -664,3 +664,55 @@ class MemberPathwayAccessItem(BaseModel):
     progress_pct: int
     last_activity_at: datetime | None
     enrollment_status: str | None  # active | paused | completed | None
+
+
+# ---------------------------------------------------------------------------
+# Creator Billing
+# ---------------------------------------------------------------------------
+
+class CreatorPlanOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    name: str
+    slug: str
+    description: str | None
+    monthly_price_cents: int
+    currency: str
+    transaction_fee_basis_points: int
+    collective_limit: int
+    pathway_limit: int | None
+    media_storage_limit_mb: int | None
+    creator_admin_seat_limit: int | None
+
+
+class CreatorSubscriptionOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    status: str
+    starts_at: datetime
+    ends_at: datetime | None
+    # Stripe fields intentionally not exposed here
+    stripe_connected: bool = False  # always False until Stripe is live
+
+
+class CreatorUsage(BaseModel):
+    collectives_used: int
+    pathways_used: int
+    # media_storage_used_mb not yet calculated (requires file-size tracking per asset)
+    media_storage_used_mb: int | None
+
+
+class CreatorPaymentSetup(BaseModel):
+    creator_billing_connected: bool   # True when creator's Stripe billing is active
+    member_payments_connected: bool   # True when member checkout is live
+    stripe_connect_connected: bool    # True when Stripe Connect is configured
+
+
+class CreatorBillingResponse(BaseModel):
+    current_plan: CreatorPlanOut
+    subscription: CreatorSubscriptionOut
+    usage: CreatorUsage
+    available_plans: list[CreatorPlanOut]
+    payment_setup: CreatorPaymentSetup

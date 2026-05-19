@@ -4,7 +4,6 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import LogoutButton from '@/components/layout/LogoutButton'
-import { MAX_COLLECTIVES_FOR_FOUNDING_CREATOR } from '@/lib/creatorPlan'
 import type { SpaceSummary } from '@/types/platform'
 
 interface User {
@@ -19,6 +18,7 @@ interface Props {
   user: User
   spaces: SpaceSummary[]
   activeSpace: SpaceSummary | null
+  collectiveLimit: number
 }
 
 interface NavItem {
@@ -36,7 +36,8 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: 'ACCOUNT',
     items: [
-      { href: '/creator-studio', label: 'Studio Home', exact: true },
+      { href: '/creator-studio',         label: 'Studio Home', exact: true },
+      { href: '/creator-studio/billing', label: 'Billing' },
     ],
   },
   {
@@ -62,12 +63,14 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
 function CollectiveSwitcher({
   spaces,
   activeSpace,
+  collectiveLimit,
 }: {
   spaces: SpaceSummary[]
   activeSpace: SpaceSummary | null
+  collectiveLimit: number
 }) {
   const router = useRouter()
-  const atLimit = spaces.length >= MAX_COLLECTIVES_FOR_FOUNDING_CREATOR
+  const atLimit = spaces.length >= collectiveLimit
 
   function switchTo(slug: string) {
     document.cookie = `fc_creator_space=${slug}; path=/; max-age=86400`
@@ -158,11 +161,15 @@ function CollectiveSwitcher({
         ) : (
           <div>
             <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              {spaces.length} of {MAX_COLLECTIVES_FOR_FOUNDING_CREATOR} used
+              {spaces.length} of {collectiveLimit} collectives used
             </p>
-            <p className="mt-0.5 text-[10px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
-              Creator Plus coming soon
-            </p>
+            <Link
+              href="/creator-studio/billing"
+              className="mt-0.5 block text-[10px] transition-opacity hover:opacity-80"
+              style={{ color: 'rgba(141,232,230,0.70)' }}
+            >
+              View plan →
+            </Link>
           </div>
         )}
       </div>
@@ -178,12 +185,14 @@ function SidebarInner({
   user,
   spaces,
   activeSpace,
+  collectiveLimit,
   pathname,
   onNavClick,
 }: {
   user: User
   spaces: SpaceSummary[]
   activeSpace: SpaceSummary | null
+  collectiveLimit: number
   pathname: string
   onNavClick?: () => void
 }) {
@@ -233,7 +242,7 @@ function SidebarInner({
           </span>
         </Link>
 
-        <CollectiveSwitcher spaces={spaces} activeSpace={activeSpace} />
+        <CollectiveSwitcher spaces={spaces} activeSpace={activeSpace} collectiveLimit={collectiveLimit} />
       </div>
 
       {/* Nav */}
@@ -304,7 +313,7 @@ function SidebarInner({
 // Shell
 // ---------------------------------------------------------------------------
 
-export default function CreatorStudioShell({ children, user, spaces, activeSpace }: Props) {
+export default function CreatorStudioShell({ children, user, spaces, activeSpace, collectiveLimit }: Props) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -320,6 +329,7 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
           user={user}
           spaces={spaces}
           activeSpace={activeSpace}
+          collectiveLimit={collectiveLimit}
           pathname={pathname}
         />
       </aside>
@@ -337,6 +347,7 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
               user={user}
               spaces={spaces}
               activeSpace={activeSpace}
+              collectiveLimit={collectiveLimit}
               pathname={pathname}
               onNavClick={() => setMobileOpen(false)}
             />

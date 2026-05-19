@@ -11,7 +11,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 from app.db.base import Base
 import app.models.user      # noqa: F401 — ensures models are registered with Base
 import app.models.sales     # noqa: F401 — registers sales pipeline models
-import app.models.platform  # noqa: F401 — registers Space-based platform models
+import app.models.platform        # noqa: F401 — registers Space-based platform models
+import app.models.creator_billing  # noqa: F401 — registers creator plan/subscription models
 
 config = context.config
 

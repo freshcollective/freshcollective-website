@@ -22,6 +22,11 @@ from app.core.database import get_db
 from app.core.storage import delete_file, save_file, save_media_file
 from app.creator.schemas import (
     AboutBlockCreateRequest,
+    CreatorBillingResponse,
+    CreatorPaymentSetup,
+    CreatorPlanOut,
+    CreatorSubscriptionOut,
+    CreatorUsage,
     AboutBlockReorderRequest,
     AboutBlockResponse,
     AboutBlockUpdateRequest,
@@ -59,6 +64,7 @@ from app.creator.schemas import (
     StepUpdateRequest,
     slugify,
 )
+from app.models.creator_billing import CreatorPlan, CreatorSubscription
 from app.models.platform import (
     CommunityPost,
     CreatorMediaAsset,
@@ -170,6 +176,94 @@ def _get_resource(step: PathwayStep, resource_id: str, db: Session) -> StepResou
     if not resource:
         raise HTTPException(status_code=404, detail="Resource not found.")
     return resource
+
+
+# ---------------------------------------------------------------------------
+# Billing
+# ---------------------------------------------------------------------------
+
+@router.get("/billing", response_model=CreatorBillingResponse)
+def get_creator_billing(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> CreatorBillingResponse:
+    """Return the creator's current plan, usage, and billing setup status."""
+
+    # Active subscription for this creator
+    subscription = (
+        db.query(CreatorSubscription)
+        .filter(
+            CreatorSubscription.user_id == current_user.id,
+            CreatorSubscription.status.in_(["active", "trialing"]),
+        )
+        .first()
+    )
+
+    # All active plans ordered cheapest-first (for plan comparison)
+    available_plans = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.is_active.is_(True))
+        .order_by(CreatorPlan.monthly_price_cents)
+        .all()
+    )
+
+    # Fall back to the cheapest plan if the creator has no subscription yet
+    current_plan = subscription.plan if subscription else (available_plans[0] if available_plans else None)
+    if not current_plan:
+        raise HTTPException(status_code=500, detail="No creator plans are configured.")
+
+    if not subscription:
+        # Create a synthetic placeholder so the response shape is consistent
+        from datetime import datetime as dt
+        fake_sub = CreatorSubscriptionOut(
+            id="",
+            status="active",
+            starts_at=dt.utcnow(),
+            ends_at=None,
+            stripe_connected=False,
+        )
+        sub_out = fake_sub
+    else:
+        sub_out = CreatorSubscriptionOut(
+            id=subscription.id,
+            status=subscription.status.value if hasattr(subscription.status, "value") else str(subscription.status),
+            starts_at=subscription.starts_at,
+            ends_at=subscription.ends_at,
+            stripe_connected=False,  # TODO: Stripe billing — set True when stripe_subscription_id is populated
+        )
+
+    # Usage: count spaces owned by this creator
+    collectives_used = (
+        db.query(func.count(Space.id))
+        .filter(Space.creator_id == current_user.id)
+        .scalar()
+    ) or 0
+
+    # Usage: count pathways across all creator-owned spaces
+    creator_space_ids = [
+        row[0] for row in db.query(Space.id).filter(Space.creator_id == current_user.id).all()
+    ]
+    pathways_used = (
+        db.query(func.count(Pathway.id))
+        .filter(Pathway.space_id.in_(creator_space_ids))
+        .scalar()
+    ) if creator_space_ids else 0
+
+    return CreatorBillingResponse(
+        current_plan=CreatorPlanOut.model_validate(current_plan),
+        subscription=sub_out,
+        usage=CreatorUsage(
+            collectives_used=collectives_used,
+            pathways_used=pathways_used,
+            media_storage_used_mb=None,  # TODO: sum media asset file sizes when tracked
+        ),
+        available_plans=[CreatorPlanOut.model_validate(p) for p in available_plans],
+        payment_setup=CreatorPaymentSetup(
+            creator_billing_connected=False,   # TODO: Stripe billing — True when subscription is Stripe-managed
+            member_payments_connected=False,   # TODO: Stripe Connect — True when member checkout is live
+            stripe_connect_connected=False,    # TODO: Stripe Connect — True when creator's Connect account is set up
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +464,21 @@ def get_member_pathway_access(
         ):
             last_activity_map[pid] = rec.completed_at
 
+    # Any step progress (including notes-only) to detect engagement with free/included pathways
+    any_progress_records = (
+        db.query(StepProgress)
+        .filter(
+            StepProgress.user_id == user_id,
+            StepProgress.step_id.in_(all_step_ids),
+        )
+        .all()
+    ) if all_step_ids else []
+    pathways_with_any_progress = {
+        step_to_pathway[r.step_id]
+        for r in any_progress_records
+        if r.step_id in step_to_pathway
+    }
+
     result: list[MemberPathwayAccessItem] = []
     for pathway in pathways:
         p_status = (
@@ -408,6 +517,16 @@ def get_member_pathway_access(
             access_source = access_type
         else:
             access_state, access_label, access_source = "locked", "Locked", None
+
+        # Only return pathways where this member has an actual relationship
+        has_enrollment = enrollment is not None
+        has_any_progress = pathway.id in pathways_with_any_progress
+        if p_status in ("coming_soon", "draft", "archived"):
+            continue
+        if access_type in ("free", "included") and not has_enrollment and not has_any_progress:
+            continue
+        if access_type in ("one_time", "subscription") and enroll_status not in ("active", "completed"):
+            continue
 
         result.append(
             MemberPathwayAccessItem(

@@ -394,6 +394,52 @@ export interface PathwayAboutBlock {
   updated_at: string
 }
 
+// ---------------------------------------------------------------------------
+// Creator Billing
+// ---------------------------------------------------------------------------
+
+export interface CreatorPlanOut {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+  monthly_price_cents: number
+  currency: string
+  transaction_fee_basis_points: number
+  collective_limit: number
+  pathway_limit: number | null
+  media_storage_limit_mb: number | null
+  creator_admin_seat_limit: number | null
+}
+
+export interface CreatorSubscriptionOut {
+  id: string
+  status: 'active' | 'trialing' | 'past_due' | 'cancelled' | 'unpaid'
+  starts_at: string
+  ends_at: string | null
+  stripe_connected: boolean
+}
+
+export interface CreatorUsage {
+  collectives_used: number
+  pathways_used: number
+  media_storage_used_mb: number | null
+}
+
+export interface CreatorPaymentSetup {
+  creator_billing_connected: boolean
+  member_payments_connected: boolean
+  stripe_connect_connected: boolean
+}
+
+export interface CreatorBillingResponse {
+  current_plan: CreatorPlanOut
+  subscription: CreatorSubscriptionOut
+  usage: CreatorUsage
+  available_plans: CreatorPlanOut[]
+  payment_setup: CreatorPaymentSetup
+}
+
 /** Minimal shared shape used by block editor sub-components. */
 export interface EditorBlock {
   id: string

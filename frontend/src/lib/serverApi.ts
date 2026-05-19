@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { PublicSpaceCard, SpaceSummary } from '@/types/platform'
+import type { CreatorBillingResponse, PublicSpaceCard, SpaceSummary } from '@/types/platform'
 
 export const ACTIVE_SPACE_COOKIE = 'fc_creator_space'
 
@@ -257,4 +257,14 @@ export const getPathwayAboutBlocks = cache(async (spaceSlug: string, pathwaySlug
   )
   if (!res.ok) return []
   return res.json()
+})
+
+export const getCreatorBilling = cache(async (): Promise<CreatorBillingResponse | null> => {
+  try {
+    const res = await fetchWithSession('/api/creator/billing')
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
 })

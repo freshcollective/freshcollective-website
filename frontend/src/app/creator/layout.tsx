@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
-import { getMe, getCreatorSpaces, ACTIVE_SPACE_COOKIE } from '@/lib/serverApi'
+import { getMe, getCreatorSpaces, getCreatorBilling, ACTIVE_SPACE_COOKIE } from '@/lib/serverApi'
 import CreatorStudioShell from '@/app/creator-studio/CreatorStudioShell'
 import type { SpaceSummary } from '@/types/platform'
 
@@ -22,8 +22,11 @@ export default async function CreatorLayout({ children }: { children: React.Reac
   const activeSlug = cookieStore.get(ACTIVE_SPACE_COOKIE)?.value
   const activeSpace = (activeSlug ? spaces.find((s) => s.slug === activeSlug) : null) ?? spaces[0] ?? null
 
+  const billing = await getCreatorBilling()
+  const collectiveLimit = billing?.current_plan.collective_limit ?? 1
+
   return (
-    <CreatorStudioShell user={profile} spaces={spaces} activeSpace={activeSpace}>
+    <CreatorStudioShell user={profile} spaces={spaces} activeSpace={activeSpace} collectiveLimit={collectiveLimit}>
       {children}
     </CreatorStudioShell>
   )
