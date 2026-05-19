@@ -112,6 +112,7 @@ class PathwayWithSteps(BaseModel):
     price_cents: int | None = None
     currency: str | None = None
     billing_interval: str | None = None
+    user_has_access: bool = False
 
 
 class CompleteStepRequest(BaseModel):

@@ -181,6 +181,56 @@ def _ensure_enrollment(user_id: str, pathway_id: str, db: Session) -> None:
         db.flush()
 
 
+def _compute_pathway_access(user: User, pathway: Pathway, space: Space, db: Session) -> bool:
+    """
+    Return True if user has access to this pathway; False otherwise.
+    Same rules as _check_pathway_access but returns a bool instead of raising.
+    Used by the checkout page to determine which state to show.
+    """
+    if user.role in ("creator", "admin"):
+        return True
+    space_role = (
+        db.query(SpaceMembership.role)
+        .filter(
+            SpaceMembership.user_id == user.id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.role.in_(["creator", "moderator"]),
+            SpaceMembership.status == "active",
+        )
+        .first()
+    )
+    if space_role:
+        return True
+    p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
+    access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
+    if p_status in ("draft", "archived", "coming_soon"):
+        return False
+    if access_type == "free":
+        return True
+    if access_type == "included":
+        mem = (
+            db.query(SpaceMembership.id)
+            .filter(
+                SpaceMembership.user_id == user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == "active",
+            )
+            .first()
+        )
+        return mem is not None
+    # one_time or subscription — requires active PathwayEntitlement
+    ent = (
+        db.query(PathwayEntitlement.id)
+        .filter(
+            PathwayEntitlement.user_id == user.id,
+            PathwayEntitlement.pathway_id == pathway.id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+        )
+        .first()
+    )
+    return ent is not None
+
+
 def _check_pathway_access(
     user: User,
     pathway: Pathway,
@@ -484,6 +534,8 @@ def get_pathway_overview(
             steps=[summary_by_id[s.id] for s in sec_steps if s.id in summary_by_id],
         ))
 
+    user_has_access = _compute_pathway_access(current_user, pathway, space, db)
+
     return PathwayWithSteps(
         id=pathway.id,
         slug=pathway.slug,
@@ -499,6 +551,7 @@ def get_pathway_overview(
         price_cents=pathway.price_cents,
         currency=pathway.currency,
         billing_interval=pathway.billing_interval,
+        user_has_access=user_has_access,
     )
 
 

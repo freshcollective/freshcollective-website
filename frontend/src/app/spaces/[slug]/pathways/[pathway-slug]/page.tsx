@@ -200,15 +200,15 @@ export default async function PathwayDetailPage({ params }: Props) {
                   <span className="font-semibold text-navy-900">{priceLabel}</span>
                 </p>
               )}
-              {/* TODO: Route paid pathway unlock through checkout once Stripe is wired. */}
-              <div
-                className="mt-4 inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-medium"
-                style={{ background: 'rgba(56,160,158,0.08)', color: '#073B3A' }}
-              >
-                <svg className="h-3.5 w-3.5 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Unlock access — coming soon
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Link
+                  href={`/spaces/${slug}/pathways/${pathwaySlug}/checkout`}
+                  className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                >
+                  {unlockLabel ?? 'Unlock'}
+                </Link>
+                <span className="text-[11px] text-slate-400">Checkout coming soon</span>
               </div>
             </div>
           </div>

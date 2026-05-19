@@ -30,7 +30,12 @@ export function unlockCtaLabel(
   currency: string | null,
   billingInterval: string | null,
 ): string {
+  if (accessType === 'subscription') {
+    if (!priceCents) return 'Subscribe'
+    const dollars = Math.round(priceCents / 100)
+    const curr = (currency ?? 'AUD').toUpperCase()
+    return `Subscribe for $${dollars} ${curr}/month`
+  }
   const price = formatPathwayPrice(priceCents, currency, billingInterval)
-  if (accessType === 'subscription') return price ? `Join for ${price}` : 'Join'
   return price ? `Unlock for ${price}` : 'Unlock'
 }

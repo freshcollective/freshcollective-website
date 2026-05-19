@@ -366,7 +366,7 @@ export default async function PathwayAboutPage({ params }: Props) {
             )}
 
             {/* CTA button */}
-            {locked || isComingSoon ? (
+            {isComingSoon ? (
               <div
                 className="flex w-full items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[14px] font-medium"
                 style={{ background: 'rgba(56,160,158,0.08)', color: '#073B3A' }}
@@ -374,8 +374,19 @@ export default async function PathwayAboutPage({ params }: Props) {
                 <svg className="h-3.5 w-3.5 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                {isComingSoon ? 'Coming soon' : 'Unlock access — coming soon'}
+                Coming soon
               </div>
+            ) : locked ? (
+              <>
+                <Link
+                  href={`/spaces/${slug}/pathways/${pathwaySlug}/checkout`}
+                  className="block w-full rounded-full px-5 py-2.5 text-center text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                >
+                  {unlockLabel ?? 'Unlock'}
+                </Link>
+                <p className="mt-2 text-center text-[11px] text-slate-400">Checkout coming soon</p>
+              </>
             ) : pathway.steps.length > 0 && continueHref ? (
               <Link
                 href={continueHref}
