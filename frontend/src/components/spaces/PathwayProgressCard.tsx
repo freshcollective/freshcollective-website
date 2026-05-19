@@ -16,7 +16,10 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
   const isComingSoon = pathway.status === 'coming_soon'
   // TODO: Connect pathway purchase/access entitlement once checkout is wired.
   const locked = !isComingSoon && isPathwayLocked(pathway.access_type)
-  const href = `/spaces/${spaceSlug}/pathways/${pathway.slug}`
+  // Locked pathways route to the About page (mini sales page) instead of the overview.
+  const href = locked
+    ? `/spaces/${spaceSlug}/pathways/${pathway.slug}/about`
+    : `/spaces/${spaceSlug}/pathways/${pathway.slug}`
 
   const progressPct =
     !locked && pathway.step_count > 0
@@ -114,7 +117,7 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
               )}
               <div className="ml-auto text-right">
                 <span className="block text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
-                  Preview →
+                  Learn more →
                 </span>
                 <span className="block text-[10px] text-slate-400 mt-0.5">
                   Unlocking coming soon

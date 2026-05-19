@@ -241,10 +241,10 @@ export default async function PathwayAboutPage({ params }: Props) {
 
       {/* Back link */}
       <Link
-        href={`/spaces/${slug}/pathways/${pathwaySlug}`}
+        href={locked ? `/spaces/${slug}/pathways` : `/spaces/${slug}/pathways/${pathwaySlug}`}
         className="mb-6 inline-block text-sm text-slate-400 transition-colors hover:text-teal-600"
       >
-        ← Back to pathway
+        {locked ? '← All Pathways' : '← Back to pathway'}
       </Link>
 
       {/* ── Two-column layout on desktop ── */}
