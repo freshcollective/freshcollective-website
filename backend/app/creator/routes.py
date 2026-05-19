@@ -21,6 +21,10 @@ from app.auth.dependencies import get_creator_user
 from app.core.database import get_db
 from app.core.storage import delete_file, save_file, save_media_file
 from app.creator.schemas import (
+    AboutBlockCreateRequest,
+    AboutBlockReorderRequest,
+    AboutBlockResponse,
+    AboutBlockUpdateRequest,
     EventCreateRequest,
     EventResponse,
     EventUpdateRequest,
@@ -59,6 +63,7 @@ from app.models.platform import (
     CreatorMediaAsset,
     Event,
     Pathway,
+    PathwayAboutBlock,
     PathwaySection,
     PathwayStep,
     PathwayStepBlock,
@@ -1732,6 +1737,181 @@ def delete_step_block(
     ).first()
     if not block:
         raise HTTPException(status_code=404, detail="Block not found.")
+
+    db.delete(block)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Pathway About Blocks — CRUD for the pathway-level about/sales page
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/spaces/{slug}/pathways/{pathway_slug}/about-blocks",
+    response_model=list[AboutBlockResponse],
+)
+def list_about_blocks(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[PathwayAboutBlock]:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    return (
+        db.query(PathwayAboutBlock)
+        .options(selectinload(PathwayAboutBlock.media_asset))
+        .filter(PathwayAboutBlock.pathway_id == pathway.id)
+        .order_by(PathwayAboutBlock.position)
+        .all()
+    )
+
+
+@router.post(
+    "/spaces/{slug}/pathways/{pathway_slug}/about-blocks",
+    response_model=AboutBlockResponse,
+    status_code=201,
+)
+def create_about_block(
+    slug: str,
+    pathway_slug: str,
+    body: AboutBlockCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> PathwayAboutBlock:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+
+    if body.media_asset_id:
+        asset = db.query(CreatorMediaAsset).filter(
+            CreatorMediaAsset.id == body.media_asset_id,
+            CreatorMediaAsset.space_id == space.id,
+        ).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Media asset not found in this space.")
+
+    if body.position is not None:
+        position = body.position
+    else:
+        max_pos = (
+            db.query(func.max(PathwayAboutBlock.position))
+            .filter(PathwayAboutBlock.pathway_id == pathway.id)
+            .scalar()
+        )
+        position = (max_pos or -1) + 1
+
+    block = PathwayAboutBlock(
+        id=str(uuid4()),
+        pathway_id=pathway.id,
+        block_type=body.block_type,
+        position=position,
+        content=body.content,
+        label=body.label,
+        caption=body.caption,
+        embed_url=body.embed_url,
+        media_asset_id=body.media_asset_id,
+    )
+    db.add(block)
+    db.commit()
+    db.refresh(block)
+    db.refresh(block, ["media_asset"])
+    return block
+
+
+# IMPORTANT: /about-blocks/reorder must be registered BEFORE /about-blocks/{block_id}
+@router.patch(
+    "/spaces/{slug}/pathways/{pathway_slug}/about-blocks/reorder",
+    response_model=list[AboutBlockResponse],
+)
+def reorder_about_blocks(
+    slug: str,
+    pathway_slug: str,
+    body: AboutBlockReorderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[PathwayAboutBlock]:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+
+    blocks = {
+        b.id: b
+        for b in db.query(PathwayAboutBlock)
+        .filter(PathwayAboutBlock.pathway_id == pathway.id)
+        .all()
+    }
+    for pos, block_id in enumerate(body.ids):
+        if block_id in blocks:
+            blocks[block_id].position = pos
+    db.commit()
+
+    return (
+        db.query(PathwayAboutBlock)
+        .options(selectinload(PathwayAboutBlock.media_asset))
+        .filter(PathwayAboutBlock.pathway_id == pathway.id)
+        .order_by(PathwayAboutBlock.position)
+        .all()
+    )
+
+
+@router.patch(
+    "/spaces/{slug}/pathways/{pathway_slug}/about-blocks/{block_id}",
+    response_model=AboutBlockResponse,
+)
+def update_about_block(
+    slug: str,
+    pathway_slug: str,
+    block_id: str,
+    body: AboutBlockUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> PathwayAboutBlock:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+
+    block = db.query(PathwayAboutBlock).filter(
+        PathwayAboutBlock.id == block_id,
+        PathwayAboutBlock.pathway_id == pathway.id,
+    ).first()
+    if not block:
+        raise HTTPException(status_code=404, detail="About block not found.")
+
+    if body.media_asset_id is not None:
+        asset = db.query(CreatorMediaAsset).filter(
+            CreatorMediaAsset.id == body.media_asset_id,
+            CreatorMediaAsset.space_id == space.id,
+        ).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Media asset not found in this space.")
+
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(block, field, value)
+
+    db.commit()
+    db.refresh(block)
+    db.refresh(block, ["media_asset"])
+    return block
+
+
+@router.delete(
+    "/spaces/{slug}/pathways/{pathway_slug}/about-blocks/{block_id}",
+    status_code=204,
+)
+def delete_about_block(
+    slug: str,
+    pathway_slug: str,
+    block_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+
+    block = db.query(PathwayAboutBlock).filter(
+        PathwayAboutBlock.id == block_id,
+        PathwayAboutBlock.pathway_id == pathway.id,
+    ).first()
+    if not block:
+        raise HTTPException(status_code=404, detail="About block not found.")
 
     db.delete(block)
     db.commit()

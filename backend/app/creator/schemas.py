@@ -589,3 +589,52 @@ class StepBlockUpdateRequest(BaseModel):
 
 class StepBlockReorderRequest(BaseModel):
     ids: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Pathway About Blocks
+# ---------------------------------------------------------------------------
+
+class AboutBlockResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    pathway_id: str
+    block_type: str
+    position: int
+    content: str | None
+    label: str | None
+    caption: str | None
+    embed_url: str | None
+    media_asset_id: str | None
+    media_asset: BlockMediaInfo | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AboutBlockCreateRequest(BaseModel):
+    block_type: str
+    position: int | None = None
+    content: str | None = None
+    label: str | None = None
+    caption: str | None = None
+    embed_url: str | None = None
+    media_asset_id: str | None = None
+
+    @field_validator("block_type")
+    @classmethod
+    def validate_block_type(cls, v: str) -> str:
+        if v not in VALID_BLOCK_TYPES:
+            raise ValueError(f"Invalid block type. Must be one of: {', '.join(VALID_BLOCK_TYPES)}")
+        return v
+
+
+class AboutBlockUpdateRequest(BaseModel):
+    content: str | None = None
+    label: str | None = None
+    caption: str | None = None
+    embed_url: str | None = None
+    media_asset_id: str | None = None
+
+
+class AboutBlockReorderRequest(BaseModel):
+    ids: list[str]

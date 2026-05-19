@@ -322,6 +322,10 @@ class Pathway(Base):
     enrollments: Mapped[list["Enrollment"]] = relationship(
         "Enrollment", back_populates="pathway", cascade="all, delete-orphan"
     )
+    about_blocks: Mapped[list["PathwayAboutBlock"]] = relationship(
+        "PathwayAboutBlock", back_populates="pathway", cascade="all, delete-orphan",
+        order_by="PathwayAboutBlock.position",
+    )
 
     __table_args__ = (
         UniqueConstraint("space_id", "slug", name="pathways_space_slug_unique"),
@@ -900,4 +904,55 @@ class PathwayStepBlock(Base):
 
     __table_args__ = (
         Index("ix_pathway_step_blocks_step_position", "step_id", "position"),
+    )
+
+
+class PathwayAboutBlock(Base):
+    """
+    A single content block on a Pathway's About/preview page.
+
+    Mirrors PathwayStepBlock column-for-column but is keyed to a pathway
+    rather than a step.  Same block types and rendering rules apply.
+    """
+
+    __tablename__ = "pathway_about_blocks"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    pathway_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("pathways.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    block_type: Mapped[StepBlockType] = mapped_column(
+        SAEnum(StepBlockType, name="step_block_type_enum", create_type=False),
+        nullable=False,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    label: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    caption: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    embed_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    media_asset_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("creator_media_assets.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    pathway: Mapped["Pathway"] = relationship("Pathway", back_populates="about_blocks")
+    media_asset: Mapped["CreatorMediaAsset | None"] = relationship(
+        "CreatorMediaAsset", foreign_keys=[media_asset_id]
+    )
+
+    __table_args__ = (
+        Index("ix_pathway_about_blocks_pathway_position", "pathway_id", "position"),
     )

@@ -7,11 +7,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
-from app.creator.schemas import BlockMediaInfo, StepBlockResponse
+from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.platform import (
     Enrollment,
     Event,
     Pathway,
+    PathwayAboutBlock,
     PathwaySection,
     PathwayStep,
     PathwayStepBlock,
@@ -596,6 +597,32 @@ def list_step_resources(
         db.query(StepResource)
         .filter(StepResource.step_id == step.id)
         .order_by(StepResource.position)
+        .all()
+    )
+
+
+@router.get(
+    "/{slug}/pathways/{pathway_slug}/about-blocks",
+    response_model=list[AboutBlockResponse],
+)
+def list_pathway_about_blocks(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[PathwayAboutBlock]:
+    """Return about-page blocks for a pathway.
+
+    Accessible to any authenticated user — locked pathways can still show
+    their About page as a preview/sales page before purchase.
+    """
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    return (
+        db.query(PathwayAboutBlock)
+        .options(selectinload(PathwayAboutBlock.media_asset))
+        .filter(PathwayAboutBlock.pathway_id == pathway.id)
+        .order_by(PathwayAboutBlock.position)
         .all()
     )
 

@@ -1065,6 +1065,25 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
         </div>
       </div>
 
+      {/* ── About page — full width ── */}
+      <div className="rounded-2xl border border-border bg-white p-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-[15px] font-semibold text-navy-900">Pathway about page</h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+              Build the page people see before they start or unlock this pathway.
+              Add rich content, images, video, and a clear call to action.
+            </p>
+          </div>
+          <Link
+            href={`/creator-studio/pathways/${pathway.slug}/about`}
+            className="shrink-0 rounded-xl border border-border bg-white px-4 py-2 text-[13px] font-medium text-teal-700 transition-colors hover:border-teal-200 hover:bg-teal-50"
+          >
+            Edit about page →
+          </Link>
+        </div>
+      </div>
+
       {/* ── Pathway structure — full width ── */}
       <PathwayStructure
         pathway={pathway}

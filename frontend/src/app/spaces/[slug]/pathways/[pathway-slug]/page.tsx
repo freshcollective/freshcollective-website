@@ -104,12 +104,20 @@ export default async function PathwayDetailPage({ params }: Props) {
 
   return (
     <div className="max-w-2xl">
-      <Link
-        href={`/spaces/${slug}/pathways`}
-        className="mb-6 inline-block text-sm text-slate-400 transition-colors hover:text-teal-600"
-      >
-        ← All Pathways
-      </Link>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <Link
+          href={`/spaces/${slug}/pathways`}
+          className="text-sm text-slate-400 transition-colors hover:text-teal-600"
+        >
+          ← All Pathways
+        </Link>
+        <Link
+          href={`/spaces/${slug}/pathways/${pathwaySlug}/about`}
+          className="text-[12px] font-medium text-slate-400 transition-colors hover:text-teal-600"
+        >
+          About this pathway →
+        </Link>
+      </div>
 
       {/* ── Pathway hero banner ── */}
       <div

@@ -359,3 +359,31 @@ export interface StepBlock {
   created_at: string
   updated_at: string
 }
+
+export interface PathwayAboutBlock {
+  id: string
+  pathway_id: string
+  block_type: StepBlockType
+  position: number
+  content: string | null
+  label: string | null
+  caption: string | null
+  embed_url: string | null
+  media_asset_id: string | null
+  media_asset: StepBlockMedia | null
+  created_at: string
+  updated_at: string
+}
+
+/** Minimal shared shape used by block editor sub-components. */
+export interface EditorBlock {
+  id: string
+  block_type: StepBlockType
+  position: number
+  content: string | null
+  label: string | null
+  caption: string | null
+  embed_url: string | null
+  media_asset_id: string | null
+  media_asset: StepBlockMedia | null
+}
