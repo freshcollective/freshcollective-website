@@ -384,22 +384,21 @@ def get_pathway_overview(
         .order_by(PathwaySection.position)
         .all()
     )
-    step_by_section: dict[str, list[StepSummary]] = {}
-    for summary in step_summaries:
-        raw = next((s for s in steps if s.id == summary.id), None)
-        sid = raw.section_id if raw else None
-        if sid:
-            step_by_section.setdefault(sid, []).append(summary)
-
-    sections = [
-        SectionWithSteps(
+    summary_by_id = {s.id: s for s in step_summaries}
+    sections = []
+    for sec in db_sections:
+        sec_steps = (
+            db.query(PathwayStep)
+            .filter(PathwayStep.section_id == sec.id)
+            .order_by(PathwayStep.section_position.nulls_last(), PathwayStep.position)
+            .all()
+        )
+        sections.append(SectionWithSteps(
             id=sec.id,
             title=sec.title,
             position=sec.position,
-            steps=step_by_section.get(sec.id, []),
-        )
-        for sec in db_sections
-    ]
+            steps=[summary_by_id[s.id] for s in sec_steps if s.id in summary_by_id],
+        ))
 
     return PathwayWithSteps(
         id=pathway.id,

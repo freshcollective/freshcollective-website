@@ -225,16 +225,46 @@ function AddStepForm({
 // ---------------------------------------------------------------------------
 
 function StepRow({
-  step, num, sections, pathwaySlug, onSectionChange,
+  step, num, sections, pathwaySlug, onSectionChange, onMoveUp, onMoveDown, isFirst, isLast,
 }: {
   step: CreatorStep
   num: number
   sections: CreatorSection[]
   pathwaySlug: string
   onSectionChange: (step: CreatorStep, sectionId: string | null) => void
+  onMoveUp?: () => void
+  onMoveDown?: () => void
+  isFirst?: boolean
+  isLast?: boolean
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+      {/* Up/down reorder controls */}
+      <div className="flex shrink-0 flex-col gap-px">
+        <button
+          type="button"
+          onClick={onMoveUp}
+          disabled={isFirst}
+          className="flex h-4 w-5 items-center justify-center text-slate-300 transition-colors hover:text-slate-600 disabled:opacity-20"
+          aria-label="Move step up"
+        >
+          <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+            <path d="M1 5l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={onMoveDown}
+          disabled={isLast}
+          className="flex h-4 w-5 items-center justify-center text-slate-300 transition-colors hover:text-slate-600 disabled:opacity-20"
+          aria-label="Move step down"
+        >
+          <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+            <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
       <span
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
         style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
@@ -298,12 +328,27 @@ function PathwayStructure({
   const [addingToContext, setAddingToContext] = useState<string | null>(null)
 
   function stepsForSection(sectionId: string): CreatorStep[] {
-    return steps.filter((s) => s.section_id === sectionId)
+    return steps
+      .filter((s) => s.section_id === sectionId)
+      .sort((a, b) => (a.section_position ?? 0) - (b.section_position ?? 0))
   }
-  const unsectionedSteps = steps.filter((s) => !s.section_id)
 
+  const unsectionedSteps = steps
+    .filter((s) => !s.section_id)
+    .sort((a, b) => a.position - b.position)
+
+  const sortedFlatSteps = [...steps].sort((a, b) => a.position - b.position)
+
+  // Display-order numbering: sections first (in section order), unsectioned last
   function globalNum(stepId: string): number {
-    return steps.findIndex((s) => s.id === stepId) + 1
+    const ordered: CreatorStep[] = []
+    sections.forEach((sec) => ordered.push(...stepsForSection(sec.id)))
+    ordered.push(...unsectionedSteps)
+    return ordered.findIndex((s) => s.id === stepId) + 1
+  }
+
+  function globalNumFlat(stepId: string): number {
+    return sortedFlatSteps.findIndex((s) => s.id === stepId) + 1
   }
 
   async function handleStepSectionChange(step: CreatorStep, newSectionId: string | null) {
@@ -316,7 +361,74 @@ function PathwayStructure({
         body: JSON.stringify({ section_id: newSectionId }),
       },
     )
-    if (res.ok) setSteps(steps.map((s) => (s.id === step.id ? { ...s, section_id: newSectionId } : s)))
+    if (res.ok) {
+      const updated: CreatorStep = await res.json()
+      setSteps(steps.map((s) => (s.id === step.id ? updated : s)))
+    }
+  }
+
+  async function handleSectionStepMove(step: CreatorStep, dir: -1 | 1, sectionId: string) {
+    const contextSteps = stepsForSection(sectionId)
+    const idx = contextSteps.findIndex((s) => s.id === step.id)
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= contextSteps.length) return
+    const next = [...contextSteps]
+    ;[next[idx], next[swapIdx]] = [next[swapIdx], next[idx]]
+    setSteps(steps.map((s) => {
+      const ni = next.findIndex((n) => n.id === s.id)
+      return ni >= 0 ? { ...s, section_position: ni } : s
+    }))
+    await fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/sections/${sectionId}/steps/reorder`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids: next.map((s) => s.id) }),
+      },
+    )
+  }
+
+  async function handleUnsectionedStepMove(step: CreatorStep, dir: -1 | 1) {
+    const contextSteps = [...unsectionedSteps]
+    const idx = contextSteps.findIndex((s) => s.id === step.id)
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= contextSteps.length) return
+    ;[contextSteps[idx], contextSteps[swapIdx]] = [contextSteps[swapIdx], contextSteps[idx]]
+    setSteps(steps.map((s) => {
+      const ni = contextSteps.findIndex((n) => n.id === s.id)
+      return ni >= 0 ? { ...s, position: ni } : s
+    }))
+    await fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/unsectioned/reorder`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids: contextSteps.map((s) => s.id) }),
+      },
+    )
+  }
+
+  async function handleFlatStepMove(step: CreatorStep, dir: -1 | 1) {
+    const sorted = [...sortedFlatSteps]
+    const idx = sorted.findIndex((s) => s.id === step.id)
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= sorted.length) return
+    ;[sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]]
+    setSteps(steps.map((s) => {
+      const ni = sorted.findIndex((n) => n.id === s.id)
+      return ni >= 0 ? { ...s, position: ni } : s
+    }))
+    await fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/reorder`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids: sorted.map((s) => s.id) }),
+      },
+    )
   }
 
   async function handleSectionMove(idx: number, dir: -1 | 1) {
@@ -554,7 +666,7 @@ function PathwayStructure({
                 {/* Steps in this section */}
                 {sectionSteps.length > 0 && (
                   <div className="divide-y divide-slate-50">
-                    {sectionSteps.map((step) => (
+                    {sectionSteps.map((step, stepIdx) => (
                       <StepRow
                         key={step.id}
                         step={step}
@@ -562,6 +674,10 @@ function PathwayStructure({
                         sections={sections}
                         pathwaySlug={pathway.slug}
                         onSectionChange={handleStepSectionChange}
+                        onMoveUp={() => handleSectionStepMove(step, -1, section.id)}
+                        onMoveDown={() => handleSectionStepMove(step, 1, section.id)}
+                        isFirst={stepIdx === 0}
+                        isLast={stepIdx === sectionSteps.length - 1}
                       />
                     ))}
                   </div>
@@ -598,7 +714,7 @@ function PathwayStructure({
             )
           })}
 
-          {/* Unsectioned group */}
+          {/* Unsectioned group — shown after sections */}
           {unsectionedSteps.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-dashed border-slate-200">
               <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
@@ -607,7 +723,7 @@ function PathwayStructure({
                 </span>
               </div>
               <div className="divide-y divide-slate-50">
-                {unsectionedSteps.map((step) => (
+                {unsectionedSteps.map((step, stepIdx) => (
                   <StepRow
                     key={step.id}
                     step={step}
@@ -615,6 +731,10 @@ function PathwayStructure({
                     sections={sections}
                     pathwaySlug={pathway.slug}
                     onSectionChange={handleStepSectionChange}
+                    onMoveUp={() => handleUnsectionedStepMove(step, -1)}
+                    onMoveDown={() => handleUnsectionedStepMove(step, 1)}
+                    isFirst={stepIdx === 0}
+                    isLast={stepIdx === unsectionedSteps.length - 1}
                   />
                 ))}
               </div>
@@ -624,10 +744,10 @@ function PathwayStructure({
       )}
 
       {/* ── Flat view (no sections) ── */}
-      {sections.length === 0 && steps.length > 0 && (
+      {sections.length === 0 && sortedFlatSteps.length > 0 && (
         <div className="mb-4 overflow-hidden rounded-xl border border-slate-200">
           <div className="divide-y divide-slate-50">
-            {steps.map((step, i) => (
+            {sortedFlatSteps.map((step, i) => (
               <StepRow
                 key={step.id}
                 step={step}
@@ -635,6 +755,10 @@ function PathwayStructure({
                 sections={sections}
                 pathwaySlug={pathway.slug}
                 onSectionChange={handleStepSectionChange}
+                onMoveUp={() => handleFlatStepMove(step, -1)}
+                onMoveDown={() => handleFlatStepMove(step, 1)}
+                isFirst={i === 0}
+                isLast={i === sortedFlatSteps.length - 1}
               />
             ))}
           </div>

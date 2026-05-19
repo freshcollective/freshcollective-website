@@ -712,6 +712,16 @@ def create_step(
     max_pos = db.query(PathwayStep.position).filter(PathwayStep.pathway_id == pathway.id).order_by(PathwayStep.position.desc()).first()
     position = (max_pos[0] + 1) if max_pos else 0
 
+    section_position: int | None = None
+    if body.section_id:
+        max_sec_pos = (
+            db.query(PathwayStep.section_position)
+            .filter(PathwayStep.section_id == body.section_id, PathwayStep.section_position.isnot(None))
+            .order_by(PathwayStep.section_position.desc())
+            .first()
+        )
+        section_position = (max_sec_pos[0] + 1) if max_sec_pos else 0
+
     step = PathwayStep(
         id=str(uuid4()),
         pathway_id=pathway.id,
@@ -724,6 +734,7 @@ def create_step(
         is_required=body.is_required,
         position=position,
         section_id=body.section_id,
+        section_position=section_position,
     )
     db.add(step)
     db.commit()
@@ -763,7 +774,24 @@ def update_step(
     if "is_required" in update and update["is_required"] is not None:
         step.is_required = update["is_required"]
     if "section_id" in update:
-        step.section_id = update["section_id"]
+        new_section_id = update["section_id"]
+        if new_section_id != step.section_id:
+            step.section_id = new_section_id
+            if new_section_id:
+                # Place at end of the new section
+                max_sec_pos = (
+                    db.query(PathwayStep.section_position)
+                    .filter(
+                        PathwayStep.section_id == new_section_id,
+                        PathwayStep.id != step.id,
+                        PathwayStep.section_position.isnot(None),
+                    )
+                    .order_by(PathwayStep.section_position.desc())
+                    .first()
+                )
+                step.section_position = (max_sec_pos[0] + 1) if max_sec_pos else 0
+            else:
+                step.section_position = None
 
     db.commit()
     db.refresh(step)
@@ -797,12 +825,58 @@ def reorder_steps(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> None:
+    """Reorder all steps in a flat (no-sections) pathway by global position."""
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
     for i, sid in enumerate(body.ids):
         db.query(PathwayStep).filter(
             PathwayStep.id == sid, PathwayStep.pathway_id == pathway.id
         ).update({"position": i})
+    db.commit()
+
+
+@router.post("/spaces/{slug}/pathways/{pathway_slug}/steps/unsectioned/reorder", status_code=204)
+def reorder_unsectioned_steps(
+    slug: str,
+    pathway_slug: str,
+    body: ReorderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    """Reorder unsectioned steps by global position."""
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    for i, sid in enumerate(body.ids):
+        db.query(PathwayStep).filter(
+            PathwayStep.id == sid,
+            PathwayStep.pathway_id == pathway.id,
+            PathwayStep.section_id.is_(None),
+        ).update({"position": i})
+    db.commit()
+
+
+@router.post("/spaces/{slug}/pathways/{pathway_slug}/sections/{section_id}/steps/reorder", status_code=204)
+def reorder_section_steps(
+    slug: str,
+    pathway_slug: str,
+    section_id: str,
+    body: ReorderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    """Reorder steps within a section by section_position."""
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    section = db.query(PathwaySection).filter(
+        PathwaySection.id == section_id, PathwaySection.pathway_id == pathway.id
+    ).first()
+    if not section:
+        raise HTTPException(status_code=404, detail="Section not found.")
+    for i, sid in enumerate(body.ids):
+        db.query(PathwayStep).filter(
+            PathwayStep.id == sid,
+            PathwayStep.section_id == section_id,
+        ).update({"section_position": i})
     db.commit()
 
 

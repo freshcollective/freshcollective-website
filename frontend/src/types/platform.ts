@@ -225,6 +225,7 @@ export interface CreatorStep {
   estimated_minutes: number | null
   is_required: boolean
   position: number
+  section_position: number | null
   section_id: string | null
 }
 

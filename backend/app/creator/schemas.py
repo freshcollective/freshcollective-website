@@ -258,6 +258,7 @@ class StepResponse(BaseModel):
     estimated_minutes: int | None
     is_required: bool
     position: int
+    section_position: int | None = None
     section_id: str | None = None
 
 

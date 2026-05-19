@@ -204,26 +204,10 @@ export default function PathwayStepNav({
   const sectionedStepIds = new Set(sections.flatMap((sec) => sec.steps.map((s) => s.id)))
   const unsectionedSteps = steps.filter((s) => !sectionedStepIds.has(s.id))
 
-  // Build flat step list for rendering without sections, or compute offsets for sections
+  // Build section-grouped list: sections first (in position order), unsectioned steps last
   const buildSectionList = () => {
     const items: React.ReactNode[] = []
     let offset = 0
-
-    // Unsectioned steps at the top (if any)
-    if (unsectionedSteps.length > 0) {
-      unsectionedSteps.forEach((step, i) => {
-        items.push(
-          <StepNavItem
-            key={step.id}
-            step={step}
-            index={offset + i}
-            isActive={step.slug === currentStepSlug}
-            href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/${step.slug}`}
-          />
-        )
-      })
-      offset += unsectionedSteps.length
-    }
 
     sections.forEach((sec) => {
       items.push(
@@ -238,6 +222,28 @@ export default function PathwayStepNav({
       )
       offset += sec.steps.length
     })
+
+    // Unsectioned steps at the bottom (if any)
+    if (unsectionedSteps.length > 0) {
+      if (sections.length > 0) {
+        items.push(
+          <li key="__unsectioned-label" className="px-3 pt-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Other</span>
+          </li>
+        )
+      }
+      unsectionedSteps.forEach((step, i) => {
+        items.push(
+          <StepNavItem
+            key={step.id}
+            step={step}
+            index={offset + i}
+            isActive={step.slug === currentStepSlug}
+            href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/${step.slug}`}
+          />
+        )
+      })
+    }
 
     return items
   }

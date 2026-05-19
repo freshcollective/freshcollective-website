@@ -258,17 +258,8 @@ export default async function PathwayDetailPage({ params }: Props) {
                 const unsectioned = pathway.steps.filter((s) => !sectionedIds.has(s.id))
                 let globalIndex = 0
                 const groups: React.ReactNode[] = []
-                if (unsectioned.length > 0) {
-                  groups.push(
-                    <div key="__unsectioned" className="flex flex-col gap-3">
-                      {unsectioned.map((step) => {
-                        const el = <StepRow key={step.id} step={step} spaceSlug={slug} pathwaySlug={pathwaySlug} index={globalIndex} />
-                        globalIndex++
-                        return el
-                      })}
-                    </div>
-                  )
-                }
+
+                // Sections first (in position order as returned by backend)
                 pathway.sections.forEach((section) => {
                   groups.push(
                     <div key={section.id}>
@@ -285,6 +276,20 @@ export default async function PathwayDetailPage({ params }: Props) {
                     </div>
                   )
                 })
+
+                // Unsectioned steps at the bottom
+                if (unsectioned.length > 0) {
+                  groups.push(
+                    <div key="__unsectioned" className="flex flex-col gap-3">
+                      {unsectioned.map((step) => {
+                        const el = <StepRow key={step.id} step={step} spaceSlug={slug} pathwaySlug={pathwaySlug} index={globalIndex} />
+                        globalIndex++
+                        return el
+                      })}
+                    </div>
+                  )
+                }
+
                 return groups
               })()}
             </div>

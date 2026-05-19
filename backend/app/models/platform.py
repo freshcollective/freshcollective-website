@@ -355,7 +355,7 @@ class PathwaySection(Base):
 
     pathway: Mapped[Pathway] = relationship("Pathway", back_populates="sections")
     steps: Mapped[list["PathwayStep"]] = relationship(
-        "PathwayStep", back_populates="section", order_by="PathwayStep.position"
+        "PathwayStep", back_populates="section", order_by="PathwayStep.section_position"
     )
 
     __table_args__ = (
@@ -394,8 +394,10 @@ class PathwayStep(Base):
     is_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
-    # Display order within the Pathway
+    # Display order within the Pathway (used for flat pathways and unsectioned steps)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # Display order within a section (null for unsectioned steps)
+    section_position: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Optional section grouping
     section_id: Mapped[str | None] = mapped_column(
         String,
