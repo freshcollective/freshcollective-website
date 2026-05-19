@@ -716,3 +716,41 @@ class CreatorBillingResponse(BaseModel):
     usage: CreatorUsage
     available_plans: list[CreatorPlanOut]
     payment_setup: CreatorPaymentSetup
+
+
+# ---------------------------------------------------------------------------
+# Pathway Entitlements (Creator Studio People panel)
+# ---------------------------------------------------------------------------
+
+class EntitlementOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    pathway_id: str
+    pathway_slug: str
+    pathway_title: str
+    pathway_status: str
+    access_type: str
+    source: str               # free | included | manual_grant | one_time_purchase | subscription | admin
+    status: str               # active | revoked | expired | cancelled | pending
+    starts_at: datetime
+    ends_at: datetime | None
+    granted_by_name: str | None
+    revoked_by_name: str | None
+    revoked_at: datetime | None
+    notes: str | None
+    # Progress (computed)
+    total_steps: int
+    completed_steps: int
+    progress_pct: int
+    last_activity_at: datetime | None
+
+
+class GrantEntitlementRequest(BaseModel):
+    pathway_id: str
+    notes: str | None = None
+
+
+class RevokeEntitlementRequest(BaseModel):
+    pathway_id: str
+    notes: str | None = None

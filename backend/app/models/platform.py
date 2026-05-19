@@ -112,6 +112,23 @@ class EnrollmentStatus(str, enum.Enum):
     completed = "completed"
 
 
+class EntitlementSource(str, enum.Enum):
+    free = "free"
+    included = "included"
+    manual_grant = "manual_grant"
+    one_time_purchase = "one_time_purchase"
+    subscription = "subscription"
+    admin = "admin"
+
+
+class EntitlementStatus(str, enum.Enum):
+    active = "active"
+    revoked = "revoked"
+    expired = "expired"
+    cancelled = "cancelled"
+    pending = "pending"
+
+
 class EventLocationType(str, enum.Enum):
     zoom = "zoom"
     in_person = "in_person"
@@ -955,4 +972,95 @@ class PathwayAboutBlock(Base):
 
     __table_args__ = (
         Index("ix_pathway_about_blocks_pathway_position", "pathway_id", "position"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pathway Entitlements
+# ---------------------------------------------------------------------------
+
+class PathwayEntitlement(Base):
+    """
+    Explicit access record for a member's entitlement to a pathway.
+
+    This is the source of truth for paid pathway access.  Free and included
+    pathways do not require a row here — access is derived from the pathway's
+    access_type and the user's space membership.  Entitlement rows are needed
+    only when access must be explicitly granted, tracked, or revoked:
+
+      manual_grant      — creator grants access directly in Creator Studio
+      one_time_purchase — Stripe checkout completes (TODO: wire up)
+      subscription      — active Stripe subscription (TODO: wire up)
+      admin             — platform admin override
+
+    Stripe fields are present but always NULL until payments go live.
+    """
+
+    __tablename__ = "pathway_entitlements"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    space_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    pathway_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("pathways.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source: Mapped[EntitlementSource] = mapped_column(
+        SAEnum(EntitlementSource, name="entitlement_source_enum", create_type=True),
+        nullable=False,
+    )
+    status: Mapped[EntitlementStatus] = mapped_column(
+        SAEnum(EntitlementStatus, name="entitlement_status_enum", create_type=True),
+        nullable=False,
+        default=EntitlementStatus.active,
+        server_default="active",
+    )
+    starts_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False, server_default=func.now()
+    )
+    ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    granted_by_user_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    revoked_by_user_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # TODO: Stripe — populate on Stripe Checkout completion
+    stripe_checkout_session_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # TODO: Stripe — populate on Stripe PaymentIntent confirmation
+    stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # TODO: Stripe Connect — populate when subscription entitlement is created
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )

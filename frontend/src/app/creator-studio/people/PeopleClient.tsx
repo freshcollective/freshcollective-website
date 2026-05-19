@@ -121,6 +121,9 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 const ACCESS_STATE_STYLE: Record<string, { background: string; color: string }> = {
   accessible:   { background: 'rgba(56,160,158,0.10)',  color: '#0f766e' },
   locked:       { background: 'rgba(148,163,184,0.14)', color: '#475569' },
+  revoked:      { background: 'rgba(239,68,68,0.08)',   color: '#dc2626' },
+  expired:      { background: 'rgba(234,179,8,0.12)',   color: '#a16207' },
+  cancelled:    { background: 'rgba(148,163,184,0.14)', color: '#475569' },
   coming_soon:  { background: 'rgba(234,179,8,0.12)',   color: '#a16207' },
   draft:        { background: 'rgba(99,102,241,0.10)',  color: '#6366f1' },
   archived:     { background: 'rgba(148,163,184,0.10)', color: '#64748b' },
@@ -135,10 +138,53 @@ function AccessPill({ state, label }: { state: string; label: string }) {
   )
 }
 
-function PathwayAccessRow({ item }: { item: MemberPathwayAccessItem }) {
+function PathwayAccessRow({
+  item,
+  spaceSlug,
+  userId,
+  onRevoked,
+}: {
+  item: MemberPathwayAccessItem
+  spaceSlug: string
+  userId: string
+  onRevoked: () => void
+}) {
+  const [revoking, setRevoking] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
   const priceLabel = item.access_state === 'locked' && item.price_cents
     ? formatPathwayPrice(item.price_cents, item.currency, item.billing_interval)
     : null
+
+  const isManualGrant = item.access_source === 'manual_grant'
+  const canRevoke = item.access_state === 'accessible' && isManualGrant
+
+  async function handleRevoke() {
+    if (!confirm(`Revoke access to "${item.title}" for this member?`)) return
+    setRevoking(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/members/${userId}/pathway-access/revoke`),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ pathway_id: item.id }),
+        },
+      )
+      if (res.ok) {
+        onRevoked()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(typeof body.detail === 'string' ? body.detail : 'Could not revoke access.')
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setRevoking(false)
+    }
+  }
 
   return (
     <div className="rounded-xl border border-border bg-white p-3.5">
@@ -147,14 +193,16 @@ function PathwayAccessRow({ item }: { item: MemberPathwayAccessItem }) {
         <AccessPill state={item.access_state} label={item.access_label} />
       </div>
 
-      {/* Sub-label: price for locked, access source for accessible */}
+      {/* Sub-label */}
       {priceLabel ? (
         <p className="mt-1 text-[11px] text-slate-400">{priceLabel}</p>
-      ) : item.access_state === 'accessible' && item.access_source && (
-        <p className="mt-1 text-[11px] text-slate-400 capitalize">{item.access_source.replace('_', ' ')}</p>
+      ) : item.access_source && (
+        <p className="mt-1 text-[11px] text-slate-400 capitalize">
+          {item.access_source.replace(/_/g, ' ')}
+        </p>
       )}
 
-      {/* Progress — only for accessible pathways with steps */}
+      {/* Progress */}
       {item.access_state === 'accessible' && item.total_steps > 0 && (
         <div className="mt-2.5">
           <div className="mb-1 flex items-baseline justify-between text-[11px] text-slate-400">
@@ -175,11 +223,171 @@ function PathwayAccessRow({ item }: { item: MemberPathwayAccessItem }) {
         </div>
       )}
 
-      {/* No steps defined */}
       {item.access_state === 'accessible' && item.total_steps === 0 && (
         <p className="mt-1 text-[11px] text-slate-400">No steps yet</p>
       )}
+
+      {/* Revoke */}
+      {canRevoke && (
+        <div className="mt-2 flex items-center gap-2">
+          <button
+            onClick={handleRevoke}
+            disabled={revoking}
+            className="text-[11px] font-medium text-red-500 underline underline-offset-2 transition-opacity hover:opacity-70 disabled:opacity-40"
+          >
+            {revoking ? 'Revoking…' : 'Revoke access'}
+          </button>
+        </div>
+      )}
+      {error && <p className="mt-1 text-[11px] text-red-500">{error}</p>}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Grant access modal
+// ---------------------------------------------------------------------------
+
+interface PathwayOption { id: string; title: string; access_type: string }
+
+function GrantAccessModal({
+  spaceSlug,
+  userId,
+  onClose,
+  onGranted,
+}: {
+  spaceSlug: string
+  userId: string
+  onClose: () => void
+  onGranted: () => void
+}) {
+  const [pathways, setPathways] = useState<PathwayOption[]>([])
+  const [pathwayId, setPathwayId] = useState('')
+  const [notes, setNotes] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [fetching, setFetching] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+
+  useEffect(() => {
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/pathways`), { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: { id: string; title: string; access_type: string; status: string }[]) => {
+        // Only show active paid pathways that can be granted
+        const paid = data.filter(
+          (p) => p.status === 'active' && ['one_time', 'subscription'].includes(p.access_type),
+        )
+        setPathways(paid)
+        if (paid.length > 0) setPathwayId(paid[0].id)
+      })
+      .catch(() => setPathways([]))
+      .finally(() => setFetching(false))
+  }, [spaceSlug])
+
+  async function handleSubmit() {
+    if (!pathwayId) return
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/members/${userId}/pathway-access/grant`),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ pathway_id: pathwayId, notes: notes.trim() || null }),
+        },
+      )
+      if (res.ok) {
+        setSuccess(true)
+        onGranted()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(typeof body.detail === 'string' ? body.detail : 'Could not grant access.')
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl">
+        {success ? (
+          <div className="py-4 text-center">
+            <p className="text-[16px] font-semibold text-navy-900">Access granted</p>
+            <p className="mt-1.5 text-[13px] text-slate-500">The member now has access to this pathway.</p>
+            <button
+              onClick={onClose}
+              className="mt-4 rounded-xl px-4 py-2 text-[13px] font-semibold text-white"
+              style={{ background: '#38A09E' }}
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <>
+            <h2 className="mb-4 text-[16px] font-semibold text-navy-900">Grant pathway access</h2>
+
+            {fetching ? (
+              <p className="text-[13px] text-slate-400">Loading pathways…</p>
+            ) : pathways.length === 0 ? (
+              <p className="text-[13px] text-slate-500">
+                No paid pathways found in this collective. Manual grants are only available for paid (one-time or subscription) pathways.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Pathway</label>
+                  <select
+                    value={pathwayId}
+                    onChange={(e) => setPathwayId(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  >
+                    {pathways.map((p) => (
+                      <option key={p.id} value={p.id}>{p.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Notes (optional)</label>
+                  <textarea
+                    rows={2}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Reason for grant, e.g. scholarship, beta tester…"
+                    className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                </div>
+
+                {error && <p className="text-[12px] text-red-500">{error}</p>}
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleSubmit}
+                    disabled={loading || !pathwayId}
+                    className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
+                    style={{ background: '#38A09E' }}
+                  >
+                    {loading ? 'Granting…' : 'Grant access'}
+                  </button>
+                  <button
+                    onClick={onClose}
+                    className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -192,12 +400,23 @@ function PathwayAccessSection({
 }) {
   const [items, setItems] = useState<MemberPathwayAccessItem[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [showGrant, setShowGrant] = useState(false)
+
+  function loadItems(userId: string) {
+    setLoading(true)
+    setItems(null)
+    fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/members/${userId}/pathway-access`),
+      { credentials: 'include' },
+    )
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: MemberPathwayAccessItem[] | null) => setItems(data ?? []))
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false))
+  }
 
   useEffect(() => {
-    if (entry.kind !== 'member') {
-      setItems(null)
-      return
-    }
+    if (entry.kind !== 'member') { setItems(null); return }
     let cancelled = false
     setLoading(true)
     setItems(null)
@@ -206,21 +425,29 @@ function PathwayAccessSection({
       { credentials: 'include' },
     )
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: MemberPathwayAccessItem[] | null) => {
-        if (!cancelled) setItems(data ?? [])
-      })
+      .then((data: MemberPathwayAccessItem[] | null) => { if (!cancelled) setItems(data ?? []) })
       .catch(() => { if (!cancelled) setItems([]) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [entry, spaceSlug])
 
   if (entry.kind === 'invite') return null
+  const userId = entry.data.id
 
   return (
     <div>
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-        Pathway access
-      </p>
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          Pathway access
+        </p>
+        <button
+          onClick={() => setShowGrant(true)}
+          className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors"
+          style={{ background: 'rgba(56,160,158,0.10)', color: '#0f766e' }}
+        >
+          + Grant access
+        </button>
+      </div>
 
       {loading && (
         <p className="text-[13px] italic text-slate-400">Loading…</p>
@@ -241,9 +468,27 @@ function PathwayAccessSection({
       {!loading && items && items.length > 0 && (
         <div className="flex flex-col gap-2">
           {items.map((item) => (
-            <PathwayAccessRow key={item.id} item={item} />
+            <PathwayAccessRow
+              key={item.id}
+              item={item}
+              spaceSlug={spaceSlug}
+              userId={userId}
+              onRevoked={() => loadItems(userId)}
+            />
           ))}
         </div>
+      )}
+
+      {showGrant && (
+        <GrantAccessModal
+          spaceSlug={spaceSlug}
+          userId={userId}
+          onClose={() => setShowGrant(false)}
+          onGranted={() => {
+            setShowGrant(false)
+            loadItems(userId)
+          }}
+        />
       )}
     </div>
   )

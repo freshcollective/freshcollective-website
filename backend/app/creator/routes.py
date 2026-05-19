@@ -27,6 +27,9 @@ from app.creator.schemas import (
     CreatorPlanOut,
     CreatorSubscriptionOut,
     CreatorUsage,
+    EntitlementOut,
+    GrantEntitlementRequest,
+    RevokeEntitlementRequest,
     AboutBlockReorderRequest,
     AboutBlockResponse,
     AboutBlockUpdateRequest,
@@ -66,6 +69,9 @@ from app.creator.schemas import (
 )
 from app.models.creator_billing import CreatorPlan, CreatorSubscription
 from app.models.platform import (
+    EntitlementSource,
+    EntitlementStatus,
+    PathwayEntitlement,
     CommunityPost,
     CreatorMediaAsset,
     Enrollment,
@@ -372,8 +378,72 @@ async def upload_cover_image(
 
 
 # ---------------------------------------------------------------------------
-# People / member pathway access
+# People / member pathway access  (entitlement-based)
 # ---------------------------------------------------------------------------
+
+def _pathway_progress_maps(
+    user_id: str,
+    pathway_ids: list[str],
+    db: Session,
+) -> tuple[dict[str, int], dict[str, int], dict[str, datetime], set[str]]:
+    """
+    Return (step_count_map, completed_count_map, last_activity_map,
+            pathways_with_any_progress) for the given user and pathway ids.
+    """
+    step_count_rows = (
+        db.query(PathwayStep.pathway_id, func.count(PathwayStep.id).label("cnt"))
+        .filter(PathwayStep.pathway_id.in_(pathway_ids))
+        .group_by(PathwayStep.pathway_id)
+        .all()
+    )
+    step_count_map = {r.pathway_id: r.cnt for r in step_count_rows}
+
+    step_rows = (
+        db.query(PathwayStep.id, PathwayStep.pathway_id)
+        .filter(PathwayStep.pathway_id.in_(pathway_ids))
+        .all()
+    )
+    step_to_pathway: dict[str, str] = {r.id: r.pathway_id for r in step_rows}
+    all_step_ids = list(step_to_pathway.keys())
+
+    completed_count_map: dict[str, int] = {}
+    last_activity_map: dict[str, datetime] = {}
+    pathways_with_any_progress: set[str] = set()
+
+    if all_step_ids:
+        completed_records = (
+            db.query(StepProgress)
+            .filter(
+                StepProgress.user_id == user_id,
+                StepProgress.step_id.in_(all_step_ids),
+                StepProgress.completed_at.isnot(None),
+            )
+            .all()
+        )
+        for rec in completed_records:
+            pid = step_to_pathway.get(rec.step_id)
+            if not pid:
+                continue
+            completed_count_map[pid] = completed_count_map.get(pid, 0) + 1
+            if rec.completed_at and (
+                pid not in last_activity_map or rec.completed_at > last_activity_map[pid]
+            ):
+                last_activity_map[pid] = rec.completed_at
+
+        any_progress = (
+            db.query(StepProgress.step_id)
+            .filter(
+                StepProgress.user_id == user_id,
+                StepProgress.step_id.in_(all_step_ids),
+            )
+            .all()
+        )
+        pathways_with_any_progress = {
+            step_to_pathway[r.step_id] for r in any_progress if r.step_id in step_to_pathway
+        }
+
+    return step_count_map, completed_count_map, last_activity_map, pathways_with_any_progress
+
 
 @router.get(
     "/spaces/{slug}/members/{user_id}/pathway-access",
@@ -385,22 +455,20 @@ def get_member_pathway_access(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> list[MemberPathwayAccessItem]:
-    """Return all pathways in the space with the target member's access state and progress."""
+    """
+    Return pathways in the space that this member has a meaningful relationship with,
+    using pathway_entitlements as the source of truth for paid access.
+    """
     space = _get_managed_space(slug, current_user, db)
 
-    # Confirm the target user is a member of this space
     membership = (
         db.query(SpaceMembership)
-        .filter(
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.user_id == user_id,
-        )
+        .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == user_id)
         .first()
     )
     if not membership:
         raise HTTPException(status_code=404, detail="Member not found in this space.")
 
-    # All pathways in the space ordered by display position
     pathways = (
         db.query(Pathway)
         .filter(Pathway.space_id == space.id)
@@ -412,120 +480,94 @@ def get_member_pathway_access(
 
     pathway_ids = [p.id for p in pathways]
 
-    # Enrollments: one per (user, pathway), used as proxy for paid access
-    enrollments = (
-        db.query(Enrollment)
+    # Active entitlements for this user in this space
+    entitlements = (
+        db.query(PathwayEntitlement)
         .filter(
-            Enrollment.user_id == user_id,
-            Enrollment.pathway_id.in_(pathway_ids),
+            PathwayEntitlement.user_id == user_id,
+            PathwayEntitlement.pathway_id.in_(pathway_ids),
         )
+        .order_by(PathwayEntitlement.created_at.desc())
         .all()
     )
-    enrollment_map = {e.pathway_id: e for e in enrollments}
+    # Keep the most recent entitlement per pathway (any status) for display
+    entitlement_map: dict[str, PathwayEntitlement] = {}
+    for ent in entitlements:
+        if ent.pathway_id not in entitlement_map:
+            entitlement_map[ent.pathway_id] = ent
 
-    # Step counts per pathway
-    step_count_rows = (
-        db.query(PathwayStep.pathway_id, func.count(PathwayStep.id).label("cnt"))
-        .filter(PathwayStep.pathway_id.in_(pathway_ids))
-        .group_by(PathwayStep.pathway_id)
-        .all()
-    )
-    step_count_map = {row.pathway_id: row.cnt for row in step_count_rows}
-
-    # Step-to-pathway mapping (needed to group progress records by pathway)
-    step_rows = (
-        db.query(PathwayStep.id, PathwayStep.pathway_id)
-        .filter(PathwayStep.pathway_id.in_(pathway_ids))
-        .all()
-    )
-    step_to_pathway: dict[str, str] = {row.id: row.pathway_id for row in step_rows}
-    all_step_ids = list(step_to_pathway.keys())
-
-    # Completed steps for this user
-    completed_records = (
-        db.query(StepProgress)
-        .filter(
-            StepProgress.user_id == user_id,
-            StepProgress.step_id.in_(all_step_ids),
-            StepProgress.completed_at.isnot(None),
-        )
-        .all()
-    ) if all_step_ids else []
-
-    completed_count_map: dict[str, int] = {}
-    last_activity_map: dict[str, datetime] = {}
-    for rec in completed_records:
-        pid = step_to_pathway.get(rec.step_id)
-        if not pid:
-            continue
-        completed_count_map[pid] = completed_count_map.get(pid, 0) + 1
-        if rec.completed_at and (
-            pid not in last_activity_map or rec.completed_at > last_activity_map[pid]
-        ):
-            last_activity_map[pid] = rec.completed_at
-
-    # Any step progress (including notes-only) to detect engagement with free/included pathways
-    any_progress_records = (
-        db.query(StepProgress)
-        .filter(
-            StepProgress.user_id == user_id,
-            StepProgress.step_id.in_(all_step_ids),
-        )
-        .all()
-    ) if all_step_ids else []
-    pathways_with_any_progress = {
-        step_to_pathway[r.step_id]
-        for r in any_progress_records
-        if r.step_id in step_to_pathway
+    # Active-only set for access checks
+    active_entitlement_pathway_ids = {
+        ent.pathway_id
+        for ent in entitlements
+        if (ent.status.value if hasattr(ent.status, "value") else str(ent.status)) == "active"
     }
+
+    step_count_map, completed_count_map, last_activity_map, pathways_with_any_progress = (
+        _pathway_progress_maps(user_id, pathway_ids, db)
+    )
 
     result: list[MemberPathwayAccessItem] = []
     for pathway in pathways:
-        p_status = (
-            pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
-        )
-        access_type = pathway.access_type or "free"
-        enrollment = enrollment_map.get(pathway.id)
-        enroll_status = None
-        if enrollment:
-            enroll_status = (
-                enrollment.status.value
-                if hasattr(enrollment.status, "value")
-                else str(enrollment.status)
-            )
+        p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
+        access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
+        entitlement = entitlement_map.get(pathway.id)
+        ent_status = None
+        ent_source = None
+        if entitlement:
+            ent_status = entitlement.status.value if hasattr(entitlement.status, "value") else str(entitlement.status)
+            ent_source = entitlement.source.value if hasattr(entitlement.source, "value") else str(entitlement.source)
 
         total_steps = step_count_map.get(pathway.id, 0)
         completed_steps = completed_count_map.get(pathway.id, 0)
         progress_pct = round((completed_steps / total_steps) * 100) if total_steps > 0 else 0
         last_activity_at = last_activity_map.get(pathway.id)
-
-        # Derive access state
-        if p_status == "coming_soon":
-            access_state, access_label, access_source = "coming_soon", "Coming soon", None
-        elif p_status in ("draft", "archived"):
-            access_state = p_status
-            access_label = p_status.capitalize()
-            access_source = None
-        elif access_type in ("free", "included"):
-            access_state = "accessible"
-            access_label = "Free" if access_type == "free" else "Included"
-            access_source = access_type
-        elif enroll_status in ("active", "completed"):
-            # Enrollment is the current proxy for paid access (Stripe not yet wired)
-            access_state = "accessible"
-            access_label = "Purchased" if access_type == "one_time" else "Subscribed"
-            access_source = access_type
-        else:
-            access_state, access_label, access_source = "locked", "Locked", None
-
-        # Only return pathways where this member has an actual relationship
-        has_enrollment = enrollment is not None
         has_any_progress = pathway.id in pathways_with_any_progress
+        has_active_entitlement = pathway.id in active_entitlement_pathway_ids
+
+        # Skip draft/archived/coming_soon — not shown in People panel
         if p_status in ("coming_soon", "draft", "archived"):
             continue
-        if access_type in ("free", "included") and not has_enrollment and not has_any_progress:
+
+        # Access state and label
+        if access_type == "free":
+            access_state = "accessible"
+            access_label = "Free"
+            access_source = "free"
+        elif access_type == "included":
+            access_state = "accessible"
+            access_label = "Included"
+            access_source = "included"
+        elif has_active_entitlement:
+            access_state = "accessible"
+            if ent_source == "manual_grant":
+                access_label = "Manual grant"
+            elif ent_source == "one_time_purchase":
+                access_label = "Purchased"
+            elif ent_source == "subscription":
+                access_label = "Subscribed"
+            elif ent_source == "admin":
+                access_label = "Admin"
+            else:
+                access_label = "Granted"
+            access_source = ent_source
+        elif ent_status == "revoked":
+            access_state = "revoked"
+            access_label = "Revoked"
+            access_source = ent_source
+        elif ent_status in ("expired", "cancelled"):
+            access_state = ent_status
+            access_label = ent_status.capitalize()
+            access_source = ent_source
+        else:
+            access_state = "locked"
+            access_label = "Locked"
+            access_source = None
+
+        # Filtering: only show if there is a meaningful relationship
+        if access_type in ("free", "included") and not has_any_progress and not entitlement:
             continue
-        if access_type in ("one_time", "subscription") and enroll_status not in ("active", "completed"):
+        if access_type in ("one_time", "subscription") and not entitlement:
             continue
 
         result.append(
@@ -545,11 +587,196 @@ def get_member_pathway_access(
                 completed_steps=completed_steps,
                 progress_pct=progress_pct,
                 last_activity_at=last_activity_at,
-                enrollment_status=enroll_status,
+                enrollment_status=ent_status,
             )
         )
 
     return result
+
+
+@router.post(
+    "/spaces/{slug}/members/{user_id}/pathway-access/grant",
+    response_model=EntitlementOut,
+    status_code=201,
+)
+def grant_pathway_access(
+    slug: str,
+    user_id: str,
+    body: GrantEntitlementRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> EntitlementOut:
+    """Manually grant a member access to a paid pathway."""
+    space = _get_managed_space(slug, current_user, db)
+
+    membership = (
+        db.query(SpaceMembership)
+        .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == user_id)
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=404, detail="Member not found in this space.")
+
+    pathway = (
+        db.query(Pathway)
+        .filter(Pathway.id == body.pathway_id, Pathway.space_id == space.id)
+        .first()
+    )
+    if not pathway:
+        raise HTTPException(status_code=404, detail="Pathway not found in this space.")
+
+    access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
+    if access_type in ("free", "included"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"This pathway is '{access_type}' — all eligible members already have access. Manual grants are only needed for paid pathways.",
+        )
+
+    # Check for an existing active entitlement
+    existing = (
+        db.query(PathwayEntitlement)
+        .filter(
+            PathwayEntitlement.user_id == user_id,
+            PathwayEntitlement.pathway_id == pathway.id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(status_code=409, detail="Member already has active access to this pathway.")
+
+    # Check for a revoked entitlement to reactivate
+    revoked = (
+        db.query(PathwayEntitlement)
+        .filter(
+            PathwayEntitlement.user_id == user_id,
+            PathwayEntitlement.pathway_id == pathway.id,
+            PathwayEntitlement.status == EntitlementStatus.revoked,
+        )
+        .order_by(PathwayEntitlement.revoked_at.desc())
+        .first()
+    )
+    if revoked:
+        revoked.status = EntitlementStatus.active
+        revoked.revoked_at = None
+        revoked.revoked_by_user_id = None
+        revoked.granted_by_user_id = current_user.id
+        revoked.notes = body.notes
+        revoked.source = EntitlementSource.manual_grant
+        revoked.starts_at = datetime.utcnow()
+        db.commit()
+        db.refresh(revoked)
+        ent = revoked
+    else:
+        ent = PathwayEntitlement(
+            id=str(uuid4()),
+            user_id=user_id,
+            space_id=space.id,
+            pathway_id=pathway.id,
+            source=EntitlementSource.manual_grant,
+            status=EntitlementStatus.active,
+            starts_at=datetime.utcnow(),
+            granted_by_user_id=current_user.id,
+            notes=body.notes,
+        )
+        db.add(ent)
+        db.commit()
+        db.refresh(ent)
+
+    granter = db.query(User).filter(User.id == ent.granted_by_user_id).first() if ent.granted_by_user_id else None
+    return EntitlementOut(
+        id=ent.id,
+        pathway_id=pathway.id,
+        pathway_slug=pathway.slug,
+        pathway_title=pathway.title,
+        pathway_status=pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
+        access_type=access_type,
+        source=ent.source.value if hasattr(ent.source, "value") else str(ent.source),
+        status=ent.status.value if hasattr(ent.status, "value") else str(ent.status),
+        starts_at=ent.starts_at,
+        ends_at=ent.ends_at,
+        granted_by_name=granter.display_name or granter.name if granter else None,
+        revoked_by_name=None,
+        revoked_at=None,
+        notes=ent.notes,
+        total_steps=db.query(func.count(PathwayStep.id)).filter(PathwayStep.pathway_id == pathway.id).scalar() or 0,
+        completed_steps=0,
+        progress_pct=0,
+        last_activity_at=None,
+    )
+
+
+@router.post(
+    "/spaces/{slug}/members/{user_id}/pathway-access/revoke",
+    response_model=EntitlementOut,
+)
+def revoke_pathway_access(
+    slug: str,
+    user_id: str,
+    body: RevokeEntitlementRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> EntitlementOut:
+    """Revoke a member's access to a paid pathway."""
+    space = _get_managed_space(slug, current_user, db)
+
+    pathway = (
+        db.query(Pathway)
+        .filter(Pathway.id == body.pathway_id, Pathway.space_id == space.id)
+        .first()
+    )
+    if not pathway:
+        raise HTTPException(status_code=404, detail="Pathway not found in this space.")
+
+    access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
+    if access_type in ("free", "included"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot revoke access to a '{access_type}' pathway — access is automatic. To restrict access, change the pathway's access type.",
+        )
+
+    entitlement = (
+        db.query(PathwayEntitlement)
+        .filter(
+            PathwayEntitlement.user_id == user_id,
+            PathwayEntitlement.pathway_id == pathway.id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+        )
+        .first()
+    )
+    if not entitlement:
+        raise HTTPException(status_code=404, detail="No active entitlement found for this member and pathway.")
+
+    entitlement.status = EntitlementStatus.revoked
+    entitlement.revoked_by_user_id = current_user.id
+    entitlement.revoked_at = datetime.utcnow()
+    if body.notes:
+        entitlement.notes = body.notes
+    db.commit()
+    db.refresh(entitlement)
+
+    revoker = db.query(User).filter(User.id == current_user.id).first()
+    granter = db.query(User).filter(User.id == entitlement.granted_by_user_id).first() if entitlement.granted_by_user_id else None
+    return EntitlementOut(
+        id=entitlement.id,
+        pathway_id=pathway.id,
+        pathway_slug=pathway.slug,
+        pathway_title=pathway.title,
+        pathway_status=pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
+        access_type=access_type,
+        source=entitlement.source.value if hasattr(entitlement.source, "value") else str(entitlement.source),
+        status=entitlement.status.value if hasattr(entitlement.status, "value") else str(entitlement.status),
+        starts_at=entitlement.starts_at,
+        ends_at=entitlement.ends_at,
+        granted_by_name=granter.display_name or granter.name if granter else None,
+        revoked_by_name=revoker.display_name or revoker.name if revoker else None,
+        revoked_at=entitlement.revoked_at,
+        notes=entitlement.notes,
+        total_steps=db.query(func.count(PathwayStep.id)).filter(PathwayStep.pathway_id == pathway.id).scalar() or 0,
+        completed_steps=0,
+        progress_pct=0,
+        last_activity_at=None,
+    )
 
 
 # ---------------------------------------------------------------------------

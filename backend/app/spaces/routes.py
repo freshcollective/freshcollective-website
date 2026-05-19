@@ -10,13 +10,16 @@ from app.core.database import get_db
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.platform import (
     Enrollment,
+    EntitlementStatus,
     Event,
     Pathway,
     PathwayAboutBlock,
+    PathwayEntitlement,
     PathwaySection,
     PathwayStep,
     PathwayStepBlock,
     Space,
+    SpaceMembership,
     StepProgress,
     StepResource,
 )
@@ -176,6 +179,86 @@ def _ensure_enrollment(user_id: str, pathway_id: str, db: Session) -> None:
             status="active",
         ))
         db.flush()
+
+
+def _check_pathway_access(
+    user: User,
+    pathway: Pathway,
+    space: Space,
+    db: Session,
+) -> None:
+    """
+    Raise HTTP 403 if the user does not have access to this pathway.
+
+    Access rules:
+      - creator/admin role → always allowed
+      - space creator/moderator membership → always allowed
+      - draft/archived pathway → denied to all non-creators
+      - coming_soon pathway → denied (About page is separate, not gated here)
+      - free pathway (active) → allowed
+      - included pathway (active) → allowed for space members
+      - one_time/subscription pathway → requires active PathwayEntitlement row
+    """
+    # Platform admins and creator-role users always have access
+    if user.role in ("creator", "admin"):
+        return
+
+    # Space creators and moderators always have access
+    space_role = (
+        db.query(SpaceMembership.role)
+        .filter(
+            SpaceMembership.user_id == user.id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.role.in_(["creator", "moderator"]),
+            SpaceMembership.status == "active",
+        )
+        .first()
+    )
+    if space_role:
+        return
+
+    p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
+    access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
+
+    if p_status in ("draft", "archived"):
+        raise HTTPException(status_code=403, detail="This pathway is not available.")
+    if p_status == "coming_soon":
+        raise HTTPException(status_code=403, detail="This pathway is coming soon.")
+
+    if access_type == "free":
+        return
+
+    if access_type == "included":
+        mem = (
+            db.query(SpaceMembership.id)
+            .filter(
+                SpaceMembership.user_id == user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == "active",
+            )
+            .first()
+        )
+        if mem:
+            return
+        raise HTTPException(status_code=403, detail="This pathway is included with space membership.")
+
+    # one_time / subscription — require an active entitlement
+    entitlement = (
+        db.query(PathwayEntitlement.id)
+        .filter(
+            PathwayEntitlement.user_id == user.id,
+            PathwayEntitlement.pathway_id == pathway.id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+        )
+        .first()
+    )
+    if entitlement:
+        return
+
+    raise HTTPException(
+        status_code=403,
+        detail="Access to this pathway requires a purchase or manual grant.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +515,7 @@ def list_steps(
 ) -> list[StepSummary]:
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _check_pathway_access(current_user, pathway, space, db)
 
     steps = (
         db.query(PathwayStep)
@@ -468,6 +552,7 @@ def get_step(
 ) -> StepDetail:
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
 
     progress = (
@@ -508,6 +593,7 @@ def complete_step(
 ) -> CompleteStepResponse:
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
 
     _ensure_enrollment(current_user.id, pathway.id, db)
@@ -552,6 +638,7 @@ def save_notes(
 ) -> SaveNotesResponse:
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
 
     progress = (
@@ -592,6 +679,7 @@ def list_step_resources(
 ) -> list[StepResource]:
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
     return (
         db.query(StepResource)
@@ -640,6 +728,7 @@ def list_step_blocks(
 ) -> list[PathwayStepBlock]:
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
     return (
         db.query(PathwayStepBlock)
