@@ -38,12 +38,9 @@ export default function SpaceNav({ spaceSlug }: SpaceNavProps) {
   )
   const pathwaySlug = pathwayMatch?.[1] ?? null
 
-  const aboutHref    = pathwaySlug ? `${base}/pathways/${pathwaySlug}/about` : null
-  const overviewHref = pathwaySlug ? `${base}/pathways/${pathwaySlug}`       : null
+  const aboutHref = pathwaySlug ? `${base}/pathways/${pathwaySlug}/about` : null
 
-  const isAboutTabActive    = !!aboutHref    && pathname === aboutHref
-  // "Pathway" tab is active on the overview AND any step page, but not the About page
-  const isPathwayTabActive  = !!overviewHref && pathname.startsWith(overviewHref) && pathname !== aboutHref
+  const isAboutTabActive = !!aboutHref && pathname === aboutHref
 
   // On mobile, switch from flex-1 (fill width) to fixed min-width when pathway
   // tabs are present so the row can scroll horizontally.
@@ -76,36 +73,19 @@ export default function SpaceNav({ spaceSlug }: SpaceNavProps) {
               </Link>
             ))}
 
-            {/* Pathway-level tabs — only visible when inside a specific pathway */}
-            {pathwaySlug && aboutHref && overviewHref && (
-              <>
-                {/* Thin visual divider between collective and pathway tabs */}
-                <div className="mx-3 self-center h-4 w-px bg-slate-200" aria-hidden="true" />
-
-                <Link
-                  href={aboutHref}
-                  className={[
-                    'inline-block shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
-                    isAboutTabActive
-                      ? 'border-teal-500 font-semibold text-teal-700'
-                      : 'border-transparent text-slate-500 hover:text-navy-700',
-                  ].join(' ')}
-                >
-                  About
-                </Link>
-
-                <Link
-                  href={overviewHref}
-                  className={[
-                    'inline-block shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
-                    isPathwayTabActive
-                      ? 'border-teal-500 font-semibold text-teal-700'
-                      : 'border-transparent text-slate-500 hover:text-navy-700',
-                  ].join(' ')}
-                >
-                  Pathway
-                </Link>
-              </>
+            {/* About tab — only visible when inside a specific pathway */}
+            {pathwaySlug && aboutHref && (
+              <Link
+                href={aboutHref}
+                className={[
+                  'inline-block shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
+                  isAboutTabActive
+                    ? 'border-teal-500 font-semibold text-teal-700'
+                    : 'border-transparent text-slate-500 hover:text-navy-700',
+                ].join(' ')}
+              >
+                About
+              </Link>
             )}
           </nav>
         </div>
@@ -133,25 +113,15 @@ export default function SpaceNav({ spaceSlug }: SpaceNavProps) {
             )
           })}
 
-          {/* Pathway-level tabs on mobile */}
-          {pathwaySlug && aboutHref && overviewHref && (
-            <>
-              <Link
-                href={aboutHref}
-                className={mobileTabClass(isAboutTabActive)}
-              >
-                <span className="text-base leading-none" aria-hidden="true">◇</span>
-                <span className="text-[10px] font-medium">About</span>
-              </Link>
-
-              <Link
-                href={overviewHref}
-                className={mobileTabClass(isPathwayTabActive)}
-              >
-                <span className="text-base leading-none" aria-hidden="true">▷</span>
-                <span className="text-[10px] font-medium">Pathway</span>
-              </Link>
-            </>
+          {/* About tab on mobile — only visible when inside a specific pathway */}
+          {pathwaySlug && aboutHref && (
+            <Link
+              href={aboutHref}
+              className={mobileTabClass(isAboutTabActive)}
+            >
+              <span className="text-base leading-none" aria-hidden="true">◇</span>
+              <span className="text-[10px] font-medium">About</span>
+            </Link>
           )}
         </div>
         {/* Safe area spacer for notched phones */}
