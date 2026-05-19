@@ -107,3 +107,57 @@ class ManualPaymentCreateRequest(BaseModel):
     net_platform_amount_cents: int | None = None
 
     notes: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Manual purchase simulation
+# ---------------------------------------------------------------------------
+
+class ManualPathwayPurchaseRequest(BaseModel):
+    payer_user_id: str
+    pathway_id: str
+    notes: str | None = None
+
+
+class ManualPathwayPurchaseResult(BaseModel):
+    transaction_id: str
+    entitlement_id: str
+    entitlement_source: str
+
+    payer_name: str | None
+    payer_email: str
+    pathway_title: str
+    space_name: str
+    space_slug: str
+
+    currency: str
+    gross_amount_cents: int
+    platform_fee_basis_points: int
+    platform_fee_cents: int
+    net_creator_amount_cents: int
+    net_platform_amount_cents: int
+
+
+# ---------------------------------------------------------------------------
+# Simple list types (for modal dropdowns)
+# ---------------------------------------------------------------------------
+
+class SimpleUserRow(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    name: str | None
+    email: str
+
+
+class SimplePaidPathwayRow(BaseModel):
+    id: str
+    title: str
+    space_id: str
+    space_name: str
+    space_slug: str
+    access_type: str
+    price_cents: int
+    currency: str
+    billing_interval: str | None
+    creator_fee_basis_points: int

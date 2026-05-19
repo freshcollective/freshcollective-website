@@ -22,14 +22,25 @@ from app.admin.schemas import (
     AdminUserResponse,
     CreatorBillingRow,
     ManualPaymentCreateRequest,
+    ManualPathwayPurchaseRequest,
+    ManualPathwayPurchaseResult,
     PaymentTransactionOut,
     RoleUpdateRequest,
+    SimplePaidPathwayRow,
+    SimpleUserRow,
 )
 from app.auth.dependencies import get_admin_user
 from app.core.database import get_db
 from app.models.creator_billing import CreatorPlan, CreatorSubscription, CreatorSubscriptionStatus
 from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentTransactionType, PaymentProvider
-from app.models.platform import Pathway, Space, SpaceMembership
+from app.models.platform import (
+    EntitlementSource,
+    EntitlementStatus,
+    Pathway,
+    PathwayEntitlement,
+    Space,
+    SpaceMembership,
+)
 from app.models.user import User
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -264,6 +275,275 @@ def list_payments(
         q = q.filter(PaymentTransaction.pathway_id == pathway_id)
     rows = q.order_by(PaymentTransaction.created_at.desc()).all()
     return [PaymentTransactionOut.model_validate(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Simple list helpers (for admin form dropdowns)
+# ---------------------------------------------------------------------------
+
+@router.get("/users/simple", response_model=list[SimpleUserRow])
+def list_users_simple(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[SimpleUserRow]:
+    """All users as id/name/email rows for dropdown population. Admin only."""
+    users = db.query(User).order_by(User.name).all()
+    return [SimpleUserRow.model_validate(u) for u in users]
+
+
+@router.get("/pathways/paid-simple", response_model=list[SimplePaidPathwayRow])
+def list_paid_pathways_simple(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[SimplePaidPathwayRow]:
+    """All paid pathways (one_time / subscription) with creator fee bps. Admin only."""
+    pathways = (
+        db.query(Pathway)
+        .join(Space, Space.id == Pathway.space_id)
+        .filter(Pathway.access_type.in_(["one_time", "subscription"]))
+        .order_by(Space.name, Pathway.title)
+        .all()
+    )
+
+    # Cheapest active plan as a fee fallback
+    fallback_plan = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.is_active.is_(True))
+        .order_by(CreatorPlan.monthly_price_cents)
+        .first()
+    )
+    fallback_bps = fallback_plan.transaction_fee_basis_points if fallback_plan else 800
+
+    # Cache creator fee bps per creator_user_id
+    fee_cache: dict[str, int] = {}
+
+    rows: list[SimplePaidPathwayRow] = []
+    for pw in pathways:
+        space = pw.space
+        creator_id: str | None = space.creator_id
+
+        if creator_id is None:
+            # Find creator via membership
+            mem = (
+                db.query(SpaceMembership)
+                .filter(
+                    SpaceMembership.space_id == space.id,
+                    SpaceMembership.role == "creator",
+                    SpaceMembership.status == "active",
+                )
+                .first()
+            )
+            creator_id = mem.user_id if mem else None
+
+        if creator_id and creator_id not in fee_cache:
+            sub = (
+                db.query(CreatorSubscription)
+                .filter(
+                    CreatorSubscription.user_id == creator_id,
+                    CreatorSubscription.status.in_([
+                        CreatorSubscriptionStatus.active,
+                        CreatorSubscriptionStatus.trialing,
+                    ]),
+                )
+                .order_by(CreatorSubscription.created_at.desc())
+                .first()
+            )
+            if sub:
+                plan = db.query(CreatorPlan).filter(CreatorPlan.id == sub.creator_plan_id).first()
+                fee_cache[creator_id] = plan.transaction_fee_basis_points if plan else fallback_bps
+            else:
+                fee_cache[creator_id] = fallback_bps
+
+        bps = fee_cache.get(creator_id or "", fallback_bps)
+
+        rows.append(SimplePaidPathwayRow(
+            id=pw.id,
+            title=pw.title,
+            space_id=space.id,
+            space_name=space.name,
+            space_slug=space.slug,
+            access_type=pw.access_type,
+            price_cents=pw.price_cents or 0,
+            currency=pw.currency or "AUD",
+            billing_interval=pw.billing_interval,
+            creator_fee_basis_points=bps,
+        ))
+
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Manual purchase simulation
+# ---------------------------------------------------------------------------
+
+@router.post("/payments/manual-pathway-purchase", response_model=ManualPathwayPurchaseResult, status_code=201)
+def manual_pathway_purchase(
+    body: ManualPathwayPurchaseRequest,
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> ManualPathwayPurchaseResult:
+    """
+    Admin-only: simulate a completed pathway purchase for a member.
+
+    Creates a PaymentTransaction (status=succeeded, provider=manual) and a
+    PathwayEntitlement (source=admin).  If the member already has an active
+    entitlement, returns 409.  If a revoked/inactive entitlement exists it is
+    reactivated rather than duplicated.
+    """
+    payer = db.query(User).filter(User.id == body.payer_user_id).first()
+    if not payer:
+        raise HTTPException(status_code=404, detail="Payer user not found.")
+
+    pathway = db.query(Pathway).filter(Pathway.id == body.pathway_id).first()
+    if not pathway:
+        raise HTTPException(status_code=404, detail="Pathway not found.")
+
+    space = db.query(Space).filter(Space.id == pathway.space_id).first()
+    if not space:
+        raise HTTPException(status_code=404, detail="Space not found.")
+
+    # Resolve creator
+    creator_id: str | None = space.creator_id
+    if creator_id is None:
+        mem = (
+            db.query(SpaceMembership)
+            .filter(
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.role == "creator",
+                SpaceMembership.status == "active",
+            )
+            .first()
+        )
+        creator_id = mem.user_id if mem else None
+
+    # Creator's current fee bps
+    fallback_plan = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.is_active.is_(True))
+        .order_by(CreatorPlan.monthly_price_cents)
+        .first()
+    )
+    fallback_bps = fallback_plan.transaction_fee_basis_points if fallback_plan else 800
+
+    fee_bps = fallback_bps
+    if creator_id:
+        sub = (
+            db.query(CreatorSubscription)
+            .filter(
+                CreatorSubscription.user_id == creator_id,
+                CreatorSubscription.status.in_([
+                    CreatorSubscriptionStatus.active,
+                    CreatorSubscriptionStatus.trialing,
+                ]),
+            )
+            .order_by(CreatorSubscription.created_at.desc())
+            .first()
+        )
+        if sub:
+            plan = db.query(CreatorPlan).filter(CreatorPlan.id == sub.creator_plan_id).first()
+            if plan:
+                fee_bps = plan.transaction_fee_basis_points
+
+    # Guard: active entitlement already exists
+    existing_active = (
+        db.query(PathwayEntitlement)
+        .filter(
+            PathwayEntitlement.user_id == body.payer_user_id,
+            PathwayEntitlement.pathway_id == body.pathway_id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+        )
+        .first()
+    )
+    if existing_active:
+        raise HTTPException(
+            status_code=409,
+            detail="Member already has an active entitlement for this pathway.",
+        )
+
+    # Fee/net calculations (basis points)
+    gross = pathway.price_cents or 0
+    currency = pathway.currency or "AUD"
+    platform_fee = round(gross * fee_bps / 10000)
+    net_creator = gross - platform_fee
+    net_platform = platform_fee
+
+    # Create or reactivate entitlement
+    existing_inactive = (
+        db.query(PathwayEntitlement)
+        .filter(
+            PathwayEntitlement.user_id == body.payer_user_id,
+            PathwayEntitlement.pathway_id == body.pathway_id,
+        )
+        .order_by(PathwayEntitlement.created_at.desc())
+        .first()
+    )
+
+    now = datetime.utcnow()
+    if existing_inactive:
+        ent = existing_inactive
+        ent.status = EntitlementStatus.active
+        ent.source = EntitlementSource.admin
+        ent.granted_by_user_id = admin.id
+        ent.revoked_by_user_id = None
+        ent.revoked_at = None
+        ent.ends_at = None
+        ent.notes = body.notes
+        ent.updated_at = now
+    else:
+        ent = PathwayEntitlement(
+            id=str(uuid4()),
+            user_id=body.payer_user_id,
+            space_id=space.id,
+            pathway_id=body.pathway_id,
+            source=EntitlementSource.admin,
+            status=EntitlementStatus.active,
+            starts_at=now,
+            granted_by_user_id=admin.id,
+            notes=body.notes,
+        )
+        db.add(ent)
+
+    db.flush()  # populate ent.id before referencing in txn
+
+    txn = PaymentTransaction(
+        id=str(uuid4()),
+        transaction_type=PaymentTransactionType.member_pathway_purchase,
+        status=PaymentTransactionStatus.succeeded,
+        payment_provider=PaymentProvider.manual,
+        payer_user_id=body.payer_user_id,
+        creator_user_id=creator_id,
+        space_id=space.id,
+        pathway_id=body.pathway_id,
+        entitlement_id=ent.id,
+        currency=currency,
+        gross_amount_cents=gross,
+        platform_fee_basis_points=fee_bps,
+        platform_fee_cents=platform_fee,
+        net_creator_amount_cents=net_creator,
+        net_platform_amount_cents=net_platform,
+        notes=body.notes,
+    )
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+    db.refresh(ent)
+
+    return ManualPathwayPurchaseResult(
+        transaction_id=txn.id,
+        entitlement_id=ent.id,
+        entitlement_source=ent.source.value,
+        payer_name=payer.name,
+        payer_email=payer.email,
+        pathway_title=pathway.title,
+        space_name=space.name,
+        space_slug=space.slug,
+        currency=currency,
+        gross_amount_cents=gross,
+        platform_fee_basis_points=fee_bps,
+        platform_fee_cents=platform_fee,
+        net_creator_amount_cents=net_creator,
+        net_platform_amount_cents=net_platform,
+    )
 
 
 @router.post("/payments/manual", response_model=PaymentTransactionOut, status_code=201)
