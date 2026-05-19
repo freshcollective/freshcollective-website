@@ -238,17 +238,36 @@ def get_creator_billing(
             stripe_connected=False,  # TODO: Stripe billing — set True when stripe_subscription_id is populated
         )
 
-    # Usage: count spaces owned by this creator
-    collectives_used = (
-        db.query(func.count(Space.id))
-        .filter(Space.creator_id == current_user.id)
-        .scalar()
-    ) or 0
+    # Usage: count all non-archived spaces this creator manages
+    # (owns directly OR holds creator/moderator membership in).
+    # This matches what the Creator Studio sidebar lists so both show the same number.
+    # Archived spaces do not count toward the plan limit.
+    _owned_ids: set[str] = {
+        row[0]
+        for row in db.query(Space.id)
+        .filter(
+            Space.creator_id == current_user.id,
+            Space.status.notin_(["archived"]),
+        )
+        .all()
+    }
+    _member_ids: set[str] = {
+        row[0]
+        for row in db.query(SpaceMembership.space_id)
+        .join(Space, Space.id == SpaceMembership.space_id)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.role.in_(["creator", "moderator"]),
+            SpaceMembership.status == "active",
+            Space.status.notin_(["archived"]),
+        )
+        .all()
+    }
+    managed_space_ids = _owned_ids | _member_ids
+    collectives_used = len(managed_space_ids)
 
-    # Usage: count pathways across all creator-owned spaces
-    creator_space_ids = [
-        row[0] for row in db.query(Space.id).filter(Space.creator_id == current_user.id).all()
-    ]
+    # Usage: count pathways across all creator-managed spaces
+    creator_space_ids = list(managed_space_ids)
     pathways_used = (
         db.query(func.count(Pathway.id))
         .filter(Pathway.space_id.in_(creator_space_ids))

@@ -70,7 +70,9 @@ function CollectiveSwitcher({
   collectiveLimit: number
 }) {
   const router = useRouter()
-  const atLimit = spaces.length >= collectiveLimit
+  // Count only non-archived spaces — matches the billing endpoint's definition
+  const activeSpaceCount = spaces.filter((s) => s.status !== 'archived').length
+  const atLimit = activeSpaceCount >= collectiveLimit
 
   function switchTo(slug: string) {
     document.cookie = `fc_creator_space=${slug}; path=/; max-age=86400`
@@ -161,7 +163,7 @@ function CollectiveSwitcher({
         ) : (
           <div>
             <p className="text-[11px]" style={{ color: 'rgba(255,255,255,0.55)' }}>
-              {spaces.length} of {collectiveLimit} collectives used
+              {activeSpaceCount} of {collectiveLimit} collectives used
             </p>
             <Link
               href="/creator-studio/billing"
