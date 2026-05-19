@@ -61,7 +61,8 @@ async def update_user_role(
 # ---------------------------------------------------------------------------
 
 def _creator_managed_space_ids(user_id: str, db: Session) -> set[str]:
-    """Return non-archived space IDs managed by this user (same logic as billing endpoint)."""
+    """Return non-archived space IDs managed by this user (same logic as billing endpoint).
+    Draft collectives count toward creator plan limits because they still occupy creator capacity."""
     owned = {
         r[0] for r in db.query(Space.id).filter(
             Space.creator_id == user_id,

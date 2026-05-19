@@ -242,6 +242,7 @@ def get_creator_billing(
     # (owns directly OR holds creator/moderator membership in).
     # This matches what the Creator Studio sidebar lists so both show the same number.
     # Archived spaces do not count toward the plan limit.
+    # Draft collectives count toward creator plan limits because they still occupy creator capacity.
     _owned_ids: set[str] = {
         row[0]
         for row in db.query(Space.id)
