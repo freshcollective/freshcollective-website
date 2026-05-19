@@ -312,6 +312,14 @@ export default function PathwayStepNav({
               <ProgressBar completedCount={completedCount} totalCount={totalCount} progressPct={progressPct} />
             </div>
             <div className="p-2">{stepList}</div>
+            <div className="border-t border-slate-100 px-4 py-3">
+              <Link
+                href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/about`}
+                className="text-[12px] text-slate-400 transition-colors hover:text-teal-600"
+              >
+                About this pathway →
+              </Link>
+            </div>
           </div>
         )}
       </div>
@@ -322,13 +330,19 @@ export default function PathwayStepNav({
       <div className="hidden lg:block">
         <div className="sticky top-6 overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
 
-          {/* Header: back link + progress */}
+          {/* Header: back link + about + progress */}
           <div className="border-b border-slate-100 px-4 py-4">
             <Link
               href={pathwayHref}
-              className="mb-3 inline-block text-[12px] font-medium text-slate-400 transition-colors hover:text-teal-600"
+              className="mb-1 inline-block text-[12px] font-medium text-slate-400 transition-colors hover:text-teal-600"
             >
               ← {pathwayTitle}
+            </Link>
+            <Link
+              href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/about`}
+              className="mb-3 block text-[11px] text-slate-400 transition-colors hover:text-teal-600"
+            >
+              About this pathway →
             </Link>
             <ProgressBar completedCount={completedCount} totalCount={totalCount} progressPct={progressPct} />
           </div>
