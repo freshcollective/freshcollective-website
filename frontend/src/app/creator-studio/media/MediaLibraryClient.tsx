@@ -386,7 +386,7 @@ export default function MediaLibraryClient({ initialAssets, spaceSlug, spaceName
   })
 
   return (
-    <div className="max-w-4xl px-8 py-8 md:px-10 md:py-10">
+    <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
 
       {/* Header */}
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">

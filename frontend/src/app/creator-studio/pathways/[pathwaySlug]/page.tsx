@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getActiveCreatorSpace, getCreatorPathway, getCreatorSections, getCreatorSteps } from '@/lib/serverApi'
 import type { CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
+import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
 import EditPathwayClient from './EditPathwayClient'
 
 interface Props {
@@ -14,7 +15,7 @@ export default async function EditPathwayPage({ params }: Props) {
 
   if (!activeSpace) {
     return (
-      <div className="max-w-2xl px-8 py-8 md:px-10 md:py-10">
+      <CreatorPageContainer>
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
           <p className="mb-2 text-[16px] font-semibold text-navy-900">No collective selected.</p>
           <Link
@@ -25,7 +26,7 @@ export default async function EditPathwayPage({ params }: Props) {
             Back to Studio Home
           </Link>
         </div>
-      </div>
+      </CreatorPageContainer>
     )
   }
 
@@ -38,7 +39,7 @@ export default async function EditPathwayPage({ params }: Props) {
   if (!pathway) notFound()
 
   return (
-    <div className="max-w-2xl px-8 py-8 md:px-10 md:py-10">
+    <CreatorPageContainer>
       <div className="mb-8">
         <Link
           href="/creator-studio/pathways"
@@ -63,6 +64,6 @@ export default async function EditPathwayPage({ params }: Props) {
         sections={sections}
         spaceSlug={activeSpace.slug}
       />
-    </div>
+    </CreatorPageContainer>
   )
 }

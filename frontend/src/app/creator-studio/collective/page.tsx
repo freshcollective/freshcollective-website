@@ -14,7 +14,7 @@ export default async function CollectiveOverviewPage() {
 
   if (!primarySpace) {
     return (
-      <div className="max-w-3xl px-8 py-8 md:px-10 md:py-10">
+      <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
           <p className="mb-2 text-[16px] font-semibold text-navy-900">No collective selected</p>
           <p className="mb-6 text-[14px] leading-relaxed text-slate-500">
@@ -76,7 +76,7 @@ export default async function CollectiveOverviewPage() {
   }
 
   return (
-    <div className="max-w-4xl px-8 py-8 md:px-10 md:py-10">
+    <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
 
       {/* Page header */}
       <div className="mb-8">

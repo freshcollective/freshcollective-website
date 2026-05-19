@@ -640,7 +640,7 @@ export default function PeopleClient({ members, invitations, spaceName, spaceSlu
   }
 
   return (
-    <div className="max-w-6xl space-y-6 px-8 py-8 md:px-10 md:py-10">
+    <div className="w-full max-w-[1180px] space-y-6 px-8 py-8 md:px-10 md:py-10">
 
       {/* ── Header ── */}
       <div>

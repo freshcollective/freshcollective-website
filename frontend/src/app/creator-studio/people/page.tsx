@@ -8,7 +8,7 @@ export default async function CreatorPeoplePage() {
 
   if (!activeSpace) {
     return (
-      <div className="max-w-3xl px-8 py-8 md:px-10 md:py-10">
+      <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
           <p className="mb-2 text-[16px] font-semibold text-navy-900">Select a collective first.</p>
           <p className="mb-6 text-[14px] leading-relaxed text-slate-500">

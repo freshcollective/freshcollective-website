@@ -889,170 +889,183 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
 
-      {/* Title */}
-      <div>
-        <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-          Pathway title <span className="font-normal text-slate-400">(required)</span>
-        </label>
-        <input
-          type="text" value={title}
-          onChange={(e) => { setTitle(e.target.value); setError(null) }}
-          placeholder="e.g. Slow Growth Practice"
-          className={`w-full rounded-lg border px-3 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400 ${error && !title.trim() ? 'border-red-300' : 'border-slate-200'}`}
-        />
-      </div>
+      {/* ── Two-column grid: form content left, settings/cover right ── */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
 
-      {/* Description */}
-      <div>
-        <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-          Short description <span className="font-normal text-slate-400">(optional)</span>
-        </label>
-        <input
-          type="text" value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="A guided pathway for moving slowly, reflecting honestly, and building new rhythm."
-          className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
-        />
-      </div>
+        {/* LEFT — title, description, practice body, save */}
+        <div className="rounded-2xl border border-border bg-white p-6">
+          <div className="space-y-5">
 
-      {/* Practice body */}
-      <div>
-        <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-          What will people practise? <span className="font-normal text-slate-400">(optional)</span>
-        </label>
-        <textarea
-          value={practiceBody}
-          onChange={(e) => setPracticeBody(e.target.value)}
-          placeholder="Describe the shift, skill, rhythm, or experience this pathway supports."
-          rows={4}
-          className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
-        />
-      </div>
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">
+                Pathway title <span className="font-normal text-slate-400">(required)</span>
+              </label>
+              <input
+                type="text" value={title}
+                onChange={(e) => { setTitle(e.target.value); setError(null) }}
+                placeholder="e.g. Slow Growth Practice"
+                className={`w-full rounded-lg border px-3 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400 ${error && !title.trim() ? 'border-red-300' : 'border-slate-200'}`}
+              />
+            </div>
 
-      {/* Status */}
-      <div>
-        <label className="mb-1 block text-[12px] font-semibold text-slate-600">Status</label>
-        <select
-          value={status} onChange={(e) => setStatus(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
-        >
-          <option value="draft">Draft</option>
-          <option value="active">Published</option>
-          <option value="coming_soon">Coming soon</option>
-          <option value="archived">Archived</option>
-        </select>
-      </div>
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">
+                Short description <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <input
+                type="text" value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="A guided pathway for moving slowly, reflecting honestly, and building new rhythm."
+                className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
+              />
+            </div>
 
-      {/* Access and pricing */}
-      <AccessPricingSection
-        accessType={accessType}
-        setAccessType={(v) => { setAccessType(v); setPriceError(null) }}
-        priceDollars={priceDollars}
-        setPriceDollars={(v) => { setPriceDollars(v); setPriceError(null) }}
-        currency={currency}
-        setCurrency={setCurrency}
-        priceError={priceError}
-      />
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">
+                What will people practise? <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                value={practiceBody}
+                onChange={(e) => setPracticeBody(e.target.value)}
+                placeholder="Describe the shift, skill, rhythm, or experience this pathway supports."
+                rows={5}
+                className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
+              />
+            </div>
 
-      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">{error}</p>}
-      {saved && (
-        <p className="rounded-lg px-3 py-2 text-[13px] font-medium" style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}>
-          Changes saved.
-        </p>
-      )}
-
-      <div className="flex justify-end border-t border-border pt-5">
-        <button
-          type="button"
-          disabled={loading || !title.trim()}
-          onClick={handleSave}
-          className="rounded-xl px-6 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-        >
-          {loading ? 'Saving…' : 'Save changes'}
-        </button>
-      </div>
-
-      {/* ── Pathway cover ── */}
-      <div className="rounded-2xl border border-border bg-white p-6">
-        <h2 className="mb-1 text-[16px] font-semibold text-navy-900">Pathway cover</h2>
-        <p className="mb-4 text-[13px] text-slate-500">
-          Add a visual cover so this pathway feels distinct and easy to recognise.
-        </p>
-
-        {(coverPreview ?? resolveMediaUrl(coverUrl)) && (
-          <div className="mb-4 overflow-hidden rounded-xl" style={{ maxWidth: 320 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={coverPreview ?? resolveMediaUrl(coverUrl)!}
-              alt="Pathway cover preview"
-              className="w-full object-cover"
-              style={{ aspectRatio: '16/9' }}
-            />
           </div>
-        )}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="cursor-pointer rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-navy-900 transition-colors hover:border-teal-300 hover:text-teal-700">
-            {coverUrl || coverPreview ? 'Replace image' : 'Choose image'}
-            <input
-              type="file" accept="image/jpeg,image/png" className="sr-only"
-              onChange={(e) => {
-                const f = e.target.files?.[0] ?? null
-                setCoverFile(f); setCoverError(null); setCoverSaved(false)
-                if (f) {
-                  const reader = new FileReader()
-                  reader.onload = (ev) => setCoverPreview(ev.target?.result as string)
-                  reader.readAsDataURL(f)
-                } else { setCoverPreview(null) }
-              }}
-            />
-          </label>
-
-          {coverFile && (
-            <button
-              type="button" disabled={coverUploading}
-              onClick={async () => {
-                if (!coverFile) return
-                setCoverUploading(true); setCoverError(null); setCoverSaved(false)
-                const form = new FormData()
-                form.append('file', coverFile)
-                try {
-                  const res = await fetch(
-                    apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/cover`),
-                    { method: 'POST', credentials: 'include', body: form },
-                  )
-                  if (!res.ok) {
-                    const b = await res.json().catch(() => ({}))
-                    setCoverError(typeof b.detail === 'string' ? b.detail : 'Upload failed.')
-                    return
-                  }
-                  const data = await res.json()
-                  setCoverUrl(data.cover_image_url ?? null)
-                  setCoverPreview(null); setCoverFile(null); setCoverSaved(true)
-                  startTransition(() => { router.refresh() })
-                  setTimeout(() => setCoverSaved(false), 3000)
-                } catch {
-                  setCoverError('Upload failed. Please try again.')
-                } finally { setCoverUploading(false) }
-              }}
-              className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-            >
-              {coverUploading ? 'Uploading…' : 'Upload'}
-            </button>
+          {error && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">{error}</p>}
+          {saved && (
+            <p className="mt-4 rounded-lg px-3 py-2 text-[13px] font-medium" style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}>
+              Changes saved.
+            </p>
           )}
 
-          <p className="text-[11px] text-slate-400">JPG or PNG · Wide image recommended (16:9)</p>
+          <div className="mt-6 flex justify-end border-t border-border pt-5">
+            <button
+              type="button"
+              disabled={loading || !title.trim()}
+              onClick={handleSave}
+              className="rounded-xl px-6 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            >
+              {loading ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
         </div>
 
-        {coverError && <p className="mt-2 text-[12px] text-red-600">{coverError}</p>}
-        {coverSaved && <p className="mt-2 text-[12px] font-medium" style={{ color: '#38A09E' }}>Cover image saved.</p>}
+        {/* RIGHT — status, access/pricing, cover image */}
+        <div className="space-y-5">
+
+          {/* Status */}
+          <div className="rounded-2xl border border-border bg-white p-5">
+            <label className="mb-2 block text-[12px] font-semibold text-slate-600">Status</label>
+            <select
+              value={status} onChange={(e) => setStatus(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
+            >
+              <option value="draft">Draft</option>
+              <option value="active">Published</option>
+              <option value="coming_soon">Coming soon</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+
+          {/* Access and pricing */}
+          <div className="rounded-2xl border border-border bg-white p-5">
+            <AccessPricingSection
+              accessType={accessType}
+              setAccessType={(v) => { setAccessType(v); setPriceError(null) }}
+              priceDollars={priceDollars}
+              setPriceDollars={(v) => { setPriceDollars(v); setPriceError(null) }}
+              currency={currency}
+              setCurrency={setCurrency}
+              priceError={priceError}
+            />
+          </div>
+
+          {/* Cover image */}
+          <div className="rounded-2xl border border-border bg-white p-5">
+            <h2 className="mb-0.5 text-[14px] font-semibold text-navy-900">Pathway cover</h2>
+            <p className="mb-3 text-[12px] text-slate-500">
+              Wide image recommended (16:9). JPG or PNG.
+            </p>
+
+            {(coverPreview ?? resolveMediaUrl(coverUrl)) && (
+              <div className="mb-3 overflow-hidden rounded-xl">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={coverPreview ?? resolveMediaUrl(coverUrl)!}
+                  alt="Pathway cover preview"
+                  className="w-full object-cover"
+                  style={{ aspectRatio: '16/9' }}
+                />
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-navy-900 transition-colors hover:border-teal-300 hover:text-teal-700">
+                {coverUrl || coverPreview ? 'Replace' : 'Choose image'}
+                <input
+                  type="file" accept="image/jpeg,image/png" className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null
+                    setCoverFile(f); setCoverError(null); setCoverSaved(false)
+                    if (f) {
+                      const reader = new FileReader()
+                      reader.onload = (ev) => setCoverPreview(ev.target?.result as string)
+                      reader.readAsDataURL(f)
+                    } else { setCoverPreview(null) }
+                  }}
+                />
+              </label>
+
+              {coverFile && (
+                <button
+                  type="button" disabled={coverUploading}
+                  onClick={async () => {
+                    if (!coverFile) return
+                    setCoverUploading(true); setCoverError(null); setCoverSaved(false)
+                    const form = new FormData()
+                    form.append('file', coverFile)
+                    try {
+                      const res = await fetch(
+                        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/cover`),
+                        { method: 'POST', credentials: 'include', body: form },
+                      )
+                      if (!res.ok) {
+                        const b = await res.json().catch(() => ({}))
+                        setCoverError(typeof b.detail === 'string' ? b.detail : 'Upload failed.')
+                        return
+                      }
+                      const data = await res.json()
+                      setCoverUrl(data.cover_image_url ?? null)
+                      setCoverPreview(null); setCoverFile(null); setCoverSaved(true)
+                      startTransition(() => { router.refresh() })
+                      setTimeout(() => setCoverSaved(false), 3000)
+                    } catch {
+                      setCoverError('Upload failed. Please try again.')
+                    } finally { setCoverUploading(false) }
+                  }}
+                  className="rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                >
+                  {coverUploading ? 'Uploading…' : 'Upload'}
+                </button>
+              )}
+            </div>
+
+            {coverError && <p className="mt-2 text-[12px] text-red-600">{coverError}</p>}
+            {coverSaved && <p className="mt-2 text-[12px] font-medium" style={{ color: '#38A09E' }}>Cover saved.</p>}
+          </div>
+
+        </div>
       </div>
 
-      {/* ── Pathway structure (unified) ── */}
+      {/* ── Pathway structure — full width ── */}
       <PathwayStructure
         pathway={pathway}
         steps={steps}

@@ -77,7 +77,7 @@ export default async function SetupPage() {
   const doneCount = checklist.filter((c) => c.status === 'complete').length
 
   return (
-    <div className="max-w-3xl px-8 py-8 md:px-10 md:py-10">
+    <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
 
       <div className="mb-8">
         <p

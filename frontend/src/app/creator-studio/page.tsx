@@ -48,7 +48,7 @@ export default async function CreatorStudioOverviewPage() {
   const atLimit = spaces.length >= MAX_COLLECTIVES_FOR_FOUNDING_CREATOR
 
   return (
-    <div className="max-w-4xl px-8 py-8 md:px-10 md:py-10 space-y-6">
+    <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10 space-y-6">
 
       {/* ── 1. Page header ── */}
       <div>
