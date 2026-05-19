@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getPathwayOverview, getPathwayAboutBlocks } from '@/lib/serverApi'
+import PathwaySubNav from '@/components/spaces/PathwaySubNav'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl, apiUrl } from '@/lib/api'
 import { isPathwayLocked, formatPathwayPrice, unlockCtaLabel } from '@/lib/pathwayAccess'
@@ -240,12 +241,19 @@ export default async function PathwayAboutPage({ params }: Props) {
     <div className="mx-auto max-w-5xl px-4 py-8 md:px-6">
 
       {/* Back link */}
-      <Link
-        href={locked ? `/spaces/${slug}/pathways` : `/spaces/${slug}/pathways/${pathwaySlug}`}
-        className="mb-6 inline-block text-sm text-slate-400 transition-colors hover:text-teal-600"
-      >
-        {locked ? '← All Pathways' : '← Back to pathway'}
-      </Link>
+      <div className="mb-4">
+        <Link
+          href={`/spaces/${slug}/pathways`}
+          className="text-sm text-slate-400 transition-colors hover:text-teal-600"
+        >
+          ← All Pathways
+        </Link>
+      </div>
+
+      {/* Sub-nav */}
+      <div className="mb-6">
+        <PathwaySubNav spaceSlug={slug} pathwaySlug={pathwaySlug} activeTab="about" />
+      </div>
 
       {/* ── Two-column layout on desktop ── */}
       <div className="grid gap-8 lg:grid-cols-[1fr_300px]">

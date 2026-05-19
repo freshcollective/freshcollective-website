@@ -158,10 +158,10 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
                 {badgeLabel}
               </span>
             )}
-            <div className="ml-auto flex items-center gap-3">
+            <div className="ml-auto flex items-center gap-2">
               <Link
                 href={aboutHref}
-                className="text-[11px] text-slate-400 transition-colors hover:text-teal-600"
+                className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:border-teal-200 hover:text-teal-600"
               >
                 About
               </Link>
