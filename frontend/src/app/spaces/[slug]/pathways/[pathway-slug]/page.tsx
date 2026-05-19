@@ -4,7 +4,6 @@ import { getPathwayOverview } from '@/lib/serverApi'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import { isPathwayLocked, unlockCtaLabel, formatPathwayPrice } from '@/lib/pathwayAccess'
-import PathwaySubNav from '@/components/spaces/PathwaySubNav'
 import type { PathwayWithSteps, StepSummary } from '@/types/platform'
 
 interface Props {
@@ -105,16 +104,13 @@ export default async function PathwayDetailPage({ params }: Props) {
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-4">
+      <div className="mb-6">
         <Link
           href={`/spaces/${slug}/pathways`}
           className="text-sm text-slate-400 transition-colors hover:text-teal-600"
         >
           ← All Pathways
         </Link>
-      </div>
-      <div className="mb-6">
-        <PathwaySubNav spaceSlug={slug} pathwaySlug={pathwaySlug} activeTab="pathway" />
       </div>
 
       {/* ── Pathway hero banner ── */}

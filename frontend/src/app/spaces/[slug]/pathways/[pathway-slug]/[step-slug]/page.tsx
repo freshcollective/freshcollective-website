@@ -5,7 +5,6 @@ import { getStep, getPathwayOverview, getStepResources, getStepBlocks } from '@/
 import StepActions from '@/components/spaces/StepActions'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import PathwayStepNav from '@/components/spaces/PathwayStepNav'
-import PathwaySubNav from '@/components/spaces/PathwaySubNav'
 import type { PathwayWithSteps, StepDetail, StepSummary, StepResource, StepBlock } from '@/types/platform'
 
 interface Props {
@@ -375,11 +374,6 @@ export default async function StepPage({ params }: Props) {
 
       {/* ── Right: step content ── */}
       <div className="min-w-0 flex-1">
-
-        {/* Sub-nav */}
-        <div className="mb-6">
-          <PathwaySubNav spaceSlug={slug} pathwaySlug={pathwaySlug} activeTab="pathway" />
-        </div>
 
         {/* Breadcrumb */}
         <div className="mb-8 flex items-center gap-2 text-sm text-slate-400">
