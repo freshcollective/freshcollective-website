@@ -739,6 +739,8 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
   const [blocks, setBlocks] = useState<StepBlock[]>(initialBlocks)
   const [adding, setAdding] = useState(false)
   const [newBlockId, setNewBlockId] = useState<string | null>(null)
+  const [converting, setConverting] = useState(false)
+  const [convertError, setConvertError] = useState<string | null>(null)
 
   // Step settings
   const [stepTitle, setStepTitle] = useState(step.title)
@@ -792,6 +794,28 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
       setNewBlockId(block.id)
     } finally {
       setAdding(false)
+    }
+  }
+
+  async function convertLegacy() {
+    setConverting(true)
+    setConvertError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}/convert-legacy`),
+        { method: 'POST', credentials: 'include' },
+      )
+      if (!res.ok) {
+        setConvertError('Conversion failed. Please try again.')
+        return
+      }
+      const newBlocks: StepBlock[] = await res.json()
+      setBlocks(newBlocks)
+      startTransition(() => router.refresh())
+    } catch {
+      setConvertError('Conversion failed. Please try again.')
+    } finally {
+      setConverting(false)
     }
   }
 
@@ -900,7 +924,30 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
         <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Content blocks</p>
 
         <div className="space-y-3">
-          {blocks.length === 0 && (
+          {blocks.length === 0 && step.content_body && (
+            <div
+              className="rounded-xl border p-5"
+              style={{ borderColor: 'rgba(234,179,8,0.35)', background: 'rgba(254,252,232,0.6)' }}
+            >
+              <p className="mb-1 text-[14px] font-semibold text-amber-800">Legacy content found</p>
+              <p className="mb-3 text-[13px] text-amber-700">
+                This step has existing content that was created before the block editor. Convert it into an
+                editable block so it appears here and members continue to see the same content.
+              </p>
+              {convertError && <p className="mb-2 text-[12px] text-red-600">{convertError}</p>}
+              <button
+                type="button"
+                disabled={converting}
+                onClick={convertLegacy}
+                className="rounded-lg px-4 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              >
+                {converting ? 'Converting…' : 'Convert to blocks'}
+              </button>
+            </div>
+          )}
+
+          {blocks.length === 0 && !step.content_body && (
             <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
               <p className="mb-1 text-[15px] font-semibold text-navy-900">No content blocks yet</p>
               <p className="text-[13px] text-slate-400">

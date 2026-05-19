@@ -7,7 +7,10 @@ Permission model:
   OR has a creator/moderator membership in that space.
 """
 
+import json
 import pathlib
+import re
+from datetime import datetime
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -1485,6 +1488,93 @@ def list_step_blocks(
         .order_by(PathwayStepBlock.position)
         .all()
     )
+
+
+def _parse_inline_bold(raw: str) -> list[dict]:
+    nodes: list[dict] = []
+    parts = re.split(r"\*\*(.+?)\*\*", raw)
+    for i, part in enumerate(parts):
+        if not part:
+            continue
+        if i % 2 == 0:
+            nodes.append({"type": "text", "text": part})
+        else:
+            nodes.append({"type": "text", "marks": [{"type": "bold"}], "text": part})
+    return nodes or [{"type": "text", "text": ""}]
+
+
+def _content_body_to_tiptap(content_body: str) -> str:
+    chunks = [c.strip() for c in re.split(r"\n\n+", content_body.strip()) if c.strip()]
+    nodes: list[dict] = []
+    for chunk in chunks:
+        if chunk == "---":
+            nodes.append({"type": "horizontalRule"})
+            continue
+        lines = chunk.split("\n")
+        if all(ln.startswith("- ") for ln in lines):
+            nodes.append({"type": "bulletList", "content": [
+                {"type": "listItem", "content": [
+                    {"type": "paragraph", "content": _parse_inline_bold(ln[2:])}
+                ]}
+                for ln in lines
+            ]})
+            continue
+        if len(lines) == 1 and re.match(r"^\*\*[^*]+\*\*$", chunk):
+            nodes.append({"type": "heading", "attrs": {"level": 3},
+                          "content": [{"type": "text", "text": chunk[2:-2]}]})
+            continue
+        para_text = " ".join(ln.strip() for ln in lines if ln.strip())
+        nodes.append({"type": "paragraph", "content": _parse_inline_bold(para_text)})
+    if not nodes:
+        nodes = [{"type": "paragraph", "content": [{"type": "text", "text": ""}]}]
+    return json.dumps({"type": "doc", "content": nodes}, ensure_ascii=False)
+
+
+@router.post(
+    "/spaces/{slug}/pathways/{pathway_slug}/steps/{step_slug}/convert-legacy",
+    response_model=list[StepBlockResponse],
+    status_code=201,
+)
+def convert_legacy_content(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[PathwayStepBlock]:
+    """Convert a step's legacy content_body into an editable text block.
+
+    Only acts when content_body is non-empty and the step has no existing blocks.
+    Safe to call multiple times — subsequent calls are no-ops.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    step = _get_step(pathway, step_slug, db)
+
+    existing = (
+        db.query(PathwayStepBlock)
+        .filter(PathwayStepBlock.step_id == step.id)
+        .order_by(PathwayStepBlock.position)
+        .all()
+    )
+    if existing:
+        return existing  # Already has blocks — nothing to do
+
+    if not step.content_body or not step.content_body.strip():
+        return []  # No legacy content to convert
+
+    tiptap_json = _content_body_to_tiptap(step.content_body)
+    block = PathwayStepBlock(
+        id=str(uuid4()),
+        step_id=step.id,
+        block_type="text",  # type: ignore[arg-type]
+        position=0,
+        content=tiptap_json,
+    )
+    db.add(block)
+    db.commit()
+    db.refresh(block)
+    return [block]
 
 
 @router.post(
