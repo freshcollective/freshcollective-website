@@ -43,3 +43,67 @@ class CreatorBillingRow(BaseModel):
 class AdminPlanChangeRequest(BaseModel):
     creator_plan_slug: str
     note: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Payment Transactions
+# ---------------------------------------------------------------------------
+
+class PaymentTransactionOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    transaction_type: str
+    status: str
+    payment_provider: str
+
+    payer_user_id: str | None
+    creator_user_id: str | None
+    space_id: str | None
+    pathway_id: str | None
+    entitlement_id: str | None
+    creator_plan_id: str | None
+    creator_subscription_id: str | None
+
+    currency: str
+    gross_amount_cents: int
+    platform_fee_basis_points: int
+    platform_fee_cents: int
+    processing_fee_cents: int | None
+    net_creator_amount_cents: int | None
+    net_platform_amount_cents: int | None
+
+    # Provider IDs intentionally included for admin visibility
+    # (do NOT expose provider secret keys — only IDs for lookup)
+    provider_checkout_session_id: str | None
+    provider_payment_intent_id: str | None
+    provider_charge_id: str | None
+    provider_invoice_id: str | None
+    provider_subscription_id: str | None
+
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ManualPaymentCreateRequest(BaseModel):
+    transaction_type: str
+    status: str = "succeeded"
+    payment_provider: str = "manual"
+
+    payer_user_id: str | None = None
+    creator_user_id: str | None = None
+    space_id: str | None = None
+    pathway_id: str | None = None
+    entitlement_id: str | None = None
+    creator_plan_id: str | None = None
+    creator_subscription_id: str | None = None
+
+    currency: str = "AUD"
+    gross_amount_cents: int
+    platform_fee_basis_points: int = 0
+    platform_fee_cents: int = 0
+    net_creator_amount_cents: int | None = None
+    net_platform_amount_cents: int | None = None
+
+    notes: str | None = None

@@ -754,3 +754,29 @@ class GrantEntitlementRequest(BaseModel):
 class RevokeEntitlementRequest(BaseModel):
     pathway_id: str
     notes: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Payment Transactions (creator-visible)
+# ---------------------------------------------------------------------------
+
+class CreatorPaymentTransactionOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    transaction_type: str
+    status: str
+
+    payer_user_id: str | None
+    space_id: str | None
+    pathway_id: str | None
+
+    currency: str
+    gross_amount_cents: int
+    platform_fee_basis_points: int
+    platform_fee_cents: int
+    net_creator_amount_cents: int | None
+
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime

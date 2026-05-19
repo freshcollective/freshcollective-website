@@ -13,6 +13,7 @@ import app.models.user      # noqa: F401 — ensures models are registered with 
 import app.models.sales     # noqa: F401 — registers sales pipeline models
 import app.models.platform        # noqa: F401 — registers Space-based platform models
 import app.models.creator_billing  # noqa: F401 — registers creator plan/subscription models
+import app.models.payment          # noqa: F401 — registers payment transaction ledger
 
 config = context.config
 

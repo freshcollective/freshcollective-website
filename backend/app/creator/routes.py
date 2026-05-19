@@ -24,6 +24,7 @@ from app.creator.schemas import (
     AboutBlockCreateRequest,
     CreatorBillingResponse,
     CreatorPaymentSetup,
+    CreatorPaymentTransactionOut,
     CreatorPlanOut,
     CreatorSubscriptionOut,
     CreatorUsage,
@@ -68,6 +69,7 @@ from app.creator.schemas import (
     slugify,
 )
 from app.models.creator_billing import CreatorPlan, CreatorSubscription
+from app.models.payment import PaymentTransaction, PaymentTransactionType
 from app.models.platform import (
     EntitlementSource,
     EntitlementStatus,
@@ -2440,3 +2442,30 @@ def delete_about_block(
 
     db.delete(block)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Creator Payments
+# ---------------------------------------------------------------------------
+
+@router.get("/payments", response_model=list[CreatorPaymentTransactionOut])
+def list_creator_payments(
+    current_user: User = Depends(get_creator_user),
+    db: Session = Depends(get_db),
+) -> list[CreatorPaymentTransactionOut]:
+    """
+    Return member payment transactions for the current creator's spaces/pathways.
+    Creator subscription payments are excluded — those live on the Billing page.
+    Only returns rows where creator_user_id matches the current user.
+    """
+    rows = (
+        db.query(PaymentTransaction)
+        .filter(
+            PaymentTransaction.creator_user_id == current_user.id,
+            # Exclude creator-subscription payments from this view
+            PaymentTransaction.transaction_type != PaymentTransactionType.creator_subscription_payment,
+        )
+        .order_by(PaymentTransaction.created_at.desc())
+        .all()
+    )
+    return [CreatorPaymentTransactionOut.model_validate(r) for r in rows]

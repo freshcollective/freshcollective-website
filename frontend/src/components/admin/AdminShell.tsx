@@ -12,7 +12,8 @@ const NAV_ITEMS = [
   { href: '/admin/sales/tasks', label: 'Tasks' },
   { href: '/admin/sales/subscriptions', label: 'Subscriptions' },
   { href: '/admin/sales/pricing', label: 'Pricing' },
-  { href: '/admin/billing', label: 'Creator Billing' },
+  { href: '/admin/billing',   label: 'Creator Billing' },
+  { href: '/admin/payments',  label: 'Payments' },
 ]
 
 function SidebarContent({

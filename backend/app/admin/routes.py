@@ -17,10 +17,18 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.admin import service
-from app.admin.schemas import AdminPlanChangeRequest, AdminUserResponse, CreatorBillingRow, RoleUpdateRequest
+from app.admin.schemas import (
+    AdminPlanChangeRequest,
+    AdminUserResponse,
+    CreatorBillingRow,
+    ManualPaymentCreateRequest,
+    PaymentTransactionOut,
+    RoleUpdateRequest,
+)
 from app.auth.dependencies import get_admin_user
 from app.core.database import get_db
 from app.models.creator_billing import CreatorPlan, CreatorSubscription, CreatorSubscriptionStatus
+from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentTransactionType, PaymentProvider
 from app.models.platform import Pathway, Space, SpaceMembership
 from app.models.user import User
 
@@ -226,3 +234,82 @@ async def get_stats(
     total = db.query(UserModel).count()
     admins = db.query(UserModel).filter(UserModel.role == "admin").count()
     return {"total_users": total, "admin_count": admins, "member_count": total - admins}
+
+
+# ---------------------------------------------------------------------------
+# Payment Transactions
+# ---------------------------------------------------------------------------
+
+@router.get("/payments", response_model=list[PaymentTransactionOut])
+def list_payments(
+    status: str | None = None,
+    transaction_type: str | None = None,
+    creator_user_id: str | None = None,
+    space_id: str | None = None,
+    pathway_id: str | None = None,
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[PaymentTransactionOut]:
+    """List all payment transactions with optional filters. Admin only."""
+    q = db.query(PaymentTransaction)
+    if status:
+        q = q.filter(PaymentTransaction.status == status)
+    if transaction_type:
+        q = q.filter(PaymentTransaction.transaction_type == transaction_type)
+    if creator_user_id:
+        q = q.filter(PaymentTransaction.creator_user_id == creator_user_id)
+    if space_id:
+        q = q.filter(PaymentTransaction.space_id == space_id)
+    if pathway_id:
+        q = q.filter(PaymentTransaction.pathway_id == pathway_id)
+    rows = q.order_by(PaymentTransaction.created_at.desc()).all()
+    return [PaymentTransactionOut.model_validate(r) for r in rows]
+
+
+@router.post("/payments/manual", response_model=PaymentTransactionOut, status_code=201)
+def create_manual_payment(
+    body: ManualPaymentCreateRequest,
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> PaymentTransactionOut:
+    """
+    Create a manual placeholder transaction for admin record-keeping.
+    Does not grant access automatically — entitlement linkage must be done
+    explicitly via the entitlement endpoints when needed.
+    """
+    # Validate enums before accepting
+    valid_types = {e.value for e in PaymentTransactionType}
+    valid_statuses = {e.value for e in PaymentTransactionStatus}
+    valid_providers = {e.value for e in PaymentProvider}
+
+    if body.transaction_type not in valid_types:
+        raise HTTPException(status_code=422, detail=f"Invalid transaction_type '{body.transaction_type}'.")
+    if body.status not in valid_statuses:
+        raise HTTPException(status_code=422, detail=f"Invalid status '{body.status}'.")
+    if body.payment_provider not in valid_providers:
+        raise HTTPException(status_code=422, detail=f"Invalid payment_provider '{body.payment_provider}'.")
+
+    txn = PaymentTransaction(
+        id=str(uuid4()),
+        transaction_type=body.transaction_type,
+        status=body.status,
+        payment_provider=body.payment_provider,
+        payer_user_id=body.payer_user_id,
+        creator_user_id=body.creator_user_id,
+        space_id=body.space_id,
+        pathway_id=body.pathway_id,
+        entitlement_id=body.entitlement_id,
+        creator_plan_id=body.creator_plan_id,
+        creator_subscription_id=body.creator_subscription_id,
+        currency=body.currency,
+        gross_amount_cents=body.gross_amount_cents,
+        platform_fee_basis_points=body.platform_fee_basis_points,
+        platform_fee_cents=body.platform_fee_cents,
+        net_creator_amount_cents=body.net_creator_amount_cents,
+        net_platform_amount_cents=body.net_platform_amount_cents,
+        notes=body.notes,
+    )
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+    return PaymentTransactionOut.model_validate(txn)

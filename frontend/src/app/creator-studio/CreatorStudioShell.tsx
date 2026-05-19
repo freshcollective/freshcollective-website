@@ -37,7 +37,8 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     label: 'ACCOUNT',
     items: [
       { href: '/creator-studio',         label: 'Studio Home', exact: true },
-      { href: '/creator-studio/billing', label: 'Billing' },
+      { href: '/creator-studio/billing',  label: 'Billing' },
+      { href: '/creator-studio/payments', label: 'Payments' },
     ],
   },
   {
