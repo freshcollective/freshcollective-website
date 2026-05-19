@@ -7,40 +7,26 @@ import type { CreatorPathway, CreatorSection, CreatorStep } from '@/types/platfo
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
-// Access / Pricing selector (same options as create form)
+// Constants
 // ---------------------------------------------------------------------------
 
 const ACCESS_OPTIONS = [
-  {
-    value: 'free',
-    label: 'Free',
-    description: 'Anyone with access to the collective can begin this pathway.',
-  },
-  {
-    value: 'included',
-    label: 'Included in collective access',
-    description: 'Available to members who already have access to this collective.',
-  },
-  {
-    value: 'one_time',
-    label: 'One-off payment',
-    description: 'People pay once to access this pathway.',
-  },
-  {
-    value: 'subscription',
-    label: 'Monthly subscription',
-    description: 'People pay monthly for ongoing access to this pathway.',
-  },
+  { value: 'free', label: 'Free', description: 'Anyone with access to the collective can begin this pathway.' },
+  { value: 'included', label: 'Included in collective access', description: 'Available to members who already have access to this collective.' },
+  { value: 'one_time', label: 'One-off payment', description: 'People pay once to access this pathway.' },
+  { value: 'subscription', label: 'Monthly subscription', description: 'People pay monthly for ongoing access to this pathway.' },
 ]
 
+const CONTENT_TYPE_LABEL: Record<string, string> = {
+  text: 'Text', video: 'Video', audio: 'Audio', reflection: 'Reflection', exercise: 'Exercise',
+}
+
+// ---------------------------------------------------------------------------
+// AccessPricingSection
+// ---------------------------------------------------------------------------
+
 function AccessPricingSection({
-  accessType,
-  setAccessType,
-  priceDollars,
-  setPriceDollars,
-  currency,
-  setCurrency,
-  priceError,
+  accessType, setAccessType, priceDollars, setPriceDollars, currency, setCurrency, priceError,
 }: {
   accessType: string
   setAccessType: (v: string) => void
@@ -54,9 +40,7 @@ function AccessPricingSection({
 
   return (
     <div>
-      <label className="mb-2 block text-[12px] font-semibold text-slate-600">
-        Access and pricing
-      </label>
+      <label className="mb-2 block text-[12px] font-semibold text-slate-600">Access and pricing</label>
       <div className="space-y-2">
         {ACCESS_OPTIONS.map((opt) => {
           const selected = accessType === opt.value
@@ -75,17 +59,11 @@ function AccessPricingSection({
               <div className="flex items-center gap-3">
                 <div
                   className="mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 transition-colors"
-                  style={
-                    selected
-                      ? { borderColor: '#38A09E', background: '#38A09E' }
-                      : { borderColor: '#cbd5e1', background: 'white' }
-                  }
+                  style={selected ? { borderColor: '#38A09E', background: '#38A09E' } : { borderColor: '#cbd5e1', background: 'white' }}
                 />
                 <div>
                   <p className="text-[14px] font-semibold text-navy-900">{opt.label}</p>
-                  <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">
-                    {opt.description}
-                  </p>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">{opt.description}</p>
                 </div>
               </div>
             </button>
@@ -100,31 +78,20 @@ function AccessPricingSection({
               {accessType === 'subscription' ? 'Monthly price' : 'Price'}
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">
-                $
-              </span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">$</span>
               <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={priceDollars}
-                onChange={(e) => setPriceDollars(e.target.value)}
-                placeholder="0.00"
-                className={`w-full rounded-lg border py-2 pl-7 pr-3 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400 ${
-                  priceError ? 'border-red-300' : 'border-slate-200'
-                }`}
+                type="number" min="0" step="0.01" value={priceDollars}
+                onChange={(e) => setPriceDollars(e.target.value)} placeholder="0.00"
+                className={`w-full rounded-lg border py-2 pl-7 pr-3 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400 ${priceError ? 'border-red-300' : 'border-slate-200'}`}
               />
             </div>
-            {priceError && (
-              <p className="mt-1 text-[12px] text-red-600">{priceError}</p>
-            )}
+            {priceError && <p className="mt-1 text-[12px] text-red-600">{priceError}</p>}
           </div>
           <div className="w-28">
             <label className="mb-1 block text-[12px] font-semibold text-slate-600">Currency</label>
             <select
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
+              value={currency} onChange={(e) => setCurrency(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none focus:border-teal-400"
             >
               <option value="AUD">AUD</option>
               <option value="USD">USD</option>
@@ -136,7 +103,6 @@ function AccessPricingSection({
         </div>
       )}
 
-      {/* TODO: Connect pathway pricing to payment/checkout flow when Stripe is wired. */}
       {isPaid && (
         <p className="mt-2 text-[11px] text-slate-400">
           Pricing is saved for configuration. Payment processing will be connected when Stripe is set up.
@@ -147,36 +113,24 @@ function AccessPricingSection({
 }
 
 // ---------------------------------------------------------------------------
-// Step content type label
-// ---------------------------------------------------------------------------
-
-const CONTENT_TYPE_LABEL: Record<string, string> = {
-  text:       'Text',
-  video:      'Video',
-  audio:      'Audio',
-  reflection: 'Reflection',
-  exercise:   'Exercise',
-}
-
-// ---------------------------------------------------------------------------
-// Add Step inline form
+// AddStepForm — supports section selection and default section
 // ---------------------------------------------------------------------------
 
 function AddStepForm({
-  spaceSlug,
-  pathwaySlug,
-  onAdded,
-  onCancel,
+  spaceSlug, pathwaySlug, sections, defaultSectionId, onAdded, onCancel,
 }: {
   spaceSlug: string
   pathwaySlug: string
+  sections: CreatorSection[]
+  defaultSectionId: string | null
   onAdded: () => void
   onCancel: () => void
 }) {
-  const [title, setTitle]           = useState('')
+  const [title, setTitle] = useState('')
   const [contentType, setContentType] = useState('text')
-  const [loading, setLoading]       = useState(false)
-  const [error, setError]           = useState<string | null>(null)
+  const [sectionId, setSectionId] = useState<string>(defaultSectionId ?? '')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleAdd() {
     if (!title.trim()) { setError('Step title is required.'); return }
@@ -189,7 +143,11 @@ function AddStepForm({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ title: title.trim(), content_type: contentType }),
+          body: JSON.stringify({
+            title: title.trim(),
+            content_type: contentType,
+            section_id: sectionId || null,
+          }),
         },
       )
       if (!res.ok) {
@@ -209,19 +167,21 @@ function AddStepForm({
   return (
     <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
       <p className="mb-3 text-[13px] font-semibold text-navy-900">New step</p>
-      <div className="flex flex-col gap-3 sm:flex-row">
+      <div className="mb-3">
         <input
           type="text"
           value={title}
           autoFocus
           onChange={(e) => { setTitle(e.target.value); setError(null) }}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleAdd() }}
           placeholder="Step title"
-          className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
+          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
         />
+      </div>
+      <div className="flex flex-wrap gap-3">
         <select
-          value={contentType}
-          onChange={(e) => setContentType(e.target.value)}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
+          value={contentType} onChange={(e) => setContentType(e.target.value)}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
         >
           <option value="text">Text</option>
           <option value="video">Video</option>
@@ -229,6 +189,17 @@ function AddStepForm({
           <option value="reflection">Reflection</option>
           <option value="exercise">Exercise</option>
         </select>
+        {sections.length > 0 && (
+          <select
+            value={sectionId} onChange={(e) => setSectionId(e.target.value)}
+            className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+          >
+            <option value="">No section</option>
+            {sections.map((sec) => (
+              <option key={sec.id} value={sec.id}>{sec.title}</option>
+            ))}
+          </select>
+        )}
       </div>
       {error && <p className="mt-2 text-[12px] text-red-600">{error}</p>}
       <div className="mt-3 flex items-center gap-2">
@@ -241,11 +212,7 @@ function AddStepForm({
         >
           {loading ? 'Adding…' : 'Add step'}
         </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-[13px] text-slate-500 transition-colors hover:text-navy-900"
-        >
+        <button type="button" onClick={onCancel} className="text-[13px] text-slate-500 transition-colors hover:text-navy-900">
           Cancel
         </button>
       </div>
@@ -254,155 +221,461 @@ function AddStepForm({
 }
 
 // ---------------------------------------------------------------------------
-// Section manager
+// StepRow — single step within the structure card
 // ---------------------------------------------------------------------------
 
-function SectionManager({
-  spaceSlug,
-  pathwaySlug,
-  sections,
-  setSections,
+function StepRow({
+  step, num, sections, pathwaySlug, onSectionChange,
 }: {
-  spaceSlug: string
-  pathwaySlug: string
+  step: CreatorStep
+  num: number
   sections: CreatorSection[]
+  pathwaySlug: string
+  onSectionChange: (step: CreatorStep, sectionId: string | null) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+      <span
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+        style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
+      >
+        {num}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-navy-900">
+        {step.title}
+      </span>
+      <span
+        className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+        style={{ background: 'rgba(0,0,0,0.04)', color: '#64748b' }}
+      >
+        {CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}
+      </span>
+      {sections.length > 0 && (
+        <select
+          value={step.section_id ?? ''}
+          onChange={(e) => onSectionChange(step, e.target.value || null)}
+          className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-500 outline-none focus:border-teal-400"
+        >
+          <option value="">No section</option>
+          {sections.map((sec) => (
+            <option key={sec.id} value={sec.id}>{sec.title}</option>
+          ))}
+        </select>
+      )}
+      <Link
+        href={`/creator-studio/pathways/${pathwaySlug}/steps/${step.slug}`}
+        className="shrink-0 text-[12px] font-medium text-teal-700 transition-opacity hover:opacity-70"
+      >
+        Edit →
+      </Link>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// PathwayStructure — unified sections + steps card
+// ---------------------------------------------------------------------------
+
+function PathwayStructure({
+  pathway, steps, sections, spaceSlug, setSteps, setSections,
+}: {
+  pathway: CreatorPathway
+  steps: CreatorStep[]
+  sections: CreatorSection[]
+  spaceSlug: string
+  setSteps: (s: CreatorStep[]) => void
   setSections: (s: CreatorSection[]) => void
 }) {
-  const [adding, setAdding] = useState(false)
-  const [newTitle, setNewTitle] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editTitle, setEditTitle] = useState('')
+  const router = useRouter()
+  const [, startTransition] = useTransition()
 
-  async function handleAdd() {
-    if (!newTitle.trim()) return
-    setSaving(true)
-    setError(null)
-    try {
-      const res = await fetch(
-        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/sections`),
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ title: newTitle.trim() }) },
-      )
-      if (!res.ok) { setError('Could not add section.'); return }
-      const created: CreatorSection = await res.json()
-      setSections([...sections, created])
-      setNewTitle('')
-      setAdding(false)
-    } catch { setError('Could not add section.') }
-    finally { setSaving(false) }
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [addingSection, setAddingSection] = useState(false)
+  const [newSectionTitle, setNewSectionTitle] = useState('')
+  const [savingSection, setSavingSection] = useState(false)
+  // addingToContext: null=closed, 'global'=unsectioned form, or a section id
+  const [addingToContext, setAddingToContext] = useState<string | null>(null)
+
+  function stepsForSection(sectionId: string): CreatorStep[] {
+    return steps.filter((s) => s.section_id === sectionId)
+  }
+  const unsectionedSteps = steps.filter((s) => !s.section_id)
+
+  function globalNum(stepId: string): number {
+    return steps.findIndex((s) => s.id === stepId) + 1
   }
 
-  async function handleEdit(id: string) {
+  async function handleStepSectionChange(step: CreatorStep, newSectionId: string | null) {
+    const res = await fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}`),
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ section_id: newSectionId }),
+      },
+    )
+    if (res.ok) setSteps(steps.map((s) => (s.id === step.id ? { ...s, section_id: newSectionId } : s)))
+  }
+
+  async function handleSectionMove(idx: number, dir: -1 | 1) {
+    const swapIdx = idx + dir
+    if (swapIdx < 0 || swapIdx >= sections.length) return
+    const next = [...sections]
+    ;[next[idx], next[swapIdx]] = [next[swapIdx], next[idx]]
+    setSections(next)
+    await fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/sections/reorder`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids: next.map((s) => s.id) }),
+      },
+    )
+  }
+
+  async function handleSectionRename(id: string) {
     if (!editTitle.trim()) return
     const res = await fetch(
-      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/sections/${id}`),
-      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ title: editTitle.trim() }) },
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/sections/${id}`),
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ title: editTitle.trim() }),
+      },
     )
     if (!res.ok) return
     const updated: CreatorSection = await res.json()
     setSections(sections.map((s) => (s.id === id ? updated : s)))
-    setEditingId(null)
+    setEditingSectionId(null)
   }
 
-  async function handleDelete(id: string) {
+  async function handleSectionDelete(id: string) {
     const res = await fetch(
-      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/sections/${id}`),
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/sections/${id}`),
       { method: 'DELETE', credentials: 'include' },
     )
-    if (res.ok) setSections(sections.filter((s) => s.id !== id))
+    if (res.ok) {
+      setSections(sections.filter((s) => s.id !== id))
+      setSteps(steps.map((s) => (s.section_id === id ? { ...s, section_id: null } : s)))
+    }
   }
+
+  async function handleSectionAdd() {
+    if (!newSectionTitle.trim()) return
+    setSavingSection(true)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/sections`),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ title: newSectionTitle.trim() }),
+        },
+      )
+      if (res.ok) {
+        const created: CreatorSection = await res.json()
+        setSections([...sections, created])
+        setNewSectionTitle('')
+        setAddingSection(false)
+      }
+    } finally {
+      setSavingSection(false)
+    }
+  }
+
+  function handleStepAdded() {
+    setAddingToContext(null)
+    startTransition(() => { router.refresh() })
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps`), { credentials: 'include' })
+      .then((r) => r.json())
+      .then((data: CreatorStep[]) => setSteps(data))
+      .catch(() => { /* router.refresh() covers it */ })
+  }
+
+  const isEmpty = steps.length === 0 && sections.length === 0 && !addingSection && !addingToContext
 
   return (
     <div className="rounded-2xl border border-border bg-white p-6">
-      <div className="mb-4 flex items-center justify-between">
+
+      {/* ── Header ── */}
+      <div className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[16px] font-semibold text-navy-900">Sections</h2>
+          <h2 className="text-[16px] font-semibold text-navy-900">Pathway structure</h2>
           <p className="mt-0.5 text-[13px] text-slate-500">
-            Group steps into modules or phases.
+            {isEmpty
+              ? 'Add steps to shape the journey, or create sections to organise them into modules.'
+              : `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}${sections.length > 0 ? ` · ${sections.length} ${sections.length === 1 ? 'section' : 'sections'}` : ''}`
+            }
           </p>
         </div>
-        {!adding && (
+        {!addingSection && (
           <button
             type="button"
-            onClick={() => setAdding(true)}
-            className="rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:border-teal-300 hover:text-teal-700"
+            onClick={() => setAddingSection(true)}
+            className="shrink-0 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:border-teal-300 hover:text-teal-700"
           >
             + Add section
           </button>
         )}
       </div>
 
-      {sections.length === 0 && !adding && (
-        <p className="text-[13px] italic text-slate-400">No sections yet. Steps will appear as a flat list.</p>
-      )}
-
-      {sections.length > 0 && (
-        <ul className="mb-4 space-y-2">
-          {sections.map((sec) => (
-            <li key={sec.id} className="flex items-center gap-3 rounded-lg border border-border bg-slate-50 px-4 py-2.5">
-              {editingId === sec.id ? (
-                <>
-                  <input
-                    autoFocus
-                    value={editTitle}
-                    onChange={(e) => setEditTitle(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleEdit(sec.id); if (e.key === 'Escape') setEditingId(null) }}
-                    className="flex-1 rounded-lg border border-slate-200 px-2 py-1 text-[13px] text-navy-900 outline-none focus:border-teal-400"
-                  />
-                  <button type="button" onClick={() => handleEdit(sec.id)} className="text-[12px] font-semibold text-teal-700 hover:opacity-70">Save</button>
-                  <button type="button" onClick={() => setEditingId(null)} className="text-[12px] text-slate-400 hover:text-navy-900">Cancel</button>
-                </>
-              ) : (
-                <>
-                  <span className="flex-1 text-[14px] font-medium text-navy-900">{sec.title}</span>
-                  <button type="button" onClick={() => { setEditingId(sec.id); setEditTitle(sec.title) }} className="text-[12px] text-slate-400 transition-colors hover:text-teal-700">Edit</button>
-                  <button type="button" onClick={() => handleDelete(sec.id)} className="text-[12px] text-slate-400 transition-colors hover:text-red-500">Delete</button>
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {adding && (
-        <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
+      {/* ── New section form ── */}
+      {addingSection && (
+        <div className="mb-5 rounded-xl border border-teal-200 bg-teal-50/40 p-4">
+          <p className="mb-2.5 text-[13px] font-semibold text-navy-900">New section</p>
           <input
             autoFocus
             type="text"
-            value={newTitle}
-            onChange={(e) => { setNewTitle(e.target.value); setError(null) }}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') { setAdding(false); setNewTitle('') } }}
-            placeholder="Section title, e.g. Week 1 — Foundation"
+            value={newSectionTitle}
+            onChange={(e) => setNewSectionTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSectionAdd()
+              if (e.key === 'Escape') { setAddingSection(false); setNewSectionTitle('') }
+            }}
+            placeholder="e.g. Week 1 — Foundation"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400"
           />
-          {error && <p className="mt-1 text-[12px] text-red-600">{error}</p>}
           <div className="mt-3 flex items-center gap-2">
             <button
               type="button"
-              disabled={saving || !newTitle.trim()}
-              onClick={handleAdd}
+              disabled={savingSection || !newSectionTitle.trim()}
+              onClick={handleSectionAdd}
               className="rounded-lg px-4 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
               style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
             >
-              {saving ? 'Adding…' : 'Add section'}
+              {savingSection ? 'Adding…' : 'Add section'}
             </button>
-            <button type="button" onClick={() => { setAdding(false); setNewTitle('') }} className="text-[13px] text-slate-500 hover:text-navy-900">Cancel</button>
+            <button
+              type="button"
+              onClick={() => { setAddingSection(false); setNewSectionTitle('') }}
+              className="text-[13px] text-slate-500 transition-colors hover:text-navy-900"
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
+
+      {/* ── Sectioned view ── */}
+      {sections.length > 0 && (
+        <div className="space-y-3">
+          {sections.map((section, sectionIdx) => {
+            const sectionSteps = stepsForSection(section.id)
+            const isEditing = editingSectionId === section.id
+            const isAddingHere = addingToContext === section.id
+
+            return (
+              <div key={section.id} className="overflow-hidden rounded-xl border border-slate-200">
+
+                {/* Section header */}
+                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2.5">
+                  {/* Reorder buttons */}
+                  <div className="flex shrink-0 flex-col gap-px">
+                    <button
+                      type="button"
+                      onClick={() => handleSectionMove(sectionIdx, -1)}
+                      disabled={sectionIdx === 0}
+                      className="flex h-4 w-5 items-center justify-center text-slate-300 transition-colors hover:text-slate-600 disabled:opacity-30"
+                      aria-label="Move section up"
+                    >
+                      <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                        <path d="M1 5l4-4 4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSectionMove(sectionIdx, 1)}
+                      disabled={sectionIdx === sections.length - 1}
+                      className="flex h-4 w-5 items-center justify-center text-slate-300 transition-colors hover:text-slate-600 disabled:opacity-30"
+                      aria-label="Move section down"
+                    >
+                      <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+                        <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Title / edit input */}
+                  {isEditing ? (
+                    <input
+                      autoFocus
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSectionRename(section.id)
+                        if (e.key === 'Escape') setEditingSectionId(null)
+                      }}
+                      className="flex-1 rounded-lg border border-teal-300 bg-white px-2.5 py-1 text-[13px] text-navy-900 outline-none"
+                    />
+                  ) : (
+                    <span className="flex-1 text-[13px] font-semibold text-navy-900">
+                      {section.title}
+                    </span>
+                  )}
+
+                  <span className="shrink-0 text-[11px] text-slate-400">
+                    {sectionSteps.length} {sectionSteps.length === 1 ? 'step' : 'steps'}
+                  </span>
+
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleSectionRename(section.id)}
+                        className="shrink-0 text-[12px] font-semibold text-teal-700 hover:opacity-70"
+                      >Save</button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingSectionId(null)}
+                        className="shrink-0 text-[12px] text-slate-400 hover:text-navy-900"
+                      >Cancel</button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => { setEditingSectionId(section.id); setEditTitle(section.title) }}
+                        className="shrink-0 text-[12px] text-slate-400 transition-colors hover:text-teal-700"
+                      >Rename</button>
+                      <button
+                        type="button"
+                        onClick={() => handleSectionDelete(section.id)}
+                        className="shrink-0 text-[12px] text-slate-400 transition-colors hover:text-red-500"
+                      >Delete</button>
+                    </>
+                  )}
+                </div>
+
+                {/* Steps in this section */}
+                {sectionSteps.length > 0 && (
+                  <div className="divide-y divide-slate-50">
+                    {sectionSteps.map((step) => (
+                      <StepRow
+                        key={step.id}
+                        step={step}
+                        num={globalNum(step.id)}
+                        sections={sections}
+                        pathwaySlug={pathway.slug}
+                        onSectionChange={handleStepSectionChange}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {sectionSteps.length === 0 && !isAddingHere && (
+                  <p className="px-4 py-3 text-[13px] italic text-slate-400">No steps in this section yet.</p>
+                )}
+
+                {/* Per-section add step */}
+                <div className="border-t border-slate-50 px-4 py-3">
+                  {isAddingHere ? (
+                    <AddStepForm
+                      spaceSlug={spaceSlug}
+                      pathwaySlug={pathway.slug}
+                      sections={sections}
+                      defaultSectionId={section.id}
+                      onAdded={handleStepAdded}
+                      onCancel={() => setAddingToContext(null)}
+                    />
+                  ) : (
+                    !addingToContext && (
+                      <button
+                        type="button"
+                        onClick={() => setAddingToContext(section.id)}
+                        className="text-[12px] font-medium text-slate-400 transition-colors hover:text-teal-700"
+                      >
+                        + Add step here
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Unsectioned group */}
+          {unsectionedSteps.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-dashed border-slate-200">
+              <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
+                <span className="text-[12px] font-medium text-slate-500">
+                  Unsectioned · {unsectionedSteps.length} {unsectionedSteps.length === 1 ? 'step' : 'steps'}
+                </span>
+              </div>
+              <div className="divide-y divide-slate-50">
+                {unsectionedSteps.map((step) => (
+                  <StepRow
+                    key={step.id}
+                    step={step}
+                    num={globalNum(step.id)}
+                    sections={sections}
+                    pathwaySlug={pathway.slug}
+                    onSectionChange={handleStepSectionChange}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Flat view (no sections) ── */}
+      {sections.length === 0 && steps.length > 0 && (
+        <div className="mb-4 overflow-hidden rounded-xl border border-slate-200">
+          <div className="divide-y divide-slate-50">
+            {steps.map((step, i) => (
+              <StepRow
+                key={step.id}
+                step={step}
+                num={i + 1}
+                sections={sections}
+                pathwaySlug={pathway.slug}
+                onSectionChange={handleStepSectionChange}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Global add step ── */}
+      <div className={sections.length > 0 || steps.length > 0 ? 'mt-4' : ''}>
+        {addingToContext === 'global' ? (
+          <AddStepForm
+            spaceSlug={spaceSlug}
+            pathwaySlug={pathway.slug}
+            sections={sections}
+            defaultSectionId={null}
+            onAdded={handleStepAdded}
+            onCancel={() => setAddingToContext(null)}
+          />
+        ) : (
+          !addingToContext && (
+            <button
+              type="button"
+              onClick={() => setAddingToContext('global')}
+              className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-[13px] font-medium text-slate-500 transition-colors hover:border-teal-300 hover:text-teal-700"
+            >
+              {sections.length > 0 ? '+ Add step without section' : '+ Add step'}
+            </button>
+          )
+        )}
+      </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Main edit form
+// Main export
 // ---------------------------------------------------------------------------
 
 interface Props {
-  pathway:   CreatorPathway
-  steps:     CreatorStep[]
-  sections:  CreatorSection[]
+  pathway: CreatorPathway
+  steps: CreatorStep[]
+  sections: CreatorSection[]
   spaceSlug: string
 }
 
@@ -429,15 +702,13 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
   const [priceError, setPriceError]     = useState<string | null>(null)
   const [steps, setSteps]               = useState<CreatorStep[]>(initialSteps)
   const [sections, setSections]         = useState<CreatorSection[]>(initialSections)
-  const [addingStep, setAddingStep]     = useState(false)
 
-  // Cover image upload state
-  const [coverUrl, setCoverUrl]         = useState<string | null>(pathway.cover_image_url ?? null)
-  const [coverPreview, setCoverPreview] = useState<string | null>(null)
-  const [coverFile, setCoverFile]       = useState<File | null>(null)
+  const [coverUrl, setCoverUrl]             = useState<string | null>(pathway.cover_image_url ?? null)
+  const [coverPreview, setCoverPreview]     = useState<string | null>(null)
+  const [coverFile, setCoverFile]           = useState<File | null>(null)
   const [coverUploading, setCoverUploading] = useState(false)
-  const [coverError, setCoverError]     = useState<string | null>(null)
-  const [coverSaved, setCoverSaved]     = useState(false)
+  const [coverError, setCoverError]         = useState<string | null>(null)
+  const [coverSaved, setCoverSaved]         = useState(false)
 
   const isPaid = accessType === 'one_time' || accessType === 'subscription'
 
@@ -445,14 +716,8 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
     if (!title.trim()) { setError('Pathway title is required.'); return false }
     if (isPaid) {
       const dollars = parseFloat(priceDollars)
-      if (!priceDollars.trim() || isNaN(dollars)) {
-        setPriceError('Enter a price for this paid pathway.')
-        return false
-      }
-      if (dollars <= 0) {
-        setPriceError('Price must be greater than 0.')
-        return false
-      }
+      if (!priceDollars.trim() || isNaN(dollars)) { setPriceError('Enter a price for this paid pathway.'); return false }
+      if (dollars <= 0) { setPriceError('Price must be greater than 0.'); return false }
     }
     return true
   }
@@ -462,9 +727,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
     setPriceError(null)
     setSaved(false)
     if (!validate()) return
-
     const priceCents = isPaid ? Math.round(parseFloat(priceDollars) * 100) : null
-
     setLoading(true)
     try {
       const res = await fetch(
@@ -485,17 +748,12 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
           }),
         },
       )
-
       if (!res.ok) {
         let detail: string | null = null
-        try {
-          const body = await res.json()
-          if (typeof body.detail === 'string') detail = body.detail
-        } catch { /* ignore */ }
+        try { const b = await res.json(); if (typeof b.detail === 'string') detail = b.detail } catch { /* ignore */ }
         setError(detail ?? 'Could not save changes. Please try again.')
         return
       }
-
       setSaved(true)
       startTransition(() => { router.refresh() })
       setTimeout(() => setSaved(false), 3000)
@@ -504,18 +762,6 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
     } finally {
       setLoading(false)
     }
-  }
-
-  function handleStepAdded() {
-    setAddingStep(false)
-    startTransition(() => { router.refresh() })
-    // Optimistically reload steps from server
-    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps`), {
-      credentials: 'include',
-    })
-      .then((r) => r.json())
-      .then((data) => setSteps(data))
-      .catch(() => { /* ignore, router.refresh() will handle */ })
   }
 
   return (
@@ -527,36 +773,30 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
           Pathway title <span className="font-normal text-slate-400">(required)</span>
         </label>
         <input
-          type="text"
-          value={title}
+          type="text" value={title}
           onChange={(e) => { setTitle(e.target.value); setError(null) }}
           placeholder="e.g. Slow Growth Practice"
-          className={`w-full rounded-lg border px-3 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400 ${
-            error && !title.trim() ? 'border-red-300' : 'border-slate-200'
-          }`}
+          className={`w-full rounded-lg border px-3 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400 ${error && !title.trim() ? 'border-red-300' : 'border-slate-200'}`}
         />
       </div>
 
-      {/* Short description */}
+      {/* Description */}
       <div>
         <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-          Short description{' '}
-          <span className="font-normal text-slate-400">(optional)</span>
+          Short description <span className="font-normal text-slate-400">(optional)</span>
         </label>
         <input
-          type="text"
-          value={description}
+          type="text" value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="A guided pathway for moving slowly, reflecting honestly, and building new rhythm."
           className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
         />
       </div>
 
-      {/* What will people practise? */}
+      {/* Practice body */}
       <div>
         <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-          What will people practise?{' '}
-          <span className="font-normal text-slate-400">(optional)</span>
+          What will people practise? <span className="font-normal text-slate-400">(optional)</span>
         </label>
         <textarea
           value={practiceBody}
@@ -571,8 +811,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
       <div>
         <label className="mb-1 block text-[12px] font-semibold text-slate-600">Status</label>
         <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          value={status} onChange={(e) => setStatus(e.target.value)}
           className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
         >
           <option value="draft">Draft</option>
@@ -593,17 +832,13 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
         priceError={priceError}
       />
 
-      {/* Global error / saved message */}
-      {error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">{error}</p>
-      )}
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">{error}</p>}
       {saved && (
         <p className="rounded-lg px-3 py-2 text-[13px] font-medium" style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}>
           Changes saved.
         </p>
       )}
 
-      {/* Save */}
       <div className="flex justify-end border-t border-border pt-5">
         <button
           type="button"
@@ -616,14 +851,6 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
         </button>
       </div>
 
-      {/* ── Sections ── */}
-      <SectionManager
-        spaceSlug={spaceSlug}
-        pathwaySlug={pathway.slug}
-        sections={sections}
-        setSections={setSections}
-      />
-
       {/* ── Pathway cover ── */}
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[16px] font-semibold text-navy-900">Pathway cover</h2>
@@ -631,7 +858,6 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
           Add a visual cover so this pathway feels distinct and easy to recognise.
         </p>
 
-        {/* Preview */}
         {(coverPreview ?? resolveMediaUrl(coverUrl)) && (
           <div className="mb-4 overflow-hidden rounded-xl" style={{ maxWidth: 320 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -648,34 +874,25 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
           <label className="cursor-pointer rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-navy-900 transition-colors hover:border-teal-300 hover:text-teal-700">
             {coverUrl || coverPreview ? 'Replace image' : 'Choose image'}
             <input
-              type="file"
-              accept="image/jpeg,image/png"
-              className="sr-only"
+              type="file" accept="image/jpeg,image/png" className="sr-only"
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null
-                setCoverFile(f)
-                setCoverError(null)
-                setCoverSaved(false)
+                setCoverFile(f); setCoverError(null); setCoverSaved(false)
                 if (f) {
                   const reader = new FileReader()
                   reader.onload = (ev) => setCoverPreview(ev.target?.result as string)
                   reader.readAsDataURL(f)
-                } else {
-                  setCoverPreview(null)
-                }
+                } else { setCoverPreview(null) }
               }}
             />
           </label>
 
           {coverFile && (
             <button
-              type="button"
-              disabled={coverUploading}
+              type="button" disabled={coverUploading}
               onClick={async () => {
                 if (!coverFile) return
-                setCoverUploading(true)
-                setCoverError(null)
-                setCoverSaved(false)
+                setCoverUploading(true); setCoverError(null); setCoverSaved(false)
                 const form = new FormData()
                 form.append('file', coverFile)
                 try {
@@ -684,22 +901,18 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
                     { method: 'POST', credentials: 'include', body: form },
                   )
                   if (!res.ok) {
-                    const body = await res.json().catch(() => ({}))
-                    setCoverError(typeof body.detail === 'string' ? body.detail : 'Upload failed.')
+                    const b = await res.json().catch(() => ({}))
+                    setCoverError(typeof b.detail === 'string' ? b.detail : 'Upload failed.')
                     return
                   }
                   const data = await res.json()
                   setCoverUrl(data.cover_image_url ?? null)
-                  setCoverPreview(null)
-                  setCoverFile(null)
-                  setCoverSaved(true)
+                  setCoverPreview(null); setCoverFile(null); setCoverSaved(true)
                   startTransition(() => { router.refresh() })
                   setTimeout(() => setCoverSaved(false), 3000)
                 } catch {
                   setCoverError('Upload failed. Please try again.')
-                } finally {
-                  setCoverUploading(false)
-                }
+                } finally { setCoverUploading(false) }
               }}
               className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
               style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
@@ -711,105 +924,19 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
           <p className="text-[11px] text-slate-400">JPG or PNG · Wide image recommended (16:9)</p>
         </div>
 
-        {coverError && (
-          <p className="mt-2 text-[12px] text-red-600">{coverError}</p>
-        )}
-        {coverSaved && (
-          <p className="mt-2 text-[12px] font-medium" style={{ color: '#38A09E' }}>
-            Cover image saved.
-          </p>
-        )}
+        {coverError && <p className="mt-2 text-[12px] text-red-600">{coverError}</p>}
+        {coverSaved && <p className="mt-2 text-[12px] font-medium" style={{ color: '#38A09E' }}>Cover image saved.</p>}
       </div>
 
-      {/* ── Pathway structure — separate section below details ── */}
-      <div className="rounded-2xl border border-border bg-white p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-[16px] font-semibold text-navy-900">Pathway structure</h2>
-            <p className="mt-0.5 text-[13px] text-slate-500">
-              Add steps to shape the experience people will move through.
-            </p>
-          </div>
-          <span className="text-[13px] text-slate-400">
-            {steps.length} {steps.length === 1 ? 'step' : 'steps'}
-          </span>
-        </div>
-
-        {/* Step list */}
-        {steps.length > 0 && (
-          <ul className="mb-4 space-y-2">
-            {steps.map((step, i) => (
-              <li
-                key={step.id}
-                className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-white px-4 py-3"
-              >
-                <span
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-                  style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
-                >
-                  {i + 1}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[14px] font-medium text-navy-900">
-                  {step.title}
-                </span>
-                <span
-                  className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
-                  style={{ background: 'rgba(0,0,0,0.05)', color: '#64748b' }}
-                >
-                  {CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}
-                </span>
-                {sections.length > 0 && (
-                  <select
-                    value={step.section_id ?? ''}
-                    onChange={async (e) => {
-                      const newSectionId = e.target.value || null
-                      const res = await fetch(
-                        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}`),
-                        { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ section_id: newSectionId }) },
-                      )
-                      if (res.ok) setSteps(steps.map((s) => s.id === step.id ? { ...s, section_id: newSectionId } : s))
-                    }}
-                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-600 outline-none focus:border-teal-400"
-                  >
-                    <option value="">No section</option>
-                    {sections.map((sec) => (
-                      <option key={sec.id} value={sec.id}>{sec.title}</option>
-                    ))}
-                  </select>
-                )}
-                <Link
-                  href={`/creator-studio/pathways/${pathway.slug}/steps/${step.slug}`}
-                  className="shrink-0 text-[12px] font-medium text-teal-700 transition-opacity hover:opacity-70"
-                >
-                  Edit content →
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {steps.length === 0 && !addingStep && (
-          <p className="mb-4 text-[13px] italic text-slate-400">No steps yet.</p>
-        )}
-
-        {/* Add step */}
-        {addingStep ? (
-          <AddStepForm
-            spaceSlug={spaceSlug}
-            pathwaySlug={pathway.slug}
-            onAdded={handleStepAdded}
-            onCancel={() => setAddingStep(false)}
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={() => setAddingStep(true)}
-            className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-[13px] font-medium text-slate-500 transition-colors hover:border-teal-300 hover:text-teal-700"
-          >
-            + Add step
-          </button>
-        )}
-      </div>
+      {/* ── Pathway structure (unified) ── */}
+      <PathwayStructure
+        pathway={pathway}
+        steps={steps}
+        sections={sections}
+        spaceSlug={spaceSlug}
+        setSteps={setSteps}
+        setSections={setSections}
+      />
 
     </div>
   )

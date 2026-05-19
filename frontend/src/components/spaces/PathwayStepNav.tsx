@@ -4,9 +4,6 @@ import { useState } from 'react'
 import Link from 'next/link'
 import type { PathwaySection, StepSummary } from '@/types/platform'
 
-// TODO: support grouped pathway sections/modules once step grouping is added
-// to the data model. For now the nav is a flat ordered list.
-
 const CONTENT_TYPE_LABEL: Record<string, string> = {
   text:       'Read',
   reflection: 'Reflect',
@@ -137,20 +134,26 @@ function SectionGroup({
   pathwaySlug: string
 }) {
   const hasActiveStep = section.steps.some((s) => s.slug === currentStepSlug)
-  const [open, setOpen] = useState<boolean>(hasActiveStep || true)
+  const [open, setOpen] = useState<boolean>(hasActiveStep)
+  const sectionCompleted = section.steps.filter((s) => s.is_completed).length
 
   return (
     <li>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-3 py-1.5 text-left"
+        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-slate-50 transition-colors"
       >
-        <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-          {section.title}
-        </span>
+        <div className="min-w-0">
+          <span className="block text-[12px] font-semibold text-slate-600 leading-snug">
+            {section.title}
+          </span>
+          <span className="text-[11px] text-slate-400">
+            {sectionCompleted} of {section.steps.length} complete
+          </span>
+        </div>
         <svg
-          className={`h-3 w-3 shrink-0 text-slate-300 transition-transform ${open ? '' : '-rotate-90'}`}
+          className={`ml-2 h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${open ? '' : '-rotate-90'}`}
           fill="none"
           viewBox="0 0 12 12"
           aria-hidden="true"
@@ -160,7 +163,7 @@ function SectionGroup({
       </button>
 
       {open && (
-        <ul className="space-y-0.5">
+        <ul className="ml-2 mt-0.5 space-y-0.5 border-l border-slate-100 pl-2">
           {section.steps.map((step, i) => (
             <StepNavItem
               key={step.id}

@@ -272,7 +272,7 @@ export default async function PathwayDetailPage({ params }: Props) {
                 pathway.sections.forEach((section) => {
                   groups.push(
                     <div key={section.id}>
-                      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                      <p className="mb-3 text-[13px] font-semibold text-slate-600">
                         {section.title}
                       </p>
                       <div className="flex flex-col gap-3">
