@@ -25,6 +25,7 @@ from app.creator.schemas import (
     AboutBlockReorderRequest,
     AboutBlockResponse,
     AboutBlockUpdateRequest,
+    MemberPathwayAccessItem,
     EventCreateRequest,
     EventResponse,
     EventUpdateRequest,
@@ -61,6 +62,7 @@ from app.creator.schemas import (
 from app.models.platform import (
     CommunityPost,
     CreatorMediaAsset,
+    Enrollment,
     Event,
     Pathway,
     PathwayAboutBlock,
@@ -70,6 +72,7 @@ from app.models.platform import (
     Space,
     SpaceInvitation,
     SpaceMembership,
+    StepProgress,
     StepResource,
 )
 from app.models.user import User
@@ -272,6 +275,162 @@ async def upload_cover_image(
     db.commit()
     db.refresh(space)
     return space
+
+
+# ---------------------------------------------------------------------------
+# People / member pathway access
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/spaces/{slug}/members/{user_id}/pathway-access",
+    response_model=list[MemberPathwayAccessItem],
+)
+def get_member_pathway_access(
+    slug: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[MemberPathwayAccessItem]:
+    """Return all pathways in the space with the target member's access state and progress."""
+    space = _get_managed_space(slug, current_user, db)
+
+    # Confirm the target user is a member of this space
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.user_id == user_id,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=404, detail="Member not found in this space.")
+
+    # All pathways in the space ordered by display position
+    pathways = (
+        db.query(Pathway)
+        .filter(Pathway.space_id == space.id)
+        .order_by(Pathway.position)
+        .all()
+    )
+    if not pathways:
+        return []
+
+    pathway_ids = [p.id for p in pathways]
+
+    # Enrollments: one per (user, pathway), used as proxy for paid access
+    enrollments = (
+        db.query(Enrollment)
+        .filter(
+            Enrollment.user_id == user_id,
+            Enrollment.pathway_id.in_(pathway_ids),
+        )
+        .all()
+    )
+    enrollment_map = {e.pathway_id: e for e in enrollments}
+
+    # Step counts per pathway
+    step_count_rows = (
+        db.query(PathwayStep.pathway_id, func.count(PathwayStep.id).label("cnt"))
+        .filter(PathwayStep.pathway_id.in_(pathway_ids))
+        .group_by(PathwayStep.pathway_id)
+        .all()
+    )
+    step_count_map = {row.pathway_id: row.cnt for row in step_count_rows}
+
+    # Step-to-pathway mapping (needed to group progress records by pathway)
+    step_rows = (
+        db.query(PathwayStep.id, PathwayStep.pathway_id)
+        .filter(PathwayStep.pathway_id.in_(pathway_ids))
+        .all()
+    )
+    step_to_pathway: dict[str, str] = {row.id: row.pathway_id for row in step_rows}
+    all_step_ids = list(step_to_pathway.keys())
+
+    # Completed steps for this user
+    completed_records = (
+        db.query(StepProgress)
+        .filter(
+            StepProgress.user_id == user_id,
+            StepProgress.step_id.in_(all_step_ids),
+            StepProgress.completed_at.isnot(None),
+        )
+        .all()
+    ) if all_step_ids else []
+
+    completed_count_map: dict[str, int] = {}
+    last_activity_map: dict[str, datetime] = {}
+    for rec in completed_records:
+        pid = step_to_pathway.get(rec.step_id)
+        if not pid:
+            continue
+        completed_count_map[pid] = completed_count_map.get(pid, 0) + 1
+        if rec.completed_at and (
+            pid not in last_activity_map or rec.completed_at > last_activity_map[pid]
+        ):
+            last_activity_map[pid] = rec.completed_at
+
+    result: list[MemberPathwayAccessItem] = []
+    for pathway in pathways:
+        p_status = (
+            pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
+        )
+        access_type = pathway.access_type or "free"
+        enrollment = enrollment_map.get(pathway.id)
+        enroll_status = None
+        if enrollment:
+            enroll_status = (
+                enrollment.status.value
+                if hasattr(enrollment.status, "value")
+                else str(enrollment.status)
+            )
+
+        total_steps = step_count_map.get(pathway.id, 0)
+        completed_steps = completed_count_map.get(pathway.id, 0)
+        progress_pct = round((completed_steps / total_steps) * 100) if total_steps > 0 else 0
+        last_activity_at = last_activity_map.get(pathway.id)
+
+        # Derive access state
+        if p_status == "coming_soon":
+            access_state, access_label, access_source = "coming_soon", "Coming soon", None
+        elif p_status in ("draft", "archived"):
+            access_state = p_status
+            access_label = p_status.capitalize()
+            access_source = None
+        elif access_type in ("free", "included"):
+            access_state = "accessible"
+            access_label = "Free" if access_type == "free" else "Included"
+            access_source = access_type
+        elif enroll_status in ("active", "completed"):
+            # Enrollment is the current proxy for paid access (Stripe not yet wired)
+            access_state = "accessible"
+            access_label = "Purchased" if access_type == "one_time" else "Subscribed"
+            access_source = access_type
+        else:
+            access_state, access_label, access_source = "locked", "Locked", None
+
+        result.append(
+            MemberPathwayAccessItem(
+                id=pathway.id,
+                slug=pathway.slug,
+                title=pathway.title,
+                pathway_status=p_status,
+                access_type=access_type,
+                price_cents=pathway.price_cents,
+                currency=pathway.currency or "AUD",
+                billing_interval=pathway.billing_interval,
+                access_state=access_state,
+                access_label=access_label,
+                access_source=access_source,
+                total_steps=total_steps,
+                completed_steps=completed_steps,
+                progress_pct=progress_pct,
+                last_activity_at=last_activity_at,
+                enrollment_status=enroll_status,
+            )
+        )
+
+    return result
 
 
 # ---------------------------------------------------------------------------

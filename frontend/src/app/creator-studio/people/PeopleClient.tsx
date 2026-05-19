@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import type { MemberProfile, SpaceInvitation } from '@/types/platform'
+import type { MemberProfile, MemberPathwayAccessItem, SpaceInvitation } from '@/types/platform'
 import { apiUrl } from '@/lib/api'
+import { formatPathwayPrice } from '@/lib/pathwayAccess'
 
 // ---------------------------------------------------------------------------
 // Unified entry type
@@ -114,10 +115,145 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 // ---------------------------------------------------------------------------
+// Pathway access section
+// ---------------------------------------------------------------------------
+
+const ACCESS_STATE_STYLE: Record<string, { background: string; color: string }> = {
+  accessible:   { background: 'rgba(56,160,158,0.10)',  color: '#0f766e' },
+  locked:       { background: 'rgba(148,163,184,0.14)', color: '#475569' },
+  coming_soon:  { background: 'rgba(234,179,8,0.12)',   color: '#a16207' },
+  draft:        { background: 'rgba(99,102,241,0.10)',  color: '#6366f1' },
+  archived:     { background: 'rgba(148,163,184,0.10)', color: '#64748b' },
+}
+
+function AccessPill({ state, label }: { state: string; label: string }) {
+  const style = ACCESS_STATE_STYLE[state] ?? ACCESS_STATE_STYLE.locked
+  return (
+    <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold" style={style}>
+      {label}
+    </span>
+  )
+}
+
+function PathwayAccessRow({ item }: { item: MemberPathwayAccessItem }) {
+  const priceLabel = item.access_state === 'locked' && item.price_cents
+    ? formatPathwayPrice(item.price_cents, item.currency, item.billing_interval)
+    : null
+
+  return (
+    <div className="rounded-xl border border-border bg-white p-3.5">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-[13px] font-medium leading-snug text-navy-900">{item.title}</p>
+        <AccessPill state={item.access_state} label={item.access_label} />
+      </div>
+
+      {/* Sub-label: price for locked, access source for accessible */}
+      {priceLabel ? (
+        <p className="mt-1 text-[11px] text-slate-400">{priceLabel}</p>
+      ) : item.access_state === 'accessible' && item.access_source && (
+        <p className="mt-1 text-[11px] text-slate-400 capitalize">{item.access_source.replace('_', ' ')}</p>
+      )}
+
+      {/* Progress — only for accessible pathways with steps */}
+      {item.access_state === 'accessible' && item.total_steps > 0 && (
+        <div className="mt-2.5">
+          <div className="mb-1 flex items-baseline justify-between text-[11px] text-slate-400">
+            <span>{item.completed_steps} of {item.total_steps} steps</span>
+            <span>{item.progress_pct}%</span>
+          </div>
+          <div className="h-1 w-full overflow-hidden rounded-full bg-teal-100">
+            <div
+              className="h-full rounded-full bg-teal-500 transition-all"
+              style={{ width: `${item.progress_pct}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-400">
+            {item.last_activity_at
+              ? `Last active: ${formatDate(item.last_activity_at)}`
+              : 'No activity yet'}
+          </p>
+        </div>
+      )}
+
+      {/* No steps defined */}
+      {item.access_state === 'accessible' && item.total_steps === 0 && (
+        <p className="mt-1 text-[11px] text-slate-400">No steps yet</p>
+      )}
+    </div>
+  )
+}
+
+function PathwayAccessSection({
+  entry,
+  spaceSlug,
+}: {
+  entry: PersonEntry
+  spaceSlug: string
+}) {
+  const [items, setItems] = useState<MemberPathwayAccessItem[] | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (entry.kind !== 'member') {
+      setItems(null)
+      return
+    }
+    let cancelled = false
+    setLoading(true)
+    setItems(null)
+    fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/members/${entry.data.id}/pathway-access`),
+      { credentials: 'include' },
+    )
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: MemberPathwayAccessItem[] | null) => {
+        if (!cancelled) setItems(data ?? [])
+      })
+      .catch(() => { if (!cancelled) setItems([]) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [entry, spaceSlug])
+
+  if (entry.kind === 'invite') return null
+
+  return (
+    <div>
+      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+        Pathway access
+      </p>
+
+      {loading && (
+        <p className="text-[13px] italic text-slate-400">Loading…</p>
+      )}
+
+      {!loading && items && items.length === 0 && (
+        <p className="text-[13px] italic text-slate-400">No pathways in this collective yet.</p>
+      )}
+
+      {!loading && items && items.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {items.map((item) => (
+            <PathwayAccessRow key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Detail panel
 // ---------------------------------------------------------------------------
 
-function DetailPanel({ entry, onClose }: { entry: PersonEntry; onClose: () => void }) {
+function DetailPanel({
+  entry,
+  onClose,
+  spaceSlug,
+}: {
+  entry: PersonEntry
+  onClose: () => void
+  spaceSlug: string
+}) {
   const status = entryStatus(entry)
   const role   = entryRole(entry)
   const email  = entryEmail(entry)
@@ -186,21 +322,10 @@ function DetailPanel({ entry, onClose }: { entry: PersonEntry; onClose: () => vo
           </FieldRow>
         )}
 
-        {/* Current pathway */}
-        <FieldRow label="Current pathway">
-          {/* TODO: Connect to enrollment data once available */}
-          <p className="text-[13px] italic text-slate-400">
-            {entry.kind === 'invite' ? 'Not started yet' : 'Not tracked yet'}
-          </p>
-        </FieldRow>
-
-        {/* Last activity */}
-        <FieldRow label="Last activity">
-          {/* TODO: Aggregate from step_progress to compute last active date per member */}
-          <p className="text-[13px] italic text-slate-400">
-            {entry.kind === 'invite' ? 'Not active yet' : 'Not tracked yet'}
-          </p>
-        </FieldRow>
+        {/* Pathway access — live data per member */}
+        <div className="border-t border-border pt-1">
+          <PathwayAccessSection entry={entry} spaceSlug={spaceSlug} />
+        </div>
 
         {/* Tags */}
         <FieldRow label="Tags">
@@ -717,7 +842,7 @@ export default function PeopleClient({ members, invitations, spaceName, spaceSlu
         {/* Detail panel — right of list at xl+, stacked below on smaller screens */}
         {selected && (
           <div className="w-full xl:w-[340px] xl:shrink-0">
-            <DetailPanel entry={selected} onClose={() => setSelected(null)} />
+            <DetailPanel entry={selected} onClose={() => setSelected(null)} spaceSlug={spaceSlug} />
           </div>
         )}
       </div>

@@ -638,3 +638,29 @@ class AboutBlockUpdateRequest(BaseModel):
 
 class AboutBlockReorderRequest(BaseModel):
     ids: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Member pathway access (Creator Studio People detail panel)
+# ---------------------------------------------------------------------------
+
+class MemberPathwayAccessItem(BaseModel):
+    """Access state + progress for one pathway, viewed from the creator's perspective."""
+    id: str
+    slug: str
+    title: str
+    pathway_status: str          # draft | active | coming_soon | archived
+    access_type: str             # free | included | one_time | subscription
+    price_cents: int | None
+    currency: str
+    billing_interval: str | None
+    # Derived access fields
+    access_state: str            # accessible | locked | coming_soon | draft | archived
+    access_label: str            # Free | Included | Purchased | Subscribed | Locked | Coming soon | Draft
+    access_source: str | None    # free | included | one_time | subscription | None
+    # Progress
+    total_steps: int
+    completed_steps: int
+    progress_pct: int
+    last_activity_at: datetime | None
+    enrollment_status: str | None  # active | paused | completed | None

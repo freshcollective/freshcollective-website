@@ -121,6 +121,25 @@ export interface MemberProfile {
   is_creator: boolean
 }
 
+export interface MemberPathwayAccessItem {
+  id: string
+  slug: string
+  title: string
+  pathway_status: string
+  access_type: string
+  price_cents: number | null
+  currency: string | null
+  billing_interval: string | null
+  access_state: string           // accessible | locked | coming_soon | draft | archived
+  access_label: string           // Free | Included | Purchased | Subscribed | Locked | Coming soon | Draft
+  access_source: string | null
+  total_steps: number
+  completed_steps: number
+  progress_pct: number
+  last_activity_at: string | null
+  enrollment_status: string | null
+}
+
 export interface PublicProfile {
   id: string
   display_name: string
