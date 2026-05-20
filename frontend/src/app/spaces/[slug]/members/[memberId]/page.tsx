@@ -145,12 +145,12 @@ export default async function MemberProfilePage({ params }: Props) {
             </div>
           </div>
 
-          {/* Spaces led — creator only */}
+          {/* Collectives led — creator only */}
           {profile.is_creator && profile.spaces_led.length > 0 && (
             <div className="overflow-hidden rounded-2xl border border-border bg-white">
               <div className="border-b border-border px-5 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  Spaces led
+                  Collectives led
                 </p>
               </div>
               <div className="divide-y divide-border">

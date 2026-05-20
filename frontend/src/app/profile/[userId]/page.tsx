@@ -42,7 +42,7 @@ export default async function PublicProfilePage({ params }: Props) {
         {profile.spaces_led.length > 0 && (
           <div className="mt-8 w-full text-left">
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Spaces Led
+              Collectives Led
             </h2>
             <div className="flex flex-col gap-2">
               {profile.spaces_led.map((name) => (
