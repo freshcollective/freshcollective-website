@@ -9,7 +9,7 @@
 // TODO (booking system): creator toggle per-event: open / invite-only / closed
 
 import { getSpaceEvents } from '@/lib/serverApi'
-import EventCard from '@/components/spaces/EventCard'
+import GatheringsView from '@/components/spaces/GatheringsView'
 import type { EventSummary } from '@/types/platform'
 
 interface Props {
@@ -55,24 +55,9 @@ export default async function SpaceEventsPage({ params }: Props) {
         </p>
       </div>
 
-      {/* ── Event list ── */}
-      {events.length > 0 ? (
-        <div className="flex flex-col gap-3">
-          {events.map((e) => (
-            <EventCard key={e.id} event={e} spaceSlug={slug} />
-          ))}
-        </div>
-      ) : (
-        <div className="rounded-2xl border border-teal-100 bg-white px-7 py-8">
-          <p className="mb-1 text-lg font-semibold text-navy-900">
-            No upcoming gatherings yet.
-          </p>
-          <p className="text-sm leading-relaxed text-slate-400">
-            Live calls, workshops, and sessions will appear here when scheduled.
-            Check back soon.
-          </p>
-        </div>
-      )}
+      {/* ── List / Calendar toggle + content ── */}
+      <GatheringsView events={events} spaceSlug={slug} />
+
     </div>
   )
 }
