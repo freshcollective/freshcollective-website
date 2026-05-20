@@ -12,7 +12,6 @@ interface Props {
 
 const NAV = [
   { href: '/spaces', label: 'Explore Collectives' },
-  { href: '/about',  label: 'About' },
 ]
 
 export default function MobileNav({ isLoggedIn, dark }: Props) {

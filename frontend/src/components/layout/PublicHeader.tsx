@@ -56,19 +56,13 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
           </Link>
 
           <nav aria-label="Main" className="hidden flex-1 items-center justify-center gap-8 md:flex">
-            {[
-              { href: '/spaces', label: 'Explore Collectives' },
-              { href: '/about',  label: 'About' },
-            ].map(({ href, label }) => (
-              <Link
-                key={href}
-                href={href}
-                className="text-[14px] font-medium transition-opacity hover:opacity-100"
-                style={{ color: 'rgba(255,255,255,0.52)' }}
-              >
-                {label}
-              </Link>
-            ))}
+            <Link
+              href="/spaces"
+              className="text-[14px] font-medium transition-opacity hover:opacity-100"
+              style={{ color: 'rgba(255,255,255,0.52)' }}
+            >
+              Explore Collectives
+            </Link>
           </nav>
 
           <div className="hidden shrink-0 items-center gap-4 md:flex">
@@ -131,18 +125,12 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
 
         {/* Nav — desktop */}
         <nav aria-label="Main" className="hidden flex-1 items-center justify-center gap-8 md:flex">
-          {[
-            { href: '/spaces', label: 'Explore Collectives' },
-            { href: '/about',  label: 'About' },
-          ].map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
-            >
-              {label}
-            </Link>
-          ))}
+          <Link
+            href="/spaces"
+            className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
+          >
+            Explore Collectives
+          </Link>
         </nav>
 
         {/* Auth — desktop */}
