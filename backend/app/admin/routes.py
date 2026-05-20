@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.admin import service
 from app.admin.schemas import (
+    AdminPaymentSummary,
     AdminPlanChangeRequest,
     AdminUserResponse,
     CreatorBillingRow,
@@ -32,7 +33,13 @@ from app.admin.schemas import (
 from app.auth.dependencies import get_admin_user
 from app.core.database import get_db
 from app.models.creator_billing import CreatorPlan, CreatorSubscription, CreatorSubscriptionStatus
-from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentTransactionType, PaymentProvider
+from app.models.payment import (
+    PaymentTransaction,
+    PaymentTransactionStatus,
+    PaymentTransactionType,
+    PaymentProvider,
+    PayoutStatus,
+)
 from app.models.platform import (
     EntitlementSource,
     EntitlementStatus,
@@ -250,6 +257,90 @@ async def get_stats(
 # ---------------------------------------------------------------------------
 # Payment Transactions
 # ---------------------------------------------------------------------------
+
+# Revenue-relevant transaction types — excludes creator subscription payments
+_MEMBER_TXN_TYPES = {
+    PaymentTransactionType.member_pathway_purchase,
+    PaymentTransactionType.member_collective_purchase,
+    PaymentTransactionType.member_pathway_subscription,
+    PaymentTransactionType.member_collective_subscription,
+}
+_REVENUE_STATUSES = {PaymentTransactionStatus.succeeded}
+_REFUNDED_STATUSES = {
+    PaymentTransactionStatus.refunded,
+    PaymentTransactionStatus.partially_refunded,
+}
+
+
+@router.get("/payments/summary", response_model=AdminPaymentSummary)
+def get_admin_payment_summary(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    creator_user_id: str | None = None,
+    space_id: str | None = None,
+    pathway_id: str | None = None,
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> AdminPaymentSummary:
+    """
+    Platform-wide payment summary for admin earnings dashboard.
+    Revenue totals are based on succeeded member-purchase transactions only.
+    Creator subscription payments are excluded from revenue totals.
+    Admin only.
+    """
+    from datetime import date
+
+    def _base_q(statuses: set | None = None):
+        q = db.query(PaymentTransaction).filter(
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES])
+        )
+        if statuses:
+            q = q.filter(PaymentTransaction.status.in_([s.value for s in statuses]))
+        if date_from:
+            try:
+                q = q.filter(PaymentTransaction.created_at >= date.fromisoformat(date_from))
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                q = q.filter(PaymentTransaction.created_at <= date.fromisoformat(date_to))
+            except ValueError:
+                pass
+        if creator_user_id:
+            q = q.filter(PaymentTransaction.creator_user_id == creator_user_id)
+        if space_id:
+            q = q.filter(PaymentTransaction.space_id == space_id)
+        if pathway_id:
+            q = q.filter(PaymentTransaction.pathway_id == pathway_id)
+        return q
+
+    succeeded = _base_q({PaymentTransactionStatus.succeeded}).all()
+    total_gross = sum(r.gross_amount_cents for r in succeeded)
+    total_fee = sum(r.platform_fee_cents for r in succeeded)
+    total_net = sum(r.net_creator_amount_cents or 0 for r in succeeded)
+    total_processing = sum(r.processing_fee_cents or 0 for r in succeeded)
+    pending_payout = sum(
+        r.net_creator_amount_cents or 0
+        for r in succeeded
+        if r.payout_status == PayoutStatus.pending
+    )
+
+    all_rows = _base_q().all()
+    return AdminPaymentSummary(
+        total_gross_amount_cents=total_gross,
+        total_platform_fee_cents=total_fee,
+        total_creator_net_amount_cents=total_net,
+        total_processing_fee_cents=total_processing,
+        pending_payout_cents=pending_payout,
+        succeeded_count=len(succeeded),
+        refunded_count=sum(1 for r in all_rows if r.status in (
+            PaymentTransactionStatus.refunded, PaymentTransactionStatus.partially_refunded
+        )),
+        disputed_count=sum(1 for r in all_rows if r.status == PaymentTransactionStatus.disputed),
+        pending_count=sum(1 for r in all_rows if r.status == PaymentTransactionStatus.pending),
+        failed_count=sum(1 for r in all_rows if r.status == PaymentTransactionStatus.failed),
+    )
+
 
 @router.get("/payments", response_model=list[PaymentTransactionOut])
 def list_payments(

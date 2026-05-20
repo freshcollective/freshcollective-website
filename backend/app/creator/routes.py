@@ -24,6 +24,7 @@ from app.creator.schemas import (
     AboutBlockCreateRequest,
     CreatorBillingResponse,
     CreatorPaymentSetup,
+    CreatorPaymentSummary,
     CreatorPaymentTransactionOut,
     CreatorPlanOut,
     CreatorSubscriptionOut,
@@ -69,7 +70,7 @@ from app.creator.schemas import (
     slugify,
 )
 from app.models.creator_billing import CreatorPlan, CreatorSubscription
-from app.models.payment import PaymentTransaction, PaymentTransactionType
+from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentTransactionType, PayoutStatus
 from app.models.platform import (
     EntitlementSource,
     EntitlementStatus,
@@ -2447,6 +2448,54 @@ def delete_about_block(
 # ---------------------------------------------------------------------------
 # Creator Payments
 # ---------------------------------------------------------------------------
+
+@router.get("/payments/summary", response_model=CreatorPaymentSummary)
+def get_creator_payment_summary(
+    current_user: User = Depends(get_creator_user),
+    db: Session = Depends(get_db),
+) -> CreatorPaymentSummary:
+    """
+    Earnings summary for the current creator.
+    Only includes member purchase transactions (not creator subscription payments).
+    Revenue totals are from succeeded transactions only.
+
+    pending_payout_cents = net_creator sum for succeeded transactions where
+    payout_status=pending. Updated to 'paid' when Stripe Connect transfers are
+    processed.
+    # TODO: deduct payout_status=paid rows once Stripe Connect is wired up.
+    """
+    _MEMBER_TYPES = [
+        PaymentTransactionType.member_pathway_purchase,
+        PaymentTransactionType.member_collective_purchase,
+        PaymentTransactionType.member_pathway_subscription,
+        PaymentTransactionType.member_collective_subscription,
+    ]
+    rows = (
+        db.query(PaymentTransaction)
+        .filter(
+            PaymentTransaction.creator_user_id == current_user.id,
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TYPES]),
+        )
+        .all()
+    )
+    succeeded = [r for r in rows if r.status == PaymentTransactionStatus.succeeded]
+    return CreatorPaymentSummary(
+        total_gross_amount_cents=sum(r.gross_amount_cents for r in succeeded),
+        total_platform_fee_cents=sum(r.platform_fee_cents for r in succeeded),
+        total_creator_net_amount_cents=sum(r.net_creator_amount_cents or 0 for r in succeeded),
+        pending_payout_cents=sum(
+            r.net_creator_amount_cents or 0
+            for r in succeeded
+            if r.payout_status == PayoutStatus.pending
+        ),
+        succeeded_count=len(succeeded),
+        refunded_count=sum(1 for r in rows if r.status in (
+            PaymentTransactionStatus.refunded, PaymentTransactionStatus.partially_refunded
+        )),
+        disputed_count=sum(1 for r in rows if r.status == PaymentTransactionStatus.disputed),
+        pending_count=sum(1 for r in rows if r.status == PaymentTransactionStatus.pending),
+    )
+
 
 @router.get("/payments", response_model=list[CreatorPaymentTransactionOut])
 def list_creator_payments(

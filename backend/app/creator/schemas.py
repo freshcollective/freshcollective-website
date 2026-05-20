@@ -760,6 +760,24 @@ class RevokeEntitlementRequest(BaseModel):
 # Payment Transactions (creator-visible)
 # ---------------------------------------------------------------------------
 
+class CreatorPaymentSummary(BaseModel):
+    """Earnings summary for the current creator's transactions."""
+    # Totals from succeeded member purchases (excludes creator subscription payments)
+    total_gross_amount_cents: int
+    total_platform_fee_cents: int
+    total_creator_net_amount_cents: int
+
+    # Payout estimate — sum of net_creator for succeeded transactions with payout_status=pending
+    # TODO: subtract once Stripe Connect transfers are processed (payout_status → paid)
+    pending_payout_cents: int
+
+    # Transaction counts by status
+    succeeded_count: int
+    refunded_count: int
+    disputed_count: int
+    pending_count: int
+
+
 class CreatorPaymentTransactionOut(BaseModel):
     model_config = {"from_attributes": True}
 

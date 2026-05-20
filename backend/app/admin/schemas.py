@@ -49,6 +49,25 @@ class AdminPlanChangeRequest(BaseModel):
 # Payment Transactions
 # ---------------------------------------------------------------------------
 
+class AdminPaymentSummary(BaseModel):
+    """Platform-wide payment summary for admin dashboard."""
+    # Revenue totals (succeeded transactions only, excluding creator subscription payments)
+    total_gross_amount_cents: int
+    total_platform_fee_cents: int
+    total_creator_net_amount_cents: int
+    total_processing_fee_cents: int
+
+    # Payout tracking
+    pending_payout_cents: int   # net_creator for pending-payout succeeded transactions
+
+    # Transaction counts by status
+    succeeded_count: int
+    refunded_count: int
+    disputed_count: int
+    pending_count: int
+    failed_count: int
+
+
 class PaymentTransactionOut(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -82,6 +101,9 @@ class PaymentTransactionOut(BaseModel):
     provider_subscription_id: str | None
 
     notes: str | None
+    payout_status: str
+    payout_marked_at: datetime | None
+    payout_reference: str | None
     created_at: datetime
     updated_at: datetime
 

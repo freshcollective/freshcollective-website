@@ -3,6 +3,19 @@
 import { useEffect, useState } from 'react'
 import { apiUrl } from '@/lib/api'
 
+interface AdminPaymentSummary {
+  total_gross_amount_cents: number
+  total_platform_fee_cents: number
+  total_creator_net_amount_cents: number
+  total_processing_fee_cents: number
+  pending_payout_cents: number
+  succeeded_count: number
+  refunded_count: number
+  disputed_count: number
+  pending_count: number
+  failed_count: number
+}
+
 interface PaymentTransaction {
   id: string
   transaction_type: string
@@ -379,18 +392,24 @@ function ManualPurchaseModal({
 
 export default function AdminPaymentsPage() {
   const [rows, setRows] = useState<PaymentTransaction[]>([])
+  const [summary, setSummary] = useState<AdminPaymentSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
 
   function loadPayments() {
     setLoading(true)
-    fetch(apiUrl('/api/admin/payments'), { credentials: 'include' })
-      .then((r) => {
+    Promise.all([
+      fetch(apiUrl('/api/admin/payments'), { credentials: 'include' }).then((r) => {
         if (!r.ok) throw new Error(`Error ${r.status}`)
-        return r.json()
-      })
-      .then((data) => setRows(data as PaymentTransaction[]))
+        return r.json() as Promise<PaymentTransaction[]>
+      }),
+      fetch(apiUrl('/api/admin/payments/summary'), { credentials: 'include' }).then((r) => {
+        if (!r.ok) throw new Error(`Error ${r.status}`)
+        return r.json() as Promise<AdminPaymentSummary>
+      }),
+    ])
+      .then(([txns, sum]) => { setRows(txns); setSummary(sum) })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
   }
@@ -414,11 +433,6 @@ export default function AdminPaymentsPage() {
     )
   }
 
-  const succeeded = rows.filter((r) => r.status === 'succeeded')
-  const totalGross = succeeded.reduce((s, r) => s + r.gross_amount_cents, 0)
-  const totalFee = succeeded.reduce((s, r) => s + r.platform_fee_cents, 0)
-  const totalCreatorNet = succeeded.reduce((s, r) => s + (r.net_creator_amount_cents ?? 0), 0)
-  const pendingCount = rows.filter((r) => r.status === 'pending').length
   const defaultCurrency = rows[0]?.currency ?? 'AUD'
 
   return (
@@ -448,26 +462,35 @@ export default function AdminPaymentsPage() {
         </div>
 
         {/* Summary cards */}
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetricCard
-            label="Total Gross Sales"
-            value={rows.length ? fmt(totalGross, defaultCurrency) : '—'}
+            label="Gross Sales"
+            value={summary ? fmt(summary.total_gross_amount_cents, 'AUD') : '—'}
             sub="succeeded only"
           />
           <MetricCard
             label="FC Fees"
-            value={rows.length ? fmt(totalFee, defaultCurrency) : '—'}
+            value={summary ? fmt(summary.total_platform_fee_cents, 'AUD') : '—'}
             accent
           />
           <MetricCard
             label="Creator Net Earnings"
-            value={rows.length ? fmt(totalCreatorNet, defaultCurrency) : '—'}
+            value={summary ? fmt(summary.total_creator_net_amount_cents, 'AUD') : '—'}
           />
           <MetricCard
-            label="Pending"
-            value={pendingCount}
-            sub="transactions"
+            label="Pending Payouts"
+            value={summary ? fmt(summary.pending_payout_cents, 'AUD') : '—'}
+            sub="not yet disbursed"
           />
+        </div>
+
+        {/* Payout helper */}
+        <div
+          className="mb-6 rounded-xl px-4 py-3 text-[12px] text-[#64748B]"
+          style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}
+        >
+          Payouts are not connected yet. These figures show what would be owed to creators once payout processing is enabled.{' '}
+          <span className="font-medium text-[#94A3B8]">Mark payouts as paid — coming soon.</span>
         </div>
 
         {/* Transactions */}

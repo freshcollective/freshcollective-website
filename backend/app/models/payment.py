@@ -52,6 +52,14 @@ class PaymentProvider(str, enum.Enum):
     stripe = "stripe"
 
 
+class PayoutStatus(str, enum.Enum):
+    not_applicable = "not_applicable"  # creator subscription payments, failed/cancelled
+    pending = "pending"                # succeeded member purchase, not yet paid out
+    paid = "paid"                      # TODO: set when Stripe Connect transfer confirmed
+    held = "held"                      # TODO: set when payout is on hold (dispute, etc.)
+    cancelled = "cancelled"            # TODO: set if payout is cancelled
+
+
 class PaymentTransaction(Base):
     """
     Ledger row for a single payment event.
@@ -166,6 +174,19 @@ class PaymentTransaction(Base):
     )
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Payout tracking — populated by admin when transfer is processed
+    # TODO: wire to Stripe Connect payouts once connected
+    payout_status: Mapped[PayoutStatus] = mapped_column(
+        SAEnum(PayoutStatus, name="payout_status_enum", create_type=False),
+        nullable=False,
+        default=PayoutStatus.pending,
+        server_default="pending",
+    )
+    payout_marked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    payout_reference: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
