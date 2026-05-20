@@ -137,8 +137,8 @@ function renderNode(node: DocNode, key: string): React.ReactNode {
     case 'heading': {
       const level = (node.attrs?.level as number) ?? 2
       const className = level === 2
-        ? 'mt-6 mb-2 font-serif text-[1.25rem] leading-snug text-navy-900 first:mt-0'
-        : 'mt-5 mb-2 font-serif text-[1.05rem] leading-snug text-navy-900 first:mt-0'
+        ? 'mt-6 mb-2 font-semibold text-[1.15rem] leading-snug text-navy-900 first:mt-0'
+        : 'mt-5 mb-2 font-semibold text-[1.0rem] leading-snug text-navy-900 first:mt-0'
       return React.createElement(
         `h${level}`,
         { key, className },
