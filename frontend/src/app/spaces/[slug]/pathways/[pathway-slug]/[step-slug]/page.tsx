@@ -2,6 +2,8 @@ import React from 'react'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getStep, getPathwayOverview, getStepResources, getStepBlocks } from '@/lib/serverApi'
+import { getPathwayCoverStyle } from '@/lib/coverArt'
+import { resolveMediaUrl } from '@/lib/api'
 import StepActions from '@/components/spaces/StepActions'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import PathwayStepNav from '@/components/spaces/PathwayStepNav'
@@ -344,18 +346,77 @@ export default async function StepPage({ params }: Props) {
   const prevStep = currentIndex > 0 ? allSteps[currentIndex - 1] : null
   const nextStep = currentIndex < allSteps.length - 1 ? allSteps[currentIndex + 1] : null
 
-  const pathwayHref = `/spaces/${slug}/pathways/${pathwaySlug}`
+  const pathwayHref = `/spaces/${slug}/pathways`
   const pathwayTitle = overview?.title ?? 'Pathway'
+  const cs = getPathwayCoverStyle(pathwaySlug)
+  const coverImageUrl = overview?.cover_image_url ? resolveMediaUrl(overview.cover_image_url) : null
   const completedCount = allSteps.filter((s) => s.is_completed).length
   const totalCount = allSteps.length
   const sections = overview?.sections ?? []
 
   return (
-    // Two-column layout: sidebar on left (desktop), collapsed nav on mobile.
-    // On mobile the flex-col means PathwayStepNav renders its collapsible button
-    // at the top before the step content. On desktop (lg:) it becomes a sticky
-    // left sidebar alongside the content column.
-    <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
+    <div>
+
+      {/* ── Compact pathway header card ── */}
+      {overview && (
+        <div
+          className="relative mb-6 overflow-hidden rounded-2xl"
+          style={{
+            background: cs.background,
+            backgroundSize: cs.backgroundSize ?? 'auto',
+            minHeight: '96px',
+          }}
+        >
+          {coverImageUrl && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={coverImageUrl}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(7,24,36,0.80) 0%, rgba(7,56,58,0.62) 100%)',
+                }}
+              />
+            </>
+          )}
+          <Link
+            href={pathwayHref}
+            className="group relative flex items-center gap-4 px-6 py-5 md:px-8"
+          >
+            <div className="min-w-0 flex-1">
+              <p
+                className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em] transition-opacity group-hover:opacity-80"
+                style={{ color: coverImageUrl ? 'rgba(255,255,255,0.60)' : cs.labelColor }}
+              >
+                Pathway
+              </p>
+              <h2
+                className="font-serif text-xl leading-snug md:text-2xl"
+                style={{ color: coverImageUrl ? '#FFFFFF' : cs.titleColor }}
+              >
+                {overview.title}
+              </h2>
+            </div>
+            <span
+              className="shrink-0 text-sm transition-opacity group-hover:opacity-70"
+              style={{ color: coverImageUrl ? 'rgba(255,255,255,0.55)' : cs.labelColor }}
+            >
+              ← All Pathways
+            </span>
+          </Link>
+        </div>
+      )}
+
+      {/* Two-column layout: sidebar on left (desktop), collapsed nav on mobile.
+          On mobile the flex-col means PathwayStepNav renders its collapsible button
+          at the top before the step content. On desktop (lg:) it becomes a sticky
+          left sidebar alongside the content column. */}
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
 
       {/* ── Left: pathway step nav ── */}
       <div className="lg:w-[320px] lg:shrink-0">
@@ -374,15 +435,6 @@ export default async function StepPage({ params }: Props) {
 
       {/* ── Right: step content ── */}
       <div className="min-w-0 flex-1">
-
-        {/* Breadcrumb */}
-        <div className="mb-8 flex items-center gap-2 text-sm text-slate-400">
-          <Link href={pathwayHref} className="transition-colors hover:text-navy-700">
-            {pathwayTitle}
-          </Link>
-          <span className="text-slate-200">/</span>
-          <span className="line-clamp-1 text-slate-500">{step.title}</span>
-        </div>
 
         {/* Progress strip — shown on mobile only; desktop sidebar handles it */}
         <div className="mb-10 lg:hidden">
@@ -499,6 +551,7 @@ export default async function StepPage({ params }: Props) {
         </div>
 
       </div>
+    </div>
     </div>
   )
 }

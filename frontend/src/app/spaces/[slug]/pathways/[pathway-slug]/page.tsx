@@ -90,15 +90,18 @@ export default async function PathwayDetailPage({ params }: Props) {
     redirect(`/spaces/${slug}/pathways/${pathwaySlug}/about`)
   }
 
+  // For accessible users with steps, skip the overview and go straight to the right step.
+  // First incomplete step wins; fall back to first step if all are complete.
+  if (!isComingSoon && pathway.steps.length > 0) {
+    const nextIncomplete = pathway.steps.find((s) => !s.is_completed)
+    const continueSlug = nextIncomplete?.slug ?? pathway.steps[0].slug
+    redirect(`/spaces/${slug}/pathways/${pathwaySlug}/${continueSlug}`)
+  }
+
   const progressPct =
     pathway.step_count > 0
       ? Math.round((pathway.completed_count / pathway.step_count) * 100)
       : 0
-
-  const nextIncomplete = pathway.steps.find((s) => !s.is_completed)
-  const continueHref = nextIncomplete
-    ? `/spaces/${slug}/pathways/${pathwaySlug}/${nextIncomplete.slug}`
-    : `/spaces/${slug}/pathways/${pathwaySlug}/${pathway.steps[0]?.slug}`
 
   return (
     <div className="max-w-2xl">
@@ -188,19 +191,7 @@ export default async function PathwayDetailPage({ params }: Props) {
             </div>
           )}
 
-          {pathway.steps.length > 0 && continueHref && (
-            <div className="mb-8">
-              <Link
-                href={continueHref}
-                className="inline-block rounded-full px-5 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-              >
-                {pathway.completed_count === 0 ? 'Begin' : pathway.completed_count >= pathway.step_count ? 'Review' : 'Continue'}
-              </Link>
-            </div>
-          )}
-
-          {pathway.steps.length === 0 ? (
+{pathway.steps.length === 0 ? (
             <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-slate-500">
               Steps for this pathway are coming soon.
             </div>
