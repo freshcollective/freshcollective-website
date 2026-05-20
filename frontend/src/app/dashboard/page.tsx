@@ -311,7 +311,7 @@ export default async function DashboardPage() {
                   <span
                     className="inline-block text-xl font-semibold"
                     style={{
-                      background: 'linear-gradient(90deg, #FFFFFF 0%, #EAF7F6 35%, #071824 100%)',
+                      background: 'linear-gradient(90deg, #071824 0%, #12343A 35%, #FFFFFF 100%)',
                       WebkitBackgroundClip: 'text',
                       WebkitTextFillColor: 'transparent',
                       backgroundClip: 'text',
