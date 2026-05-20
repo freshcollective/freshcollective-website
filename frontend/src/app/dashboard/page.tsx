@@ -242,16 +242,18 @@ export default async function DashboardPage() {
                     className="mb-3 h-[2px] w-5 rounded-full"
                     style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
                   />
-                  <h3
-                    className="text-xl font-semibold leading-snug transition-opacity group-hover:opacity-80"
-                    style={{
-                      background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 70%)',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                      backgroundClip: 'text',
-                    }}
-                  >
-                    Explore collectives
+                  <h3 className="leading-snug transition-opacity group-hover:opacity-80">
+                    <span
+                      className="inline-block text-xl font-semibold"
+                      style={{
+                        background: 'linear-gradient(90deg, #55D7D2 0%, #D9FFFD 50%, #FFFFFF 100%)',
+                        WebkitBackgroundClip: 'text',
+                        WebkitTextFillColor: 'transparent',
+                        backgroundClip: 'text',
+                      }}
+                    >
+                      Explore collectives
+                    </span>
                   </h3>
                   <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
                     Find other guided spaces and communities to join.
@@ -305,16 +307,18 @@ export default async function DashboardPage() {
                   className="mb-3 h-[2px] w-5 rounded-full"
                   style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.80) 0%, transparent 100%)' }}
                 />
-                <h3
-                  className="text-xl font-semibold leading-snug transition-opacity group-hover:opacity-80"
-                  style={{
-                    background: 'linear-gradient(90deg, #FFFFFF 0%, #EAF7F6 35%, #071824 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                  }}
-                >
-                  Creator Studio
+                <h3 className="leading-snug transition-opacity group-hover:opacity-80">
+                  <span
+                    className="inline-block text-xl font-semibold"
+                    style={{
+                      background: 'linear-gradient(90deg, #FFFFFF 0%, #EAF7F6 35%, #071824 100%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                    }}
+                  >
+                    Creator Studio
+                  </span>
                 </h3>
                 <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.82)' }}>
                   Build and manage your collectives, pathways, gatherings, and people.
