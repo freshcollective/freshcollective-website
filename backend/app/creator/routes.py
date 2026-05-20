@@ -87,6 +87,8 @@ from app.models.platform import (
     Space,
     SpaceInvitation,
     SpaceMembership,
+    SpaceMembershipStatus,
+    SpaceRole,
     StepProgress,
     StepResource,
 )
@@ -340,6 +342,17 @@ def create_space(
         status="draft",
     )
     db.add(space)
+    db.flush()  # assign space.id before creating membership
+
+    # Auto-create creator membership so the owner appears as a member
+    db.add(SpaceMembership(
+        id=str(uuid4()),
+        user_id=current_user.id,
+        space_id=space.id,
+        role=SpaceRole.creator,
+        status=SpaceMembershipStatus.active,
+    ))
+
     db.commit()
     db.refresh(space)
     return space

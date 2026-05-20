@@ -135,6 +135,7 @@ class ProfileResponse(BaseModel):
     bio: str | None
     display_name: str | None
     profile_tagline: str | None
+    avatar_url: str | None
     is_public: bool
     has_completed_onboarding: bool
     interests: list[str]

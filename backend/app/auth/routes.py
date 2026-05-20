@@ -225,7 +225,8 @@ async def get_memberships(
         )
         .all()
     )
-    return [
+
+    result = [
         {
             "space_id": space.id,
             "space_name": space.name,
@@ -236,6 +237,23 @@ async def get_memberships(
         }
         for membership, space in rows
     ]
+
+    # Also include spaces the user owns via creator_id but has no membership row for.
+    # This handles collectives created before auto-membership was introduced.
+    membership_space_ids = {space.id for _, space in rows}
+    owned_spaces = db.query(Space).filter(Space.creator_id == current_user.id).all()
+    for space in owned_spaces:
+        if space.id not in membership_space_ids:
+            result.append({
+                "space_id": space.id,
+                "space_name": space.name,
+                "space_slug": space.slug,
+                "role": "creator",
+                "joined_at": space.created_at.isoformat(),
+                "status": "active",
+            })
+
+    return result
 
 
 @router.post("/me/change-password")

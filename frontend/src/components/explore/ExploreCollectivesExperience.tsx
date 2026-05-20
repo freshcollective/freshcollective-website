@@ -117,14 +117,16 @@ function CollectiveCard({
         </div>
       </div>
 
-      {/* Card body — description preview */}
-      {space.description && (
-        <div className="px-4 pt-3">
-          <p className="line-clamp-2 text-[12.5px] leading-[1.65] text-slate-500">
-            {space.description}
-          </p>
-        </div>
-      )}
+      {/* Card body — description preview; flex-1 pins footer to bottom regardless of content */}
+      <div className="flex-1">
+        {space.description && (
+          <div className="px-4 pt-3">
+            <p className="line-clamp-2 text-[12.5px] leading-[1.65] text-slate-500">
+              {space.description}
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Footer row */}
       <div

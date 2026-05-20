@@ -19,8 +19,10 @@ export default async function SpaceMembersPage({ params }: Props) {
   )
   const learners = typedMembers.filter((m) => m.space_role === 'learner')
 
-  // Invite button is shown only to platform-level creators (who can call the creator invite endpoint)
-  const canInvite = me?.role === 'creator'
+  const currentUserMember = me ? typedMembers.find((m) => m.id === me.id) : null
+  const canInvite =
+    currentUserMember?.space_role === 'creator' ||
+    currentUserMember?.space_role === 'moderator'
 
   return (
     <div className="max-w-5xl">
