@@ -117,11 +117,12 @@ function CollectiveSwitcher({
                   type="button"
                   onClick={() => switchTo(s.slug)}
                   disabled={isPending}
-                  className="flex w-full flex-col border-0 px-3 py-2 text-left outline-none transition-colors"
+                  className="flex w-full flex-col rounded-xl px-3 py-2.5 text-left outline-none transition-colors"
                   style={{
-                    background: isCurrent ? 'rgba(56,160,158,0.08)' : 'transparent',
-                    borderLeft: isCurrent ? '3px solid #38A09E' : '3px solid transparent',
-                    paddingLeft: '9px',
+                    background: isCurrent ? 'rgba(56,160,158,0.10)' : 'transparent',
+                    border: isCurrent
+                      ? '1px solid rgba(56,160,158,0.28)'
+                      : '1px solid transparent',
                     opacity: isPendingThis ? 0.75 : 1,
                   }}
                   onMouseEnter={(e) => {
@@ -131,8 +132,7 @@ function CollectiveSwitcher({
                   }}
                   onMouseLeave={(e) => {
                     if (!isCurrent)
-                      (e.currentTarget as HTMLButtonElement).style.background =
-                        isCurrent ? 'rgba(56,160,158,0.10)' : 'transparent'
+                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
                   }}
                 >
                   <span
