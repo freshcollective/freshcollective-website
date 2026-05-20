@@ -3,7 +3,7 @@ import Link from 'next/link'
 import Container from '@/components/layout/Container'
 import LogoutButton from '@/components/layout/LogoutButton'
 import Avatar from '@/components/ui/Avatar'
-import { GoldLabel, PillTag } from '@/components/ui/BrandLabel'
+import { GoldLabel } from '@/components/ui/BrandLabel'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import { getMyMemberships, getPublicSpaces } from '@/lib/serverApi'
@@ -174,7 +174,7 @@ export default async function DashboardPage() {
                               Collective
                             </p>
                             <p
-                              className="font-serif text-xl leading-tight transition-opacity group-hover:opacity-90"
+                              className="text-xl font-semibold leading-tight transition-opacity group-hover:opacity-90"
                               style={{ color: hasImage ? '#FFFFFF' : cs.titleColor }}
                             >
                               {m.space_name}
@@ -227,14 +227,15 @@ export default async function DashboardPage() {
                   })}
                 </div>
 
-                {/* Explore CTA — navy feature card, below own collectives */}
+                {/* Explore card — navy, matched sizing with Creator Studio */}
                 <Link
                   href="/dashboard/explore"
-                  className="group block overflow-hidden rounded-2xl px-6 py-6 transition-all hover:-translate-y-0.5 hover:shadow-xl"
+                  className="group block w-full overflow-hidden rounded-2xl px-6 py-7 transition-all hover:-translate-y-0.5 hover:shadow-2xl"
                   style={{
+                    minHeight: '172px',
                     background: '#071824',
                     border: '1px solid rgba(66,199,198,0.10)',
-                    boxShadow: '0 8px 40px rgba(7,24,36,0.28), 0 2px 8px rgba(0,0,0,0.14)',
+                    boxShadow: '0 4px 24px rgba(7,24,36,0.24), 0 1px 4px rgba(0,0,0,0.12)',
                   }}
                 >
                   <div
@@ -242,9 +243,9 @@ export default async function DashboardPage() {
                     style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
                   />
                   <h3
-                    className="font-serif text-xl leading-snug transition-opacity group-hover:opacity-80 md:text-2xl"
+                    className="text-xl font-semibold leading-snug transition-opacity group-hover:opacity-80"
                     style={{
-                      background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 75%)',
+                      background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 70%)',
                       WebkitBackgroundClip: 'text',
                       WebkitTextFillColor: 'transparent',
                       backgroundClip: 'text',
@@ -288,30 +289,42 @@ export default async function DashboardPage() {
 
           {/* ── Creator tools ── */}
           {isCreatorOrAdmin && (
-            <section className="mb-8 max-w-2xl">
+            <section className="mb-8">
               <GoldLabel className="mb-4">Creator tools</GoldLabel>
               <Link
                 href="/creator-studio"
-                className="group block overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-md"
-                style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
+                className="group block w-full overflow-hidden rounded-2xl px-6 py-7 transition-all hover:-translate-y-0.5 hover:shadow-2xl"
+                style={{
+                  minHeight: '172px',
+                  background: '#38A09E',
+                  border: '1px solid rgba(7,24,36,0.10)',
+                  boxShadow: '0 4px 24px rgba(56,160,158,0.24), 0 1px 4px rgba(0,0,0,0.10)',
+                }}
               >
-                <div className="px-6 py-6">
-                  <div className="mb-3">
-                    <PillTag>Creator</PillTag>
-                  </div>
-                  <h3 className="font-serif text-xl text-navy-900 transition-colors group-hover:text-teal-700">
-                    Creator Studio
-                  </h3>
-                  <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
-                    Build and manage your collectives, pathways, gatherings, and people.
-                  </p>
-                  <span
-                    className="mt-4 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
-                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                  >
-                    Open Studio →
-                  </span>
-                </div>
+                <div
+                  className="mb-3 h-[2px] w-5 rounded-full"
+                  style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.80) 0%, transparent 100%)' }}
+                />
+                <h3
+                  className="text-xl font-semibold leading-snug transition-opacity group-hover:opacity-80"
+                  style={{
+                    background: 'linear-gradient(90deg, #FFFFFF 0%, #EAF7F6 35%, #071824 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                  }}
+                >
+                  Creator Studio
+                </h3>
+                <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.82)' }}>
+                  Build and manage your collectives, pathways, gatherings, and people.
+                </p>
+                <span
+                  className="mt-5 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                  style={{ background: '#071824' }}
+                >
+                  Open Studio →
+                </span>
               </Link>
             </section>
           )}
