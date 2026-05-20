@@ -384,31 +384,20 @@ export default async function StepPage({ params }: Props) {
               />
             </>
           )}
-          <Link
-            href={pathwayHref}
-            className="group relative flex items-center gap-4 px-6 py-5 md:px-8"
-          >
-            <div className="min-w-0 flex-1">
-              <p
-                className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em] transition-opacity group-hover:opacity-80"
-                style={{ color: coverImageUrl ? 'rgba(255,255,255,0.60)' : cs.labelColor }}
-              >
-                Pathway
-              </p>
-              <h2
-                className="font-serif text-xl leading-snug md:text-2xl"
-                style={{ color: coverImageUrl ? '#FFFFFF' : cs.titleColor }}
-              >
-                {overview.title}
-              </h2>
-            </div>
-            <span
-              className="shrink-0 text-sm transition-opacity group-hover:opacity-70"
-              style={{ color: coverImageUrl ? 'rgba(255,255,255,0.55)' : cs.labelColor }}
+          <div className="relative px-6 py-5 md:px-8">
+            <p
+              className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em]"
+              style={{ color: coverImageUrl ? 'rgba(255,255,255,0.60)' : cs.labelColor }}
             >
-              ← All Pathways
-            </span>
-          </Link>
+              Pathway
+            </p>
+            <h2
+              className="font-serif text-xl leading-snug md:text-2xl"
+              style={{ color: coverImageUrl ? '#FFFFFF' : cs.titleColor }}
+            >
+              {overview.title}
+            </h2>
+          </div>
         </div>
       )}
 
@@ -437,7 +426,7 @@ export default async function StepPage({ params }: Props) {
       <div className="min-w-0 flex-1">
 
         {/* Progress strip — shown on mobile only; desktop sidebar handles it */}
-        <div className="mb-10 lg:hidden">
+        <div className="mb-6 lg:hidden">
           <div className="mb-2 flex items-baseline justify-between text-xs text-slate-400">
             <span>{completedCount} of {totalCount} complete</span>
             <span>Step {step.position} of {totalCount}</span>
@@ -448,11 +437,6 @@ export default async function StepPage({ params }: Props) {
               style={{ width: `${totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%` }}
             />
           </div>
-        </div>
-
-        {/* Step position label — desktop only (mobile has it in the collapsible button) */}
-        <div className="mb-10 hidden items-baseline justify-end text-xs text-slate-400 lg:flex">
-          <span>Step {step.position} of {totalCount}</span>
         </div>
 
         {/* Step header */}
