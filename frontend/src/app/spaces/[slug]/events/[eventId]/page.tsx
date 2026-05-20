@@ -10,7 +10,7 @@
 
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getSpaceEvent } from '@/lib/serverApi'
+import { getSpace, getSpaceEvent } from '@/lib/serverApi'
 import type { EventDetail } from '@/types/platform'
 import { formatGatheringFullDate, formatGatheringTime } from '@/lib/dateTime'
 
@@ -38,8 +38,6 @@ function getEventState(event: EventDetail): EventState {
   return event.recording_url ? 'past-replay' : 'past-no-replay'
 }
 
-const formatFullDate = formatGatheringFullDate
-const formatTime     = formatGatheringTime
 
 function formatDuration(startsAt: string, endsAt: string): string {
   const mins = Math.round(
@@ -76,9 +74,16 @@ const STATE_BADGE: Record<EventState, { label: string; bg: string; color: string
 
 export default async function EventDetailPage({ params }: Props) {
   const { slug, eventId } = await params
-  const event: EventDetail | null = await getSpaceEvent(slug, eventId)
+  const [space, event] = await Promise.all([
+    getSpace(slug),
+    getSpaceEvent(slug, eventId),
+  ])
 
   if (!event) notFound()
+
+  const timezone = space?.timezone ?? 'Australia/Melbourne'
+  const formatFullDate = (iso: string) => formatGatheringFullDate(iso, timezone)
+  const formatTime     = (iso: string) => formatGatheringTime(iso, timezone)
 
   const state = getEventState(event)
   const badge = STATE_BADGE[state]
@@ -180,7 +185,7 @@ export default async function EventDetailPage({ params }: Props) {
                 About this session
               </p>
               <div className="space-y-3">
-                {event.description.split('\n').filter(Boolean).map((para, i) => (
+                {event.description.split('\n').filter(Boolean).map((para: string, i: number) => (
                   <p key={i} className="text-[15px] leading-[1.8] text-slate-600">{para}</p>
                 ))}
               </div>

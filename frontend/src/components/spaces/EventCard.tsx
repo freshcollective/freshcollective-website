@@ -51,10 +51,11 @@ function getGatheringAccent(locationType: string): AccentStyle {
 interface EventCardProps {
   event: EventSummary
   spaceSlug: string
+  timezone: string
 }
 
-export default function EventCard({ event, spaceSlug }: EventCardProps) {
-  const { day, month, time } = formatGatheringDate(event.starts_at)
+export default function EventCard({ event, spaceSlug, timezone }: EventCardProps) {
+  const { day, month, time } = formatGatheringDate(event.starts_at, timezone)
   const locationLabel = LOCATION_LABEL[event.location_type] ?? event.location_type
   const href = `/spaces/${spaceSlug}/events/${event.id}`
   const accent = getGatheringAccent(event.location_type)

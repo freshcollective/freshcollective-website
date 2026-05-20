@@ -165,6 +165,9 @@ class Space(Base):
     is_public: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
     )
+    timezone: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="Australia/Melbourne", server_default="Australia/Melbourne"
+    )
     status: Mapped[SpaceStatus] = mapped_column(
         SAEnum(SpaceStatus, name="space_status_enum", create_type=True),
         nullable=False,

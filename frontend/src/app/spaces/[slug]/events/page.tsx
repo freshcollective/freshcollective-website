@@ -8,7 +8,7 @@
 // TODO (booking system): booking confirmation email / reminder notifications
 // TODO (booking system): creator toggle per-event: open / invite-only / closed
 
-import { getSpaceEvents } from '@/lib/serverApi'
+import { getSpace, getSpaceEvents } from '@/lib/serverApi'
 import GatheringsView from '@/components/spaces/GatheringsView'
 import type { EventSummary } from '@/types/platform'
 
@@ -18,7 +18,12 @@ interface Props {
 
 export default async function SpaceEventsPage({ params }: Props) {
   const { slug } = await params
-  const events: EventSummary[] = await getSpaceEvents(slug)
+  const [space, events] = await Promise.all([
+    getSpace(slug),
+    getSpaceEvents(slug),
+  ])
+  const timezone = space?.timezone ?? 'Australia/Melbourne'
+  const typedEvents = events as EventSummary[]
 
   return (
     <div className="max-w-4xl">
@@ -56,7 +61,7 @@ export default async function SpaceEventsPage({ params }: Props) {
       </div>
 
       {/* ── List / Calendar toggle + content ── */}
-      <GatheringsView events={events} spaceSlug={slug} />
+      <GatheringsView events={typedEvents} spaceSlug={slug} timezone={timezone} />
 
     </div>
   )

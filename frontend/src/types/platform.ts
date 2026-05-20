@@ -21,6 +21,7 @@ export interface SpaceResponse {
   description: string | null
   is_public: boolean
   status: string
+  timezone: string
   cover_image_url: string | null
   pathways: PathwaySummary[]
 }
@@ -221,6 +222,7 @@ export interface CreatorSpaceDetail {
   description: string | null
   is_public: boolean
   status: string
+  timezone: string
   cover_image_url: string | null
 }
 

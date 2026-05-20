@@ -8,6 +8,19 @@ import type { CreatorSpaceDetail } from '@/types/platform'
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
 const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png']
 
+const TIMEZONE_OPTIONS = [
+  { value: 'Australia/Melbourne', label: 'Melbourne (AEST / AEDT)' },
+  { value: 'Australia/Sydney',    label: 'Sydney (AEST / AEDT)' },
+  { value: 'Australia/Brisbane',  label: 'Brisbane (AEST)' },
+  { value: 'Australia/Adelaide',  label: 'Adelaide (ACST / ACDT)' },
+  { value: 'Australia/Perth',     label: 'Perth (AWST)' },
+  { value: 'Pacific/Auckland',    label: 'Auckland (NZST / NZDT)' },
+  { value: 'Europe/London',       label: 'London (GMT / BST)' },
+  { value: 'America/New_York',    label: 'New York (EST / EDT)' },
+  { value: 'America/Los_Angeles', label: 'Los Angeles (PST / PDT)' },
+  { value: 'UTC',                 label: 'UTC' },
+]
+
 // TODO: Connect banner upload to storage once file upload API is available in production.
 // Currently uses the local file storage backend (backend/uploads/covers/).
 
@@ -23,6 +36,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
   const [name, setName] = useState(space.name)
   const [tagline, setTagline] = useState(space.tagline ?? '')
   const [description, setDescription] = useState(space.description ?? '')
+  const [timezone, setTimezone] = useState(space.timezone ?? 'Australia/Melbourne')
   const [isPublic, setIsPublic] = useState(space.is_public)
   const [status, setStatus] = useState(space.status)
 
@@ -106,6 +120,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
           description: description.trim() || null,
           is_public: isPublic,
           status,
+          timezone,
         }),
       })
 
@@ -175,6 +190,25 @@ export default function CollectiveSettingsForm({ space }: Props) {
               placeholder="Who is this for? What change does your collective support? What will people experience?"
               className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
             />
+          </div>
+
+          <div>
+            <label htmlFor="s-timezone" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
+              Timezone
+            </label>
+            <select
+              id="s-timezone"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+            >
+              {TIMEZONE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-[12px] text-slate-400">
+              Used to display gathering dates and times for members.
+            </p>
           </div>
         </div>
       </div>

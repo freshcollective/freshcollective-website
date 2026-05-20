@@ -372,6 +372,8 @@ def update_space(
         space.is_public = body.is_public
     if body.status is not None:
         space.status = body.status
+    if body.timezone is not None:
+        space.timezone = body.timezone
     db.commit()
     db.refresh(space)
     return space

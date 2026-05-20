@@ -1,24 +1,23 @@
-// TODO: COLLECTIVE_TIME_ZONE should come from collective settings, not a hardcoded constant.
-export const COLLECTIVE_TIME_ZONE = 'Australia/Melbourne'
+// TODO: timezone should come from collective settings passed at call sites — do not re-add a hardcoded constant here.
 
 /**
- * "YYYY-MM-DD" in collective local time — used as a stable calendar placement key.
+ * "YYYY-MM-DD" in the given timezone — used as a stable calendar placement key.
  * en-CA locale produces ISO date format natively.
  */
-export function gatheringDateKey(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: COLLECTIVE_TIME_ZONE })
+export function gatheringDateKey(iso: string, timezone: string): string {
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: timezone })
 }
 
-/** Date key for today in collective local time. */
-export function todayGatheringKey(): string {
-  return gatheringDateKey(new Date().toISOString())
+/** Date key for today in the given timezone. */
+export function todayGatheringKey(timezone: string): string {
+  return gatheringDateKey(new Date().toISOString(), timezone)
 }
 
 /** "10:00 AEST" or "10:00 AEDT" — local time with auto DST abbreviation. */
-export function formatGatheringTime(iso: string): string {
+export function formatGatheringTime(iso: string, timezone: string): string {
   const d = new Date(iso)
   const parts = new Intl.DateTimeFormat('en-AU', {
-    timeZone: COLLECTIVE_TIME_ZONE,
+    timeZone: timezone,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -31,39 +30,39 @@ export function formatGatheringTime(iso: string): string {
 }
 
 /** "10:00" without timezone label — for compact calendar chips. */
-export function formatGatheringTimeShort(iso: string): string {
+export function formatGatheringTimeShort(iso: string, timezone: string): string {
   return new Date(iso).toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
-    timeZone: COLLECTIVE_TIME_ZONE,
+    timeZone: timezone,
   })
 }
 
 /** { day: "28", month: "MAY", time: "10:00 AEST" } */
-export function formatGatheringDate(iso: string): { day: string; month: string; time: string } {
+export function formatGatheringDate(iso: string, timezone: string): { day: string; month: string; time: string } {
   const d = new Date(iso)
-  const day   = d.toLocaleDateString('en-GB', { day: '2-digit',  timeZone: COLLECTIVE_TIME_ZONE })
-  const month = d.toLocaleDateString('en-GB', { month: 'short', timeZone: COLLECTIVE_TIME_ZONE }).toUpperCase()
-  return { day, month, time: formatGatheringTime(iso) }
+  const day   = d.toLocaleDateString('en-GB', { day: '2-digit',  timeZone: timezone })
+  const month = d.toLocaleDateString('en-GB', { month: 'short', timeZone: timezone }).toUpperCase()
+  return { day, month, time: formatGatheringTime(iso, timezone) }
 }
 
-/** "Thursday, 28 May 2026" in collective local time. */
-export function formatGatheringFullDate(iso: string): string {
+/** "Thursday, 28 May 2026" in the given timezone. */
+export function formatGatheringFullDate(iso: string, timezone: string): string {
   return new Date(iso).toLocaleDateString('en-GB', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-    timeZone: COLLECTIVE_TIME_ZONE,
+    timeZone: timezone,
   })
 }
 
 /** "Thursday, 28 May" label for mobile calendar day groups. */
-export function formatGatheringMobileDayLabel(iso: string): string {
+export function formatGatheringMobileDayLabel(iso: string, timezone: string): string {
   return new Date(iso).toLocaleDateString('en-GB', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
-    timeZone: COLLECTIVE_TIME_ZONE,
+    timeZone: timezone,
   })
 }

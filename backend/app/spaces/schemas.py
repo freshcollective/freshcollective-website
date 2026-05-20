@@ -44,6 +44,7 @@ class SpaceResponse(BaseModel):
     description: str | None
     is_public: bool
     status: str
+    timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
     pathways: list[PathwaySummary] = []
 

@@ -41,6 +41,7 @@ class SpaceUpdateRequest(BaseModel):
     description: str | None = None
     is_public: bool | None = None
     status: str | None = None
+    timezone: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -68,6 +69,7 @@ class SpaceDetail(BaseModel):
     description: str | None
     is_public: bool
     status: str
+    timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
 
 
