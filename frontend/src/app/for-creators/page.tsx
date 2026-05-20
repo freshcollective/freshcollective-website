@@ -80,13 +80,13 @@ export default function ForCreatorsPage() {
                   style={{
                     fontSize: 'clamp(0.9375rem, 1.4vw, 1.0625rem)',
                     lineHeight: '1.80',
-                    color: 'rgba(255,255,255,0.52)',
+                    color: 'rgba(255,255,255,0.88)',
                     maxWidth: '440px',
                     letterSpacing: '-0.01em',
                   }}
                 >
-                  Create a creator-led learning space with pathways, gatherings,
-                  resources, and community in one intentional place.
+                  Create a learning space with pathways, gatherings, resources,
+                  and community in one intentional place.
                 </p>
 
                 {/* Pricing card */}
@@ -140,7 +140,7 @@ export default function ForCreatorsPage() {
                   <p
                     style={{
                       fontSize: '13px',
-                      color: 'rgba(255,255,255,0.38)',
+                      color: 'rgba(255,255,255,0.80)',
                       letterSpacing: '-0.01em',
                     }}
                   >
@@ -150,7 +150,7 @@ export default function ForCreatorsPage() {
                     className="mt-3"
                     style={{
                       fontSize: '12px',
-                      color: 'rgba(255,255,255,0.30)',
+                      color: 'rgba(255,255,255,0.75)',
                       letterSpacing: '-0.01em',
                       lineHeight: 1.6,
                     }}
@@ -159,32 +159,20 @@ export default function ForCreatorsPage() {
                   </p>
                 </div>
 
-                {/* CTAs */}
+                {/* CTA */}
                 {/* TODO: Replace /signup with dedicated creator onboarding route once it exists */}
-                <div className="flex flex-wrap items-center gap-3">
-                  <Link
-                    href="/signup"
-                    className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90"
-                    style={{
-                      background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                      boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
-                    }}
-                  >
-                    Start building
-                  </Link>
-                  <Link
-                    href="/spaces"
-                    className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px"
-                    style={{
-                      background: 'rgba(255,255,255,0.07)',
-                      border: '1px solid rgba(255,255,255,0.14)',
-                      color: 'rgba(255,255,255,0.75)',
-                      backdropFilter: 'blur(8px)',
-                    }}
-                  >
-                    Explore collectives
-                  </Link>
-                </div>
+                {/* TODO: When Stripe creator billing is wired, create the subscription checkout session with a
+                    14-day trial using subscription_data.trial_period_days = 14 */}
+                <Link
+                  href="/signup"
+                  className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90"
+                  style={{
+                    background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                    boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
+                  }}
+                >
+                  Start building
+                </Link>
 
               </div>
             </div>
