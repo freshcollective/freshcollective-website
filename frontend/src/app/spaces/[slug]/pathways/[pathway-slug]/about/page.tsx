@@ -218,7 +218,8 @@ export default async function PathwayAboutPage({ params }: Props) {
   const cs = getPathwayCoverStyle(pathwaySlug)
   const coverImageUrl = resolveMediaUrl(pathway.cover_image_url)
   const isComingSoon = pathway.status === 'coming_soon'
-  const locked = !isComingSoon && isPathwayLocked(pathway.access_type)
+  // Use server-computed user_has_access — covers free, included, paid+entitlement, admin/creator
+  const locked = !isComingSoon && !pathway.user_has_access
 
   const priceLabel = locked
     ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
@@ -425,7 +426,11 @@ export default async function PathwayAboutPage({ params }: Props) {
                     : { background: 'rgba(56,160,158,0.10)', color: '#073B3A' }
                 }
               >
-                {pathway.access_type === 'free' ? 'Free' : 'Included'}
+                {pathway.access_type === 'free'
+                  ? 'Free'
+                  : pathway.access_type === 'included'
+                  ? 'Included'
+                  : 'Access granted'}
               </span>
             </div>
           )}
