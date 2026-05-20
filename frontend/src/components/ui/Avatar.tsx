@@ -1,4 +1,7 @@
-import Image from 'next/image'
+'use client'
+
+import { useState } from 'react'
+import { resolveMediaUrl } from '@/lib/api'
 
 const SIZE_CLASSES = {
   sm: 'h-8 w-8 text-xs',
@@ -20,12 +23,13 @@ function colorForName(name: string): string {
 }
 
 function initialsFor(name: string): string {
-  return name
-    .split(' ')
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('')
-    || '?'
+  return (
+    name
+      .split(' ')
+      .slice(0, 2)
+      .map((w) => w[0]?.toUpperCase() ?? '')
+      .join('') || '?'
+  )
 }
 
 interface AvatarProps {
@@ -35,19 +39,23 @@ interface AvatarProps {
 }
 
 export default function Avatar({ name, avatarUrl, size = 'md' }: AvatarProps) {
-  const sizeClass = SIZE_CLASSES[size]
-  const colorClass = colorForName(name)
-  const initials = initialsFor(name)
+  const [imgFailed, setImgFailed] = useState(false)
 
-  if (avatarUrl) {
+  const sizeClass  = SIZE_CLASSES[size]
+  const colorClass = colorForName(name)
+  const initials   = initialsFor(name)
+  // resolveMediaUrl turns "/api/uploads/..." → "http://localhost:8000/api/uploads/..."
+  const resolvedUrl = resolveMediaUrl(avatarUrl)
+
+  if (resolvedUrl && !imgFailed) {
     return (
       <div className={`${sizeClass} shrink-0 overflow-hidden rounded-full`}>
-        <Image
-          src={avatarUrl}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={resolvedUrl}
           alt={name}
-          width={80}
-          height={80}
           className="h-full w-full object-cover"
+          onError={() => setImgFailed(true)}
         />
       </div>
     )

@@ -8,10 +8,8 @@ export default async function SettingsProfilePage() {
   return (
     <div>
       <div className="mb-8">
-        <h2 className="mb-1 font-serif text-xl text-navy-900">Profile</h2>
-        <p className="text-sm text-slate-500">
-          How you appear to others in the community.
-        </p>
+        <h2 className="mb-1 text-lg font-semibold text-navy-900">Profile</h2>
+        <p className="text-sm text-slate-500">How you appear to others in the community.</p>
       </div>
 
       {profile ? (

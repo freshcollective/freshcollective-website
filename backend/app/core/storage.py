@@ -20,7 +20,7 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB
 
 ALLOWED_EXTENSIONS = {
     ".pdf", ".mp4", ".mov", ".mp3", ".wav", ".m4a",
-    ".docx", ".png", ".jpg", ".jpeg",
+    ".docx", ".png", ".jpg", ".jpeg", ".webp",
 }
 
 MIME_TO_RESOURCE_TYPE: dict[str, str] = {

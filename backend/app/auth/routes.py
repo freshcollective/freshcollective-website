@@ -1,7 +1,7 @@
 import logging
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
@@ -106,6 +106,7 @@ def _profile_response(user: User, cp: "CreatorProfile | None") -> ProfileRespons
         bio=cp.bio if cp else None,
         display_name=cp.display_name if cp else None,
         profile_tagline=cp.profile_tagline if cp else None,
+        avatar_url=cp.avatar_url if cp else None,
         is_public=cp.is_public if cp else False,
         has_completed_onboarding=user.onboarding_completed_at is not None,
         interests=interests,
@@ -162,6 +163,38 @@ async def update_me(
     if cp:
         db.refresh(cp)
 
+    return _profile_response(current_user, cp)
+
+
+@router.post("/me/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ProfileResponse:
+    from app.core.storage import delete_file, save_file
+    filename = file.filename or "avatar.jpg"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ("jpg", "jpeg", "png", "webp"):
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, and WebP images are allowed.")
+    data = await file.read()
+
+    cp = db.query(CreatorProfile).filter(CreatorProfile.user_id == current_user.id).first()
+    if cp is None:
+        from uuid import uuid4
+        cp = CreatorProfile(id=str(uuid4()), user_id=current_user.id)
+        db.add(cp)
+        db.flush()
+
+    if cp.avatar_url:
+        old_rel = cp.avatar_url.removeprefix("/api/uploads/")
+        delete_file(old_rel)
+
+    rel_path, _, _ = save_file(data, filename, file.content_type or "image/jpeg", "avatars")
+    cp.avatar_url = f"/api/uploads/{rel_path}"
+    db.commit()
+    db.refresh(current_user)
+    db.refresh(cp)
     return _profile_response(current_user, cp)
 
 

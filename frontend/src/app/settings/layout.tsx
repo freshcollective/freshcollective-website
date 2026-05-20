@@ -3,8 +3,8 @@ import SettingsNav from '@/components/settings/SettingsNav'
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <header className="border-b border-border bg-surface">
+    <div className="flex min-h-screen flex-col bg-white">
+      <header className="border-b border-border bg-white">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4 md:px-10">
           <Link href="/dashboard" className="font-serif text-lg text-navy-900 hover:text-teal-600">
             Fresh Collective
@@ -17,16 +17,33 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 
       <main className="flex-1 py-10">
         <div className="mx-auto max-w-4xl px-6 md:px-10">
-          <div className="mb-8">
-            <div className="mb-2 h-px w-6 bg-gold-500" />
-            <h1 className="font-serif text-2xl text-navy-900">Account Settings</h1>
+
+          {/* Heading */}
+          <div className="mb-10">
+            <div
+              className="mb-3 h-[2px] w-8 rounded-full"
+              style={{ background: 'linear-gradient(90deg, #BF9830 0%, transparent 100%)' }}
+            />
+            <h1 className="text-2xl font-semibold leading-snug">
+              <span
+                style={{
+                  background: 'linear-gradient(90deg, #38A09E 0%, #071824 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+                className="inline-block"
+              >
+                Account Settings
+              </span>
+            </h1>
           </div>
 
-          <div className="md:grid md:grid-cols-[200px_1fr] md:gap-12">
+          <div className="md:grid md:grid-cols-[180px_1fr] md:gap-12">
             <aside>
               <SettingsNav />
             </aside>
-            <div className="min-w-0">{children}</div>
+            <div className="min-w-0 pt-8 md:pt-0">{children}</div>
           </div>
         </div>
       </main>
