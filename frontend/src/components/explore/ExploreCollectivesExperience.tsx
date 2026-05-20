@@ -41,14 +41,14 @@ function CollectiveCard({
 
   return (
     <div
-      className="group flex flex-col overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-1 hover:shadow-lg"
+      className="group flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-1 hover:shadow-lg"
       style={{
         border: '1px solid rgba(0,0,0,0.07)',
         boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05)',
       }}
     >
-      {/* Cover area — fixed aspect ratio so all cards are the same height */}
-      <div className="relative w-full overflow-hidden" style={{ paddingBottom: '52%' }}>
+      {/* Cover area — fixed aspect ratio keeps all covers the same height */}
+      <div className="relative w-full shrink-0 overflow-hidden" style={{ paddingBottom: '56.25%' }}>
 
         {/* CSS art layer */}
         {!hasImage && (
@@ -321,7 +321,7 @@ export default function ExploreCollectivesExperience({
           )}
 
           {filtered.length > 0 ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 items-stretch gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map((space) => (
                 <CollectiveCard
                   key={space.id}
