@@ -2,6 +2,11 @@ import re
 from datetime import datetime
 from pydantic import BaseModel, field_validator
 
+ALLOWED_THEMES: set[str] = {
+    "Inner Work", "Wellbeing", "Creativity", "Leadership", "Reflection",
+    "Movement", "Business", "Spirituality", "Relationships", "Parenting",
+}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -42,6 +47,7 @@ class SpaceUpdateRequest(BaseModel):
     is_public: bool | None = None
     status: str | None = None
     timezone: str | None = None
+    themes: list[str] | None = None
 
     @field_validator("name")
     @classmethod
@@ -59,6 +65,15 @@ class SpaceUpdateRequest(BaseModel):
             raise ValueError("Invalid status.")
         return v
 
+    @field_validator("themes")
+    @classmethod
+    def validate_themes(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            invalid = [t for t in v if t not in ALLOWED_THEMES]
+            if invalid:
+                raise ValueError(f"Invalid themes: {invalid}")
+        return v
+
 
 class SpaceDetail(BaseModel):
     model_config = {"from_attributes": True}
@@ -71,6 +86,7 @@ class SpaceDetail(BaseModel):
     status: str
     timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
+    themes: list[str] = []
 
 
 # ---------------------------------------------------------------------------

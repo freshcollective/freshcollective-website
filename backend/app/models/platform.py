@@ -32,6 +32,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -173,6 +174,9 @@ class Space(Base):
         nullable=False,
         default=SpaceStatus.active,
         server_default="active",
+    )
+    themes: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default="'[]'"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False

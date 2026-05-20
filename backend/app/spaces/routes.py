@@ -119,6 +119,7 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
             member_count=member_counts.get(s.id, 0),
             creator_name=creator_names.get(s.creator_id) if s.creator_id else None,
             has_upcoming_event=s.id in upcoming_event_space_ids,
+            themes=s.themes or [],
         )
         for s in spaces
     ]

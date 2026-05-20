@@ -246,6 +246,7 @@ export interface CreatorSpaceDetail {
   status: string
   timezone: string
   cover_image_url: string | null
+  themes: string[]
 }
 
 export interface CreatorPathway {
@@ -353,6 +354,7 @@ export interface PublicSpaceCard {
   member_count: number
   creator_name: string | null
   has_upcoming_event: boolean
+  themes: string[]
 }
 
 export interface SpaceInvitation {

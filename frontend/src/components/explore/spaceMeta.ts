@@ -1,23 +1,22 @@
 import type { PublicSpaceCard } from '@/types/platform'
 
 export interface SpaceWithMeta extends PublicSpaceCard {
-  category: string
   accentColor: string
   isReal: boolean
 }
 
-// TODO: Connect collectives to category taxonomy once category data is finalised.
-export const SPACE_META: Record<
-  string,
-  Pick<SpaceWithMeta, 'category' | 'accentColor'>
-> = {
-  'fresh-collective': { category: 'Inner Work', accentColor: '#38A09E' },
+// accentColor is display-only — not stored in the database.
+const SPACE_ACCENT: Record<string, string> = {
+  'fresh-collective': '#38A09E',
+  'winters-playground': '#7E6E9A',
 }
 
+const DEFAULT_ACCENT = '#38A09E'
+
 export function toSpaceWithMeta(card: PublicSpaceCard): SpaceWithMeta {
-  const meta = SPACE_META[card.slug] ?? {
-    category: 'Inner Work',
-    accentColor: '#38A09E',
+  return {
+    ...card,
+    accentColor: SPACE_ACCENT[card.slug] ?? DEFAULT_ACCENT,
+    isReal: true,
   }
-  return { ...card, ...meta, isReal: true }
 }

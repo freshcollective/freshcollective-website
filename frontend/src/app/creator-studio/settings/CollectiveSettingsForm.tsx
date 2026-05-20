@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { COLLECTIVE_THEMES } from '@/lib/themes'
 import type { CreatorSpaceDetail } from '@/types/platform'
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
@@ -39,6 +40,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
   const [timezone, setTimezone] = useState(space.timezone ?? 'Australia/Melbourne')
   const [isPublic, setIsPublic] = useState(space.is_public)
   const [status, setStatus] = useState(space.status)
+  const [themes, setThemes] = useState<string[]>(space.themes ?? [])
 
   // Banner
   const [bannerFile, setBannerFile] = useState<File | null>(null)
@@ -121,6 +123,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
           is_public: isPublic,
           status,
           timezone,
+          themes,
         }),
       })
 
@@ -209,6 +212,51 @@ export default function CollectiveSettingsForm({ space }: Props) {
             <p className="mt-1.5 text-[12px] text-slate-400">
               Used to display gathering dates and times for members.
             </p>
+          </div>
+
+          {/* ── Collective themes ── */}
+          <div>
+            <p className="mb-1.5 text-[14px] font-semibold text-navy-900">Collective themes</p>
+            <p className="mb-3 text-[13px] text-slate-500">
+              Choose the themes that best describe this collective.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {COLLECTIVE_THEMES.map((theme) => {
+                const selected = themes.includes(theme)
+                return (
+                  <button
+                    key={theme}
+                    type="button"
+                    onClick={() =>
+                      setThemes((prev) =>
+                        selected ? prev.filter((t) => t !== theme) : [...prev, theme],
+                      )
+                    }
+                    className="rounded-lg border px-3.5 py-1.5 text-[13px] font-medium transition-all"
+                    style={
+                      selected
+                        ? {
+                            borderColor: 'rgba(56,160,158,0.50)',
+                            background: 'rgba(56,160,158,0.10)',
+                            color: '#1E6E6C',
+                          }
+                        : {
+                            borderColor: '#e2e8f0',
+                            background: 'transparent',
+                            color: '#6B7A8D',
+                          }
+                    }
+                  >
+                    {theme}
+                  </button>
+                )
+              })}
+            </div>
+            {themes.length === 0 && (
+              <p className="mt-2 text-[12px]" style={{ color: '#94a3b8' }}>
+                Select at least one theme so members can find your collective.
+              </p>
+            )}
           </div>
         </div>
       </div>

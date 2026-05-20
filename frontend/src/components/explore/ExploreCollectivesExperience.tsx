@@ -5,12 +5,10 @@ import Link from 'next/link'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import Container from '@/components/layout/Container'
+import { COLLECTIVE_THEMES } from '@/lib/themes'
 import type { SpaceWithMeta } from './spaceMeta'
 
 export type { SpaceWithMeta }
-
-// TODO: Connect collectives to category taxonomy once category data is finalised.
-const CATEGORIES = ['All', 'Inner Work', 'Wellbeing', 'Creativity', 'Leadership', 'Reflection']
 
 // TODO: Add optional "Featured collective" or "Collective of the week" section later.
 
@@ -39,6 +37,7 @@ function CollectiveCard({
       : '#64748B'
 
   const ctaLabel = isJoined ? 'Continue →' : 'Explore →'
+  const primaryTheme = space.themes[0] ?? null
 
   return (
     <div
@@ -133,12 +132,14 @@ function CollectiveCard({
         style={{ borderColor: 'rgba(0,0,0,0.06)' }}
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-slate-400">
-          <span
-            className="rounded px-1.5 py-0.5 text-[10px] font-medium"
-            style={{ background: `${space.accentColor}18`, color: space.accentColor }}
-          >
-            {space.category}
-          </span>
+          {primaryTheme && (
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+              style={{ background: `${space.accentColor}18`, color: space.accentColor }}
+            >
+              {primaryTheme}
+            </span>
+          )}
           {space.creator_name && (
             <span className="hidden sm:inline">
               by <span className="font-medium text-slate-600">{space.creator_name}</span>
@@ -173,7 +174,7 @@ function EmptyState() {
     <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
       <p className="mb-2 text-[16px] font-semibold text-navy-900">No collectives found.</p>
       <p className="text-[14px] leading-relaxed text-slate-500">
-        Try a different category or search term.
+        Try a different theme or search term.
       </p>
     </div>
   )
@@ -194,13 +195,22 @@ export default function ExploreCollectivesExperience({
   joinedSlugs = [],
   isLoggedIn = false,
 }: Props) {
-  const [activeCategory, setActiveCategory] = useState('All')
+  const [activeTheme, setActiveTheme] = useState('All')
   const [search, setSearch] = useState('')
 
   const joinedSet = useMemo(() => new Set(joinedSlugs), [joinedSlugs])
 
+  // Only show theme filter chips that at least one collective uses
+  const availableThemes = useMemo(() => {
+    const used = new Set(spaces.flatMap((s) => s.themes))
+    return COLLECTIVE_THEMES.filter((t) => used.has(t))
+  }, [spaces])
+
   const filtered = useMemo(() => {
-    let result = activeCategory === 'All' ? spaces : spaces.filter((s) => s.category === activeCategory)
+    let result =
+      activeTheme === 'All'
+        ? spaces
+        : spaces.filter((s) => s.themes.includes(activeTheme))
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       result = result.filter(
@@ -215,7 +225,7 @@ export default function ExploreCollectivesExperience({
       const bJ = joinedSet.has(b.slug) ? 0 : 1
       return aJ - bJ
     })
-  }, [spaces, activeCategory, search, joinedSet])
+  }, [spaces, activeTheme, search, joinedSet])
 
   return (
     <>
@@ -262,27 +272,27 @@ export default function ExploreCollectivesExperience({
         </Container>
       </div>
 
-      {/* ── Category filter + search ── */}
+      {/* ── Theme filter + search ── */}
       <div
         className="sticky top-0 z-10 border-b bg-white"
         style={{ borderColor: '#EEEDE9' }}
       >
         <Container>
           <div className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-            {/* Category chips */}
+            {/* Theme chips — All + only themes used by real collectives */}
             <div className="flex items-center gap-1 overflow-x-auto">
-              {CATEGORIES.map((cat) => (
+              {['All', ...availableThemes].map((theme) => (
                 <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
+                  key={theme}
+                  onClick={() => setActiveTheme(theme)}
                   className="flex-shrink-0 rounded-lg px-3.5 py-1.5 text-[13px] font-medium transition-all"
                   style={
-                    activeCategory === cat
+                    activeTheme === theme
                       ? { background: '#0C1826', color: '#ffffff' }
                       : { color: '#6B7A8D' }
                   }
                 >
-                  {cat}
+                  {theme}
                 </button>
               ))}
             </div>

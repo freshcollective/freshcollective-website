@@ -374,6 +374,8 @@ def update_space(
         space.status = body.status
     if body.timezone is not None:
         space.timezone = body.timezone
+    if body.themes is not None:
+        space.themes = body.themes
     db.commit()
     db.refresh(space)
     return space

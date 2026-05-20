@@ -190,6 +190,7 @@ class PublicSpaceCard(BaseModel):
     member_count: int
     creator_name: str | None
     has_upcoming_event: bool
+    themes: list[str] = []
 
 
 # ---------------------------------------------------------------------------
