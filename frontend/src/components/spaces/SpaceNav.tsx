@@ -33,7 +33,7 @@ export default function SpaceNav({ spaceSlug }: SpaceNavProps) {
       icon: '◎',
     },
     {
-      label: 'Events',
+      label: 'Gatherings',
       href: `${base}/events`,
       icon: '◷',
     },

@@ -1,3 +1,4 @@
+// TODO (naming): Routes and backend models still use "events" internally. User-facing language is "Gatherings".
 // TODO (booking): RSVP / reserve-a-spot action — wire to booking endpoint
 // TODO (booking): capacity limits per event (creator-managed in Creator Studio)
 // TODO (booking): booking status — available, full, booked, cancelled
@@ -106,7 +107,7 @@ export default async function EventDetailPage({ params }: Props) {
           href={`/spaces/${slug}/events`}
           className="text-sm text-slate-400 transition-colors hover:text-teal-600"
         >
-          ← Live Experiences
+          ← Gatherings
         </Link>
       </div>
 
@@ -166,7 +167,7 @@ export default async function EventDetailPage({ params }: Props) {
           <div className="overflow-hidden rounded-2xl border border-border bg-white">
             <div className="border-b border-border px-5 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                Event details
+                Gathering details
               </p>
             </div>
             <div className="divide-y divide-border">

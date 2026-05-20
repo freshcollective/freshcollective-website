@@ -1,3 +1,4 @@
+// TODO (naming): Routes and backend models still use "events" internally. User-facing language is "Gatherings".
 // TODO (booking system): add RSVP / reserve-a-spot action to each event card
 // TODO (booking system): support capacity limits per event (creator-managed)
 // TODO (booking system): booking status — available, full, booked, cancelled
@@ -45,7 +46,7 @@ export default async function SpaceEventsPage({ params }: Props) {
               backgroundClip: 'text',
             }}
           >
-            Live Experiences
+            Live Gatherings
           </span>
         </h2>
         <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
@@ -64,10 +65,10 @@ export default async function SpaceEventsPage({ params }: Props) {
       ) : (
         <div className="rounded-2xl border border-teal-100 bg-white px-7 py-8">
           <p className="mb-1 text-lg font-semibold text-navy-900">
-            No upcoming sessions yet.
+            No upcoming gatherings yet.
           </p>
           <p className="text-sm leading-relaxed text-slate-400">
-            Live calls, workshops, and gatherings will appear here when scheduled.
+            Live calls, workshops, and sessions will appear here when scheduled.
             Check back soon.
           </p>
         </div>
