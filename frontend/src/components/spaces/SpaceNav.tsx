@@ -1,52 +1,39 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import CollectiveSettingsModal from '@/components/spaces/CollectiveSettingsModal'
 
 interface Tab {
   label: string
   href: string
   icon: string
-  // Additional paths that should make this tab active
   alsoActiveOn?: RegExp
 }
 
 interface SpaceNavProps {
   spaceSlug: string
+  spaceName: string
+  isMember: boolean
 }
 
-export default function SpaceNav({ spaceSlug }: SpaceNavProps) {
+export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavProps) {
   const pathname = usePathname()
   const base = `/spaces/${spaceSlug}`
+  const [notifOpen, setNotifOpen] = useState(false)
 
   const tabs: Tab[] = [
     {
       label: 'Collective',
       href: `${base}/community`,
       icon: '◈',
-      // Also active when sitting at the bare space root (redirect target)
       alsoActiveOn: new RegExp(`^/spaces/${spaceSlug}$`),
     },
-    {
-      label: 'Pathways',
-      href: `${base}/pathways`,
-      icon: '◎',
-    },
-    {
-      label: 'Gatherings',
-      href: `${base}/events`,
-      icon: '◷',
-    },
-    {
-      label: 'Members',
-      href: `${base}/members`,
-      icon: '◉',
-    },
-    {
-      label: 'About',
-      href: `${base}/about`,
-      icon: '◇',
-    },
+    { label: 'Pathways',  href: `${base}/pathways`, icon: '◎' },
+    { label: 'Gatherings', href: `${base}/events`,  icon: '◷' },
+    { label: 'Members',   href: `${base}/members`,  icon: '◉' },
+    { label: 'About',     href: `${base}/about`,    icon: '◇' },
   ]
 
   function isActive(tab: Tab): boolean {
@@ -56,6 +43,14 @@ export default function SpaceNav({ spaceSlug }: SpaceNavProps) {
 
   return (
     <>
+      {notifOpen && (
+        <CollectiveSettingsModal
+          spaceSlug={spaceSlug}
+          spaceName={spaceName}
+          onClose={() => setNotifOpen(false)}
+        />
+      )}
+
       {/* ── Desktop: horizontal tab bar ── */}
       <div className="hidden border-b border-border bg-surface md:block">
         <div className="mx-auto max-w-6xl px-10">
@@ -74,13 +69,22 @@ export default function SpaceNav({ spaceSlug }: SpaceNavProps) {
                 {tab.label}
               </Link>
             ))}
+
+            {isMember && (
+              <button
+                onClick={() => setNotifOpen(true)}
+                className="inline-block shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-slate-500 transition-colors hover:text-navy-700"
+              >
+                Notifications
+              </button>
+            )}
           </nav>
         </div>
       </div>
 
       {/* ── Mobile: fixed bottom nav ── */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-surface md:hidden">
-        <div className="flex">
+        <div className="flex overflow-x-auto">
           {tabs.map((tab) => {
             const active = isActive(tab)
             return (
@@ -99,8 +103,17 @@ export default function SpaceNav({ spaceSlug }: SpaceNavProps) {
               </Link>
             )
           })}
+
+          {isMember && (
+            <button
+              onClick={() => setNotifOpen(true)}
+              className="flex flex-1 flex-col items-center gap-0.5 py-2.5 text-center text-slate-400 transition-colors hover:text-teal-600"
+            >
+              <span className="text-base leading-none" aria-hidden="true">🔔</span>
+              <span className="text-[10px] font-medium">Notifications</span>
+            </button>
+          )}
         </div>
-        {/* Safe area spacer for notched phones */}
         <div style={{ height: 'env(safe-area-inset-bottom)' }} className="bg-surface" />
       </nav>
     </>

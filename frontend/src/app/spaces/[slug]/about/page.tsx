@@ -3,7 +3,6 @@ import { resolveMediaUrl } from '@/lib/api'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Avatar from '@/components/ui/Avatar'
-import CollectiveSettingsButton from '@/components/spaces/CollectiveSettingsButton'
 import type { MemberProfile, EventSummary, UserProfile, SpaceResponse } from '@/types/platform'
 
 interface Props {
@@ -237,9 +236,6 @@ export default async function SpaceAboutPage({ params }: Props) {
                   <div className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center text-[14px] font-medium text-slate-400">
                     Join — coming soon
                   </div>
-                )}
-                {isSpaceMember && (
-                  <CollectiveSettingsButton spaceSlug={slug} spaceName={space.name} />
                 )}
                 {canManage && (
                   <Link

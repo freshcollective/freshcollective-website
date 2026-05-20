@@ -23,6 +23,7 @@ export default async function SpaceLayout({ children, params }: Props) {
   if (!space) notFound()
 
   const spaceCoverUrl = resolveMediaUrl(space.cover_image_url)
+  const isMember = memberships.some((m) => m.space_slug === slug)
 
   return (
     <div className="flex min-h-screen flex-col" style={{ background: '#FAFAF8' }}>
@@ -107,7 +108,7 @@ export default async function SpaceLayout({ children, params }: Props) {
         </div>
       </div>
 
-      <SpaceNav spaceSlug={slug} />
+      <SpaceNav spaceSlug={slug} spaceName={space.name} isMember={isMember} />
 
       <main className="flex-1 py-10 pb-24 md:pb-10">
         <div className="mx-auto max-w-6xl px-6 md:px-10">
