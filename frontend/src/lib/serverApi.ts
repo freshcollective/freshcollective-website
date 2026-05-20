@@ -243,6 +243,14 @@ export const getStepBlocks = cache(async (spaceSlug: string, pathwaySlug: string
   return res.json()
 })
 
+export const getStepComments = cache(async (spaceSlug: string, pathwaySlug: string, stepSlug: string) => {
+  const res = await fetchWithSession(
+    `/api/spaces/${spaceSlug}/pathways/${pathwaySlug}/steps/${stepSlug}/comments`,
+  )
+  if (!res.ok) return []
+  return res.json()
+})
+
 export const getCreatorPathwayAboutBlocks = cache(async (spaceSlug: string, pathwaySlug: string) => {
   const res = await fetchWithSession(
     `/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/about-blocks`,

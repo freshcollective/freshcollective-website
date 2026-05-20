@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field, field_validator
 
 
 class StepResourceResponse(BaseModel):
@@ -31,6 +31,7 @@ class PathwaySummary(BaseModel):
     price_cents: int | None = None
     currency: str | None = None
     billing_interval: str | None = None
+    user_has_access: bool = False
 
 
 class SpaceResponse(BaseModel):
@@ -188,3 +189,39 @@ class PublicSpaceCard(BaseModel):
     member_count: int
     creator_name: str | None
     has_upcoming_event: bool
+
+
+# ---------------------------------------------------------------------------
+# Step Comments (Questions & discussion)
+# ---------------------------------------------------------------------------
+
+class StepCommentAuthor(BaseModel):
+    id: str
+    name: str | None
+    email: str
+
+    @computed_field
+    @property
+    def display_name(self) -> str:
+        return self.name or self.email.split("@")[0]
+
+
+class StepCommentItem(BaseModel):
+    id: str
+    body: str
+    author: StepCommentAuthor
+    created_at: datetime
+
+
+class StepCommentCreate(BaseModel):
+    body: str
+
+    @field_validator("body")
+    @classmethod
+    def body_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Comment body cannot be empty.")
+        if len(v) > 2000:
+            raise ValueError("Comment body exceeds 2000 characters.")
+        return v

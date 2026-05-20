@@ -20,6 +20,7 @@ from app.models.platform import (
     PathwayStepBlock,
     Space,
     SpaceMembership,
+    StepComment,
     StepProgress,
     StepResource,
 )
@@ -39,6 +40,9 @@ from app.spaces.schemas import (
     SectionWithSteps,
     SpaceResponse,
     SpaceSummary,
+    StepCommentAuthor,
+    StepCommentCreate,
+    StepCommentItem,
     StepDetail,
     StepResourceResponse,
     StepSummary,
@@ -354,14 +358,46 @@ def list_pathways(
     slug: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> list[Pathway]:
+) -> list[PathwaySummary]:
     space = _get_space_or_404(slug, db)
-    return (
-        db.query(Pathway)
-        .filter(Pathway.space_id == space.id)
-        .order_by(Pathway.position)
-        .all()
+    is_creator_or_admin = current_user.role in ("creator", "admin")
+    space_role = (
+        db.query(SpaceMembership.role)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.role.in_(["creator", "moderator"]),
+            SpaceMembership.status == "active",
+        )
+        .first()
     )
+    is_space_manager = bool(space_role)
+
+    query = db.query(Pathway).filter(Pathway.space_id == space.id)
+    if not (is_creator_or_admin or is_space_manager):
+        # Regular members only see published pathways (active + coming_soon)
+        query = query.filter(Pathway.status.in_(["active", "coming_soon"]))
+
+    pathways = query.order_by(Pathway.position).all()
+
+    result = []
+    for p in pathways:
+        has_access = _compute_pathway_access(current_user, p, space, db)
+        result.append(PathwaySummary(
+            id=p.id,
+            slug=p.slug,
+            title=p.title,
+            description=p.description,
+            cover_image_url=p.cover_image_url,
+            status=p.status.value if hasattr(p.status, "value") else str(p.status),
+            position=p.position,
+            access_type=p.access_type.value if hasattr(p.access_type, "value") else str(p.access_type or "free"),
+            price_cents=p.price_cents,
+            currency=p.currency,
+            billing_interval=p.billing_interval,
+            user_has_access=has_access,
+        ))
+    return result
 
 
 @router.get("/{slug}/pathways-progress", response_model=list[PathwayProgress])
@@ -834,4 +870,95 @@ def get_continue(
         step_slug=next_step.slug,
         step_title=next_step.title,
         all_complete=all_complete,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Step Comments — Questions & discussion
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{slug}/pathways/{pathway_slug}/steps/{step_slug}/comments",
+    response_model=list[StepCommentItem],
+)
+def list_step_comments(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[StepCommentItem]:
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _check_pathway_access(current_user, pathway, space, db)
+    step = _get_step_or_404(pathway.id, step_slug, db)
+
+    comments = (
+        db.query(StepComment)
+        .filter(StepComment.step_id == step.id, StepComment.is_visible.is_(True))
+        .order_by(StepComment.created_at.asc())
+        .all()
+    )
+
+    # Batch-load authors
+    from app.models.user import User as UserModel
+    author_ids = list({c.author_id for c in comments})
+    authors = {
+        u.id: u
+        for u in db.query(UserModel).filter(UserModel.id.in_(author_ids)).all()
+    }
+
+    return [
+        StepCommentItem(
+            id=c.id,
+            body=c.body,
+            author=StepCommentAuthor(
+                id=c.author_id,
+                name=authors[c.author_id].name if c.author_id in authors else None,
+                email=authors[c.author_id].email if c.author_id in authors else "",
+            ),
+            created_at=c.created_at,
+        )
+        for c in comments
+    ]
+
+
+@router.post(
+    "/{slug}/pathways/{pathway_slug}/steps/{step_slug}/comments",
+    response_model=StepCommentItem,
+    status_code=201,
+)
+def create_step_comment(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    body: StepCommentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StepCommentItem:
+    space = _get_space_or_404(slug, db)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _check_pathway_access(current_user, pathway, space, db)
+    step = _get_step_or_404(pathway.id, step_slug, db)
+
+    comment = StepComment(
+        id=str(uuid.uuid4()),
+        step_id=step.id,
+        author_id=current_user.id,
+        body=body.body,
+        is_visible=True,
+    )
+    db.add(comment)
+    db.commit()
+    db.refresh(comment)
+
+    return StepCommentItem(
+        id=comment.id,
+        body=comment.body,
+        author=StepCommentAuthor(
+            id=current_user.id,
+            name=current_user.name,
+            email=current_user.email,
+        ),
+        created_at=comment.created_at,
     )

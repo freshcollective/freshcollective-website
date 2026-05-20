@@ -166,6 +166,13 @@ export interface CommentItem {
   created_at: string
 }
 
+export interface StepComment {
+  id: string
+  body: string
+  author: PostAuthor
+  created_at: string
+}
+
 export interface PostSummary {
   id: string
   post_type: 'prompt' | 'reflection' | 'discussion' | 'announcement'

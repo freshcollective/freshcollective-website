@@ -1,13 +1,14 @@
 import React from 'react'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getStep, getPathwayOverview, getStepResources, getStepBlocks } from '@/lib/serverApi'
+import { getStep, getPathwayOverview, getStepResources, getStepBlocks, getStepComments } from '@/lib/serverApi'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import StepActions from '@/components/spaces/StepActions'
+import StepDiscussion from '@/components/spaces/StepDiscussion'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import PathwayStepNav from '@/components/spaces/PathwayStepNav'
-import type { PathwayWithSteps, StepDetail, StepSummary, StepResource, StepBlock } from '@/types/platform'
+import type { PathwayWithSteps, StepDetail, StepSummary, StepResource, StepBlock, StepComment } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string; 'step-slug': string }>
@@ -327,16 +328,18 @@ function StepResourceList({ resources }: { resources: StepResource[] }) {
 export default async function StepPage({ params }: Props) {
   const { slug, 'pathway-slug': pathwaySlug, 'step-slug': stepSlug } = await params
 
-  const [step, overview, resources, blocks]: [
+  const [step, overview, resources, blocks, comments]: [
     StepDetail | null,
     PathwayWithSteps | null,
     StepResource[],
     StepBlock[],
+    StepComment[],
   ] = await Promise.all([
     getStep(slug, pathwaySlug, stepSlug),
     getPathwayOverview(slug, pathwaySlug),
     getStepResources(slug, pathwaySlug, stepSlug),
     getStepBlocks(slug, pathwaySlug, stepSlug),
+    getStepComments(slug, pathwaySlug, stepSlug),
   ])
 
   if (!step) notFound()
@@ -493,6 +496,14 @@ export default async function StepPage({ params }: Props) {
             <StepResourceList resources={resources} />
           </section>
         )}
+
+        {/* Questions & discussion */}
+        <StepDiscussion
+          spaceSlug={slug}
+          pathwaySlug={pathwaySlug}
+          stepSlug={stepSlug}
+          initialComments={comments}
+        />
 
         {/* Prev / Next */}
         <div className="mt-10 flex items-center justify-between border-t border-border pt-6">

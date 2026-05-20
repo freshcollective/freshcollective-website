@@ -742,6 +742,50 @@ class PostComment(Base):
 
 
 # ---------------------------------------------------------------------------
+# Pathway Step Comments (public/shared discussion per step)
+# ---------------------------------------------------------------------------
+
+class StepComment(Base):
+    """A public discussion comment on a specific pathway step."""
+
+    __tablename__ = "step_comments"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    step_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("pathway_steps.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    author_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    is_visible: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    step: Mapped["PathwayStep"] = relationship("PathwayStep")
+    author: Mapped["User"] = relationship("User", foreign_keys=[author_id])  # type: ignore[name-defined]
+
+    __table_args__ = (
+        Index("ix_step_comments_step_created", "step_id", "created_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Space Invitations
 # ---------------------------------------------------------------------------
 
