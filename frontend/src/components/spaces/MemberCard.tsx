@@ -21,18 +21,20 @@ function formatJoined(isoString: string): string {
 
 interface MemberCardProps {
   member: MemberProfile
+  spaceSlug: string
 }
 
-export default function MemberCard({ member }: MemberCardProps) {
+export default function MemberCard({ member, spaceSlug }: MemberCardProps) {
+  const tagline = member.profile_tagline?.trim() || null
   return (
     <Link
-      href={`/profile/${member.id}`}
+      href={`/spaces/${spaceSlug}/members/${member.id}`}
       className="group block rounded-2xl border border-border bg-white px-5 py-5 transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-sm"
     >
       <div className="flex items-start gap-4">
         <Avatar name={member.display_name} avatarUrl={member.avatar_url} size="md" />
         <div className="flex-1 min-w-0">
-          <div className="mb-1 flex flex-wrap items-center gap-2">
+          <div className="mb-0.5 flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-navy-800 group-hover:text-teal-700 transition-colors">
               {member.display_name}
             </span>
@@ -42,6 +44,9 @@ export default function MemberCard({ member }: MemberCardProps) {
               </span>
             )}
           </div>
+          {tagline && (
+            <p className="mb-1 text-[12px] text-slate-400 italic">{tagline}</p>
+          )}
           {member.bio && (
             <p className="mb-1 text-xs leading-relaxed text-slate-500 line-clamp-2">{member.bio}</p>
           )}

@@ -8,10 +8,11 @@ class MemberProfile(BaseModel):
     id: str
     display_name: str
     avatar_url: str | None
-    space_role: str          # learner / moderator / creator
-    joined_at: datetime      # when they joined the Space
-    bio: str | None          # from CreatorProfile (is_public only)
-    is_creator: bool         # has a public CreatorProfile
+    space_role: str               # learner / moderator / creator
+    joined_at: datetime           # when they joined the Space
+    bio: str | None               # from CreatorProfile (is_public only)
+    profile_tagline: str | None   # short self-description
+    is_creator: bool              # has a public CreatorProfile
 
 
 class PublicProfile(BaseModel):
@@ -21,6 +22,7 @@ class PublicProfile(BaseModel):
     display_name: str
     avatar_url: str | None
     bio: str | None
+    profile_tagline: str | None   # short self-description
     is_creator: bool
     joined_platform: datetime
-    spaces_led: list[str]    # names of spaces where this user is creator
+    spaces_led: list[str]         # names of spaces where this user is creator

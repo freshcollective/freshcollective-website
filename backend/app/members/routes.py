@@ -69,6 +69,7 @@ def list_members(
             ),
             joined_at=membership.joined_at,
             bio=cp.bio if cp else None,
+            profile_tagline=cp.profile_tagline if cp else None,
             is_creator=cp is not None,
         )
         for membership, user, cp in rows
@@ -117,6 +118,7 @@ def get_profile(
         display_name=_display_name(user, cp),
         avatar_url=cp.avatar_url if cp else None,
         bio=cp.bio if cp else None,
+        profile_tagline=cp.profile_tagline if cp else None,
         is_creator=cp is not None,
         joined_platform=user.created_at,
         spaces_led=spaces_led,

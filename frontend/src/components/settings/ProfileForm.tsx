@@ -15,6 +15,7 @@ export default function ProfileForm({ profile }: Props) {
   const displayName = profile.display_name || profile.name || ''
 
   const [name, setName] = useState(profile.name ?? '')
+  const [tagline, setTagline] = useState(profile.profile_tagline ?? '')
   const [bio, setBio] = useState(profile.bio ?? '')
   const [isPublic, setIsPublic] = useState(profile.is_public)
   const [saving, setSaving] = useState(false)
@@ -32,7 +33,7 @@ export default function ProfileForm({ profile }: Props) {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), bio: bio.trim() || null, is_public: isPublic }),
+        body: JSON.stringify({ name: name.trim(), bio: bio.trim() || null, profile_tagline: tagline.trim() || null, is_public: isPublic }),
       })
 
       if (!res.ok) {
@@ -74,6 +75,22 @@ export default function ProfileForm({ profile }: Props) {
             placeholder="Your name"
             className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder:text-slate-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
           />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-navy-800" htmlFor="tagline">
+            Profile tagline
+          </label>
+          <input
+            id="tagline"
+            type="text"
+            value={tagline}
+            onChange={(e) => setTagline(e.target.value)}
+            maxLength={150}
+            placeholder="e.g. Pattern spotter, quiet powerhouse, joy seeker"
+            className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder:text-slate-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+          />
+          <p className="mt-1 text-xs text-slate-400">A short line that gives people a feel for you.</p>
         </div>
 
         <div>

@@ -105,6 +105,7 @@ def _profile_response(user: User, cp: "CreatorProfile | None") -> ProfileRespons
         role=user.role,
         bio=cp.bio if cp else None,
         display_name=cp.display_name if cp else None,
+        profile_tagline=cp.profile_tagline if cp else None,
         is_public=cp.is_public if cp else False,
         has_completed_onboarding=user.onboarding_completed_at is not None,
         interests=interests,
@@ -135,6 +136,7 @@ async def update_me(
         k: v for k, v in {
             "bio": payload.bio,
             "display_name": payload.display_name,
+            "profile_tagline": payload.profile_tagline,
             "is_public": payload.is_public,
         }.items() if v is not None
     }
@@ -147,6 +149,7 @@ async def update_me(
                 user_id=current_user.id,
                 bio=profile_fields.get("bio"),
                 display_name=profile_fields.get("display_name"),
+                profile_tagline=profile_fields.get("profile_tagline"),
                 is_public=profile_fields.get("is_public", False),
             )
             db.add(cp)

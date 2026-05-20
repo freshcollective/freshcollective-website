@@ -121,6 +121,7 @@ export interface MemberProfile {
   space_role: 'learner' | 'moderator' | 'creator'
   joined_at: string
   bio: string | null
+  profile_tagline: string | null
   is_creator: boolean
 }
 
@@ -148,6 +149,7 @@ export interface PublicProfile {
   display_name: string
   avatar_url: string | null
   bio: string | null
+  profile_tagline: string | null
   is_creator: boolean
   joined_platform: string
   spaces_led: string[]
@@ -196,6 +198,7 @@ export interface UserProfile {
   role: string
   bio: string | null
   display_name: string | null
+  profile_tagline: string | null
   is_public: boolean
   has_completed_onboarding: boolean
   interests: string[]

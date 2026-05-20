@@ -1,4 +1,4 @@
-import { getSpaceMembers } from '@/lib/serverApi'
+import { getMe, getSpaceMembers } from '@/lib/serverApi'
 import MembersView from '@/components/spaces/MembersView'
 import type { MemberProfile } from '@/types/platform'
 
@@ -8,17 +8,24 @@ interface Props {
 
 export default async function SpaceMembersPage({ params }: Props) {
   const { slug } = await params
-  const members: MemberProfile[] = await getSpaceMembers(slug)
+  const [me, members] = await Promise.all([
+    getMe(),
+    getSpaceMembers(slug),
+  ])
+  const typedMembers = members as MemberProfile[]
 
-  const leaders = members.filter(
+  const leaders = typedMembers.filter(
     (m) => m.space_role === 'creator' || m.space_role === 'moderator',
   )
-  const learners = members.filter((m) => m.space_role === 'learner')
+  const learners = typedMembers.filter((m) => m.space_role === 'learner')
+
+  // Invite button is shown only to platform-level creators (who can call the creator invite endpoint)
+  const canInvite = me?.role === 'creator'
 
   return (
     <div className="max-w-5xl">
 
-      {/* ── Intro card — navy/gradient, matching other collective pages ── */}
+      {/* ── Intro card — navy/gradient ── */}
       <div
         className="mb-8 overflow-hidden rounded-2xl px-7 py-7"
         style={{
@@ -53,7 +60,12 @@ export default async function SpaceMembersPage({ params }: Props) {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
 
         {/* ── Left: searchable member list ── */}
-        <MembersView leaders={leaders} learners={learners} />
+        <MembersView
+          leaders={leaders}
+          learners={learners}
+          spaceSlug={slug}
+          canInvite={canInvite}
+        />
 
         {/* ── Right: placeholder sidebar panel ── */}
         {/* TODO (creator-content): Creator-managed Members sidebar content will be editable from Creator Studio later. */}
@@ -77,24 +89,14 @@ export default async function SpaceMembersPage({ params }: Props) {
                   Creators can add a welcome note or member guidance here.
                 </p>
               </div>
-
-              <div
-                className="h-px"
-                style={{ background: 'rgba(0,0,0,0.06)' }}
-              />
-
+              <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
               <div>
                 <p className="mb-1 text-[14px] font-semibold text-navy-900">Member notes</p>
                 <p className="text-[13px] leading-relaxed text-slate-500">
                   Key expectations, links, or community reminders can live here.
                 </p>
               </div>
-
-              <div
-                className="h-px"
-                style={{ background: 'rgba(0,0,0,0.06)' }}
-              />
-
+              <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
               <div>
                 <p className="mb-1 text-[14px] font-semibold text-navy-900">Helpful links</p>
                 <p className="text-[13px] leading-relaxed text-slate-500">

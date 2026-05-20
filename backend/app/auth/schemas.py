@@ -68,6 +68,7 @@ class UpdateProfileRequest(BaseModel):
     name: str | None = None
     bio: str | None = None
     display_name: str | None = None
+    profile_tagline: str | None = None
     is_public: bool | None = None
 
     @field_validator("name")
@@ -133,6 +134,7 @@ class ProfileResponse(BaseModel):
     role: str
     bio: str | None
     display_name: str | None
+    profile_tagline: str | None
     is_public: bool
     has_completed_onboarding: bool
     interests: list[str]

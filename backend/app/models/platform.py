@@ -261,6 +261,7 @@ class CreatorProfile(Base):
     )
     display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
+    profile_tagline: Mapped[str | None] = mapped_column(String(150), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     website_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_public: Mapped[bool] = mapped_column(
