@@ -89,9 +89,9 @@ export default function StepDiscussion({
   return (
     <div className="mt-10 pt-8 border-t border-border">
       <div className="mb-1 h-[2px] w-6 rounded-full bg-teal-400" />
-      <h2 className="mb-1 font-serif text-lg text-navy-800">Questions &amp; discussion</h2>
-      <p className="mb-6 text-sm text-slate-400">
-        Ask a question, share what landed, or add something others may find helpful.
+      <h2 className="mb-1 font-serif text-lg text-slate-900">Questions &amp; discussion</h2>
+      <p className="mb-6 text-sm text-slate-500">
+        Visible to others in this pathway. Ask a question, share what landed, or add something others may find helpful.
       </p>
 
       {/* Composer */}
@@ -103,21 +103,26 @@ export default function StepDiscussion({
           rows={3}
           maxLength={2000}
           placeholder="Ask a question or share a thought about this step…"
-          className="w-full resize-none px-5 pt-4 pb-3 text-[15px] leading-relaxed text-navy-900 placeholder:text-slate-300 focus:outline-none"
+          className="w-full resize-none px-5 pt-4 pb-3 text-[15px] leading-relaxed text-navy-900 placeholder:text-slate-400 focus:outline-none"
           style={{ fontFamily: 'inherit' }}
         />
         <div className="flex items-center justify-between border-t border-border px-4 py-2.5">
           {error ? (
             <span className="text-xs text-red-500">{error}</span>
           ) : (
-            <span className="text-xs text-slate-300">
-              {body.length > 0 ? `${body.length}/2000` : 'Cmd+Enter to post'}
+            <span className="text-xs text-slate-400">
+              {body.trim().length > 0 ? `${body.length}/2000` : 'Cmd+Enter to post'}
             </span>
           )}
           <button
             onClick={handlePost}
             disabled={!body.trim() || posting}
-            className="rounded-full bg-navy-900 px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-navy-800 disabled:cursor-not-allowed disabled:opacity-40"
+            className={[
+              'rounded-full px-4 py-1.5 text-xs font-semibold text-white transition-colors',
+              body.trim() && !posting
+                ? 'bg-teal-600 hover:bg-teal-700 cursor-pointer'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed',
+            ].join(' ')}
           >
             {posting ? 'Posting…' : 'Post'}
           </button>
@@ -126,7 +131,7 @@ export default function StepDiscussion({
 
       {/* Comment list */}
       {comments.length === 0 ? (
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-slate-500">
           No discussion yet. Be the first to ask a question or share a thought.
         </p>
       ) : (
