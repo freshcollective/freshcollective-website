@@ -121,6 +121,68 @@ export default async function CreatorStudioHome() {
     }
   }
 
+  // ── Stat card definitions ──────────────────────────────────────────────────
+  const statCards = [
+    {
+      value: pathways.length,
+      label: 'Pathways',
+      sub: `${activePathways.length} published`,
+      accent: 'rgba(56,160,158,0.50)',   // teal
+    },
+    {
+      value: events.length,
+      label: 'Gatherings',
+      sub: `${upcomingEvents.length} upcoming`,
+      accent: 'rgba(197,160,80,0.55)',   // gold
+    },
+    {
+      value: spaceDetail?.status === 'active' ? memberCount : '—',
+      label: 'Members',
+      sub: spaceDetail?.status !== 'active' ? 'publish to see' : undefined,
+      accent: 'rgba(12,24,38,0.22)',     // navy
+    },
+  ]
+
+  // ── Quick action definitions ───────────────────────────────────────────────
+  const quickActions = [
+    {
+      label: 'Edit settings',
+      desc: 'Name, description, themes, visibility',
+      href: '/creator-studio/settings',
+      accent: 'rgba(56,160,158,0.40)',
+    },
+    {
+      label: 'Build pathways',
+      desc: 'Create or manage structured journeys',
+      href: '/creator-studio/pathways',
+      accent: 'rgba(56,160,158,0.40)',
+    },
+    {
+      label: 'Schedule gathering',
+      desc: 'Set up a live event for your members',
+      href: '/creator-studio/gatherings',
+      accent: 'rgba(197,160,80,0.55)',
+    },
+    {
+      label: 'Community',
+      desc: 'Manage posts and discussions',
+      href: '/creator-studio/community',
+      accent: 'rgba(56,160,158,0.40)',
+    },
+    {
+      label: 'Manage people',
+      desc: 'Members, moderators, and invites',
+      href: '/creator-studio/people',
+      accent: 'rgba(12,24,38,0.22)',
+    },
+    {
+      label: 'Edit About page',
+      desc: 'Description shown on the About tab',
+      href: '/creator-studio/settings',
+      accent: 'rgba(56,160,158,0.40)',
+    },
+  ]
+
   return (
     <div className="w-full max-w-[1100px] space-y-6 px-6 py-8 md:px-10 md:py-10">
 
@@ -167,122 +229,118 @@ export default async function CreatorStudioHome() {
           >
             Current collective
           </p>
-          <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+          <div
+            className="overflow-hidden rounded-2xl bg-white"
+            style={{
+              border: '1px solid rgba(56,160,158,0.18)',
+              borderTop: '3px solid rgba(56,160,158,0.45)',
+            }}
+          >
+            <div className="p-6">
 
-            {/* Name + status badges + public link */}
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-[20px] font-semibold text-navy-900">{spaceDetail.name}</h2>
-                  <span
-                    className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                    style={{
-                      background:
-                        spaceDetail.status === 'active'
-                          ? 'rgba(56,160,158,0.12)'
-                          : 'rgba(0,0,0,0.06)',
-                      color: spaceDetail.status === 'active' ? '#38A09E' : '#94a3b8',
-                    }}
-                  >
-                    {spaceDetail.status === 'active' ? 'Published' : 'Draft'}
-                  </span>
-                  <span
-                    className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-                    style={{
-                      background: spaceDetail.is_public
-                        ? 'rgba(56,160,158,0.08)'
-                        : 'rgba(0,0,0,0.05)',
-                      color: spaceDetail.is_public ? '#38A09E' : '#94a3b8',
-                    }}
-                  >
-                    {spaceDetail.is_public ? 'Public' : 'Private'}
-                  </span>
+              {/* Name + status badges + public link */}
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-[20px] font-semibold" style={{ color: '#0C1826' }}>
+                      {spaceDetail.name}
+                    </h2>
+                    <span
+                      className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                      style={{
+                        background:
+                          spaceDetail.status === 'active'
+                            ? 'rgba(56,160,158,0.12)'
+                            : 'rgba(0,0,0,0.06)',
+                        color: spaceDetail.status === 'active' ? '#38A09E' : '#94a3b8',
+                        border:
+                          spaceDetail.status === 'active'
+                            ? '1px solid rgba(56,160,158,0.22)'
+                            : '1px solid rgba(0,0,0,0.08)',
+                      }}
+                    >
+                      {spaceDetail.status === 'active' ? 'Published' : 'Draft'}
+                    </span>
+                    <span
+                      className="rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide"
+                      style={{
+                        background: spaceDetail.is_public
+                          ? 'rgba(56,160,158,0.08)'
+                          : 'rgba(0,0,0,0.05)',
+                        color: spaceDetail.is_public ? '#38A09E' : '#94a3b8',
+                        border: '1px solid rgba(0,0,0,0.07)',
+                      }}
+                    >
+                      {spaceDetail.is_public ? 'Public' : 'Private'}
+                    </span>
+                  </div>
+                  {spaceDetail.tagline && (
+                    <p className="mt-1 text-[14px] text-slate-500">{spaceDetail.tagline}</p>
+                  )}
                 </div>
-                {spaceDetail.tagline && (
-                  <p className="mt-1 text-[14px] text-slate-500">{spaceDetail.tagline}</p>
-                )}
-              </div>
-              <Link
-                href={`/spaces/${spaceDetail.slug}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="shrink-0 text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
-              >
-                View public page ↗
-              </Link>
-            </div>
-
-            {/* Description */}
-            {spaceDetail.description && (
-              <p className="mb-4 max-w-[600px] text-[14px] leading-relaxed text-slate-500">
-                {spaceDetail.description}
-              </p>
-            )}
-
-            {/* Themes + timezone */}
-            {(spaceDetail.themes.length > 0 || spaceDetail.timezone) && (
-              <div className="mb-5 flex flex-wrap items-center gap-2">
-                {spaceDetail.themes.map((t) => (
-                  <span
-                    key={t}
-                    className="rounded-lg px-2.5 py-0.5 text-[11px] font-medium"
-                    style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}
-                  >
-                    {t}
-                  </span>
-                ))}
-                {spaceDetail.timezone && (
-                  <span className="text-[12px] text-slate-400">{spaceDetail.timezone}</span>
-                )}
-              </div>
-            )}
-
-            {/* Stats */}
-            <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                <p className="font-serif text-2xl text-navy-900">{pathways.length}</p>
-                <p className="mt-0.5 text-[13px] text-slate-500">Pathways</p>
-                <p className="mt-0.5 text-[11px] text-slate-400">{activePathways.length} published</p>
-              </div>
-              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                <p className="font-serif text-2xl text-navy-900">{events.length}</p>
-                <p className="mt-0.5 text-[13px] text-slate-500">Gatherings</p>
-                <p className="mt-0.5 text-[11px] text-slate-400">{upcomingEvents.length} upcoming</p>
-              </div>
-              <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                <p className="font-serif text-2xl text-navy-900">
-                  {spaceDetail.status === 'active' ? memberCount : '—'}
-                </p>
-                <p className="mt-0.5 text-[13px] text-slate-500">Members</p>
-                {spaceDetail.status !== 'active' && (
-                  <p className="mt-0.5 text-[11px] text-slate-400">publish to see</p>
-                )}
-              </div>
-            </div>
-
-            {/* Quick links */}
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: 'Edit settings', href: '/creator-studio/settings' },
-                { label: 'Manage pathways', href: '/creator-studio/pathways' },
-                { label: 'Schedule gathering', href: '/creator-studio/gatherings' },
-                { label: 'View people', href: '/creator-studio/people' },
-              ].map(({ label, href }) => (
                 <Link
-                  key={href}
-                  href={href}
-                  className="rounded-xl border border-slate-200 px-3.5 py-2 text-[13px] font-medium text-slate-600 transition-all hover:border-teal-200 hover:text-teal-700"
+                  href={`/spaces/${spaceDetail.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
                 >
-                  {label}
+                  View public page ↗
                 </Link>
-              ))}
-            </div>
+              </div>
 
+              {/* Description */}
+              {spaceDetail.description && (
+                <p className="mb-4 max-w-[600px] text-[14px] leading-relaxed text-slate-500">
+                  {spaceDetail.description}
+                </p>
+              )}
+
+              {/* Themes + timezone */}
+              {(spaceDetail.themes.length > 0 || spaceDetail.timezone) && (
+                <div
+                  className="mb-5 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2.5"
+                  style={{ background: 'rgba(56,160,158,0.05)' }}
+                >
+                  {spaceDetail.themes.map((t) => (
+                    <span
+                      key={t}
+                      className="rounded-lg px-2.5 py-0.5 text-[11px] font-medium"
+                      style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
+                    >
+                      {t}
+                    </span>
+                  ))}
+                  {spaceDetail.timezone && (
+                    <span className="text-[12px] text-slate-400">{spaceDetail.timezone}</span>
+                  )}
+                </div>
+              )}
+
+              {/* Stat cards */}
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {statCards.map(({ value, label, sub, accent }) => (
+                  <div
+                    key={label}
+                    className="overflow-hidden rounded-xl"
+                    style={{ border: '1px solid rgba(0,0,0,0.07)' }}
+                  >
+                    {/* Accent line */}
+                    <div className="h-[3px] w-full" style={{ background: accent }} />
+                    <div className="bg-white p-4">
+                      <p className="font-serif text-2xl" style={{ color: '#0C1826' }}>{value}</p>
+                      <p className="mt-0.5 text-[13px] text-slate-500">{label}</p>
+                      {sub && <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+            </div>
           </div>
         </section>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
-          <p className="mb-2 text-[16px] font-medium text-navy-900">No collective selected</p>
+          <p className="mb-2 text-[16px] font-medium" style={{ color: '#0C1826' }}>No collective selected</p>
           <p className="mb-5 text-[14px] text-slate-500">
             Create your first collective to get started.
           </p>
@@ -313,7 +371,7 @@ export default async function CreatorStudioHome() {
                 border: '1px solid rgba(56,160,158,0.16)',
               }}
             >
-              <p className="text-[14px] font-semibold text-navy-900">Everything looks tidy.</p>
+              <p className="text-[14px] font-semibold" style={{ color: '#0C1826' }}>Everything looks tidy.</p>
               <p className="mt-0.5 text-[13px] text-slate-500">
                 Your collective has the basics in place.
               </p>
@@ -326,7 +384,7 @@ export default async function CreatorStudioHome() {
                   className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-100 bg-white px-5 py-4"
                 >
                   <div className="min-w-0">
-                    <p className="text-[14px] font-medium text-navy-900">{item.title}</p>
+                    <p className="text-[14px] font-medium" style={{ color: '#0C1826' }}>{item.title}</p>
                     <p className="mt-0.5 text-[13px] text-slate-500">{item.desc}</p>
                   </div>
                   <Link
@@ -351,49 +409,23 @@ export default async function CreatorStudioHome() {
           Quick actions
         </p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            {
-              label: 'Create pathway',
-              desc: 'Add a new pathway to your collective',
-              href: '/creator-studio/pathways',
-            },
-            {
-              label: 'Schedule gathering',
-              desc: 'Set up a live event for your members',
-              href: '/creator-studio/gatherings',
-            },
-            {
-              label: 'Invite person',
-              desc: 'Add a member or moderator to your collective',
-              href: '/creator-studio/people',
-            },
-            {
-              label: 'Edit settings',
-              desc: 'Update name, description, and themes',
-              href: '/creator-studio/settings',
-            },
-            {
-              label: 'Open payments',
-              desc: 'Manage member payments and earnings',
-              href: '/creator-studio/payments',
-            },
-            {
-              label: 'View collective',
-              desc: activeSummary
-                ? `Public page for ${activeSummary.name}`
-                : 'Browse all collectives',
-              href: activeSummary ? `/spaces/${activeSummary.slug}` : '/spaces',
-            },
-          ].map(({ label, desc, href }) => (
+          {quickActions.map(({ label, desc, href, accent }) => (
             <Link
               key={label}
               href={href}
-              className="group rounded-xl border border-slate-100 bg-white p-5 shadow-sm transition-all hover:border-teal-200 hover:shadow-md"
+              className="group overflow-hidden rounded-xl border border-slate-100 bg-white transition-all hover:border-teal-200 hover:shadow-sm"
             >
-              <p className="text-[14px] font-medium text-navy-900 transition-colors group-hover:text-teal-700">
-                {label}
-              </p>
-              <p className="mt-1 text-[13px] text-slate-500">{desc}</p>
+              {/* Per-card accent line */}
+              <div className="h-[3px] w-full transition-opacity group-hover:opacity-80" style={{ background: accent }} />
+              <div className="p-5">
+                <p
+                  className="text-[14px] font-medium transition-colors group-hover:text-teal-700"
+                  style={{ color: '#0C1826' }}
+                >
+                  {label}
+                </p>
+                <p className="mt-1 text-[13px] text-slate-500">{desc}</p>
+              </div>
             </Link>
           ))}
         </div>
@@ -426,7 +458,7 @@ export default async function CreatorStudioHome() {
           }}
         >
           <div>
-            <p className="text-[14px] font-semibold text-navy-900">Payments</p>
+            <p className="text-[14px] font-semibold" style={{ color: '#0C1826' }}>Payments</p>
             <p className="mt-0.5 text-[13px] text-slate-500">
               Payment tracking is available from your Payments page.
             </p>
