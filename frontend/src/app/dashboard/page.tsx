@@ -307,18 +307,8 @@ export default async function DashboardPage() {
                   className="mb-3 h-[2px] w-5 rounded-full"
                   style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.80) 0%, transparent 100%)' }}
                 />
-                <h3 className="leading-snug transition-opacity group-hover:opacity-80">
-                  <span
-                    className="inline-block text-xl font-semibold"
-                    style={{
-                      background: 'linear-gradient(90deg, #071824 0%, #12343A 35%, #FFFFFF 100%)',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                      backgroundClip: 'text',
-                    }}
-                  >
-                    Creator Studio
-                  </span>
+                <h3 className="text-xl font-semibold leading-snug text-white transition-opacity group-hover:opacity-80">
+                  Creator Studio
                 </h3>
                 <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.82)' }}>
                   Build and manage your collectives, pathways, gatherings, and people.
