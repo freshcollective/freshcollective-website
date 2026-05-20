@@ -1,5 +1,5 @@
 import { getSpaceMembers } from '@/lib/serverApi'
-import MemberCard from '@/components/spaces/MemberCard'
+import MembersView from '@/components/spaces/MembersView'
 import type { MemberProfile } from '@/types/platform'
 
 interface Props {
@@ -10,58 +10,102 @@ export default async function SpaceMembersPage({ params }: Props) {
   const { slug } = await params
   const members: MemberProfile[] = await getSpaceMembers(slug)
 
-  const leaders = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator')
+  const leaders = members.filter(
+    (m) => m.space_role === 'creator' || m.space_role === 'moderator',
+  )
   const learners = members.filter((m) => m.space_role === 'learner')
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-5xl">
+
+      {/* ── Intro card — navy/gradient, matching other collective pages ── */}
       <div
         className="mb-8 overflow-hidden rounded-2xl px-7 py-7"
         style={{
-          background:
-            'radial-gradient(circle at 85% 15%, rgba(56,160,158,0.18), transparent 50%), ' +
-            'radial-gradient(rgba(56,160,158,0.06) 1px, transparent 1px), ' +
-            'linear-gradient(135deg, #EAF8F7 0%, #F0FBFA 60%, #FAFAF8 100%)',
-          backgroundSize: 'auto, 20px 20px, auto',
-          border: '1px solid rgba(56,160,158,0.14)',
+          background: '#071824',
+          border: '1px solid rgba(66,199,198,0.10)',
+          boxShadow: '0 4px 24px rgba(7,24,36,0.18), 0 1px 4px rgba(0,0,0,0.10)',
         }}
       >
-        <div className="mb-2 h-[2px] w-8 rounded-full" style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }} />
-        <h1 className="mb-1.5 font-serif text-2xl text-navy-900">Members</h1>
-        <p className="text-[14px] text-slate-500">
-          The people in this space — here to learn, reflect, and grow together.
+        <div
+          className="mb-3 h-[2px] w-8 rounded-full"
+          style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
+        />
+        <h1 className="mb-2 leading-snug">
+          <span
+            className="inline-block text-2xl font-semibold"
+            style={{
+              background: 'linear-gradient(90deg, #55D7D2 0%, #D9FFFD 50%, #FFFFFF 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            Members
+          </span>
+        </h1>
+        <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
+          The people inside this collective — here to learn, reflect, and grow together.
         </p>
       </div>
 
-      {leaders.length > 0 && (
-        <section className="mb-10">
-          <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Creators & Moderators
-          </h2>
-          <div className="flex flex-col gap-3">
-            {leaders.map((m) => (
-              <MemberCard key={m.id} member={m} />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* ── Two-column layout ── */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
 
-      <section>
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          {learners.length > 0 ? `${learners.length} Member${learners.length === 1 ? '' : 's'}` : 'Members'}
-        </h2>
-        {learners.length > 0 ? (
-          <div className="flex flex-col gap-3">
-            {learners.map((m) => (
-              <MemberCard key={m.id} member={m} />
-            ))}
+        {/* ── Left: searchable member list ── */}
+        <MembersView leaders={leaders} learners={learners} />
+
+        {/* ── Right: placeholder sidebar panel ── */}
+        {/* TODO (creator-content): Creator-managed Members sidebar content will be editable from Creator Studio later. */}
+        <div className="lg:sticky lg:top-6">
+          <div
+            className="overflow-hidden rounded-2xl border bg-white p-5"
+            style={{ borderColor: 'rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+          >
+            <div
+              className="mb-4 h-[2px] w-5 rounded-full"
+              style={{ background: 'linear-gradient(90deg, #BF9830 0%, transparent 100%)' }}
+            />
+            <p className="mb-4 text-[13px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Important
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <p className="mb-1 text-[14px] font-semibold text-navy-900">Start here</p>
+                <p className="text-[13px] leading-relaxed text-slate-500">
+                  Creators can add a welcome note or member guidance here.
+                </p>
+              </div>
+
+              <div
+                className="h-px"
+                style={{ background: 'rgba(0,0,0,0.06)' }}
+              />
+
+              <div>
+                <p className="mb-1 text-[14px] font-semibold text-navy-900">Member notes</p>
+                <p className="text-[13px] leading-relaxed text-slate-500">
+                  Key expectations, links, or community reminders can live here.
+                </p>
+              </div>
+
+              <div
+                className="h-px"
+                style={{ background: 'rgba(0,0,0,0.06)' }}
+              />
+
+              <div>
+                <p className="mb-1 text-[14px] font-semibold text-navy-900">Helpful links</p>
+                <p className="text-[13px] leading-relaxed text-slate-500">
+                  Resources and links will appear here.
+                </p>
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="rounded-2xl border border-teal-100 bg-white px-6 py-8 text-center">
-            <p className="text-sm text-slate-400">No members yet — be the first to join.</p>
-          </div>
-        )}
-      </section>
+        </div>
+
+      </div>
     </div>
   )
 }
