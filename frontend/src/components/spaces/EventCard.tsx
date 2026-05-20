@@ -1,51 +1,12 @@
 import Link from 'next/link'
 import type { EventSummary } from '@/types/platform'
 import { formatGatheringDate } from '@/lib/dateTime'
+import { getGatheringAccent } from '@/lib/gatheringAccent'
 
 const LOCATION_LABEL: Record<string, string> = {
   zoom: 'Live — Zoom',
   in_person: 'In Person',
   async_recorded: 'Recorded',
-}
-
-type AccentStyle = {
-  border: string
-  pillBg: string
-  pillColor: string
-  monthColor: string
-}
-
-function getGatheringAccent(locationType: string): AccentStyle {
-  switch (locationType) {
-    case 'zoom':
-      return {
-        border: '#38A09E',
-        pillBg: 'rgba(56,160,158,0.10)',
-        pillColor: '#0f766e',
-        monthColor: '#0f766e',
-      }
-    case 'in_person':
-      return {
-        border: '#BF9830',
-        pillBg: 'rgba(191,152,48,0.10)',
-        pillColor: '#92700a',
-        monthColor: '#92700a',
-      }
-    case 'async_recorded':
-      return {
-        border: '#334155',
-        pillBg: 'rgba(51,65,85,0.08)',
-        pillColor: '#334155',
-        monthColor: '#475569',
-      }
-    default:
-      return {
-        border: '#94a3b8',
-        pillBg: 'rgba(148,163,184,0.10)',
-        pillColor: '#64748b',
-        monthColor: '#64748b',
-      }
-  }
 }
 
 interface EventCardProps {

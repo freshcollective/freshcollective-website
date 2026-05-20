@@ -11,6 +11,7 @@ import {
   formatGatheringTimeShort,
   formatGatheringMobileDayLabel,
 } from '@/lib/dateTime'
+import { getGatheringAccent } from '@/lib/gatheringAccent'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -190,17 +191,20 @@ export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
 
                     {/* Event chips */}
                     <div className="flex flex-col gap-0.5">
-                      {dayEvts.map((e) => (
-                        <Link
-                          key={e.id}
-                          href={`/spaces/${spaceSlug}/events/${e.id}`}
-                          title={e.title}
-                          className="block truncate rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight transition-opacity hover:opacity-75"
-                          style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
-                        >
-                          {formatGatheringTimeShort(e.starts_at, timezone)} {e.title}
-                        </Link>
-                      ))}
+                      {dayEvts.map((e) => {
+                        const accent = getGatheringAccent(e.location_type)
+                        return (
+                          <Link
+                            key={e.id}
+                            href={`/spaces/${spaceSlug}/events/${e.id}`}
+                            title={e.title}
+                            className="block truncate rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight transition-opacity hover:opacity-75"
+                            style={{ background: accent.chipBg, color: accent.chipColor }}
+                          >
+                            {formatGatheringTimeShort(e.starts_at, timezone)} {e.title}
+                          </Link>
+                        )
+                      })}
                     </div>
                   </div>
                 )
