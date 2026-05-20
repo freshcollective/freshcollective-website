@@ -84,59 +84,77 @@ function CollectiveSwitcher({
     <div className="mt-4">
       {spaces.length > 0 && (
         <div
-          className="rounded-xl p-3"
+          className="rounded-2xl p-3"
           style={{
-            background: 'rgba(255,255,255,0.07)',
-            border: '1px solid rgba(255,255,255,0.11)',
+            background: 'rgba(255,255,255,0.96)',
+            border: '1px solid rgba(56,160,158,0.28)',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.12)',
           }}
         >
           <p
-            className="mb-2 px-0.5 text-[10px] font-bold uppercase tracking-[0.18em]"
-            style={{ color: 'rgba(255,255,255,0.55)' }}
+            className="mb-2.5 px-1 text-[9.5px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: '#38A09E' }}
           >
             Current collective
           </p>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {spaces.map((s) => {
-              const isActive = s.slug === activeSpace?.slug
+              const isCurrent = s.slug === activeSpace?.slug
               return (
                 <button
                   key={s.slug}
                   type="button"
                   onClick={() => switchTo(s.slug)}
-                  className={`flex w-full flex-col rounded-lg px-3 py-2.5 text-left transition-all ${
-                    isActive ? 'bg-white/[12%]' : 'hover:bg-white/[6%]'
-                  }`}
+                  className="flex w-full flex-col rounded-xl px-3 py-2.5 text-left transition-all"
+                  style={
+                    isCurrent
+                      ? {
+                          background: 'rgba(56,160,158,0.10)',
+                          borderLeft: '3px solid #38A09E',
+                          paddingLeft: '9px',
+                        }
+                      : {
+                          background: 'transparent',
+                          borderLeft: '3px solid transparent',
+                          paddingLeft: '9px',
+                        }
+                  }
+                  onMouseEnter={(e) => {
+                    if (!isCurrent)
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        'rgba(56,160,158,0.06)'
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isCurrent)
+                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                  }}
                 >
                   <span
-                    className="w-full truncate text-[13px] font-medium leading-snug"
-                    style={{ color: isActive ? '#ffffff' : 'rgba(255,255,255,0.80)' }}
+                    className="w-full truncate text-[13px] font-semibold leading-snug"
+                    style={{ color: isCurrent ? '#0C1826' : '#334155' }}
                   >
                     {s.name}
                   </span>
-                  <div className="mt-1.5 flex items-center gap-1">
+                  <div className="mt-1.5 flex items-center gap-1.5">
                     <span
                       className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
                       style={{
                         background:
                           s.status === 'active'
-                            ? 'rgba(66,199,198,0.28)'
-                            : 'rgba(255,255,255,0.08)',
-                        color:
-                          s.status === 'active'
-                            ? '#8DE8E6'
-                            : 'rgba(255,255,255,0.58)',
+                            ? 'rgba(56,160,158,0.14)'
+                            : 'rgba(0,0,0,0.07)',
+                        color: s.status === 'active' ? '#38A09E' : '#94a3b8',
                       }}
                     >
                       {s.status === 'active' ? 'Active' : 'Draft'}
                     </span>
-                    {isActive && (
+                    {isCurrent && (
                       <span
                         className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
                         style={{
-                          background: 'rgba(141,232,230,0.12)',
-                          border: '1px solid rgba(141,232,230,0.35)',
-                          color: '#8DE8E6',
+                          background: 'rgba(56,160,158,0.12)',
+                          border: '1px solid rgba(56,160,158,0.35)',
+                          color: '#38A09E',
                         }}
                       >
                         Current
@@ -151,7 +169,7 @@ function CollectiveSwitcher({
       )}
 
       {/* Create / limit */}
-      <div className="mt-3">
+      <div className="mt-2.5 px-1">
         {!atLimit ? (
           <Link
             href="/creator-studio/create"
