@@ -196,7 +196,7 @@ export default async function CollectiveOverviewPage() {
           },
         ].map(({ label, desc, href }) => (
           <Link
-            key={href}
+            key={label}
             href={href}
             className="group rounded-xl border border-border bg-white p-5 transition-all hover:border-teal-200 hover:shadow-sm"
           >

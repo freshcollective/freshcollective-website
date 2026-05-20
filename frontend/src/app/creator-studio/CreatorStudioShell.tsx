@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import LogoutButton from '@/components/layout/LogoutButton'
@@ -71,13 +71,23 @@ function CollectiveSwitcher({
   collectiveLimit: number
 }) {
   const router = useRouter()
+  // Optimistic selected slug — updates immediately on click so the sidebar
+  // never shows the wrong collective as Current while the page is navigating.
+  // The cookie/server state remains the real source of truth after re-render.
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(activeSpace?.slug ?? null)
+  const [isPending, startTransition] = useTransition()
+
   // Count only non-archived spaces — matches the billing endpoint's definition
   const activeSpaceCount = spaces.filter((s) => s.status !== 'archived').length
   const atLimit = activeSpaceCount >= collectiveLimit
 
   function switchTo(slug: string) {
-    document.cookie = `fc_creator_space=${slug}; path=/; max-age=86400`
-    router.push('/creator-studio/collective')
+    if (slug === selectedSlug) return
+    setSelectedSlug(slug)   // immediate optimistic update
+    startTransition(() => {
+      document.cookie = `fc_creator_space=${slug}; path=/; max-age=86400`
+      router.push('/creator-studio/collective')
+    })
   }
 
   return (
@@ -99,34 +109,31 @@ function CollectiveSwitcher({
           </p>
           <div className="space-y-1.5">
             {spaces.map((s) => {
-              const isCurrent = s.slug === activeSpace?.slug
+              // Use optimistic selectedSlug so the UI updates immediately on click.
+              const isCurrent = s.slug === selectedSlug
+              const isPendingThis = isPending && s.slug === selectedSlug
               return (
                 <button
                   key={s.slug}
                   type="button"
                   onClick={() => switchTo(s.slug)}
+                  disabled={isPending}
                   className="flex w-full flex-col rounded-xl px-3 py-2.5 text-left transition-all"
-                  style={
-                    isCurrent
-                      ? {
-                          background: 'rgba(56,160,158,0.10)',
-                          borderLeft: '3px solid #38A09E',
-                          paddingLeft: '9px',
-                        }
-                      : {
-                          background: 'transparent',
-                          borderLeft: '3px solid transparent',
-                          paddingLeft: '9px',
-                        }
-                  }
+                  style={{
+                    background: isCurrent ? 'rgba(56,160,158,0.10)' : 'transparent',
+                    borderLeft: isCurrent ? '3px solid #38A09E' : '3px solid transparent',
+                    paddingLeft: '9px',
+                    opacity: isPendingThis ? 0.75 : 1,
+                  }}
                   onMouseEnter={(e) => {
-                    if (!isCurrent)
+                    if (!isCurrent && !isPending)
                       (e.currentTarget as HTMLButtonElement).style.background =
                         'rgba(56,160,158,0.06)'
                   }}
                   onMouseLeave={(e) => {
                     if (!isCurrent)
-                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        isCurrent ? 'rgba(56,160,158,0.10)' : 'transparent'
                   }}
                 >
                   <span
@@ -157,7 +164,7 @@ function CollectiveSwitcher({
                           color: '#38A09E',
                         }}
                       >
-                        Current
+                        {isPendingThis ? 'Switching…' : 'Current'}
                       </span>
                     )}
                   </div>
