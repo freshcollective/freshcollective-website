@@ -12,146 +12,7 @@ export type { SpaceWithMeta }
 // TODO: Connect collectives to category taxonomy once category data is finalised.
 const CATEGORIES = ['All', 'Inner Work', 'Wellbeing', 'Creativity', 'Leadership', 'Reflection']
 
-// ---------------------------------------------------------------------------
-// Flagship card
-// ---------------------------------------------------------------------------
-
-function FlagshipCard({
-  space,
-  isJoined,
-  isLoggedIn,
-}: {
-  space: SpaceWithMeta
-  isJoined: boolean
-  isLoggedIn: boolean
-}) {
-  const cs = getCollectiveCoverStyle(space.slug)
-  const resolvedImageUrl = resolveMediaUrl(space.cover_image_url)
-  const hasImage = Boolean(resolvedImageUrl)
-  const href = space.isReal ? `/spaces/${space.slug}` : '/signup'
-  const ctaLabel = isJoined ? 'Continue' : 'Explore Collective'
-
-  return (
-    <div
-      className="group mb-8 overflow-hidden rounded-2xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-xl"
-      style={{
-        border: '1px solid rgba(56,160,158,0.20)',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.04), 0 12px 32px rgba(56,160,158,0.08)',
-      }}
-    >
-      {/* Accent bar */}
-      <div
-        className="h-[3px] w-full"
-        style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 55%, #E7C65A 100%)' }}
-      />
-
-      <div className="grid md:grid-cols-[1fr_260px]">
-        {/* Content */}
-        <div className="p-7 sm:p-8">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span
-              className="rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em]"
-              style={{ background: 'rgba(231,198,90,0.12)', color: '#9A7A18' }}
-            >
-              Flagship Collective
-            </span>
-            {isJoined && (
-              <span
-                className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
-              >
-                Joined
-              </span>
-            )}
-            {space.has_upcoming_event && (
-              <span
-                className="flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
-                style={{ background: 'rgba(56,160,158,0.07)', color: '#38A09E' }}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-teal-400" />
-                Live event soon
-              </span>
-            )}
-          </div>
-
-          <h2
-            className="mb-2 text-navy-950"
-            style={{
-              fontSize: 'clamp(1.375rem, 2.5vw, 1.875rem)',
-              letterSpacing: '-0.03em',
-              lineHeight: '1.15',
-              fontWeight: 650,
-            }}
-          >
-            {space.name}
-          </h2>
-
-          {space.tagline && (
-            <p className="mb-3 text-[15px] leading-[1.65] text-navy-500">{space.tagline}</p>
-          )}
-
-          {space.description && (
-            <p className="mb-5 max-w-[520px] text-[14px] leading-[1.75] text-navy-400">
-              {space.description}
-            </p>
-          )}
-
-          <div className="mb-6 flex flex-wrap items-center gap-4 text-[12.5px] text-navy-400">
-            {space.creator_name && (
-              <span>
-                by <span className="font-medium text-navy-600">{space.creator_name}</span>
-              </span>
-            )}
-            {space.pathway_count > 0 && (
-              <span>{space.pathway_count} pathway{space.pathway_count !== 1 ? 's' : ''}</span>
-            )}
-            {space.member_count > 0 && (
-              <span>{space.member_count} member{space.member_count !== 1 ? 's' : ''}</span>
-            )}
-          </div>
-
-          <Link
-            href={href}
-            className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-          >
-            {ctaLabel}
-            <span className="text-teal-100">→</span>
-          </Link>
-        </div>
-
-        {/* Cover art panel — desktop only */}
-        <div className="relative hidden overflow-hidden md:block" style={{ minHeight: '220px' }}>
-          {hasImage ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={resolvedImageUrl!}
-                alt={space.name}
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-              <div
-                className="absolute inset-0"
-                style={{
-                  background:
-                    'linear-gradient(to right, rgba(255,255,255,0.10) 0%, transparent 40%)',
-                }}
-              />
-            </>
-          ) : (
-            <div
-              className="absolute inset-0"
-              style={{
-                background: cs.background,
-                backgroundSize: cs.backgroundSize ?? 'auto',
-              }}
-            />
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
+// TODO: Add optional "Featured collective" or "Collective of the week" section later.
 
 // ---------------------------------------------------------------------------
 // Collective card
@@ -160,7 +21,6 @@ function FlagshipCard({
 function CollectiveCard({
   space,
   isJoined,
-  isLoggedIn,
 }: {
   space: SpaceWithMeta
   isJoined: boolean
@@ -188,7 +48,7 @@ function CollectiveCard({
         boxShadow: '0 1px 3px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.05)',
       }}
     >
-      {/* Cover area */}
+      {/* Cover area — fixed aspect ratio so all cards are the same height */}
       <div className="relative w-full overflow-hidden" style={{ paddingBottom: '52%' }}>
 
         {/* CSS art layer */}
@@ -258,9 +118,18 @@ function CollectiveCard({
         </div>
       </div>
 
+      {/* Card body — description preview */}
+      {space.description && (
+        <div className="px-4 pt-3">
+          <p className="line-clamp-2 text-[12.5px] leading-[1.65] text-slate-500">
+            {space.description}
+          </p>
+        </div>
+      )}
+
       {/* Footer row */}
       <div
-        className="flex items-center justify-between gap-3 border-t px-4 py-3"
+        className="mt-auto flex items-center justify-between gap-3 border-t px-4 py-3"
         style={{ borderColor: 'rgba(0,0,0,0.06)' }}
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-slate-400">
@@ -330,11 +199,8 @@ export default function ExploreCollectivesExperience({
 
   const joinedSet = useMemo(() => new Set(joinedSlugs), [joinedSlugs])
 
-  const flagship = spaces.find((s) => s.isFlagship)
-  const rest = spaces.filter((s) => !s.isFlagship)
-
-  const filteredRest = useMemo(() => {
-    let result = activeCategory === 'All' ? rest : rest.filter((s) => s.category === activeCategory)
+  const filtered = useMemo(() => {
+    let result = activeCategory === 'All' ? spaces : spaces.filter((s) => s.category === activeCategory)
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       result = result.filter(
@@ -349,51 +215,50 @@ export default function ExploreCollectivesExperience({
       const bJ = joinedSet.has(b.slug) ? 0 : 1
       return aJ - bJ
     })
-  }, [rest, activeCategory, search, joinedSet])
-
-  const showFlagship =
-    !search.trim() &&
-    (activeCategory === 'All' || flagship?.category === activeCategory)
+  }, [spaces, activeCategory, search, joinedSet])
 
   return (
     <>
       {/* ── Hero ── */}
-      <div
-        style={{
-          background:
-            'radial-gradient(rgba(66,199,198,0.08) 1px, transparent 1px), ' +
-            'radial-gradient(ellipse at 88% 25%, rgba(66,199,198,0.30), transparent 50%), ' +
-            'radial-gradient(ellipse at 12% 78%, rgba(56,160,158,0.18), transparent 45%), ' +
-            'linear-gradient(135deg, #071824 0%, #073B3A 50%, #0F5E5C 100%)',
-          backgroundSize: '22px 22px, auto, auto, auto',
-        }}
-      >
-        <Container className="py-12 md:py-16">
+      <div className="py-8 sm:py-10" style={{ background: '#FDFCF9' }}>
+        <Container>
           <div
-            className="mb-4 h-[2px] w-8"
-            style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
-          />
-          <h1
-            className="mb-3 font-serif"
+            className="overflow-hidden rounded-2xl px-8 py-10 sm:px-10 sm:py-12"
             style={{
-              fontSize: 'clamp(2.25rem, 4.5vw, 3.5rem)',
-              lineHeight: '1.08',
-              letterSpacing: '-0.04em',
-              color: '#FFFFFF',
+              background: '#071824',
+              border: '1px solid rgba(56,160,158,0.22)',
+              boxShadow:
+                '0 0 0 1px rgba(56,160,158,0.08), 0 8px 32px rgba(7,24,36,0.18), 0 0 48px rgba(56,160,158,0.06)',
             }}
           >
-            Explore collectives.
-          </h1>
-          <p
-            className="max-w-[560px] text-[15px] leading-[1.78]"
-            style={{ color: 'rgba(255,255,255,0.70)' }}
-          >
-            Each collective is a creator-led learning environment — structured pathways, live
-            gatherings, and an active community built into one intentional place.{' '}
-            <span style={{ color: 'rgba(255,255,255,0.50)' }}>
-              Find the one that fits where you are.
-            </span>
-          </p>
+            {/* Teal accent line */}
+            <div
+              className="mb-5 h-[2px] w-8 rounded-full"
+              style={{ background: 'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.2) 100%)' }}
+            />
+
+            <h1 className="mb-3 font-serif" style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', lineHeight: '1.1', letterSpacing: '-0.03em' }}>
+              <span
+                style={{
+                  display: 'inline-block',
+                  background: 'linear-gradient(90deg, #38A09E 0%, #FFFFFF 55%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                Explore collectives
+              </span>
+            </h1>
+
+            <p
+              className="max-w-[540px] text-[15px] leading-[1.78]"
+              style={{ color: 'rgba(255,255,255,0.62)' }}
+            >
+              Each collective is a creator-led learning environment — with pathways, gatherings,
+              and community in one intentional place. Find the one that fits where you are.
+            </p>
+          </div>
         </Container>
       </div>
 
@@ -438,42 +303,29 @@ export default function ExploreCollectivesExperience({
       <div className="flex-1 py-10 sm:py-14" style={{ background: '#FDFCF9' }}>
         <Container>
 
-          {/* Flagship */}
-          {showFlagship && flagship && (
-            <FlagshipCard
-              space={flagship}
-              isJoined={joinedSet.has(flagship.slug)}
-              isLoggedIn={isLoggedIn}
-            />
+          {/* Section label when user has joined collectives */}
+          {isLoggedIn && !search.trim() && joinedSet.size > 0 && filtered.some((s) => joinedSet.has(s.slug)) && (
+            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Your collectives
+            </p>
           )}
 
-          {/* Grid */}
-          {filteredRest.length > 0 ? (
-            <>
-              {/* "Your collectives" section label when logged in and has joined ones */}
-              {isLoggedIn && !search.trim() && joinedSet.size > 0 && filteredRest.some((s) => joinedSet.has(s.slug)) && (
-                <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  Your collectives
-                </p>
-              )}
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredRest.map((space) => (
-                  <CollectiveCard
-                    key={space.id}
-                    space={space}
-                    isJoined={joinedSet.has(space.slug)}
-                    isLoggedIn={isLoggedIn}
-                  />
-                ))}
-              </div>
-            </>
+          {filtered.length > 0 ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filtered.map((space) => (
+                <CollectiveCard
+                  key={space.id}
+                  space={space}
+                  isJoined={joinedSet.has(space.slug)}
+                  isLoggedIn={isLoggedIn}
+                />
+              ))}
+            </div>
           ) : (
-            !showFlagship || search.trim() ? (
-              <EmptyState />
-            ) : null
+            <EmptyState />
           )}
 
-          {/* Logged-in note about payment */}
+          {/* Note about payment */}
           {isLoggedIn && (
             <p className="mt-10 text-center text-[12px] text-slate-400">
               To join a collective, visit its page. Paid collectives require payment — payment

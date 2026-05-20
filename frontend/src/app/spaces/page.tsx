@@ -27,7 +27,6 @@ const SEEDED_SPACES: SpaceWithMeta[] = [
     category: 'Wellbeing',
     accentColor: '#4A8E6E',
     isReal: false,
-    isFlagship: false,
   },
   {
     id: 'seed-letters',
@@ -45,7 +44,6 @@ const SEEDED_SPACES: SpaceWithMeta[] = [
     category: 'Reflection',
     accentColor: '#B8922A',
     isReal: false,
-    isFlagship: false,
   },
   {
     id: 'seed-thread',
@@ -63,7 +61,6 @@ const SEEDED_SPACES: SpaceWithMeta[] = [
     category: 'Creativity',
     accentColor: '#C06B3A',
     isReal: false,
-    isFlagship: false,
   },
   {
     id: 'seed-company',
@@ -81,7 +78,6 @@ const SEEDED_SPACES: SpaceWithMeta[] = [
     category: 'Leadership',
     accentColor: '#3A5C8E',
     isReal: false,
-    isFlagship: false,
   },
   {
     id: 'seed-still',
@@ -99,7 +95,6 @@ const SEEDED_SPACES: SpaceWithMeta[] = [
     category: 'Reflection',
     accentColor: '#7E6E9A',
     isReal: false,
-    isFlagship: false,
   },
 ]
 
@@ -112,11 +107,7 @@ export default async function SpacesPage() {
   const allSpaces: SpaceWithMeta[] = [
     ...realSpaces,
     ...SEEDED_SPACES.filter((s) => !realSlugs.has(s.slug)),
-  ].sort((a, b) => {
-    if (a.isFlagship) return -1
-    if (b.isFlagship) return 1
-    return 0
-  })
+  ]
 
   return (
     <SiteShell>

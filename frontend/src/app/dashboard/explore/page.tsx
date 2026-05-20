@@ -15,13 +15,7 @@ export default async function ExploreCollectivesPage() {
     .filter((m) => m.status === 'active')
     .map((m) => m.space_slug)
 
-  const spaces = apiSpaces
-    .map(toSpaceWithMeta)
-    .sort((a, b) => {
-      if (a.isFlagship) return -1
-      if (b.isFlagship) return 1
-      return 0
-    })
+  const spaces = apiSpaces.map(toSpaceWithMeta)
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
