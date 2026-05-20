@@ -34,7 +34,7 @@ export default function EventCard({ event, spaceSlug }: EventCardProps) {
     >
       {/* Date block */}
       <div className="shrink-0 text-center">
-        <div className="font-serif text-2xl leading-none text-navy-900">{day}</div>
+        <div className="text-2xl font-bold leading-none text-navy-900">{day}</div>
         <div className="mt-0.5 text-xs font-semibold uppercase tracking-wider" style={{ color: '#9A7A18' }}>{month}</div>
       </div>
 
