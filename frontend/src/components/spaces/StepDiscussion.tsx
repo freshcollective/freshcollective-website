@@ -89,7 +89,7 @@ export default function StepDiscussion({
   return (
     <div className="mt-10 pt-8 border-t border-border">
       <div className="mb-1 h-[2px] w-6 rounded-full bg-teal-400" />
-      <h2 className="mb-1 font-serif text-lg text-slate-900">Questions &amp; discussion</h2>
+      <h2 className="mb-1 text-lg font-semibold text-slate-900">Questions &amp; discussion</h2>
       <p className="mb-6 text-sm text-slate-500">
         Visible to others in this pathway. Ask a question, share what landed, or add something others may find helpful.
       </p>

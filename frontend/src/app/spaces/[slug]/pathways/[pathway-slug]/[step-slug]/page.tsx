@@ -31,7 +31,7 @@ function renderContent(body: string): React.ReactNode {
 
       if (trimmed.startsWith('**') && trimmed.endsWith('**') && !trimmed.slice(2, -2).includes('\n')) {
         return (
-          <h3 key={i} className="mt-8 mb-3 font-serif text-xl text-navy-900">
+          <h3 key={i} className="mt-8 mb-3 font-semibold text-[1.1rem] text-navy-900">
             {trimmed.slice(2, -2)}
           </h3>
         )
@@ -113,8 +113,8 @@ function renderBlocks(blocks: StepBlock[]): React.ReactNode {
     if (t === 'heading') {
       const level = block.label === 'h1' ? 'h2' : block.label === 'h3' ? 'h3' : 'h2'
       const cls = level === 'h3'
-        ? 'mt-7 mb-2 font-serif text-xl text-navy-900'
-        : 'mt-8 mb-3 font-serif text-2xl text-navy-900'
+        ? 'mt-7 mb-2 font-semibold text-[1.05rem] text-navy-900'
+        : 'mt-8 mb-3 font-semibold text-[1.2rem] text-navy-900'
       return React.createElement(level, { key: id, className: cls }, block.content)
     }
 
