@@ -97,16 +97,18 @@ export default async function DashboardPage() {
               className="mb-2 h-[2px] w-5 rounded-full"
               style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
             />
-            <h1
-              className="text-3xl md:text-4xl"
-              style={{
-                background: 'linear-gradient(90deg, #071824 0%, #0F5E5C 55%, #38A09E 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-                backgroundClip: 'text',
-              }}
-            >
-              Welcome back, {firstName}.
+            <h1 className="text-3xl md:text-4xl">
+              <span
+                className="inline-block"
+                style={{
+                  background: 'linear-gradient(90deg, #071824 0%, #38A09E 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                Welcome back, {firstName}.
+              </span>
             </h1>
             <p className="mt-1.5 text-[14px] text-slate-500">
               Ready to continue where you left off?
@@ -228,6 +230,7 @@ export default async function DashboardPage() {
                 </div>
 
                 {/* Explore card — navy, matched sizing with Creator Studio */}
+                <GoldLabel className="mb-4">Collectives to explore</GoldLabel>
                 <Link
                   href="/dashboard/explore"
                   className="group block w-full overflow-hidden rounded-2xl px-6 py-7 transition-all hover:-translate-y-0.5 hover:shadow-2xl"
@@ -307,7 +310,10 @@ export default async function DashboardPage() {
                   className="mb-3 h-[2px] w-5 rounded-full"
                   style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.80) 0%, transparent 100%)' }}
                 />
-                <h3 className="text-xl font-semibold leading-snug text-white transition-opacity group-hover:opacity-80">
+                <h3
+                  className="text-xl font-semibold leading-snug transition-opacity group-hover:opacity-80"
+                  style={{ color: '#FFFFFF' }}
+                >
                   Creator Studio
                 </h3>
                 <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.82)' }}>
