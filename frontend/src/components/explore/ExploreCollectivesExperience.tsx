@@ -328,8 +328,7 @@ export default function ExploreCollectivesExperience({
           {/* Note about payment */}
           {isLoggedIn && (
             <p className="mt-10 text-center text-[12px] text-slate-400">
-              To join a collective, visit its page. Paid collectives require payment — payment
-              integration coming soon.
+              Some collectives are free and some require payment. Payment integration is coming soon.
             </p>
           )}
 
