@@ -189,6 +189,11 @@ export default async function CollectiveOverviewPage() {
             desc: 'Name, banner, visibility',
             href: '/creator-studio/settings',
           },
+          {
+            label: 'Edit About page',
+            desc: 'Description shown on the About tab',
+            href: '/creator-studio/settings',
+          },
         ].map(({ label, desc, href }) => (
           <Link
             key={href}

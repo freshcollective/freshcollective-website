@@ -20,8 +20,8 @@ const LockIcon = () => (
 
 export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
   const isComingSoon = pathway.status === 'coming_soon'
-  // TODO: Connect pathway purchase/access entitlement once checkout is wired.
-  const locked = !isComingSoon && isPathwayLocked(pathway.access_type)
+  // Locked only if paid AND the user does not already have access
+  const locked = !isComingSoon && isPathwayLocked(pathway.access_type) && !pathway.user_has_access
   const overviewHref = `/spaces/${spaceSlug}/pathways/${pathway.slug}`
   const aboutHref = `/spaces/${spaceSlug}/pathways/${pathway.slug}/about`
 

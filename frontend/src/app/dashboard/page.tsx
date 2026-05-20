@@ -135,7 +135,7 @@ export default async function DashboardPage() {
                     return (
                       <Link
                         key={m.space_id}
-                        href={`/spaces/${m.space_slug}`}
+                        href={`/spaces/${m.space_slug}/community`}
                         className="group block overflow-hidden rounded-2xl transition-all hover:-translate-y-0.5 hover:shadow-xl"
                         style={{ border: CARD_BORDER, boxShadow: CARD_SHADOW }}
                       >

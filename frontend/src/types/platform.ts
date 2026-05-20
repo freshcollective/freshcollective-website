@@ -10,6 +10,7 @@ export interface PathwaySummary {
   price_cents: number | null
   currency: string | null
   billing_interval: string | null
+  user_has_access: boolean
 }
 
 export interface SpaceResponse {
