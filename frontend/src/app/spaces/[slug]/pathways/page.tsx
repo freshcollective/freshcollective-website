@@ -17,10 +17,33 @@ export default async function SpacePathwaysPage({ params }: Props) {
 
   return (
     <div>
-      <div className="mb-6">
-        <div className="mb-2 h-[2px] w-8 rounded-full bg-teal-400" />
-        <h2 className="mb-1 font-serif text-2xl text-navy-900">Pathways</h2>
-        <p className="text-[14px] leading-relaxed text-slate-500">
+      {/* Intro card */}
+      <div
+        className="mb-8 overflow-hidden rounded-2xl px-7 py-7"
+        style={{
+          background: '#071824',
+          border: '1px solid rgba(66,199,198,0.10)',
+          boxShadow: '0 4px 24px rgba(7,24,36,0.18), 0 1px 4px rgba(0,0,0,0.10)',
+        }}
+      >
+        <div
+          className="mb-3 h-[2px] w-8 rounded-full"
+          style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
+        />
+        <h2 className="mb-2 leading-snug">
+          <span
+            className="inline-block text-2xl font-semibold"
+            style={{
+              background: 'linear-gradient(90deg, #55D7D2 0%, #D9FFFD 50%, #FFFFFF 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            Pathways
+          </span>
+        </h2>
+        <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.60)' }}>
           Structured journeys to guide your growth and reflection.
         </p>
       </div>
