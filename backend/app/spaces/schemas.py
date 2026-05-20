@@ -226,3 +226,42 @@ class StepCommentCreate(BaseModel):
         if len(v) > 2000:
             raise ValueError("Comment body exceeds 2000 characters.")
         return v
+
+
+# ---------------------------------------------------------------------------
+# Notification Preferences
+# ---------------------------------------------------------------------------
+
+class NotificationPrefsResponse(BaseModel):
+    space_id: str
+    space_slug: str
+    space_name: str
+    # Email
+    weekly_digest_email: bool
+    daily_digest_email: bool
+    admin_broadcast_email: bool
+    gathering_reminder_email: bool
+    new_post_email: bool
+    comment_reply_email: bool
+    pathway_comment_email: bool
+    new_pathway_email: bool
+    # Push (TODO: wire up delivery when push system is implemented)
+    push_enabled: bool
+    push_gathering_reminders: bool
+    push_replies: bool
+    push_announcements: bool
+
+
+class NotificationPrefsUpdate(BaseModel):
+    weekly_digest_email: bool | None = None
+    daily_digest_email: bool | None = None
+    admin_broadcast_email: bool | None = None
+    gathering_reminder_email: bool | None = None
+    new_post_email: bool | None = None
+    comment_reply_email: bool | None = None
+    pathway_comment_email: bool | None = None
+    new_pathway_email: bool | None = None
+    push_enabled: bool | None = None
+    push_gathering_reminders: bool | None = None
+    push_replies: bool | None = None
+    push_announcements: bool | None = None

@@ -790,6 +790,49 @@ class StepComment(Base):
 
 
 # ---------------------------------------------------------------------------
+# Space Member Notification Preferences
+# ---------------------------------------------------------------------------
+
+class SpaceMemberNotificationPrefs(Base):
+    """
+    Per-member, per-collective notification preferences.
+    Row is created on first save; defaults are served without a row.
+    """
+
+    __tablename__ = "space_member_notification_prefs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    space_id: Mapped[str] = mapped_column(
+        String, ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # ── Email ──
+    weekly_digest_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
+    daily_digest_email: Mapped[bool]  = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    admin_broadcast_email: Mapped[bool]     = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
+    gathering_reminder_email: Mapped[bool]  = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
+    new_post_email: Mapped[bool]            = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    comment_reply_email: Mapped[bool]       = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
+    pathway_comment_email: Mapped[bool]     = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
+    new_pathway_email: Mapped[bool]         = mapped_column(Boolean, nullable=False, default=True,  server_default="true")
+    # ── Push (TODO: wire up delivery when push system is implemented) ──
+    push_enabled: Mapped[bool]              = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    push_gathering_reminders: Mapped[bool]  = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    push_replies: Mapped[bool]              = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    push_announcements: Mapped[bool]        = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "space_id", name="notif_prefs_user_space_unique"),
+        Index("ix_notif_prefs_user_space", "user_id", "space_id"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Space Invitations
 # ---------------------------------------------------------------------------
 

@@ -20,6 +20,7 @@ from app.models.platform import (
     PathwayStepBlock,
     Space,
     SpaceMembership,
+    SpaceMemberNotificationPrefs,
     StepComment,
     StepProgress,
     StepResource,
@@ -31,6 +32,8 @@ from app.spaces.schemas import (
     ContinueResponse,
     EventDetail,
     EventSummary,
+    NotificationPrefsResponse,
+    NotificationPrefsUpdate,
     PathwayProgress,
     PathwaySummary,
     PathwayWithSteps,
@@ -961,3 +964,108 @@ def create_step_comment(
         ),
         created_at=comment.created_at,
     )
+
+# ---------------------------------------------------------------------------
+# Notification Preferences
+# ---------------------------------------------------------------------------
+
+_NOTIF_DEFAULTS = dict(
+    weekly_digest_email=True,
+    daily_digest_email=False,
+    admin_broadcast_email=True,
+    gathering_reminder_email=True,
+    new_post_email=False,
+    comment_reply_email=True,
+    pathway_comment_email=True,
+    new_pathway_email=True,
+    push_enabled=False,
+    push_gathering_reminders=False,
+    push_replies=False,
+    push_announcements=False,
+)
+
+
+def _prefs_response(space: Space, prefs: "SpaceMemberNotificationPrefs | None") -> NotificationPrefsResponse:
+    if prefs is None:
+        return NotificationPrefsResponse(
+            space_id=space.id,
+            space_slug=space.slug,
+            space_name=space.name,
+            **_NOTIF_DEFAULTS,  # type: ignore[arg-type]
+        )
+    return NotificationPrefsResponse(
+        space_id=space.id,
+        space_slug=space.slug,
+        space_name=space.name,
+        weekly_digest_email=prefs.weekly_digest_email,
+        daily_digest_email=prefs.daily_digest_email,
+        admin_broadcast_email=prefs.admin_broadcast_email,
+        gathering_reminder_email=prefs.gathering_reminder_email,
+        new_post_email=prefs.new_post_email,
+        comment_reply_email=prefs.comment_reply_email,
+        pathway_comment_email=prefs.pathway_comment_email,
+        new_pathway_email=prefs.new_pathway_email,
+        push_enabled=prefs.push_enabled,
+        push_gathering_reminders=prefs.push_gathering_reminders,
+        push_replies=prefs.push_replies,
+        push_announcements=prefs.push_announcements,
+    )
+
+
+def _require_membership(space_id: str, user_id: str, db: Session) -> None:
+    m = db.query(SpaceMembership).filter(
+        SpaceMembership.space_id == space_id,
+        SpaceMembership.user_id == user_id,
+        SpaceMembership.status == "active",
+    ).first()
+    if not m:
+        raise HTTPException(status_code=403, detail="You are not a member of this collective.")
+
+
+@router.get("/{slug}/notification-settings", response_model=NotificationPrefsResponse)
+def get_notification_settings(
+    slug: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NotificationPrefsResponse:
+    space = _get_space_or_404(slug, db)
+    _require_membership(space.id, current_user.id, db)
+    prefs = db.query(SpaceMemberNotificationPrefs).filter(
+        SpaceMemberNotificationPrefs.user_id == current_user.id,
+        SpaceMemberNotificationPrefs.space_id == space.id,
+    ).first()
+    return _prefs_response(space, prefs)
+
+
+@router.patch("/{slug}/notification-settings", response_model=NotificationPrefsResponse)
+def update_notification_settings(
+    slug: str,
+    payload: NotificationPrefsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> NotificationPrefsResponse:
+    space = _get_space_or_404(slug, db)
+    _require_membership(space.id, current_user.id, db)
+
+    prefs = db.query(SpaceMemberNotificationPrefs).filter(
+        SpaceMemberNotificationPrefs.user_id == current_user.id,
+        SpaceMemberNotificationPrefs.space_id == space.id,
+    ).first()
+
+    if prefs is None:
+        import uuid as _uuid
+        prefs = SpaceMemberNotificationPrefs(
+            id=str(_uuid.uuid4()),
+            user_id=current_user.id,
+            space_id=space.id,
+            **_NOTIF_DEFAULTS,
+        )
+        db.add(prefs)
+        db.flush()
+
+    for field, value in payload.model_dump(exclude_none=True).items():
+        setattr(prefs, field, value)
+
+    db.commit()
+    db.refresh(prefs)
+    return _prefs_response(space, prefs)

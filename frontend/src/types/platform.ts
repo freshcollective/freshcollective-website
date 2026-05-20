@@ -199,9 +199,28 @@ export interface UserProfile {
   bio: string | null
   display_name: string | null
   profile_tagline: string | null
+  avatar_url: string | null
   is_public: boolean
   has_completed_onboarding: boolean
   interests: string[]
+}
+
+export interface NotificationPrefs {
+  space_id: string
+  space_slug: string
+  space_name: string
+  weekly_digest_email: boolean
+  daily_digest_email: boolean
+  admin_broadcast_email: boolean
+  gathering_reminder_email: boolean
+  new_post_email: boolean
+  comment_reply_email: boolean
+  pathway_comment_email: boolean
+  new_pathway_email: boolean
+  push_enabled: boolean
+  push_gathering_reminders: boolean
+  push_replies: boolean
+  push_announcements: boolean
 }
 
 export interface SpaceMembership {
