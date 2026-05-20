@@ -10,7 +10,9 @@ export default async function SpacePathwaysPage({ params }: Props) {
   const { slug } = await params
   const pathways: PathwaySummary[] = await getSpacePathways(slug)
 
-  const active = pathways.filter((p) => p.status !== 'coming_soon')
+  // Only show pathways the backend returned as active; coming_soon gets its own section.
+  // Draft and archived are already excluded by the API for regular members.
+  const active = pathways.filter((p) => p.status === 'active')
   const soon = pathways.filter((p) => p.status === 'coming_soon')
 
   return (
@@ -23,11 +25,11 @@ export default async function SpacePathwaysPage({ params }: Props) {
         </p>
       </div>
 
-      {pathways.length === 0 ? (
+      {active.length === 0 && soon.length === 0 ? (
         <div className="rounded-2xl border border-teal-100 bg-white px-7 py-12 text-center">
-          <p className="font-serif text-lg text-navy-800">Pathways coming soon.</p>
+          <p className="font-serif text-lg text-navy-800">No pathways yet.</p>
           <p className="mt-1.5 text-sm text-slate-400">
-            Your pathways will appear here once they are ready.
+            Pathways will appear here once they are published.
           </p>
         </div>
       ) : (
