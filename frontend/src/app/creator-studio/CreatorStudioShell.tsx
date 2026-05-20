@@ -98,7 +98,6 @@ function CollectiveSwitcher({
           style={{
             background: 'rgba(255,255,255,0.96)',
             border: '1px solid rgba(56,160,158,0.28)',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
           }}
         >
           <p
