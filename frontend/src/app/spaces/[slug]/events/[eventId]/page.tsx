@@ -1,3 +1,12 @@
+// TODO (booking): RSVP / reserve-a-spot action — wire to booking endpoint
+// TODO (booking): capacity limits per event (creator-managed in Creator Studio)
+// TODO (booking): booking status — available, full, booked, cancelled
+// TODO (booking): free bookings flow (RSVP with no payment)
+// TODO (booking): paid bookings — route to checkout, integrate Stripe
+// TODO (booking): attendee list visible to creator in Creator Studio
+// TODO (booking): booking confirmation email + reminder notifications
+// TODO (booking): per-event booking settings (open / invite-only / closed)
+
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSpaceEvent } from '@/lib/serverApi'
@@ -38,12 +47,21 @@ function formatFullDate(isoString: string): string {
 }
 
 function formatTime(isoString: string): string {
-  const d = new Date(isoString)
-  return d.toLocaleTimeString('en-GB', {
+  return new Date(isoString).toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     timeZone: 'UTC',
   }) + ' UTC'
+}
+
+function formatDuration(startsAt: string, endsAt: string): string {
+  const mins = Math.round(
+    (new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60000,
+  )
+  if (mins < 60) return `${mins} min`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m > 0 ? `${h} hr ${m} min` : `${h} hr`
 }
 
 function googleCalendarUrl(event: EventDetail): string {
@@ -62,11 +80,11 @@ function googleCalendarUrl(event: EventDetail): string {
   return `https://calendar.google.com/calendar/render?${params}`
 }
 
-const STATE_BADGE: Record<EventState, { label: string; className: string }> = {
-  upcoming: { label: 'Upcoming', className: 'bg-teal-50 text-teal-700' },
-  live: { label: 'Happening now', className: 'bg-green-50 text-green-700 animate-pulse' },
-  'past-replay': { label: 'Replay available', className: 'bg-navy-50 text-navy-600' },
-  'past-no-replay': { label: 'Replay coming soon', className: 'bg-slate-50 text-slate-500' },
+const STATE_BADGE: Record<EventState, { label: string; bg: string; color: string }> = {
+  upcoming:         { label: 'Upcoming',           bg: 'rgba(56,160,158,0.10)', color: '#0f766e' },
+  live:             { label: 'Happening now',       bg: 'rgba(22,163,74,0.10)',  color: '#15803d' },
+  'past-replay':    { label: 'Replay available',    bg: 'rgba(21,36,54,0.08)',   color: '#334155' },
+  'past-no-replay': { label: 'Session ended',       bg: 'rgba(0,0,0,0.05)',      color: '#94a3b8' },
 }
 
 export default async function EventDetailPage({ params }: Props) {
@@ -77,134 +95,227 @@ export default async function EventDetailPage({ params }: Props) {
 
   const state = getEventState(event)
   const badge = STATE_BADGE[state]
+  const locationLabel = LOCATION_LABEL[event.location_type] ?? event.location_type
 
   return (
-    <div className="max-w-2xl">
-      <Link
-        href={`/spaces/${slug}/events`}
-        className="mb-7 inline-block text-sm text-slate-400 hover:text-navy-700"
+    <div className="max-w-3xl">
+
+      {/* Back link */}
+      <div className="mb-6">
+        <Link
+          href={`/spaces/${slug}/events`}
+          className="text-sm text-slate-400 transition-colors hover:text-teal-600"
+        >
+          ← Live Experiences
+        </Link>
+      </div>
+
+      {/* ── Hero card ── */}
+      <div
+        className="relative mb-8 overflow-hidden rounded-2xl px-7 py-8 md:px-9"
+        style={{
+          background: '#071824',
+          border: '1px solid rgba(66,199,198,0.10)',
+          boxShadow: '0 4px 24px rgba(7,24,36,0.18), 0 1px 4px rgba(0,0,0,0.10)',
+        }}
       >
-        ← Live Experiences
-      </Link>
+        <div
+          className="mb-3 h-[2px] w-8 rounded-full"
+          style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
+        />
 
-      {/* State badge */}
-      <div className="mb-5">
-        <span className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${badge.className}`}>
-          {badge.label}
-        </span>
-      </div>
-
-      {/* Header */}
-      <div className="mb-8">
-        <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
-        <h1 className="font-serif text-3xl leading-snug text-navy-900">{event.title}</h1>
-      </div>
-
-      {/* Date / time / location */}
-      <div className="mb-8 flex flex-col gap-2 rounded-2xl border border-teal-100 bg-white px-6 py-5">
-        <div className="flex items-start gap-3">
-          <span className="w-20 shrink-0 text-xs font-medium uppercase tracking-wider text-slate-400">Date</span>
-          <span className="text-sm text-navy-800">{formatFullDate(event.starts_at)}</span>
-        </div>
-        <div className="flex items-start gap-3">
-          <span className="w-20 shrink-0 text-xs font-medium uppercase tracking-wider text-slate-400">Time</span>
-          <span className="text-sm text-navy-800">{formatTime(event.starts_at)}</span>
-        </div>
-        <div className="flex items-start gap-3">
-          <span className="w-20 shrink-0 text-xs font-medium uppercase tracking-wider text-slate-400">Format</span>
-          <span className="text-sm text-navy-800">
-            {LOCATION_LABEL[event.location_type] ?? event.location_type}
+        {/* State badge */}
+        <div className="mb-3">
+          <span
+            className={`inline-block rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide${state === 'live' ? ' animate-pulse' : ''}`}
+            style={{ background: badge.bg, color: badge.color }}
+          >
+            {badge.label}
           </span>
         </div>
-        {event.ends_at && (
-          <div className="flex items-start gap-3">
-            <span className="w-20 shrink-0 text-xs font-medium uppercase tracking-wider text-slate-400">Duration</span>
-            <span className="text-sm text-navy-800">
-              {Math.round((new Date(event.ends_at).getTime() - new Date(event.starts_at).getTime()) / 60000)} min
-            </span>
-          </div>
-        )}
+
+        <h1 className="mb-2 leading-snug">
+          <span
+            className="inline-block text-2xl font-semibold md:text-3xl"
+            style={{
+              background: 'linear-gradient(90deg, #55D7D2 0%, #D9FFFD 50%, #FFFFFF 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            {event.title}
+          </span>
+        </h1>
+
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.60)' }}>
+          <span>{locationLabel}</span>
+          <span>{formatFullDate(event.starts_at)}</span>
+          <span>{formatTime(event.starts_at)}</span>
+          {event.ends_at && <span>{formatDuration(event.starts_at, event.ends_at)}</span>}
+        </div>
       </div>
 
-      {/* Description */}
-      {event.description && (
-        <div className="mb-8">
-          {event.description.split('\n').filter(Boolean).map((para, i) => (
-            <p key={i} className="mb-3 text-[15px] leading-[1.8] text-slate-600">
-              {para}
-            </p>
-          ))}
-        </div>
-      )}
+      {/* ── Two-column layout: details + booking panel ── */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start">
 
-      {/* State-aware actions */}
-      <div className="flex flex-col gap-3">
-        {state === 'upcoming' && (
-          <>
-            {event.location_url && (
+        {/* ── Left: details + actions ── */}
+        <div className="flex flex-col gap-6">
+
+          {/* Details card */}
+          <div className="overflow-hidden rounded-2xl border border-border bg-white">
+            <div className="border-b border-border px-5 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                Event details
+              </p>
+            </div>
+            <div className="divide-y divide-border">
+              {[
+                { label: 'Date',     value: formatFullDate(event.starts_at) },
+                { label: 'Time',     value: formatTime(event.starts_at) },
+                { label: 'Format',   value: locationLabel },
+                ...(event.ends_at
+                  ? [{ label: 'Duration', value: formatDuration(event.starts_at, event.ends_at) }]
+                  : []),
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-start gap-4 px-5 py-3">
+                  <span className="w-20 shrink-0 text-[12px] font-medium text-slate-400">{label}</span>
+                  <span className="text-[14px] text-navy-900">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Description */}
+          {event.description && (
+            <div className="rounded-2xl border border-border bg-white px-6 py-5">
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                About this session
+              </p>
+              <div className="space-y-3">
+                {event.description.split('\n').filter(Boolean).map((para, i) => (
+                  <p key={i} className="text-[15px] leading-[1.8] text-slate-600">{para}</p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* State-aware action buttons */}
+          {state === 'upcoming' && (
+            <div className="flex flex-wrap gap-3">
+              {event.location_url && (
+                <a
+                  href={event.location_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center rounded-full bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700"
+                >
+                  Join session →
+                </a>
+              )}
               <a
-                href={event.location_url}
+                href={googleCalendarUrl(event)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block rounded-full bg-teal-500 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-teal-600 w-fit"
+                className="inline-flex items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900"
               >
-                Join session →
+                Add to Google Calendar
               </a>
-            )}
+            </div>
+          )}
+
+          {state === 'live' && (
+            <div>
+              {event.location_url ? (
+                <a
+                  href={event.location_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center rounded-full bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700"
+                >
+                  Join now →
+                </a>
+              ) : (
+                <p className="text-sm text-slate-500">Join link will be available shortly.</p>
+              )}
+            </div>
+          )}
+
+          {state === 'past-replay' && event.recording_url && (
             <a
-              href={googleCalendarUrl(event)}
+              href={event.recording_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-block rounded-full border border-navy-200 px-6 py-2.5 text-sm font-medium text-navy-600 transition-colors hover:border-navy-400 w-fit"
+              className="inline-flex items-center rounded-full bg-navy-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-navy-800 w-fit"
             >
-              Add to Google Calendar
+              Watch replay →
             </a>
-          </>
-        )}
+          )}
 
-        {state === 'live' && (
-          <>
-            {event.location_url ? (
+          {state === 'past-no-replay' && (
+            <p className="text-sm text-slate-400">
+              A replay of this session will be available here once it has been processed.
+            </p>
+          )}
+
+        </div>
+
+        {/* ── Right: booking panel ── */}
+        {/* TODO (booking): replace this placeholder with real booking logic */}
+        {/* TODO (booking): show "Reserve your spot" when booking is open */}
+        {/* TODO (booking): show capacity remaining when limits are set */}
+        {/* TODO (booking): show price or "Included with membership" */}
+        {/* TODO (booking): disable/grey out when event is full or past */}
+        <div className="lg:sticky lg:top-6">
+          <div
+            className="rounded-2xl border bg-white p-5"
+            style={{ borderColor: 'rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+          >
+            <div
+              className="mb-4 h-[2px] w-5 rounded-full"
+              style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
+            />
+
+            <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Booking
+            </p>
+            <p className="mb-4 text-[15px] font-semibold text-navy-900">
+              {state === 'past-replay' || state === 'past-no-replay'
+                ? 'Session ended'
+                : 'Booking not yet open'}
+            </p>
+
+            <div className="mb-4 space-y-2.5 text-[13px] text-slate-500">
+              <div className="flex items-center justify-between">
+                <span>Price</span>
+                <span className="text-slate-400">—</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Capacity</span>
+                <span className="text-slate-400">—</span>
+              </div>
+            </div>
+
+            <button
+              disabled
+              className="w-full rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400 cursor-not-allowed"
+            >
+              Booking coming soon
+            </button>
+
+            {(state === 'upcoming' || state === 'live') && (
               <a
-                href={event.location_url}
+                href={googleCalendarUrl(event)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-block rounded-full bg-teal-500 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-teal-600 w-fit"
+                className="mt-3 block text-center text-[12px] text-slate-400 transition-colors hover:text-teal-600"
               >
-                Join now →
+                Add to Google Calendar
               </a>
-            ) : (
-              <p className="text-sm text-slate-500">Join link will be available shortly.</p>
             )}
-          </>
-        )}
+          </div>
+        </div>
 
-        {state === 'past-replay' && event.recording_url && (
-          <a
-            href={event.recording_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block rounded-full bg-navy-700 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-navy-800 w-fit"
-          >
-            Watch replay →
-          </a>
-        )}
-
-        {state === 'past-no-replay' && (
-          <p className="text-sm text-slate-400">
-            A replay of this session will be available here once it has been processed.
-          </p>
-        )}
-      </div>
-
-      {/* Back to space */}
-      <div className="mt-10 border-t border-border pt-6">
-        <Link
-          href={`/spaces/${slug}`}
-          className="text-sm text-slate-400 hover:text-navy-700"
-        >
-          ← Back to Fresh Collective
-        </Link>
       </div>
     </div>
   )
