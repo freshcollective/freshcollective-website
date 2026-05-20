@@ -1,5 +1,9 @@
-import { getSpace } from '@/lib/serverApi'
+import { getSpace, getSpaceMembers, getMe, getSpaceEvents } from '@/lib/serverApi'
+import { resolveMediaUrl } from '@/lib/api'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
+import Avatar from '@/components/ui/Avatar'
+import type { MemberProfile, EventSummary, UserProfile, SpaceResponse } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -7,63 +11,246 @@ interface Props {
 
 export default async function SpaceAboutPage({ params }: Props) {
   const { slug } = await params
-  const space = await getSpace(slug)
+
+  const [space, members, me, events] = await Promise.all([
+    getSpace(slug) as Promise<SpaceResponse | null>,
+    getSpaceMembers(slug) as Promise<MemberProfile[]>,
+    getMe() as Promise<UserProfile | null>,
+    getSpaceEvents(slug) as Promise<EventSummary[]>,
+  ])
+
   if (!space) notFound()
 
-  return (
-    <div className="max-w-2xl">
+  const memberCount    = members.length
+  const pathwayCount   = space.pathways?.length ?? 0
+  const gatheringCount = events.length
+  const spaceCreators  = members.filter((m) => m.space_role === 'creator')
+  const creatorName    = spaceCreators[0]?.display_name ?? null
 
-      {/* Header */}
+  const currentUserMember = me ? members.find((m) => m.id === me.id) : null
+  const isSpaceMember     = !!currentUserMember
+  const currentUserRole   = currentUserMember?.space_role ?? null
+  const canManage         = currentUserRole === 'creator' || currentUserRole === 'moderator'
+
+  const coverUrl      = resolveMediaUrl(space.cover_image_url)
+  const avatarMembers = members.slice(0, 5)
+
+  return (
+    <div className="max-w-5xl">
+
+      {/* ── Navy intro card ── */}
       <div
-        className="mb-8 overflow-hidden rounded-2xl px-7 py-8"
+        className="mb-8 overflow-hidden rounded-2xl px-7 py-7"
         style={{
-          background:
-            'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
-            'radial-gradient(ellipse at 80% 20%, rgba(66,199,198,0.22), transparent 45%), ' +
-            'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0F5E5C 100%)',
-          backgroundSize: '22px 22px, auto, auto',
+          background: '#071824',
+          border: '1px solid rgba(66,199,198,0.10)',
+          boxShadow: '0 4px 24px rgba(7,24,36,0.18), 0 1px 4px rgba(0,0,0,0.10)',
         }}
       >
         <div
           className="mb-3 h-[2px] w-8 rounded-full"
-          style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
+          style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
         />
-        <h2 className="font-serif text-2xl" style={{ color: '#FFFFFF' }}>About</h2>
-        <p className="mt-1 text-[15px] font-semibold" style={{ color: 'rgba(255,255,255,0.90)' }}>
+        <h1 className="mb-2 leading-snug">
+          <span
+            className="inline-block text-2xl font-semibold"
+            style={{
+              background: 'linear-gradient(90deg, #55D7D2 0%, #D9FFFD 50%, #FFFFFF 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}
+          >
+            About
+          </span>
+        </h1>
+        <p className="text-[15px] font-semibold" style={{ color: 'rgba(255,255,255,0.90)' }}>
           {space.name}
         </p>
         {space.tagline && (
-          <p className="mt-2 text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.65)' }}>
+          <p className="mt-1 text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.65)' }}>
             {space.tagline}
           </p>
         )}
       </div>
 
-      {/* Description */}
-      {space.description ? (
-        <div
-          className="rounded-2xl bg-white px-7 py-8"
-          style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-        >
+      {/* ── Two-column layout ── */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_272px] lg:items-start">
+
+        {/* ── Left: main content ── */}
+        <div className="flex flex-col gap-6">
+
+          {/* Main about card */}
+          {/* TODO: Collective About content can be expanded into a richer creator-managed editor later. */}
           <div
-            className="prose prose-slate max-w-none text-[15px] leading-relaxed text-slate-700"
-            style={{ whiteSpace: 'pre-wrap' }}
+            className="overflow-hidden rounded-2xl bg-white"
+            style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
           >
-            {space.description}
+            {/* Cover image */}
+            {coverUrl && (
+              <div className="relative h-52 w-full overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={coverUrl}
+                  alt={space.name}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            )}
+
+            <div className="px-7 py-7">
+              <h2 className="mb-5 text-xl font-semibold text-navy-900">{space.name}</h2>
+
+              {/* Quick facts row */}
+              <div className="mb-6 flex flex-wrap gap-x-5 gap-y-2.5">
+                <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
+                  <span>{space.is_public ? '🌐' : '🔒'}</span>
+                  <span>{space.is_public ? 'Public' : 'Private'}</span>
+                </span>
+                {memberCount > 0 && (
+                  <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
+                    <span>👥</span>
+                    <span>{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
+                  </span>
+                )}
+                {pathwayCount > 0 && (
+                  <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
+                    <span>🧭</span>
+                    <span>{pathwayCount} {pathwayCount === 1 ? 'pathway' : 'pathways'}</span>
+                  </span>
+                )}
+                {gatheringCount > 0 && (
+                  <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
+                    <span>📅</span>
+                    <span>{gatheringCount} upcoming {gatheringCount === 1 ? 'gathering' : 'gatherings'}</span>
+                  </span>
+                )}
+                {creatorName && (
+                  <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
+                    <span>✨</span>
+                    <span>Led by {creatorName}</span>
+                  </span>
+                )}
+              </div>
+
+              <div className="mb-6 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
+
+              {/* Description — preserves line breaks and renders emojis naturally */}
+              {space.description ? (
+                <div
+                  className="text-[15px] leading-[1.85] text-slate-600"
+                  style={{ whiteSpace: 'pre-wrap' }}
+                >
+                  {space.description}
+                </div>
+              ) : (
+                <p className="text-[14px] text-slate-400">
+                  This collective doesn&apos;t have an About description yet.
+                </p>
+              )}
+            </div>
+          </div>
+
+        </div>
+
+        {/* ── Right: summary card (sticky) ── */}
+        <div className="lg:sticky lg:top-6">
+          <div
+            className="overflow-hidden rounded-2xl bg-white"
+            style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+          >
+            {/* Cover image or gradient fallback */}
+            {coverUrl ? (
+              <div className="relative h-32 w-full overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={coverUrl} alt="" aria-hidden="true" className="h-full w-full object-cover" />
+              </div>
+            ) : (
+              <div
+                className="h-16 w-full"
+                style={{
+                  background: 'linear-gradient(135deg, #071824 0%, #073B3A 55%, #0F5E5C 100%)',
+                }}
+              />
+            )}
+
+            <div className="p-5">
+              <h3 className="mb-0.5 text-[15px] font-semibold text-navy-900">{space.name}</h3>
+              {space.tagline && (
+                <p className="mb-4 text-[13px] leading-relaxed text-slate-500">{space.tagline}</p>
+              )}
+
+              {/* Stats */}
+              {(memberCount > 0 || pathwayCount > 0 || gatheringCount > 0) && (
+                <div className="mb-4 flex gap-5">
+                  {memberCount > 0 && (
+                    <div>
+                      <p className="text-[20px] font-semibold text-navy-900">{memberCount}</p>
+                      <p className="text-[11px] text-slate-400">{memberCount === 1 ? 'member' : 'members'}</p>
+                    </div>
+                  )}
+                  {pathwayCount > 0 && (
+                    <div>
+                      <p className="text-[20px] font-semibold text-navy-900">{pathwayCount}</p>
+                      <p className="text-[11px] text-slate-400">{pathwayCount === 1 ? 'pathway' : 'pathways'}</p>
+                    </div>
+                  )}
+                  {gatheringCount > 0 && (
+                    <div>
+                      <p className="text-[20px] font-semibold text-navy-900">{gatheringCount}</p>
+                      <p className="text-[11px] text-slate-400">upcoming</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Member avatar stack */}
+              {avatarMembers.length > 0 && (
+                <div className="mb-5 flex items-center">
+                  <div className="flex -space-x-2">
+                    {avatarMembers.map((m) => (
+                      <div key={m.id} className="rounded-full ring-2 ring-white">
+                        <Avatar name={m.display_name} avatarUrl={m.avatar_url} size="sm" />
+                      </div>
+                    ))}
+                  </div>
+                  {memberCount > 5 && (
+                    <span className="ml-2 text-[12px] text-slate-400">+{memberCount - 5} more</span>
+                  )}
+                </div>
+              )}
+
+              <div className="mb-4 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
+
+              {/* CTAs */}
+              <div className="flex flex-col gap-2">
+                {isSpaceMember ? (
+                  <Link
+                    href={`/spaces/${slug}`}
+                    className="block w-full rounded-xl px-4 py-2.5 text-center text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                  >
+                    Enter collective
+                  </Link>
+                ) : (
+                  <div className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center text-[14px] font-medium text-slate-400">
+                    Join — coming soon
+                  </div>
+                )}
+                {canManage && (
+                  <Link
+                    href="/creator-studio"
+                    className="block w-full rounded-xl border border-slate-200 px-4 py-2 text-center text-[13px] font-medium text-slate-500 transition-colors hover:bg-slate-50"
+                  >
+                    Manage collective
+                  </Link>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      ) : (
-        <div
-          className="rounded-2xl bg-white px-7 py-12 text-center"
-          style={{ border: '1px solid rgba(0,0,0,0.07)' }}
-        >
-          <p className="font-serif text-lg text-navy-800">More coming soon.</p>
-          <p className="mt-2 text-[14px] text-slate-400">
-            The collective description will appear here once it has been added.
-          </p>
-        </div>
-      )}
 
+      </div>
     </div>
   )
 }
