@@ -12,6 +12,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSpaceEvent } from '@/lib/serverApi'
 import type { EventDetail } from '@/types/platform'
+import { formatGatheringFullDate, formatGatheringTime } from '@/lib/dateTime'
 
 interface Props {
   params: Promise<{ slug: string; eventId: string }>
@@ -37,23 +38,8 @@ function getEventState(event: EventDetail): EventState {
   return event.recording_url ? 'past-replay' : 'past-no-replay'
 }
 
-function formatFullDate(isoString: string): string {
-  const d = new Date(isoString)
-  return d.toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-}
-
-function formatTime(isoString: string): string {
-  return new Date(isoString).toLocaleTimeString('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'UTC',
-  }) + ' UTC'
-}
+const formatFullDate = formatGatheringFullDate
+const formatTime     = formatGatheringTime
 
 function formatDuration(startsAt: string, endsAt: string): string {
   const mins = Math.round(

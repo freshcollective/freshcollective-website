@@ -4,6 +4,13 @@ import { useState } from 'react'
 import Link from 'next/link'
 import EventCard from '@/components/spaces/EventCard'
 import type { EventSummary } from '@/types/platform'
+import {
+  gatheringDateKey,
+  todayGatheringKey,
+  formatGatheringTime,
+  formatGatheringTimeShort,
+  formatGatheringMobileDayLabel,
+} from '@/lib/dateTime'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -14,35 +21,6 @@ const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
-
-function formatTime(iso: string): string {
-  return (
-    new Date(iso).toLocaleTimeString('en-GB', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'UTC',
-    }) + ' UTC'
-  )
-}
-
-function formatMobileDayLabel(d: Date): string {
-  return d.toLocaleDateString('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'UTC',
-  })
-}
-
-/** UTC date key used to group events onto calendar cells. */
-function utcDateKey(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`
-}
-
-function todayKey(): string {
-  return utcDateKey(new Date().toISOString())
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -56,7 +34,7 @@ interface Props {
 export default function GatheringsView({ events, spaceSlug }: Props) {
   const [view, setView] = useState<'list' | 'calendar'>('list')
 
-  // Calendar month state — start on current UTC month
+  // Calendar month state — start on current UTC month (UTC and Melbourne months align at boundaries)
   const [monthStart, setMonthStart] = useState<Date>(() => {
     const now = new Date()
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
@@ -73,23 +51,25 @@ export default function GatheringsView({ events, spaceSlug }: Props) {
     (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
   )
 
-  // Group events by UTC date key
+  // Group events by Melbourne local date key
   const eventsByKey: Record<string, EventSummary[]> = {}
   for (const e of sortedEvents) {
-    const k = utcDateKey(e.starts_at)
+    const k = gatheringDateKey(e.starts_at)
     ;(eventsByKey[k] ??= []).push(e)
   }
 
-  // Events that fall in the currently displayed month
-  const eventsThisMonth = sortedEvents.filter((e) => {
-    const d = new Date(e.starts_at)
-    return d.getUTCFullYear() === year && d.getUTCMonth() === month
-  })
+  // Events that fall in the currently displayed month (Melbourne local date)
+  const yearStr  = String(year).padStart(4, '0')
+  const monthStr = String(month + 1).padStart(2, '0')
+  const monthPrefix = `${yearStr}-${monthStr}`
+  const eventsThisMonth = sortedEvents.filter(e =>
+    gatheringDateKey(e.starts_at).startsWith(monthPrefix),
+  )
 
   // Calendar grid geometry
   const daysInMonth  = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
   const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay() // 0 = Sun
-  const today        = todayKey()
+  const today        = todayGatheringKey()
 
   // ---------------------------------------------------------------------------
   // Render
@@ -181,18 +161,18 @@ export default function GatheringsView({ events, spaceSlug }: Props) {
 
               {/* Blank offset cells */}
               {Array.from({ length: firstWeekday }).map((_, i) => (
-                <div key={`blank-${i}`} className="min-h-[88px] bg-slate-50/50" />
+                <div key={`blank-${i}`} className="min-h-[120px] bg-slate-50/50" />
               ))}
 
               {/* Day cells */}
               {Array.from({ length: daysInMonth }).map((_, i) => {
-                const day      = i + 1
-                const key      = `${year}-${month}-${day}`
-                const isToday  = key === today
-                const dayEvts  = eventsByKey[key] ?? []
+                const day     = i + 1
+                const cellKey = `${yearStr}-${monthStr}-${String(day).padStart(2, '0')}`
+                const isToday = cellKey === today
+                const dayEvts = eventsByKey[cellKey] ?? []
 
                 return (
-                  <div key={day} className="min-h-[88px] bg-white p-1.5">
+                  <div key={day} className="min-h-[120px] bg-white p-1.5">
                     {/* Day number */}
                     <div className="mb-1 flex justify-end pr-0.5">
                       <span
@@ -217,7 +197,7 @@ export default function GatheringsView({ events, spaceSlug }: Props) {
                           className="block truncate rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight transition-opacity hover:opacity-75"
                           style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
                         >
-                          {formatTime(e.starts_at).replace(' UTC', '')} {e.title}
+                          {formatGatheringTimeShort(e.starts_at)} {e.title}
                         </Link>
                       ))}
                     </div>
@@ -243,10 +223,10 @@ export default function GatheringsView({ events, spaceSlug }: Props) {
             ) : (
               <div className="divide-y divide-border">
                 {Object.entries(
-                  eventsThisMonth.reduce<Record<string, { date: Date; events: EventSummary[] }>>(
+                  eventsThisMonth.reduce<Record<string, { iso: string; events: EventSummary[] }>>(
                     (acc, e) => {
-                      const k = utcDateKey(e.starts_at)
-                      if (!acc[k]) acc[k] = { date: new Date(e.starts_at), events: [] }
+                      const k = gatheringDateKey(e.starts_at)
+                      if (!acc[k]) acc[k] = { iso: e.starts_at, events: [] }
                       acc[k].events.push(e)
                       return acc
                     },
@@ -254,10 +234,10 @@ export default function GatheringsView({ events, spaceSlug }: Props) {
                   ),
                 )
                   .sort(([a], [b]) => a.localeCompare(b))
-                  .map(([k, { date, events: dayEvts }]) => (
+                  .map(([k, { iso, events: dayEvts }]) => (
                     <div key={k} className="px-5 py-4">
                       <p className="mb-2.5 text-[12px] font-semibold uppercase tracking-wider text-slate-400">
-                        {formatMobileDayLabel(date)}
+                        {formatGatheringMobileDayLabel(iso)}
                       </p>
                       <div className="flex flex-col gap-2">
                         {dayEvts.map((e) => (
@@ -269,7 +249,7 @@ export default function GatheringsView({ events, spaceSlug }: Props) {
                           >
                             <div className="min-w-0">
                               <p className="truncate text-[14px] font-medium text-navy-900">{e.title}</p>
-                              <p className="mt-0.5 text-[12px] text-slate-500">{formatTime(e.starts_at)}</p>
+                              <p className="mt-0.5 text-[12px] text-slate-500">{formatGatheringTime(e.starts_at)}</p>
                             </div>
                             <span className="ml-3 shrink-0 text-teal-500">→</span>
                           </Link>

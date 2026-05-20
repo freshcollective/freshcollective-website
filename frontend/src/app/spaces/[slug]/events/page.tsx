@@ -21,7 +21,7 @@ export default async function SpaceEventsPage({ params }: Props) {
   const events: EventSummary[] = await getSpaceEvents(slug)
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-4xl">
 
       {/* ── Intro card — navy/gradient, matching Collective page ── */}
       <div

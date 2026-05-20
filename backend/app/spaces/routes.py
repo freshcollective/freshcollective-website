@@ -463,7 +463,7 @@ def list_events(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[Event]:
-    """Upcoming published events for a space, limited to the next 3."""
+    """All upcoming published events for a space, sorted chronologically."""
     space = _get_space_or_404(slug, db)
     return (
         db.query(Event)
@@ -473,7 +473,6 @@ def list_events(
             Event.starts_at >= datetime.utcnow(),
         )
         .order_by(Event.starts_at)
-        .limit(3)
         .all()
     )
 
