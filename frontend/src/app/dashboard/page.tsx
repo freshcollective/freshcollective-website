@@ -227,21 +227,38 @@ export default async function DashboardPage() {
                   })}
                 </div>
 
-                {/* Explore CTA — secondary, below own collectives */}
+                {/* Explore CTA — navy feature card, below own collectives */}
                 <Link
                   href="/dashboard/explore"
-                  className="group flex items-center justify-between gap-4 rounded-xl px-5 py-3.5 transition-all hover:shadow-sm"
-                  style={{ background: '#EAF7F6', border: '1px solid rgba(56,160,158,0.20)' }}
+                  className="group block overflow-hidden rounded-2xl px-6 py-6 transition-all hover:-translate-y-0.5 hover:shadow-xl"
+                  style={{
+                    background: '#071824',
+                    border: '1px solid rgba(66,199,198,0.10)',
+                    boxShadow: '0 8px 40px rgba(7,24,36,0.28), 0 2px 8px rgba(0,0,0,0.14)',
+                  }}
                 >
-                  <div>
-                    <p className="text-[13px] font-semibold text-navy-900 transition-colors group-hover:text-teal-700">
-                      Explore collectives
-                    </p>
-                    <p className="text-[12px] text-slate-500">
-                      Find other guided spaces and communities to join.
-                    </p>
-                  </div>
-                  <span className="shrink-0 text-[13px] font-semibold text-teal-600 transition-colors group-hover:text-teal-700">
+                  <div
+                    className="mb-3 h-[2px] w-5 rounded-full"
+                    style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
+                  />
+                  <h3
+                    className="font-serif text-xl leading-snug transition-opacity group-hover:opacity-80 md:text-2xl"
+                    style={{
+                      background: 'linear-gradient(90deg, #55D7D2 0%, #BDF7F5 35%, #FFFFFF 75%)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      backgroundClip: 'text',
+                    }}
+                  >
+                    Explore collectives
+                  </h3>
+                  <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
+                    Find other guided spaces and communities to join.
+                  </p>
+                  <span
+                    className="mt-5 inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity group-hover:opacity-90"
+                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                  >
                     Browse collectives →
                   </span>
                 </Link>
