@@ -232,7 +232,7 @@ export default async function DashboardPage() {
                 {/* Explore card — navy, matched sizing with Creator Studio */}
                 <GoldLabel className="mb-4">Collectives to explore</GoldLabel>
                 <Link
-                  href="/dashboard/explore"
+                  href="/spaces"
                   className="group block w-full overflow-hidden rounded-2xl px-6 py-7 transition-all hover:-translate-y-0.5 hover:shadow-2xl"
                   style={{
                     minHeight: '172px',
@@ -282,7 +282,7 @@ export default async function DashboardPage() {
                   Collectives are guided spaces where you learn, reflect, and connect with others.
                 </p>
                 <Link
-                  href="/dashboard/explore"
+                  href="/spaces"
                   className="mt-5 inline-flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
                   style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
                 >
