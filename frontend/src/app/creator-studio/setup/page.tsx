@@ -77,11 +77,13 @@ export default async function SetupPage() {
   ]
 
   const doneCount = checklist.filter((c) => c.status === 'complete').length
+  const allComplete = doneCount === checklist.length
 
   return (
-    <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
+    <div className="w-full max-w-[860px] space-y-10 px-8 py-8 md:px-10 md:py-10">
 
-      <div className="mb-8">
+      {/* ── Page heading ── */}
+      <div>
         <p
           className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
           style={{ color: '#38A09E' }}
@@ -92,97 +94,173 @@ export default async function SetupPage() {
           Set up your collective.
         </h1>
         <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
-          Start with the foundations, then build the rhythm around your work.
-        </p>
-        <p className="mt-1.5 text-[13px] text-slate-400">
-          {doneCount} of {checklist.length} complete
+          Manage the foundations and member experience for this collective.
         </p>
       </div>
 
-      <div className="space-y-3 mb-10">
-        {checklist.map(({ label, desc, status, href }, i) => {
-          const cfg = STATUS_CONFIG[status]
-          return (
-            <div
-              key={label}
-              className="flex items-start gap-4 rounded-2xl border bg-white p-5"
-              style={{
-                borderColor:
-                  status === 'complete'
-                    ? 'rgba(56,160,158,0.22)'
-                    : status === 'in_progress'
-                    ? 'rgba(212,176,72,0.20)'
-                    : '#e2e8f0',
-              }}
-            >
-              {/* Step number / check */}
-              <div
-                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-                style={{
-                  background:
-                    status === 'complete' ? 'rgba(56,160,158,0.12)' : 'rgba(0,0,0,0.05)',
-                  color: status === 'complete' ? '#38A09E' : '#94a3b8',
-                  border:
-                    status === 'complete'
-                      ? '1.5px solid rgba(56,160,158,0.40)'
-                      : '1.5px solid rgba(0,0,0,0.12)',
-                }}
-              >
-                {status === 'complete' ? (
-                  <svg width="8" height="6" viewBox="0 0 8 6" fill="none" aria-hidden="true">
-                    <path
-                      d="M1 3l2 2 4-4"
-                      stroke="#38A09E"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                ) : (
-                  String(i + 1)
-                )}
-              </div>
-
-              <div className="flex-1">
-                <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
-                  <p className="text-[15px] font-medium text-navy-900">{label}</p>
-                  <span
-                    className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                    style={{ background: cfg.bg, color: cfg.color }}
-                  >
-                    {cfg.label}
-                  </span>
-                </div>
-                <p className="text-[13.5px] leading-relaxed text-slate-500">{desc}</p>
-                {status !== 'complete' && (
-                  <Link
-                    href={href}
-                    className="mt-3 inline-block text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
-                  >
-                    {status === 'in_progress' ? 'Continue →' : 'Start this step →'}
-                  </Link>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* ── Member guidance panel editor ── */}
-      {spaceDetail && (
+      {/* ── 1. Member Experience ── */}
+      {spaceDetail ? (
         <section>
-          <div className="mb-6">
-            <h2 className="font-serif text-xl text-navy-900">Member guidance panel</h2>
-            <p className="mt-1.5 text-[14px] leading-relaxed" style={{ color: '#334155' }}>
-              Choose what members see in the <strong>Important</strong> panel inside this collective.
-              This appears on the Community and Members pages.
+          <div className="mb-5">
+            <h2 className="font-serif text-xl text-navy-900">Member Experience</h2>
+            <p className="mt-1 text-[14px] leading-relaxed" style={{ color: '#334155' }}>
+              Choose what members see in the <strong>Important</strong> panel on the Collective
+              and Members pages.
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-7">
-            <GuidancePanelForm space={spaceDetail} />
+
+          <div
+            className="overflow-hidden rounded-2xl bg-white"
+            style={{ border: '1px solid rgba(56,160,158,0.18)', borderTop: '3px solid rgba(191,152,48,0.55)' }}
+          >
+            <div className="px-7 py-6">
+              <div className="mb-5 flex items-center gap-2.5">
+                <div
+                  className="h-[2px] w-5 rounded-full"
+                  style={{ background: 'linear-gradient(90deg, #BF9830 0%, transparent 100%)' }}
+                />
+                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                  Important panel
+                </p>
+              </div>
+              <GuidancePanelForm space={spaceDetail} />
+            </div>
           </div>
         </section>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-7 py-8 text-center">
+          <p className="text-[14px] font-medium text-navy-900">No collective selected</p>
+          <p className="mt-1 text-[13px] text-slate-500">
+            Create a collective first to manage the member experience.
+          </p>
+          <Link
+            href="/creator-studio/create"
+            className="mt-4 inline-flex items-center rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            Create collective
+          </Link>
+        </div>
       )}
+
+      {/* ── 2. Setup checklist ── */}
+      <section>
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="font-serif text-xl text-navy-900">Launch checklist</h2>
+            <p className="mt-1 text-[13px] text-slate-400">
+              {doneCount} of {checklist.length} complete
+            </p>
+          </div>
+          {allComplete && (
+            <span
+              className="rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide"
+              style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E', border: '1px solid rgba(56,160,158,0.22)' }}
+            >
+              Setup complete
+            </span>
+          )}
+        </div>
+
+        {allComplete ? (
+          /* Compact summary when everything is done */
+          <div
+            className="rounded-2xl px-6 py-5"
+            style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.16)' }}
+          >
+            <p className="text-[14px] font-semibold" style={{ color: '#0C1826' }}>
+              Your collective is ready.
+            </p>
+            <p className="mt-0.5 text-[13px] text-slate-500">
+              All five launch steps are complete. Keep growing at your own pace.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {checklist.map(({ label }) => (
+                <span
+                  key={label}
+                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] font-medium"
+                  style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}
+                >
+                  <svg width="8" height="6" viewBox="0 0 8 6" fill="none" aria-hidden="true">
+                    <path d="M1 3l2 2 4-4" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* Full checklist while items remain */
+          <div className="space-y-3">
+            {checklist.map(({ label, desc, status, href }, i) => {
+              const cfg = STATUS_CONFIG[status]
+              return (
+                <div
+                  key={label}
+                  className="flex items-start gap-4 rounded-2xl border bg-white p-5"
+                  style={{
+                    borderColor:
+                      status === 'complete'
+                        ? 'rgba(56,160,158,0.22)'
+                        : status === 'in_progress'
+                        ? 'rgba(212,176,72,0.20)'
+                        : '#e2e8f0',
+                  }}
+                >
+                  {/* Step number / check */}
+                  <div
+                    className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+                    style={{
+                      background:
+                        status === 'complete' ? 'rgba(56,160,158,0.12)' : 'rgba(0,0,0,0.05)',
+                      color: status === 'complete' ? '#38A09E' : '#94a3b8',
+                      border:
+                        status === 'complete'
+                          ? '1.5px solid rgba(56,160,158,0.40)'
+                          : '1.5px solid rgba(0,0,0,0.12)',
+                    }}
+                  >
+                    {status === 'complete' ? (
+                      <svg width="8" height="6" viewBox="0 0 8 6" fill="none" aria-hidden="true">
+                        <path
+                          d="M1 3l2 2 4-4"
+                          stroke="#38A09E"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : (
+                      String(i + 1)
+                    )}
+                  </div>
+
+                  <div className="flex-1">
+                    <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
+                      <p className="text-[15px] font-medium text-navy-900">{label}</p>
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                        style={{ background: cfg.bg, color: cfg.color }}
+                      >
+                        {cfg.label}
+                      </span>
+                    </div>
+                    <p className="text-[13.5px] leading-relaxed text-slate-500">{desc}</p>
+                    {status !== 'complete' && (
+                      <Link
+                        href={href}
+                        className="mt-3 inline-block text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
+                      >
+                        {status === 'in_progress' ? 'Continue →' : 'Start this step →'}
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
 
     </div>
   )
