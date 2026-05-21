@@ -338,7 +338,8 @@ def create_space(
         tagline=body.tagline.strip() if body.tagline else None,
         description=body.description.strip() if body.description else None,
         creator_id=current_user.id,
-        is_public=False,
+        is_public=body.is_public,
+        themes=body.themes,
         status="draft",
     )
     db.add(space)

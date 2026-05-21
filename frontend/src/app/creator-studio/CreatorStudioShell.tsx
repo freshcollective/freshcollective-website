@@ -178,7 +178,7 @@ function CollectiveSwitcher({
       <div className="mt-2.5 px-1">
         {!atLimit ? (
           <Link
-            href="/creator-studio/create"
+            href="/creator-studio/create-collective"
             className="flex items-center gap-1.5 text-[12px] font-medium transition-opacity hover:opacity-80"
             style={{ color: '#8DE8E6' }}
           >

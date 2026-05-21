@@ -28,6 +28,8 @@ class SpaceCreateRequest(BaseModel):
     name: str
     tagline: str | None = None
     description: str | None = None
+    is_public: bool = False
+    themes: list[str] = []
 
     @field_validator("name")
     @classmethod
@@ -37,6 +39,14 @@ class SpaceCreateRequest(BaseModel):
             raise ValueError("Name cannot be empty.")
         if len(v) > 200:
             raise ValueError("Name must be 200 characters or fewer.")
+        return v
+
+    @field_validator("themes")
+    @classmethod
+    def validate_themes(cls, v: list[str]) -> list[str]:
+        invalid = [t for t in v if t not in ALLOWED_THEMES]
+        if invalid:
+            raise ValueError(f"Invalid themes: {invalid}")
         return v
 
 
