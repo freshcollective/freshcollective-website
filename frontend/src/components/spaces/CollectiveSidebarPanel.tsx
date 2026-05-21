@@ -4,9 +4,15 @@ import type { SpaceResponse } from '@/types/platform'
 
 interface Props {
   space: SpaceResponse | null
+  memberCount: number
+  leaderCount: number
 }
 
-export default function CollectiveSidebarPanel({ space }: Props) {
+function plural(n: number, singular: string, plural: string) {
+  return `${n} ${n === 1 ? singular : plural}`
+}
+
+export default function CollectiveSidebarPanel({ space, memberCount, leaderCount }: Props) {
   const coverUrl = resolveMediaUrl(space?.cover_image_url)
 
   return (
@@ -14,7 +20,7 @@ export default function CollectiveSidebarPanel({ space }: Props) {
       className="overflow-hidden rounded-2xl bg-white"
       style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
     >
-      {/* Banner image — rounded top corners come from parent overflow-hidden */}
+      {/* Banner image — rounded top corners from parent overflow-hidden */}
       {coverUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -32,9 +38,34 @@ export default function CollectiveSidebarPanel({ space }: Props) {
         />
       )}
 
-      {/* Important panel content — no separate card wrapper */}
+      <div className="px-5 pt-5 pb-1">
+        {/* Stats row */}
+        <div className="flex gap-6">
+          <div>
+            <p className="font-serif text-[22px] leading-tight" style={{ color: '#0C1826' }}>
+              {memberCount}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              {memberCount === 1 ? 'member' : 'members'}
+            </p>
+          </div>
+          <div>
+            <p className="font-serif text-[22px] leading-tight" style={{ color: '#0C1826' }}>
+              {leaderCount}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              {leaderCount === 1 ? 'leader' : 'leaders'}
+            </p>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="mt-4 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
+      </div>
+
+      {/* Important panel content */}
       <ImportantPanelContent
-        className="px-5 py-6"
+        className="px-5 pt-4 pb-6"
         startTitle={space?.guidance_start_title}
         startBody={space?.guidance_start_body}
         focusTitle={space?.guidance_focus_title}

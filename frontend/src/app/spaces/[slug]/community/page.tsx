@@ -1,8 +1,8 @@
-import { getCommunityFeed, getSpace } from '@/lib/serverApi'
+import { getCommunityFeed, getSpace, getSpaceMembers } from '@/lib/serverApi'
 import PostCard from '@/components/community/PostCard'
 import CreatePostForm from '@/components/community/CreatePostForm'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
-import type { PostSummary, SpaceResponse } from '@/types/platform'
+import type { MemberProfile, PostSummary, SpaceResponse } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -10,10 +10,14 @@ interface Props {
 
 export default async function SpaceCommunityPage({ params }: Props) {
   const { slug } = await params
-  const [posts, space]: [PostSummary[], SpaceResponse | null] = await Promise.all([
+  const [posts, space, members]: [PostSummary[], SpaceResponse | null, MemberProfile[]] = await Promise.all([
     getCommunityFeed(slug),
     getSpace(slug),
+    getSpaceMembers(slug),
   ])
+
+  const memberCount = members.filter((m) => m.space_role === 'learner').length
+  const leaderCount = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
 
   const pinned = posts.filter((p) => p.is_pinned)
   const feed = posts.filter((p) => !p.is_pinned)
@@ -105,10 +109,14 @@ export default async function SpaceCommunityPage({ params }: Props) {
         )}
       </div>
 
-      {/* ── Right column: banner + Important panel (desktop only) ── */}
+      {/* ── Right column: banner + stats + Important panel (desktop only) ── */}
       <aside className="hidden lg:block">
         <div className="sticky top-6">
-          <CollectiveSidebarPanel space={space} />
+          <CollectiveSidebarPanel
+            space={space}
+            memberCount={memberCount}
+            leaderCount={leaderCount}
+          />
         </div>
       </aside>
 

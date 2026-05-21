@@ -71,9 +71,13 @@ export default async function SpaceMembersPage({ params }: Props) {
           canInvite={canInvite}
         />
 
-        {/* ── Right: banner + Important panel ── */}
+        {/* ── Right: banner + stats + Important panel ── */}
         <div className="lg:sticky lg:top-6">
-          <CollectiveSidebarPanel space={space} />
+          <CollectiveSidebarPanel
+            space={space}
+            memberCount={learners.length}
+            leaderCount={leaders.length}
+          />
         </div>
 
       </div>
