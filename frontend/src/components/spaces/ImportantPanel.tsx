@@ -131,14 +131,24 @@ const DEFAULTS = {
   linksBody:  null,
 }
 
-export default function ImportantPanel({
+// ---------------------------------------------------------------------------
+// ImportantPanelContent — sections only, no outer card wrapper.
+// Use this when embedding inside a shared card (e.g. CollectiveSidebarPanel).
+// ---------------------------------------------------------------------------
+
+interface ContentProps extends Props {
+  className?: string
+}
+
+export function ImportantPanelContent({
   startTitle,
   startBody,
   focusTitle,
   focusBody,
   linksTitle,
   linksBody,
-}: Props) {
+  className,
+}: ContentProps) {
   const sections = [
     { title: startTitle || DEFAULTS.startTitle, body: startBody ?? DEFAULTS.startBody },
     { title: focusTitle || DEFAULTS.focusTitle, body: focusBody ?? DEFAULTS.focusBody },
@@ -146,10 +156,7 @@ export default function ImportantPanel({
   ]
 
   return (
-    <div
-      className="rounded-2xl bg-white px-5 py-6"
-      style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-    >
+    <div className={className}>
       <div
         className="mb-3 h-[2px] w-5 rounded-full"
         style={{ background: 'linear-gradient(90deg, #BF9830 0%, transparent 100%)' }}
@@ -175,6 +182,36 @@ export default function ImportantPanel({
           </React.Fragment>
         ))}
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ImportantPanel — standalone card with own border/shadow.
+// Use this when the panel appears without a banner image above it.
+// ---------------------------------------------------------------------------
+
+export default function ImportantPanel({
+  startTitle,
+  startBody,
+  focusTitle,
+  focusBody,
+  linksTitle,
+  linksBody,
+}: Props) {
+  return (
+    <div
+      className="rounded-2xl bg-white px-5 py-6"
+      style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+    >
+      <ImportantPanelContent
+        startTitle={startTitle}
+        startBody={startBody}
+        focusTitle={focusTitle}
+        focusBody={focusBody}
+        linksTitle={linksTitle}
+        linksBody={linksBody}
+      />
     </div>
   )
 }
