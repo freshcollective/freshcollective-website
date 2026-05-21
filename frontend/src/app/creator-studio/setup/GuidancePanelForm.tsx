@@ -3,25 +3,22 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import SimpleRichTextEditor from '@/components/creator/SimpleRichTextEditor'
 import type { CreatorSpaceDetail } from '@/types/platform'
 
 interface Props {
   space: CreatorSpaceDetail
 }
 
-type FieldKey =
-  | 'guidance_start_title'
-  | 'guidance_start_body'
-  | 'guidance_focus_title'
-  | 'guidance_focus_body'
-  | 'guidance_links_title'
-  | 'guidance_links_body'
+type TitleKey = 'guidance_start_title' | 'guidance_focus_title' | 'guidance_links_title'
+type BodyKey  = 'guidance_start_body'  | 'guidance_focus_body'  | 'guidance_links_body'
+type FieldKey = TitleKey | BodyKey
 
 type FormState = Record<FieldKey, string>
 
 const SECTIONS: Array<{
-  titleKey: FieldKey
-  bodyKey: FieldKey
+  titleKey: TitleKey
+  bodyKey: BodyKey
   label: string
   titlePlaceholder: string
   bodyPlaceholder: string
@@ -63,7 +60,7 @@ export default function GuidancePanelForm({ space }: Props) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  function set(key: FieldKey, value: string) {
+  function setField(key: FieldKey, value: string) {
     setForm((f) => ({ ...f, [key]: value }))
     setSaved(false)
   }
@@ -76,7 +73,21 @@ export default function GuidancePanelForm({ space }: Props) {
     try {
       const body: Record<string, string | null> = {}
       for (const k of Object.keys(form) as FieldKey[]) {
-        body[k] = form[k].trim() || null
+        const v = form[k].trim()
+        // A TipTap JSON doc with no content is treated as empty
+        if (!v) { body[k] = null; continue }
+        try {
+          const parsed = JSON.parse(v)
+          const isEmpty =
+            parsed?.type === 'doc' &&
+            (!parsed.content || parsed.content.length === 0 ||
+              parsed.content.every((n: { type: string; content?: unknown[] }) =>
+                n.type === 'paragraph' && (!n.content || n.content.length === 0)
+              ))
+          body[k] = isEmpty ? null : v
+        } catch {
+          body[k] = v || null
+        }
       }
       const res = await fetch(apiUrl(`/api/creator/spaces/${space.slug}`), {
         method: 'PATCH',
@@ -100,7 +111,7 @@ export default function GuidancePanelForm({ space }: Props) {
 
   return (
     <form onSubmit={handleSave}>
-      <div className="space-y-6">
+      <div className="space-y-8">
         {SECTIONS.map(({ titleKey, bodyKey, label, titlePlaceholder, bodyPlaceholder }) => (
           <div key={titleKey}>
             <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
@@ -114,7 +125,7 @@ export default function GuidancePanelForm({ space }: Props) {
                 <input
                   type="text"
                   value={form[titleKey]}
-                  onChange={(e) => set(titleKey, e.target.value)}
+                  onChange={(e) => setField(titleKey, e.target.value)}
                   placeholder={titlePlaceholder}
                   maxLength={100}
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-800 placeholder:text-slate-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
@@ -124,13 +135,11 @@ export default function GuidancePanelForm({ space }: Props) {
                 <label className="mb-1 block text-[13px] font-medium text-slate-600">
                   Text
                 </label>
-                <textarea
-                  rows={3}
+                <SimpleRichTextEditor
                   value={form[bodyKey]}
-                  onChange={(e) => set(bodyKey, e.target.value)}
+                  onChange={(json) => setField(bodyKey, json)}
                   placeholder={bodyPlaceholder}
-                  maxLength={500}
-                  className="w-full resize-none rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-800 placeholder:text-slate-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                  minHeight={90}
                 />
               </div>
             </div>
