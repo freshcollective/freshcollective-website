@@ -178,6 +178,13 @@ class Space(Base):
     themes: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default="'[]'"
     )
+    # Creator-managed guidance panel shown in member-facing sidebar
+    guidance_start_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    guidance_start_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    guidance_focus_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    guidance_focus_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    guidance_links_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    guidance_links_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )

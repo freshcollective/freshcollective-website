@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { getActiveCreatorSpace, getCreatorPathways, getCreatorEvents } from '@/lib/serverApi'
-import type { CreatorPathway, CreatorEvent } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorPathways, getCreatorEvents, getCreatorSpace } from '@/lib/serverApi'
+import type { CreatorPathway, CreatorEvent, CreatorSpaceDetail } from '@/types/platform'
+import GuidancePanelForm from './GuidancePanelForm'
 
 type StepStatus = 'not_started' | 'in_progress' | 'complete'
 
@@ -13,12 +14,13 @@ const STATUS_CONFIG: Record<StepStatus, { label: string; bg: string; color: stri
 export default async function SetupPage() {
   const primarySpace = await getActiveCreatorSpace()
 
-  const [pathways, events]: [CreatorPathway[], CreatorEvent[]] = primarySpace
+  const [pathways, events, spaceDetail]: [CreatorPathway[], CreatorEvent[], CreatorSpaceDetail | null] = primarySpace
     ? await Promise.all([
         getCreatorPathways(primarySpace.slug),
         getCreatorEvents(primarySpace.slug),
+        getCreatorSpace(primarySpace.slug) as Promise<CreatorSpaceDetail | null>,
       ])
-    : [[], []]
+    : [[], [], null]
 
   const hasStepContent = pathways.some((p) => p.step_count > 0)
 
@@ -97,7 +99,7 @@ export default async function SetupPage() {
         </p>
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-3 mb-10">
         {checklist.map(({ label, desc, status, href }, i) => {
           const cfg = STATUS_CONFIG[status]
           return (
@@ -165,6 +167,22 @@ export default async function SetupPage() {
           )
         })}
       </div>
+
+      {/* ── Member guidance panel editor ── */}
+      {spaceDetail && (
+        <section>
+          <div className="mb-6">
+            <h2 className="font-serif text-xl text-navy-900">Member guidance panel</h2>
+            <p className="mt-1.5 text-[14px] leading-relaxed" style={{ color: '#334155' }}>
+              Choose what members see in the <strong>Important</strong> panel inside this collective.
+              This appears on the Community and Members pages.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-7">
+            <GuidancePanelForm space={spaceDetail} />
+          </div>
+        </section>
+      )}
 
     </div>
   )

@@ -1,7 +1,8 @@
-import { getCommunityFeed } from '@/lib/serverApi'
+import { getCommunityFeed, getSpace } from '@/lib/serverApi'
 import PostCard from '@/components/community/PostCard'
 import CreatePostForm from '@/components/community/CreatePostForm'
-import type { PostSummary } from '@/types/platform'
+import ImportantPanel from '@/components/spaces/ImportantPanel'
+import type { PostSummary, SpaceResponse } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -9,7 +10,10 @@ interface Props {
 
 export default async function SpaceCommunityPage({ params }: Props) {
   const { slug } = await params
-  const posts: PostSummary[] = await getCommunityFeed(slug)
+  const [posts, space]: [PostSummary[], SpaceResponse | null] = await Promise.all([
+    getCommunityFeed(slug),
+    getSpace(slug),
+  ])
 
   const pinned = posts.filter((p) => p.is_pinned)
   const feed = posts.filter((p) => !p.is_pinned)
@@ -101,49 +105,17 @@ export default async function SpaceCommunityPage({ params }: Props) {
         )}
       </div>
 
-      {/* ── Right column: sidebar panel (desktop only) ── */}
+      {/* ── Right column: creator-managed Important panel (desktop only) ── */}
       <aside className="hidden lg:block">
         <div className="sticky top-6">
-          {/* TODO: replace this placeholder with creator-managed Collective sidebar content. */}
-          <div
-            className="rounded-2xl bg-white px-5 py-6"
-            style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-          >
-            <div
-              className="mb-3 h-[2px] w-5 rounded-full"
-              style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
-            />
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-              Important
-            </p>
-
-            <div className="mt-4 flex flex-col gap-4">
-              <div>
-                <p className="mb-1 text-[12px] font-semibold text-navy-900">Start here</p>
-                <p className="text-[12px] leading-relaxed text-slate-400">
-                  Creators can add a welcome message or first step here.
-                </p>
-              </div>
-              <div className="h-px bg-slate-100" />
-              <div>
-                <p className="mb-1 text-[12px] font-semibold text-navy-900">Upcoming focus</p>
-                <p className="text-[12px] leading-relaxed text-slate-400">
-                  A weekly theme or prompt can live here.
-                </p>
-              </div>
-              <div className="h-px bg-slate-100" />
-              <div>
-                <p className="mb-1 text-[12px] font-semibold text-navy-900">Helpful links</p>
-                <p className="text-[12px] leading-relaxed text-slate-400">
-                  Key resources and links will appear here.
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-5 text-[11px] leading-relaxed text-slate-300">
-              Creators will be able to manage this panel from Creator Studio.
-            </p>
-          </div>
+          <ImportantPanel
+            startTitle={space?.guidance_start_title}
+            startBody={space?.guidance_start_body}
+            focusTitle={space?.guidance_focus_title}
+            focusBody={space?.guidance_focus_body}
+            linksTitle={space?.guidance_links_title}
+            linksBody={space?.guidance_links_body}
+          />
         </div>
       </aside>
 

@@ -97,7 +97,7 @@ export default async function CreatorStudioHome() {
     // Only flag "no members" for published spaces — draft spaces naturally have none.
     if (spaceDetail.status === 'active' && learnerCount === 0) {
       attention.push({
-        title: 'No members yet',
+        title: 'No learner members yet',
         desc: 'Invite people or share your collective page to welcome your first members.',
         href: '/creator-studio/people',
         action: 'Invite people',

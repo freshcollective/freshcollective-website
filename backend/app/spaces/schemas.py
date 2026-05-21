@@ -47,6 +47,12 @@ class SpaceResponse(BaseModel):
     timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
     pathways: list[PathwaySummary] = []
+    guidance_start_title: str | None = None
+    guidance_start_body: str | None = None
+    guidance_focus_title: str | None = None
+    guidance_focus_body: str | None = None
+    guidance_links_title: str | None = None
+    guidance_links_body: str | None = None
 
 
 class SpaceSummary(BaseModel):

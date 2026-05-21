@@ -48,6 +48,12 @@ class SpaceUpdateRequest(BaseModel):
     status: str | None = None
     timezone: str | None = None
     themes: list[str] | None = None
+    guidance_start_title: str | None = None
+    guidance_start_body: str | None = None
+    guidance_focus_title: str | None = None
+    guidance_focus_body: str | None = None
+    guidance_links_title: str | None = None
+    guidance_links_body: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -87,6 +93,12 @@ class SpaceDetail(BaseModel):
     timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
     themes: list[str] = []
+    guidance_start_title: str | None = None
+    guidance_start_body: str | None = None
+    guidance_focus_title: str | None = None
+    guidance_focus_body: str | None = None
+    guidance_links_title: str | None = None
+    guidance_links_body: str | None = None
 
 
 # ---------------------------------------------------------------------------

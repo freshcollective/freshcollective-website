@@ -24,6 +24,12 @@ export interface SpaceResponse {
   timezone: string
   cover_image_url: string | null
   pathways: PathwaySummary[]
+  guidance_start_title: string | null
+  guidance_start_body: string | null
+  guidance_focus_title: string | null
+  guidance_focus_body: string | null
+  guidance_links_title: string | null
+  guidance_links_body: string | null
 }
 
 export interface SpaceSummary {
@@ -236,7 +242,16 @@ export interface SpaceMembership {
 // Creator Studio
 // ---------------------------------------------------------------------------
 
-export interface CreatorSpaceDetail {
+export interface GuidancePanel {
+  guidance_start_title: string | null
+  guidance_start_body: string | null
+  guidance_focus_title: string | null
+  guidance_focus_body: string | null
+  guidance_links_title: string | null
+  guidance_links_body: string | null
+}
+
+export interface CreatorSpaceDetail extends GuidancePanel {
   id: string
   slug: string
   name: string

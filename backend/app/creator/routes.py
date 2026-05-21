@@ -389,6 +389,18 @@ def update_space(
         space.timezone = body.timezone
     if body.themes is not None:
         space.themes = body.themes
+    if body.guidance_start_title is not None:
+        space.guidance_start_title = body.guidance_start_title.strip() or None
+    if body.guidance_start_body is not None:
+        space.guidance_start_body = body.guidance_start_body.strip() or None
+    if body.guidance_focus_title is not None:
+        space.guidance_focus_title = body.guidance_focus_title.strip() or None
+    if body.guidance_focus_body is not None:
+        space.guidance_focus_body = body.guidance_focus_body.strip() or None
+    if body.guidance_links_title is not None:
+        space.guidance_links_title = body.guidance_links_title.strip() or None
+    if body.guidance_links_body is not None:
+        space.guidance_links_body = body.guidance_links_body.strip() or None
     db.commit()
     db.refresh(space)
     return space

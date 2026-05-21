@@ -1,6 +1,7 @@
-import { getMe, getSpaceMembers } from '@/lib/serverApi'
+import { getMe, getSpace, getSpaceMembers } from '@/lib/serverApi'
 import MembersView from '@/components/spaces/MembersView'
-import type { MemberProfile } from '@/types/platform'
+import ImportantPanel from '@/components/spaces/ImportantPanel'
+import type { MemberProfile, SpaceResponse } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -8,9 +9,10 @@ interface Props {
 
 export default async function SpaceMembersPage({ params }: Props) {
   const { slug } = await params
-  const [me, members] = await Promise.all([
+  const [me, members, space] = await Promise.all([
     getMe(),
     getSpaceMembers(slug),
+    getSpace(slug) as Promise<SpaceResponse | null>,
   ])
   const typedMembers = members as MemberProfile[]
 
@@ -69,44 +71,16 @@ export default async function SpaceMembersPage({ params }: Props) {
           canInvite={canInvite}
         />
 
-        {/* ── Right: placeholder sidebar panel ── */}
-        {/* TODO (creator-content): Creator-managed Members sidebar content will be editable from Creator Studio later. */}
+        {/* ── Right: creator-managed Important panel ── */}
         <div className="lg:sticky lg:top-6">
-          <div
-            className="overflow-hidden rounded-2xl border bg-white p-5"
-            style={{ borderColor: 'rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-          >
-            <div
-              className="mb-4 h-[2px] w-5 rounded-full"
-              style={{ background: 'linear-gradient(90deg, #BF9830 0%, transparent 100%)' }}
-            />
-            <p className="mb-4 text-[13px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-              Important
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <p className="mb-1 text-[14px] font-semibold text-navy-900">Start here</p>
-                <p className="text-[13px] leading-relaxed text-slate-500">
-                  Creators can add a welcome note or member guidance here.
-                </p>
-              </div>
-              <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
-              <div>
-                <p className="mb-1 text-[14px] font-semibold text-navy-900">Member notes</p>
-                <p className="text-[13px] leading-relaxed text-slate-500">
-                  Key expectations, links, or community reminders can live here.
-                </p>
-              </div>
-              <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
-              <div>
-                <p className="mb-1 text-[14px] font-semibold text-navy-900">Helpful links</p>
-                <p className="text-[13px] leading-relaxed text-slate-500">
-                  Resources and links will appear here.
-                </p>
-              </div>
-            </div>
-          </div>
+          <ImportantPanel
+            startTitle={space?.guidance_start_title}
+            startBody={space?.guidance_start_body}
+            focusTitle={space?.guidance_focus_title}
+            focusBody={space?.guidance_focus_body}
+            linksTitle={space?.guidance_links_title}
+            linksBody={space?.guidance_links_body}
+          />
         </div>
 
       </div>
