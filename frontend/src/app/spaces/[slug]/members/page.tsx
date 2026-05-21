@@ -1,6 +1,6 @@
 import { getMe, getSpace, getSpaceMembers } from '@/lib/serverApi'
 import MembersView from '@/components/spaces/MembersView'
-import ImportantPanel from '@/components/spaces/ImportantPanel'
+import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
 import type { MemberProfile, SpaceResponse } from '@/types/platform'
 
 interface Props {
@@ -71,16 +71,9 @@ export default async function SpaceMembersPage({ params }: Props) {
           canInvite={canInvite}
         />
 
-        {/* ── Right: creator-managed Important panel ── */}
+        {/* ── Right: banner + Important panel ── */}
         <div className="lg:sticky lg:top-6">
-          <ImportantPanel
-            startTitle={space?.guidance_start_title}
-            startBody={space?.guidance_start_body}
-            focusTitle={space?.guidance_focus_title}
-            focusBody={space?.guidance_focus_body}
-            linksTitle={space?.guidance_links_title}
-            linksBody={space?.guidance_links_body}
-          />
+          <CollectiveSidebarPanel space={space} />
         </div>
 
       </div>

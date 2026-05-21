@@ -1,7 +1,7 @@
 import { getCommunityFeed, getSpace } from '@/lib/serverApi'
 import PostCard from '@/components/community/PostCard'
 import CreatePostForm from '@/components/community/CreatePostForm'
-import ImportantPanel from '@/components/spaces/ImportantPanel'
+import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
 import type { PostSummary, SpaceResponse } from '@/types/platform'
 
 interface Props {
@@ -105,17 +105,10 @@ export default async function SpaceCommunityPage({ params }: Props) {
         )}
       </div>
 
-      {/* ── Right column: creator-managed Important panel (desktop only) ── */}
+      {/* ── Right column: banner + Important panel (desktop only) ── */}
       <aside className="hidden lg:block">
         <div className="sticky top-6">
-          <ImportantPanel
-            startTitle={space?.guidance_start_title}
-            startBody={space?.guidance_start_body}
-            focusTitle={space?.guidance_focus_title}
-            focusBody={space?.guidance_focus_body}
-            linksTitle={space?.guidance_links_title}
-            linksBody={space?.guidance_links_body}
-          />
+          <CollectiveSidebarPanel space={space} />
         </div>
       </aside>
 
