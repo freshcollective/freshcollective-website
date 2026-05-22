@@ -378,6 +378,18 @@ def update_space(
     space = _get_managed_space(slug, current_user, db)
     if body.name is not None:
         space.name = body.name.strip()
+    if body.slug is not None and body.slug != space.slug:
+        conflict = (
+            db.query(Space)
+            .filter(Space.slug == body.slug, Space.id != space.id)
+            .first()
+        )
+        if conflict:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This URL is already in use by another collective.",
+            )
+        space.slug = body.slug
     if body.tagline is not None:
         space.tagline = body.tagline.strip() or None
     if body.description is not None:

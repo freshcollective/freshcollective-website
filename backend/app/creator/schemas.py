@@ -52,6 +52,7 @@ class SpaceCreateRequest(BaseModel):
 
 class SpaceUpdateRequest(BaseModel):
     name: str | None = None
+    slug: str | None = None
     tagline: str | None = None
     description: str | None = None
     is_public: bool | None = None
@@ -72,6 +73,22 @@ class SpaceUpdateRequest(BaseModel):
             v = v.strip()
             if not v:
                 raise ValueError("Name cannot be empty.")
+        return v
+
+    @field_validator("slug")
+    @classmethod
+    def validate_slug(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip().lower()
+            if not v:
+                raise ValueError("Slug cannot be empty.")
+            if len(v) > 80:
+                raise ValueError("Slug must be 80 characters or fewer.")
+            if not re.match(r'^[a-z0-9]([a-z0-9-]*[a-z0-9])?$', v):
+                raise ValueError(
+                    "Slug must contain only lowercase letters, numbers, and hyphens, "
+                    "and cannot start or end with a hyphen."
+                )
         return v
 
     @field_validator("status")

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
@@ -35,12 +35,18 @@ export default function CollectiveSettingsForm({ space }: Props) {
 
   // Text fields
   const [name, setName] = useState(space.name)
+  const [slug, setSlug] = useState(space.slug)
+  const [slugOrigin, setSlugOrigin] = useState('')
   const [tagline, setTagline] = useState(space.tagline ?? '')
   const [description, setDescription] = useState(space.description ?? '')
   const [timezone, setTimezone] = useState(space.timezone ?? 'Australia/Melbourne')
   const [isPublic, setIsPublic] = useState(space.is_public)
   const [status, setStatus] = useState(space.status)
   const [themes, setThemes] = useState<string[]>(space.themes ?? [])
+
+  useEffect(() => {
+    setSlugOrigin(window.location.origin)
+  }, [])
 
   // Banner
   const [bannerFile, setBannerFile] = useState<File | null>(null)
@@ -100,10 +106,30 @@ export default function CollectiveSettingsForm({ space }: Props) {
     }
   }
 
+  const SLUG_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
+
+  function handleSlugChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const formatted = e.target.value
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '')
+      .replace(/-{2,}/g, '-')
+    setSlug(formatted)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) {
       setError('Collective name is required.')
+      return
+    }
+    const trimmedSlug = slug.trim()
+    if (!trimmedSlug) {
+      setError('Collective URL is required.')
+      return
+    }
+    if (!SLUG_RE.test(trimmedSlug)) {
+      setError('Collective URL must use only lowercase letters, numbers, and hyphens, and cannot start or end with a hyphen.')
       return
     }
 
@@ -118,6 +144,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
         credentials: 'include',
         body: JSON.stringify({
           name: name.trim(),
+          slug: trimmedSlug,
           tagline: tagline.trim() || null,
           description: description.trim() || null,
           is_public: isPublic,
@@ -132,8 +159,16 @@ export default function CollectiveSettingsForm({ space }: Props) {
         throw new Error(typeof b.detail === 'string' ? b.detail : `Save failed (${res.status})`)
       }
 
-      setSaved(true)
-      router.refresh()
+      const saved = await res.json() as { slug: string }
+
+      if (saved.slug !== space.slug) {
+        // Slug changed — update the active-collective cookie then reload settings
+        document.cookie = `fc_creator_space=${saved.slug}; path=/; max-age=86400`
+        router.push('/creator-studio/settings')
+      } else {
+        setSaved(true)
+        router.refresh()
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
     } finally {
@@ -164,6 +199,36 @@ export default function CollectiveSettingsForm({ space }: Props) {
               maxLength={200}
               className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
             />
+          </div>
+
+          {/* ── Collective URL (slug) ── */}
+          <div>
+            <label htmlFor="s-slug" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
+              Collective URL
+            </label>
+            <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70 transition-colors focus-within:border-teal-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-400/20">
+              <span
+                className="flex shrink-0 items-center border-r border-slate-200 bg-slate-100 px-3 py-2.5 text-[13px] text-slate-400 select-none"
+                aria-hidden="true"
+              >
+                {slugOrigin || 'https://…'}/spaces/
+              </span>
+              <input
+                id="s-slug"
+                type="text"
+                value={slug}
+                onChange={handleSlugChange}
+                maxLength={80}
+                spellCheck={false}
+                autoCapitalize="none"
+                autoCorrect="off"
+                className="flex-1 bg-transparent px-3 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 focus:outline-none"
+                placeholder="your-collective-name"
+              />
+            </div>
+            <p className="mt-1.5 text-[12px] text-slate-400">
+              This is your collective&apos;s public link. Use lowercase letters, numbers, and hyphens. Changing this will break any existing links.
+            </p>
           </div>
 
           <div>
