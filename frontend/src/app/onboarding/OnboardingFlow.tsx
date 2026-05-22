@@ -45,7 +45,7 @@ export default function OnboardingFlow({ firstName }: Props) {
     } catch {
       // Non-critical — proceed regardless
     }
-    router.push('/spaces/fresh-collective')
+    router.push('/spaces/the-natural-leader-hub')
     router.refresh()
   }
 

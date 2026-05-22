@@ -26,12 +26,12 @@ def upgrade() -> None:
     op.execute("""
         UPDATE spaces
         SET themes = '["Inner Work","Leadership","Reflection"]'::jsonb
-        WHERE slug = 'fresh-collective';
+        WHERE slug = 'the-natural-leader-hub';
     """)
     op.execute("""
         UPDATE spaces
         SET themes = '["Movement","Wellbeing","Inner Work"]'::jsonb
-        WHERE slug = 'winters-playground';
+        WHERE slug = 'embody';
     """)
 
 

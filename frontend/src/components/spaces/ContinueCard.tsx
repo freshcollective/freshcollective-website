@@ -20,7 +20,7 @@ export default function ContinueCard({
 }: ContinueCardProps) {
   const href = data
     ? `/spaces/${data.space_slug}/pathways/${data.pathway_slug}/${data.step_slug}`
-    : '/spaces/fresh-collective/pathways/real-journey'
+    : '/spaces/the-natural-leader-hub/pathways/real-journey'
 
   const label = data?.all_complete
     ? 'Journey complete'

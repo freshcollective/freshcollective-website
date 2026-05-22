@@ -22,7 +22,7 @@
 | `/reset-password` | Password reset form. |
 
 > **Legacy routes (kept during transition):**
-> `/real-journey` and `/membership` remain as marketing pages. They will be gradually replaced by `/spaces/fresh-collective` and Space-level purchase flows.
+> `/real-journey` and `/membership` remain as marketing pages. They will be gradually replaced by `/spaces/the-natural-leader-hub` and Space-level purchase flows.
 
 ---
 
@@ -185,7 +185,7 @@ The dashboard is the learner's home. It should show them exactly what to do next
 ## Entry Path Logic
 
 **Path 1 — Space landing → join → begin Pathway:**
-1. User lands on `/spaces/fresh-collective`
+1. User lands on `/spaces/the-natural-leader-hub`
 2. Joins the Space (free or paid)
 3. Lands on dashboard → directed to REAL Journey Pathway
 4. Progresses through Steps, then moves to other Pathways

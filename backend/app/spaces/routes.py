@@ -845,7 +845,7 @@ def get_continue(
     pathway = (
         db.query(Pathway)
         .join(Space)
-        .filter(Space.slug == "fresh-collective", Pathway.slug == "real-journey")
+        .filter(Space.slug == "the-natural-leader-hub", Pathway.slug == "real-journey")
         .first()
     )
     if not pathway:
@@ -867,7 +867,7 @@ def get_continue(
     next_step = next((s for s in steps if s.id not in completed), steps[-1])
 
     return ContinueResponse(
-        space_slug="fresh-collective",
+        space_slug="the-natural-leader-hub",
         pathway_slug=pathway.slug,
         pathway_title=pathway.title,
         step_slug=next_step.slug,

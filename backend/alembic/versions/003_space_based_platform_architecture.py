@@ -265,10 +265,10 @@ def upgrade() -> None:
         INSERT INTO spaces (id, slug, name, tagline, description, is_public, status, created_at, updated_at)
         VALUES (
             '{FC_SPACE_ID}',
-            'fresh-collective',
-            'Fresh Collective',
+            'the-natural-leader-hub',
+            'The Natural Leader Hub',
             'An experiential learning space for women ready to grow.',
-            'Fresh Collective is the flagship space on the platform. Start with the REAL Journey — the foundational pathway — then explore Growth and beyond.',
+            'The Natural Leader Hub is the flagship space on the platform. Start with the REAL Journey — the foundational pathway — then explore Growth and beyond.',
             true,
             'active',
             '{NOW}',
