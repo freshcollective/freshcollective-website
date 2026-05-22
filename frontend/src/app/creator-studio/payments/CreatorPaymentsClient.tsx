@@ -90,6 +90,29 @@ function SummaryCard({
   )
 }
 
+const PRICING_OPTIONS = [
+  {
+    title: 'Free collective',
+    description: 'Members join at no cost. Great for community-led spaces.',
+  },
+  {
+    title: 'Paid collective',
+    description: 'Charge a one-time or recurring fee for full Space access.',
+  },
+  {
+    title: 'Paid pathway',
+    description: 'Offer individual pathways for purchase within a free or paid Space.',
+  },
+  {
+    title: 'Paid gathering',
+    description: 'Sell tickets or charge for individual live events.',
+  },
+  {
+    title: 'Included with membership',
+    description: 'Bundle Space access into a platform-wide membership subscription.',
+  },
+]
+
 export default function CreatorPaymentsClient({
   feeBasisPoints,
   currency,
@@ -135,6 +158,113 @@ export default function CreatorPaymentsClient({
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Payments</h1>
         <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
           Track member purchases, fees, and estimated payouts for your collectives.
+        </p>
+      </div>
+
+      {/* Payment setup status */}
+      <div
+        className="mb-6 rounded-2xl p-5"
+        style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}
+      >
+        <div className="flex items-start gap-3">
+          <div
+            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+            style={{ background: '#FEF3C7', color: '#92400E' }}
+          >
+            !
+          </div>
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[14px] font-semibold" style={{ color: '#92400E' }}>
+                Payment setup not connected
+              </p>
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                style={{ background: '#FDE68A', color: '#78350F' }}
+              >
+                Stripe not configured
+              </span>
+            </div>
+            <p className="mt-1 text-[13px] leading-relaxed" style={{ color: '#78350F' }}>
+              Stripe is not yet connected to this collective. Members cannot purchase access until
+              payment processing is set up. Your earnings estimates below are based on any
+              manually recorded transactions only.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Creator plan */}
+      <div
+        className="mb-6 rounded-2xl p-5"
+        style={{ background: '#F0FDFB', border: '1px solid #99E6E4' }}
+      >
+        <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#38A09E' }}>
+          Your creator plan
+        </p>
+        <p className="font-serif text-[1.1rem] font-semibold text-[#0F172A]">
+          Founding Creator Access
+        </p>
+        <div className="mt-3 flex flex-wrap gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Trial</p>
+            {/* TODO: wire to Stripe trial_period_days: 14 when payment setup is enabled */}
+            <p className="text-[14px] font-semibold text-[#0F172A]">14 days free</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Then</p>
+            <p className="text-[14px] font-semibold text-[#0F172A]">$19 / month</p>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Transaction fee</p>
+            <p className="text-[14px] font-semibold text-[#0F172A]">{feeDisplay} per sale</p>
+          </div>
+        </div>
+        <p className="mt-3 text-[12px]" style={{ color: '#64748B' }}>
+          No hidden fees. The transaction fee covers payment processing and platform infrastructure.
+        </p>
+      </div>
+
+      {/* Access and pricing options */}
+      <div className="mb-8">
+        <div className="mb-3 flex items-baseline gap-2">
+          <h2 className="text-[15px] font-semibold text-[#0F172A]">Access and pricing options</h2>
+          <span
+            className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+            style={{ background: '#E2E8F0', color: '#64748B' }}
+          >
+            Coming soon
+          </span>
+        </div>
+        <p className="mb-4 text-[13px]" style={{ color: '#64748B' }}>
+          Choose how members access your collective. Pricing configuration will be available once
+          Stripe is connected.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {PRICING_OPTIONS.map((opt) => (
+            <div
+              key={opt.title}
+              className="rounded-xl p-4 opacity-60"
+              style={{ background: '#F8FAFC', border: '1px dashed #CBD5E1' }}
+            >
+              <p className="text-[13px] font-semibold text-[#0F172A]">{opt.title}</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-[#64748B]">{opt.description}</p>
+              <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>
+                Coming soon
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="mb-6" style={{ borderTop: '1px solid #E2E8F0' }} />
+
+      {/* Transaction history heading */}
+      <div className="mb-4">
+        <h2 className="text-[15px] font-semibold text-[#0F172A]">Transaction history</h2>
+        <p className="mt-0.5 text-[13px]" style={{ color: '#64748B' }}>
+          Payments recorded when member purchases are processed through Stripe.
         </p>
       </div>
 
