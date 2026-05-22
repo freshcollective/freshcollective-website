@@ -38,6 +38,7 @@ export interface SpaceSummary {
   name: string
   tagline: string | null
   status: string
+  is_public: boolean
 }
 
 export interface StepSummary {

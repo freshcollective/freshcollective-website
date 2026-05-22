@@ -63,6 +63,7 @@ class SpaceSummary(BaseModel):
     name: str
     tagline: str | None
     status: str
+    is_public: bool
 
 
 class StepSummary(BaseModel):

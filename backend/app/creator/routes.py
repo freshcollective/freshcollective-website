@@ -909,6 +909,28 @@ def create_invitation(
     return InvitationResponse.model_validate(invitation)
 
 
+@router.delete("/spaces/{slug}/invitations/{invitation_id}", status_code=204)
+def delete_invitation(
+    slug: str,
+    invitation_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    space = _get_managed_space(slug, current_user, db)
+    invitation = (
+        db.query(SpaceInvitation)
+        .filter(
+            SpaceInvitation.space_id == space.id,
+            SpaceInvitation.id == invitation_id,
+        )
+        .first()
+    )
+    if not invitation:
+        raise HTTPException(status_code=404, detail="Invitation not found.")
+    db.delete(invitation)
+    db.commit()
+
+
 # ---------------------------------------------------------------------------
 # Pathways
 # ---------------------------------------------------------------------------

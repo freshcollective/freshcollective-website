@@ -1,39 +1,10 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { MemberProfile, MemberPathwayAccessItem, SpaceInvitation } from '@/types/platform'
 import { apiUrl } from '@/lib/api'
 import { formatPathwayPrice } from '@/lib/pathwayAccess'
-
-// ---------------------------------------------------------------------------
-// Unified entry type
-// ---------------------------------------------------------------------------
-
-type PersonEntry =
-  | { kind: 'member'; data: MemberProfile }
-  | { kind: 'invite'; data: SpaceInvitation }
-
-function entryId(e: PersonEntry)     { return e.data.id }
-function entryStatus(e: PersonEntry) { return e.kind === 'member' ? 'active' : 'invited' }
-function entryRole(e: PersonEntry)   { return e.kind === 'member' ? e.data.space_role : e.data.role }
-function entryDate(e: PersonEntry)   { return e.kind === 'member' ? e.data.joined_at : e.data.created_at }
-
-function entryDisplayName(e: PersonEntry): string {
-  if (e.kind === 'member') return e.data.display_name
-  return e.data.name || e.data.email
-}
-
-function entryEmail(e: PersonEntry): string | null {
-  if (e.kind === 'member') return null  // not exposed by current endpoint
-  return e.data.email
-}
-
-function entryMatchesSearch(e: PersonEntry, q: string): boolean {
-  const name = entryDisplayName(e).toLowerCase()
-  const email = entryEmail(e)?.toLowerCase() ?? ''
-  return name.includes(q) || email.includes(q)
-}
 
 // ---------------------------------------------------------------------------
 // Display helpers
@@ -46,20 +17,10 @@ const ROLE_LABEL: Record<string, string> = {
 }
 
 function roleBadgeStyle(role: string): { background: string; color: string } {
-  if (role === 'creator')   return { background: 'rgba(14,116,144,0.10)',  color: '#0e7470' }
+  if (role === 'creator')   return { background: 'rgba(14,116,144,0.10)',  color: '#0e7490' }
   if (role === 'moderator') return { background: 'rgba(99,102,241,0.09)',  color: '#6366f1' }
   return                           { background: 'rgba(56,160,158,0.09)',  color: '#38A09E' }
 }
-
-const STATUS_STYLE: Record<string, { background: string; color: string }> = {
-  active:    { background: 'rgba(56,160,158,0.10)',  color: '#38A09E' },
-  invited:   { background: 'rgba(234,179,8,0.12)',   color: '#a16207' },
-  paused:    { background: 'rgba(148,163,184,0.15)', color: '#64748b' },
-  completed: { background: 'rgba(99,102,241,0.10)',  color: '#6366f1' },
-  removed:   { background: 'rgba(239,68,68,0.08)',   color: '#dc2626' },
-}
-
-function statusStyle(s: string) { return STATUS_STYLE[s] ?? STATUS_STYLE.active }
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-GB', {
@@ -72,13 +33,13 @@ function initials(name: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Small pieces
+// Small reusable pieces
 // ---------------------------------------------------------------------------
 
-function Avatar({ name }: { name: string }) {
+function Avatar({ name, size = 9 }: { name: string; size?: number }) {
   return (
     <div
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+      className={`flex h-${size} w-${size} shrink-0 items-center justify-center rounded-full text-[11px] font-semibold`}
       style={{ background: 'rgba(56,160,158,0.12)', color: '#38A09E' }}
     >
       {initials(name)}
@@ -94,28 +55,85 @@ function RoleBadge({ role }: { role: string }) {
   )
 }
 
-function StatusBadge({ status }: { status: string }) {
+function SectionHeading({ title, count }: { title: string; count?: number }) {
   return (
-    <span
-      className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize"
-      style={statusStyle(status)}
-    >
-      {status}
-    </span>
-  )
-}
-
-function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-      <div className="mt-1">{children}</div>
+    <div className="mb-3 flex items-baseline gap-2">
+      <h2 className="text-[16px] font-semibold text-navy-900">{title}</h2>
+      {count !== undefined && (
+        <span className="text-[13px] text-slate-400">{count}</span>
+      )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Pathway access section
+// Invite link card
+// ---------------------------------------------------------------------------
+
+function InviteLinkCard({ spaceSlug, isPublic }: { spaceSlug: string; isPublic: boolean }) {
+  const [origin, setOrigin] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    setOrigin(window.location.origin)
+  }, [])
+
+  const inviteUrl = origin ? `${origin}/spaces/${spaceSlug}` : `/spaces/${spaceSlug}`
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard API unavailable — select the text manually isn't ideal here
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-white p-5">
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[14px] font-semibold text-navy-900">Collective link</p>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">
+            {isPublic
+              ? 'People can view this collective and join if access is open. Share this link freely.'
+              : 'This collective is private. Share this link with people you want to invite — they can request access or be invited directly.'}
+          </p>
+        </div>
+        {!isPublic && (
+          <span
+            className="mt-0.5 shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+            style={{ background: 'rgba(148,163,184,0.15)', color: '#64748b' }}
+          >
+            Private
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <div
+          className="flex-1 truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-600 select-all"
+          title={inviteUrl}
+        >
+          {inviteUrl}
+        </div>
+        <button
+          onClick={copyLink}
+          className="shrink-0 rounded-lg px-4 py-2 text-[13px] font-semibold transition-all"
+          style={{
+            background: copied ? 'rgba(56,160,158,0.18)' : 'rgba(56,160,158,0.09)',
+            color: '#38A09E',
+          }}
+        >
+          {copied ? 'Copied!' : 'Copy link'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Pathway access (grant access modal)
 // ---------------------------------------------------------------------------
 
 const ACCESS_STATE_STYLE: Record<string, { background: string; color: string }> = {
@@ -155,9 +173,7 @@ function PathwayAccessRow({
   const priceLabel = item.access_state === 'locked' && item.price_cents
     ? formatPathwayPrice(item.price_cents, item.currency, item.billing_interval)
     : null
-
-  const isManualGrant = item.access_source === 'manual_grant'
-  const canRevoke = item.access_state === 'accessible' && isManualGrant
+  const canRevoke = item.access_state === 'accessible' && item.access_source === 'manual_grant'
 
   async function handleRevoke() {
     if (!confirm(`Revoke access to "${item.title}" for this member?`)) return
@@ -173,9 +189,8 @@ function PathwayAccessRow({
           body: JSON.stringify({ pathway_id: item.id }),
         },
       )
-      if (res.ok) {
-        onRevoked()
-      } else {
+      if (res.ok) onRevoked()
+      else {
         const body = await res.json().catch(() => ({}))
         setError(typeof body.detail === 'string' ? body.detail : 'Could not revoke access.')
       }
@@ -192,17 +207,11 @@ function PathwayAccessRow({
         <p className="text-[13px] font-medium leading-snug text-navy-900">{item.title}</p>
         <AccessPill state={item.access_state} label={item.access_label} />
       </div>
-
-      {/* Sub-label */}
       {priceLabel ? (
         <p className="mt-1 text-[11px] text-slate-400">{priceLabel}</p>
-      ) : item.access_source && (
-        <p className="mt-1 text-[11px] text-slate-400 capitalize">
-          {item.access_source.replace(/_/g, ' ')}
-        </p>
-      )}
-
-      {/* Progress */}
+      ) : item.access_source ? (
+        <p className="mt-1 text-[11px] text-slate-400 capitalize">{item.access_source.replace(/_/g, ' ')}</p>
+      ) : null}
       {item.access_state === 'accessible' && item.total_steps > 0 && (
         <div className="mt-2.5">
           <div className="mb-1 flex items-baseline justify-between text-[11px] text-slate-400">
@@ -210,24 +219,16 @@ function PathwayAccessRow({
             <span>{item.progress_pct}%</span>
           </div>
           <div className="h-1 w-full overflow-hidden rounded-full bg-teal-100">
-            <div
-              className="h-full rounded-full bg-teal-500 transition-all"
-              style={{ width: `${item.progress_pct}%` }}
-            />
+            <div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${item.progress_pct}%` }} />
           </div>
           <p className="mt-1.5 text-[11px] text-slate-400">
-            {item.last_activity_at
-              ? `Last active: ${formatDate(item.last_activity_at)}`
-              : 'No activity yet'}
+            {item.last_activity_at ? `Last active: ${formatDate(item.last_activity_at)}` : 'No activity yet'}
           </p>
         </div>
       )}
-
       {item.access_state === 'accessible' && item.total_steps === 0 && (
         <p className="mt-1 text-[11px] text-slate-400">No steps yet</p>
       )}
-
-      {/* Revoke */}
       {canRevoke && (
         <div className="mt-2 flex items-center gap-2">
           <button
@@ -243,10 +244,6 @@ function PathwayAccessRow({
     </div>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Grant access modal
-// ---------------------------------------------------------------------------
 
 interface PathwayOption { id: string; title: string; access_type: string }
 
@@ -273,10 +270,7 @@ function GrantAccessModal({
     fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/pathways`), { credentials: 'include' })
       .then((r) => r.ok ? r.json() : [])
       .then((data: { id: string; title: string; access_type: string; status: string }[]) => {
-        // Only show active paid pathways that can be granted
-        const paid = data.filter(
-          (p) => p.status === 'active' && ['one_time', 'subscription'].includes(p.access_type),
-        )
+        const paid = data.filter((p) => p.status === 'active' && ['one_time', 'subscription'].includes(p.access_type))
         setPathways(paid)
         if (paid.length > 0) setPathwayId(paid[0].id)
       })
@@ -298,10 +292,8 @@ function GrantAccessModal({
           body: JSON.stringify({ pathway_id: pathwayId, notes: notes.trim() || null }),
         },
       )
-      if (res.ok) {
-        setSuccess(true)
-        onGranted()
-      } else {
+      if (res.ok) { setSuccess(true); onGranted() }
+      else {
         const body = await res.json().catch(() => ({}))
         setError(typeof body.detail === 'string' ? body.detail : 'Could not grant access.')
       }
@@ -320,67 +312,37 @@ function GrantAccessModal({
           <div className="py-4 text-center">
             <p className="text-[16px] font-semibold text-navy-900">Access granted</p>
             <p className="mt-1.5 text-[13px] text-slate-500">The member now has access to this pathway.</p>
-            <button
-              onClick={onClose}
-              className="mt-4 rounded-xl px-4 py-2 text-[13px] font-semibold text-white"
-              style={{ background: '#38A09E' }}
-            >
-              Done
-            </button>
+            <button onClick={onClose} className="mt-4 rounded-xl px-4 py-2 text-[13px] font-semibold text-white" style={{ background: '#38A09E' }}>Done</button>
           </div>
         ) : (
           <>
             <h2 className="mb-4 text-[16px] font-semibold text-navy-900">Grant pathway access</h2>
-
             {fetching ? (
               <p className="text-[13px] text-slate-400">Loading pathways…</p>
             ) : pathways.length === 0 ? (
-              <p className="text-[13px] text-slate-500">
-                No paid pathways found in this collective. Manual grants are only available for paid (one-time or subscription) pathways.
-              </p>
+              <p className="text-[13px] text-slate-500">No paid pathways found. Manual grants are only available for paid pathways.</p>
             ) : (
               <div className="space-y-4">
                 <div>
                   <label className="mb-1 block text-[12px] font-semibold text-slate-500">Pathway</label>
-                  <select
-                    value={pathwayId}
-                    onChange={(e) => setPathwayId(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  >
-                    {pathways.map((p) => (
-                      <option key={p.id} value={p.id}>{p.title}</option>
-                    ))}
+                  <select value={pathwayId} onChange={(e) => setPathwayId(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
+                    {pathways.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
                   </select>
                 </div>
-
                 <div>
                   <label className="mb-1 block text-[12px] font-semibold text-slate-500">Notes (optional)</label>
-                  <textarea
-                    rows={2}
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                  <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
                     placeholder="Reason for grant, e.g. scholarship, beta tester…"
-                    className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
+                    className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 </div>
-
                 {error && <p className="text-[12px] text-red-500">{error}</p>}
-
                 <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={handleSubmit}
-                    disabled={loading || !pathwayId}
-                    className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
-                    style={{ background: '#38A09E' }}
-                  >
+                  <button onClick={handleSubmit} disabled={loading || !pathwayId}
+                    className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white disabled:opacity-50" style={{ background: '#38A09E' }}>
                     {loading ? 'Granting…' : 'Grant access'}
                   </button>
-                  <button
-                    onClick={onClose}
-                    className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
+                  <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
                 </div>
               </div>
             )}
@@ -391,139 +353,84 @@ function GrantAccessModal({
   )
 }
 
-function PathwayAccessSection({
-  entry,
-  spaceSlug,
-}: {
-  entry: PersonEntry
-  spaceSlug: string
-}) {
+function PathwayAccessSection({ member, spaceSlug }: { member: MemberProfile; spaceSlug: string }) {
   const [items, setItems] = useState<MemberPathwayAccessItem[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [showGrant, setShowGrant] = useState(false)
 
-  function loadItems(userId: string) {
+  function loadItems() {
     setLoading(true)
     setItems(null)
-    fetch(
-      apiUrl(`/api/creator/spaces/${spaceSlug}/members/${userId}/pathway-access`),
-      { credentials: 'include' },
-    )
-      .then((res) => (res.ok ? res.json() : null))
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/members/${member.id}/pathway-access`), { credentials: 'include' })
+      .then((res) => res.ok ? res.json() : null)
       .then((data: MemberPathwayAccessItem[] | null) => setItems(data ?? []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
-    if (entry.kind !== 'member') { setItems(null); return }
     let cancelled = false
     setLoading(true)
     setItems(null)
-    fetch(
-      apiUrl(`/api/creator/spaces/${spaceSlug}/members/${entry.data.id}/pathway-access`),
-      { credentials: 'include' },
-    )
-      .then((res) => (res.ok ? res.json() : null))
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/members/${member.id}/pathway-access`), { credentials: 'include' })
+      .then((res) => res.ok ? res.json() : null)
       .then((data: MemberPathwayAccessItem[] | null) => { if (!cancelled) setItems(data ?? []) })
       .catch(() => { if (!cancelled) setItems([]) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [entry, spaceSlug])
-
-  if (entry.kind === 'invite') return null
-  const userId = entry.data.id
+  }, [member.id, spaceSlug])
 
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-          Pathway access
-        </p>
-        <button
-          onClick={() => setShowGrant(true)}
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Pathway access</p>
+        <button onClick={() => setShowGrant(true)}
           className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors"
-          style={{ background: 'rgba(56,160,158,0.10)', color: '#0f766e' }}
-        >
+          style={{ background: 'rgba(56,160,158,0.10)', color: '#0f766e' }}>
           + Grant access
         </button>
       </div>
-
-      {loading && (
-        <p className="text-[13px] italic text-slate-400">Loading…</p>
-      )}
-
-      {!loading && items && items.length === 0 && (
+      {loading && <p className="text-[13px] italic text-slate-400">Loading…</p>}
+      {!loading && items?.length === 0 && (
         <div className="space-y-1">
           <p className="text-[13px] font-medium text-slate-500">No pathway access yet.</p>
-          <p className="text-[12px] text-slate-400">
-            This person has not started, purchased, or been granted access to any pathways yet.
-          </p>
-          <p className="text-[12px] text-slate-400">
-            Free and included pathways will appear here once the member starts them.
-          </p>
+          <p className="text-[12px] text-slate-400">Free and included pathways appear here once the member starts them.</p>
         </div>
       )}
-
       {!loading && items && items.length > 0 && (
         <div className="flex flex-col gap-2">
           {items.map((item) => (
-            <PathwayAccessRow
-              key={item.id}
-              item={item}
-              spaceSlug={spaceSlug}
-              userId={userId}
-              onRevoked={() => loadItems(userId)}
-            />
+            <PathwayAccessRow key={item.id} item={item} spaceSlug={spaceSlug} userId={member.id} onRevoked={loadItems} />
           ))}
         </div>
       )}
-
       {showGrant && (
-        <GrantAccessModal
-          spaceSlug={spaceSlug}
-          userId={userId}
-          onClose={() => setShowGrant(false)}
-          onGranted={() => {
-            setShowGrant(false)
-            loadItems(userId)
-          }}
-        />
+        <GrantAccessModal spaceSlug={spaceSlug} userId={member.id} onClose={() => setShowGrant(false)} onGranted={() => { setShowGrant(false); loadItems() }} />
       )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Detail panel
+// Member detail panel
 // ---------------------------------------------------------------------------
 
-function DetailPanel({
-  entry,
+function MemberDetailPanel({
+  member,
   onClose,
   spaceSlug,
 }: {
-  entry: PersonEntry
+  member: MemberProfile
   onClose: () => void
   spaceSlug: string
 }) {
-  const status = entryStatus(entry)
-  const role   = entryRole(entry)
-  const email  = entryEmail(entry)
-  const name   = entryDisplayName(entry)
-  const date   = entryDate(entry)
-  const note   = entry.kind === 'invite' ? entry.data.note : null
-  const bio    = entry.kind === 'member' ? entry.data.bio  : null
-
   return (
     <div className="rounded-2xl border border-border bg-white">
       <div className="flex items-center justify-between border-b border-border px-5 py-4">
         <h2 className="text-[15px] font-semibold text-navy-900">Member details</h2>
-        <button
-          onClick={onClose}
+        <button onClick={onClose}
           className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          aria-label="Close"
-        >
+          aria-label="Close">
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
             <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
@@ -531,93 +438,63 @@ function DetailPanel({
       </div>
 
       <div className="space-y-5 px-5 py-5">
-
-        {/* Identity */}
         <div className="flex items-center gap-3">
-          <Avatar name={name} />
+          <Avatar name={member.display_name} size={10} />
           <div>
-            <p className="text-[15px] font-semibold text-navy-900">{name}</p>
-            {email ? (
-              <p className="mt-0.5 text-[13px] text-slate-600">{email}</p>
-            ) : (
-              /* TODO: Expose email via a creator-only members endpoint */
-              <p className="mt-0.5 text-[12px] italic text-slate-400">Email not available in this view</p>
-            )}
+            <p className="text-[15px] font-semibold text-navy-900">{member.display_name}</p>
+            {/* TODO: Expose email via a creator-only members endpoint */}
+            <p className="mt-0.5 text-[12px] italic text-slate-400">Email not available in this view</p>
           </div>
         </div>
 
-        {/* Status + Role */}
         <div className="flex flex-wrap gap-5">
-          <FieldRow label="Status">
-            <StatusBadge status={status} />
-          </FieldRow>
-          <FieldRow label="Role">
-            <RoleBadge role={role} />
-          </FieldRow>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
+            <span className="mt-1 inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+              style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}>
+              Active
+            </span>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
+            <div className="mt-1"><RoleBadge role={member.space_role} /></div>
+          </div>
         </div>
 
-        {/* Date */}
-        <FieldRow label={entry.kind === 'invite' ? 'Invited' : 'Joined'}>
-          <p className="text-[14px] text-navy-900">{formatDate(date)}</p>
-        </FieldRow>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Joined</p>
+          <p className="mt-1 text-[14px] text-navy-900">{formatDate(member.joined_at)}</p>
+        </div>
 
-        {/* Bio (members only) */}
-        {bio && (
-          <FieldRow label="Bio">
-            <p className="text-[13px] leading-relaxed text-slate-600">{bio}</p>
-          </FieldRow>
+        {member.bio && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bio</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-slate-600">{member.bio}</p>
+          </div>
         )}
 
-        {/* Invite note (invites only) */}
-        {note && (
-          <FieldRow label="Invite note">
-            <p className="text-[13px] leading-relaxed text-slate-600">{note}</p>
-          </FieldRow>
-        )}
-
-        {/* Pathway access — live data per member */}
         <div className="border-t border-border pt-1">
-          <PathwayAccessSection entry={entry} spaceSlug={spaceSlug} />
+          <PathwayAccessSection member={member} spaceSlug={spaceSlug} />
         </div>
-
-        {/* Tags */}
-        <FieldRow label="Tags">
-          {/* TODO: Add a tags/labels model to space_membership or a separate join table */}
-          <p className="text-[13px] italic text-slate-400">No tags yet</p>
-          <button
-            disabled
-            title="Tag saving coming soon"
-            className="mt-2 cursor-not-allowed rounded-full border border-dashed border-slate-300 px-2.5 py-0.5 text-[11px] font-medium text-slate-400"
-          >
-            + Add tag
-          </button>
-        </FieldRow>
 
         <div className="border-t border-border" />
 
-        {/* Private creator notes */}
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-            Private creator notes
-          </p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Private creator notes</p>
           <p className="mb-2 mt-0.5 text-[11px] text-slate-400">Only you can see these notes.</p>
           {/* TODO: Persist private creator notes when member notes API is available. */}
-          <textarea
-            rows={4}
-            disabled
+          <textarea rows={4} disabled
             placeholder="Add a private note about this person..."
-            className="w-full cursor-not-allowed resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-400 placeholder-slate-300 outline-none"
-          />
+            className="w-full cursor-not-allowed resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-400 placeholder-slate-300 outline-none" />
           <p className="mt-1.5 text-[11px] text-slate-400">Note saving coming soon.</p>
         </div>
-
       </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Invite modal (wired to real API)
+// Invite modal
 // ---------------------------------------------------------------------------
 
 function InviteModal({
@@ -631,25 +508,20 @@ function InviteModal({
   onClose: () => void
   onSuccess: () => void
 }) {
-  const [name, setName]     = useState('')
-  const [email, setEmail]   = useState('')
-  const [role, setRole]     = useState('learner')
-  const [note, setNote]     = useState('')
+  const [name, setName]       = useState('')
+  const [email, setEmail]     = useState('')
+  const [role, setRole]       = useState('learner')
+  const [note, setNote]       = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError]   = useState<string | null>(null)
-  const [sent, setSent]     = useState(false)
+  const [error, setError]     = useState<string | null>(null)
+  const [sent, setSent]       = useState(false)
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
   async function handleSubmit() {
     setError(null)
     const trimmedEmail = email.trim().toLowerCase()
-
-    if (!trimmedEmail) {
-      setError('Enter a valid email address.')
-      return
-    }
-    if (!EMAIL_RE.test(trimmedEmail)) {
+    if (!trimmedEmail || !EMAIL_RE.test(trimmedEmail)) {
       setError('Enter a valid email address.')
       return
     }
@@ -657,43 +529,29 @@ function InviteModal({
       setError('This person has already been invited to this collective.')
       return
     }
-
     setLoading(true)
     try {
       const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/invitations`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          email: trimmedEmail,
-          name: name.trim() || null,
-          role,
-          note: note.trim() || null,
-        }),
+        body: JSON.stringify({ email: trimmedEmail, name: name.trim() || null, role, note: note.trim() || null }),
       })
-
       if (!res.ok) {
         let detail: string | null = null
         try {
           const body = await res.json()
           if (typeof body.detail === 'string') detail = body.detail
           else if (Array.isArray(body.detail) && body.detail.length > 0) {
-            // Pydantic 422 validation error — extract first message
             const first = body.detail[0]
             detail = typeof first?.msg === 'string' ? first.msg : null
           }
-        } catch { /* response not JSON */ }
-
-        if (res.status === 409) {
-          setError(detail ?? 'This person already belongs to or has been invited to this collective.')
-        } else if (res.status === 422 || res.status === 400) {
-          setError(detail ?? 'Enter a valid email address.')
-        } else {
-          setError(detail ?? 'Invite could not be created. Please try again.')
-        }
+        } catch { /* not JSON */ }
+        if (res.status === 409) setError(detail ?? 'This person already belongs to or has been invited to this collective.')
+        else if (res.status === 422 || res.status === 400) setError(detail ?? 'Enter a valid email address.')
+        else setError(detail ?? 'Invite could not be created. Please try again.')
         return
       }
-
       setSent(true)
       onSuccess()
     } catch {
@@ -707,31 +565,21 @@ function InviteModal({
     <>
       <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
       <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl">
-
         {sent ? (
           <div className="py-4 text-center">
-            <div
-              className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full"
-              style={{ background: 'rgba(56,160,158,0.10)' }}
-            >
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full" style={{ background: 'rgba(56,160,158,0.10)' }}>
               <svg width="20" height="16" viewBox="0 0 20 16" fill="none" aria-hidden="true">
                 <path d="M2 8l5 5L18 2" stroke="#38A09E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
             <p className="text-[16px] font-semibold text-navy-900">Invite created</p>
             <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
-              <span className="font-medium text-navy-900">{email.trim().toLowerCase()}</span> has
-              been added to your invited list.
+              <span className="font-medium text-navy-900">{email.trim().toLowerCase()}</span> has been added to your pending invites.
             </p>
             {/* TODO: Send invitation email when email service is connected. */}
-            <p className="mt-2 text-[11px] text-slate-400">
-              No email has been sent yet — email sending coming soon.
-            </p>
-            <button
-              onClick={onClose}
-              className="mt-5 rounded-xl px-6 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-            >
+            <p className="mt-2 text-[11px] text-slate-400">No email has been sent yet — email sending coming soon.</p>
+            <button onClick={onClose} className="mt-5 rounded-xl px-6 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}>
               Done
             </button>
           </div>
@@ -739,89 +587,52 @@ function InviteModal({
           <>
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-[17px] font-semibold text-navy-900">Invite person</h2>
-              <button
-                onClick={onClose}
+              <button onClick={onClose}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                aria-label="Close"
-              >
+                aria-label="Close">
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                   <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
               </button>
             </div>
-
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">Name</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
+                <label className="mb-1 block text-[12px] font-semibold text-slate-600">Name <span className="font-normal text-slate-400">(optional)</span></label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)}
                   placeholder="Jane Smith"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
-                />
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400" />
               </div>
-
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                  Email address <span className="font-normal text-slate-400">(required)</span>
-                </label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); setError(null) }}
+                <label className="mb-1 block text-[12px] font-semibold text-slate-600">Email address <span className="font-normal text-slate-400">(required)</span></label>
+                <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(null) }}
                   placeholder="jane@example.com"
-                  className={`w-full rounded-lg border px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400 ${
-                    error ? 'border-red-300' : 'border-slate-200'
-                  }`}
-                />
+                  className={`w-full rounded-lg border px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400 ${error ? 'border-red-300' : 'border-slate-200'}`} />
               </div>
-
               <div>
                 <label className="mb-1 block text-[12px] font-semibold text-slate-600">Role</label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
-                >
+                <select value={role} onChange={(e) => setRole(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400">
                   <option value="learner">Member</option>
                   <option value="moderator">Moderator</option>
                   <option value="creator">Leader</option>
                 </select>
               </div>
-
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                  Personal note{' '}
-                  <span className="font-normal text-slate-400">(optional)</span>
-                </label>
-                <textarea
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="A short note about this person or why you're inviting them…"
-                  rows={3}
-                  className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
-                />
+                <label className="mb-1 block text-[12px] font-semibold text-slate-600">Personal note <span className="font-normal text-slate-400">(optional)</span></label>
+                <textarea value={note} onChange={(e) => setNote(e.target.value)}
+                  placeholder="A short note about why you're inviting them…"
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400" />
               </div>
             </div>
-
-            {/* Error message */}
-            {error && (
-              <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">
-                {error}
-              </p>
-            )}
-
+            {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">{error}</p>}
             <div className="mt-6 flex items-center justify-between gap-3">
               {/* TODO: Send invitation email when email service is connected. */}
               <p className="text-[11px] text-slate-400">No email is sent yet.</p>
-              <button
-                disabled={!email.trim() || loading}
-                onClick={handleSubmit}
+              <button disabled={!email.trim() || loading} onClick={handleSubmit}
                 className="shrink-0 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-              >
-                {loading ? 'Creating…' : 'Create invite'}
+                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}>
+                {loading ? 'Sending…' : 'Send invite'}
               </button>
             </div>
           </>
@@ -832,142 +643,108 @@ function InviteModal({
 }
 
 // ---------------------------------------------------------------------------
-// People list
+// Pending invites section
 // ---------------------------------------------------------------------------
 
-function PeopleList({
-  entries,
-  totalCount,
-  statusFilter,
-  selected,
-  onSelect,
-  onInvite,
+function PendingInviteRow({
+  invite,
+  spaceSlug,
+  onCancelled,
 }: {
-  entries: PersonEntry[]
-  totalCount: number
-  statusFilter: string
-  selected: PersonEntry | null
-  onSelect: (e: PersonEntry) => void
-  onInvite: () => void
+  invite: SpaceInvitation
+  spaceSlug: string
+  onCancelled: () => void
 }) {
-  if (entries.length === 0) {
-    return (
-      <div className="px-6 py-14 text-center">
-        {totalCount === 0 ? (
-          <>
-            <p className="mb-1 text-[15px] font-semibold text-navy-900">No people yet.</p>
-            <p className="mb-5 text-[14px] leading-relaxed text-slate-500">
-              Invite your first person when you are ready to open this collective.
-            </p>
-            <button
-              onClick={onInvite}
-              className="rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-            >
-              Invite person
-            </button>
-          </>
-        ) : statusFilter !== 'all' && statusFilter !== 'active' && statusFilter !== 'invited' ? (
-          <>
-            <p className="text-[14px] text-slate-500">
-              No members with <span className="font-medium capitalize">{statusFilter}</span> status.
-            </p>
-            {/* TODO: Surface paused/completed/removed once creator endpoint exposes all statuses */}
-            <p className="mt-1 text-[13px] italic text-slate-400">
-              Status tracking beyond Active and Invited is coming soon.
-            </p>
-          </>
-        ) : (
-          <p className="text-[14px] text-slate-400">No people match your search.</p>
-        )}
-      </div>
-    )
+  const [cancelling, setCancelling] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleCancel() {
+    if (!confirm(`Cancel invitation to ${invite.email}?`)) return
+    setCancelling(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/invitations/${invite.id}`),
+        { method: 'DELETE', credentials: 'include' },
+      )
+      if (res.ok || res.status === 204) {
+        onCancelled()
+      } else {
+        setError('Could not cancel invitation.')
+      }
+    } catch {
+      setError('Something went wrong.')
+    } finally {
+      setCancelling(false)
+    }
   }
 
-  return (
-    <ul>
-      {entries.map((entry, i) => {
-        const isLast     = i === entries.length - 1
-        const isSelected = selected ? entryId(selected) === entryId(entry) : false
-        const status     = entryStatus(entry)
-        const role       = entryRole(entry)
-        const name       = entryDisplayName(entry)
-        const email      = entryEmail(entry)
-        const date       = entryDate(entry)
+  const displayName = invite.name || invite.email
 
-        return (
-          <li key={entryId(entry)}>
-            <button
-              onClick={() => onSelect(entry)}
-              className={`w-full cursor-pointer text-left transition-colors ${
-                !isLast ? 'border-b border-border' : ''
-              } ${isSelected ? 'bg-teal-50/50' : 'hover:bg-teal-50/30'}`}
-              style={isSelected ? { borderLeft: '2px solid rgba(56,160,158,0.45)' } : undefined}
-            >
-              <div className="flex items-center gap-4 px-5 py-4">
-                <Avatar name={name} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[14px] font-medium text-navy-900">{name}</p>
-                  {email ? (
-                    <p className="mt-0.5 truncate text-[12px] text-slate-500">{email}</p>
-                  ) : (
-                    /* TODO: Show email once creator endpoint exposes it */
-                    <p className="mt-0.5 truncate text-[12px] italic text-slate-400">
-                      Email not available
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                  <StatusBadge status={status} />
-                  <RoleBadge role={role} />
-                  <span className="hidden text-[12px] text-slate-400 sm:inline">
-                    {formatDate(date)}
-                  </span>
-                </div>
-              </div>
-              <p className="px-5 pb-3 text-[12px] text-slate-400 sm:hidden">
-                {entry.kind === 'invite' ? 'Invited ' : 'Joined '}
-                {formatDate(date)}
-              </p>
-            </button>
-          </li>
-        )
-      })}
-    </ul>
+  return (
+    <li className="flex items-center gap-3 border-b border-border px-5 py-4 last:border-0">
+      <Avatar name={displayName} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[14px] font-medium text-navy-900">{displayName}</p>
+        {invite.name && (
+          <p className="mt-0.5 truncate text-[12px] text-slate-500">{invite.email}</p>
+        )}
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <RoleBadge role={invite.role} />
+        <span className="hidden text-[12px] text-slate-400 sm:inline">{formatDate(invite.created_at)}</span>
+      </div>
+      <button
+        onClick={handleCancel}
+        disabled={cancelling}
+        className="shrink-0 rounded-lg border border-slate-200 px-3 py-1 text-[12px] font-medium text-slate-500 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
+      >
+        {cancelling ? 'Cancelling…' : 'Cancel'}
+      </button>
+      {error && <p className="text-[11px] text-red-500">{error}</p>}
+    </li>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Status filter options
-// ---------------------------------------------------------------------------
-
-const STATUS_OPTIONS = [
-  { value: 'all',       label: 'All statuses' },
-  { value: 'active',    label: 'Active' },
-  { value: 'invited',   label: 'Invited' },
-  // TODO: Surface these once creator endpoint exposes all membership statuses
-  { value: 'paused',    label: 'Paused' },
-  { value: 'completed', label: 'Completed' },
-  { value: 'removed',   label: 'Removed' },
-]
 
 // ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
 interface Props {
-  members:     MemberProfile[]
-  invitations: SpaceInvitation[]
-  spaceName:   string
-  spaceSlug:   string
+  members:      MemberProfile[]
+  invitations:  SpaceInvitation[]
+  spaceName:    string
+  spaceSlug:    string
+  spaceIsPublic: boolean
 }
 
-export default function PeopleClient({ members, invitations, spaceName, spaceSlug }: Props) {
+export default function PeopleClient({ members, invitations, spaceName, spaceSlug, spaceIsPublic }: Props) {
   const router = useRouter()
-  const [search, setSearch]             = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [selected, setSelected]         = useState<PersonEntry | null>(null)
-  const [inviteOpen, setInviteOpen]     = useState(false)
+  const [inviteOpen, setInviteOpen]       = useState(false)
+  const [selectedMember, setSelectedMember] = useState<MemberProfile | null>(null)
+  const [search, setSearch]               = useState('')
+
+  const existingInviteEmails = useMemo(
+    () => new Set(invitations.map((i) => i.email.toLowerCase())),
+    [invitations],
+  )
+
+  const filteredMembers = useMemo(() => {
+    if (!search.trim()) return members
+    const q = search.trim().toLowerCase()
+    return members.filter((m) =>
+      m.display_name.toLowerCase().includes(q)
+    )
+  }, [members, search])
+
+  function handleInviteSuccess() {
+    router.refresh()
+  }
+
+  function handleInviteCancelled() {
+    router.refresh()
+    if (selectedMember) setSelectedMember(null)
+  }
 
   // Derived stats
   const now = new Date()
@@ -976,70 +753,25 @@ export default function PeopleClient({ members, invitations, spaceName, spaceSlu
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
   }).length
 
-  // Combined total (members + pending invitations)
-  const totalCount = members.length + invitations.length
-
-  // Build unified sorted list: active members first, then invitations by date
-  const allEntries: PersonEntry[] = useMemo(() => {
-    const memberEntries: PersonEntry[] = members.map((m) => ({ kind: 'member', data: m }))
-    const inviteEntries: PersonEntry[] = invitations.map((i) => ({ kind: 'invite', data: i }))
-    return [...memberEntries, ...inviteEntries]
-  }, [members, invitations])
-
-  const filtered = useMemo(() => {
-    let list = allEntries
-    if (statusFilter === 'active')  list = list.filter((e) => e.kind === 'member')
-    else if (statusFilter === 'invited') list = list.filter((e) => e.kind === 'invite')
-    else if (statusFilter !== 'all') {
-      // paused/completed/removed — no data yet
-      list = []
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase()
-      list = list.filter((e) => entryMatchesSearch(e, q))
-    }
-    return list
-  }, [allEntries, statusFilter, search])
-
-  const existingInviteEmails = useMemo(
-    () => new Set(invitations.map((i) => i.email.toLowerCase())),
-    [invitations],
-  )
-
-  function handleSelect(entry: PersonEntry) {
-    setSelected((prev) =>
-      prev && entryId(prev) === entryId(entry) ? null : entry,
-    )
-  }
-
-  function handleInviteSuccess() {
-    // Refresh server component data to pick up the new invitation
-    router.refresh()
-  }
-
   return (
-    <div className="w-full max-w-[1180px] space-y-6 px-8 py-8 md:px-10 md:py-10">
+    <div className="w-full max-w-[1100px] space-y-8 px-8 py-8 md:px-10 md:py-10">
 
       {/* ── Header ── */}
       <div>
-        <p
-          className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: '#38A09E' }}
-        >
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
           {spaceName}
         </p>
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">People</h1>
         <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
-          See who belongs to this collective, how they joined, and where they are in the experience.
+          Invite people, manage access, and see who belongs to this collective.
         </p>
       </div>
 
-      {/* ── Stats row ── */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* ── Stats ── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[
-          { label: 'Total people',   value: totalCount },
           { label: 'Active members', value: members.length },
-          { label: 'Invited',        value: invitations.length },
+          { label: 'Pending invites', value: invitations.length },
           { label: 'New this month', value: newThisMonth },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-xl border border-border bg-white p-4">
@@ -1049,58 +781,129 @@ export default function PeopleClient({ members, invitations, spaceName, spaceSlu
         ))}
       </div>
 
-      {/* ── Main area: list + detail panel ── */}
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-
-        {/* List card */}
-        <div className="min-w-0 flex-1 rounded-2xl border border-border bg-white">
-
-          {/* Toolbar */}
-          <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-4">
-            <input
-              type="text"
-              placeholder="Search by name or email…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="min-w-[140px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
-            />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+      {/* ── Section 1: Invite people ── */}
+      <section>
+        <SectionHeading title="Invite people" />
+        <div className="space-y-4">
+          <InviteLinkCard spaceSlug={spaceSlug} isPublic={spaceIsPublic} />
+          <div className="flex items-center gap-4">
             <button
               onClick={() => setInviteOpen(true)}
-              className="ml-auto shrink-0 rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
               style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
             >
-              Invite person
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+              Invite by email
             </button>
+            <p className="text-[13px] text-slate-400">
+              Send a direct invite to someone with a specific role.
+            </p>
           </div>
+        </div>
+      </section>
 
-          <PeopleList
-            entries={filtered}
-            totalCount={totalCount}
-            statusFilter={statusFilter}
-            selected={selected}
-            onSelect={handleSelect}
-            onInvite={() => setInviteOpen(true)}
+      {/* ── Section 2: Pending invites ── */}
+      <section>
+        <SectionHeading title="Pending invites" count={invitations.length} />
+        <div className="rounded-2xl border border-border bg-white">
+          {invitations.length === 0 ? (
+            <div className="px-6 py-10 text-center">
+              <p className="text-[14px] font-medium text-slate-500">No pending invites.</p>
+              <p className="mt-1 text-[13px] text-slate-400">
+                Invites you send will appear here until the person joins.
+              </p>
+            </div>
+          ) : (
+            <ul>
+              {invitations.map((invite) => (
+                <PendingInviteRow
+                  key={invite.id}
+                  invite={invite}
+                  spaceSlug={spaceSlug}
+                  onCancelled={handleInviteCancelled}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      {/* ── Section 3: Current people ── */}
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <SectionHeading title="Current people" count={members.length} />
+          <input
+            type="text"
+            placeholder="Search by name…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
           />
         </div>
 
-        {/* Detail panel — right of list at xl+, stacked below on smaller screens */}
-        {selected && (
-          <div className="w-full xl:w-[340px] xl:shrink-0">
-            <DetailPanel entry={selected} onClose={() => setSelected(null)} spaceSlug={spaceSlug} />
-          </div>
-        )}
-      </div>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
 
-      {/* ── Privacy note ── */}
+          {/* Member list card */}
+          <div className="min-w-0 flex-1 rounded-2xl border border-border bg-white">
+            {filteredMembers.length === 0 ? (
+              <div className="px-6 py-10 text-center">
+                {members.length === 0 ? (
+                  <>
+                    <p className="mb-1 text-[15px] font-semibold text-navy-900">No members yet.</p>
+                    <p className="text-[13px] text-slate-400">Invite your first person to get started.</p>
+                  </>
+                ) : (
+                  <p className="text-[14px] text-slate-400">No members match your search.</p>
+                )}
+              </div>
+            ) : (
+              <ul>
+                {filteredMembers.map((member, i) => {
+                  const isLast = i === filteredMembers.length - 1
+                  const isSelected = selectedMember?.id === member.id
+                  return (
+                    <li key={member.id}>
+                      <button
+                        onClick={() => setSelectedMember(isSelected ? null : member)}
+                        className={`w-full cursor-pointer text-left transition-colors ${!isLast ? 'border-b border-border' : ''} ${isSelected ? 'bg-teal-50/50' : 'hover:bg-teal-50/30'}`}
+                        style={isSelected ? { borderLeft: '2px solid rgba(56,160,158,0.45)' } : undefined}
+                      >
+                        <div className="flex items-center gap-4 px-5 py-4">
+                          <Avatar name={member.display_name} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[14px] font-medium text-navy-900">{member.display_name}</p>
+                            {/* TODO: Show email once creator endpoint exposes it */}
+                            <p className="mt-0.5 truncate text-[12px] italic text-slate-400">Email not available</p>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                            <RoleBadge role={member.space_role} />
+                            <span className="hidden text-[12px] text-slate-400 sm:inline">{formatDate(member.joined_at)}</span>
+                          </div>
+                        </div>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* Detail panel */}
+          {selectedMember && (
+            <div className="w-full xl:w-[340px] xl:shrink-0">
+              <MemberDetailPanel
+                member={selectedMember}
+                onClose={() => setSelectedMember(null)}
+                spaceSlug={spaceSlug}
+              />
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── Footer note ── */}
       <p className="text-[13px] text-slate-500">
         <span className="font-medium">Private to creator admins.</span>{' '}
         Use member information respectfully and only for managing this collective.

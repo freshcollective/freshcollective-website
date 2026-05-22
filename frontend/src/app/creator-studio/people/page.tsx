@@ -40,6 +40,7 @@ export default async function CreatorPeoplePage() {
       invitations={invitations}
       spaceName={activeSpace.name}
       spaceSlug={activeSpace.slug}
+      spaceIsPublic={activeSpace.is_public}
     />
   )
 }
