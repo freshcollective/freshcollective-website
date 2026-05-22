@@ -260,6 +260,36 @@ class NotificationPrefsResponse(BaseModel):
     push_announcements: bool
 
 
+class SpaceAccessStatus(BaseModel):
+    """Current caller's access state for a specific Space."""
+    is_member: bool
+    membership_role: str | None       # learner | moderator | creator | None
+    has_pending_request: bool          # pending access request exists
+    has_pending_invite: bool           # invite exists for caller's email
+
+
+class AccessRequestOut(BaseModel):
+    id: str
+    space_id: str
+    user_id: str
+    user_display_name: str
+    user_email: str
+    status: str                        # pending | approved | declined
+    message: str | None
+    created_at: datetime
+
+
+class InviteLookupResponse(BaseModel):
+    """Public info about an invite, returned by token lookup (no auth required)."""
+    id: str
+    space_id: str
+    space_name: str
+    space_slug: str
+    email: str
+    name: str | None
+    role: str
+
+
 class NotificationPrefsUpdate(BaseModel):
     weekly_digest_email: bool | None = None
     daily_digest_email: bool | None = None

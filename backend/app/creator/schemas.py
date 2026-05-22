@@ -540,6 +540,18 @@ class InvitationResponse(BaseModel):
     role: str
     note: str | None
     invited_by_id: str
+    token: str
+    created_at: datetime
+
+
+class AccessRequestOut(BaseModel):
+    id: str
+    space_id: str
+    user_id: str
+    user_display_name: str
+    user_email: str
+    status: str                # pending | approved | declined
+    message: str | None
     created_at: datetime
 
 

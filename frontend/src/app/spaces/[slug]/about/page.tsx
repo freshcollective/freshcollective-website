@@ -1,9 +1,10 @@
-import { getSpace, getSpaceMembers, getMe, getSpaceEvents } from '@/lib/serverApi'
+import { getSpace, getSpaceMembers, getMe, getSpaceEvents, getMySpaceAccess } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Avatar from '@/components/ui/Avatar'
 import type { MemberProfile, EventSummary, UserProfile, SpaceResponse } from '@/types/platform'
+import SpaceAboutCTA from './SpaceAboutCTA'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -31,6 +32,9 @@ export default async function SpaceAboutPage({ params }: Props) {
   const isSpaceMember     = !!currentUserMember
   const currentUserRole   = currentUserMember?.space_role ?? null
   const canManage         = currentUserRole === 'creator' || currentUserRole === 'moderator'
+
+  // Check if logged-in non-member has a pending access request or pending invite
+  const myAccess = me && !isSpaceMember ? await getMySpaceAccess(slug) : null
 
   const coverUrl      = resolveMediaUrl(space.cover_image_url)
   const avatarMembers = members.slice(0, 5)
@@ -223,29 +227,15 @@ export default async function SpaceAboutPage({ params }: Props) {
               <div className="mb-4 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
 
               {/* CTAs */}
-              <div className="flex flex-col gap-2">
-                {isSpaceMember ? (
-                  <Link
-                    href={`/spaces/${slug}`}
-                    className="block w-full rounded-xl px-4 py-2.5 text-center text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-                    style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                  >
-                    Enter collective
-                  </Link>
-                ) : (
-                  <div className="block w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center text-[14px] font-medium text-slate-400">
-                    Join — coming soon
-                  </div>
-                )}
-                {canManage && (
-                  <Link
-                    href="/creator-studio"
-                    className="block w-full rounded-xl border border-slate-200 px-4 py-2 text-center text-[13px] font-medium text-slate-500 transition-colors hover:bg-slate-50"
-                  >
-                    Manage collective
-                  </Link>
-                )}
-              </div>
+              <SpaceAboutCTA
+                slug={slug}
+                isPublic={space.is_public}
+                isMember={isSpaceMember}
+                isLoggedIn={!!me}
+                hasPendingRequest={myAccess?.has_pending_request ?? false}
+                hasPendingInvite={myAccess?.has_pending_invite ?? false}
+                canManage={canManage}
+              />
             </div>
           </div>
         </div>

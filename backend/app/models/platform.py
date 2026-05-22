@@ -852,8 +852,9 @@ class SpaceInvitation(Base):
     A creator-issued invitation for someone to join a Space.
     Stored independently of SpaceMembership because the invitee may not
     have a platform account yet. When they accept and create an account,
-    a SpaceMembership is created and the invitation can be deleted or
-    marked accepted by a future migration.
+    a SpaceMembership is created and the invitation is deleted.
+
+    token is a secret UUID used to build an accept URL: /invites/{token}.
     """
 
     __tablename__ = "space_invitations"
@@ -880,6 +881,7 @@ class SpaceInvitation(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )
@@ -889,6 +891,50 @@ class SpaceInvitation(Base):
     __table_args__ = (
         UniqueConstraint("space_id", "email", name="space_invitations_space_email_unique"),
         Index("ix_space_invitations_space_id", "space_id"),
+    )
+
+
+class SpaceAccessRequest(Base):
+    """
+    A request from a user to join a private Space.
+    One row per user per space; status transitions: pending → approved | declined.
+    On approval, a SpaceMembership is created and status is set to 'approved'.
+    """
+
+    __tablename__ = "space_access_requests"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    space_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # pending | approved | declined
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])  # type: ignore[name-defined]
+    space: Mapped[Space] = relationship("Space")
+
+    __table_args__ = (
+        UniqueConstraint("space_id", "user_id", name="space_access_requests_space_user_unique"),
+        Index("ix_access_requests_space_user", "space_id", "user_id"),
     )
 
 

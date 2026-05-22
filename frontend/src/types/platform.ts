@@ -381,7 +381,36 @@ export interface SpaceInvitation {
   role: 'learner' | 'moderator' | 'creator'
   note: string | null
   invited_by_id: string
+  token: string
   created_at: string
+}
+
+export interface SpaceAccessStatus {
+  is_member: boolean
+  membership_role: 'learner' | 'moderator' | 'creator' | null
+  has_pending_request: boolean
+  has_pending_invite: boolean
+}
+
+export interface AccessRequest {
+  id: string
+  space_id: string
+  user_id: string
+  user_display_name: string
+  user_email: string
+  status: 'pending' | 'approved' | 'declined'
+  message: string | null
+  created_at: string
+}
+
+export interface InviteLookupResponse {
+  id: string
+  space_id: string
+  space_name: string
+  space_slug: string
+  email: string
+  name: string | null
+  role: 'learner' | 'moderator' | 'creator'
 }
 
 export interface ContinueResponse {

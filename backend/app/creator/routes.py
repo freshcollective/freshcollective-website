@@ -22,6 +22,7 @@ from app.core.database import get_db
 from app.core.storage import delete_file, save_file, save_media_file
 from app.creator.schemas import (
     AboutBlockCreateRequest,
+    AccessRequestOut,
     CreatorBillingResponse,
     CreatorPaymentSetup,
     CreatorPaymentSummary,
@@ -85,6 +86,7 @@ from app.models.platform import (
     PathwayStep,
     PathwayStepBlock,
     Space,
+    SpaceAccessRequest,
     SpaceInvitation,
     SpaceMembership,
     SpaceMembershipStatus,
@@ -914,6 +916,7 @@ def create_invitation(
         role=body.role,
         note=body.note,
         invited_by_id=current_user.id,
+        token=str(uuid4()),
     )
     db.add(invitation)
     db.commit()
@@ -941,6 +944,123 @@ def delete_invitation(
         raise HTTPException(status_code=404, detail="Invitation not found.")
     db.delete(invitation)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Access Requests
+# ---------------------------------------------------------------------------
+
+@router.get("/spaces/{slug}/access-requests", response_model=list[AccessRequestOut])
+def list_access_requests(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[AccessRequestOut]:
+    """Return pending access requests for a space."""
+    space = _get_managed_space(slug, current_user, db)
+    requests = (
+        db.query(SpaceAccessRequest)
+        .filter(SpaceAccessRequest.space_id == space.id, SpaceAccessRequest.status == "pending")
+        .order_by(SpaceAccessRequest.created_at.desc())
+        .all()
+    )
+    if not requests:
+        return []
+
+    user_ids = [r.user_id for r in requests]
+    users = {u.id: u for u in db.query(User).filter(User.id.in_(user_ids)).all()}
+
+    from app.models.platform import CreatorProfile
+    profiles = {
+        cp.user_id: cp
+        for cp in db.query(CreatorProfile).filter(CreatorProfile.user_id.in_(user_ids)).all()
+    }
+
+    def display_name(u: User) -> str:
+        cp = profiles.get(u.id)
+        if cp and cp.display_name:
+            return cp.display_name
+        return u.name or u.email.split("@")[0]
+
+    return [
+        AccessRequestOut(
+            id=r.id,
+            space_id=r.space_id,
+            user_id=r.user_id,
+            user_display_name=display_name(users[r.user_id]) if r.user_id in users else "Unknown",
+            user_email=users[r.user_id].email if r.user_id in users else "",
+            status=r.status,
+            message=r.message,
+            created_at=r.created_at,
+        )
+        for r in requests
+    ]
+
+
+@router.post("/spaces/{slug}/access-requests/{request_id}/approve", status_code=200)
+def approve_access_request(
+    slug: str,
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Approve a pending access request — creates membership with learner role."""
+    space = _get_managed_space(slug, current_user, db)
+    req = (
+        db.query(SpaceAccessRequest)
+        .filter(SpaceAccessRequest.id == request_id, SpaceAccessRequest.space_id == space.id)
+        .first()
+    )
+    if not req:
+        raise HTTPException(status_code=404, detail="Access request not found.")
+    if req.status != "pending":
+        raise HTTPException(status_code=409, detail=f"Request is already {req.status}.")
+
+    existing = (
+        db.query(SpaceMembership)
+        .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == req.user_id)
+        .first()
+    )
+    if not existing:
+        db.add(SpaceMembership(
+            id=str(uuid4()),
+            user_id=req.user_id,
+            space_id=space.id,
+            role=SpaceRole.learner,
+            status=SpaceMembershipStatus.active,
+        ))
+
+    req.status = "approved"
+    from datetime import datetime as _dt
+    req.updated_at = _dt.utcnow()
+    db.commit()
+    return {"approved": True}
+
+
+@router.post("/spaces/{slug}/access-requests/{request_id}/decline", status_code=200)
+def decline_access_request(
+    slug: str,
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Decline a pending access request."""
+    space = _get_managed_space(slug, current_user, db)
+    req = (
+        db.query(SpaceAccessRequest)
+        .filter(SpaceAccessRequest.id == request_id, SpaceAccessRequest.space_id == space.id)
+        .first()
+    )
+    if not req:
+        raise HTTPException(status_code=404, detail="Access request not found.")
+    if req.status != "pending":
+        raise HTTPException(status_code=409, detail=f"Request is already {req.status}.")
+
+    req.status = "declined"
+    from datetime import datetime as _dt
+    req.updated_at = _dt.utcnow()
+    db.commit()
+    return {"declined": True}
 
 
 # ---------------------------------------------------------------------------

@@ -19,19 +19,25 @@ from app.models.platform import (
     PathwayStep,
     PathwayStepBlock,
     Space,
+    SpaceAccessRequest,
+    SpaceInvitation,
     SpaceMembership,
     SpaceMemberNotificationPrefs,
+    SpaceRole,
+    SpaceMembershipStatus,
     StepComment,
     StepProgress,
     StepResource,
 )
 from app.models.user import User
 from app.spaces.schemas import (
+    AccessRequestOut,
     CompleteStepRequest,
     CompleteStepResponse,
     ContinueResponse,
     EventDetail,
     EventSummary,
+    InviteLookupResponse,
     NotificationPrefsResponse,
     NotificationPrefsUpdate,
     PathwayProgress,
@@ -41,6 +47,7 @@ from app.spaces.schemas import (
     SaveNotesRequest,
     SaveNotesResponse,
     SectionWithSteps,
+    SpaceAccessStatus,
     SpaceResponse,
     SpaceSummary,
     StepCommentAuthor,
@@ -351,6 +358,220 @@ def get_space(
     if not space:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
     return space
+
+
+# ---------------------------------------------------------------------------
+# Member access: join, request-access, my-access
+# ---------------------------------------------------------------------------
+
+@router.get("/{slug}/my-access", response_model=SpaceAccessStatus)
+def get_my_access(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SpaceAccessStatus:
+    """Return the current user's access state for this Space."""
+    space = _get_space_or_404(slug, db)
+
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.status == "active",
+        )
+        .first()
+    )
+
+    request = (
+        db.query(SpaceAccessRequest)
+        .filter(
+            SpaceAccessRequest.space_id == space.id,
+            SpaceAccessRequest.user_id == current_user.id,
+            SpaceAccessRequest.status == "pending",
+        )
+        .first()
+    )
+
+    invite = (
+        db.query(SpaceInvitation)
+        .filter(
+            SpaceInvitation.space_id == space.id,
+            SpaceInvitation.email == current_user.email.lower(),
+        )
+        .first()
+    )
+
+    return SpaceAccessStatus(
+        is_member=membership is not None,
+        membership_role=(
+            membership.role.value if membership and hasattr(membership.role, "value")
+            else str(membership.role) if membership else None
+        ),
+        has_pending_request=request is not None,
+        has_pending_invite=invite is not None,
+    )
+
+
+@router.post("/{slug}/join", status_code=201)
+def join_space(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Join a public Space as a learner."""
+    space = _get_space_or_404(slug, db)
+
+    if not space.is_public:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="This collective is private. Request access instead.")
+
+    existing = (
+        db.query(SpaceMembership)
+        .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == current_user.id)
+        .first()
+    )
+    if existing:
+        return {"joined": True, "already_member": True}
+
+    db.add(SpaceMembership(
+        id=str(uuid.uuid4()),
+        user_id=current_user.id,
+        space_id=space.id,
+        role=SpaceRole.learner,
+        status=SpaceMembershipStatus.active,
+    ))
+    db.commit()
+    return {"joined": True, "already_member": False}
+
+
+@router.post("/{slug}/request-access", status_code=201)
+def request_access(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Submit an access request to a private Space."""
+    space = _get_space_or_404(slug, db)
+
+    if space.is_public:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="This collective is public. Use the join endpoint instead.")
+
+    existing_member = (
+        db.query(SpaceMembership)
+        .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == current_user.id,
+                SpaceMembership.status == "active")
+        .first()
+    )
+    if existing_member:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="You are already a member of this collective.")
+
+    existing_request = (
+        db.query(SpaceAccessRequest)
+        .filter(SpaceAccessRequest.space_id == space.id, SpaceAccessRequest.user_id == current_user.id)
+        .first()
+    )
+    if existing_request:
+        if existing_request.status == "pending":
+            return {"requested": True, "already_pending": True}
+        # Allow re-requesting if previously declined
+        existing_request.status = "pending"
+        existing_request.updated_at = datetime.utcnow()
+        db.commit()
+        return {"requested": True, "already_pending": False}
+
+    db.add(SpaceAccessRequest(
+        id=str(uuid.uuid4()),
+        space_id=space.id,
+        user_id=current_user.id,
+        status="pending",
+    ))
+    db.commit()
+    return {"requested": True, "already_pending": False}
+
+
+# ---------------------------------------------------------------------------
+# Invite acceptance (token-based)
+# ---------------------------------------------------------------------------
+
+invites_router = APIRouter(prefix="/api/invites", tags=["invites"])
+
+
+@invites_router.get("/{token}", response_model=InviteLookupResponse)
+def get_invite_by_token(
+    token: str,
+    db: Session = Depends(get_db),
+) -> InviteLookupResponse:
+    """Look up an invite by token — public endpoint (no auth required)."""
+    invite = (
+        db.query(SpaceInvitation)
+        .filter(SpaceInvitation.token == token)
+        .first()
+    )
+    if not invite:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found or already used.")
+
+    space = db.query(Space).filter(Space.id == invite.space_id).first()
+    if not space:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+
+    return InviteLookupResponse(
+        id=invite.id,
+        space_id=invite.space_id,
+        space_name=space.name,
+        space_slug=space.slug,
+        email=invite.email,
+        name=invite.name,
+        role=invite.role.value if hasattr(invite.role, "value") else str(invite.role),
+    )
+
+
+@invites_router.post("/{token}/accept", status_code=201)
+def accept_invite(
+    token: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Accept a space invite by token. Caller must be logged in."""
+    invite = (
+        db.query(SpaceInvitation)
+        .filter(SpaceInvitation.token == token)
+        .first()
+    )
+    if not invite:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found or already used.")
+
+    if current_user.email.lower() != invite.email.lower():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This invite was sent to a different email address. Please log in with that account.",
+        )
+
+    space = db.query(Space).filter(Space.id == invite.space_id).first()
+    if not space:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+
+    existing = (
+        db.query(SpaceMembership)
+        .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == current_user.id)
+        .first()
+    )
+    if not existing:
+        role_value = invite.role.value if hasattr(invite.role, "value") else str(invite.role)
+        db.add(SpaceMembership(
+            id=str(uuid.uuid4()),
+            user_id=current_user.id,
+            space_id=space.id,
+            role=role_value,
+            status=SpaceMembershipStatus.active,
+        ))
+
+    # Delete the invite — consumed
+    db.delete(invite)
+    db.commit()
+    return {"accepted": True, "space_slug": space.slug}
 
 
 # ---------------------------------------------------------------------------

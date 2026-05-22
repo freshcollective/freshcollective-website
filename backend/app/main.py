@@ -11,7 +11,7 @@ from app.auth.routes import router as auth_router
 from app.client.routes import router as client_router
 from app.admin.routes import router as admin_router
 from app.sales.routes import router as sales_router
-from app.spaces.routes import router as spaces_router, me_router, public_router
+from app.spaces.routes import router as spaces_router, me_router, public_router, invites_router
 from app.community.routes import router as community_router
 from app.members.routes import members_router, profiles_router
 from app.creator.routes import router as creator_router
@@ -66,6 +66,7 @@ app.include_router(members_router)
 app.include_router(profiles_router)
 app.include_router(creator_router)
 app.include_router(uploads_router)
+app.include_router(invites_router)
 
 
 # ---------------------------------------------------------------------------

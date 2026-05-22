@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { CreatorBillingResponse, PublicSpaceCard, SpaceSummary } from '@/types/platform'
+import type { AccessRequest, CreatorBillingResponse, InviteLookupResponse, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 export const ACTIVE_SPACE_COOKIE = 'fc_creator_space'
 
@@ -263,6 +263,32 @@ export const getPathwayAboutBlocks = cache(async (spaceSlug: string, pathwaySlug
   const res = await fetchWithSession(
     `/api/spaces/${spaceSlug}/pathways/${pathwaySlug}/about-blocks`,
   )
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getMySpaceAccess = cache(async (slug: string): Promise<SpaceAccessStatus | null> => {
+  try {
+    const res = await fetchWithSession(`/api/spaces/${slug}/my-access`)
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+})
+
+export const getInviteByToken = cache(async (token: string): Promise<InviteLookupResponse | null> => {
+  try {
+    const res = await fetch(apiUrl(`/api/invites/${token}`), { next: { revalidate: 0 } })
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+})
+
+export const getCreatorAccessRequests = cache(async (slug: string): Promise<AccessRequest[]> => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/access-requests`)
   if (!res.ok) return []
   return res.json()
 })
