@@ -13,6 +13,82 @@ interface Props {
   params: Promise<{ slug: string }>
 }
 
+// ---------------------------------------------------------------------------
+// Accent palette — teal for shared, 5 complementary for pathways
+// ---------------------------------------------------------------------------
+
+const TEAL_ACCENT = {
+  stripe:    'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.15) 100%)',
+  pillBg:    'rgba(56,160,158,0.10)',
+  pillText:  '#1E6E6C',
+  labelBg:   'rgba(56,160,158,0.10)',
+  labelText: '#1E6E6C',
+  headingLine: '#38A09E',
+}
+
+const PATHWAY_ACCENTS = [
+  // Gold
+  {
+    stripe:    'linear-gradient(90deg, #C49A28 0%, rgba(196,154,40,0.12) 100%)',
+    pillBg:    'rgba(196,154,40,0.10)',
+    pillText:  '#7A5E0A',
+    labelBg:   'rgba(196,154,40,0.10)',
+    labelText: '#7A5E0A',
+    headingLine: '#C49A28',
+  },
+  // Slate blue
+  {
+    stripe:    'linear-gradient(90deg, #5278A8 0%, rgba(82,120,168,0.12) 100%)',
+    pillBg:    'rgba(82,120,168,0.10)',
+    pillText:  '#2E4F7A',
+    labelBg:   'rgba(82,120,168,0.10)',
+    labelText: '#2E4F7A',
+    headingLine: '#5278A8',
+  },
+  // Sage
+  {
+    stripe:    'linear-gradient(90deg, #5A8F72 0%, rgba(90,143,114,0.12) 100%)',
+    pillBg:    'rgba(90,143,114,0.10)',
+    pillText:  '#2A5E42',
+    labelBg:   'rgba(90,143,114,0.10)',
+    labelText: '#2A5E42',
+    headingLine: '#5A8F72',
+  },
+  // Muted lavender
+  {
+    stripe:    'linear-gradient(90deg, #7B6FAF 0%, rgba(123,111,175,0.12) 100%)',
+    pillBg:    'rgba(123,111,175,0.10)',
+    pillText:  '#4A3D8A',
+    labelBg:   'rgba(123,111,175,0.10)',
+    labelText: '#4A3D8A',
+    headingLine: '#7B6FAF',
+  },
+  // Dusty rose
+  {
+    stripe:    'linear-gradient(90deg, #A8706A 0%, rgba(168,112,106,0.12) 100%)',
+    pillBg:    'rgba(168,112,106,0.10)',
+    pillText:  '#6A3A38',
+    labelBg:   'rgba(168,112,106,0.10)',
+    labelText: '#6A3A38',
+    headingLine: '#A8706A',
+  },
+]
+
+type Accent = typeof TEAL_ACCENT
+
+function pathwayAccent(pathwayId: string): Accent {
+  let hash = 0
+  for (let i = 0; i < pathwayId.length; i++) {
+    hash = ((hash << 5) - hash) + pathwayId.charCodeAt(i)
+    hash |= 0
+  }
+  return PATHWAY_ACCENTS[Math.abs(hash) % PATHWAY_ACCENTS.length]
+}
+
+// ---------------------------------------------------------------------------
+// Resource type maps
+// ---------------------------------------------------------------------------
+
 const RESOURCE_TYPE_LABELS: Record<string, string> = {
   link:     'Link',
   file:     'File',
@@ -60,13 +136,19 @@ function sourceMeta(url: string | null, fileName: string | null): string | null 
   try { return new URL(url).hostname } catch { return url }
 }
 
+// ---------------------------------------------------------------------------
+// ResourceCard — accepts an accent object so shared vs pathway cards differ
+// ---------------------------------------------------------------------------
+
 function ResourceCard({
   resource,
+  accent = TEAL_ACCENT,
 }: {
   resource: CollectiveResource | PathwayResourceItem
+  accent?: Accent
 }) {
-  const typeLabel   = RESOURCE_TYPE_LABELS[resource.resource_type]  ?? 'Resource'
-  const typeIcon    = RESOURCE_TYPE_ICONS[resource.resource_type]   ?? '◫'
+  const typeLabel   = RESOURCE_TYPE_LABELS[resource.resource_type] ?? 'Resource'
+  const typeIcon    = RESOURCE_TYPE_ICONS[resource.resource_type]  ?? '◫'
   const actionLabel = RESOURCE_ACTION_LABELS[resource.resource_type] ?? 'Open →'
 
   const resolvedUrl = resolveResourceUrl(resource.url)
@@ -79,15 +161,15 @@ function ResourceCard({
       className="overflow-hidden rounded-2xl bg-white transition-shadow hover:shadow-sm"
       style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
     >
-      <div
-        className="h-[3px] w-full"
-        style={{ background: 'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.15) 100%)' }}
-      />
+      {/* Accent top stripe */}
+      <div className="h-[3px] w-full" style={{ background: accent.stripe }} />
+
       <div className="px-5 py-5">
-        <div className="mb-3 flex items-center gap-2">
+        {/* Type pill */}
+        <div className="mb-3">
           <span
             className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide"
-            style={{ background: 'rgba(56,160,158,0.10)', color: '#1E6E6C' }}
+            style={{ background: accent.pillBg, color: accent.pillText }}
           >
             <span>{typeIcon}</span>
             {typeLabel}
@@ -133,32 +215,65 @@ function ResourceCard({
   )
 }
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
+// ---------------------------------------------------------------------------
+// Section heading — teal or pathway accent
+// ---------------------------------------------------------------------------
+
+function SectionHeading({
+  children,
+  accent = TEAL_ACCENT,
+}: {
+  children: React.ReactNode
+  accent?: Accent
+}) {
   return (
-    <h2 className="mb-4 text-[16px] font-semibold text-navy-900">{children}</h2>
+    <div className="mb-5 flex items-center gap-3">
+      <div
+        className="h-4 w-[3px] rounded-full shrink-0"
+        style={{ background: accent.headingLine }}
+      />
+      <h2 className="text-[16px] font-semibold text-navy-900">{children}</h2>
+    </div>
   )
 }
 
+// ---------------------------------------------------------------------------
+// Pathway group — picks its accent from pathway_id hash
+// ---------------------------------------------------------------------------
+
 function PathwayGroup({ group }: { group: PathwayResourceGroup }) {
+  const accent = pathwayAccent(group.pathway_id)
+
   return (
     <div className="mb-8">
-      <div className="mb-3 flex items-center gap-2">
+      {/* Pathway heading row */}
+      <div className="mb-3 flex items-center gap-2.5">
+        {/* Tiny coloured accent line */}
+        <div
+          className="h-[14px] w-[3px] rounded-full shrink-0"
+          style={{ background: accent.headingLine }}
+        />
         <h3 className="text-[14px] font-semibold text-navy-900">{group.pathway_title}</h3>
         <span
           className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-          style={{ background: 'rgba(56,160,158,0.10)', color: '#1E6E6C' }}
+          style={{ background: accent.labelBg, color: accent.labelText }}
         >
           {group.access_label}
         </span>
       </div>
+
       <div className="grid gap-4 sm:grid-cols-2">
         {group.resources.map((r) => (
-          <ResourceCard key={r.id} resource={r} />
+          <ResourceCard key={r.id} resource={r} accent={accent} />
         ))}
       </div>
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Empty state
+// ---------------------------------------------------------------------------
 
 function EmptyState() {
   return (
@@ -170,6 +285,10 @@ function EmptyState() {
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 export default async function SpaceResourcesPage({ params }: Props) {
   const { slug } = await params
@@ -225,22 +344,22 @@ export default async function SpaceResourcesPage({ params }: Props) {
           <EmptyState />
         ) : (
           <div>
-            {/* Standalone resources */}
+            {/* ── Shared resources (teal) ── */}
             {standalone_resources.length > 0 && (
               <section className="mb-10">
-                <SectionHeading>Shared resources</SectionHeading>
+                <SectionHeading accent={TEAL_ACCENT}>Shared resources</SectionHeading>
                 <p className="mb-5 text-[13px] text-slate-500">
                   Resources shared by the creator for this collective.
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2">
                   {standalone_resources.map((r) => (
-                    <ResourceCard key={r.id} resource={r} />
+                    <ResourceCard key={r.id} resource={r} accent={TEAL_ACCENT} />
                   ))}
                 </div>
               </section>
             )}
 
-            {/* Pathway resources */}
+            {/* ── Pathway resources (complementary accents) ── */}
             {pathway_resource_groups.length > 0 && (
               <section>
                 <SectionHeading>From your pathways</SectionHeading>
