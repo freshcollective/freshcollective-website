@@ -104,6 +104,25 @@ router = APIRouter(prefix="/api/creator", tags=["creator"])
 # Permission helpers
 # ---------------------------------------------------------------------------
 
+def _space_detail_response(space: Space, db: Session) -> dict:
+    """Build a SpaceDetail-compatible dict with derived_has_paid_internal_content injected."""
+    data = SpaceDetail.model_validate(space).model_dump()
+    data['derived_has_paid_internal_content'] = _derived_has_paid_content(space.id, db)
+    return data
+
+
+def _derived_has_paid_content(space_id: str, db: Session) -> bool:
+    """True if the space has at least one active paid pathway."""
+    from app.models.platform import Pathway  # local import to avoid circular
+    return db.query(Pathway).filter(
+        Pathway.space_id == space_id,
+        Pathway.status == "active",
+        Pathway.access_type.in_(("one_time", "subscription")),
+        Pathway.price_cents.isnot(None),
+        Pathway.price_cents > 0,
+    ).first() is not None
+
+
 def _get_managed_space(slug: str, user: User, db: Session) -> Space:
     """Return the Space if the user owns it or is a creator/moderator."""
     space = db.query(Space).filter(Space.slug == slug).first()
@@ -366,8 +385,9 @@ def get_space(
     slug: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
-) -> Space:
-    return _get_managed_space(slug, current_user, db)
+):
+    space = _get_managed_space(slug, current_user, db)
+    return _space_detail_response(space, db)
 
 
 @router.patch("/spaces/{slug}", response_model=SpaceDetail)
@@ -434,7 +454,7 @@ def update_space(
         space.guidance_links_body = body.guidance_links_body.strip() or None
     db.commit()
     db.refresh(space)
-    return space
+    return _space_detail_response(space, db)
 
 
 @router.post("/spaces/{slug}/cover", response_model=SpaceDetail)
@@ -457,7 +477,7 @@ async def upload_cover_image(
     space.cover_image_url = f"/api/uploads/{rel_path}"
     db.commit()
     db.refresh(space)
-    return space
+    return _space_detail_response(space, db)
 
 
 # ---------------------------------------------------------------------------

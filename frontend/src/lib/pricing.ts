@@ -8,16 +8,22 @@ interface PricingSource {
 }
 
 interface FullPricingSource extends PricingSource {
+  /** Creator-manually-set flag indicating this collective has paid internal content. */
   has_paid_internal_content: boolean
   /**
-   * Creator-entered copy describing what is paid separately.
-   * This is the PRIMARY source for the inline "· ..." suffix.
-   * min_paid_pathway_price_cents is only used as a fallback when this is blank.
+   * Auto-derived: true if the collective has at least one active paid pathway.
+   * Computed by the backend from pathway pricing data.
+   */
+  derived_has_paid_internal_content?: boolean
+  /**
+   * Creator-entered copy for the paid-separately suffix.
+   * PRIMARY source for the inline "· ..." label — wins over auto-derived price.
+   * Only falls back to min_paid_pathway_price_cents when this is blank.
    */
   paid_content_summary?: string | null
   /**
-   * Auto-derived minimum price of any active paid pathway in this collective (cents).
-   * Only shown if paid_content_summary is blank and the value is a positive integer.
+   * Auto-derived minimum price of any active paid pathway (cents).
+   * Only shown when paid_content_summary is blank.
    */
   min_paid_pathway_price_cents?: number | null
 }
@@ -27,7 +33,7 @@ function formatAmount(cents: number, currency: string): string {
   return `$${amount} ${currency || 'AUD'}`
 }
 
-/** Lowercase the first character of a string for inline embedding. */
+/** Lowercase the first character for inline embedding, e.g. "Free to join · paid pathways…" */
 function inlineCase(s: string): string {
   return s.charAt(0).toLowerCase() + s.slice(1)
 }
@@ -56,15 +62,21 @@ export function formatCollectiveAccessLabel(space: PricingSource): string {
 }
 
 /**
- * Full public summary label for Explore cards and the About quick-facts row.
+ * Full public summary for Explore cards and the About quick-facts row.
  *
- * Priority for the "· ..." suffix:
- *   1. paid_content_summary (creator-entered) — always wins when present
- *   2. min_paid_pathway_price_cents (auto-derived) — fallback when (1) is blank
- *   3. Generic "paid pathways available" — last resort
+ * effectiveHasPaidContent = has_paid_internal_content OR derived_has_paid_internal_content
+ *
+ * Priority for the "· ..." suffix when paid content is present:
+ *   1. paid_content_summary (creator-entered) — always wins when non-empty
+ *   2. min_paid_pathway_price_cents (auto-derived) — used only when (1) is blank
+ *   3. "paid pathways available" — generic last resort
  */
 export function formatCollectivePricingSummary(space: FullPricingSource): string {
-  const { pricing_type, pricing_currency, has_paid_internal_content, paid_content_summary, min_paid_pathway_price_cents } = space
+  const {
+    pricing_type, pricing_currency,
+    has_paid_internal_content, derived_has_paid_internal_content,
+    paid_content_summary, min_paid_pathway_price_cents,
+  } = space
   const currency = pricing_currency || 'AUD'
   const accessLabel = formatCollectiveAccessLabel(space)
 
@@ -72,8 +84,10 @@ export function formatCollectivePricingSummary(space: FullPricingSource): string
     return accessLabel
   }
 
+  const effectivePaid = has_paid_internal_content || (derived_has_paid_internal_content ?? false)
+
   if (pricing_type === 'free') {
-    if (!has_paid_internal_content) {
+    if (!effectivePaid) {
       return 'Free to join · all included'
     }
     // 1. Creator-entered copy wins
@@ -90,7 +104,7 @@ export function formatCollectivePricingSummary(space: FullPricingSource): string
   }
 
   // Paid collective
-  if (has_paid_internal_content) {
+  if (effectivePaid) {
     const manualSummary = paid_content_summary?.trim()
     if (manualSummary) {
       return `${accessLabel} · ${inlineCase(manualSummary)}`

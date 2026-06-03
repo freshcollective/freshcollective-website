@@ -147,6 +147,7 @@ class SpaceDetail(BaseModel):
     has_paid_internal_content: bool = False
     included_access_summary: str | None = None
     paid_content_summary: str | None = None
+    derived_has_paid_internal_content: bool = False
     guidance_start_title: str | None = None
     guidance_start_body: str | None = None
     guidance_focus_title: str | None = None

@@ -153,6 +153,7 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
             has_paid_internal_content=s.has_paid_internal_content or False,
             included_access_summary=s.included_access_summary,
             paid_content_summary=s.paid_content_summary,
+            derived_has_paid_internal_content=s.id in min_pathway_prices,
             min_paid_pathway_price_cents=min_pathway_prices.get(s.id),
         )
         for s in spaces

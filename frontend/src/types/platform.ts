@@ -31,6 +31,7 @@ export interface SpaceResponse {
   has_paid_internal_content: boolean
   included_access_summary: string | null
   paid_content_summary: string | null
+  derived_has_paid_internal_content: boolean
   guidance_start_title: string | null
   guidance_start_body: string | null
   guidance_focus_title: string | null
@@ -277,6 +278,7 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   has_paid_internal_content: boolean
   included_access_summary: string | null
   paid_content_summary: string | null
+  derived_has_paid_internal_content: boolean
 }
 
 export interface CreatorPathway {
@@ -394,6 +396,7 @@ export interface PublicSpaceCard {
   has_paid_internal_content: boolean
   included_access_summary: string | null
   paid_content_summary: string | null
+  derived_has_paid_internal_content: boolean
   min_paid_pathway_price_cents: number | null
 }
 

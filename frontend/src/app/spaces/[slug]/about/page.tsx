@@ -40,6 +40,19 @@ export default async function SpaceAboutPage({ params }: Props) {
   const coverUrl      = resolveMediaUrl(space.cover_image_url)
   const avatarMembers = members.slice(0, 5)
 
+  // Effective paid content = manual toggle OR auto-detected from paid pathways
+  const effectiveHasPaidContent = space.has_paid_internal_content || space.derived_has_paid_internal_content
+
+  // Derive minimum paid pathway price from pathways already in the response
+  const paidPathwayCents = space.pathways
+    .filter((p) => (p.access_type === 'one_time' || p.access_type === 'subscription') && p.status === 'active' && p.price_cents != null && p.price_cents > 0)
+    .map((p) => p.price_cents as number)
+  const minPaidPathwayPriceCents = paidPathwayCents.length > 0 ? Math.min(...paidPathwayCents) : null
+
+  // Paid-separately copy — priority: creator summary > derived price > generic
+  const paidSeparatelyCopy = space.paid_content_summary?.trim()
+    || (minPaidPathwayPriceCents != null ? `Pathways from $${Math.round(minPaidPathwayPriceCents / 100)} AUD` : 'Paid pathways available separately')
+
   return (
     <div className="max-w-5xl">
 
@@ -132,7 +145,7 @@ export default async function SpaceAboutPage({ params }: Props) {
                 )}
                 <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
                   <span>🏷️</span>
-                  <span>{formatCollectivePricingSummary({ ...space, min_paid_pathway_price_cents: null })}</span>
+                  <span>{formatCollectivePricingSummary({ ...space, min_paid_pathway_price_cents: minPaidPathwayPriceCents })}</span>
                 </span>
                 {creatorName && (
                   <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
@@ -234,7 +247,7 @@ export default async function SpaceAboutPage({ params }: Props) {
                 <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Access</p>
                 <p className="text-[15px] font-semibold text-navy-900">{formatCollectiveAccessLabel(space)}</p>
 
-                {space.has_paid_internal_content ? (
+                {effectiveHasPaidContent ? (
                   <div className="mt-2 space-y-1.5">
                     <div>
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Included</p>
@@ -242,12 +255,10 @@ export default async function SpaceAboutPage({ params }: Props) {
                         {space.included_access_summary?.trim() || 'Available community content'}
                       </p>
                     </div>
-                    {space.paid_content_summary?.trim() && (
-                      <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Paid separately</p>
-                        <p className="text-[12px] text-slate-500">{space.paid_content_summary}</p>
-                      </div>
-                    )}
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Paid separately</p>
+                      <p className="text-[12px] text-slate-500">{paidSeparatelyCopy}</p>
+                    </div>
                   </div>
                 ) : (
                   <>

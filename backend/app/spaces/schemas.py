@@ -61,6 +61,19 @@ class SpaceResponse(BaseModel):
     guidance_links_title: str | None = None
     guidance_links_body: str | None = None
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def derived_has_paid_internal_content(self) -> bool:
+        """True if at least one active pathway requires separate payment."""
+        paid_access = {'one_time', 'subscription'}
+        return any(
+            p.access_type in paid_access
+            and p.status == 'active'
+            and p.price_cents is not None
+            and p.price_cents > 0
+            for p in (self.pathways or [])
+        )
+
 
 class SpaceSummary(BaseModel):
     model_config = {"from_attributes": True}
@@ -212,6 +225,8 @@ class PublicSpaceCard(BaseModel):
     has_paid_internal_content: bool = False
     included_access_summary: str | None = None
     paid_content_summary: str | None = None
+    # Auto-derived: True if the collective has at least one active paid pathway.
+    derived_has_paid_internal_content: bool = False
     # Minimum price of any published paid pathway inside this collective (cents).
     # None means no paid pathways exist or pricing is not yet set.
     min_paid_pathway_price_cents: int | None = None

@@ -53,6 +53,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
   const [hasPaidInternalContent, setHasPaidInternalContent] = useState(space.has_paid_internal_content ?? false)
   const [includedAccessSummary, setIncludedAccessSummary] = useState(space.included_access_summary ?? '')
   const [paidContentSummary, setPaidContentSummary] = useState(space.paid_content_summary ?? '')
+  const derivedHasPaidContent = space.derived_has_paid_internal_content ?? false
 
   useEffect(() => {
     setSlugOrigin(window.location.origin)
@@ -580,34 +581,48 @@ export default function CollectiveSettingsForm({ space }: Props) {
           </div>
 
           {/* Paid internal content toggle */}
-          <div
-            className="flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-all"
-            style={{
-              borderColor: hasPaidInternalContent ? 'rgba(56,160,158,0.40)' : '#e2e8f0',
-              background: hasPaidInternalContent ? 'rgba(56,160,158,0.06)' : 'transparent',
-            }}
-            onClick={() => setHasPaidInternalContent((v) => !v)}
-          >
-            <input
-              type="checkbox"
-              id="has-paid-internal"
-              checked={hasPaidInternalContent}
-              onChange={(e) => setHasPaidInternalContent(e.target.checked)}
-              onClick={(e) => e.stopPropagation()}
-              className="mt-0.5 h-4 w-4 accent-teal-500"
-            />
-            <div>
-              <label htmlFor="has-paid-internal" className="cursor-pointer text-[14px] font-medium text-navy-900">
-                Contains paid content inside this collective
-              </label>
-              <p className="mt-0.5 text-[13px] text-slate-500">
-                Turn this on if some pathways, gatherings, or resources require separate payment after someone joins.
-              </p>
+          <div>
+            <div
+              className="flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-all"
+              style={{
+                borderColor: (hasPaidInternalContent || derivedHasPaidContent) ? 'rgba(56,160,158,0.40)' : '#e2e8f0',
+                background: (hasPaidInternalContent || derivedHasPaidContent) ? 'rgba(56,160,158,0.06)' : 'transparent',
+              }}
+              onClick={() => setHasPaidInternalContent((v) => !v)}
+            >
+              <input
+                type="checkbox"
+                id="has-paid-internal"
+                checked={hasPaidInternalContent}
+                onChange={(e) => setHasPaidInternalContent(e.target.checked)}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-0.5 h-4 w-4 accent-teal-500"
+              />
+              <div>
+                <label htmlFor="has-paid-internal" className="cursor-pointer text-[14px] font-medium text-navy-900">
+                  Contains paid content inside this collective
+                </label>
+                <p className="mt-0.5 text-[13px] text-slate-500">
+                  Turn this on if some pathways, gatherings, or resources require separate payment after someone joins.
+                  This is also detected automatically when you publish a paid pathway.
+                </p>
+              </div>
             </div>
+            {derivedHasPaidContent && (
+              <div
+                className="mt-2 flex items-center gap-2 rounded-xl px-4 py-2.5"
+                style={{ background: 'rgba(56,160,158,0.08)', border: '1px solid rgba(56,160,158,0.20)' }}
+              >
+                <div className="h-2 w-2 rounded-full" style={{ background: '#38A09E' }} />
+                <p className="text-[13px]" style={{ color: '#1E6E6C' }}>
+                  Paid content detected from your published pathways.
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* What's included / paid separately — shown when paid internal content is toggled on */}
-          {hasPaidInternalContent && (
+          {/* What's included / paid separately — shown when manual toggle or auto-detected */}
+          {(hasPaidInternalContent || derivedHasPaidContent) && (
             <>
               <div>
                 <label htmlFor="included-summary" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
