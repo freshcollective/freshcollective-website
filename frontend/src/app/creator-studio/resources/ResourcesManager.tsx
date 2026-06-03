@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
-import type { CreatorResource, ResourceType } from '@/types/platform'
+import type { CreatorPathway, CreatorResource, ResourceType } from '@/types/platform'
 
 const RESOURCE_TYPES: { value: ResourceType; label: string; hint: string }[] = [
   { value: 'link',     label: 'Link',     hint: 'Article, tool, or external resource' },
@@ -27,6 +27,8 @@ interface FormState {
   resource_type: ResourceType
   url: string
   status: 'draft' | 'published'
+  scope: 'general' | 'pathway'
+  pathway_id: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -35,18 +37,20 @@ const EMPTY_FORM: FormState = {
   resource_type: 'link',
   url: '',
   status: 'draft',
+  scope: 'general',
+  pathway_id: '',
 }
 
 interface Props {
   spaceSlug: string
   initialResources: CreatorResource[]
+  pathways: CreatorPathway[]
 }
 
-export default function ResourcesManager({ spaceSlug, initialResources }: Props) {
+export default function ResourcesManager({ spaceSlug, initialResources, pathways }: Props) {
   const router = useRouter()
   const [resources, setResources] = useState<CreatorResource[]>(initialResources)
 
-  // Form mode: null = hidden, 'create' = new, string = resource id being edited
   const [formMode, setFormMode] = useState<null | 'create' | string>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -58,6 +62,13 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
   const tealBtn = 'inline-flex items-center rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50'
   const tealStyle = { background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }
   const ghostBtn = 'inline-flex items-center rounded-xl border border-slate-200 px-3.5 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700 disabled:opacity-50'
+
+  const activePaths = pathways.filter((p) => p.status !== 'archived')
+
+  function pathwayTitle(id: string | null) {
+    if (!id) return null
+    return activePaths.find((p) => p.id === id)?.title ?? null
+  }
 
   function openCreate() {
     setForm(EMPTY_FORM)
@@ -73,6 +84,8 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
       resource_type: r.resource_type as ResourceType,
       url: r.url ?? '',
       status: r.status,
+      scope: r.scope ?? 'general',
+      pathway_id: r.pathway_id ?? '',
     })
     setUploadFile(null)
     setFormError(null)
@@ -87,18 +100,28 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
 
   async function handleSave() {
     if (!form.title.trim()) { setFormError('Title is required.'); return }
+    if (form.scope === 'pathway' && !form.pathway_id) {
+      setFormError('Please select a pathway for pathway-specific resources.')
+      return
+    }
     setSaving(true); setFormError(null)
     try {
       let res: Response
 
+      const scopePayload = {
+        scope: form.scope,
+        pathway_id: form.scope === 'pathway' ? form.pathway_id : null,
+      }
+
       if (uploadFile) {
-        // File upload path
         const fd = new FormData()
         fd.append('file', uploadFile)
         fd.append('title', form.title.trim())
         fd.append('description', form.description.trim())
         fd.append('resource_type', form.resource_type)
         fd.append('status', form.status)
+        fd.append('scope', scopePayload.scope)
+        if (scopePayload.pathway_id) fd.append('pathway_id', scopePayload.pathway_id)
         res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources/upload`), {
           method: 'POST',
           credentials: 'include',
@@ -115,6 +138,7 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
             resource_type: form.resource_type,
             url: form.url.trim() || null,
             status: form.status,
+            ...scopePayload,
           }),
         })
       } else {
@@ -128,6 +152,7 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
             resource_type: form.resource_type,
             url: form.url.trim() || null,
             status: form.status,
+            ...scopePayload,
           }),
         })
       }
@@ -165,7 +190,7 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
       setResources((prev) => prev.filter((r) => r.id !== id))
       router.refresh()
     } catch {
-      // silently ignore — list stays in sync
+      // silently ignore
     } finally {
       setDeletingId(null)
     }
@@ -205,7 +230,6 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
         ))}
       </div>
 
-      {/* Add resource button */}
       {formMode === null && (
         <div className="mb-6">
           <button onClick={openCreate} className={tealBtn} style={tealStyle}>
@@ -265,7 +289,7 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
               />
             </div>
 
-            {/* URL — only shown when not uploading a file */}
+            {/* URL */}
             {!uploadFile && (
               <div>
                 <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
@@ -304,6 +328,66 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
                 )}
               </div>
             )}
+
+            {/* Resource access (scope) */}
+            <div>
+              <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
+                Resource access
+              </label>
+              <p className="mb-2.5 text-[12px] text-slate-400">
+                General resources are visible to all members. Pathway resources only appear for
+                members who have access to that pathway.
+              </p>
+              <div className="flex gap-3">
+                {([
+                  { value: 'general', label: 'General', hint: 'Visible to all members' },
+                  { value: 'pathway', label: 'Pathway-specific', hint: 'Pathway members only' },
+                ] as const).map((s) => (
+                  <label
+                    key={s.value}
+                    className="flex cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2.5 text-[13px] font-medium transition-all"
+                    style={{
+                      borderColor: form.scope === s.value ? 'rgba(56,160,158,0.40)' : '#e2e8f0',
+                      background: form.scope === s.value ? 'rgba(56,160,158,0.06)' : 'transparent',
+                      color: form.scope === s.value ? '#1E6E6C' : '#6B7A8D',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="res-scope"
+                      value={s.value}
+                      checked={form.scope === s.value}
+                      onChange={() => setForm((f) => ({ ...f, scope: s.value, pathway_id: '' }))}
+                      className="accent-teal-500"
+                    />
+                    {s.label}
+                  </label>
+                ))}
+              </div>
+
+              {/* Pathway dropdown */}
+              {form.scope === 'pathway' && (
+                <div className="mt-3">
+                  <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
+                    Pathway <span style={{ color: '#38A09E' }}>*</span>
+                  </label>
+                  {activePaths.length === 0 ? (
+                    <p className="text-[13px] text-slate-400">No pathways found. Create a pathway first.</p>
+                  ) : (
+                    <select
+                      value={form.pathway_id}
+                      onChange={(e) => setForm((f) => ({ ...f, pathway_id: e.target.value }))}
+                      className={inputCls}
+                    >
+                      <option value="">Select a pathway…</option>
+                      {activePaths.map((p) => (
+                        <option key={p.id} value={p.id}>{p.title}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Status */}
             <div>
@@ -356,53 +440,60 @@ export default function ResourcesManager({ spaceSlug, initialResources }: Props)
         </div>
       ) : resources.length > 0 ? (
         <div className="space-y-3">
-          {resources.map((r) => (
-            <div
-              key={r.id}
-              className="rounded-2xl border border-border bg-white px-5 py-4"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex flex-wrap items-center gap-2">
-                    <p className="text-[14px] font-semibold text-navy-900">{r.title}</p>
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUS_PILLS[r.status] ?? STATUS_PILLS.draft}`}
-                    >
-                      {r.status}
-                    </span>
-                    <span className="rounded-full border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">
-                      {r.resource_type}
-                    </span>
-                  </div>
-                  {r.description && (
-                    <p className="mb-1 line-clamp-1 text-[13px] text-slate-500">{r.description}</p>
-                  )}
-                  {(r.file_name || r.url) && (
-                    <p className="truncate text-[11.5px] text-slate-400">{r.file_name ?? r.url}</p>
-                  )}
-                </div>
+          {resources.map((r) => {
+            const scopeLabel = r.scope === 'pathway'
+              ? (pathwayTitle(r.pathway_id ?? null) ?? 'Pathway')
+              : 'General'
+            const scopePillCls = r.scope === 'pathway'
+              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+              : 'bg-slate-50 text-slate-500 border-slate-200'
 
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    onClick={() => handleTogglePublish(r)}
-                    className={ghostBtn}
-                  >
-                    {r.status === 'published' ? 'Unpublish' : 'Publish'}
-                  </button>
-                  <button onClick={() => openEdit(r)} className={ghostBtn}>
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(r.id)}
-                    disabled={deletingId === r.id}
-                    className="inline-flex items-center rounded-xl border border-red-100 px-3.5 py-2 text-[13px] font-medium text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 disabled:opacity-50"
-                  >
-                    {deletingId === r.id ? '…' : 'Delete'}
-                  </button>
+            return (
+              <div
+                key={r.id}
+                className="rounded-2xl border border-border bg-white px-5 py-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                      <p className="text-[14px] font-semibold text-navy-900">{r.title}</p>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUS_PILLS[r.status] ?? STATUS_PILLS.draft}`}>
+                        {r.status}
+                      </span>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${scopePillCls}`}>
+                        {scopeLabel}
+                      </span>
+                      <span className="rounded-full border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">
+                        {r.resource_type}
+                      </span>
+                    </div>
+                    {r.description && (
+                      <p className="mb-1 line-clamp-1 text-[13px] text-slate-500">{r.description}</p>
+                    )}
+                    {(r.file_name || r.url) && (
+                      <p className="truncate text-[11.5px] text-slate-400">{r.file_name ?? r.url}</p>
+                    )}
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button onClick={() => handleTogglePublish(r)} className={ghostBtn}>
+                      {r.status === 'published' ? 'Unpublish' : 'Publish'}
+                    </button>
+                    <button onClick={() => openEdit(r)} className={ghostBtn}>
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(r.id)}
+                      disabled={deletingId === r.id}
+                      className="inline-flex items-center rounded-xl border border-red-100 px-3.5 py-2 text-[13px] font-medium text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {deletingId === r.id ? '…' : 'Delete'}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       ) : null}
     </div>

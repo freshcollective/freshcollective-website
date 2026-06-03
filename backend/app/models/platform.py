@@ -1269,6 +1269,14 @@ class SpaceResource(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="draft", server_default="draft"
     )
+    # general = visible to all members | pathway = only for members with pathway access
+    scope: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="general", server_default="general"
+    )
+    # Required when scope = "pathway"; null for general resources
+    pathway_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("pathways.id", ondelete="SET NULL"), nullable=True
+    )
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
@@ -1283,7 +1291,9 @@ class SpaceResource(Base):
     )
 
     space: Mapped["Space"] = relationship("Space", back_populates="resources")
+    pathway: Mapped["Pathway | None"] = relationship("Pathway", foreign_keys=[pathway_id])
 
     __table_args__ = (
         Index("ix_space_resources_space_status", "space_id", "status"),
+        Index("ix_space_resources_scope_status", "space_id", "scope", "status"),
     )

@@ -1,10 +1,12 @@
-import { getActiveCreatorSpace, getCreatorResources } from '@/lib/serverApi'
-import type { CreatorResource } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorResources, getCreatorPathways } from '@/lib/serverApi'
+import type { CreatorPathway, CreatorResource } from '@/types/platform'
 import ResourcesManager from './ResourcesManager'
 
 export default async function ResourcesPage() {
   const space = await getActiveCreatorSpace()
-  const resources: CreatorResource[] = space ? await getCreatorResources(space.slug) : []
+  const [resources, pathways]: [CreatorResource[], CreatorPathway[]] = space
+    ? await Promise.all([getCreatorResources(space.slug), getCreatorPathways(space.slug)])
+    : [[], []]
 
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
@@ -46,7 +48,7 @@ export default async function ResourcesPage() {
           </p>
         </div>
       ) : (
-        <ResourcesManager spaceSlug={space.slug} initialResources={resources} />
+        <ResourcesManager spaceSlug={space.slug} initialResources={resources} pathways={pathways} />
       )}
 
     </div>

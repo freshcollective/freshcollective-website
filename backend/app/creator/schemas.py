@@ -172,6 +172,8 @@ class ResourceCreateRequest(BaseModel):
     url: str | None = None
     status: str = "draft"
     sort_order: int = 0
+    scope: str = "general"
+    pathway_id: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -205,6 +207,8 @@ class ResourceUpdateRequest(BaseModel):
     url: str | None = None
     status: str | None = None
     sort_order: int | None = None
+    scope: str | None = None
+    pathway_id: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -241,6 +245,8 @@ class ResourceResponse(BaseModel):
     file_size: int | None
     status: str
     sort_order: int
+    scope: str = "general"
+    pathway_id: str | None = None
     created_at: datetime
     updated_at: datetime
 

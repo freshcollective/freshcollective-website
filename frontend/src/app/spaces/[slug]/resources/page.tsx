@@ -64,15 +64,13 @@ function ResourceCard({
   resource,
 }: {
   resource: CollectiveResource | PathwayResourceItem
-  stepLabel?: string
 }) {
-  const typeLabel  = RESOURCE_TYPE_LABELS[resource.resource_type]  ?? 'Resource'
-  const typeIcon   = RESOURCE_TYPE_ICONS[resource.resource_type]   ?? '◫'
+  const typeLabel   = RESOURCE_TYPE_LABELS[resource.resource_type]  ?? 'Resource'
+  const typeIcon    = RESOURCE_TYPE_ICONS[resource.resource_type]   ?? '◫'
   const actionLabel = RESOURCE_ACTION_LABELS[resource.resource_type] ?? 'Open →'
 
   const resolvedUrl = resolveResourceUrl(resource.url)
-  const meta = sourceMeta(resolvedUrl, resource.file_name)
-
+  const meta = sourceMeta(resolvedUrl, resource.file_name ?? null)
   const isFile = !!resource.file_name
   const stepTitle = 'step_title' in resource ? resource.step_title : null
 
@@ -110,11 +108,7 @@ function ResourceCard({
           <p className="mb-1 text-[11.5px] text-slate-400">From: {stepTitle}</p>
         )}
 
-        {meta && !stepTitle && (
-          <p className="mb-4 truncate text-[11.5px] text-slate-400">{meta}</p>
-        )}
-
-        {meta && stepTitle && (
+        {meta && (
           <p className="mb-4 truncate text-[11.5px] text-slate-400">{meta}</p>
         )}
 

@@ -388,7 +388,9 @@ export interface CollectiveResource {
   file_size: number | null
   sort_order: number
   created_at: string
-  source?: 'standalone' | 'pathway'
+  scope?: 'general' | 'pathway'
+  pathway_id?: string | null
+  source?: string
 }
 
 export interface PathwayResourceItem {
@@ -401,9 +403,9 @@ export interface PathwayResourceItem {
   file_size: number | null
   mime_type: string | null
   is_downloadable: boolean
-  step_id: string
-  step_title: string
-  source: 'pathway'
+  step_id: string | null
+  step_title: string | null
+  source: string
 }
 
 export interface PathwayResourceGroup {
@@ -421,6 +423,8 @@ export interface AggregatedResourcesResponse {
 
 export interface CreatorResource extends CollectiveResource {
   status: 'draft' | 'published'
+  scope: 'general' | 'pathway'
+  pathway_id: string | null
   updated_at: string
 }
 

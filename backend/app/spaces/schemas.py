@@ -247,6 +247,8 @@ class CollectiveResourceResponse(BaseModel):
     file_size: int | None
     sort_order: int
     created_at: datetime
+    scope: str = "general"
+    pathway_id: str | None = None
     source: str = "standalone"
 
 
@@ -256,13 +258,14 @@ class PathwayResourceItem(BaseModel):
     description: str | None
     resource_type: str
     url: str | None
-    file_name: str | None
-    file_size: int | None
-    mime_type: str | None
-    is_downloadable: bool
-    step_id: str
-    step_title: str
-    source: str = "pathway"
+    file_name: str | None = None
+    file_size: int | None = None
+    mime_type: str | None = None
+    is_downloadable: bool = True
+    step_id: str | None = None
+    step_title: str | None = None
+    # general | pathway_resource | pathway_step | pathway_step_content
+    source: str = "pathway_step"
 
 
 class PathwayResourceGroup(BaseModel):

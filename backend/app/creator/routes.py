@@ -2696,6 +2696,8 @@ def create_space_resource(
     current_user: User = Depends(get_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
+    scope = body.scope if body.scope in ("general", "pathway") else "general"
+    pathway_id = body.pathway_id if scope == "pathway" else None
     resource = SpaceResource(
         id=uuid4().hex,
         space_id=space.id,
@@ -2706,6 +2708,8 @@ def create_space_resource(
         url=body.url.strip() if body.url else None,
         status=body.status,
         sort_order=body.sort_order,
+        scope=scope,
+        pathway_id=pathway_id,
     )
     db.add(resource)
     db.commit()
@@ -2720,6 +2724,8 @@ async def upload_space_resource_file(
     description: str | None = Form(None),
     resource_type: str = Form("file"),
     status: str = Form("draft"),
+    scope: str = Form("general"),
+    pathway_id: str | None = Form(None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
@@ -2734,6 +2740,7 @@ async def upload_space_resource_file(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    _scope = scope if scope in ("general", "pathway") else "general"
     resource = SpaceResource(
         id=uuid4().hex,
         space_id=space.id,
@@ -2746,6 +2753,8 @@ async def upload_space_resource_file(
         file_size=file_size,
         status=status if status in ("draft", "published") else "draft",
         sort_order=0,
+        scope=_scope,
+        pathway_id=pathway_id if _scope == "pathway" else None,
     )
     db.add(resource)
     db.commit()
@@ -2780,6 +2789,14 @@ def update_space_resource(
         resource.status = body.status
     if body.sort_order is not None:
         resource.sort_order = body.sort_order
+    if body.scope is not None and body.scope in ("general", "pathway"):
+        resource.scope = body.scope
+    # Update pathway_id — always sync based on current scope after update
+    new_scope = body.scope if body.scope in ("general", "pathway") else resource.scope
+    if new_scope == "general":
+        resource.pathway_id = None
+    elif body.pathway_id is not None:
+        resource.pathway_id = body.pathway_id
     db.commit()
     db.refresh(resource)
     return resource
