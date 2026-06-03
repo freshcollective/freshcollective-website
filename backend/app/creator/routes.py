@@ -414,6 +414,12 @@ def update_space(
         space.pricing_currency = body.pricing_currency
     if body.pricing_note is not None:
         space.pricing_note = body.pricing_note.strip() or None
+    if body.has_paid_internal_content is not None:
+        space.has_paid_internal_content = body.has_paid_internal_content
+    if body.included_access_summary is not None:
+        space.included_access_summary = body.included_access_summary.strip() or None
+    if body.paid_content_summary is not None:
+        space.paid_content_summary = body.paid_content_summary.strip() or None
     if body.guidance_start_title is not None:
         space.guidance_start_title = body.guidance_start_title.strip() or None
     if body.guidance_start_body is not None:

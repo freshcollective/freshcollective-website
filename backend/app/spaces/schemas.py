@@ -51,6 +51,9 @@ class SpaceResponse(BaseModel):
     pricing_amount_cents: int | None = None
     pricing_currency: str = 'AUD'
     pricing_note: str | None = None
+    has_paid_internal_content: bool = False
+    included_access_summary: str | None = None
+    paid_content_summary: str | None = None
     guidance_start_title: str | None = None
     guidance_start_body: str | None = None
     guidance_focus_title: str | None = None
@@ -206,6 +209,12 @@ class PublicSpaceCard(BaseModel):
     pricing_amount_cents: int | None = None
     pricing_currency: str = 'AUD'
     pricing_note: str | None = None
+    has_paid_internal_content: bool = False
+    included_access_summary: str | None = None
+    paid_content_summary: str | None = None
+    # Minimum price of any published paid pathway inside this collective (cents).
+    # None means no paid pathways exist or pricing is not yet set.
+    min_paid_pathway_price_cents: int | None = None
 
 
 # ---------------------------------------------------------------------------

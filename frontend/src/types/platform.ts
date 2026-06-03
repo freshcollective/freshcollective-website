@@ -28,6 +28,9 @@ export interface SpaceResponse {
   pricing_amount_cents: number | null
   pricing_currency: string
   pricing_note: string | null
+  has_paid_internal_content: boolean
+  included_access_summary: string | null
+  paid_content_summary: string | null
   guidance_start_title: string | null
   guidance_start_body: string | null
   guidance_focus_title: string | null
@@ -271,6 +274,9 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   pricing_amount_cents: number | null
   pricing_currency: string
   pricing_note: string | null
+  has_paid_internal_content: boolean
+  included_access_summary: string | null
+  paid_content_summary: string | null
 }
 
 export interface CreatorPathway {
@@ -385,6 +391,10 @@ export interface PublicSpaceCard {
   pricing_amount_cents: number | null
   pricing_currency: string
   pricing_note: string | null
+  has_paid_internal_content: boolean
+  included_access_summary: string | null
+  paid_content_summary: string | null
+  min_paid_pathway_price_cents: number | null
 }
 
 export interface SpaceInvitation {

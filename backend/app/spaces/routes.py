@@ -88,6 +88,25 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
         .all()
     )
 
+    # Minimum price among active paid pathways per space
+    _paid_access_types = ('one_time', 'subscription')
+    min_pathway_prices: dict[str, int] = {}
+    paid_pathway_rows = (
+        db.query(Pathway.space_id, func.min(Pathway.price_cents))
+        .filter(
+            Pathway.space_id.in_(space_ids),
+            Pathway.status == "active",
+            Pathway.access_type.in_(_paid_access_types),
+            Pathway.price_cents.isnot(None),
+            Pathway.price_cents > 0,
+        )
+        .group_by(Pathway.space_id)
+        .all()
+    )
+    for space_id, min_cents in paid_pathway_rows:
+        if min_cents is not None:
+            min_pathway_prices[space_id] = int(min_cents)
+
     member_counts: dict[str, int] = dict(
         db.query(Pathway.space_id, func.count(func.distinct(Enrollment.user_id)))
         .join(Enrollment, Enrollment.pathway_id == Pathway.id)
@@ -131,6 +150,10 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
             pricing_amount_cents=s.pricing_amount_cents,
             pricing_currency=s.pricing_currency or 'AUD',
             pricing_note=s.pricing_note,
+            has_paid_internal_content=s.has_paid_internal_content or False,
+            included_access_summary=s.included_access_summary,
+            paid_content_summary=s.paid_content_summary,
+            min_paid_pathway_price_cents=min_pathway_prices.get(s.id),
         )
         for s in spaces
     ]

@@ -50,6 +50,9 @@ export default function CollectiveSettingsForm({ space }: Props) {
     space.pricing_amount_cents ? String(Math.round(space.pricing_amount_cents / 100)) : ''
   )
   const [pricingNote, setPricingNote] = useState(space.pricing_note ?? '')
+  const [hasPaidInternalContent, setHasPaidInternalContent] = useState(space.has_paid_internal_content ?? false)
+  const [includedAccessSummary, setIncludedAccessSummary] = useState(space.included_access_summary ?? '')
+  const [paidContentSummary, setPaidContentSummary] = useState(space.paid_content_summary ?? '')
 
   useEffect(() => {
     setSlugOrigin(window.location.origin)
@@ -168,6 +171,9 @@ export default function CollectiveSettingsForm({ space }: Props) {
             : null,
           pricing_currency: 'AUD',
           pricing_note: pricingNote.trim() || null,
+          has_paid_internal_content: hasPaidInternalContent,
+          included_access_summary: includedAccessSummary.trim() || null,
+          paid_content_summary: paidContentSummary.trim() || null,
         }),
       })
 
@@ -572,6 +578,71 @@ export default function CollectiveSettingsForm({ space }: Props) {
               className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 shadow-sm outline-none transition-colors focus:border-teal-400"
             />
           </div>
+
+          {/* Paid internal content toggle */}
+          <div
+            className="flex cursor-pointer items-start gap-4 rounded-xl border p-4 transition-all"
+            style={{
+              borderColor: hasPaidInternalContent ? 'rgba(56,160,158,0.40)' : '#e2e8f0',
+              background: hasPaidInternalContent ? 'rgba(56,160,158,0.06)' : 'transparent',
+            }}
+            onClick={() => setHasPaidInternalContent((v) => !v)}
+          >
+            <input
+              type="checkbox"
+              id="has-paid-internal"
+              checked={hasPaidInternalContent}
+              onChange={(e) => setHasPaidInternalContent(e.target.checked)}
+              onClick={(e) => e.stopPropagation()}
+              className="mt-0.5 h-4 w-4 accent-teal-500"
+            />
+            <div>
+              <label htmlFor="has-paid-internal" className="cursor-pointer text-[14px] font-medium text-navy-900">
+                Contains paid content inside this collective
+              </label>
+              <p className="mt-0.5 text-[13px] text-slate-500">
+                Turn this on if some pathways, gatherings, or resources require separate payment after someone joins.
+              </p>
+            </div>
+          </div>
+
+          {/* What's included / paid separately — shown when paid internal content is toggled on */}
+          {hasPaidInternalContent && (
+            <>
+              <div>
+                <label htmlFor="included-summary" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
+                  What&apos;s included?
+                </label>
+                <input
+                  id="included-summary"
+                  type="text"
+                  value={includedAccessSummary}
+                  onChange={(e) => setIncludedAccessSummary(e.target.value)}
+                  maxLength={300}
+                  placeholder="Community, gatherings, and member updates"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 shadow-sm outline-none transition-colors focus:border-teal-400"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="paid-summary" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
+                  Paid separately
+                </label>
+                <input
+                  id="paid-summary"
+                  type="text"
+                  value={paidContentSummary}
+                  onChange={(e) => setPaidContentSummary(e.target.value)}
+                  maxLength={300}
+                  placeholder="Paid pathways available separately"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 shadow-sm outline-none transition-colors focus:border-teal-400"
+                />
+                <p className="mt-1.5 text-[12px] text-slate-400">
+                  Explain what people access for free and what may require separate payment.
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
-import { formatCollectivePrice } from '@/lib/pricing'
+import { formatCollectivePricingSummary } from '@/lib/pricing'
 import Container from '@/components/layout/Container'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
 import type { SpaceWithMeta } from './spaceMeta'
@@ -177,7 +177,7 @@ function CollectiveCard({
               color: '#475569',
             }}
           >
-            {formatCollectivePrice(space)}
+            {formatCollectivePricingSummary(space)}
           </span>
         </div>
       </div>

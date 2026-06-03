@@ -187,6 +187,12 @@ class Space(Base):
         String(10), nullable=False, default="AUD", server_default="AUD"
     )
     pricing_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Access model — distinguishes join cost from what is included / paid separately inside
+    has_paid_internal_content: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    included_access_summary: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    paid_content_summary: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     # Creator-managed guidance panel shown in member-facing sidebar
     guidance_start_title: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -69,6 +69,9 @@ class SpaceUpdateRequest(BaseModel):
     pricing_amount_cents: int | None = None
     pricing_currency: str | None = None
     pricing_note: str | None = None
+    has_paid_internal_content: bool | None = None
+    included_access_summary: str | None = None
+    paid_content_summary: str | None = None
     guidance_start_title: str | None = None
     guidance_start_body: str | None = None
     guidance_focus_title: str | None = None
@@ -141,6 +144,9 @@ class SpaceDetail(BaseModel):
     pricing_amount_cents: int | None = None
     pricing_currency: str = 'AUD'
     pricing_note: str | None = None
+    has_paid_internal_content: bool = False
+    included_access_summary: str | None = None
+    paid_content_summary: str | None = None
     guidance_start_title: str | None = None
     guidance_start_body: str | None = None
     guidance_focus_title: str | None = None
