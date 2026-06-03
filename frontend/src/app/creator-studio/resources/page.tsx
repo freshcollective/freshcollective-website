@@ -24,18 +24,17 @@ export default async function ResourcesPage() {
         </p>
       </div>
 
-      {/* Pathway resources info */}
+      {/* Pathway resources info — gold accent, matches member-facing pathway colour */}
       <div
         className="mb-6 flex items-start gap-3 rounded-2xl border px-5 py-4"
-        style={{ borderColor: 'rgba(56,160,158,0.25)', background: 'rgba(56,160,158,0.04)' }}
+        style={{ borderColor: 'rgba(214,177,63,0.40)', background: 'rgba(226,193,79,0.07)' }}
       >
-        <span className="mt-0.5 text-[16px]">◫</span>
+        <span className="mt-0.5 text-[15px]" style={{ color: '#D6B13F' }}>◫</span>
         <div>
-          <p className="text-[13px] font-semibold text-navy-900">Pathway resources</p>
+          <p className="text-[13px] font-semibold" style={{ color: '#7A5A00' }}>Pathway resources</p>
           <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">
-            Resources attached inside pathway steps are managed within each pathway. They appear
-            automatically on the member Resources page, grouped by pathway, for members who have
-            access.
+            Pathway resources appear automatically for members who have access to that pathway.
+            Resources attached inside pathway steps are managed within each pathway.
           </p>
         </div>
       </div>

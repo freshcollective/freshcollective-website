@@ -334,42 +334,58 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
               <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
                 Resource access
               </label>
-              <p className="mb-2.5 text-[12px] text-slate-400">
-                General resources are visible to all members. Pathway resources only appear for
-                members who have access to that pathway.
-              </p>
               <div className="flex gap-3">
                 {([
-                  { value: 'general', label: 'General', hint: 'Visible to all members' },
-                  { value: 'pathway', label: 'Pathway-specific', hint: 'Pathway members only' },
-                ] as const).map((s) => (
-                  <label
-                    key={s.value}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2.5 text-[13px] font-medium transition-all"
-                    style={{
-                      borderColor: form.scope === s.value ? 'rgba(56,160,158,0.40)' : '#e2e8f0',
-                      background: form.scope === s.value ? 'rgba(56,160,158,0.06)' : 'transparent',
-                      color: form.scope === s.value ? '#1E6E6C' : '#6B7A8D',
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="res-scope"
-                      value={s.value}
-                      checked={form.scope === s.value}
-                      onChange={() => setForm((f) => ({ ...f, scope: s.value, pathway_id: '' }))}
-                      className="accent-teal-500"
-                    />
-                    {s.label}
-                  </label>
-                ))}
+                  { value: 'general',  label: 'General',          hint: 'Visible to all members' },
+                  { value: 'pathway',  label: 'Pathway-specific', hint: 'Pathway members only'   },
+                ] as const).map((s) => {
+                  const isActive = form.scope === s.value
+                  const isGold   = s.value === 'pathway'
+                  return (
+                    <label
+                      key={s.value}
+                      className="flex cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2.5 text-[13px] font-medium transition-all"
+                      style={{
+                        borderColor: isActive
+                          ? (isGold ? 'rgba(214,177,63,0.55)' : 'rgba(56,160,158,0.40)')
+                          : '#e2e8f0',
+                        background: isActive
+                          ? (isGold ? 'rgba(226,193,79,0.10)' : 'rgba(56,160,158,0.06)')
+                          : 'transparent',
+                        color: isActive
+                          ? (isGold ? '#7A5A00' : '#1E6E6C')
+                          : '#6B7A8D',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="res-scope"
+                        value={s.value}
+                        checked={form.scope === s.value}
+                        onChange={() => setForm((f) => ({ ...f, scope: s.value, pathway_id: '' }))}
+                        className={isGold ? 'accent-yellow-500' : 'accent-teal-500'}
+                      />
+                      {s.label}
+                    </label>
+                  )
+                })}
               </div>
 
-              {/* Pathway dropdown */}
+              {/* Helper text — dynamic based on selected scope */}
+              <p className="mt-2 text-[12px]" style={{ color: form.scope === 'pathway' ? '#7A5A00' : '#94A3B8' }}>
+                {form.scope === 'pathway'
+                  ? 'This resource will only appear for members who have access to the selected pathway.'
+                  : 'This resource will appear for all members of this collective.'}
+              </p>
+
+              {/* Pathway dropdown — gold-tinted when pathway scope active */}
               {form.scope === 'pathway' && (
-                <div className="mt-3">
-                  <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
-                    Pathway <span style={{ color: '#38A09E' }}>*</span>
+                <div
+                  className="mt-3 rounded-xl px-4 py-3"
+                  style={{ background: 'rgba(226,193,79,0.07)', border: '1px solid rgba(214,177,63,0.35)' }}
+                >
+                  <label className="mb-1.5 block text-[13px] font-semibold" style={{ color: '#7A5A00' }}>
+                    Pathway <span style={{ color: '#D6B13F' }}>*</span>
                   </label>
                   {activePaths.length === 0 ? (
                     <p className="text-[13px] text-slate-400">No pathways found. Create a pathway first.</p>
@@ -441,26 +457,34 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
       ) : resources.length > 0 ? (
         <div className="space-y-3">
           {resources.map((r) => {
-            const scopeLabel = r.scope === 'pathway'
-              ? (pathwayTitle(r.pathway_id ?? null) ?? 'Pathway')
-              : 'General'
-            const scopePillCls = r.scope === 'pathway'
-              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-              : 'bg-slate-50 text-slate-500 border-slate-200'
+            const isPathway  = r.scope === 'pathway'
+            const scopeLabel = isPathway ? (pathwayTitle(r.pathway_id ?? null) ?? 'Pathway') : 'General'
+            const stripe     = isPathway
+              ? 'linear-gradient(90deg, #D6B13F 0%, rgba(214,177,63,0.15) 100%)'
+              : 'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.15) 100%)'
+            const pillStyle  = isPathway
+              ? { background: 'rgba(226,193,79,0.14)', color: '#7A5A00', borderColor: 'rgba(214,177,63,0.40)' }
+              : { background: 'rgba(56,160,158,0.10)', color: '#1E6E6C', borderColor: 'rgba(56,160,158,0.30)' }
 
             return (
               <div
                 key={r.id}
-                className="rounded-2xl border border-border bg-white px-5 py-4"
+                className="overflow-hidden rounded-2xl border border-border bg-white"
               >
-                <div className="flex items-start justify-between gap-4">
+                {/* Scope-coloured top stripe */}
+                <div className="h-[3px] w-full" style={{ background: stripe }} />
+
+                <div className="flex items-start justify-between gap-4 px-5 py-4">
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex flex-wrap items-center gap-2">
                       <p className="text-[14px] font-semibold text-navy-900">{r.title}</p>
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUS_PILLS[r.status] ?? STATUS_PILLS.draft}`}>
                         {r.status}
                       </span>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${scopePillCls}`}>
+                      <span
+                        className="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                        style={pillStyle}
+                      >
                         {scopeLabel}
                       </span>
                       <span className="rounded-full border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">
