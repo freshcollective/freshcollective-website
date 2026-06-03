@@ -34,7 +34,7 @@ const GOLD_ACCENT = {
   labelBg:     'rgba(226,193,79,0.14)',
   labelText:   '#7A5A00',
   headingLine: '#D6B13F',
-  btnBg:       '#071824',
+  btnBg:       '#0F3050',
 }
 
 type Accent = typeof TEAL_ACCENT
