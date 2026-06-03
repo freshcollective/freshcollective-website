@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.models.platform import CreatorProfile, Space, SpaceMembership
 from app.models.user import User
@@ -35,10 +35,12 @@ def _display_name(user: User, creator_profile: CreatorProfile | None) -> str:
 def list_members(
     slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
 ) -> list[MemberProfile]:
     """Return active Space members — creators/moderators first, then learners."""
     space = _get_space_or_404(slug, db)
+    if not space.is_public and current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
 
     rows = (
         db.query(SpaceMembership, User, CreatorProfile)

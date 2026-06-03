@@ -1,13 +1,26 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
 
-const PROTECTED_PREFIXES = ['/dashboard', '/admin', '/spaces', '/creator', '/profile', '/settings', '/onboarding']
+// /spaces (browse) and /spaces/[slug]/about are public.
+// All other /spaces/* sub-routes require authentication.
+function isSpacesRouteProtected(pathname: string): boolean {
+  const segments = pathname.split('/').filter(Boolean)
+  if (segments.length <= 1) return false  // /spaces
+  if (segments.length === 2) return false  // /spaces/[slug] — server-redirects to community
+  if (segments[2] === 'about') return false  // /spaces/[slug]/about
+  return true  // /spaces/[slug]/community, /pathways, /members, /events, etc.
+}
+
+const PROTECTED_PREFIXES = ['/dashboard', '/admin', '/creator', '/profile', '/settings', '/onboarding']
 const AUTH_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password']
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  const isProtected = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p))
+  const isSpacesPath = pathname === '/spaces' || pathname.startsWith('/spaces/')
+  const isProtected = isSpacesPath
+    ? isSpacesRouteProtected(pathname)
+    : PROTECTED_PREFIXES.some((p) => pathname.startsWith(p))
   const isAuthRoute = AUTH_ROUTES.some((r) => pathname.startsWith(r))
 
   if (!isProtected && !isAuthRoute) return NextResponse.next()

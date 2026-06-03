@@ -34,6 +34,18 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     return user
 
 
+def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User | None:
+    """Return the current user if authenticated, None otherwise (no exception raised)."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    payload = decode_token(token)
+    if not payload:
+        return None
+    user_id: str = payload.get("sub", "")
+    return db.query(User).filter(User.id == user_id).first()
+
+
 def get_creator_user(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role not in ("creator", "admin"):
         raise HTTPException(

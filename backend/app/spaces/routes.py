@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.platform import (
@@ -347,7 +347,7 @@ def list_spaces(
 def get_space(
     slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
 ) -> Space:
     space = (
         db.query(Space)
@@ -357,6 +357,8 @@ def get_space(
     )
     if not space:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+    if not space.is_public and current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
     return space
 
 
@@ -686,10 +688,12 @@ def list_pathways_progress(
 def list_events(
     slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User | None = Depends(get_optional_user),
 ) -> list[Event]:
     """All upcoming published events for a space, sorted chronologically."""
     space = _get_space_or_404(slug, db)
+    if not space.is_public and current_user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
     return (
         db.query(Event)
         .filter(
