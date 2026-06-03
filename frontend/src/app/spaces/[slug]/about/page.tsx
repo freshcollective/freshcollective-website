@@ -231,23 +231,32 @@ export default async function SpaceAboutPage({ params }: Props) {
 
               {/* Pricing */}
               <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Access</p>
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Access</p>
                 <p className="text-[15px] font-semibold text-navy-900">{formatCollectiveAccessLabel(space)}</p>
-                {space.has_paid_internal_content && space.included_access_summary && (
-                  <p className="mt-1 text-[12px] text-slate-500">
-                    Included: {space.included_access_summary}
-                  </p>
-                )}
-                {space.has_paid_internal_content && space.paid_content_summary && (
-                  <p className="mt-0.5 text-[12px] text-slate-500">
-                    Paid separately: {space.paid_content_summary}
-                  </p>
-                )}
-                {!space.has_paid_internal_content && space.pricing_note && (
-                  <p className="mt-1 text-[12px] text-slate-500">{space.pricing_note}</p>
-                )}
-                {!space.has_paid_internal_content && !space.pricing_note && space.pricing_type === 'free' && (
-                  <p className="mt-1 text-[12px] text-slate-400">All available content is included.</p>
+
+                {space.has_paid_internal_content ? (
+                  <div className="mt-2 space-y-1.5">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Included</p>
+                      <p className="text-[12px] text-slate-500">
+                        {space.included_access_summary?.trim() || 'Available community content'}
+                      </p>
+                    </div>
+                    {space.paid_content_summary?.trim() && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Paid separately</p>
+                        <p className="text-[12px] text-slate-500">{space.paid_content_summary}</p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {space.pricing_note ? (
+                      <p className="mt-1 text-[12px] text-slate-500">{space.pricing_note}</p>
+                    ) : space.pricing_type === 'free' ? (
+                      <p className="mt-1 text-[12px] text-slate-400">All available content is included.</p>
+                    ) : null}
+                  </>
                 )}
               </div>
 

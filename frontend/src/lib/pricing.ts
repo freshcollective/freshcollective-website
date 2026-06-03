@@ -9,12 +9,27 @@ interface PricingSource {
 
 interface FullPricingSource extends PricingSource {
   has_paid_internal_content: boolean
+  /**
+   * Creator-entered copy describing what is paid separately.
+   * This is the PRIMARY source for the inline "· ..." suffix.
+   * min_paid_pathway_price_cents is only used as a fallback when this is blank.
+   */
+  paid_content_summary?: string | null
+  /**
+   * Auto-derived minimum price of any active paid pathway in this collective (cents).
+   * Only shown if paid_content_summary is blank and the value is a positive integer.
+   */
   min_paid_pathway_price_cents?: number | null
 }
 
 function formatAmount(cents: number, currency: string): string {
   const amount = (cents / 100).toFixed(0)
   return `$${amount} ${currency || 'AUD'}`
+}
+
+/** Lowercase the first character of a string for inline embedding. */
+function inlineCase(s: string): string {
+  return s.charAt(0).toLowerCase() + s.slice(1)
 }
 
 /** The join-cost label only — answers "What does it cost to join this collective?" */
@@ -41,11 +56,15 @@ export function formatCollectiveAccessLabel(space: PricingSource): string {
 }
 
 /**
- * Full public summary label shown on Explore cards and About page.
- * Communicates both the join cost AND whether paid content exists inside.
+ * Full public summary label for Explore cards and the About quick-facts row.
+ *
+ * Priority for the "· ..." suffix:
+ *   1. paid_content_summary (creator-entered) — always wins when present
+ *   2. min_paid_pathway_price_cents (auto-derived) — fallback when (1) is blank
+ *   3. Generic "paid pathways available" — last resort
  */
 export function formatCollectivePricingSummary(space: FullPricingSource): string {
-  const { pricing_type, pricing_amount_cents, pricing_currency, has_paid_internal_content, min_paid_pathway_price_cents } = space
+  const { pricing_type, pricing_currency, has_paid_internal_content, paid_content_summary, min_paid_pathway_price_cents } = space
   const currency = pricing_currency || 'AUD'
   const accessLabel = formatCollectiveAccessLabel(space)
 
@@ -57,22 +76,31 @@ export function formatCollectivePricingSummary(space: FullPricingSource): string
     if (!has_paid_internal_content) {
       return 'Free to join · all included'
     }
-    // TODO: derive minimum pathway pricing dynamically once pathway pricing is fully live
+    // 1. Creator-entered copy wins
+    const manualSummary = paid_content_summary?.trim()
+    if (manualSummary) {
+      return `Free to join · ${inlineCase(manualSummary)}`
+    }
+    // 2. Auto-derived pathway price fallback
     if (min_paid_pathway_price_cents != null && min_paid_pathway_price_cents > 0) {
       return `Free to join · pathways from ${formatAmount(min_paid_pathway_price_cents, currency)}`
     }
+    // 3. Generic fallback
     return 'Free to join · paid pathways available'
   }
 
   // Paid collective
-  const base = accessLabel
   if (has_paid_internal_content) {
-    return `${base} · paid extras available`
+    const manualSummary = paid_content_summary?.trim()
+    if (manualSummary) {
+      return `${accessLabel} · ${inlineCase(manualSummary)}`
+    }
+    return `${accessLabel} · paid extras available`
   }
-  return base
+  return accessLabel
 }
 
-/** Legacy alias — kept for backwards compat; prefer the two functions above. */
+/** Legacy alias — prefer the two functions above. */
 export function formatCollectivePrice(space: PricingSource): string {
   return formatCollectiveAccessLabel(space)
 }
