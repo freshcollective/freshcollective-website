@@ -127,6 +127,10 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
             creator_name=creator_names.get(s.creator_id) if s.creator_id else None,
             has_upcoming_event=s.id in upcoming_event_space_ids,
             themes=s.themes or [],
+            pricing_type=s.pricing_type or 'free',
+            pricing_amount_cents=s.pricing_amount_cents,
+            pricing_currency=s.pricing_currency or 'AUD',
+            pricing_note=s.pricing_note,
         )
         for s in spaces
     ]

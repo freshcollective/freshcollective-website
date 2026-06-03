@@ -4,7 +4,7 @@ import { useRef, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
-import type { CreatorSpaceDetail } from '@/types/platform'
+import type { CreatorSpaceDetail, PricingType } from '@/types/platform'
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
 const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png']
@@ -44,6 +44,13 @@ export default function CollectiveSettingsForm({ space }: Props) {
   const [status, setStatus] = useState(space.status)
   const [themes, setThemes] = useState<string[]>(space.themes ?? [])
 
+  // Pricing
+  const [pricingType, setPricingType] = useState<PricingType>(space.pricing_type ?? 'free')
+  const [pricingAmountDisplay, setPricingAmountDisplay] = useState<string>(
+    space.pricing_amount_cents ? String(Math.round(space.pricing_amount_cents / 100)) : ''
+  )
+  const [pricingNote, setPricingNote] = useState(space.pricing_note ?? '')
+
   useEffect(() => {
     setSlugOrigin(window.location.origin)
   }, [])
@@ -60,6 +67,10 @@ export default function CollectiveSettingsForm({ space }: Props) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+
+  function isPaidType(type: PricingType): boolean {
+    return type === 'paid_one_time' || type === 'paid_monthly' || type === 'paid_annual'
+  }
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     setBannerError(null)
@@ -151,6 +162,12 @@ export default function CollectiveSettingsForm({ space }: Props) {
           status,
           timezone,
           themes,
+          pricing_type: pricingType,
+          pricing_amount_cents: isPaidType(pricingType) && pricingAmountDisplay
+            ? Math.round(parseFloat(pricingAmountDisplay) * 100) || null
+            : null,
+          pricing_currency: 'AUD',
+          pricing_note: pricingNote.trim() || null,
         }),
       })
 
@@ -483,6 +500,77 @@ export default function CollectiveSettingsForm({ space }: Props) {
                 </label>
               ))}
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Public pricing ── */}
+      <div className="rounded-2xl border border-border bg-white p-6">
+        <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Public pricing</h2>
+        <p className="mb-5 text-[14px] text-slate-500">
+          Shown publicly so people understand the cost before joining. Payment processing will be connected separately.
+        </p>
+
+        <div className="space-y-4">
+          {/* Pricing type */}
+          <div>
+            <label htmlFor="pricing-type" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
+              Pricing type
+            </label>
+            <select
+              id="pricing-type"
+              value={pricingType}
+              onChange={(e) => setPricingType(e.target.value as PricingType)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 shadow-sm outline-none transition-colors focus:border-teal-400"
+            >
+              <option value="free">Free</option>
+              <option value="paid_one_time">Paid — one time</option>
+              <option value="paid_monthly">Paid — monthly</option>
+              <option value="paid_annual">Paid — annual</option>
+              <option value="invite_only">Invite only</option>
+              <option value="coming_soon">Paid — coming soon</option>
+            </select>
+          </div>
+
+          {/* Amount — only shown for paid types */}
+          {isPaidType(pricingType) && (
+            <div>
+              <label htmlFor="pricing-amount" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
+                Amount (AUD)
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-[15px] text-slate-400">$</span>
+                <input
+                  id="pricing-amount"
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="e.g. 49"
+                  value={pricingAmountDisplay}
+                  onChange={(e) => setPricingAmountDisplay(e.target.value)}
+                  className="w-36 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 shadow-sm outline-none transition-colors focus:border-teal-400"
+                />
+                <span className="text-[14px] text-slate-400">
+                  AUD{pricingType === 'paid_monthly' ? ' / month' : pricingType === 'paid_annual' ? ' / year' : ''}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Optional note */}
+          <div>
+            <label htmlFor="pricing-note" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
+              Pricing note <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <input
+              id="pricing-note"
+              type="text"
+              value={pricingNote}
+              onChange={(e) => setPricingNote(e.target.value)}
+              maxLength={300}
+              placeholder="e.g. Founding member rate — limited spots"
+              className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 shadow-sm outline-none transition-colors focus:border-teal-400"
+            />
           </div>
         </div>
       </div>

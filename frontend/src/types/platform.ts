@@ -24,6 +24,10 @@ export interface SpaceResponse {
   timezone: string
   cover_image_url: string | null
   pathways: PathwaySummary[]
+  pricing_type: PricingType
+  pricing_amount_cents: number | null
+  pricing_currency: string
+  pricing_note: string | null
   guidance_start_title: string | null
   guidance_start_body: string | null
   guidance_focus_title: string | null
@@ -263,6 +267,10 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   timezone: string
   cover_image_url: string | null
   themes: string[]
+  pricing_type: PricingType
+  pricing_amount_cents: number | null
+  pricing_currency: string
+  pricing_note: string | null
 }
 
 export interface CreatorPathway {
@@ -358,6 +366,8 @@ export interface StepResource {
   created_at: string
 }
 
+export type PricingType = 'free' | 'paid_one_time' | 'paid_monthly' | 'paid_annual' | 'invite_only' | 'coming_soon'
+
 export interface PublicSpaceCard {
   id: string
   slug: string
@@ -371,6 +381,10 @@ export interface PublicSpaceCard {
   creator_name: string | null
   has_upcoming_event: boolean
   themes: string[]
+  pricing_type: PricingType
+  pricing_amount_cents: number | null
+  pricing_currency: string
+  pricing_note: string | null
 }
 
 export interface SpaceInvitation {

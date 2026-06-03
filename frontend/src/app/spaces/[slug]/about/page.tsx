@@ -1,5 +1,6 @@
 import { getSpace, getSpaceMembers, getMe, getSpaceEvents, getMySpaceAccess } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
+import { formatCollectivePrice } from '@/lib/pricing'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Avatar from '@/components/ui/Avatar'
@@ -129,6 +130,10 @@ export default async function SpaceAboutPage({ params }: Props) {
                     <span>{gatheringCount} upcoming {gatheringCount === 1 ? 'gathering' : 'gatherings'}</span>
                   </span>
                 )}
+                <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
+                  <span>🏷️</span>
+                  <span>{formatCollectivePrice(space)}</span>
+                </span>
                 {creatorName && (
                   <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
                     <span>✨</span>
@@ -224,6 +229,15 @@ export default async function SpaceAboutPage({ params }: Props) {
                 </div>
               )}
 
+              {/* Pricing */}
+              <div className="mb-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+                <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Price</p>
+                <p className="text-[15px] font-semibold text-navy-900">{formatCollectivePrice(space)}</p>
+                {space.pricing_note && (
+                  <p className="mt-1 text-[12px] text-slate-500">{space.pricing_note}</p>
+                )}
+              </div>
+
               <div className="mb-4 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
 
               {/* CTAs */}
@@ -235,6 +249,7 @@ export default async function SpaceAboutPage({ params }: Props) {
                 hasPendingRequest={myAccess?.has_pending_request ?? false}
                 hasPendingInvite={myAccess?.has_pending_invite ?? false}
                 canManage={canManage}
+                pricingType={space.pricing_type}
               />
             </div>
           </div>

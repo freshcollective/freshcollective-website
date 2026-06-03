@@ -404,6 +404,16 @@ def update_space(
         space.timezone = body.timezone
     if body.themes is not None:
         space.themes = body.themes
+    if body.pricing_type is not None:
+        space.pricing_type = body.pricing_type
+        if body.pricing_type == "free":
+            space.pricing_amount_cents = None
+    if body.pricing_amount_cents is not None:
+        space.pricing_amount_cents = body.pricing_amount_cents
+    if body.pricing_currency is not None:
+        space.pricing_currency = body.pricing_currency
+    if body.pricing_note is not None:
+        space.pricing_note = body.pricing_note.strip() or None
     if body.guidance_start_title is not None:
         space.guidance_start_title = body.guidance_start_title.strip() or None
     if body.guidance_start_body is not None:

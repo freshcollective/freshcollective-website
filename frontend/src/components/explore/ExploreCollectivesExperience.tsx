@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
+import { formatCollectivePrice } from '@/lib/pricing'
 import Container from '@/components/layout/Container'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
 import type { SpaceWithMeta } from './spaceMeta'
@@ -132,38 +133,53 @@ function CollectiveCard({
 
       {/* Footer row */}
       <div
-        className="mt-auto flex items-center justify-between gap-3 border-t px-4 py-3"
+        className="mt-auto border-t px-4 py-3"
         style={{ borderColor: 'rgba(0,0,0,0.06)' }}
       >
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-slate-400">
-          {primaryTheme && (
-            <span
-              className="rounded px-1.5 py-0.5 text-[10px] font-medium"
-              style={{ background: `${space.accentColor}18`, color: space.accentColor }}
-            >
-              {primaryTheme}
-            </span>
-          )}
-          {space.creator_name && (
-            <span className="hidden sm:inline">
-              by <span className="font-medium text-slate-600">{space.creator_name}</span>
-            </span>
-          )}
-          {space.pathway_count > 0 && (
-            <span>{space.pathway_count} {space.pathway_count === 1 ? 'pathway' : 'pathways'}</span>
-          )}
-          {space.member_count > 0 && (
-            <span className="hidden sm:inline">
-              · {space.member_count} {space.member_count === 1 ? 'member' : 'members'}
-            </span>
-          )}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-slate-400">
+            {primaryTheme && (
+              <span
+                className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                style={{ background: `${space.accentColor}18`, color: space.accentColor }}
+              >
+                {primaryTheme}
+              </span>
+            )}
+            {space.creator_name && (
+              <span className="hidden sm:inline">
+                by <span className="font-medium text-slate-600">{space.creator_name}</span>
+              </span>
+            )}
+            {space.pathway_count > 0 && (
+              <span>{space.pathway_count} {space.pathway_count === 1 ? 'pathway' : 'pathways'}</span>
+            )}
+            {space.member_count > 0 && (
+              <span className="hidden sm:inline">
+                · {space.member_count} {space.member_count === 1 ? 'member' : 'members'}
+              </span>
+            )}
+          </div>
+          <Link
+            href={href}
+            className="shrink-0 text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
+          >
+            {ctaLabel}
+          </Link>
         </div>
-        <Link
-          href={href}
-          className="shrink-0 text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
-        >
-          {ctaLabel}
-        </Link>
+        {/* Pricing pill */}
+        <div className="mt-2">
+          <span
+            className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium"
+            style={{
+              borderColor: 'rgba(0,0,0,0.08)',
+              background: 'rgba(0,0,0,0.03)',
+              color: '#475569',
+            }}
+          >
+            {formatCollectivePrice(space)}
+          </span>
+        </div>
       </div>
     </div>
   )

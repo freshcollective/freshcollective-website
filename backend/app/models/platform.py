@@ -178,6 +178,16 @@ class Space(Base):
     themes: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default="'[]'"
     )
+    # Public pricing display — display/config only; payment processing is separate
+    pricing_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="free", server_default="free"
+    )
+    pricing_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pricing_currency: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="AUD", server_default="AUD"
+    )
+    pricing_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
     # Creator-managed guidance panel shown in member-facing sidebar
     guidance_start_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     guidance_start_body: Mapped[str | None] = mapped_column(Text, nullable=True)

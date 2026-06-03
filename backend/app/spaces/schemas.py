@@ -47,6 +47,10 @@ class SpaceResponse(BaseModel):
     timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
     pathways: list[PathwaySummary] = []
+    pricing_type: str = 'free'
+    pricing_amount_cents: int | None = None
+    pricing_currency: str = 'AUD'
+    pricing_note: str | None = None
     guidance_start_title: str | None = None
     guidance_start_body: str | None = None
     guidance_focus_title: str | None = None
@@ -198,6 +202,10 @@ class PublicSpaceCard(BaseModel):
     creator_name: str | None
     has_upcoming_event: bool
     themes: list[str] = []
+    pricing_type: str = 'free'
+    pricing_amount_cents: int | None = None
+    pricing_currency: str = 'AUD'
+    pricing_note: str | None = None
 
 
 # ---------------------------------------------------------------------------

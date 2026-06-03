@@ -50,6 +50,11 @@ class SpaceCreateRequest(BaseModel):
         return v
 
 
+ALLOWED_PRICING_TYPES: set[str] = {
+    "free", "paid_one_time", "paid_monthly", "paid_annual", "invite_only", "coming_soon",
+}
+
+
 class SpaceUpdateRequest(BaseModel):
     name: str | None = None
     slug: str | None = None
@@ -59,6 +64,11 @@ class SpaceUpdateRequest(BaseModel):
     status: str | None = None
     timezone: str | None = None
     themes: list[str] | None = None
+    # Public pricing display
+    pricing_type: str | None = None
+    pricing_amount_cents: int | None = None
+    pricing_currency: str | None = None
+    pricing_note: str | None = None
     guidance_start_title: str | None = None
     guidance_start_body: str | None = None
     guidance_focus_title: str | None = None
@@ -98,6 +108,13 @@ class SpaceUpdateRequest(BaseModel):
             raise ValueError("Invalid status.")
         return v
 
+    @field_validator("pricing_type")
+    @classmethod
+    def validate_pricing_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in ALLOWED_PRICING_TYPES:
+            raise ValueError(f"Invalid pricing_type. Must be one of: {sorted(ALLOWED_PRICING_TYPES)}")
+        return v
+
     @field_validator("themes")
     @classmethod
     def validate_themes(cls, v: list[str] | None) -> list[str] | None:
@@ -120,6 +137,10 @@ class SpaceDetail(BaseModel):
     timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
     themes: list[str] = []
+    pricing_type: str = 'free'
+    pricing_amount_cents: int | None = None
+    pricing_currency: str = 'AUD'
+    pricing_note: str | None = None
     guidance_start_title: str | None = None
     guidance_start_body: str | None = None
     guidance_focus_title: str | None = None

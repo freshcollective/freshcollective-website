@@ -4,6 +4,8 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiUrl } from '@/lib/api'
+import { isPaidPricingType } from '@/lib/pricing'
+import type { PricingType } from '@/types/platform'
 
 type CTAState = 'idle' | 'loading' | 'joined' | 'requested' | 'error'
 
@@ -15,6 +17,7 @@ interface Props {
   hasPendingRequest: boolean
   hasPendingInvite: boolean
   canManage: boolean
+  pricingType: PricingType
 }
 
 export default function SpaceAboutCTA({
@@ -25,6 +28,7 @@ export default function SpaceAboutCTA({
   hasPendingRequest,
   hasPendingInvite,
   canManage,
+  pricingType,
 }: Props) {
   const router = useRouter()
   const [state, setState] = useState<CTAState>('idle')
@@ -118,6 +122,41 @@ export default function SpaceAboutCTA({
         <Link href="/login" className={ghostBtn}>
           Sign in to accept
         </Link>
+      </div>
+    )
+  }
+
+  // Invite-only pricing — no self-service join or request
+  if (pricingType === 'invite_only') {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center text-[13px] font-medium text-slate-500">
+        Invite only
+      </div>
+    )
+  }
+
+  // Coming-soon pricing — no join button yet
+  if (pricingType === 'coming_soon') {
+    return (
+      <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-2.5 text-center text-[13px] font-medium text-amber-700">
+        Paid access coming soon
+      </div>
+    )
+  }
+
+  // Paid collective — show informational button; payment not yet connected
+  if (isPaidPricingType(pricingType)) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div
+          className="block w-full rounded-xl px-4 py-2.5 text-center text-[14px] font-semibold text-white opacity-60"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Join — payment coming soon
+        </div>
+        <p className="text-center text-[11px] text-slate-400">
+          Payment processing is being set up. Check back soon.
+        </p>
       </div>
     )
   }
