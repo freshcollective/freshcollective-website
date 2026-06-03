@@ -18,8 +18,24 @@ export default async function ResourcesPage() {
         </p>
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Resources</h1>
         <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
-          Add links, files, guides, and tools that are visible to all members of your collective.
+          Add standalone links, files, guides, and tools for your members.
         </p>
+      </div>
+
+      {/* Pathway resources info */}
+      <div
+        className="mb-6 flex items-start gap-3 rounded-2xl border px-5 py-4"
+        style={{ borderColor: 'rgba(56,160,158,0.25)', background: 'rgba(56,160,158,0.04)' }}
+      >
+        <span className="mt-0.5 text-[16px]">◫</span>
+        <div>
+          <p className="text-[13px] font-semibold text-navy-900">Pathway resources</p>
+          <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">
+            Resources attached inside pathway steps are managed within each pathway. They appear
+            automatically on the member Resources page, grouped by pathway, for members who have
+            access.
+          </p>
+        </div>
       </div>
 
       {!space ? (

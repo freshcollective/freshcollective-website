@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessRequest, CreatorBillingResponse, InviteLookupResponse, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessRequest, AggregatedResourcesResponse, CreatorBillingResponse, InviteLookupResponse, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 export const ACTIVE_SPACE_COOKIE = 'fc_creator_space'
 
@@ -157,9 +157,9 @@ export const getCreatorPathways = cache(async (slug: string) => {
   return res.json()
 })
 
-export const getSpaceResources = cache(async (slug: string) => {
+export const getSpaceResources = cache(async (slug: string): Promise<AggregatedResourcesResponse> => {
   const res = await fetchWithSession(`/api/spaces/${slug}/resources`)
-  if (!res.ok) return []
+  if (!res.ok) return { standalone_resources: [], pathway_resource_groups: [] }
   return res.json()
 })
 

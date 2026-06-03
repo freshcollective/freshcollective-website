@@ -388,6 +388,35 @@ export interface CollectiveResource {
   file_size: number | null
   sort_order: number
   created_at: string
+  source?: 'standalone' | 'pathway'
+}
+
+export interface PathwayResourceItem {
+  id: string
+  title: string
+  description: string | null
+  resource_type: string
+  url: string | null
+  file_name: string | null
+  file_size: number | null
+  mime_type: string | null
+  is_downloadable: boolean
+  step_id: string
+  step_title: string
+  source: 'pathway'
+}
+
+export interface PathwayResourceGroup {
+  pathway_id: string
+  pathway_title: string
+  pathway_slug: string
+  access_label: string
+  resources: PathwayResourceItem[]
+}
+
+export interface AggregatedResourcesResponse {
+  standalone_resources: CollectiveResource[]
+  pathway_resource_groups: PathwayResourceGroup[]
 }
 
 export interface CreatorResource extends CollectiveResource {

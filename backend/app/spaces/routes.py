@@ -52,6 +52,9 @@ from app.spaces.schemas import (
     SpaceResponse,
     SpaceSummary,
     CollectiveResourceResponse,
+    AggregatedResourcesResponse,
+    PathwayResourceGroup,
+    PathwayResourceItem,
     StepCommentAuthor,
     StepCommentCreate,
     StepCommentItem,
@@ -763,7 +766,7 @@ def get_event(
 # Space Resources (member-facing — members only, published resources only)
 # ---------------------------------------------------------------------------
 
-@router.get("/{slug}/resources", response_model=list[CollectiveResourceResponse])
+@router.get("/{slug}/resources", response_model=AggregatedResourcesResponse)
 def list_space_resources(
     slug: str,
     db: Session = Depends(get_db),
@@ -779,9 +782,11 @@ def list_space_resources(
         )
         .first()
     )
-    if not membership and current_user.role != "admin":
+    if not membership and current_user.role not in ("admin", "creator"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Members only.")
-    return (
+
+    # -- Standalone collective resources (published only) ---------------------
+    standalone_orm = (
         db.query(SpaceResource)
         .filter(
             SpaceResource.space_id == space.id,
@@ -789,6 +794,90 @@ def list_space_resources(
         )
         .order_by(SpaceResource.sort_order, SpaceResource.created_at)
         .all()
+    )
+    standalone = [
+        CollectiveResourceResponse.model_validate(r) for r in standalone_orm
+    ]
+
+    # -- Pathway resources (step_resources for accessible active pathways) ----
+    pathways = (
+        db.query(Pathway)
+        .filter(Pathway.space_id == space.id, Pathway.status == "active")
+        .order_by(Pathway.position)
+        .all()
+    )
+
+    pathway_groups: list[PathwayResourceGroup] = []
+    for pathway in pathways:
+        if not _compute_pathway_access(current_user, pathway, space, db):
+            continue
+
+        steps = (
+            db.query(PathwayStep)
+            .filter(PathwayStep.pathway_id == pathway.id)
+            .order_by(PathwayStep.position)
+            .all()
+        )
+        if not steps:
+            continue
+
+        step_ids = [s.id for s in steps]
+        step_map = {s.id: s for s in steps}
+
+        step_resources = (
+            db.query(StepResource)
+            .filter(StepResource.step_id.in_(step_ids))
+            .order_by(StepResource.position)
+            .all()
+        )
+        # TODO: also surface step.content_url for video/audio steps once
+        # there is a clean way to distinguish standalone content from
+        # supplementary resources (content_url is the step's primary media,
+        # not a supplementary resource — skip for now).
+        if not step_resources:
+            continue
+
+        access_type = (
+            pathway.access_type.value
+            if hasattr(pathway.access_type, "value")
+            else str(pathway.access_type or "free")
+        )
+        access_label = (
+            "Free" if access_type == "free"
+            else "Included" if access_type == "included"
+            else "Purchased"
+        )
+
+        items = [
+            PathwayResourceItem(
+                id=sr.id,
+                title=sr.title,
+                description=sr.description,
+                resource_type=sr.resource_type,
+                url=sr.url,
+                file_name=sr.file_name,
+                file_size=sr.file_size,
+                mime_type=sr.mime_type,
+                is_downloadable=sr.is_downloadable,
+                step_id=sr.step_id,
+                step_title=step_map[sr.step_id].title if sr.step_id in step_map else "",
+                source="pathway",
+            )
+            for sr in step_resources
+            if sr.step_id in step_map
+        ]
+        if items:
+            pathway_groups.append(PathwayResourceGroup(
+                pathway_id=pathway.id,
+                pathway_title=pathway.title,
+                pathway_slug=pathway.slug,
+                access_label=access_label,
+                resources=items,
+            ))
+
+    return AggregatedResourcesResponse(
+        standalone_resources=standalone,
+        pathway_resource_groups=pathway_groups,
     )
 
 

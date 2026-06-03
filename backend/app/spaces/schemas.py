@@ -247,6 +247,35 @@ class CollectiveResourceResponse(BaseModel):
     file_size: int | None
     sort_order: int
     created_at: datetime
+    source: str = "standalone"
+
+
+class PathwayResourceItem(BaseModel):
+    id: str
+    title: str
+    description: str | None
+    resource_type: str
+    url: str | None
+    file_name: str | None
+    file_size: int | None
+    mime_type: str | None
+    is_downloadable: bool
+    step_id: str
+    step_title: str
+    source: str = "pathway"
+
+
+class PathwayResourceGroup(BaseModel):
+    pathway_id: str
+    pathway_title: str
+    pathway_slug: str
+    access_label: str
+    resources: list[PathwayResourceItem]
+
+
+class AggregatedResourcesResponse(BaseModel):
+    standalone_resources: list[CollectiveResourceResponse]
+    pathway_resource_groups: list[PathwayResourceGroup]
 
 
 # ---------------------------------------------------------------------------
