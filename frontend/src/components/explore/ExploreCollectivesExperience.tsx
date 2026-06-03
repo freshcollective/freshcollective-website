@@ -27,7 +27,9 @@ function CollectiveCard({
   const cs = getCollectiveCoverStyle(space.slug)
   const resolvedImageUrl = resolveMediaUrl(space.cover_image_url)
   const hasImage = Boolean(resolvedImageUrl)
-  const href = space.isReal ? `/spaces/${space.slug}` : '/signup'
+  const href = space.isReal
+    ? (isJoined ? `/spaces/${space.slug}` : `/spaces/${space.slug}/about`)
+    : '/signup'
 
   const titleColor = hasImage ? '#FFFFFF' : (cs.isDark ? '#FFFFFF' : '#152236')
   const taglineColor = hasImage

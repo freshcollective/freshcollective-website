@@ -1,25 +1,26 @@
+import { cookies } from 'next/headers'
 import SiteShell from '@/components/layout/SiteShell'
-import { getPublicSpaces, getMyMemberships, getMe } from '@/lib/serverApi'
+import { getPublicSpaces } from '@/lib/serverApi'
+import { SESSION_COOKIE } from '@/lib/session'
 import ExploreCollectivesExperience from '@/components/explore/ExploreCollectivesExperience'
 import { toSpaceWithMeta } from '@/components/explore/spaceMeta'
-import type { PublicSpaceCard, SpaceMembership } from '@/types/platform'
+import type { PublicSpaceCard } from '@/types/platform'
 
 export default async function SpacesPage() {
-  const [apiSpaces, memberships, me]: [PublicSpaceCard[], SpaceMembership[], unknown] =
-    await Promise.all([getPublicSpaces(), getMyMemberships(), getMe()])
+  const [apiSpaces, cookieStore] = await Promise.all([
+    getPublicSpaces(),
+    cookies(),
+  ])
 
-  const spaces = apiSpaces.map(toSpaceWithMeta)
-
-  const joinedSlugs = (memberships as SpaceMembership[])
-    .filter((m) => m.status === 'active')
-    .map((m) => m.space_slug)
+  const isLoggedIn = !!cookieStore.get(SESSION_COOKIE)
+  const spaces = (apiSpaces as PublicSpaceCard[]).map(toSpaceWithMeta)
 
   return (
     <SiteShell>
       <ExploreCollectivesExperience
         spaces={spaces}
-        joinedSlugs={joinedSlugs}
-        isLoggedIn={!!me}
+        joinedSlugs={[]}
+        isLoggedIn={isLoggedIn}
       />
     </SiteShell>
   )
