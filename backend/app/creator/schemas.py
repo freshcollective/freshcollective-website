@@ -157,6 +157,95 @@ class SpaceDetail(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Space Resources (collective-level)
+# ---------------------------------------------------------------------------
+
+ALLOWED_RESOURCE_TYPES: set[str] = {
+    "link", "file", "replay", "guide", "template", "audio", "video", "other",
+}
+
+
+class ResourceCreateRequest(BaseModel):
+    title: str
+    description: str | None = None
+    resource_type: str = "link"
+    url: str | None = None
+    status: str = "draft"
+    sort_order: int = 0
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Title is required.")
+        if len(v) > 300:
+            raise ValueError("Title must be 300 characters or fewer.")
+        return v
+
+    @field_validator("resource_type")
+    @classmethod
+    def validate_resource_type(cls, v: str) -> str:
+        if v not in ALLOWED_RESOURCE_TYPES:
+            raise ValueError(f"Invalid resource_type. Must be one of: {sorted(ALLOWED_RESOURCE_TYPES)}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        if v not in ("draft", "published"):
+            raise ValueError("Status must be 'draft' or 'published'.")
+        return v
+
+
+class ResourceUpdateRequest(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    resource_type: str | None = None
+    url: str | None = None
+    status: str | None = None
+    sort_order: int | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, v: str | None) -> str | None:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                raise ValueError("Title cannot be empty.")
+        return v
+
+    @field_validator("resource_type")
+    @classmethod
+    def validate_resource_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in ALLOWED_RESOURCE_TYPES:
+            raise ValueError(f"Invalid resource_type. Must be one of: {sorted(ALLOWED_RESOURCE_TYPES)}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("draft", "published"):
+            raise ValueError("Status must be 'draft' or 'published'.")
+        return v
+
+
+class ResourceResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    title: str
+    description: str | None
+    resource_type: str
+    url: str | None
+    file_name: str | None
+    file_size: int | None
+    status: str
+    sort_order: int
+    created_at: datetime
+    updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
 # Pathways
 # ---------------------------------------------------------------------------
 

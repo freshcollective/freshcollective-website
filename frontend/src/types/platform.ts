@@ -376,6 +376,25 @@ export interface StepResource {
 
 export type PricingType = 'free' | 'paid_one_time' | 'paid_monthly' | 'paid_annual' | 'invite_only' | 'coming_soon'
 
+export type ResourceType = 'link' | 'file' | 'replay' | 'guide' | 'template' | 'audio' | 'video' | 'other'
+
+export interface CollectiveResource {
+  id: string
+  title: string
+  description: string | null
+  resource_type: ResourceType
+  url: string | null
+  file_name: string | null
+  file_size: number | null
+  sort_order: number
+  created_at: string
+}
+
+export interface CreatorResource extends CollectiveResource {
+  status: 'draft' | 'published'
+  updated_at: string
+}
+
 export interface PublicSpaceCard {
   id: string
   slug: string

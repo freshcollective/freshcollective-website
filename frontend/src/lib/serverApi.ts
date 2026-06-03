@@ -157,6 +157,18 @@ export const getCreatorPathways = cache(async (slug: string) => {
   return res.json()
 })
 
+export const getSpaceResources = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/spaces/${slug}/resources`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCreatorResources = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/resources`)
+  if (!res.ok) return []
+  return res.json()
+})
+
 export const getCreatorPathway = cache(async (slug: string, pathwaySlug: string) => {
   const res = await fetchWithSession(`/api/creator/spaces/${slug}/pathways/${pathwaySlug}`)
   if (!res.ok) return null

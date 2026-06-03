@@ -25,6 +25,7 @@ from app.models.platform import (
     SpaceMemberNotificationPrefs,
     SpaceRole,
     SpaceMembershipStatus,
+    SpaceResource,
     StepComment,
     StepProgress,
     StepResource,
@@ -50,6 +51,7 @@ from app.spaces.schemas import (
     SpaceAccessStatus,
     SpaceResponse,
     SpaceSummary,
+    CollectiveResourceResponse,
     StepCommentAuthor,
     StepCommentCreate,
     StepCommentItem,
@@ -755,6 +757,39 @@ def get_event(
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
     return event
+
+
+# ---------------------------------------------------------------------------
+# Space Resources (member-facing — members only, published resources only)
+# ---------------------------------------------------------------------------
+
+@router.get("/{slug}/resources", response_model=list[CollectiveResourceResponse])
+def list_space_resources(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    space = _get_space_or_404(slug, db)
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.status == "active",
+        )
+        .first()
+    )
+    if not membership and current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Members only.")
+    return (
+        db.query(SpaceResource)
+        .filter(
+            SpaceResource.space_id == space.id,
+            SpaceResource.status == "published",
+        )
+        .order_by(SpaceResource.sort_order, SpaceResource.created_at)
+        .all()
+    )
 
 
 @router.get("/{slug}/pathways/{pathway_slug}", response_model=PathwaySummary)

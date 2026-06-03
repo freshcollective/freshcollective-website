@@ -48,6 +48,9 @@ from app.creator.schemas import (
     PathwayCreateRequest,
     PathwayResponse,
     PathwayUpdateRequest,
+    ResourceCreateRequest,
+    ResourceResponse,
+    ResourceUpdateRequest,
     PostCreateRequest,
     PostManageResponse,
     PostUpdateRequest,
@@ -90,6 +93,7 @@ from app.models.platform import (
     SpaceInvitation,
     SpaceMembership,
     SpaceMembershipStatus,
+    SpaceResource,
     SpaceRole,
     StepProgress,
     StepResource,
@@ -2662,6 +2666,143 @@ def delete_about_block(
         raise HTTPException(status_code=404, detail="About block not found.")
 
     db.delete(block)
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Space Resources (collective-level)
+# ---------------------------------------------------------------------------
+
+@router.get("/spaces/{slug}/resources", response_model=list[ResourceResponse])
+def list_space_resources(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    return (
+        db.query(SpaceResource)
+        .filter(SpaceResource.space_id == space.id)
+        .order_by(SpaceResource.sort_order, SpaceResource.created_at)
+        .all()
+    )
+
+
+@router.post("/spaces/{slug}/resources", response_model=ResourceResponse, status_code=201)
+def create_space_resource(
+    slug: str,
+    body: ResourceCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    resource = SpaceResource(
+        id=uuid4().hex,
+        space_id=space.id,
+        created_by_id=current_user.id,
+        title=body.title.strip(),
+        description=body.description.strip() if body.description else None,
+        resource_type=body.resource_type,
+        url=body.url.strip() if body.url else None,
+        status=body.status,
+        sort_order=body.sort_order,
+    )
+    db.add(resource)
+    db.commit()
+    db.refresh(resource)
+    return resource
+
+
+@router.post("/spaces/{slug}/resources/upload", response_model=ResourceResponse, status_code=201)
+async def upload_space_resource_file(
+    slug: str,
+    title: str = Form(...),
+    description: str | None = Form(None),
+    resource_type: str = Form("file"),
+    status: str = Form("draft"),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    data = await file.read()
+    filename = file.filename or "resource"
+    try:
+        storage_path, file_url, _, stored_filename, file_size = save_media_file(
+            data, filename, file.content_type or "application/octet-stream", space.slug
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    resource = SpaceResource(
+        id=uuid4().hex,
+        space_id=space.id,
+        created_by_id=current_user.id,
+        title=title.strip(),
+        description=description.strip() if description else None,
+        resource_type=resource_type if resource_type in ("link", "file", "replay", "guide", "template", "audio", "video", "other") else "file",
+        url=file_url,
+        file_name=filename,
+        file_size=file_size,
+        status=status if status in ("draft", "published") else "draft",
+        sort_order=0,
+    )
+    db.add(resource)
+    db.commit()
+    db.refresh(resource)
+    return resource
+
+
+@router.patch("/spaces/{slug}/resources/{resource_id}", response_model=ResourceResponse)
+def update_space_resource(
+    slug: str,
+    resource_id: str,
+    body: ResourceUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    resource = db.query(SpaceResource).filter(
+        SpaceResource.id == resource_id,
+        SpaceResource.space_id == space.id,
+    ).first()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found.")
+    if body.title is not None:
+        resource.title = body.title
+    if body.description is not None:
+        resource.description = body.description.strip() or None
+    if body.resource_type is not None:
+        resource.resource_type = body.resource_type
+    if body.url is not None:
+        resource.url = body.url.strip() or None
+    if body.status is not None:
+        resource.status = body.status
+    if body.sort_order is not None:
+        resource.sort_order = body.sort_order
+    db.commit()
+    db.refresh(resource)
+    return resource
+
+
+@router.delete("/spaces/{slug}/resources/{resource_id}", status_code=204)
+def delete_space_resource(
+    slug: str,
+    resource_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    resource = db.query(SpaceResource).filter(
+        SpaceResource.id == resource_id,
+        SpaceResource.space_id == space.id,
+    ).first()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found.")
+    # If it's an uploaded file, clean up from disk
+    if resource.url and resource.url.startswith("/api/uploads/"):
+        delete_file(resource.url.removeprefix("/api/uploads/"))
+    db.delete(resource)
     db.commit()
 
 

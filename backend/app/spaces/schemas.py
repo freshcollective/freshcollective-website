@@ -233,6 +233,23 @@ class PublicSpaceCard(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Space Resources (member-facing)
+# ---------------------------------------------------------------------------
+
+class CollectiveResourceResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    title: str
+    description: str | None
+    resource_type: str
+    url: str | None
+    file_name: str | None
+    file_size: int | None
+    sort_order: int
+    created_at: datetime
+
+
+# ---------------------------------------------------------------------------
 # Step Comments (Questions & discussion)
 # ---------------------------------------------------------------------------
 

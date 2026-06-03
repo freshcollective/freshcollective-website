@@ -223,6 +223,9 @@ class Space(Base):
     community_posts: Mapped[list["CommunityPost"]] = relationship(
         "CommunityPost", back_populates="space", cascade="all, delete-orphan"
     )
+    resources: Mapped[list["SpaceResource"]] = relationship(
+        "SpaceResource", back_populates="space", cascade="all, delete-orphan"
+    )
 
 
 class SpaceMembership(Base):
@@ -1227,4 +1230,60 @@ class PathwayEntitlement(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+class SpaceResource(Base):
+    """
+    A collective-level resource shared by the creator with all members.
+
+    Resources are distinct from StepResource (pathway step attachments).
+    They live at the collective level and appear on the Resources tab.
+
+    resource_type values: link | file | replay | guide | template | audio | video | other
+    status values: draft | published
+
+    TODO: add access_level field (included | paid | public_preview) when paid resources are needed.
+    """
+
+    __tablename__ = "space_resources"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: uuid4().hex)
+    space_id: Mapped[str] = mapped_column(
+        String, ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_by_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # link | file | replay | guide | template | audio | video | other
+    resource_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="link", server_default="link"
+    )
+    # External URL for link resources; uploaded file URL for file resources
+    url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    file_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # draft | published
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default="draft"
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    space: Mapped["Space"] = relationship("Space", back_populates="resources")
+
+    __table_args__ = (
+        Index("ix_space_resources_space_status", "space_id", "status"),
     )

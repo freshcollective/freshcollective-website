@@ -31,8 +31,9 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavPro
       alsoActiveOn: new RegExp(`^/spaces/${spaceSlug}$`),
     },
     { label: 'Pathways',  href: `${base}/pathways`, icon: '◎' },
-    { label: 'Gatherings', href: `${base}/events`,  icon: '◷' },
-    { label: 'Members',   href: `${base}/members`,  icon: '◉' },
+    { label: 'Gatherings', href: `${base}/events`,    icon: '◷' },
+    { label: 'Resources',  href: `${base}/resources`, icon: '◫' },
+    { label: 'Members',    href: `${base}/members`,   icon: '◉' },
     { label: 'About',     href: `${base}/about`,    icon: '◇' },
   ]
 
