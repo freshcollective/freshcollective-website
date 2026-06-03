@@ -24,6 +24,7 @@ const TEAL_ACCENT = {
   labelBg:     'rgba(56,160,158,0.10)',
   labelText:   '#1E6E6C',
   headingLine: '#38A09E',
+  btnBg:       'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
 }
 
 const GOLD_ACCENT = {
@@ -33,6 +34,7 @@ const GOLD_ACCENT = {
   labelBg:     'rgba(226,193,79,0.14)',
   labelText:   '#7A5A00',
   headingLine: '#D6B13F',
+  btnBg:       '#071824',
 }
 
 type Accent = typeof TEAL_ACCENT
@@ -152,8 +154,8 @@ function ResourceCard({
             target={isFile ? undefined : '_blank'}
             rel={isFile ? undefined : 'noopener noreferrer'}
             download={isFile ? (resource.file_name ?? undefined) : undefined}
-            className="inline-flex items-center rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            className="inline-flex items-center rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-80"
+            style={{ background: accent.btnBg }}
           >
             {actionLabel}
           </a>
