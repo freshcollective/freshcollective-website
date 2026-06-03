@@ -14,76 +14,28 @@ interface Props {
 }
 
 // ---------------------------------------------------------------------------
-// Accent palette — teal for shared, 5 complementary for pathways
+// Two-accent system: teal for shared resources, gold for pathway resources
 // ---------------------------------------------------------------------------
 
 const TEAL_ACCENT = {
-  stripe:    'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.15) 100%)',
-  pillBg:    'rgba(56,160,158,0.10)',
-  pillText:  '#1E6E6C',
-  labelBg:   'rgba(56,160,158,0.10)',
-  labelText: '#1E6E6C',
+  stripe:      'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.15) 100%)',
+  pillBg:      'rgba(56,160,158,0.10)',
+  pillText:    '#1E6E6C',
+  labelBg:     'rgba(56,160,158,0.10)',
+  labelText:   '#1E6E6C',
   headingLine: '#38A09E',
 }
 
-const PATHWAY_ACCENTS = [
-  // Gold
-  {
-    stripe:    'linear-gradient(90deg, #C49A28 0%, rgba(196,154,40,0.12) 100%)',
-    pillBg:    'rgba(196,154,40,0.10)',
-    pillText:  '#7A5E0A',
-    labelBg:   'rgba(196,154,40,0.10)',
-    labelText: '#7A5E0A',
-    headingLine: '#C49A28',
-  },
-  // Slate blue
-  {
-    stripe:    'linear-gradient(90deg, #5278A8 0%, rgba(82,120,168,0.12) 100%)',
-    pillBg:    'rgba(82,120,168,0.10)',
-    pillText:  '#2E4F7A',
-    labelBg:   'rgba(82,120,168,0.10)',
-    labelText: '#2E4F7A',
-    headingLine: '#5278A8',
-  },
-  // Sage
-  {
-    stripe:    'linear-gradient(90deg, #5A8F72 0%, rgba(90,143,114,0.12) 100%)',
-    pillBg:    'rgba(90,143,114,0.10)',
-    pillText:  '#2A5E42',
-    labelBg:   'rgba(90,143,114,0.10)',
-    labelText: '#2A5E42',
-    headingLine: '#5A8F72',
-  },
-  // Muted lavender
-  {
-    stripe:    'linear-gradient(90deg, #7B6FAF 0%, rgba(123,111,175,0.12) 100%)',
-    pillBg:    'rgba(123,111,175,0.10)',
-    pillText:  '#4A3D8A',
-    labelBg:   'rgba(123,111,175,0.10)',
-    labelText: '#4A3D8A',
-    headingLine: '#7B6FAF',
-  },
-  // Dusty rose
-  {
-    stripe:    'linear-gradient(90deg, #A8706A 0%, rgba(168,112,106,0.12) 100%)',
-    pillBg:    'rgba(168,112,106,0.10)',
-    pillText:  '#6A3A38',
-    labelBg:   'rgba(168,112,106,0.10)',
-    labelText: '#6A3A38',
-    headingLine: '#A8706A',
-  },
-]
+const GOLD_ACCENT = {
+  stripe:      'linear-gradient(90deg, #D6B13F 0%, rgba(214,177,63,0.15) 100%)',
+  pillBg:      'rgba(226,193,79,0.14)',
+  pillText:    '#7A5A00',
+  labelBg:     'rgba(226,193,79,0.14)',
+  labelText:   '#7A5A00',
+  headingLine: '#D6B13F',
+}
 
 type Accent = typeof TEAL_ACCENT
-
-function pathwayAccent(pathwayId: string): Accent {
-  let hash = 0
-  for (let i = 0; i < pathwayId.length; i++) {
-    hash = ((hash << 5) - hash) + pathwayId.charCodeAt(i)
-    hash |= 0
-  }
-  return PATHWAY_ACCENTS[Math.abs(hash) % PATHWAY_ACCENTS.length]
-}
 
 // ---------------------------------------------------------------------------
 // Resource type maps
@@ -242,21 +194,24 @@ function SectionHeading({
 // ---------------------------------------------------------------------------
 
 function PathwayGroup({ group }: { group: PathwayResourceGroup }) {
-  const accent = pathwayAccent(group.pathway_id)
-
   return (
-    <div className="mb-8">
+    <div
+      className="mb-6 rounded-2xl px-5 py-5"
+      style={{
+        background: 'rgba(226,193,79,0.07)',
+        border: '1px solid rgba(214,177,63,0.30)',
+      }}
+    >
       {/* Pathway heading row */}
-      <div className="mb-3 flex items-center gap-2.5">
-        {/* Tiny coloured accent line */}
+      <div className="mb-4 flex items-center gap-2.5">
         <div
-          className="h-[14px] w-[3px] rounded-full shrink-0"
-          style={{ background: accent.headingLine }}
+          className="h-[14px] w-[3px] shrink-0 rounded-full"
+          style={{ background: GOLD_ACCENT.headingLine }}
         />
         <h3 className="text-[14px] font-semibold text-navy-900">{group.pathway_title}</h3>
         <span
           className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-          style={{ background: accent.labelBg, color: accent.labelText }}
+          style={{ background: GOLD_ACCENT.labelBg, color: GOLD_ACCENT.labelText }}
         >
           {group.access_label}
         </span>
@@ -264,7 +219,7 @@ function PathwayGroup({ group }: { group: PathwayResourceGroup }) {
 
       <div className="grid gap-4 sm:grid-cols-2">
         {group.resources.map((r) => (
-          <ResourceCard key={r.id} resource={r} accent={accent} />
+          <ResourceCard key={r.id} resource={r} accent={GOLD_ACCENT} />
         ))}
       </div>
     </div>
@@ -359,10 +314,10 @@ export default async function SpaceResourcesPage({ params }: Props) {
               </section>
             )}
 
-            {/* ── Pathway resources (complementary accents) ── */}
+            {/* ── Pathway resources (gold accent) ── */}
             {pathway_resource_groups.length > 0 && (
               <section>
-                <SectionHeading>From your pathways</SectionHeading>
+                <SectionHeading accent={GOLD_ACCENT}>From your pathways</SectionHeading>
                 {pathway_resource_groups.map((group) => (
                   <PathwayGroup key={group.pathway_id} group={group} />
                 ))}
