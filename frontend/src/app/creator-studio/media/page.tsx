@@ -13,12 +13,12 @@ export default async function MediaLibraryPage() {
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
             Creator Studio
           </p>
-          <h1 className="text-2xl text-navy-900 md:text-3xl">Media Library</h1>
+          <h1 className="text-2xl text-navy-900 md:text-3xl">Brand Library</h1>
         </div>
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
           <p className="mb-2 text-[16px] font-semibold text-navy-900">No collective yet</p>
           <p className="text-[14px] leading-relaxed text-slate-500">
-            Set up your collective first, then upload media files here.
+            Set up your collective first, then upload brand assets here.
           </p>
         </div>
       </div>

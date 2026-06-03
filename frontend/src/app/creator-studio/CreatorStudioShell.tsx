@@ -48,7 +48,7 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       { href: '/creator-studio/pathways',   label: 'Pathways',      activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/ },
       { href: '/creator-studio/gatherings', label: 'Gatherings',    activeOnPath: /^\/creator\/spaces\/[^/]+\/events/ },
       { href: '/creator-studio/resources',  label: 'Resources' },
-      { href: '/creator-studio/media',      label: 'Media Library' },
+      { href: '/creator-studio/media',      label: 'Brand Library' }, // TODO: rename route to /brand-library
       { href: '/creator-studio/community',  label: 'Community',     activeOnPath: /^\/creator\/spaces\/[^/]+\/community/ },
       { href: '/creator-studio/people',     label: 'People' },
       { href: '/creator-studio/setup',      label: 'Setup' },

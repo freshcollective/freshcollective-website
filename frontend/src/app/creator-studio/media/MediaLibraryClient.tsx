@@ -16,7 +16,7 @@ interface Props {
   spaceName: string
 }
 
-const TYPE_FILTERS = ['all', 'image', 'video', 'audio', 'document', 'other'] as const
+const TYPE_FILTERS = ['all', 'image', 'video', 'audio', 'other'] as const
 type TypeFilter = typeof TYPE_FILTERS[number]
 
 const ACCEPTED_MIME =
@@ -186,7 +186,7 @@ function UploadModal({ spaceSlug, onClose, onUploaded }: UploadModalProps) {
         style={{ border: '1px solid rgba(0,0,0,0.08)' }}
       >
         <div className="px-6 py-5" style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
-          <h2 className="text-[16px] font-semibold text-navy-900">Upload file</h2>
+          <h2 className="text-[16px] font-semibold text-navy-900">Upload asset</h2>
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
@@ -394,9 +394,12 @@ export default function MediaLibraryClient({ initialAssets, spaceSlug, spaceName
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
             {spaceName}
           </p>
-          <h1 className="text-2xl text-navy-900 md:text-3xl">Media Library</h1>
+          <h1 className="text-2xl text-navy-900 md:text-3xl">Brand Library</h1>
           <p className="mt-1.5 text-[14px] leading-relaxed" style={{ color: '#334155' }}>
-            Upload and manage videos, images, files, and resources for this collective.
+            Upload and manage the visual assets used across this collective.
+          </p>
+          <p className="mt-1 text-[12.5px]" style={{ color: '#64748B' }}>
+            Use this for banners, logos, icons, thumbnails, and other brand images.
           </p>
         </div>
         <button
@@ -405,8 +408,23 @@ export default function MediaLibraryClient({ initialAssets, spaceSlug, spaceName
           className="inline-flex shrink-0 items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
           style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
         >
-          <span aria-hidden="true">+</span> Upload file
+          <span aria-hidden="true">+</span> Upload asset
         </button>
+      </div>
+
+      {/* Resource separation note */}
+      <div
+        className="mb-6 flex items-start gap-3 rounded-2xl border px-5 py-4"
+        style={{ borderColor: 'rgba(56,160,158,0.28)', background: 'rgba(56,160,158,0.05)' }}
+      >
+        <span className="mt-0.5 text-[14px]" style={{ color: '#38A09E' }}>◫</span>
+        <p className="text-[13px] leading-relaxed" style={{ color: '#334155' }}>
+          <span className="font-semibold">Looking for member resources?</span>{' '}
+          Add PDFs, links, guides, replays, and pathway materials in{' '}
+          <a href="/creator-studio/resources" className="font-medium underline underline-offset-2" style={{ color: '#38A09E' }}>
+            Resources
+          </a>.
+        </p>
       </div>
 
       {/* Search + filter */}
@@ -462,9 +480,9 @@ export default function MediaLibraryClient({ initialAssets, spaceSlug, spaceName
               <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <p className="mb-1 text-[16px] font-semibold text-navy-900">No media uploaded yet</p>
+          <p className="mb-1 text-[16px] font-semibold text-navy-900">No brand assets yet</p>
           <p className="mb-6 text-[14px] leading-relaxed text-slate-500">
-            Upload your first file to use it in pathways, resources, or gatherings.
+            Upload your first asset — banners, logos, icons, or thumbnails — to use across this collective.
           </p>
           <button
             type="button"
@@ -472,7 +490,7 @@ export default function MediaLibraryClient({ initialAssets, spaceSlug, spaceName
             className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
-            Upload first file
+            Upload first asset
           </button>
         </div>
       ) : (
