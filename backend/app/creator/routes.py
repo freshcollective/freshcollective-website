@@ -2090,7 +2090,6 @@ def list_event_bookings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> list[dict]:
-    from app.models.platform import User as UserModel
     space = _get_managed_space(slug, current_user, db)
     event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
     if not event:
@@ -2102,11 +2101,11 @@ def list_event_bookings(
         .all()
     )
     user_ids = [b.user_id for b in bookings]
-    users_by_id: dict[str, UserModel] = {}
+    users_by_id: dict[str, User] = {}
     if user_ids:
         users_by_id = {
             u.id: u
-            for u in db.query(UserModel).filter(UserModel.id.in_(user_ids)).all()
+            for u in db.query(User).filter(User.id.in_(user_ids)).all()
         }
     return [
         {
