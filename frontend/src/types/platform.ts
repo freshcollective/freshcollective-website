@@ -164,6 +164,33 @@ export interface EventBooking {
   status: 'confirmed' | 'cancelled'
   source: string | null
   note: string | null
+  attendance_status: 'pending' | 'attended' | 'no_show' | null
+  attendance_marked_at: string | null
+}
+
+export interface CreatorMemberDetail {
+  id: string
+  display_name: string
+  email: string
+  space_role: 'learner' | 'moderator' | 'creator'
+  joined_at: string
+  is_creator: boolean
+}
+
+export interface MemberBookingItem {
+  booking_id: string
+  event_id: string
+  event_title: string
+  event_starts_at: string
+  event_location_type: string
+  booking_status: 'confirmed' | 'cancelled'
+  attendance_status: 'pending' | 'attended' | 'no_show' | null
+  booked_at: string
+}
+
+export interface AddMemberResponse {
+  result: 'added_as_member' | 'invite_created' | 'already_member' | 'invite_already_pending'
+  message: string
 }
 
 export interface MemberProfile {
@@ -367,6 +394,8 @@ export interface CreatorEvent {
   booking_closes_at: string | null
   booking_note: string | null
   booked_count: number
+  attended_count: number
+  no_show_count: number
   thumbnail_url: string | null
   status: 'active' | 'cancelled' | 'archived'
   recurrence_series_id: string | null

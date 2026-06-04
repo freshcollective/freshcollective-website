@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { getActiveCreatorSpace, getSpaceMembers, getCreatorInvitations, getCreatorAccessRequests } from '@/lib/serverApi'
-import type { AccessRequest, MemberProfile, SpaceInvitation } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorMembers, getCreatorInvitations, getCreatorAccessRequests } from '@/lib/serverApi'
+import type { AccessRequest, CreatorMemberDetail, SpaceInvitation } from '@/types/platform'
 import PeopleClient from './PeopleClient'
 
 export default async function CreatorPeoplePage() {
@@ -26,12 +26,9 @@ export default async function CreatorPeoplePage() {
     )
   }
 
-  // TODO: Replace getSpaceMembers with a creator-specific endpoint once built.
-  // The public /api/spaces/{slug}/members endpoint only returns active members
-  // and does not include email addresses.
-  const [members, invitations, accessRequests]: [MemberProfile[], SpaceInvitation[], AccessRequest[]] =
+  const [members, invitations, accessRequests]: [CreatorMemberDetail[], SpaceInvitation[], AccessRequest[]] =
     await Promise.all([
-      getSpaceMembers(activeSpace.slug),
+      getCreatorMembers(activeSpace.slug),
       getCreatorInvitations(activeSpace.slug),
       getCreatorAccessRequests(activeSpace.slug),
     ])

@@ -543,6 +543,8 @@ class EventResponse(BaseModel):
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     booked_count: int = 0
+    attended_count: int = 0
+    no_show_count: int = 0
     thumbnail_url: str | None = None
     status: str = "active"
     recurrence_series_id: str | None = None
@@ -561,11 +563,49 @@ class BookedMemberItem(BaseModel):
     status: str
     source: str | None = None
     note: str | None = None
+    attendance_status: str | None = None
+    attendance_marked_at: datetime | None = None
 
 
 class ManualBookingRequest(BaseModel):
     user_id: str
     note: str | None = None
+
+
+class AttendanceUpdateRequest(BaseModel):
+    status: str  # 'attended' | 'no_show' | 'pending'
+
+
+class CreatorMemberItem(BaseModel):
+    id: str
+    display_name: str
+    email: str
+    space_role: str
+    joined_at: datetime
+    is_creator: bool = False
+
+
+class MemberBookingItem(BaseModel):
+    booking_id: str
+    event_id: str
+    event_title: str
+    event_starts_at: datetime
+    event_location_type: str
+    booking_status: str
+    attendance_status: str | None = None
+    booked_at: datetime
+
+
+class AddMemberRequest(BaseModel):
+    email: str
+    name: str | None = None
+    role: str = "learner"
+    note: str | None = None
+
+
+class AddMemberResponse(BaseModel):
+    result: str  # 'added_as_member' | 'invite_created' | 'already_member' | 'invite_already_pending'
+    message: str
 
 
 # ---------------------------------------------------------------------------

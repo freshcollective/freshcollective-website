@@ -730,6 +730,10 @@ class EventBooking(Base):
     source: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Optional note for manual bookings
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Attendance: 'pending' | 'attended' | 'no_show' — NULL until manually set
+    attendance_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    attendance_marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attendance_marked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )

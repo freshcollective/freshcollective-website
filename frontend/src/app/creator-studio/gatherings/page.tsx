@@ -80,6 +80,18 @@ function GatheringRow({
               {event.booked_count}{event.capacity ? `/${event.capacity}` : ''} booked
             </span>
           )}
+          {isPast && event.attended_count > 0 && (
+            <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: 'rgba(56,160,158,0.08)', color: '#0f766e' }}>
+              {event.attended_count} attended
+            </span>
+          )}
+          {isPast && event.no_show_count > 0 && (
+            <span className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: 'rgba(239,68,68,0.06)', color: '#b91c1c' }}>
+              {event.no_show_count} no show
+            </span>
+          )}
           {event.recurrence_series_id && (
             <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-700">
               Series{event.recurrence_index ? ` · ${event.recurrence_index}/${event.recurrence_total}` : ''}

@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessRequest, AggregatedResourcesResponse, CreatorBillingResponse, InviteLookupResponse, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessRequest, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, MemberBookingItem, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 export const ACTIVE_SPACE_COOKIE = 'fc_creator_space'
 
@@ -207,6 +207,18 @@ export const getCreatorEvent = cache(async (slug: string, eventId: string) => {
 
 export const getCreatorEventBookings = cache(async (slug: string, eventId: string) => {
   const res = await fetchWithSession(`/api/creator/spaces/${slug}/events/${eventId}/bookings`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCreatorMembers = cache(async (slug: string): Promise<CreatorMemberDetail[]> => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/members`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getMemberBookings = cache(async (slug: string, userId: string): Promise<MemberBookingItem[]> => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/members/${userId}/bookings`)
   if (!res.ok) return []
   return res.json()
 })

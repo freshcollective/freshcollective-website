@@ -23,7 +23,11 @@ from app.core.storage import delete_file, save_file, save_media_file
 from app.creator.schemas import (
     AboutBlockCreateRequest,
     AccessRequestOut,
+    AddMemberRequest,
+    AddMemberResponse,
+    AttendanceUpdateRequest,
     CreatorBillingResponse,
+    CreatorMemberItem,
     CreatorPaymentSetup,
     CreatorPaymentSummary,
     CreatorPaymentTransactionOut,
@@ -36,6 +40,7 @@ from app.creator.schemas import (
     AboutBlockReorderRequest,
     AboutBlockResponse,
     AboutBlockUpdateRequest,
+    MemberBookingItem,
     MemberPathwayAccessItem,
     BookedMemberItem,
     BulkEventCreateResponse,
@@ -1848,6 +1853,8 @@ def list_events(
     )
     event_ids = [e.id for e in events]
     booked_counts: dict[str, int] = {}
+    attended_counts: dict[str, int] = {}
+    no_show_counts: dict[str, int] = {}
     if event_ids:
         booked_counts = dict(
             db.query(EventBooking.event_id, func.count(EventBooking.id))
@@ -1855,7 +1862,19 @@ def list_events(
             .group_by(EventBooking.event_id)
             .all()
         )
-    return [_event_to_dict(e, booked_counts.get(e.id, 0)) for e in events]
+        attended_counts = dict(
+            db.query(EventBooking.event_id, func.count(EventBooking.id))
+            .filter(EventBooking.event_id.in_(event_ids), EventBooking.attendance_status == "attended")
+            .group_by(EventBooking.event_id)
+            .all()
+        )
+        no_show_counts = dict(
+            db.query(EventBooking.event_id, func.count(EventBooking.id))
+            .filter(EventBooking.event_id.in_(event_ids), EventBooking.attendance_status == "no_show")
+            .group_by(EventBooking.event_id)
+            .all()
+        )
+    return [_event_to_dict(e, booked_counts.get(e.id, 0), attended_counts.get(e.id, 0), no_show_counts.get(e.id, 0)) for e in events]
 
 
 @router.get("/spaces/{slug}/events/{event_id}", response_model=EventResponse)
@@ -1877,7 +1896,7 @@ def get_event(
     return _event_to_dict(event, booked_count)
 
 
-def _event_to_dict(event: Event, booked_count: int = 0) -> dict:
+def _event_to_dict(event: Event, booked_count: int = 0, attended_count: int = 0, no_show_count: int = 0) -> dict:
     return {
         "id": event.id,
         "title": event.title,
@@ -1894,6 +1913,8 @@ def _event_to_dict(event: Event, booked_count: int = 0) -> dict:
         "booking_closes_at": event.booking_closes_at,
         "booking_note": event.booking_note,
         "booked_count": booked_count,
+        "attended_count": attended_count,
+        "no_show_count": no_show_count,
         "thumbnail_url": event.thumbnail_url,
         "status": event.status if event.status else "active",
         "recurrence_series_id": event.recurrence_series_id,
@@ -2097,6 +2118,8 @@ def list_event_bookings(
             "status": b.status.value if hasattr(b.status, "value") else b.status,
             "source": b.source,
             "note": b.note,
+            "attendance_status": b.attendance_status,
+            "attendance_marked_at": b.attendance_marked_at,
         }
         for b in bookings
     ]
@@ -2204,8 +2227,6 @@ def manual_book_member(
         raise HTTPException(status_code=400, detail="Cannot book a cancelled event.")
 
     now = _dt.utcnow()
-    if event.starts_at <= now:
-        raise HTTPException(status_code=400, detail="Cannot manually book a past event.")
 
     # Target user must be an active space member
     membership = (
@@ -2277,6 +2298,8 @@ def manual_book_member(
         "status": "confirmed",
         "source": "creator_manual",
         "note": body.note,
+        "attendance_status": booking.attendance_status,
+        "attendance_marked_at": booking.attendance_marked_at,
     }
 
 
@@ -2310,6 +2333,203 @@ def cancel_member_booking(
     booking.cancelled_at = now
     db.commit()
     return {"booking_id": booking_id, "status": "cancelled"}
+
+
+@router.patch("/spaces/{slug}/events/{event_id}/bookings/{booking_id}/attendance", status_code=200)
+def update_booking_attendance(
+    slug: str,
+    event_id: str,
+    booking_id: str,
+    body: AttendanceUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Mark a booking as attended, no_show, or reset to pending."""
+    from datetime import datetime as _dt
+    valid = {"attended", "no_show", "pending"}
+    if body.status not in valid:
+        raise HTTPException(status_code=400, detail=f"status must be one of: {', '.join(sorted(valid))}")
+    space = _get_managed_space(slug, current_user, db)
+    event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    booking = db.query(EventBooking).filter(
+        EventBooking.id == booking_id,
+        EventBooking.event_id == event.id,
+    ).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+    bstatus = booking.status.value if hasattr(booking.status, "value") else str(booking.status)
+    if bstatus == "cancelled":
+        raise HTTPException(status_code=400, detail="Cannot mark attendance for a cancelled booking.")
+    booking.attendance_status = body.status if body.status != "pending" else None
+    booking.attendance_marked_at = _dt.utcnow()
+    booking.attendance_marked_by = current_user.id
+    db.commit()
+    return {"booking_id": booking_id, "attendance_status": booking.attendance_status}
+
+
+# ---------------------------------------------------------------------------
+# Creator member management
+# ---------------------------------------------------------------------------
+
+@router.get("/spaces/{slug}/members", response_model=list[CreatorMemberItem])
+def list_creator_members(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[CreatorMemberItem]:
+    """Return active space members with email (creator-only)."""
+    from app.models.platform import CreatorProfile
+    from sqlalchemy import and_
+
+    space = _get_managed_space(slug, current_user, db)
+    rows = (
+        db.query(SpaceMembership, User, CreatorProfile)
+        .join(User, User.id == SpaceMembership.user_id)
+        .outerjoin(
+            CreatorProfile,
+            and_(CreatorProfile.user_id == User.id, CreatorProfile.is_public.is_(True)),
+        )
+        .filter(SpaceMembership.space_id == space.id, SpaceMembership.status == "active")
+        .all()
+    )
+    result = []
+    for membership, user, cp in rows:
+        role = membership.role.value if hasattr(membership.role, "value") else str(membership.role)
+        display_name = (cp.display_name if cp and cp.display_name else None) or user.name or user.email.split("@")[0]
+        result.append(CreatorMemberItem(
+            id=user.id,
+            display_name=display_name,
+            email=user.email,
+            space_role=role,
+            joined_at=membership.joined_at,
+            is_creator=cp is not None,
+        ))
+    result.sort(key=lambda m: {"creator": 0, "moderator": 1, "learner": 2}.get(m.space_role, 9))
+    return result
+
+
+@router.post("/spaces/{slug}/members/add", response_model=AddMemberResponse, status_code=200)
+def add_or_invite_member(
+    slug: str,
+    body: AddMemberRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> AddMemberResponse:
+    """Add an existing user directly as a member, or create an invitation if not found.
+
+    Result codes:
+    - added_as_member: user existed, now an active member
+    - already_member: user existed and was already a member
+    - invite_created: user not found, invitation record created
+    - invite_already_pending: invitation already exists for this email
+    """
+    from sqlalchemy import func as _func
+
+    space = _get_managed_space(slug, current_user, db)
+    email = body.email.strip().lower()
+
+    # Parse role — default to learner for unknown values
+    role_map = {"learner": SpaceRole.learner, "moderator": SpaceRole.moderator, "creator": SpaceRole.creator}
+    role_enum = role_map.get(body.role, SpaceRole.learner)
+
+    # Check if a user account exists with this email
+    user = db.query(User).filter(_func.lower(User.email) == email).first()
+
+    if user:
+        # Check if already an active member
+        existing = (
+            db.query(SpaceMembership)
+            .filter(
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.user_id == user.id,
+                SpaceMembership.status == "active",
+            )
+            .first()
+        )
+        if existing:
+            return AddMemberResponse(
+                result="already_member",
+                message="This person is already a member of this collective.",
+            )
+        # Add as active member
+        membership = SpaceMembership(
+            id=str(uuid4()),
+            space_id=space.id,
+            user_id=user.id,
+            role=role_enum,
+            status=SpaceMembershipStatus.active,
+        )
+        db.add(membership)
+        db.commit()
+        display = user.name or email
+        return AddMemberResponse(
+            result="added_as_member",
+            message=f"{display} has been added to this collective.",
+        )
+    else:
+        # No account — create or detect pending invitation
+        existing_invite = (
+            db.query(SpaceInvitation)
+            .filter(SpaceInvitation.space_id == space.id, SpaceInvitation.email == email)
+            .first()
+        )
+        if existing_invite:
+            return AddMemberResponse(
+                result="invite_already_pending",
+                message="An invitation is already pending for this email address.",
+            )
+        invitation = SpaceInvitation(
+            id=str(uuid4()),
+            space_id=space.id,
+            email=email,
+            name=body.name,
+            role=role_enum,
+            note=body.note,
+            invited_by_id=current_user.id,
+            token=str(uuid4()),
+        )
+        db.add(invitation)
+        db.commit()
+        return AddMemberResponse(
+            result="invite_created",
+            message=f"No account found for {email}. An invitation has been created — share the invite link with them.",
+        )
+
+
+@router.get("/spaces/{slug}/members/{user_id}/bookings", response_model=list[MemberBookingItem])
+def get_member_bookings(
+    slug: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[MemberBookingItem]:
+    """Return a member's gathering booking history for this space."""
+    space = _get_managed_space(slug, current_user, db)
+    rows = (
+        db.query(EventBooking, Event)
+        .join(Event, Event.id == EventBooking.event_id)
+        .filter(
+            Event.space_id == space.id,
+            EventBooking.user_id == user_id,
+        )
+        .order_by(Event.starts_at.desc())
+        .all()
+    )
+    return [
+        MemberBookingItem(
+            booking_id=b.id,
+            event_id=e.id,
+            event_title=e.title,
+            event_starts_at=e.starts_at,
+            event_location_type=e.location_type.value if hasattr(e.location_type, "value") else str(e.location_type),
+            booking_status=b.status.value if hasattr(b.status, "value") else str(b.status),
+            attendance_status=b.attendance_status,
+            booked_at=b.booked_at,
+        )
+        for b, e in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
