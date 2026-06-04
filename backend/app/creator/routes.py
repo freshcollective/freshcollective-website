@@ -1922,6 +1922,8 @@ def _event_to_dict(event: Event, booked_count: int = 0, attended_count: int = 0,
         "recurrence_index": event.recurrence_index,
         "recurrence_total": event.recurrence_total,
         "created_at": event.created_at,
+        "booking_access_type": getattr(event, 'booking_access_type', 'all_members') or 'all_members',
+        "booking_required_pathway_id": getattr(event, 'booking_required_pathway_id', None),
     }
 
 
@@ -1951,6 +1953,8 @@ def create_event(
         booking_closes_at=body.booking_closes_at,
         booking_note=body.booking_note,
         thumbnail_url=body.thumbnail_url,
+        booking_access_type=body.booking_access_type,
+        booking_required_pathway_id=body.booking_required_pathway_id,
     )
     db.add(event)
     db.commit()
@@ -2025,8 +2029,9 @@ def bulk_create_events(
             capacity=body.capacity,
             booking_closes_at=body.booking_closes_at,
             booking_note=body.booking_note,
-            # TODO: Allow updating thumbnail across entire series later
             thumbnail_url=body.thumbnail_url,
+            booking_access_type=body.booking_access_type,
+            booking_required_pathway_id=body.booking_required_pathway_id,
             recurrence_series_id=series_id,
             recurrence_label=series_label,
             recurrence_index=idx,
@@ -2053,7 +2058,8 @@ def update_event(
 
     for field in ("title", "description", "starts_at", "ends_at", "location_type", "location_url",
                   "recording_url", "is_published", "is_public", "requires_booking", "capacity",
-                  "booking_closes_at", "booking_note", "thumbnail_url"):
+                  "booking_closes_at", "booking_note", "thumbnail_url",
+                  "booking_access_type", "booking_required_pathway_id"):
         val = getattr(body, field)
         if val is not None:
             setattr(event, field, val)

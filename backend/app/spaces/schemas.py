@@ -61,6 +61,9 @@ class SpaceResponse(BaseModel):
     guidance_focus_body: str | None = None
     guidance_links_title: str | None = None
     guidance_links_body: str | None = None
+    show_member_directory: bool = False
+    # Count of active learner members — injected by the get_space route, not from ORM
+    learner_count: int = 0
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -207,6 +210,16 @@ class EventSummary(BaseModel):
     thumbnail_url: str | None = None
     # Lifecycle: active | cancelled | archived
     status: str = "active"
+    # Booking access control
+    booking_access_type: str = "all_members"
+    booking_required_pathway_id: str | None = None
+    # Whether the current user has access to the required pathway (True when no restriction)
+    user_has_pathway_access: bool = True
+
+
+class EventDetail(EventSummary):
+    location_url: str | None = None
+    recording_url: str | None = None
 
 
 class SeriesBookingResponse(BaseModel):
@@ -216,34 +229,6 @@ class SeriesBookingResponse(BaseModel):
     skipped_closed: int
     total_in_series: int
 
-
-class EventDetail(BaseModel):
-    """Full event including join/recording URLs and per-user booking state."""
-
-    id: str
-    title: str
-    description: str | None
-    starts_at: datetime
-    ends_at: datetime | None
-    location_type: str
-    location_url: str | None
-    recording_url: str | None
-    requires_booking: bool = False
-    capacity: int | None = None
-    booked_count: int = 0
-    spots_remaining: int | None = None
-    booking_closes_at: datetime | None = None
-    booking_note: str | None = None
-    my_booking_status: str | None = None
-    can_book: bool = False
-    can_cancel_booking: bool = False
-    recurrence_series_id: str | None = None
-    recurrence_label: str | None = None
-    recurrence_index: int | None = None
-    recurrence_total: int | None = None
-    is_public: bool = False
-    thumbnail_url: str | None = None
-    status: str = "active"
 
 
 class BookingResponse(BaseModel):

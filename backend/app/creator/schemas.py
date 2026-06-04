@@ -493,6 +493,8 @@ class EventCreateRequest(BaseModel):
     booking_note: str | None = None
     thumbnail_url: str | None = None
     recurrence: RecurrenceRequest | None = None
+    booking_access_type: str = "all_members"
+    booking_required_pathway_id: str | None = None
 
     @field_validator("location_type")
     @classmethod
@@ -517,6 +519,8 @@ class EventUpdateRequest(BaseModel):
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     thumbnail_url: str | None = None
+    booking_access_type: str | None = None
+    booking_required_pathway_id: str | None = None
 
     @field_validator("location_type")
     @classmethod
@@ -551,6 +555,8 @@ class EventResponse(BaseModel):
     recurrence_label: str | None = None
     recurrence_index: int | None = None
     recurrence_total: int | None = None
+    booking_access_type: str = "all_members"
+    booking_required_pathway_id: str | None = None
     created_at: datetime
 
 

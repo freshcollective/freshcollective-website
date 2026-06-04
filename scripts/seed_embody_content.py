@@ -211,9 +211,42 @@ def main() -> None:  # noqa: C901
         space.name = "EMBODY"
         space.tagline = "Strength. Somatics. Sisterhood."
         space.description = (
-            "A 10-week in-person movement experience for women ready to reconnect "
-            "with their body, breath, and internal power — based in South Croydon, Victoria."
+            "## What is EMBODY?\n\n"
+            "EMBODY is a 10-week in-person movement experience for women ready to reconnect with their body, breath, and internal power — based in South Croydon, Victoria.\n\n"
+            "It is not a gym class or a performance space. EMBODY is a structured, somatic-informed container that blends functional strength, feminine archetypes, breath work, and nervous system recalibration into a single weekly practice.\n\n"
+            "Each term runs for 10 weeks, with three sessions per week (Monday, Thursday, Saturday). You book whichever sessions suit your schedule.\n\n"
+            "## Who it's for\n\n"
+            "EMBODY is for women who:\n"
+            "- Feel disconnected from their body or strength\n"
+            "- Are done with punishing fitness culture and want something that actually feels good\n"
+            "- Want structure without rigidity — a real container, not just classes\n"
+            "- Are ready to move, feel, and be witnessed\n\n"
+            "You do not need to be fit. You do not need experience. You need to be willing to show up.\n\n"
+            "## Session structure\n\n"
+            "Each 60-minute session moves through:\n"
+            "- **Activation** — waking up the body, breath, and awareness\n"
+            "- **Strength** — functional movement patterns, resistance, and power\n"
+            "- **Decompression** — floor-based release, somatic discharge, regulation\n"
+            "- **Integration** — breath, stillness, and a moment to land\n\n"
+            "Each week has a theme aligned to the 10-week arc of the term.\n\n"
+            "## Times and location\n\n"
+            "**Monday** — 6:00pm – 7:00pm\n"
+            "**Thursday** — 6:00pm – 7:00pm\n"
+            "**Saturday** — 9:00am – 10:00am\n\n"
+            "Location: South Croydon, Victoria (address shared upon booking confirmation)\n\n"
+            "## Membership and access\n\n"
+            "Joining EMBODY as a community member is free. Access to the EMBODY In-Person Sessions pathway — and the ability to book sessions — requires term enrollment.\n\n"
+            "Term pricing is set each term. Payment secures your place in the cohort and grants access to all session bookings, community, resources, and pathway content for that term.\n\n"
+            "## What to bring\n\n"
+            "- Water bottle\n"
+            "- Comfortable, layered clothing you can move in\n"
+            "- A mat (provided if you don't have one)\n"
+            "- An open mind and a willingness to feel\n\n"
+            "## Meet your facilitator\n\n"
+            "EMBODY is led by Lindsey — movement facilitator, somatic practitioner, and founder of Fresh Collective.\n\n"
+            "Lindsey has spent years exploring the intersection of strength, nervous system safety, and feminine embodiment. EMBODY distils that into a weekly practice that is real, grounded, and built for actual women's lives."
         )
+        space.show_member_directory = False
         space.themes = ["Movement", "Wellbeing", "Inner Work"]
         space.is_public = True
         space.status = "active"
@@ -727,6 +760,8 @@ def main() -> None:  # noqa: C901
                     requires_booking=True,
                     capacity=7,
                     booking_note=BOOKING_NOTE,
+                    booking_access_type="pathway_required",
+                    booking_required_pathway_id=PATHWAY_IDS["in-person"],
                     recurrence_series_id=series_id,
                     recurrence_label=f"{label} — 10-week term",
                     recurrence_index=i + 1,

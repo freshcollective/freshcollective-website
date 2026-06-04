@@ -17,6 +17,8 @@ interface Props {
   initialCanCancelBooking: boolean
   isPast: boolean
   recurrenceSeriesId?: string | null
+  accessType?: 'all_members' | 'pathway_required'
+  userHasPathwayAccess?: boolean
 }
 
 export default function BookingPanel({
@@ -32,6 +34,8 @@ export default function BookingPanel({
   initialCanCancelBooking,
   isPast,
   recurrenceSeriesId,
+  accessType = 'all_members',
+  userHasPathwayAccess = true,
 }: Props) {
   const [bookedCount, setBookedCount] = useState(initialBookedCount)
   const [spotsRemaining, setSpotsRemaining] = useState(initialSpotsRemaining)
@@ -119,6 +123,7 @@ export default function BookingPanel({
 
   const isBooked = myBookingStatus === 'confirmed'
   const isFull = spotsRemaining !== null && spotsRemaining === 0 && !isBooked
+  const needsPathwayAccess = accessType === 'pathway_required' && !userHasPathwayAccess
 
   return (
     <div>
@@ -166,7 +171,16 @@ export default function BookingPanel({
         </div>
       )}
 
-      {!isPast && (
+      {!isPast && needsPathwayAccess && (
+        <button
+          disabled
+          className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400"
+        >
+          Join the pathway to book
+        </button>
+      )}
+
+      {!isPast && !needsPathwayAccess && (
         <>
           {isBooked ? (
             <div className="space-y-2">

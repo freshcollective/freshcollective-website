@@ -150,9 +150,11 @@ interface Props {
   learners: MemberProfile[]
   spaceSlug: string
   canInvite: boolean
+  showMemberDirectory?: boolean
+  learnerCount?: number
 }
 
-export default function MembersView({ leaders, learners, spaceSlug, canInvite }: Props) {
+export default function MembersView({ leaders, learners, spaceSlug, canInvite, showMemberDirectory = true, learnerCount }: Props) {
   const [query, setQuery]       = useState('')
   const [inviteOpen, setInviteOpen] = useState(false)
 
@@ -210,9 +212,19 @@ export default function MembersView({ leaders, learners, spaceSlug, canInvite }:
             <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
               {!q && learners.length > 0
                 ? `${learners.length} ${learners.length === 1 ? 'Member' : 'Members'}`
-                : 'Members'}
+                : !showMemberDirectory && learnerCount !== undefined
+                  ? `${learnerCount} ${learnerCount === 1 ? 'Member' : 'Members'}`
+                  : 'Members'}
             </h2>
-            {filteredLearners.length > 0 ? (
+            {!showMemberDirectory && !canInvite ? (
+              <div className="rounded-2xl border border-teal-100 bg-white px-6 py-8 text-center">
+                <p className="text-sm text-slate-400">
+                  {learnerCount !== undefined && learnerCount > 0
+                    ? `${learnerCount} ${learnerCount === 1 ? 'person is' : 'people are'} in this collective.`
+                    : 'Member details are visible to collective leaders only.'}
+                </p>
+              </div>
+            ) : filteredLearners.length > 0 ? (
               <div className="flex flex-col gap-3">
                 {filteredLearners.map((m) => (
                   <MemberCard key={m.id} member={m} spaceSlug={spaceSlug} />

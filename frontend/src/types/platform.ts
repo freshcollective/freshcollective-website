@@ -39,6 +39,8 @@ export interface SpaceResponse {
   guidance_focus_body: string | null
   guidance_links_title: string | null
   guidance_links_body: string | null
+  show_member_directory: boolean
+  learner_count: number
 }
 
 export interface SpaceSummary {
@@ -139,6 +141,9 @@ export interface EventSummary {
   is_public: boolean
   thumbnail_url: string | null
   status: 'active' | 'cancelled' | 'archived'
+  booking_access_type: 'all_members' | 'pathway_required'
+  booking_required_pathway_id: string | null
+  user_has_pathway_access: boolean
 }
 
 export interface EventDetail extends EventSummary {

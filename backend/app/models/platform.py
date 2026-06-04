@@ -206,6 +206,10 @@ class Space(Base):
     guidance_focus_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     guidance_links_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     guidance_links_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Member directory — False (default): learners see count only; True: all members visible
+    show_member_directory: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )
@@ -682,6 +686,16 @@ class Event(Base):
     thumbnail_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Lifecycle status: active | cancelled | archived
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", server_default="active")
+    # Booking access control — 'all_members' or 'pathway_required'
+    booking_access_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="all_members", server_default="all_members"
+    )
+    # Required pathway for booking — set when booking_access_type = 'pathway_required'
+    booking_required_pathway_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("pathways.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )

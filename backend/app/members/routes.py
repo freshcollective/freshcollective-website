@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models.platform import CreatorProfile, Space, SpaceMembership
+from app.models.platform import CreatorProfile, Space, SpaceMembership, SpaceMembershipStatus, SpaceRole
 from app.models.user import User
 from app.members.schemas import MemberProfile, PublicProfile
 
@@ -37,10 +37,45 @@ def list_members(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ) -> list[MemberProfile]:
-    """Return active Space members — creators/moderators first, then learners."""
+    """Return active Space members — creators/moderators first, then learners.
+
+    When show_member_directory=False and the caller is a learner, only
+    creators and moderators are returned (learners remain hidden).
+    """
     space = _get_space_or_404(slug, db)
     if not space.is_public and current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
+
+    # Determine the caller's role to apply directory privacy
+    caller_role: str | None = None
+    if current_user:
+        caller_membership = (
+            db.query(SpaceMembership)
+            .filter(
+                SpaceMembership.user_id == current_user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+            )
+            .first()
+        )
+        if caller_membership:
+            caller_role = (
+                caller_membership.role.value
+                if hasattr(caller_membership.role, "value")
+                else str(caller_membership.role)
+            )
+
+    hide_learners = (
+        not getattr(space, 'show_member_directory', True)
+        and caller_role == "learner"
+    )
+
+    membership_filter = [
+        SpaceMembership.space_id == space.id,
+        SpaceMembership.status == "active",
+    ]
+    if hide_learners:
+        membership_filter.append(SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]))
 
     rows = (
         db.query(SpaceMembership, User, CreatorProfile)
@@ -52,10 +87,7 @@ def list_members(
                 CreatorProfile.is_public.is_(True),
             ),
         )
-        .filter(
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.status == "active",
-        )
+        .filter(*membership_filter)
         .all()
     )
 

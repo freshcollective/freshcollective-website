@@ -385,7 +385,7 @@ def get_space(
     slug: str,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
-) -> Space:
+) -> SpaceResponse:
     space = (
         db.query(Space)
         .options(selectinload(Space.pathways))
@@ -396,7 +396,17 @@ def get_space(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
     if not space.is_public and current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
-    return space
+    learner_count = (
+        db.query(func.count(SpaceMembership.id))
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+            SpaceMembership.role == SpaceRole.learner,
+        )
+        .scalar()
+    ) or 0
+    resp = SpaceResponse.model_validate(space)
+    return resp.model_copy(update={"learner_count": learner_count})
 
 
 # ---------------------------------------------------------------------------
@@ -815,6 +825,30 @@ def list_events(
         )
         user_bookings = {r.event_id: r.status.value for r in user_rows}
 
+    # Bulk-check pathway entitlements for the current user
+    # Collect unique required pathway IDs from pathway_required events
+    required_pathway_ids = {
+        e.booking_required_pathway_id
+        for e in events
+        if getattr(e, 'booking_access_type', 'all_members') == 'pathway_required'
+        and e.booking_required_pathway_id
+    }
+    user_pathway_access: set[str] = set()
+    if current_user and required_pathway_ids:
+        ent_rows = (
+            db.query(PathwayEntitlement.pathway_id)
+            .filter(
+                PathwayEntitlement.user_id == current_user.id,
+                PathwayEntitlement.pathway_id.in_(required_pathway_ids),
+                PathwayEntitlement.status == EntitlementStatus.active,
+            )
+            .all()
+        )
+        user_pathway_access = {r.pathway_id for r in ent_rows}
+        # Creators/moderators always have pathway access
+        if membership and getattr(membership, 'role', None) in (SpaceRole.creator, SpaceRole.moderator):
+            user_pathway_access = required_pathway_ids
+
     result = []
     for e in events:
         booked = booked_counts.get(e.id, 0)
@@ -822,9 +856,17 @@ def list_events(
         my_status = user_bookings.get(e.id)  # 'confirmed' | 'cancelled' | None
         booking_closed = bool(e.booking_closes_at and e.booking_closes_at <= now)
         is_full = e.capacity is not None and booked >= e.capacity
+        event_access_type = getattr(e, 'booking_access_type', 'all_members') or 'all_members'
+        required_pid = getattr(e, 'booking_required_pathway_id', None)
+        has_pathway_access = (
+            event_access_type == 'all_members'
+            or required_pid is None
+            or required_pid in user_pathway_access
+        )
         can_book = (
             e.requires_booking
             and is_member
+            and has_pathway_access
             and my_status != "confirmed"
             and not booking_closed
             and not is_full
@@ -857,6 +899,9 @@ def list_events(
             is_public=e.is_public,
             thumbnail_url=e.thumbnail_url,
             status=e.status if e.status else "active",
+            booking_access_type=event_access_type,
+            booking_required_pathway_id=required_pid,
+            user_has_pathway_access=has_pathway_access,
         ))
     return result
 
@@ -895,6 +940,24 @@ def book_event(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering does not require booking.")
     if getattr(event, 'status', 'active') == 'cancelled':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering has been cancelled.")
+
+    # Check pathway access restriction
+    event_access_type = getattr(event, 'booking_access_type', 'all_members') or 'all_members'
+    if event_access_type == 'pathway_required':
+        required_pid = getattr(event, 'booking_required_pathway_id', None)
+        if required_pid:
+            entitlement = (
+                db.query(PathwayEntitlement)
+                .filter(
+                    PathwayEntitlement.user_id == current_user.id,
+                    PathwayEntitlement.pathway_id == required_pid,
+                    PathwayEntitlement.status == EntitlementStatus.active,
+                )
+                .first()
+            )
+            # Creators and moderators bypass the pathway restriction
+            if not entitlement and getattr(membership, 'role', None) not in (SpaceRole.creator, SpaceRole.moderator):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You must have access to the required pathway to book this session.")
 
     now = datetime.utcnow()
     if event.starts_at <= now:
@@ -1040,11 +1103,42 @@ def get_event(
 
     event_status = getattr(event, 'status', 'active') or 'active'
     is_cancelled = event_status == 'cancelled'
+
+    # Pathway access restriction
+    event_access_type = getattr(event, 'booking_access_type', 'all_members') or 'all_members'
+    required_pid = getattr(event, 'booking_required_pathway_id', None)
+    user_has_pathway_access = True
+    if event_access_type == 'pathway_required' and required_pid and current_user:
+        # Creators/moderators always have access
+        if is_member and (
+            db.query(SpaceMembership)
+            .filter(
+                SpaceMembership.user_id == current_user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]),
+                SpaceMembership.status == SpaceMembershipStatus.active,
+            )
+            .first()
+        ):
+            user_has_pathway_access = True
+        else:
+            ent = (
+                db.query(PathwayEntitlement)
+                .filter(
+                    PathwayEntitlement.user_id == current_user.id,
+                    PathwayEntitlement.pathway_id == required_pid,
+                    PathwayEntitlement.status == EntitlementStatus.active,
+                )
+                .first()
+            )
+            user_has_pathway_access = bool(ent)
+
     booking_open = (
         event.requires_booking
         and not is_past
         and not is_cancelled
         and is_member
+        and user_has_pathway_access
         and (event.booking_closes_at is None or event.booking_closes_at > now)
     )
     can_book = booking_open and my_booking_status != "confirmed" and (spots_remaining is None or spots_remaining > 0)
@@ -1075,6 +1169,9 @@ def get_event(
         "is_public": event.is_public,
         "thumbnail_url": event.thumbnail_url,
         "status": event_status,
+        "booking_access_type": event_access_type,
+        "booking_required_pathway_id": required_pid,
+        "user_has_pathway_access": user_has_pathway_access,
     }
 
 

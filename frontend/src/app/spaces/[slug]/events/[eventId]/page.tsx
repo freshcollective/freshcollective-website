@@ -327,6 +327,8 @@ export default async function EventDetailPage({ params }: Props) {
                 initialCanCancelBooking={event.can_cancel_booking}
                 isPast={state === 'past-replay' || state === 'past-no-replay'}
                 recurrenceSeriesId={event.recurrence_series_id}
+                accessType={event.booking_access_type}
+                userHasPathwayAccess={event.user_has_pathway_access}
               />
             ) : (
               <>

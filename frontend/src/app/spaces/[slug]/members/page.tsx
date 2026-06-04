@@ -69,6 +69,8 @@ export default async function SpaceMembersPage({ params }: Props) {
           learners={learners}
           spaceSlug={slug}
           canInvite={canInvite}
+          showMemberDirectory={space?.show_member_directory ?? true}
+          learnerCount={space?.learner_count}
         />
 
         {/* ── Right: banner + stats + Important panel ── */}
