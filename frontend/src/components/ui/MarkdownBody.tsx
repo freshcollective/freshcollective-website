@@ -2,7 +2,7 @@ import React from 'react'
 
 /**
  * Safe, minimal markdown renderer for creator-authored content.
- * Supports: ## headings, **bold**, bullet lists, blank-line paragraphs.
+ * Supports: ## h2, ### h3, **bold**, [text](url) links, * bullet lists, paragraphs.
  * No external dependencies, no dangerouslySetInnerHTML.
  */
 
@@ -16,15 +16,34 @@ type Token =
 type InlineSegment =
   | { kind: 'text'; value: string }
   | { kind: 'bold'; value: string }
+  | { kind: 'link'; text: string; href: string }
+
+// Only allow http/https URLs — reject javascript: and data: schemes
+function safeHref(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return null
+}
 
 function parseInline(text: string): InlineSegment[] {
   const segments: InlineSegment[] = []
-  const re = /\*\*(.+?)\*\*/g
+  // Match **bold** and [text](url) interleaved
+  const re = /\*\*(.+?)\*\*|\[([^\]]+)\]\(([^)]+)\)/g
   let last = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) segments.push({ kind: 'text', value: text.slice(last, m.index) })
-    segments.push({ kind: 'bold', value: m[1] })
+    if (m[0].startsWith('**')) {
+      segments.push({ kind: 'bold', value: m[1] })
+    } else {
+      const href = safeHref(m[3])
+      if (href) {
+        segments.push({ kind: 'link', text: m[2], href })
+      } else {
+        // Unsafe URL — render as plain text
+        segments.push({ kind: 'text', value: m[2] })
+      }
+    }
     last = m.index + m[0].length
   }
   if (last < text.length) segments.push({ kind: 'text', value: text.slice(last) })
@@ -32,11 +51,25 @@ function parseInline(text: string): InlineSegment[] {
 }
 
 function renderInline(segments: InlineSegment[], key: string): React.ReactNode {
-  return segments.map((s, i) =>
-    s.kind === 'bold'
-      ? <strong key={`${key}-b${i}`} className="font-semibold text-navy-900">{s.value}</strong>
-      : <React.Fragment key={`${key}-t${i}`}>{s.value}</React.Fragment>
-  )
+  return segments.map((s, i) => {
+    if (s.kind === 'bold') {
+      return <strong key={`${key}-b${i}`} className="font-semibold text-navy-900">{s.value}</strong>
+    }
+    if (s.kind === 'link') {
+      return (
+        <a
+          key={`${key}-a${i}`}
+          href={s.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-teal-600 underline underline-offset-2 hover:text-teal-700"
+        >
+          {s.text}
+        </a>
+      )
+    }
+    return <React.Fragment key={`${key}-t${i}`}>{s.value}</React.Fragment>
+  })
 }
 
 function tokenise(md: string): Token[] {
@@ -55,7 +88,6 @@ function tokenise(md: string): Token[] {
       tokens.push({ type: 'h3', text: line.slice(4) })
       i++
     } else if (line.startsWith('* ') || line.startsWith('- ')) {
-      // Collect consecutive bullet lines
       const items: InlineSegment[][] = []
       while (i < lines.length && (lines[i].startsWith('* ') || lines[i].startsWith('- '))) {
         items.push(parseInline(lines[i].slice(2)))
@@ -66,7 +98,6 @@ function tokenise(md: string): Token[] {
       tokens.push({ type: 'blank' })
       i++
     } else {
-      // Collect non-empty, non-special lines as a paragraph
       const paraLines: string[] = []
       while (
         i < lines.length &&

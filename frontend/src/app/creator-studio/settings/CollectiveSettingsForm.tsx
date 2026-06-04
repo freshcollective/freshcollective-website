@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
 import type { CreatorSpaceDetail, PricingType } from '@/types/platform'
+import AboutEditor from '@/components/ui/AboutEditor'
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
 const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png']
@@ -271,16 +272,16 @@ export default function CollectiveSettingsForm({ space }: Props) {
           </div>
 
           <div>
-            <label htmlFor="s-desc" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
-              Description
+            <label htmlFor="s-desc" className="mb-1 block text-[14px] font-semibold text-navy-900">
+              About page content
             </label>
-            <textarea
+            <p className="mb-2 text-[13px] text-slate-500">
+              This appears on your public About page. Use headings, bold text, bullets, and links to help people understand your collective.
+            </p>
+            <AboutEditor
               id="s-desc"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={4}
-              placeholder="Who is this for? What change does your collective support? What will people experience?"
-              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+              onChange={setDescription}
             />
           </div>
 
