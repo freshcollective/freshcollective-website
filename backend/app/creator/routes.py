@@ -2216,9 +2216,6 @@ def manual_book_member(
     TODO: Add manual booking across remaining series sessions later.
     TODO: Send email notification to booked member later.
     """
-    from app.models.platform import User as UserModel
-    from datetime import datetime as _dt
-
     space = _get_managed_space(slug, current_user, db)
     event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
     if not event:
@@ -2226,7 +2223,7 @@ def manual_book_member(
     if event.status == "cancelled":
         raise HTTPException(status_code=400, detail="Cannot book a cancelled event.")
 
-    now = _dt.utcnow()
+    now = datetime.utcnow()
 
     # Target user must be an active space member
     membership = (
@@ -2244,7 +2241,7 @@ def manual_book_member(
             detail="User is not an active member of this collective. Invite them as a member first.",
         )
 
-    target_user = db.query(UserModel).filter(UserModel.id == body.user_id).first()
+    target_user = db.query(User).filter(User.id == body.user_id).first()
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found.")
 

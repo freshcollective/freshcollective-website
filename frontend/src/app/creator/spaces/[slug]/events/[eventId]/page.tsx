@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { getCreatorEvent, getCreatorEventBookings, getSpaceMembers } from '@/lib/serverApi'
+import { getCreatorEvent, getCreatorEventBookings, getCreatorMembers } from '@/lib/serverApi'
 import EventForm from '../EventForm'
 import EventManagePanel from './EventManagePanel'
 
@@ -12,7 +12,7 @@ export default async function EditEventPage({
   const [event, bookings, members] = await Promise.all([
     getCreatorEvent(slug, eventId),
     getCreatorEventBookings(slug, eventId),
-    getSpaceMembers(slug),
+    getCreatorMembers(slug),
   ])
   if (!event) notFound()
 

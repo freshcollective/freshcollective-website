@@ -113,7 +113,7 @@ function GatheringRow({
         href={`/creator/spaces/${spaceSlug}/events/${event.id}`}
         className="shrink-0 rounded-xl border border-border px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
       >
-        Edit
+        Manage
       </Link>
     </div>
   )
