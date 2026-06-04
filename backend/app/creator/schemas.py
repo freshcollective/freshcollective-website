@@ -446,6 +446,37 @@ class StepResponse(BaseModel):
 # Events
 # ---------------------------------------------------------------------------
 
+class RecurrenceRequest(BaseModel):
+    """Describes a weekly recurrence pattern for bulk event creation."""
+    pattern: str = "weekly"  # only "weekly" supported for now
+    days_of_week: list[int]  # 0=Mon, 1=Tue, ..., 6=Sun
+    series_label: str | None = None
+    end_after_n: int | None = None       # stop after N total occurrences
+    repeat_until: datetime | None = None  # stop on/before this date
+
+    @field_validator("pattern")
+    @classmethod
+    def validate_pattern(cls, v: str) -> str:
+        if v not in ("weekly",):
+            raise ValueError("Only 'weekly' recurrence is supported.")
+        return v
+
+    @field_validator("days_of_week")
+    @classmethod
+    def validate_days(cls, v: list[int]) -> list[int]:
+        for d in v:
+            if d < 0 or d > 6:
+                raise ValueError("days_of_week values must be 0 (Mon) to 6 (Sun).")
+        if not v:
+            raise ValueError("At least one day of the week is required.")
+        return sorted(set(v))
+
+
+class BulkEventCreateResponse(BaseModel):
+    created_count: int
+    series_id: str
+
+
 class EventCreateRequest(BaseModel):
     title: str
     description: str | None = None
@@ -455,6 +486,13 @@ class EventCreateRequest(BaseModel):
     location_url: str | None = None
     recording_url: str | None = None
     is_published: bool = False
+    is_public: bool = False
+    requires_booking: bool = False
+    capacity: int | None = None
+    booking_closes_at: datetime | None = None
+    booking_note: str | None = None
+    thumbnail_url: str | None = None
+    recurrence: RecurrenceRequest | None = None
 
     @field_validator("location_type")
     @classmethod
@@ -473,6 +511,12 @@ class EventUpdateRequest(BaseModel):
     location_url: str | None = None
     recording_url: str | None = None
     is_published: bool | None = None
+    is_public: bool | None = None
+    requires_booking: bool | None = None
+    capacity: int | None = None
+    booking_closes_at: datetime | None = None
+    booking_note: str | None = None
+    thumbnail_url: str | None = None
 
     @field_validator("location_type")
     @classmethod
@@ -493,7 +537,35 @@ class EventResponse(BaseModel):
     location_url: str | None
     recording_url: str | None
     is_published: bool
+    is_public: bool = False
+    requires_booking: bool = False
+    capacity: int | None = None
+    booking_closes_at: datetime | None = None
+    booking_note: str | None = None
+    booked_count: int = 0
+    thumbnail_url: str | None = None
+    status: str = "active"
+    recurrence_series_id: str | None = None
+    recurrence_label: str | None = None
+    recurrence_index: int | None = None
+    recurrence_total: int | None = None
     created_at: datetime
+
+
+class BookedMemberItem(BaseModel):
+    booking_id: str
+    user_id: str
+    name: str | None
+    email: str
+    booked_at: datetime
+    status: str
+    source: str | None = None
+    note: str | None = None
+
+
+class ManualBookingRequest(BaseModel):
+    user_id: str
+    note: str | None = None
 
 
 # ---------------------------------------------------------------------------

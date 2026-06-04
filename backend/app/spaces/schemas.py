@@ -180,7 +180,45 @@ class PathwayProgress(BaseModel):
 
 
 class EventSummary(BaseModel):
-    model_config = {"from_attributes": True}
+    id: str
+    title: str
+    description: str | None
+    starts_at: datetime
+    ends_at: datetime | None
+    location_type: str
+    # Booking state — computed in routes, not read from ORM attributes directly
+    requires_booking: bool = False
+    capacity: int | None = None
+    booked_count: int = 0
+    spots_remaining: int | None = None
+    booking_closes_at: datetime | None = None
+    booking_note: str | None = None
+    my_booking_status: str | None = None   # 'confirmed' | 'cancelled' | None
+    can_book: bool = False
+    can_cancel_booking: bool = False
+    # Recurrence
+    recurrence_series_id: str | None = None
+    recurrence_label: str | None = None
+    recurrence_index: int | None = None
+    recurrence_total: int | None = None
+    # Visibility
+    is_public: bool = False
+    # Thumbnail
+    thumbnail_url: str | None = None
+    # Lifecycle: active | cancelled | archived
+    status: str = "active"
+
+
+class SeriesBookingResponse(BaseModel):
+    booked: int
+    already_booked: int
+    skipped_full: int
+    skipped_closed: int
+    total_in_series: int
+
+
+class EventDetail(BaseModel):
+    """Full event including join/recording URLs and per-user booking state."""
 
     id: str
     title: str
@@ -188,13 +226,29 @@ class EventSummary(BaseModel):
     starts_at: datetime
     ends_at: datetime | None
     location_type: str
-
-
-class EventDetail(EventSummary):
-    """Full event including join/recording URLs, shown on the detail page."""
-
     location_url: str | None
     recording_url: str | None
+    requires_booking: bool = False
+    capacity: int | None = None
+    booked_count: int = 0
+    spots_remaining: int | None = None
+    booking_closes_at: datetime | None = None
+    booking_note: str | None = None
+    my_booking_status: str | None = None
+    can_book: bool = False
+    can_cancel_booking: bool = False
+    recurrence_series_id: str | None = None
+    recurrence_label: str | None = None
+    recurrence_index: int | None = None
+    recurrence_total: int | None = None
+    is_public: bool = False
+    thumbnail_url: str | None = None
+    status: str = "active"
+
+
+class BookingResponse(BaseModel):
+    status: str
+    booking_id: str | None = None
 
 
 class ContinueResponse(BaseModel):

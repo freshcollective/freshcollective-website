@@ -9,9 +9,11 @@ from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.platform import (
+    BookingStatus,
     Enrollment,
     EntitlementStatus,
     Event,
+    EventBooking,
     Pathway,
     PathwayAboutBlock,
     PathwayEntitlement,
@@ -61,6 +63,8 @@ from app.spaces.schemas import (
     StepDetail,
     StepResourceResponse,
     StepSummary,
+    BookingResponse,
+    SeriesBookingResponse,
 )
 
 router = APIRouter(prefix="/api/spaces", tags=["spaces"])
@@ -733,21 +737,245 @@ def list_events(
     slug: str,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
-) -> list[Event]:
-    """All upcoming published events for a space, sorted chronologically."""
+) -> list[EventSummary]:
+    """All upcoming published events for a space, with per-user booking state."""
     space = _get_space_or_404(slug, db)
-    if not space.is_public and current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
-    return (
-        db.query(Event)
-        .filter(
+
+    # Determine if caller is a member (affects event visibility and booking access)
+    is_member = False
+    if current_user:
+        membership = (
+            db.query(SpaceMembership)
+            .filter(
+                SpaceMembership.user_id == current_user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+            )
+            .first()
+        )
+        is_member = bool(membership)
+
+    # Non-members (and anon users) only see public events; members see all published
+    # Cancelled events are excluded from all member-facing list views
+    if not space.is_public and not is_member and current_user is None:
+        # Space is private and caller is unauthenticated — still show public events
+        events_q = db.query(Event).filter(
             Event.space_id == space.id,
             Event.is_published.is_(True),
+            Event.is_public.is_(True),
+            Event.status == "active",
             Event.starts_at >= datetime.utcnow(),
         )
-        .order_by(Event.starts_at)
-        .all()
+    elif is_member:
+        events_q = db.query(Event).filter(
+            Event.space_id == space.id,
+            Event.is_published.is_(True),
+            Event.status == "active",
+            Event.starts_at >= datetime.utcnow(),
+        )
+    else:
+        # Logged-in non-member: only public events
+        events_q = db.query(Event).filter(
+            Event.space_id == space.id,
+            Event.is_published.is_(True),
+            Event.is_public.is_(True),
+            Event.status == "active",
+            Event.starts_at >= datetime.utcnow(),
+        )
+
+    events = events_q.order_by(Event.starts_at).all()
+
+    now = datetime.utcnow()
+
+    # Bulk-fetch confirmed booking counts for all events in one query
+    event_ids = [e.id for e in events]
+    booked_counts: dict[str, int] = {}
+    if event_ids:
+        rows = (
+            db.query(EventBooking.event_id, func.count(EventBooking.id))
+            .filter(
+                EventBooking.event_id.in_(event_ids),
+                EventBooking.status == BookingStatus.confirmed,
+            )
+            .group_by(EventBooking.event_id)
+            .all()
+        )
+        booked_counts = dict(rows)
+
+    # Fetch current user's bookings if logged in
+    user_bookings: dict[str, str] = {}  # event_id -> status
+    if current_user:
+        user_rows = (
+            db.query(EventBooking.event_id, EventBooking.status)
+            .filter(
+                EventBooking.event_id.in_(event_ids),
+                EventBooking.user_id == current_user.id,
+            )
+            .all()
+        )
+        user_bookings = {r.event_id: r.status.value for r in user_rows}
+
+    result = []
+    for e in events:
+        booked = booked_counts.get(e.id, 0)
+        spots_remaining = (e.capacity - booked) if e.capacity is not None else None
+        my_status = user_bookings.get(e.id)  # 'confirmed' | 'cancelled' | None
+        booking_closed = bool(e.booking_closes_at and e.booking_closes_at <= now)
+        is_full = e.capacity is not None and booked >= e.capacity
+        can_book = (
+            e.requires_booking
+            and is_member
+            and my_status != "confirmed"
+            and not booking_closed
+            and not is_full
+        )
+        can_cancel = (
+            e.requires_booking
+            and is_member
+            and my_status == "confirmed"
+        )
+        result.append(EventSummary(
+            id=e.id,
+            title=e.title,
+            description=e.description,
+            starts_at=e.starts_at,
+            ends_at=e.ends_at,
+            location_type=e.location_type.value if hasattr(e.location_type, "value") else str(e.location_type),
+            requires_booking=e.requires_booking,
+            capacity=e.capacity,
+            booked_count=booked,
+            spots_remaining=spots_remaining,
+            booking_closes_at=e.booking_closes_at,
+            booking_note=e.booking_note,
+            my_booking_status=my_status,
+            can_book=can_book,
+            can_cancel_booking=can_cancel,
+            recurrence_series_id=e.recurrence_series_id,
+            recurrence_label=e.recurrence_label,
+            recurrence_index=e.recurrence_index,
+            recurrence_total=e.recurrence_total,
+            is_public=e.is_public,
+            thumbnail_url=e.thumbnail_url,
+            status=e.status if e.status else "active",
+        ))
+    return result
+
+
+@router.post("/{slug}/events/{event_id}/book", response_model=BookingResponse)
+def book_event(
+    slug: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BookingResponse:
+    """Book a spot at a gathering. Members only. Enforces capacity and cutoff time."""
+    space = _get_space_or_404(slug, db)
+
+    # Must be an active member
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+        .first()
     )
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Must be a member to book.")
+
+    event = (
+        db.query(Event)
+        .filter(Event.id == event_id, Event.space_id == space.id, Event.is_published.is_(True))
+        .first()
+    )
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gathering not found.")
+    if not event.requires_booking:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering does not require booking.")
+    if getattr(event, 'status', 'active') == 'cancelled':
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering has been cancelled.")
+
+    now = datetime.utcnow()
+    if event.starts_at <= now:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering has already started.")
+    if event.booking_closes_at and event.booking_closes_at <= now:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Booking has closed for this gathering.")
+
+    # Check capacity
+    if event.capacity is not None:
+        confirmed = (
+            db.query(func.count(EventBooking.id))
+            .filter(EventBooking.event_id == event.id, EventBooking.status == BookingStatus.confirmed)
+            .scalar()
+        )
+        if confirmed >= event.capacity:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering is fully booked.")
+
+    # Reactivate cancelled booking or create new
+    existing = (
+        db.query(EventBooking)
+        .filter(EventBooking.event_id == event.id, EventBooking.user_id == current_user.id)
+        .first()
+    )
+    if existing:
+        if existing.status == BookingStatus.confirmed:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Already booked.")
+        existing.status = BookingStatus.confirmed
+        existing.booked_at = now
+        existing.cancelled_at = None
+        db.commit()
+        db.refresh(existing)
+        return BookingResponse(status="confirmed", booking_id=existing.id)
+
+    import uuid
+    booking = EventBooking(
+        id=str(uuid.uuid4()),
+        event_id=event.id,
+        user_id=current_user.id,
+        status=BookingStatus.confirmed,
+        booked_at=now,
+    )
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
+    return BookingResponse(status="confirmed", booking_id=booking.id)
+
+
+@router.post("/{slug}/events/{event_id}/cancel-booking", response_model=BookingResponse)
+def cancel_booking(
+    slug: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BookingResponse:
+    """Cancel the current user's booking for a gathering."""
+    space = _get_space_or_404(slug, db)
+    event = (
+        db.query(Event)
+        .filter(Event.id == event_id, Event.space_id == space.id)
+        .first()
+    )
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gathering not found.")
+
+    booking = (
+        db.query(EventBooking)
+        .filter(
+            EventBooking.event_id == event.id,
+            EventBooking.user_id == current_user.id,
+            EventBooking.status == BookingStatus.confirmed,
+        )
+        .first()
+    )
+    if not booking:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active booking found.")
+
+    now = datetime.utcnow()
+    booking.status = BookingStatus.cancelled
+    booking.cancelled_at = now
+    db.commit()
+    return BookingResponse(status="cancelled", booking_id=booking.id)
 
 
 @router.get("/{slug}/events/{event_id}", response_model=EventDetail)
@@ -755,9 +983,9 @@ def get_event(
     slug: str,
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Event:
-    """Return a single published event by ID within a space."""
+    current_user: User | None = Depends(get_optional_user),
+) -> dict:
+    """Return a single published event by ID within a space, with booking state."""
     space = _get_space_or_404(slug, db)
     event = (
         db.query(Event)
@@ -770,7 +998,256 @@ def get_event(
     )
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
-    return event
+
+    # Non-members can only see public events
+    is_member = False
+    if current_user:
+        is_member = bool(
+            db.query(SpaceMembership)
+            .filter(
+                SpaceMembership.user_id == current_user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+            )
+            .first()
+        )
+    if not is_member and not event.is_public:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
+
+    now = datetime.utcnow()
+    is_past = bool(event.ends_at and event.ends_at < now) or (not event.ends_at and event.starts_at < now)
+
+    booked_count = 0
+    my_booking_status = None
+    if event.requires_booking:
+        booked_count = (
+            db.query(func.count(EventBooking.id))
+            .filter(EventBooking.event_id == event.id, EventBooking.status == BookingStatus.confirmed)
+            .scalar()
+        ) or 0
+        if current_user:
+            my_row = (
+                db.query(EventBooking)
+                .filter(EventBooking.event_id == event.id, EventBooking.user_id == current_user.id)
+                .first()
+            )
+            if my_row:
+                my_booking_status = my_row.status.value if hasattr(my_row.status, "value") else my_row.status
+
+    spots_remaining = None
+    if event.capacity is not None:
+        spots_remaining = max(0, event.capacity - booked_count)
+
+    event_status = getattr(event, 'status', 'active') or 'active'
+    is_cancelled = event_status == 'cancelled'
+    booking_open = (
+        event.requires_booking
+        and not is_past
+        and not is_cancelled
+        and is_member
+        and (event.booking_closes_at is None or event.booking_closes_at > now)
+    )
+    can_book = booking_open and my_booking_status != "confirmed" and (spots_remaining is None or spots_remaining > 0)
+    can_cancel_booking = bool(not is_past and not is_cancelled and my_booking_status == "confirmed")
+
+    return {
+        "id": event.id,
+        "title": event.title,
+        "description": event.description,
+        "starts_at": event.starts_at,
+        "ends_at": event.ends_at,
+        "location_type": event.location_type.value if hasattr(event.location_type, "value") else str(event.location_type),
+        "location_url": event.location_url if is_member else None,
+        "recording_url": event.recording_url if is_member else None,
+        "requires_booking": event.requires_booking,
+        "capacity": event.capacity,
+        "booked_count": booked_count,
+        "spots_remaining": spots_remaining,
+        "booking_closes_at": event.booking_closes_at,
+        "booking_note": event.booking_note,
+        "my_booking_status": my_booking_status,
+        "can_book": can_book,
+        "can_cancel_booking": can_cancel_booking,
+        "recurrence_series_id": event.recurrence_series_id,
+        "recurrence_label": event.recurrence_label,
+        "recurrence_index": event.recurrence_index,
+        "recurrence_total": event.recurrence_total,
+        "is_public": event.is_public,
+        "thumbnail_url": event.thumbnail_url,
+        "status": event_status,
+    }
+
+
+@router.post("/{slug}/events/series/{series_id}/book", response_model=SeriesBookingResponse)
+def book_series(
+    slug: str,
+    series_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SeriesBookingResponse:
+    """Book all future bookable sessions in a recurrence series. Skips full/closed/already-booked."""
+    space = _get_space_or_404(slug, db)
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Must be a member to book.")
+
+    now = datetime.utcnow()
+    events = (
+        db.query(Event)
+        .filter(
+            Event.space_id == space.id,
+            Event.recurrence_series_id == series_id,
+            Event.is_published.is_(True),
+            Event.requires_booking.is_(True),
+            Event.status == "active",
+            Event.starts_at > now,
+        )
+        .order_by(Event.starts_at)
+        .all()
+    )
+    if not events:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No upcoming bookable sessions in this series.")
+
+    event_ids = [e.id for e in events]
+    confirmed_counts: dict[str, int] = dict(
+        db.query(EventBooking.event_id, func.count(EventBooking.id))
+        .filter(EventBooking.event_id.in_(event_ids), EventBooking.status == BookingStatus.confirmed)
+        .group_by(EventBooking.event_id)
+        .all()
+    )
+    existing_bookings: dict[str, "EventBooking"] = {
+        b.event_id: b
+        for b in db.query(EventBooking).filter(
+            EventBooking.event_id.in_(event_ids),
+            EventBooking.user_id == current_user.id,
+        ).all()
+    }
+
+    booked = 0
+    already_booked = 0
+    skipped_full = 0
+    skipped_closed = 0
+
+    for e in events:
+        existing = existing_bookings.get(e.id)
+        if existing and existing.status == BookingStatus.confirmed:
+            already_booked += 1
+            continue
+        if e.booking_closes_at and e.booking_closes_at <= now:
+            skipped_closed += 1
+            continue
+        confirmed = confirmed_counts.get(e.id, 0)
+        if e.capacity is not None and confirmed >= e.capacity:
+            skipped_full += 1
+            continue
+
+        if existing:
+            existing.status = BookingStatus.confirmed
+            existing.booked_at = now
+            existing.cancelled_at = None
+        else:
+            db.add(EventBooking(
+                id=str(uuid.uuid4()),
+                event_id=e.id,
+                user_id=current_user.id,
+                status=BookingStatus.confirmed,
+                booked_at=now,
+            ))
+        booked += 1
+
+    db.commit()
+    return SeriesBookingResponse(
+        booked=booked,
+        already_booked=already_booked,
+        skipped_full=skipped_full,
+        skipped_closed=skipped_closed,
+        total_in_series=len(events),
+    )
+
+
+@router.get("/{slug}/events/{event_id}/calendar.ics")
+def download_ics(
+    slug: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+):
+    """Download an iCalendar (.ics) file for a gathering. Available for public events or members."""
+    from fastapi.responses import Response
+
+    space = _get_space_or_404(slug, db)
+    event = (
+        db.query(Event)
+        .filter(Event.id == event_id, Event.space_id == space.id, Event.is_published.is_(True))
+        .first()
+    )
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found.")
+
+    is_member = False
+    if current_user:
+        is_member = bool(
+            db.query(SpaceMembership)
+            .filter(
+                SpaceMembership.user_id == current_user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+            )
+            .first()
+        )
+    if not is_member and not event.is_public:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    if getattr(event, 'status', 'active') == 'cancelled':
+        raise HTTPException(status_code=410, detail="This event has been cancelled.")
+
+    def fmt_ics_dt(dt: datetime) -> str:
+        return dt.strftime("%Y%m%dT%H%M%SZ")
+
+    starts = fmt_ics_dt(event.starts_at)
+    if event.ends_at:
+        ends = fmt_ics_dt(event.ends_at)
+    else:
+        from datetime import timedelta
+        ends = fmt_ics_dt(event.starts_at + timedelta(hours=1))
+
+    location = event.location_url or ""
+    description = (event.description or "").replace("\n", "\\n")
+    event_url = f"https://fresh.community/spaces/{slug}/events/{event.id}"
+    uid = f"{event.id}@fresh.community"
+
+    ics = "\r\n".join([
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Fresh Collective//Gatherings//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTART:{starts}",
+        f"DTEND:{ends}",
+        f"SUMMARY:{event.title}",
+        f"DESCRIPTION:{description}",
+        f"LOCATION:{location}",
+        f"URL:{event_url}",
+        "END:VEVENT",
+        "END:VCALENDAR",
+    ])
+
+    safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_").strip().replace(" ", "-")
+    filename = f"{safe_title or 'gathering'}.ics"
+    return Response(
+        content=ics,
+        media_type="text/calendar",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ---------------------------------------------------------------------------

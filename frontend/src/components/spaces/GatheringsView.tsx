@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import EventCard from '@/components/spaces/EventCard'
-import type { EventSummary } from '@/types/platform'
+import type { EventSummary, SeriesBookingResult } from '@/types/platform'
 import {
   gatheringDateKey,
   todayGatheringKey,
@@ -12,6 +12,7 @@ import {
   formatGatheringMobileDayLabel,
 } from '@/lib/dateTime'
 import { getGatheringAccent } from '@/lib/gatheringAccent'
+import { apiUrl } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -31,12 +32,15 @@ interface Props {
   events: EventSummary[]
   spaceSlug: string
   timezone: string
+  isMember?: boolean
 }
 
-export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
+export default function GatheringsView({ events: initialEvents, spaceSlug, timezone, isMember = true }: Props) {
+  const [events, setEvents] = useState<EventSummary[]>(initialEvents)
   const [view, setView] = useState<'list' | 'calendar'>('list')
+  const [seriesResult, setSeriesResult] = useState<(SeriesBookingResult & { seriesId: string }) | null>(null)
 
-  // Calendar month state — start on current UTC month (UTC and +10/+11 months align at boundaries)
+  // Calendar month state — start on current UTC month
   const [monthStart, setMonthStart] = useState<Date>(() => {
     const now = new Date()
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
@@ -48,19 +52,85 @@ export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
   const prevMonth = () => setMonthStart(new Date(Date.UTC(year, month - 1, 1)))
   const nextMonth = () => setMonthStart(new Date(Date.UTC(year, month + 1, 1)))
 
-  // Sort all events ascending
+  // ---------------------------------------------------------------------------
+  // Booking handlers
+  // ---------------------------------------------------------------------------
+
+  async function handleBook(eventId: string) {
+    const res = await fetch(apiUrl(`/api/spaces/${spaceSlug}/events/${eventId}/book`), {
+      method: 'POST',
+      credentials: 'include',
+    })
+    if (!res.ok) return
+    setEvents(prev =>
+      prev.map(e =>
+        e.id !== eventId ? e : {
+          ...e,
+          my_booking_status: 'confirmed',
+          can_book: false,
+          can_cancel_booking: true,
+          booked_count: e.booked_count + 1,
+          spots_remaining: e.spots_remaining !== null ? e.spots_remaining - 1 : null,
+        }
+      )
+    )
+  }
+
+  async function handleCancelBooking(eventId: string) {
+    const res = await fetch(apiUrl(`/api/spaces/${spaceSlug}/events/${eventId}/cancel-booking`), {
+      method: 'POST',
+      credentials: 'include',
+    })
+    if (!res.ok) return
+    setEvents(prev =>
+      prev.map(e =>
+        e.id !== eventId ? e : {
+          ...e,
+          my_booking_status: 'cancelled',
+          can_book: true,
+          can_cancel_booking: false,
+          booked_count: Math.max(0, e.booked_count - 1),
+          spots_remaining: e.spots_remaining !== null ? e.spots_remaining + 1 : null,
+        }
+      )
+    )
+  }
+
+  async function handleBookSeries(eventId: string, seriesId: string) {
+    const res = await fetch(apiUrl(`/api/spaces/${spaceSlug}/events/series/${seriesId}/book`), {
+      method: 'POST',
+      credentials: 'include',
+    })
+    if (!res.ok) return
+    const result: SeriesBookingResult = await res.json()
+    setSeriesResult({ ...result, seriesId })
+    // Mark all future series events as booked in local state
+    setEvents(prev =>
+      prev.map(e =>
+        e.recurrence_series_id !== seriesId ? e : {
+          ...e,
+          my_booking_status: 'confirmed',
+          can_book: false,
+          can_cancel_booking: true,
+        }
+      )
+    )
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sorting / grouping
+  // ---------------------------------------------------------------------------
+
   const sortedEvents = [...events].sort(
     (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
   )
 
-  // Group events by collective local date key
   const eventsByKey: Record<string, EventSummary[]> = {}
   for (const e of sortedEvents) {
     const k = gatheringDateKey(e.starts_at, timezone)
     ;(eventsByKey[k] ??= []).push(e)
   }
 
-  // Events that fall in the currently displayed month (collective local date)
   const yearStr  = String(year).padStart(4, '0')
   const monthStr = String(month + 1).padStart(2, '0')
   const monthPrefix = `${yearStr}-${monthStr}`
@@ -68,9 +138,8 @@ export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
     gatheringDateKey(e.starts_at, timezone).startsWith(monthPrefix),
   )
 
-  // Calendar grid geometry
   const daysInMonth  = new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
-  const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay() // 0 = Sun
+  const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay()
   const today        = todayGatheringKey(timezone)
 
   // ---------------------------------------------------------------------------
@@ -79,6 +148,27 @@ export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
 
   return (
     <div>
+
+      {/* Series booking result toast */}
+      {seriesResult && (
+        <div
+          className="mb-4 flex items-start justify-between rounded-xl px-5 py-3.5"
+          style={{ background: 'rgba(56,160,158,0.08)', border: '1px solid rgba(56,160,158,0.2)' }}
+        >
+          <p className="text-sm text-teal-800">
+            Booked {seriesResult.booked} session{seriesResult.booked !== 1 ? 's' : ''}.
+            {seriesResult.skipped_full > 0 && ` ${seriesResult.skipped_full} full.`}
+            {seriesResult.skipped_closed > 0 && ` ${seriesResult.skipped_closed} booking closed.`}
+            {seriesResult.already_booked > 0 && ` ${seriesResult.already_booked} already booked.`}
+          </p>
+          <button
+            onClick={() => setSeriesResult(null)}
+            className="ml-4 shrink-0 text-xs text-slate-400 hover:text-slate-600"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── View toggle ── */}
       <div className="mb-6">
@@ -105,14 +195,28 @@ export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
         sortedEvents.length > 0 ? (
           <div className="flex flex-col gap-3">
             {sortedEvents.map((e) => (
-              <EventCard key={e.id} event={e} spaceSlug={spaceSlug} timezone={timezone} />
+              <EventCard
+                key={e.id}
+                event={e}
+                spaceSlug={spaceSlug}
+                timezone={timezone}
+                isMember={isMember}
+                onBook={() => handleBook(e.id)}
+                onCancelBooking={() => handleCancelBooking(e.id)}
+                onBookSeries={e.recurrence_series_id
+                  ? () => handleBookSeries(e.id, e.recurrence_series_id!)
+                  : undefined
+                }
+              />
             ))}
           </div>
         ) : (
           <div className="rounded-2xl border border-teal-100 bg-white px-7 py-8">
             <p className="mb-1 text-lg font-semibold text-navy-900">No upcoming gatherings yet.</p>
             <p className="text-sm leading-relaxed text-slate-400">
-              Live calls, workshops, and sessions will appear here when scheduled. Check back soon.
+              {isMember
+                ? 'Live calls, workshops, and sessions will appear here when scheduled. Check back soon.'
+                : 'Public sessions will appear here when scheduled.'}
             </p>
           </div>
         )
@@ -158,15 +262,13 @@ export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
               ))}
             </div>
 
-            {/* Day cells — gap-px + bg-border gives crisp 1px separators */}
+            {/* Day cells */}
             <div className="grid grid-cols-7 gap-px bg-border">
 
-              {/* Blank offset cells */}
               {Array.from({ length: firstWeekday }).map((_, i) => (
                 <div key={`blank-${i}`} className="min-h-[120px] bg-slate-50/50" />
               ))}
 
-              {/* Day cells */}
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day     = i + 1
                 const cellKey = `${yearStr}-${monthStr}-${String(day).padStart(2, '0')}`
@@ -175,21 +277,17 @@ export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
 
                 return (
                   <div key={day} className="min-h-[120px] bg-white p-1.5">
-                    {/* Day number */}
                     <div className="mb-1 flex justify-end pr-0.5">
                       <span
                         className={[
                           'flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-medium',
-                          isToday
-                            ? 'bg-teal-500 text-white'
-                            : 'text-slate-400',
+                          isToday ? 'bg-teal-500 text-white' : 'text-slate-400',
                         ].join(' ')}
                       >
                         {day}
                       </span>
                     </div>
 
-                    {/* Event chips */}
                     <div className="flex flex-col gap-0.5">
                       {dayEvts.map((e) => {
                         const accent = getGatheringAccent(e.location_type)
@@ -211,7 +309,6 @@ export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
               })}
             </div>
 
-            {/* Desktop empty-month note */}
             {eventsThisMonth.length === 0 && (
               <div className="border-t border-border px-5 py-6 text-center text-sm text-slate-400">
                 No gatherings scheduled for this month.
@@ -219,7 +316,7 @@ export default function GatheringsView({ events, spaceSlug, timezone }: Props) {
             )}
           </div>
 
-          {/* ── Mobile: day-list for the month (hidden on sm+) ── */}
+          {/* ── Mobile: day-list for the month ── */}
           <div className="sm:hidden">
             {eventsThisMonth.length === 0 ? (
               <div className="px-5 py-8 text-center text-sm text-slate-400">

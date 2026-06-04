@@ -123,11 +123,47 @@ export interface EventSummary {
   starts_at: string
   ends_at: string | null
   location_type: 'zoom' | 'in_person' | 'async_recorded'
+  requires_booking: boolean
+  capacity: number | null
+  booked_count: number
+  spots_remaining: number | null
+  booking_closes_at: string | null
+  booking_note: string | null
+  my_booking_status: 'confirmed' | 'cancelled' | null
+  can_book: boolean
+  can_cancel_booking: boolean
+  recurrence_series_id: string | null
+  recurrence_label: string | null
+  recurrence_index: number | null
+  recurrence_total: number | null
+  is_public: boolean
+  thumbnail_url: string | null
+  status: 'active' | 'cancelled' | 'archived'
 }
 
 export interface EventDetail extends EventSummary {
   location_url: string | null
   recording_url: string | null
+  // thumbnail_url and status inherited from EventSummary
+}
+
+export interface SeriesBookingResult {
+  booked: number
+  already_booked: number
+  skipped_full: number
+  skipped_closed: number
+  total_in_series: number
+}
+
+export interface EventBooking {
+  booking_id: string
+  user_id: string
+  name: string | null
+  email: string
+  booked_at: string
+  status: 'confirmed' | 'cancelled'
+  source: string | null
+  note: string | null
 }
 
 export interface MemberProfile {
@@ -325,6 +361,18 @@ export interface CreatorEvent {
   location_url: string | null
   recording_url: string | null
   is_published: boolean
+  is_public: boolean
+  requires_booking: boolean
+  capacity: number | null
+  booking_closes_at: string | null
+  booking_note: string | null
+  booked_count: number
+  thumbnail_url: string | null
+  status: 'active' | 'cancelled' | 'archived'
+  recurrence_series_id: string | null
+  recurrence_label: string | null
+  recurrence_index: number | null
+  recurrence_total: number | null
   created_at: string
 }
 

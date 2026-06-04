@@ -1,6 +1,7 @@
 import { getSpace, getSpaceMembers, getMe, getSpaceEvents, getMySpaceAccess } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
 import { formatCollectiveAccessLabel, formatCollectivePricingSummary } from '@/lib/pricing'
+import { formatGatheringDate } from '@/lib/dateTime'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Avatar from '@/components/ui/Avatar'
@@ -172,6 +173,42 @@ export default async function SpaceAboutPage({ params }: Props) {
               )}
             </div>
           </div>
+
+          {/* Upcoming public sessions — shown to non-members when events are publicly visible */}
+          {!isSpaceMember && events.length > 0 && (
+            <div
+              className="overflow-hidden rounded-2xl bg-white"
+              style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+            >
+              <div className="border-b border-border px-6 py-4">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  Upcoming sessions
+                </p>
+              </div>
+              <div className="divide-y divide-border">
+                {events.slice(0, 3).map((event) => {
+                  const { day, month, time } = formatGatheringDate(event.starts_at, space.timezone)
+                  return (
+                    <div key={event.id} className="flex items-center gap-4 px-6 py-4">
+                      <div className="shrink-0 text-center">
+                        <div className="text-xl font-bold leading-none text-navy-900">{day}</div>
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-teal-600">{month}</div>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[14px] font-medium text-navy-900">{event.title}</p>
+                        <p className="text-[12px] text-slate-400">{time}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="border-t border-border px-6 py-4">
+                <p className="text-[13px] text-slate-500">
+                  Join to book your spot in these sessions.{' '}
+                </p>
+              </div>
+            </div>
+          )}
 
         </div>
 

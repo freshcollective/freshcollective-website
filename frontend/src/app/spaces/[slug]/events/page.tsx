@@ -1,17 +1,7 @@
-// TODO (naming): Routes and backend models still use "events" internally. User-facing language is "Gatherings".
-// TODO (booking system): add RSVP / reserve-a-spot action to each event card
-// TODO (booking system): support capacity limits per event (creator-managed)
-// TODO (booking system): booking status — available, full, booked, cancelled
-// TODO (booking system): free events flow (RSVP with no payment)
-// TODO (booking system): paid events — route to checkout, integrate Stripe
-// TODO (booking system): attendee list visible to creator in Creator Studio
-// TODO (booking system): booking confirmation email / reminder notifications
-// TODO (booking system): creator toggle per-event: open / invite-only / closed
-
-import { getSpace, getSpaceEvents, getSpaceMembers } from '@/lib/serverApi'
+import { getSpace, getSpaceEvents, getSpaceMembers, getMySpaceAccess } from '@/lib/serverApi'
 import GatheringsView from '@/components/spaces/GatheringsView'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
-import type { EventSummary, MemberProfile, SpaceResponse } from '@/types/platform'
+import type { EventSummary, MemberProfile, SpaceResponse, SpaceAccessStatus } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -19,11 +9,13 @@ interface Props {
 
 export default async function SpaceEventsPage({ params }: Props) {
   const { slug } = await params
-  const [space, events, members]: [SpaceResponse | null, EventSummary[], MemberProfile[]] = await Promise.all([
+  const [space, events, members, access]: [SpaceResponse | null, EventSummary[], MemberProfile[], SpaceAccessStatus | null] = await Promise.all([
     getSpace(slug),
     getSpaceEvents(slug),
     getSpaceMembers(slug),
+    getMySpaceAccess(slug),
   ])
+  const isMember = access?.is_member ?? false
 
   const timezone = space?.timezone ?? 'Australia/Melbourne'
   const memberCount = members.filter((m) => m.space_role === 'learner').length
@@ -68,7 +60,7 @@ export default async function SpaceEventsPage({ params }: Props) {
         </div>
 
         {/* List / Calendar toggle + content */}
-        <GatheringsView events={events} spaceSlug={slug} timezone={timezone} />
+        <GatheringsView events={events} spaceSlug={slug} timezone={timezone} isMember={isMember} />
 
       </div>
 

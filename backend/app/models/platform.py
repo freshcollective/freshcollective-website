@@ -136,6 +136,11 @@ class EventLocationType(str, enum.Enum):
     async_recorded = "async_recorded"
 
 
+class BookingStatus(str, enum.Enum):
+    confirmed = "confirmed"
+    cancelled = "cancelled"
+
+
 class PostType(str, enum.Enum):
     prompt = "prompt"
     reflection = "reflection"
@@ -659,6 +664,24 @@ class Event(Base):
     is_published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Booking fields
+    requires_booking: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    booking_closes_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    booking_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Recurrence — individual events are generated from a series; grouped by series_id
+    recurrence_series_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    recurrence_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recurrence_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recurrence_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Visibility — public events are visible to logged-out/non-member users
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Thumbnail for visual identity in event lists and detail
+    thumbnail_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Lifecycle status: active | cancelled | archived
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", server_default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )
@@ -670,9 +693,56 @@ class Event(Base):
     )
 
     space: Mapped[Space] = relationship("Space", back_populates="events")
+    bookings: Mapped[list["EventBooking"]] = relationship("EventBooking", back_populates="event", lazy="dynamic")
 
     __table_args__ = (
         Index("ix_events_space_starts_at", "space_id", "starts_at"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Event Bookings
+# ---------------------------------------------------------------------------
+
+class EventBooking(Base):
+    """A member's booking for a gathering that requires_booking=True."""
+
+    __tablename__ = "event_bookings"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    event_id: Mapped[str] = mapped_column(
+        String, ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[BookingStatus] = mapped_column(
+        SAEnum(BookingStatus, name="bookingstatus", create_type=True),
+        nullable=False,
+        default=BookingStatus.confirmed,
+        server_default="confirmed",
+    )
+    booked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    # Source: 'member' (self-booked) | 'creator_manual' (added by creator/moderator)
+    source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Optional note for manual bookings
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    event: Mapped["Event"] = relationship("Event", back_populates="bookings")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (
+        UniqueConstraint("event_id", "user_id", name="uq_event_bookings_event_user"),
+        Index("ix_event_bookings_event_status", "event_id", "status"),
     )
 
 

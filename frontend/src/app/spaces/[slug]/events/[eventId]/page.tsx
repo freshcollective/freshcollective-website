@@ -1,18 +1,9 @@
-// TODO (naming): Routes and backend models still use "events" internally. User-facing language is "Gatherings".
-// TODO (booking): RSVP / reserve-a-spot action — wire to booking endpoint
-// TODO (booking): capacity limits per event (creator-managed in Creator Studio)
-// TODO (booking): booking status — available, full, booked, cancelled
-// TODO (booking): free bookings flow (RSVP with no payment)
-// TODO (booking): paid bookings — route to checkout, integrate Stripe
-// TODO (booking): attendee list visible to creator in Creator Studio
-// TODO (booking): booking confirmation email + reminder notifications
-// TODO (booking): per-event booking settings (open / invite-only / closed)
-
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSpace, getSpaceEvent } from '@/lib/serverApi'
 import type { EventDetail } from '@/types/platform'
 import { formatGatheringFullDate, formatGatheringTime } from '@/lib/dateTime'
+import BookingPanel from '@/components/spaces/BookingPanel'
 
 interface Props {
   params: Promise<{ slug: string; eventId: string }>
@@ -49,27 +40,42 @@ function formatDuration(startsAt: string, endsAt: string): string {
   return m > 0 ? `${h} hr ${m} min` : `${h} hr`
 }
 
-function googleCalendarUrl(event: EventDetail): string {
+function calendarUrls(event: EventDetail) {
   const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
   const start = new Date(event.starts_at)
   const end = event.ends_at
     ? new Date(event.ends_at)
     : new Date(start.getTime() + 60 * 60 * 1000)
-  const params = new URLSearchParams({
+
+  const googleParams = new URLSearchParams({
     action: 'TEMPLATE',
     text: event.title,
     dates: `${fmt(start)}/${fmt(end)}`,
     details: event.description ?? '',
     location: event.location_url ?? '',
   })
-  return `https://calendar.google.com/calendar/render?${params}`
+  const google = `https://calendar.google.com/calendar/render?${googleParams}`
+
+  const outlookParams = new URLSearchParams({
+    path: '/calendar/action/compose',
+    rru: 'addevent',
+    startdt: start.toISOString(),
+    enddt: end.toISOString(),
+    subject: event.title,
+    body: event.description ?? '',
+    location: event.location_url ?? '',
+  })
+  const outlook = `https://outlook.live.com/calendar/0/action/compose?${outlookParams}`
+
+  return { google, outlook }
 }
 
-const STATE_BADGE: Record<EventState, { label: string; bg: string; color: string }> = {
+const STATE_BADGE: Record<EventState | 'cancelled', { label: string; bg: string; color: string }> = {
   upcoming:         { label: 'Upcoming',           bg: 'rgba(56,160,158,0.10)', color: '#0f766e' },
   live:             { label: 'Happening now',       bg: 'rgba(22,163,74,0.10)',  color: '#15803d' },
   'past-replay':    { label: 'Replay available',    bg: 'rgba(21,36,54,0.08)',   color: '#334155' },
   'past-no-replay': { label: 'Session ended',       bg: 'rgba(0,0,0,0.05)',      color: '#94a3b8' },
+  'cancelled':      { label: 'Cancelled',           bg: 'rgba(239,68,68,0.08)',  color: '#b91c1c' },
 }
 
 export default async function EventDetailPage({ params }: Props) {
@@ -85,9 +91,12 @@ export default async function EventDetailPage({ params }: Props) {
   const formatFullDate = (iso: string) => formatGatheringFullDate(iso, timezone)
   const formatTime     = (iso: string) => formatGatheringTime(iso, timezone)
 
-  const state = getEventState(event)
+  const isCancelled = event.status === 'cancelled'
+  const state = isCancelled ? 'cancelled' as const : getEventState(event)
   const badge = STATE_BADGE[state]
   const locationLabel = LOCATION_LABEL[event.location_type] ?? event.location_type
+  const { google: googleCalUrl, outlook: outlookCalUrl } = calendarUrls(event)
+  const icsUrl = `/api/spaces/${slug}/events/${eventId}/calendar.ics`
 
   return (
     <div className="max-w-3xl">
@@ -104,13 +113,31 @@ export default async function EventDetailPage({ params }: Props) {
 
       {/* ── Hero card ── */}
       <div
-        className="relative mb-8 overflow-hidden rounded-2xl px-7 py-8 md:px-9"
+        className="relative mb-8 overflow-hidden rounded-2xl"
         style={{
           background: '#071824',
           border: '1px solid rgba(66,199,198,0.10)',
           boxShadow: '0 4px 24px rgba(7,24,36,0.18), 0 1px 4px rgba(0,0,0,0.10)',
         }}
       >
+        {event.thumbnail_url && (
+          <div className="relative h-52 w-full overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={event.thumbnail_url}
+              alt={event.title}
+              className="h-full w-full object-cover"
+            />
+            {isCancelled && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <span className="rounded-full bg-white/90 px-4 py-1.5 text-sm font-semibold text-slate-700">
+                  Cancelled
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="px-7 py-8 md:px-9">
         <div
           className="mb-3 h-[2px] w-8 rounded-full"
           style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
@@ -145,6 +172,7 @@ export default async function EventDetailPage({ params }: Props) {
           <span>{formatFullDate(event.starts_at)}</span>
           <span>{formatTime(event.starts_at)}</span>
           {event.ends_at && <span>{formatDuration(event.starts_at, event.ends_at)}</span>}
+        </div>
         </div>
       </div>
 
@@ -206,12 +234,27 @@ export default async function EventDetailPage({ params }: Props) {
                 </a>
               )}
               <a
-                href={googleCalendarUrl(event)}
+                href={googleCalUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900"
               >
-                Add to Google Calendar
+                Google Calendar
+              </a>
+              <a
+                href={outlookCalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900"
+              >
+                Outlook
+              </a>
+              <a
+                href={icsUrl}
+                download
+                className="inline-flex items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900"
+              >
+                Download .ics
               </a>
             </div>
           )}
@@ -252,12 +295,7 @@ export default async function EventDetailPage({ params }: Props) {
 
         </div>
 
-        {/* ── Right: booking panel ── */}
-        {/* TODO (booking): replace this placeholder with real booking logic */}
-        {/* TODO (booking): show "Reserve your spot" when booking is open */}
-        {/* TODO (booking): show capacity remaining when limits are set */}
-        {/* TODO (booking): show price or "Included with membership" */}
-        {/* TODO (booking): disable/grey out when event is full or past */}
+        {/* ── Right: booking / info panel ── */}
         <div className="lg:sticky lg:top-6">
           <div
             className="rounded-2xl border bg-white p-5"
@@ -268,42 +306,56 @@ export default async function EventDetailPage({ params }: Props) {
               style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
             />
 
-            <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-              Booking
-            </p>
-            <p className="mb-4 text-[15px] font-semibold text-navy-900">
-              {state === 'past-replay' || state === 'past-no-replay'
-                ? 'Session ended'
-                : 'Booking not yet open'}
-            </p>
-
-            <div className="mb-4 space-y-2.5 text-[13px] text-slate-500">
-              <div className="flex items-center justify-between">
-                <span>Price</span>
-                <span className="text-slate-400">—</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Capacity</span>
-                <span className="text-slate-400">—</span>
-              </div>
-            </div>
-
-            <button
-              disabled
-              className="w-full rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400 cursor-not-allowed"
-            >
-              Booking coming soon
-            </button>
+            {isCancelled ? (
+              <>
+                <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Status
+                </p>
+                <p className="text-[15px] font-semibold text-red-700">This event has been cancelled</p>
+              </>
+            ) : event.requires_booking ? (
+              <BookingPanel
+                eventId={event.id}
+                spaceSlug={slug}
+                requiresBooking={event.requires_booking}
+                capacity={event.capacity}
+                initialBookedCount={event.booked_count}
+                initialSpotsRemaining={event.spots_remaining}
+                bookingNote={event.booking_note}
+                initialMyBookingStatus={event.my_booking_status as 'confirmed' | 'cancelled' | null}
+                initialCanBook={event.can_book}
+                initialCanCancelBooking={event.can_cancel_booking}
+                isPast={state === 'past-replay' || state === 'past-no-replay'}
+                recurrenceSeriesId={event.recurrence_series_id}
+              />
+            ) : (
+              <>
+                <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Access
+                </p>
+                <p className="mb-4 text-[15px] font-semibold text-navy-900">
+                  {state === 'past-replay' || state === 'past-no-replay'
+                    ? 'Session ended'
+                    : 'Open to all members'}
+                </p>
+              </>
+            )}
 
             {(state === 'upcoming' || state === 'live') && (
-              <a
-                href={googleCalendarUrl(event)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 block text-center text-[12px] text-slate-400 transition-colors hover:text-teal-600"
-              >
-                Add to Google Calendar
-              </a>
+              <div className="mt-3 flex flex-col gap-1.5 text-center text-[12px]">
+                <a href={googleCalUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-slate-400 transition-colors hover:text-teal-600">
+                  Google Calendar
+                </a>
+                <a href={outlookCalUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-slate-400 transition-colors hover:text-teal-600">
+                  Outlook
+                </a>
+                <a href={icsUrl} download
+                  className="text-slate-400 transition-colors hover:text-teal-600">
+                  Download .ics
+                </a>
+              </div>
             )}
           </div>
         </div>

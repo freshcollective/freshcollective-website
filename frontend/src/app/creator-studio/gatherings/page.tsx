@@ -2,19 +2,13 @@ import Link from 'next/link'
 import { getActiveCreatorSpace, getCreatorEvents } from '@/lib/serverApi'
 import type { CreatorEvent } from '@/types/platform'
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  })
+const LOCATION_LABELS: Record<string, string> = {
+  zoom: 'Zoom',
+  in_person: 'In person',
+  async_recorded: 'Recorded',
 }
 
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-}
-
-function EventCard({
+function GatheringRow({
   event,
   spaceSlug,
   isPast,
@@ -23,48 +17,93 @@ function EventCard({
   spaceSlug: string
   isPast?: boolean
 }) {
+  const isCancelled = event.status === 'cancelled'
+  const day = new Date(event.starts_at).getDate()
+  const month = new Date(event.starts_at).toLocaleDateString('en-GB', { month: 'short' })
+  const time = new Date(event.starts_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+
   return (
-    <Link
-      href={`/creator/spaces/${spaceSlug}/events/${event.id}`}
-      className="group flex items-start gap-4 rounded-2xl border border-border bg-white p-5 transition-all hover:border-teal-200 hover:shadow-sm"
-      style={{ opacity: isPast ? 0.65 : 1 }}
+    <div
+      className="flex items-center gap-4 rounded-2xl border bg-white px-5 py-4 transition-all"
+      style={{
+        borderColor: isCancelled ? 'rgba(239,68,68,0.15)' : 'rgba(0,0,0,0.07)',
+        opacity: isCancelled || isPast ? 0.7 : 1,
+      }}
     >
-      <div
-        className="shrink-0 rounded-xl p-2 text-center"
-        style={{ background: 'rgba(56,160,158,0.08)', minWidth: '52px' }}
-      >
-        <p className="text-[20px] font-bold leading-none text-navy-900">
-          {new Date(event.starts_at).getDate()}
-        </p>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-teal-600">
-          {new Date(event.starts_at).toLocaleDateString('en-GB', { month: 'short' })}
-        </p>
-      </div>
+      {/* Thumbnail or date block */}
+      {event.thumbnail_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={event.thumbnail_url}
+          alt=""
+          className="h-12 w-16 shrink-0 rounded-xl object-cover"
+        />
+      ) : (
+        <div
+          className="shrink-0 rounded-xl p-2 text-center"
+          style={{ background: 'rgba(56,160,158,0.08)', minWidth: '48px' }}
+        >
+          <p className="text-[18px] font-bold leading-none text-navy-900">{day}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-teal-600">{month}</p>
+        </div>
+      )}
+
+      {/* Main info */}
       <div className="min-w-0 flex-1">
-        <p className="text-[15px] font-medium text-navy-900 transition-colors group-hover:text-teal-700">
-          {event.title}
-        </p>
-        <p className="mt-0.5 text-[13px] text-slate-500">
-          {formatDate(event.starts_at)} · {formatTime(event.starts_at)}
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span
-            className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
-            style={{ background: 'rgba(0,0,0,0.05)', color: '#64748b' }}
-          >
-            {event.location_type.replace(/_/g, ' ')}
-          </span>
-          {!event.is_published && (
+        <div className="mb-0.5 flex flex-wrap items-center gap-2">
+          <p className="truncate text-[15px] font-medium text-navy-900">{event.title}</p>
+          {isCancelled && (
+            <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-600">
+              Cancelled
+            </span>
+          )}
+          {!isCancelled && !event.is_published && (
             <span
-              className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+              className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium"
               style={{ background: 'rgba(212,176,72,0.12)', color: '#b08d2a' }}
             >
               Draft
             </span>
           )}
         </div>
+
+        <p className="text-[12px] text-slate-400">
+          {time} · {LOCATION_LABELS[event.location_type] ?? event.location_type}
+        </p>
+
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          {event.requires_booking && (
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
+            >
+              {event.booked_count}{event.capacity ? `/${event.capacity}` : ''} booked
+            </span>
+          )}
+          {event.recurrence_series_id && (
+            <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-medium text-teal-700">
+              Series{event.recurrence_index ? ` · ${event.recurrence_index}/${event.recurrence_total}` : ''}
+            </span>
+          )}
+          {event.is_public && (
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+              style={{ background: 'rgba(214,177,63,0.10)', color: '#7A5A00' }}
+            >
+              Public preview
+            </span>
+          )}
+        </div>
       </div>
-    </Link>
+
+      {/* Edit action */}
+      <Link
+        href={`/creator/spaces/${spaceSlug}/events/${event.id}`}
+        className="shrink-0 rounded-xl border border-border px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+      >
+        Edit
+      </Link>
+    </div>
   )
 }
 
@@ -73,8 +112,9 @@ export default async function GatheringsPage() {
   const events: CreatorEvent[] = primarySpace ? await getCreatorEvents(primarySpace.slug) : []
 
   const now = new Date()
-  const upcoming = events.filter((e) => new Date(e.starts_at) >= now)
-  const past = events.filter((e) => new Date(e.starts_at) < now)
+  const upcoming = events.filter((e) => new Date(e.starts_at) >= now && e.status !== 'cancelled')
+  const past = events.filter((e) => new Date(e.starts_at) < now && e.status !== 'cancelled')
+  const cancelled = events.filter((e) => e.status === 'cancelled')
 
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
@@ -93,7 +133,7 @@ export default async function GatheringsPage() {
           </p>
         </div>
         {primarySpace && (
-          <div className="mt-1 flex shrink-0 items-center gap-3">
+          <div className="mt-1 shrink-0">
             <Link
               href={`/creator/spaces/${primarySpace.slug}/events/new`}
               className="rounded-xl px-4 py-2 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
@@ -101,14 +141,6 @@ export default async function GatheringsPage() {
             >
               + Schedule
             </Link>
-            {events.length > 0 && (
-              <Link
-                href={`/creator/spaces/${primarySpace.slug}/events`}
-                className="rounded-xl border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
-              >
-                Manage →
-              </Link>
-            )}
           </div>
         )}
       </div>
@@ -147,6 +179,7 @@ export default async function GatheringsPage() {
         </div>
       )}
 
+      {/* Upcoming */}
       {upcoming.length > 0 && (
         <section className="mb-8">
           <p
@@ -155,22 +188,42 @@ export default async function GatheringsPage() {
           >
             Upcoming
           </p>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {upcoming.map((event) => (
-              <EventCard key={event.id} event={event} spaceSlug={primarySpace!.slug} />
+              <GatheringRow key={event.id} event={event} spaceSlug={primarySpace!.slug} />
             ))}
           </div>
         </section>
       )}
 
+      {/* Past */}
       {past.length > 0 && (
-        <section>
+        <section className="mb-8">
           <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             Past
           </p>
-          <div className="space-y-3">
-            {past.slice(0, 6).map((event) => (
-              <EventCard key={event.id} event={event} spaceSlug={primarySpace!.slug} isPast />
+          <div className="space-y-2">
+            {past.slice(0, 8).map((event) => (
+              <GatheringRow key={event.id} event={event} spaceSlug={primarySpace!.slug} isPast />
+            ))}
+            {past.length > 8 && (
+              <p className="pt-1 text-center text-[12px] text-slate-400">
+                + {past.length - 8} older session{past.length - 8 !== 1 ? 's' : ''}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* Cancelled */}
+      {cancelled.length > 0 && (
+        <section>
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-300">
+            Cancelled
+          </p>
+          <div className="space-y-2">
+            {cancelled.map((event) => (
+              <GatheringRow key={event.id} event={event} spaceSlug={primarySpace!.slug} />
             ))}
           </div>
         </section>

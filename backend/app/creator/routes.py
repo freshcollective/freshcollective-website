@@ -37,9 +37,12 @@ from app.creator.schemas import (
     AboutBlockResponse,
     AboutBlockUpdateRequest,
     MemberPathwayAccessItem,
+    BookedMemberItem,
+    BulkEventCreateResponse,
     EventCreateRequest,
     EventResponse,
     EventUpdateRequest,
+    ManualBookingRequest,
     InvitationCreateRequest,
     InvitationResponse,
     BlockMediaInfo,
@@ -76,6 +79,7 @@ from app.creator.schemas import (
 from app.models.creator_billing import CreatorPlan, CreatorSubscription
 from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentTransactionType, PayoutStatus
 from app.models.platform import (
+    BookingStatus,
     EntitlementSource,
     EntitlementStatus,
     PathwayEntitlement,
@@ -83,6 +87,7 @@ from app.models.platform import (
     CreatorMediaAsset,
     Enrollment,
     Event,
+    EventBooking,
     Pathway,
     PathwayAboutBlock,
     PathwaySection,
@@ -1833,14 +1838,24 @@ def list_events(
     slug: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
-) -> list[Event]:
+) -> list[dict]:
     space = _get_managed_space(slug, current_user, db)
-    return (
+    events = (
         db.query(Event)
         .filter(Event.space_id == space.id)
         .order_by(Event.starts_at.desc())
         .all()
     )
+    event_ids = [e.id for e in events]
+    booked_counts: dict[str, int] = {}
+    if event_ids:
+        booked_counts = dict(
+            db.query(EventBooking.event_id, func.count(EventBooking.id))
+            .filter(EventBooking.event_id.in_(event_ids), EventBooking.status == "confirmed")
+            .group_by(EventBooking.event_id)
+            .all()
+        )
+    return [_event_to_dict(e, booked_counts.get(e.id, 0)) for e in events]
 
 
 @router.get("/spaces/{slug}/events/{event_id}", response_model=EventResponse)
@@ -1849,12 +1864,44 @@ def get_event(
     event_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
-) -> Event:
+) -> dict:
     space = _get_managed_space(slug, current_user, db)
     event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found.")
-    return event
+    booked_count = (
+        db.query(func.count(EventBooking.id))
+        .filter(EventBooking.event_id == event.id, EventBooking.status == "confirmed")
+        .scalar()
+    ) or 0
+    return _event_to_dict(event, booked_count)
+
+
+def _event_to_dict(event: Event, booked_count: int = 0) -> dict:
+    return {
+        "id": event.id,
+        "title": event.title,
+        "description": event.description,
+        "starts_at": event.starts_at,
+        "ends_at": event.ends_at,
+        "location_type": event.location_type.value if hasattr(event.location_type, "value") else str(event.location_type),
+        "location_url": event.location_url,
+        "recording_url": event.recording_url,
+        "is_published": event.is_published,
+        "is_public": event.is_public,
+        "requires_booking": event.requires_booking,
+        "capacity": event.capacity,
+        "booking_closes_at": event.booking_closes_at,
+        "booking_note": event.booking_note,
+        "booked_count": booked_count,
+        "thumbnail_url": event.thumbnail_url,
+        "status": event.status if event.status else "active",
+        "recurrence_series_id": event.recurrence_series_id,
+        "recurrence_label": event.recurrence_label,
+        "recurrence_index": event.recurrence_index,
+        "recurrence_total": event.recurrence_total,
+        "created_at": event.created_at,
+    }
 
 
 @router.post("/spaces/{slug}/events", response_model=EventResponse, status_code=201)
@@ -1863,7 +1910,7 @@ def create_event(
     body: EventCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
-) -> Event:
+) -> dict:
     space = _get_managed_space(slug, current_user, db)
     event = Event(
         id=str(uuid4()),
@@ -1877,11 +1924,97 @@ def create_event(
         location_url=body.location_url,
         recording_url=body.recording_url,
         is_published=body.is_published,
+        is_public=body.is_public,
+        requires_booking=body.requires_booking,
+        capacity=body.capacity,
+        booking_closes_at=body.booking_closes_at,
+        booking_note=body.booking_note,
+        thumbnail_url=body.thumbnail_url,
     )
     db.add(event)
     db.commit()
     db.refresh(event)
-    return event
+    return _event_to_dict(event, 0)
+
+
+@router.post("/spaces/{slug}/events/bulk", response_model=BulkEventCreateResponse, status_code=201)
+def bulk_create_events(
+    slug: str,
+    body: EventCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> BulkEventCreateResponse:
+    """Create a recurring series of individual event records."""
+    from datetime import timedelta
+
+    if not body.recurrence:
+        raise HTTPException(status_code=400, detail="recurrence is required for bulk creation.")
+
+    space = _get_managed_space(slug, current_user, db)
+    rec = body.recurrence
+    series_id = str(uuid4())
+    series_label = rec.series_label
+    days_set = set(rec.days_of_week)
+
+    duration = None
+    if body.ends_at:
+        duration = body.ends_at - body.starts_at
+
+    start_date = body.starts_at.date()
+    start_time = body.starts_at.time()
+
+    dates: list[tuple] = []
+    candidate = start_date
+    max_search = 365 * 3
+
+    for _ in range(max_search):
+        if candidate.weekday() in days_set:
+            from datetime import datetime as _dt
+            new_start = _dt(candidate.year, candidate.month, candidate.day,
+                            start_time.hour, start_time.minute, start_time.second)
+            new_end = new_start + duration if duration else None
+
+            if rec.repeat_until and new_start.date() > rec.repeat_until.date():
+                break
+            dates.append((new_start, new_end))
+            if rec.end_after_n and len(dates) >= rec.end_after_n:
+                break
+
+        candidate += timedelta(days=1)
+
+    if not dates:
+        raise HTTPException(status_code=400, detail="No valid dates generated from recurrence settings.")
+
+    total = len(dates)
+    for idx, (new_start, new_end) in enumerate(dates, start=1):
+        event = Event(
+            id=str(uuid4()),
+            space_id=space.id,
+            created_by_id=current_user.id,
+            title=body.title.strip(),
+            description=body.description,
+            starts_at=new_start,
+            ends_at=new_end,
+            location_type=body.location_type,
+            location_url=body.location_url,
+            recording_url=body.recording_url,
+            is_published=body.is_published,
+            is_public=body.is_public,
+            requires_booking=body.requires_booking,
+            capacity=body.capacity,
+            booking_closes_at=body.booking_closes_at,
+            booking_note=body.booking_note,
+            # TODO: Allow updating thumbnail across entire series later
+            thumbnail_url=body.thumbnail_url,
+            recurrence_series_id=series_id,
+            recurrence_label=series_label,
+            recurrence_index=idx,
+            recurrence_total=total,
+        )
+        db.add(event)
+
+    db.commit()
+    return BulkEventCreateResponse(created_count=total, series_id=series_id)
 
 
 @router.patch("/spaces/{slug}/events/{event_id}", response_model=EventResponse)
@@ -1891,20 +2024,27 @@ def update_event(
     body: EventUpdateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
-) -> Event:
+) -> dict:
     space = _get_managed_space(slug, current_user, db)
     event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found.")
 
-    for field in ("title", "description", "starts_at", "ends_at", "location_type", "location_url", "recording_url", "is_published"):
+    for field in ("title", "description", "starts_at", "ends_at", "location_type", "location_url",
+                  "recording_url", "is_published", "is_public", "requires_booking", "capacity",
+                  "booking_closes_at", "booking_note", "thumbnail_url"):
         val = getattr(body, field)
         if val is not None:
             setattr(event, field, val)
 
     db.commit()
     db.refresh(event)
-    return event
+    booked_count = (
+        db.query(func.count(EventBooking.id))
+        .filter(EventBooking.event_id == event.id, EventBooking.status == "confirmed")
+        .scalar()
+    ) or 0
+    return _event_to_dict(event, booked_count)
 
 
 @router.delete("/spaces/{slug}/events/{event_id}", status_code=204)
@@ -1920,6 +2060,256 @@ def delete_event(
         raise HTTPException(status_code=404, detail="Event not found.")
     db.delete(event)
     db.commit()
+
+
+@router.get("/spaces/{slug}/events/{event_id}/bookings", response_model=list[BookedMemberItem])
+def list_event_bookings(
+    slug: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[dict]:
+    from app.models.platform import User as UserModel
+    space = _get_managed_space(slug, current_user, db)
+    event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    bookings = (
+        db.query(EventBooking)
+        .filter(EventBooking.event_id == event.id)
+        .order_by(EventBooking.booked_at.asc())
+        .all()
+    )
+    user_ids = [b.user_id for b in bookings]
+    users_by_id: dict[str, UserModel] = {}
+    if user_ids:
+        users_by_id = {
+            u.id: u
+            for u in db.query(UserModel).filter(UserModel.id.in_(user_ids)).all()
+        }
+    return [
+        {
+            "booking_id": b.id,
+            "user_id": b.user_id,
+            "name": users_by_id[b.user_id].name if b.user_id in users_by_id else None,
+            "email": users_by_id[b.user_id].email if b.user_id in users_by_id else "",
+            "booked_at": b.booked_at,
+            "status": b.status.value if hasattr(b.status, "value") else b.status,
+            "source": b.source,
+            "note": b.note,
+        }
+        for b in bookings
+    ]
+
+
+@router.post("/spaces/{slug}/events/{event_id}/thumbnail", response_model=EventResponse)
+async def upload_event_thumbnail(
+    slug: str,
+    event_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Upload or replace the thumbnail image for a single event."""
+    space = _get_managed_space(slug, current_user, db)
+    event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    filename = file.filename or "thumbnail.jpg"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ("jpg", "jpeg", "png", "webp"):
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, and WebP images are allowed.")
+    data = await file.read()
+    if event.thumbnail_url:
+        old_rel = event.thumbnail_url.removeprefix("/api/uploads/")
+        delete_file(old_rel)
+    rel_path, _, _ = save_file(data, filename, file.content_type or "image/jpeg", "event-thumbnails")
+    event.thumbnail_url = f"/api/uploads/{rel_path}"
+    db.commit()
+    db.refresh(event)
+    booked_count = (
+        db.query(func.count(EventBooking.id))
+        .filter(EventBooking.event_id == event.id, EventBooking.status == "confirmed")
+        .scalar()
+    ) or 0
+    return _event_to_dict(event, booked_count)
+
+
+@router.delete("/spaces/{slug}/events/{event_id}/thumbnail", status_code=204)
+def remove_event_thumbnail(
+    slug: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    """Remove the thumbnail image from an event."""
+    space = _get_managed_space(slug, current_user, db)
+    event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    if event.thumbnail_url:
+        old_rel = event.thumbnail_url.removeprefix("/api/uploads/")
+        delete_file(old_rel)
+    event.thumbnail_url = None
+    db.commit()
+
+
+@router.post("/spaces/{slug}/events/{event_id}/cancel", response_model=EventResponse)
+def cancel_event(
+    slug: str,
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Cancel a single event occurrence. Does not affect other events in the series.
+    TODO: Add cancel entire series endpoint later.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    if event.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Event is already cancelled.")
+    event.status = "cancelled"
+    db.commit()
+    db.refresh(event)
+    booked_count = (
+        db.query(func.count(EventBooking.id))
+        .filter(EventBooking.event_id == event.id, EventBooking.status == "confirmed")
+        .scalar()
+    ) or 0
+    return _event_to_dict(event, booked_count)
+
+
+@router.post("/spaces/{slug}/events/{event_id}/bookings/manual", response_model=BookedMemberItem)
+def manual_book_member(
+    slug: str,
+    event_id: str,
+    body: ManualBookingRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Manually add a collective member to an event booking.
+    TODO: Add manual booking across remaining series sessions later.
+    TODO: Send email notification to booked member later.
+    """
+    from app.models.platform import User as UserModel
+    from datetime import datetime as _dt
+
+    space = _get_managed_space(slug, current_user, db)
+    event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    if event.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Cannot book a cancelled event.")
+
+    now = _dt.utcnow()
+    if event.starts_at <= now:
+        raise HTTPException(status_code=400, detail="Cannot manually book a past event.")
+
+    # Target user must be an active space member
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.user_id == body.user_id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == "active",
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(
+            status_code=400,
+            detail="User is not an active member of this collective. Invite them as a member first.",
+        )
+
+    target_user = db.query(UserModel).filter(UserModel.id == body.user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    # Check capacity
+    if event.capacity is not None:
+        confirmed = (
+            db.query(func.count(EventBooking.id))
+            .filter(EventBooking.event_id == event.id, EventBooking.status == "confirmed")
+            .scalar()
+        ) or 0
+        if confirmed >= event.capacity:
+            raise HTTPException(status_code=400, detail="Event is at full capacity.")
+
+    # Reactivate cancelled booking or create new
+    existing = (
+        db.query(EventBooking)
+        .filter(EventBooking.event_id == event.id, EventBooking.user_id == body.user_id)
+        .first()
+    )
+    if existing:
+        if existing.status == "confirmed":
+            raise HTTPException(status_code=400, detail="This member is already booked into this event.")
+        existing.status = BookingStatus.confirmed
+        existing.booked_at = now
+        existing.cancelled_at = None
+        existing.source = "creator_manual"
+        existing.note = body.note
+        db.commit()
+        db.refresh(existing)
+        booking = existing
+    else:
+        booking = EventBooking(
+            id=str(uuid4()),
+            event_id=event.id,
+            user_id=body.user_id,
+            status=BookingStatus.confirmed,
+            booked_at=now,
+            source="creator_manual",
+            note=body.note,
+        )
+        db.add(booking)
+        db.commit()
+        db.refresh(booking)
+
+    return {
+        "booking_id": booking.id,
+        "user_id": body.user_id,
+        "name": target_user.name,
+        "email": target_user.email,
+        "booked_at": booking.booked_at,
+        "status": "confirmed",
+        "source": "creator_manual",
+        "note": body.note,
+    }
+
+
+@router.post("/spaces/{slug}/events/{event_id}/bookings/{booking_id}/cancel", status_code=200)
+def cancel_member_booking(
+    slug: str,
+    event_id: str,
+    booking_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Creator cancels a member's booking. Record is retained for history.
+    TODO: Send cancellation notification to member later.
+    """
+    from datetime import datetime as _dt
+
+    space = _get_managed_space(slug, current_user, db)
+    event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found.")
+    booking = db.query(EventBooking).filter(
+        EventBooking.id == booking_id,
+        EventBooking.event_id == event.id,
+    ).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found.")
+    if booking.status == "cancelled":
+        raise HTTPException(status_code=400, detail="Booking is already cancelled.")
+    now = _dt.utcnow()
+    booking.status = BookingStatus.cancelled
+    booking.cancelled_at = now
+    db.commit()
+    return {"booking_id": booking_id, "status": "cancelled"}
 
 
 # ---------------------------------------------------------------------------
