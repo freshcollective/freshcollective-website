@@ -7,6 +7,7 @@ import Link from 'next/link'
 import Avatar from '@/components/ui/Avatar'
 import type { MemberProfile, EventSummary, UserProfile, SpaceResponse } from '@/types/platform'
 import SpaceAboutCTA from './SpaceAboutCTA'
+import MarkdownBody from '@/components/ui/MarkdownBody'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -158,14 +159,9 @@ export default async function SpaceAboutPage({ params }: Props) {
 
               <div className="mb-6 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
 
-              {/* Description — preserves line breaks and renders emojis naturally */}
+              {/* Description — rendered as safe markdown */}
               {space.description ? (
-                <div
-                  className="text-[15px] leading-[1.85] text-slate-600"
-                  style={{ whiteSpace: 'pre-wrap' }}
-                >
-                  {space.description}
-                </div>
+                <MarkdownBody content={space.description} />
               ) : (
                 <p className="text-[14px] text-slate-400">
                   This collective doesn&apos;t have an About description yet.
