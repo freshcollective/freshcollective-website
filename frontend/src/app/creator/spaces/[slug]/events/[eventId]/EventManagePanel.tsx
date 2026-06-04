@@ -228,6 +228,11 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
                   {pendingCount > 0 && <span>{pendingCount} not marked</span>}
                 </p>
               )}
+              {!isPast && !isCancelled && (
+                <p className="mt-1 text-[12px] text-slate-400">
+                  Attendance can be marked once this session has started.
+                </p>
+              )}
             </div>
             {!isCancelled && (
               <button
@@ -311,8 +316,8 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
                       </button>
                     )}
                   </div>
-                  {/* Attendance marking — always visible for confirmed bookings */}
-                  {!isCancelled && (
+                  {/* Attendance marking — only available once the session has started */}
+                  {!isCancelled && isPast && (
                     <AttendanceButtons
                       bookingId={b.booking_id}
                       eventId={event.id}
