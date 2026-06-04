@@ -32,6 +32,7 @@ class PathwaySummary(BaseModel):
     currency: str | None = None
     billing_interval: str | None = None
     user_has_access: bool = False
+    step_count: int = 0
 
 
 class SpaceResponse(BaseModel):

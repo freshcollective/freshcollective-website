@@ -2,7 +2,7 @@ import Link from 'next/link'
 import PathwayCover from '@/components/ui/PathwayCover'
 import {
   isPathwayLocked,
-  accessBadgeLabel,
+  cardAccessBadge,
   formatPathwayPrice,
 } from '@/lib/pathwayAccess'
 import type { PathwaySummary } from '@/types/platform'
@@ -25,9 +25,12 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
   const overviewHref = `/spaces/${spaceSlug}/pathways/${pathway.slug}`
   const aboutHref = `/spaces/${spaceSlug}/pathways/${pathway.slug}/about`
 
-  const badgeLabel = accessBadgeLabel(pathway.access_type)
+  const badge = cardAccessBadge(pathway.access_type, pathway.user_has_access)
   const priceLabel = locked
     ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
+    : null
+  const stepLabel = pathway.step_count > 0
+    ? `${pathway.step_count} step${pathway.step_count !== 1 ? 's' : ''}`
     : null
 
   const baseClass = 'group flex flex-col overflow-hidden rounded-2xl border border-border bg-white'
@@ -47,13 +50,16 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
         <PathwayCover slug={pathway.slug} title={pathway.title} coverImageUrl={pathway.cover_image_url} isComingSoon />
         <div className="flex flex-1 flex-col p-4">
           {descriptionEl}
-          <div className="flex items-center border-t border-border pt-3">
+          <div className="flex items-center gap-2 border-t border-border pt-3">
             <span
               className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
               style={{ background: 'rgba(148,163,184,0.12)', color: '#64748B' }}
             >
               Coming soon
             </span>
+            {stepLabel && (
+              <span className="text-[11px] text-slate-400">{stepLabel}</span>
+            )}
           </div>
         </div>
       </div>
@@ -77,14 +83,19 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
           {descriptionEl}
           <div className="flex items-center justify-between border-t border-border pt-3">
             <div className="flex w-full items-center justify-between gap-3">
-              {priceLabel && (
-                <span
-                  className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-                  style={{ background: 'rgba(7,24,36,0.07)', color: '#152236' }}
-                >
-                  {priceLabel}
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {priceLabel && (
+                  <span
+                    className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                    style={{ background: 'rgba(214,177,63,0.12)', color: '#7A5A00' }}
+                  >
+                    {priceLabel}
+                  </span>
+                )}
+                {stepLabel && (
+                  <span className="text-[11px] text-slate-400">{stepLabel}</span>
+                )}
+              </div>
               <div className="ml-auto text-right">
                 <span className="block text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
                   Learn more →
@@ -120,18 +131,25 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
         {descriptionEl}
         <div className="flex items-center justify-between border-t border-border pt-3">
           <div className="flex w-full items-center justify-between gap-3">
-            {badgeLabel && (
-              <span
-                className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-                style={
-                  badgeLabel === 'Free'
-                    ? { background: 'rgba(16,185,129,0.10)', color: '#065F46' }
-                    : { background: 'rgba(56,160,158,0.10)', color: '#073B3A' }
-                }
-              >
-                {badgeLabel}
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {badge && (
+                <span
+                  className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                  style={
+                    badge.variant === 'free'
+                      ? { background: 'rgba(16,185,129,0.10)', color: '#065F46' }
+                      : badge.variant === 'included'
+                      ? { background: 'rgba(56,160,158,0.10)', color: '#073B3A' }
+                      : { background: 'rgba(56,160,158,0.12)', color: '#0f766e' }
+                  }
+                >
+                  {badge.label}
+                </span>
+              )}
+              {stepLabel && (
+                <span className="text-[11px] text-slate-400">{stepLabel}</span>
+              )}
+            </div>
             <div className="ml-auto flex items-center gap-2">
               <Link
                 href={aboutHref}

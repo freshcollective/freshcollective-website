@@ -15,9 +15,9 @@ const STATUS_STYLE: Record<string, { bg: string; text: string }> = {
 
 const ACCESS_STYLE: Record<string, { bg: string; text: string }> = {
   free:         { bg: 'rgba(56,160,158,0.09)',  text: '#38A09E' },
-  included:     { bg: 'rgba(99,102,241,0.09)',  text: '#6366f1' },
-  one_time:     { bg: 'rgba(234,179,8,0.12)',   text: '#a16207' },
-  subscription: { bg: 'rgba(168,85,247,0.10)',  text: '#9333ea' },
+  included:     { bg: 'rgba(56,160,158,0.09)',  text: '#38A09E' },
+  one_time:     { bg: 'rgba(214,177,63,0.14)',  text: '#7A5A00' },
+  subscription: { bg: 'rgba(214,177,63,0.14)',  text: '#7A5A00' },
 }
 
 function statusLabel(status: string) {

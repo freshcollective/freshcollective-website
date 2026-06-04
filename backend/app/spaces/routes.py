@@ -640,6 +640,16 @@ def list_pathways(
 
     pathways = query.order_by(Pathway.position).all()
 
+    pathway_ids = [p.id for p in pathways]
+    step_counts: dict[str, int] = {}
+    if pathway_ids:
+        step_counts = dict(
+            db.query(PathwayStep.pathway_id, func.count(PathwayStep.id))
+            .filter(PathwayStep.pathway_id.in_(pathway_ids))
+            .group_by(PathwayStep.pathway_id)
+            .all()
+        )
+
     result = []
     for p in pathways:
         has_access = _compute_pathway_access(current_user, p, space, db)
@@ -656,6 +666,7 @@ def list_pathways(
             currency=p.currency,
             billing_interval=p.billing_interval,
             user_has_access=has_access,
+            step_count=step_counts.get(p.id, 0),
         ))
     return result
 

@@ -11,6 +11,7 @@ export interface PathwaySummary {
   currency: string | null
   billing_interval: string | null
   user_has_access: boolean
+  step_count: number
 }
 
 export interface SpaceResponse {

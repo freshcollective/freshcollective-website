@@ -24,6 +24,18 @@ export function accessBadgeLabel(accessType: AccessType): string | null {
   return null
 }
 
+export type BadgeVariant = 'free' | 'included' | 'granted' | null
+
+export function cardAccessBadge(
+  accessType: AccessType,
+  userHasAccess: boolean,
+): { label: string; variant: Exclude<BadgeVariant, null> } | null {
+  if (accessType === 'free') return { label: 'Free', variant: 'free' }
+  if (accessType === 'included') return { label: 'Included', variant: 'included' }
+  if (userHasAccess) return { label: 'Access granted', variant: 'granted' }
+  return null
+}
+
 export function unlockCtaLabel(
   accessType: AccessType,
   priceCents: number | null,
