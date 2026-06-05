@@ -126,59 +126,146 @@ export default async function PathwaysPage() {
         </div>
       )}
 
-      {/* Pathway list */}
-      {pathways.length > 0 && (
-        <div className="space-y-3">
-          {pathways.map((pathway) => {
-            const statusStyle = STATUS_STYLE[pathway.status] ?? STATUS_STYLE.draft
-            const accessStyle = ACCESS_STYLE[pathway.access_type] ?? ACCESS_STYLE.free
-            const dateStr = pathway.updated_at ?? pathway.created_at
-            return (
-              <div
-                key={pathway.id}
-                className="group rounded-2xl border border-border bg-white p-5 transition-all hover:border-teal-200 hover:shadow-sm"
-              >
-                <div className="flex items-start gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-[15px] font-semibold text-navy-900">{pathway.title}</p>
-                      <span
-                        className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-                        style={{ background: statusStyle.bg, color: statusStyle.text }}
-                      >
-                        {statusLabel(pathway.status)}
-                      </span>
-                      <span
-                        className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-                        style={{ background: accessStyle.bg, color: accessStyle.text }}
-                      >
-                        {accessLabel(pathway)}
-                      </span>
-                    </div>
-                    {pathway.description && (
-                      <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-slate-500">
-                        {pathway.description}
-                      </p>
-                    )}
-                    <div className="mt-3 flex flex-wrap items-center gap-4 text-[12px] text-slate-400">
-                      <span>{pathway.step_count} {pathway.step_count === 1 ? 'step' : 'steps'}</span>
-                      {dateStr && (
-                        <span>Updated {formatDate(dateStr)}</span>
-                      )}
-                    </div>
-                  </div>
-                  <Link
-                    href={`/creator-studio/pathways/${pathway.slug}`}
-                    className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+      {/* Pathway list — grouped by status */}
+      {pathways.length > 0 && (() => {
+        const byStatus = (statuses: string[]) =>
+          pathways
+            .filter((p) => statuses.includes(p.status))
+            .sort((a, b) => {
+              const da = new Date(a.updated_at ?? a.created_at ?? 0).getTime()
+              const db = new Date(b.updated_at ?? b.created_at ?? 0).getTime()
+              return db - da
+            })
+
+        const published   = byStatus(['active'])
+        const comingSoon  = byStatus(['coming_soon'])
+        const drafts      = byStatus(['draft'])
+        const archived    = byStatus(['archived'])
+
+        const sections = [
+          {
+            key: 'published',
+            label: 'Published',
+            helper: 'Visible to members according to access settings.',
+            items: published,
+            muted: false,
+          },
+          {
+            key: 'coming_soon',
+            label: 'Coming soon',
+            helper: 'Shown as coming soon, but not yet available.',
+            items: comingSoon,
+            muted: false,
+          },
+          {
+            key: 'drafts',
+            label: 'Drafts',
+            helper: 'Only visible to you while you build.',
+            items: drafts,
+            muted: false,
+          },
+          {
+            key: 'archived',
+            label: 'Archived',
+            helper: 'Hidden from members and kept for your records.',
+            items: archived,
+            muted: true,
+          },
+        ].filter((s) => s.items.length > 0)
+
+        return (
+          <div className="space-y-8">
+            {sections.map((section) => (
+              <div key={section.key}>
+                {/* Section heading */}
+                <div className="mb-3 flex items-baseline gap-2.5">
+                  <h2
+                    className="text-[15px] font-semibold"
+                    style={{ color: section.muted ? '#94a3b8' : '#152236' }}
                   >
-                    Edit →
-                  </Link>
+                    {section.label}
+                  </h2>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                    style={
+                      section.muted
+                        ? { background: 'rgba(0,0,0,0.04)', color: '#94a3b8' }
+                        : { background: 'rgba(56,160,158,0.09)', color: '#38A09E' }
+                    }
+                  >
+                    {section.items.length}
+                  </span>
+                  <span
+                    className="text-[12px]"
+                    style={{ color: section.muted ? '#cbd5e1' : '#94a3b8' }}
+                  >
+                    {section.helper}
+                  </span>
+                </div>
+
+                {/* Cards */}
+                <div className="space-y-3">
+                  {section.items.map((pathway) => {
+                    const statusStyle = STATUS_STYLE[pathway.status] ?? STATUS_STYLE.draft
+                    const accessStyle = ACCESS_STYLE[pathway.access_type] ?? ACCESS_STYLE.free
+                    const dateStr = pathway.updated_at ?? pathway.created_at
+                    return (
+                      <div
+                        key={pathway.id}
+                        className="group rounded-2xl border bg-white p-5 transition-all hover:shadow-sm"
+                        style={{
+                          borderColor: section.muted ? 'rgba(0,0,0,0.06)' : undefined,
+                          opacity: section.muted ? 0.72 : 1,
+                        }}
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p
+                                className="text-[15px] font-semibold"
+                                style={{ color: section.muted ? '#64748b' : '#152236' }}
+                              >
+                                {pathway.title}
+                              </p>
+                              <span
+                                className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                                style={{ background: statusStyle.bg, color: statusStyle.text }}
+                              >
+                                {statusLabel(pathway.status)}
+                              </span>
+                              <span
+                                className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                                style={{ background: accessStyle.bg, color: accessStyle.text }}
+                              >
+                                {accessLabel(pathway)}
+                              </span>
+                            </div>
+                            {pathway.description && (
+                              <p className="mt-1.5 line-clamp-2 text-[13px] leading-relaxed text-slate-500">
+                                {pathway.description}
+                              </p>
+                            )}
+                            <div className="mt-3 flex flex-wrap items-center gap-4 text-[12px] text-slate-400">
+                              <span>{pathway.step_count} {pathway.step_count === 1 ? 'step' : 'steps'}</span>
+                              {dateStr && <span>Updated {formatDate(dateStr)}</span>}
+                            </div>
+                          </div>
+                          <Link
+                            href={`/creator-studio/pathways/${pathway.slug}`}
+                            className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+                          >
+                            Edit →
+                          </Link>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
-            )
-          })}
-        </div>
-      )}
+            ))}
+          </div>
+        )
+      })()}
 
     </div>
   )
