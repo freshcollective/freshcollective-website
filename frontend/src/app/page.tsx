@@ -8,7 +8,7 @@ import HomeHero from '@/components/home/HomeHero'
 function DualIntent() {
   return (
     <section
-      className="py-16 sm:py-24"
+      className="py-12 sm:py-24"
       style={{ background: '#FFFFFF' }}
     >
       <Container>
@@ -233,7 +233,7 @@ function EcosystemStatement() {
 
           {/* ROW 1 — Collectives: text left, visual right */}
           <div className="grid items-center gap-12 sm:grid-cols-[42fr_58fr] sm:gap-16">
-            <div>
+            <div className="border-l-2 border-[rgba(56,160,158,0.22)] pl-4 sm:border-l-0 sm:pl-0">
               <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <circle cx="7" cy="7" r="2.5" stroke="#38A09E" strokeWidth="1.5"/>
@@ -342,7 +342,7 @@ function EcosystemStatement() {
               </div>
             </div>
 
-            <div className="order-1 sm:order-2">
+            <div className="order-1 sm:order-2 border-l-2 border-[rgba(56,160,158,0.22)] pl-4 sm:border-l-0 sm:pl-0">
               <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path d="M4 10h12M10 4l6 6-6 6" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -359,7 +359,7 @@ function EcosystemStatement() {
 
           {/* ROW 3 — Gatherings: text left, visual right */}
           <div className="grid items-center gap-12 sm:grid-cols-[42fr_58fr] sm:gap-16">
-            <div>
+            <div className="border-l-2 border-[rgba(56,160,158,0.22)] pl-4 sm:border-l-0 sm:pl-0">
               <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <rect x="3" y="4" width="14" height="13" rx="2" stroke="#38A09E" strokeWidth="1.5"/>
@@ -478,7 +478,7 @@ function EcosystemStatement() {
               </div>
             </div>
 
-            <div>
+            <div className="border-l-2 border-[rgba(196,152,26,0.28)] pl-4 sm:border-l-0 sm:pl-0">
               <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(212,176,72,0.12)' }}>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
@@ -534,10 +534,10 @@ function FreshIdeas() {
             }}
           />
 
-          <div style={{ padding: 'clamp(3rem, 5.5vw, 5rem)' }}>
+          <div style={{ padding: 'clamp(2.5rem, 5.5vw, 5rem) clamp(1.25rem, 5.5vw, 5rem)' }}>
 
             {/* Eyebrow */}
-            <div className="mb-10 flex items-center gap-3">
+            <div className="mb-6 sm:mb-10 flex items-center gap-3">
               <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.60)' }} />
               <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.68)' }}>
                 Built for human connection
@@ -547,11 +547,11 @@ function FreshIdeas() {
             {/* Heading */}
             <h2
               style={{
-                fontSize: 'clamp(2.5rem, 4.5vw, 4.25rem)',
+                fontSize: 'clamp(2rem, 4.5vw, 4.25rem)',
                 letterSpacing: '-0.04em',
-                lineHeight: '1.05',
+                lineHeight: '1.08',
                 fontWeight: 660,
-                marginBottom: '2.25rem',
+                marginBottom: '1.75rem',
                 maxWidth: '640px',
               }}
             >
@@ -605,7 +605,7 @@ function FreshIdeas() {
 
 function TheWayWeFeelSection() {
   return (
-    <section className="py-16 sm:py-20" style={{ background: '#FFFFFF' }}>
+    <section className="py-12 sm:py-20" style={{ background: '#FFFFFF' }}>
       <Container>
         <div className="text-center">
 
@@ -621,11 +621,11 @@ function TheWayWeFeelSection() {
           {/* Heading */}
           <h2
             style={{
-              fontSize: 'clamp(2.25rem, 4vw, 3.75rem)',
+              fontSize: 'clamp(1.875rem, 4vw, 3.75rem)',
               letterSpacing: '-0.04em',
-              lineHeight: '1.08',
+              lineHeight: '1.1',
               fontWeight: 660,
-              marginBottom: '1.5rem',
+              marginBottom: '1.25rem',
             }}
           >
             <span style={{ display: 'block', color: '#0F172A' }}>Humans thrive through</span>
@@ -699,7 +699,7 @@ function WhereTheLearningLives() {
   ]
 
   return (
-    <section className="py-20 sm:py-28" style={{ background: '#F3FAFA' }}>
+    <section className="py-14 sm:py-28" style={{ background: '#F3FAFA' }}>
       <Container>
         <div className="grid items-center gap-12 sm:grid-cols-[45fr_55fr] sm:gap-16">
 
@@ -938,9 +938,9 @@ function GoodQuestions() {
   ]
 
   return (
-    <section className="py-20 sm:py-28" style={{ background: '#FFFFFF' }}>
+    <section className="py-14 sm:py-28" style={{ background: '#FFFFFF' }}>
       <Container>
-        <div className="grid gap-12 sm:grid-cols-[38fr_62fr] sm:gap-16">
+        <div className="grid gap-10 sm:grid-cols-[38fr_62fr] sm:gap-16">
 
           {/* Left: heading */}
           <div>
@@ -1022,7 +1022,7 @@ function GoodQuestions() {
 
 function FinalCTA() {
   return (
-    <section className="py-20 sm:py-28" style={{ background: '#FAFAF8' }}>
+    <section className="py-14 sm:py-28" style={{ background: '#FAFAF8' }}>
       <Container>
 
         {/* Card */}
@@ -1033,7 +1033,7 @@ function FinalCTA() {
             background: '#071824',
             border: '1px solid rgba(255,255,255,0.07)',
             boxShadow: '0 8px 48px rgba(0,0,0,0.28), 0 2px 12px rgba(0,0,0,0.18)',
-            padding: 'clamp(3rem, 5.5vw, 5.5rem) clamp(2rem, 6vw, 5rem)',
+            padding: 'clamp(2.5rem, 5.5vw, 5.5rem) clamp(1.25rem, 6vw, 5rem)',
           }}
         >
 
@@ -1055,9 +1055,9 @@ function FinalCTA() {
             <h2
               className="mb-5"
               style={{
-                fontSize: 'clamp(2.5rem, 5vw, 4.25rem)',
+                fontSize: 'clamp(2rem, 5vw, 4.25rem)',
                 letterSpacing: '-0.04em',
-                lineHeight: '1.06',
+                lineHeight: '1.08',
                 fontWeight: 660,
               }}
             >

@@ -55,7 +55,7 @@ export default function HomeHero() {
       />
 
       {/* ── Content ─────────────────────────────────────────────────────────── */}
-      <div className="relative z-10 w-full" style={{ paddingTop: 'clamp(7rem, 14vw, 10rem)', paddingBottom: 'clamp(4rem, 8vw, 6rem)' }}>
+      <div className="relative z-10 w-full" style={{ paddingTop: 'clamp(5rem, 14vw, 10rem)', paddingBottom: 'clamp(3.5rem, 8vw, 6rem)' }}>
       <Container>
         <div className="max-w-[680px]">
 
@@ -73,16 +73,16 @@ export default function HomeHero() {
           </div>
 
           <h1
-            className="mb-7"
+            className="mb-6"
             style={{
-              fontSize: 'clamp(2.75rem, 6vw, 5.5rem)',
-              lineHeight: '1.03',
+              fontSize: 'clamp(2.375rem, 6vw, 5.5rem)',
+              lineHeight: '1.05',
               letterSpacing: '-0.04em',
               fontWeight: 660,
               color: '#ffffff',
             }}
           >
-            <span className="block">Human connection is</span>
+            <span className="block">Human connection</span>
             <span
               className="block"
               style={{
@@ -92,15 +92,15 @@ export default function HomeHero() {
                 color: 'transparent',
               }}
             >
-              <span className="block">our greatest</span>
+              <span className="block">is our greatest</span>
               <span className="block">advantage.</span>
             </span>
           </h1>
 
           <p
-            className="mb-9"
+            className="mb-8"
             style={{
-              fontSize: 'clamp(1rem, 1.4vw, 1.0625rem)',
+              fontSize: 'clamp(0.9375rem, 1.4vw, 1.0625rem)',
               lineHeight: '1.80',
               color: 'rgba(255,255,255,0.46)',
               maxWidth: '460px',
@@ -110,10 +110,10 @@ export default function HomeHero() {
             Fresh Collective brings together people, ideas, and communities built on trust, curiosity, kindness, and collaboration — because as technology evolves, meaningful connection matters more than ever.
           </p>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <Link
               href="/spaces"
-              className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90"
+              className="inline-flex w-full items-center justify-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90 sm:w-auto"
               style={{
                 background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
                 boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
@@ -123,7 +123,7 @@ export default function HomeHero() {
             </Link>
             <Link
               href="/for-creators"
-              className="inline-flex items-center rounded-xl px-7 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px bg-white hover:bg-[#F6F6F6]"
+              className="inline-flex w-full items-center justify-center rounded-xl px-7 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px bg-white hover:bg-[#F6F6F6] sm:w-auto"
               style={{
                 border: '1px solid rgba(255,255,255,0.12)',
                 color: '#0F172A',
