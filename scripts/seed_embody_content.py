@@ -715,49 +715,101 @@ def main() -> None:  # noqa: C901
 
         db.flush()
 
-        # ── Part 5: Gatherings — 10-week term ─────────────────────────────
+        # ── Part 5: Gatherings — July–September 2026 term ─────────────────
         print("\n── Part 5: Gatherings ──")
-        print("  Existing series (preserved, not modified):")
 
-        # Report existing series
+        # Hard-coded term start dates for the July 2026 10-week term.
+        # Times stored as naive local datetime (Australia/Melbourne) — the
+        # frontend converts to local display using the space's timezone field.
+        TERM_STARTS = {
+            "mon": datetime(2026, 7, 13),   # Monday 13 Jul — 6:00pm–7:00pm
+            "thu": datetime(2026, 7, 16),   # Thursday 16 Jul — 6:00pm–7:00pm
+            "sat": datetime(2026, 7, 18),   # Saturday 18 Jul — 9:00am–10:00am
+        }
+
         from sqlalchemy import func as sa_func
-        existing = (
+
+        # Unpublish future events belonging to OLD series (not our managed IDs).
+        # This hides legacy/wrong-date events from members without deleting
+        # bookings or attendance records.
+        managed_sids = set(SERIES_IDS.values())
+        now = datetime.utcnow()
+        old_future = (
+            db.query(Event)
+            .filter(
+                Event.space_id == SPACE_ID,
+                Event.starts_at > now,
+                Event.recurrence_series_id.notin_(list(managed_sids)),
+            )
+            .all()
+        )
+        if old_future:
+            for e in old_future:
+                e.is_published = False
+                e.is_public = False
+            db.flush()
+            print(f"  [unpublished] {len(old_future)} future events from old/test series (bookings preserved)")
+        else:
+            print("  No old-series future events to unpublish")
+
+        # Report all series for visibility
+        existing_series = (
             db.query(Event.recurrence_series_id, sa_func.count(Event.id).label("n"))
             .filter(Event.space_id == SPACE_ID, Event.recurrence_series_id.isnot(None))
             .group_by(Event.recurrence_series_id)
             .all()
         )
-        for sid, n in existing:
-            if sid not in SERIES_IDS.values():
+        for sid, n in existing_series:
+            if sid not in managed_sids:
                 sample = (
                     db.query(Event)
                     .filter(Event.recurrence_series_id == sid)
                     .order_by(Event.starts_at)
                     .first()
                 )
-                day = sample.starts_at.strftime("%A") if sample else "?"
-                print(f"    series {sid[:8]}…  {n} events  first={sample.starts_at.date() if sample else '?'}  ({day})")
+                future_n = db.query(Event).filter(
+                    Event.recurrence_series_id == sid,
+                    Event.starts_at > now,
+                ).count()
+                bookings = sum(
+                    db.query(Event).filter(Event.recurrence_series_id == sid).count()
+                    for _ in [1]  # just count events, not bookings — already logged above
+                )
+                print(f"    series {sid[:8]}… {n} events ({future_n} now unpublished) first={sample.starts_at.date() if sample else '?'}")
 
-        # Create new series (idempotent: skip if series already seeded)
-        def seed_series(series_key: str, title_prefix: str, weekday: int, hour: int, label: str):
+        # Create/recreate managed series.
+        # Idempotent: if the first event already starts on the correct term date,
+        # the series is up-to-date and is skipped. Otherwise delete and recreate
+        # (safe — these series have no real member bookings).
+        def seed_series(series_key: str, title_prefix: str, hour: int, label: str):
             series_id = SERIES_IDS[series_key]
-            existing_count = (
-                db.query(Event).filter(Event.recurrence_series_id == series_id).count()
-            )
-            if existing_count >= 10:
-                print(f"  [skipped] {label} — already seeded ({existing_count} events)")
-                return
-            if 0 < existing_count < 10:
-                # Partial seed — delete incomplete set and recreate cleanly
-                db.query(Event).filter(Event.recurrence_series_id == series_id).delete()
-                db.flush()
-                print(f"  [reset]   {label} — removed {existing_count} partial events")
+            term_start = TERM_STARTS[series_key]
+            expected_first = term_start.replace(hour=hour, minute=0, second=0, microsecond=0)
 
-            start = next_weekday(weekday)
+            first_event = (
+                db.query(Event)
+                .filter(Event.recurrence_series_id == series_id)
+                .order_by(Event.starts_at)
+                .first()
+            )
+            existing_count = db.query(Event).filter(Event.recurrence_series_id == series_id).count()
+
+            if existing_count == 10 and first_event is not None:
+                # Compare dates only (strip microseconds from DB value)
+                actual = first_event.starts_at.replace(microsecond=0)
+                if actual == expected_first:
+                    print(f"  [skipped]  {label} — already correct ({expected_first.strftime('%d %b %Y')} start)")
+                    return
+
+            if existing_count > 0:
+                deleted = db.query(Event).filter(Event.recurrence_series_id == series_id).delete()
+                db.flush()
+                print(f"  [reset]    {label} — removed {deleted} events with wrong term dates")
+
             for i in range(10):
-                week_start = start + timedelta(weeks=i)
-                starts_at = week_start.replace(hour=hour, minute=0, second=0)
-                ends_at   = week_start.replace(hour=hour + 1, minute=0, second=0)
+                week_start = term_start + timedelta(weeks=i)
+                starts_at = week_start.replace(hour=hour,     minute=0, second=0, microsecond=0)
+                ends_at   = week_start.replace(hour=hour + 1, minute=0, second=0, microsecond=0)
                 theme = WEEK_THEMES[i]
                 eid = event_id(series_key, i + 1)
                 e = Event(
@@ -773,6 +825,7 @@ def main() -> None:  # noqa: C901
                     starts_at=starts_at,
                     ends_at=ends_at,
                     location_type="in_person",
+                    location_url="South Croydon, Victoria",
                     is_published=True,
                     is_public=True,
                     requires_booking=True,
@@ -789,12 +842,11 @@ def main() -> None:  # noqa: C901
                     updated_at=SEED_TS,
                 )
                 db.add(e)
-            first_date = (start).strftime("%d %b %Y")
-            print(f"  [created] {label} — 10 events from {first_date}")
+            print(f"  [created]  {label} — 10 events from {expected_first.strftime('%d %b %Y')} to {(term_start + timedelta(weeks=9)).replace(hour=hour).strftime('%d %b %Y')}")
 
-        seed_series("sat", "Saturday EMBODY Session", weekday=5, hour=9,  label="Saturday EMBODY sessions")
-        seed_series("mon", "Monday EMBODY Session",   weekday=0, hour=18, label="Monday EMBODY sessions")
-        seed_series("thu", "Thursday EMBODY Session", weekday=3, hour=18, label="Thursday EMBODY sessions")
+        seed_series("mon", "Monday EMBODY Session",   hour=18, label="Monday EMBODY sessions")
+        seed_series("thu", "Thursday EMBODY Session", hour=18, label="Thursday EMBODY sessions")
+        seed_series("sat", "Saturday EMBODY Session", hour=9,  label="Saturday EMBODY sessions")
 
         db.flush()
 
