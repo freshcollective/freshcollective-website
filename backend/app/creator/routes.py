@@ -372,6 +372,7 @@ def create_space(
         name=body.name.strip(),
         tagline=body.tagline.strip() if body.tagline else None,
         description=body.description.strip() if body.description else None,
+        about_content=body.about_content.strip() if body.about_content else None,
         creator_id=current_user.id,
         is_public=body.is_public,
         themes=body.themes,
@@ -430,6 +431,8 @@ def update_space(
         space.tagline = body.tagline.strip() or None
     if body.description is not None:
         space.description = body.description.strip() or None
+    if body.about_content is not None:
+        space.about_content = body.about_content.strip() or None
     if body.is_public is not None:
         space.is_public = body.is_public
     if body.status is not None:

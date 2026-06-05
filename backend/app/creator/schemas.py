@@ -28,6 +28,7 @@ class SpaceCreateRequest(BaseModel):
     name: str
     tagline: str | None = None
     description: str | None = None
+    about_content: str | None = None
     is_public: bool = False
     themes: list[str] = []
 
@@ -60,6 +61,7 @@ class SpaceUpdateRequest(BaseModel):
     slug: str | None = None
     tagline: str | None = None
     description: str | None = None
+    about_content: str | None = None
     is_public: bool | None = None
     status: str | None = None
     timezone: str | None = None
@@ -135,6 +137,7 @@ class SpaceDetail(BaseModel):
     name: str
     tagline: str | None
     description: str | None
+    about_content: str | None = None
     is_public: bool
     status: str
     timezone: str = 'Australia/Melbourne'

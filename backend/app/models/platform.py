@@ -160,6 +160,7 @@ class Space(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     tagline: Mapped[str | None] = mapped_column(String(300), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    about_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # NULL creator_id means the space is owned by the platform itself
     creator_id: Mapped[str | None] = mapped_column(

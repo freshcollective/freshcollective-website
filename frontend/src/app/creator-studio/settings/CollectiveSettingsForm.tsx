@@ -40,6 +40,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
   const [slugOrigin, setSlugOrigin] = useState('')
   const [tagline, setTagline] = useState(space.tagline ?? '')
   const [description, setDescription] = useState(space.description ?? '')
+  const [aboutContent, setAboutContent] = useState(space.about_content ?? '')
   const [timezone, setTimezone] = useState(space.timezone ?? 'Australia/Melbourne')
   const [isPublic, setIsPublic] = useState(space.is_public)
   const [status, setStatus] = useState(space.status)
@@ -163,6 +164,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
           slug: trimmedSlug,
           tagline: tagline.trim() || null,
           description: description.trim() || null,
+          about_content: aboutContent.trim() || null,
           is_public: isPublic,
           status,
           timezone,
@@ -272,17 +274,21 @@ export default function CollectiveSettingsForm({ space }: Props) {
           </div>
 
           <div>
-            <label htmlFor="s-desc" className="mb-1 block text-[14px] font-semibold text-navy-900">
-              About page content
+            <label htmlFor="s-desc" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
+              Short description
             </label>
-            <p className="mb-2 text-[13px] text-slate-500">
-              This appears on your public About page. Use headings, bold text, bullets, and links to help people understand your collective.
-            </p>
-            <AboutRichTextEditor
+            <textarea
               id="s-desc"
               value={description}
-              onChange={setDescription}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder="A short summary shown on cards, explore pages, and previews."
+              className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
             />
+            <p className="mt-1.5 text-[12px] text-slate-400">
+              Shown on cards and explore pages — keep it to 1–2 sentences.
+            </p>
           </div>
 
           <div>
@@ -349,6 +355,19 @@ export default function CollectiveSettingsForm({ space }: Props) {
             )}
           </div>
         </div>
+      </div>
+
+      {/* ── About page ── */}
+      <div className="rounded-2xl border border-border bg-white p-6">
+        <h2 className="mb-1 text-[17px] font-semibold text-navy-900">About page</h2>
+        <p className="mb-5 text-[14px] text-slate-500">
+          Full rich content shown on your public About page. Use headings, bold text, bullets, and links.
+        </p>
+        <AboutRichTextEditor
+          id="s-about"
+          value={aboutContent}
+          onChange={setAboutContent}
+        />
       </div>
 
       {/* ── Banner image ── */}

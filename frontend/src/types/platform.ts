@@ -20,6 +20,7 @@ export interface SpaceResponse {
   name: string
   tagline: string | null
   description: string | null
+  about_content: string | null
   is_public: boolean
   status: string
   timezone: string
@@ -335,6 +336,7 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   name: string
   tagline: string | null
   description: string | null
+  about_content: string | null
   is_public: boolean
   status: string
   timezone: string

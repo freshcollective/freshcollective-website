@@ -43,6 +43,7 @@ class SpaceResponse(BaseModel):
     name: str
     tagline: str | None
     description: str | None
+    about_content: str | None = None
     is_public: bool
     status: str
     timezone: str = 'Australia/Melbourne'

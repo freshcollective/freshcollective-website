@@ -211,6 +211,10 @@ def main() -> None:  # noqa: C901
         space.name = "EMBODY"
         space.tagline = "Strength. Somatics. Sisterhood."
         space.description = (
+            "A 10-week in-person movement experience for women ready to reconnect with their body, "
+            "breath, and internal power — based in South Croydon, Victoria."
+        )
+        space.about_content = (
             "## 🌿 What is EMBODY?\n\n"
             "EMBODY is a 10-week in-person movement experience for women ready to reconnect with their body, breath, and internal power — based in South Croydon, Victoria.\n\n"
             "It is not a gym class or a performance space. EMBODY is a structured, somatic-informed container that blends functional strength, feminine archetypes, breath work, and nervous system recalibration into one weekly practice.\n\n"

@@ -159,9 +159,9 @@ export default async function SpaceAboutPage({ params }: Props) {
 
               <div className="mb-6 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
 
-              {/* Description — rendered as safe markdown */}
-              {space.description ? (
-                <MarkdownBody content={space.description} />
+              {/* About content — prefers about_content, falls back to description */}
+              {(space.about_content ?? space.description) ? (
+                <MarkdownBody content={(space.about_content ?? space.description)!} />
               ) : (
                 <p className="text-[14px] text-slate-400">
                   This collective doesn&apos;t have an About description yet.
