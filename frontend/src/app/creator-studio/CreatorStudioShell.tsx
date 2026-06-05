@@ -17,11 +17,16 @@ interface User {
 
 const EMPTY_LITE_DATA: LiteData = {
   pathwayCounts: { published: 0, comingSoon: 0, drafts: 0, archived: 0 },
+  publishedPathways: [],
   upcomingGatherings: [],
   memberCount: 0,
   leaderCount: 0,
+  members: [],
+  invitations: [],
+  accessRequests: [],
   pendingInvites: 0,
   pendingRequests: 0,
+  resourceCount: 0,
 }
 
 interface Props {
@@ -344,7 +349,7 @@ export default function CreatorStudioShell({
     <>
       {/* ── Mobile: Creator Studio Lite (full replacement) ── */}
       <div className="md:hidden">
-        <CreatorStudioLiteMobile user={user} activeSpace={activeSpace} liteData={liteData} />
+        <CreatorStudioLiteMobile user={user} activeSpace={activeSpace} spaces={spaces} liteData={liteData} />
       </div>
 
       {/* ── Desktop: Full Creator Studio ── */}
