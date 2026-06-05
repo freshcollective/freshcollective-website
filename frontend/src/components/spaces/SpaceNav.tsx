@@ -85,7 +85,7 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavPro
 
       {/* ── Mobile: fixed bottom nav ── */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-surface md:hidden">
-        <div className="flex overflow-x-auto">
+        <div className="flex overflow-x-auto overscroll-x-contain">
           {tabs.map((tab) => {
             const active = isActive(tab)
             return (
@@ -93,14 +93,14 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavPro
                 key={tab.href}
                 href={tab.href}
                 className={[
-                  'flex flex-1 flex-col items-center gap-0.5 py-2.5 text-center transition-colors',
+                  'flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center transition-colors',
                   active ? 'text-teal-600' : 'text-slate-400',
                 ].join(' ')}
               >
                 <span className="text-base leading-none" aria-hidden="true">
                   {tab.icon}
                 </span>
-                <span className="text-[10px] font-medium">{tab.label}</span>
+                <span className="whitespace-nowrap text-xs font-medium">{tab.label}</span>
               </Link>
             )
           })}
@@ -108,10 +108,10 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavPro
           {isMember && (
             <button
               onClick={() => setNotifOpen(true)}
-              className="flex flex-1 flex-col items-center gap-0.5 py-2.5 text-center text-slate-400 transition-colors hover:text-teal-600"
+              className="flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center text-slate-400 transition-colors hover:text-teal-600"
             >
               <span className="text-base leading-none" aria-hidden="true">🔔</span>
-              <span className="text-[10px] font-medium">Notifications</span>
+              <span className="whitespace-nowrap text-xs font-medium">Notifications</span>
             </button>
           )}
         </div>

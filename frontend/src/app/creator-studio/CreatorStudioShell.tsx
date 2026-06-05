@@ -101,7 +101,7 @@ function CollectiveSwitcher({
           }}
         >
           <p
-            className="mb-2.5 px-1 text-[9.5px] font-bold uppercase tracking-[0.18em]"
+            className="mb-2.5 px-1 text-[11px] font-bold uppercase tracking-[0.18em]"
             style={{ color: '#38A09E' }}
           >
             Current collective
@@ -143,7 +143,7 @@ function CollectiveSwitcher({
                   </span>
                   <div className="mt-1.5 flex items-center gap-1.5">
                     <span
-                      className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
+                      className="rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
                       style={{
                         background:
                           s.status === 'active'
@@ -156,7 +156,7 @@ function CollectiveSwitcher({
                     </span>
                     {isCurrent && (
                       <span
-                        className="rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide"
+                        className="rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
                         style={{
                           background: 'rgba(56,160,158,0.12)',
                           border: '1px solid rgba(56,160,158,0.35)',
@@ -192,7 +192,7 @@ function CollectiveSwitcher({
             </p>
             <Link
               href="/creator-studio/billing"
-              className="mt-0.5 block text-[10px] transition-opacity hover:opacity-80"
+              className="mt-0.5 block text-[11px] transition-opacity hover:opacity-80"
               style={{ color: 'rgba(141,232,230,0.70)' }}
             >
               View plan →
@@ -262,7 +262,7 @@ function SidebarInner({
             Creator Studio
           </span>
           <span
-            className="text-[10px] font-bold uppercase tracking-[0.18em]"
+            className="text-[11px] font-bold uppercase tracking-[0.18em]"
             style={{ color: 'rgba(255,255,255,0.42)' }}
           >
             Fresh Collective
@@ -277,7 +277,7 @@ function SidebarInner({
         {NAV_SECTIONS.map(({ label, items }) => (
           <div key={label} className="mb-5">
             <p
-              className="mb-1.5 px-4 text-[9px] font-bold uppercase tracking-[0.18em]"
+              className="mb-1.5 px-4 text-[11px] font-bold uppercase tracking-[0.18em]"
               style={{ color: 'rgba(255,255,255,0.35)' }}
             >
               {label}
@@ -369,7 +369,7 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
             onClick={() => setMobileOpen(false)}
             aria-hidden="true"
           />
-          <aside className="fixed inset-y-0 left-0 z-50 w-64 md:hidden">
+          <aside className="fixed inset-y-0 left-0 z-50 w-60 md:hidden">
             <SidebarInner
               user={user}
               spaces={spaces}
@@ -401,7 +401,7 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
               Creator Studio
             </span>
             <span
-              className="text-[9px] font-bold uppercase tracking-[0.16em]"
+              className="text-[11px] font-bold uppercase tracking-[0.16em]"
               style={{ color: 'rgba(255,255,255,0.42)' }}
             >
               Fresh Collective
@@ -410,18 +410,28 @@ export default function CreatorStudioShell({ children, user, spaces, activeSpace
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded text-white/70 transition-colors hover:text-white"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-white/70 transition-colors hover:text-white"
             aria-label="Open navigation"
           >
-            <svg width="18" height="14" fill="none" viewBox="0 0 18 14" aria-hidden="true">
+            <svg width="20" height="15" fill="none" viewBox="0 0 20 15" aria-hidden="true">
               <path
-                d="M0 1h18M0 7h18M0 13h18"
+                d="M0 1.5h20M0 7.5h20M0 13.5h20"
                 stroke="currentColor"
                 strokeWidth="1.5"
                 strokeLinecap="round"
               />
             </svg>
           </button>
+        </div>
+
+        {/* Desktop-recommended nudge — mobile only */}
+        <div
+          className="flex items-center gap-2 px-4 py-2 md:hidden"
+          style={{ background: 'rgba(0,0,0,0.04)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}
+        >
+          <span className="text-[11px] leading-snug text-slate-500">
+            Creator Studio is easier to manage on a larger screen.
+          </span>
         </div>
 
         {/* Page content */}
