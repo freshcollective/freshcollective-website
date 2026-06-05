@@ -51,6 +51,18 @@ export interface LiteMember {
   display_name: string
 }
 
+export interface LiteBillingData {
+  planName: string
+  monthlyPriceCents: number
+  currency: string
+  transactionFeeBasisPoints: number
+  creatorBillingConnected: boolean
+  memberPaymentsConnected: boolean
+  stripeConnectConnected: boolean
+  collectivesUsed: number
+  collectiveLimit: number
+}
+
 export interface LiteData {
   pathwayCounts: { published: number; comingSoon: number; drafts: number; archived: number }
   publishedPathways: LitePathway[]
@@ -63,6 +75,7 @@ export interface LiteData {
   pendingInvites: number
   pendingRequests: number
   resourceCount: number
+  billing: LiteBillingData | null
 }
 
 // ---------------------------------------------------------------------------
@@ -1006,6 +1019,174 @@ function PathwaysCard({
 }
 
 // ---------------------------------------------------------------------------
+// Billing card
+// ---------------------------------------------------------------------------
+
+function BillingCard({ billing }: { billing: LiteBillingData }) {
+  function fmtPrice(cents: number, cur: string) {
+    return `$${(cents / 100).toFixed(0)} ${cur.toUpperCase()}`
+  }
+  function fmtFee(bp: number) {
+    return `${(bp / 100).toFixed(0)}%`
+  }
+
+  return (
+    <Card>
+      <CardBody>
+        <SectionLabel>Billing</SectionLabel>
+
+        {/* Plan summary */}
+        <div className="mb-4">
+          <p className="text-[16px] font-semibold leading-snug" style={{ color: '#152236' }}>
+            {billing.planName}
+          </p>
+          <p className="mt-0.5 text-[13px] text-slate-500">
+            {fmtPrice(billing.monthlyPriceCents, billing.currency)}/month
+            &nbsp;·&nbsp;
+            {fmtFee(billing.transactionFeeBasisPoints)} transaction fee
+          </p>
+        </div>
+
+        {/* Status badges */}
+        <div className="mb-4 flex flex-wrap gap-2">
+          <span
+            className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+            style={
+              billing.creatorBillingConnected
+                ? { background: 'rgba(56,160,158,0.10)', color: '#0f766e' }
+                : { background: 'rgba(245,158,11,0.12)', color: '#92400e' }
+            }
+          >
+            {billing.creatorBillingConnected ? 'Billing connected' : 'Billing not connected'}
+          </span>
+          <span
+            className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+            style={{ background: 'rgba(0,0,0,0.05)', color: '#64748b' }}
+          >
+            {billing.collectivesUsed} of {billing.collectiveLimit}{' '}
+            collective{billing.collectiveLimit !== 1 ? 's' : ''} used
+          </span>
+        </div>
+
+        <p className="text-[12px] text-slate-400">
+          Manage billing, plan details, and usage on desktop.
+        </p>
+      </CardBody>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Payments card (lazy-fetches summary on mount)
+// ---------------------------------------------------------------------------
+
+interface LitePaymentSummary {
+  total_creator_net_amount_cents: number
+  pending_payout_cents: number
+  succeeded_count: number
+}
+
+function PaymentsCard({ billing }: { billing: LiteBillingData }) {
+  const [summary, setSummary] = useState<LitePaymentSummary | null>(null)
+  const [loadingPayments, setLoadingPayments] = useState(true)
+
+  const currency = billing.currency.toUpperCase()
+  const fmtFee = (bp: number) => `${(bp / 100).toFixed(0)}%`
+
+  function fmtAmount(cents: number) {
+    return new Intl.NumberFormat('en-AU', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(cents / 100)
+  }
+
+  useEffect(() => {
+    fetch(apiUrl('/api/creator/payments/summary'), { credentials: 'include' })
+      .then(r => r.ok ? r.json() as Promise<LitePaymentSummary> : null)
+      .then(data => setSummary(data))
+      .catch(() => setSummary(null))
+      .finally(() => setLoadingPayments(false))
+  }, [])
+
+  const isStripeConnected = billing.stripeConnectConnected
+  const hasTransactions = summary !== null && summary.succeeded_count > 0
+
+  return (
+    <Card>
+      <CardBody>
+        <SectionLabel>Payments</SectionLabel>
+
+        {/* Connection status */}
+        <div className="mb-4">
+          <span
+            className="mb-2 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+            style={
+              isStripeConnected
+                ? { background: 'rgba(56,160,158,0.10)', color: '#0f766e' }
+                : { background: 'rgba(245,158,11,0.12)', color: '#92400e' }
+            }
+          >
+            {isStripeConnected ? 'Stripe connected' : 'Stripe not connected'}
+          </span>
+          {!isStripeConnected && (
+            <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+              Connect payment processing on desktop to start accepting paid pathways or bookings.
+            </p>
+          )}
+        </div>
+
+        {/* Lazy-loaded summary stats */}
+        {loadingPayments && (
+          <p className="mb-4 text-[12px] text-slate-400">Loading payment data…</p>
+        )}
+
+        {!loadingPayments && (
+          <div className="mb-4 grid grid-cols-2 gap-3">
+            <div
+              className="rounded-xl px-3.5 py-3"
+              style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Total earned
+              </p>
+              <p className="mt-0.5 text-[18px] font-semibold leading-none" style={{ color: '#152236' }}>
+                {hasTransactions ? fmtAmount(summary!.total_creator_net_amount_cents) : '—'}
+              </p>
+              {hasTransactions && (
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                  after {fmtFee(billing.transactionFeeBasisPoints)} fee
+                </p>
+              )}
+            </div>
+            <div
+              className="rounded-xl px-3.5 py-3"
+              style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Pending payout
+              </p>
+              <p className="mt-0.5 text-[18px] font-semibold leading-none" style={{ color: '#152236' }}>
+                {hasTransactions ? fmtAmount(summary!.pending_payout_cents) : '—'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!loadingPayments && !hasTransactions && (
+          <p className="mb-3 text-[12px] text-slate-400">No member payments recorded yet.</p>
+        )}
+
+        <p className="text-[12px] text-slate-400">
+          View transactions and manage payments on desktop.
+        </p>
+      </CardBody>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -1030,6 +1211,7 @@ export default function CreatorStudioLiteMobile({ user, activeSpace, spaces, lit
     invitations,
     accessRequests,
     resourceCount,
+    billing,
   } = liteData
 
   const slug = activeSpace?.slug ?? ''
@@ -1194,6 +1376,12 @@ export default function CreatorStudioLiteMobile({ user, activeSpace, spaces, lit
             spaceSlug={slug}
           />
         )}
+
+        {/* Billing */}
+        {billing && <BillingCard billing={billing} />}
+
+        {/* Payments */}
+        {billing && <PaymentsCard billing={billing} />}
 
         {/* Pathways */}
         {activeSpace && (

@@ -27,6 +27,7 @@ const EMPTY_LITE_DATA: LiteData = {
   pendingInvites: 0,
   pendingRequests: 0,
   resourceCount: 0,
+  billing: null,
 }
 
 interface Props {

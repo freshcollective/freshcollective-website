@@ -14,7 +14,7 @@ import {
   ACTIVE_SPACE_COOKIE,
 } from '@/lib/serverApi'
 import CreatorStudioShell from './CreatorStudioShell'
-import type { LiteData } from './CreatorStudioLiteMobile'
+import type { LiteData, LiteBillingData } from './CreatorStudioLiteMobile'
 import type {
   SpaceSummary,
   CreatorPathway,
@@ -45,6 +45,19 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
   const billing = await getCreatorBilling()
   const collectiveLimit = billing?.current_plan.collective_limit ?? 1
 
+  // Map billing data for the Lite mobile view (already fetched above).
+  const liteBilling: LiteBillingData | null = billing ? {
+    planName: billing.current_plan.name,
+    monthlyPriceCents: billing.current_plan.monthly_price_cents,
+    currency: billing.current_plan.currency,
+    transactionFeeBasisPoints: billing.current_plan.transaction_fee_basis_points,
+    creatorBillingConnected: billing.payment_setup.creator_billing_connected,
+    memberPaymentsConnected: billing.payment_setup.member_payments_connected,
+    stripeConnectConnected: billing.payment_setup.stripe_connect_connected,
+    collectivesUsed: billing.usage.collectives_used,
+    collectiveLimit: billing.current_plan.collective_limit,
+  } : null
+
   // Fetch data for the mobile Creator Studio Lite view in parallel.
   // Any individual failure degrades gracefully to an empty value.
   const liteData: LiteData = {
@@ -59,6 +72,7 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
     pendingInvites: 0,
     pendingRequests: 0,
     resourceCount: 0,
+    billing: liteBilling,
   }
 
   if (activeSpace) {
