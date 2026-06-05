@@ -29,7 +29,6 @@ function getEventState(event: EventDetail): EventState {
   return event.recording_url ? 'past-replay' : 'past-no-replay'
 }
 
-
 function formatDuration(startsAt: string, endsAt: string): string {
   const mins = Math.round(
     (new Date(endsAt).getTime() - new Date(startsAt).getTime()) / 60000,
@@ -78,10 +77,6 @@ const STATE_BADGE: Record<EventState | 'cancelled', { label: string; bg: string;
   'cancelled':      { label: 'Cancelled',           bg: 'rgba(239,68,68,0.08)',  color: '#b91c1c' },
 }
 
-// Shared classes for calendar export buttons — smaller on mobile, full size on desktop
-const calBtnClass =
-  'inline-flex items-center rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900 md:px-6 md:py-2.5 md:text-sm'
-
 export default async function EventDetailPage({ params }: Props) {
   const { slug, eventId } = await params
   const [space, event, me] = await Promise.all([
@@ -107,10 +102,9 @@ export default async function EventDetailPage({ params }: Props) {
   const icsUrl = `/api/spaces/${slug}/events/${eventId}/calendar.ics`
 
   const isPast = state === 'past-replay' || state === 'past-no-replay'
-  const showMobileCTA = event.requires_booking && !isCancelled && !isPast
 
   return (
-    <div className={`max-w-3xl${showMobileCTA ? ' pb-20 md:pb-0' : ''}`}>
+    <div className="max-w-3xl">
 
       {/* Back link */}
       <div className="mb-6">
@@ -149,49 +143,52 @@ export default async function EventDetailPage({ params }: Props) {
           </div>
         )}
         <div className="px-7 py-8 md:px-9">
-        <div
-          className="mb-3 h-[2px] w-8 rounded-full"
-          style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
-        />
+          <div
+            className="mb-3 h-[2px] w-8 rounded-full"
+            style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
+          />
 
-        {/* State badge */}
-        <div className="mb-3">
-          <span
-            className={`inline-block rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide${state === 'live' ? ' animate-pulse' : ''}`}
-            style={{ background: badge.bg, color: badge.color }}
-          >
-            {badge.label}
-          </span>
-        </div>
+          {/* State badge */}
+          <div className="mb-3">
+            <span
+              className={`inline-block rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide${state === 'live' ? ' animate-pulse' : ''}`}
+              style={{ background: badge.bg, color: badge.color }}
+            >
+              {badge.label}
+            </span>
+          </div>
 
-        <h1 className="mb-2 leading-snug">
-          <span
-            className="inline-block text-2xl font-semibold md:text-3xl"
-            style={{
-              background: 'linear-gradient(90deg, #55D7D2 0%, #D9FFFD 50%, #FFFFFF 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}
-          >
-            {event.title}
-          </span>
-        </h1>
+          <h1 className="mb-2 leading-snug">
+            <span
+              className="inline-block text-2xl font-semibold md:text-3xl"
+              style={{
+                background: 'linear-gradient(90deg, #55D7D2 0%, #D9FFFD 50%, #FFFFFF 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            >
+              {event.title}
+            </span>
+          </h1>
 
-        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.60)' }}>
-          <span>{locationLabel}</span>
-          <span>{formatFullDate(event.starts_at)}</span>
-          <span>{formatTime(event.starts_at)}</span>
-          {event.ends_at && <span>{formatDuration(event.starts_at, event.ends_at)}</span>}
-        </div>
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.60)' }}>
+            <span>{locationLabel}</span>
+            <span>{formatFullDate(event.starts_at)}</span>
+            <span>{formatTime(event.starts_at)}</span>
+            {event.ends_at && <span>{formatDuration(event.starts_at, event.ends_at)}</span>}
+          </div>
         </div>
       </div>
 
-      {/* ── Two-column layout: details + booking panel ── */}
+      {/* ── Two-column layout: details + booking panel ──
+          On mobile: booking panel comes FIRST (order-1) so it's visible right
+          after the hero without scrolling. Desktop: standard left/right columns.
+      ── */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start">
 
-        {/* ── Left: details + actions ── */}
-        <div className="flex flex-col gap-6">
+        {/* ── Left: details + actions — second on mobile, first on desktop ── */}
+        <div className="order-2 flex flex-col gap-6 lg:order-1">
 
           {/* Details card */}
           <div className="overflow-hidden rounded-2xl border border-border bg-white">
@@ -231,26 +228,42 @@ export default async function EventDetailPage({ params }: Props) {
             </div>
           )}
 
-          {/* State-aware action buttons */}
+          {/* State-aware action buttons.
+              Calendar pill buttons are hidden on mobile — the booking panel
+              (shown first on mobile) already provides calendar text links. */}
           {state === 'upcoming' && (
-            <div className="flex flex-wrap gap-2 md:gap-3">
+            <div className="flex flex-wrap gap-3">
               {event.location_url && (
                 <a
                   href={event.location_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-full bg-teal-600 px-5 py-2 text-xs font-semibold text-white transition-colors hover:bg-teal-700 md:px-6 md:py-2.5 md:text-sm"
+                  className="inline-flex items-center rounded-full bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700"
                 >
                   Join session →
                 </a>
               )}
-              <a href={googleCalUrl} target="_blank" rel="noopener noreferrer" className={calBtnClass}>
+              <a
+                href={googleCalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900 md:inline-flex"
+              >
                 Google Calendar
               </a>
-              <a href={outlookCalUrl} target="_blank" rel="noopener noreferrer" className={calBtnClass}>
+              <a
+                href={outlookCalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hidden items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900 md:inline-flex"
+              >
                 Outlook
               </a>
-              <a href={icsUrl} download className={calBtnClass}>
+              <a
+                href={icsUrl}
+                download
+                className="hidden items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900 md:inline-flex"
+              >
                 Download .ics
               </a>
             </div>
@@ -278,7 +291,7 @@ export default async function EventDetailPage({ params }: Props) {
               href={event.recording_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center rounded-full bg-navy-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-navy-800 w-fit"
+              className="inline-flex w-fit items-center rounded-full bg-navy-900 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-navy-800"
             >
               Watch replay →
             </a>
@@ -292,8 +305,8 @@ export default async function EventDetailPage({ params }: Props) {
 
         </div>
 
-        {/* ── Right: booking / info panel ── */}
-        <div className="lg:sticky lg:top-6">
+        {/* ── Right: booking / info panel — first on mobile, second on desktop ── */}
+        <div className="order-1 lg:sticky lg:top-6 lg:order-2">
           <div
             className="rounded-2xl border bg-white p-5"
             style={{ borderColor: 'rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
@@ -323,7 +336,6 @@ export default async function EventDetailPage({ params }: Props) {
                 initialCanBook={event.can_book}
                 initialCanCancelBooking={event.can_cancel_booking}
                 isPast={isPast}
-                isCancelled={isCancelled}
                 recurrenceSeriesId={event.recurrence_series_id}
                 accessType={event.booking_access_type}
                 userHasPathwayAccess={event.user_has_pathway_access}
@@ -341,6 +353,7 @@ export default async function EventDetailPage({ params }: Props) {
               </>
             )}
 
+            {/* Calendar text links — always visible in panel; desktop also has pill buttons below description */}
             {(state === 'upcoming' || state === 'live') && (
               <div className="mt-3 flex flex-col gap-1.5 text-center text-[12px]">
                 <a href={googleCalUrl} target="_blank" rel="noopener noreferrer"

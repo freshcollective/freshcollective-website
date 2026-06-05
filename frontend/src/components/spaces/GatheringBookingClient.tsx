@@ -17,7 +17,6 @@ interface Props {
   initialCanBook: boolean
   initialCanCancelBooking: boolean
   isPast: boolean
-  isCancelled: boolean
   recurrenceSeriesId?: string | null
   accessType?: 'all_members' | 'pathway_required'
   userHasPathwayAccess?: boolean
@@ -37,7 +36,6 @@ export default function GatheringBookingClient({
   initialCanBook,
   initialCanCancelBooking,
   isPast,
-  isCancelled,
   recurrenceSeriesId,
   accessType = 'all_members',
   userHasPathwayAccess = true,
@@ -81,10 +79,10 @@ export default function GatheringBookingClient({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(apiUrl(`/api/spaces/${spaceSlug}/events/${eventId}/cancel-booking`), {
-        method: 'POST',
-        credentials: 'include',
-      })
+      const res = await fetch(
+        apiUrl(`/api/spaces/${spaceSlug}/events/${eventId}/cancel-booking`),
+        { method: 'POST', credentials: 'include' },
+      )
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
         throw new Error(typeof b.detail === 'string' ? b.detail : 'Could not cancel booking.')
@@ -131,198 +129,129 @@ export default function GatheringBookingClient({
   const isBooked = myBookingStatus === 'confirmed'
   const isFull = spotsRemaining !== null && spotsRemaining === 0 && !isBooked
   const needsPathwayAccess = accessType === 'pathway_required' && !userHasPathwayAccess
-  const showMobileCTA = !isCancelled && !isPast
 
   return (
-    <>
-      {/* ── Inline booking panel (right column, all breakpoints) ── */}
-      <div>
-        <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-          Booking
-        </p>
+    <div>
+      <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        Booking
+      </p>
 
-        {isPast ? (
-          <p className="mb-4 text-[15px] font-semibold text-navy-900">Session ended</p>
-        ) : isBooked ? (
-          <p className="mb-4 text-[15px] font-semibold text-teal-700">You&rsquo;re booked ✓</p>
-        ) : isFull ? (
-          <p className="mb-4 text-[15px] font-semibold text-slate-500">Session full</p>
-        ) : (
-          <p className="mb-4 text-[15px] font-semibold text-navy-900">Reserve your spot</p>
-        )}
+      {isPast ? (
+        <p className="mb-4 text-[15px] font-semibold text-navy-900">Session ended</p>
+      ) : isBooked ? (
+        <p className="mb-4 text-[15px] font-semibold text-teal-700">You&rsquo;re booked ✓</p>
+      ) : isFull ? (
+        <p className="mb-4 text-[15px] font-semibold text-slate-500">Session full</p>
+      ) : (
+        <p className="mb-4 text-[15px] font-semibold text-navy-900">Reserve your spot</p>
+      )}
 
-        <div className="mb-4 space-y-2 text-[13px] text-slate-500">
-          {capacity !== null && (
-            <div className="flex items-center justify-between">
-              <span>Spots</span>
-              <span className="font-medium text-navy-800">
-                {spotsRemaining !== null
-                  ? `${spotsRemaining} of ${capacity} remaining`
-                  : `${capacity} total`}
-              </span>
-            </div>
-          )}
-          {bookedCount > 0 && (
-            <div className="flex items-center justify-between">
-              <span>Booked</span>
-              <span className="font-medium text-navy-800">{bookedCount}</span>
-            </div>
-          )}
-        </div>
-
-        {seriesResult && (
-          <div
-            className="mb-3 rounded-xl px-4 py-3 text-[12px] text-teal-800"
-            style={{ background: 'rgba(56,160,158,0.08)', border: '1px solid rgba(56,160,158,0.2)' }}
-          >
-            Booked {seriesResult.booked} session{seriesResult.booked !== 1 ? 's' : ''}.
-            {seriesResult.skipped_full > 0 && ` ${seriesResult.skipped_full} full.`}
-            {seriesResult.skipped_closed > 0 && ` ${seriesResult.skipped_closed} booking closed.`}
-            {seriesResult.already_booked > 0 && ` ${seriesResult.already_booked} already booked.`}
+      <div className="mb-4 space-y-2 text-[13px] text-slate-500">
+        {capacity !== null && (
+          <div className="flex items-center justify-between">
+            <span>Spots</span>
+            <span className="font-medium text-navy-800">
+              {spotsRemaining !== null
+                ? `${spotsRemaining} of ${capacity} remaining`
+                : `${capacity} total`}
+            </span>
           </div>
         )}
-
-        {!isPast && !isAuthenticated && (
-          <Link
-            href={loginHref}
-            className="block w-full rounded-xl py-2.5 text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-          >
-            Log in to book
-          </Link>
+        {bookedCount > 0 && (
+          <div className="flex items-center justify-between">
+            <span>Booked</span>
+            <span className="font-medium text-navy-800">{bookedCount}</span>
+          </div>
         )}
-
-        {!isPast && isAuthenticated && needsPathwayAccess && (
-          <button
-            disabled
-            className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400"
-          >
-            Join the pathway to book
-          </button>
-        )}
-
-        {!isPast && isAuthenticated && !needsPathwayAccess && (
-          <>
-            {isBooked ? (
-              <div className="space-y-2">
-                <div
-                  className="flex items-center gap-2 rounded-xl px-4 py-2.5"
-                  style={{ background: 'rgba(56,160,158,0.08)' }}
-                >
-                  <span className="text-sm font-semibold text-teal-700">Booking confirmed</span>
-                </div>
-                {canCancelBooking && (
-                  <button
-                    onClick={handleCancelBooking}
-                    disabled={loading}
-                    className="w-full rounded-xl border border-slate-200 py-2 text-sm text-slate-400 transition-colors hover:border-red-200 hover:text-red-500 disabled:opacity-50"
-                  >
-                    {loading ? 'Cancelling…' : 'Cancel booking'}
-                  </button>
-                )}
-              </div>
-            ) : canBook ? (
-              <div className="space-y-2">
-                <button
-                  onClick={handleBook}
-                  disabled={loading}
-                  className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                >
-                  {loading ? 'Booking…' : 'Book your spot'}
-                </button>
-                {recurrenceSeriesId && !seriesResult && (
-                  <button
-                    onClick={handleBookSeries}
-                    disabled={loading}
-                    className="w-full rounded-xl border border-teal-200 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50"
-                  >
-                    {loading ? 'Booking…' : 'Book remaining sessions'}
-                  </button>
-                )}
-              </div>
-            ) : isFull ? (
-              <button
-                disabled
-                className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400"
-              >
-                Session full
-              </button>
-            ) : null}
-          </>
-        )}
-
-        {bookingNote && (
-          <p className="mt-3 text-[12px] leading-relaxed text-slate-400">{bookingNote}</p>
-        )}
-
-        {error && <p className="mt-2 text-[12px] text-red-500">{error}</p>}
       </div>
 
-      {/* ── Mobile sticky booking CTA (below SpaceNav, above safe area) ── */}
-      {showMobileCTA && (
+      {seriesResult && (
         <div
-          className="fixed left-0 right-0 z-30 border-t border-border bg-white/96 px-4 py-3 backdrop-blur-sm md:hidden"
-          style={{ bottom: 'calc(52px + env(safe-area-inset-bottom))' }}
+          className="mb-3 rounded-xl px-4 py-3 text-[12px] text-teal-800"
+          style={{ background: 'rgba(56,160,158,0.08)', border: '1px solid rgba(56,160,158,0.2)' }}
         >
-          {!isAuthenticated ? (
-            <Link
-              href={loginHref}
-              className="block w-full rounded-xl py-3 text-center text-[15px] font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-            >
-              Log in to book
-            </Link>
-          ) : needsPathwayAccess ? (
-            <button
-              disabled
-              className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-3 text-[15px] font-semibold text-slate-400"
-            >
-              Pathway required to book
-            </button>
-          ) : isBooked ? (
-            <div className="flex items-center gap-3">
-              <span
-                className="flex-1 rounded-xl px-4 py-3 text-center text-[15px] font-semibold text-teal-700"
-                style={{
-                  background: 'rgba(56,160,158,0.10)',
-                  border: '1px solid rgba(56,160,158,0.20)',
-                }}
+          Booked {seriesResult.booked} session{seriesResult.booked !== 1 ? 's' : ''}.
+          {seriesResult.skipped_full > 0 && ` ${seriesResult.skipped_full} full.`}
+          {seriesResult.skipped_closed > 0 && ` ${seriesResult.skipped_closed} booking closed.`}
+          {seriesResult.already_booked > 0 && ` ${seriesResult.already_booked} already booked.`}
+        </div>
+      )}
+
+      {!isPast && !isAuthenticated && (
+        <Link
+          href={loginHref}
+          className="block w-full rounded-xl py-2.5 text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Log in to book
+        </Link>
+      )}
+
+      {!isPast && isAuthenticated && needsPathwayAccess && (
+        <button
+          disabled
+          className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400"
+        >
+          Join the pathway to book
+        </button>
+      )}
+
+      {!isPast && isAuthenticated && !needsPathwayAccess && (
+        <>
+          {isBooked ? (
+            <div className="space-y-2">
+              <div
+                className="flex items-center gap-2 rounded-xl px-4 py-2.5"
+                style={{ background: 'rgba(56,160,158,0.08)' }}
               >
-                Booked ✓
-              </span>
+                <span className="text-sm font-semibold text-teal-700">Booking confirmed</span>
+              </div>
               {canCancelBooking && (
                 <button
                   onClick={handleCancelBooking}
                   disabled={loading}
-                  className="shrink-0 rounded-xl border border-slate-200 px-4 py-3 text-[13px] text-slate-400 transition-colors hover:border-red-200 hover:text-red-500 disabled:opacity-50"
+                  className="w-full rounded-xl border border-slate-200 py-2 text-sm text-slate-400 transition-colors hover:border-red-200 hover:text-red-500 disabled:opacity-50"
                 >
-                  {loading ? '…' : 'Cancel'}
+                  {loading ? 'Cancelling…' : 'Cancel booking'}
+                </button>
+              )}
+            </div>
+          ) : canBook ? (
+            <div className="space-y-2">
+              <button
+                onClick={handleBook}
+                disabled={loading}
+                className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              >
+                {loading ? 'Booking…' : 'Book your spot'}
+              </button>
+              {recurrenceSeriesId && !seriesResult && (
+                <button
+                  onClick={handleBookSeries}
+                  disabled={loading}
+                  className="w-full rounded-xl border border-teal-200 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50"
+                >
+                  {loading ? 'Booking…' : 'Book remaining sessions'}
                 </button>
               )}
             </div>
           ) : isFull ? (
             <button
               disabled
-              className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-3 text-[15px] font-semibold text-slate-400"
+              className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400"
             >
-              Fully booked
-            </button>
-          ) : canBook ? (
-            <button
-              onClick={handleBook}
-              disabled={loading}
-              className="w-full rounded-xl py-3 text-[15px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-            >
-              {loading ? 'Booking…' : 'Book your spot'}
+              Session full
             </button>
           ) : null}
-          {error && (
-            <p className="mt-2 text-center text-[12px] text-red-500">{error}</p>
-          )}
-        </div>
+        </>
       )}
-    </>
+
+      {bookingNote && (
+        <p className="mt-3 text-[12px] leading-relaxed text-slate-400">{bookingNote}</p>
+      )}
+
+      {error && <p className="mt-2 text-[12px] text-red-500">{error}</p>}
+    </div>
   )
 }

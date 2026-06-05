@@ -148,7 +148,7 @@ function ResourceCard({
           <p className="mb-4 truncate text-[11.5px] text-slate-400">{meta}</p>
         )}
 
-        {resolvedUrl ? (
+        {resolvedUrl && (
           <a
             href={resolvedUrl}
             target={isFile ? undefined : '_blank'}
@@ -159,10 +159,6 @@ function ResourceCard({
           >
             {actionLabel}
           </a>
-        ) : (
-          <span className="inline-flex items-center rounded-xl border border-slate-200 px-4 py-2 text-[13px] text-slate-400">
-            No link available
-          </span>
         )}
       </div>
     </div>
