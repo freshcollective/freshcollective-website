@@ -149,6 +149,14 @@ export default async function PathwaysPage() {
             helper: 'Visible to members according to access settings.',
             items: published,
             muted: false,
+            badgeStyle: { background: 'rgba(56,160,158,0.09)', color: '#38A09E' },
+            cardStyle: {
+              border: '1px solid rgba(56,160,158,0.18)',
+              borderTop: '2px solid rgba(56,160,158,0.55)',
+              background: '#ffffff',
+            },
+            titleColor: '#152236',
+            opacity: 1,
           },
           {
             key: 'coming_soon',
@@ -156,6 +164,14 @@ export default async function PathwaysPage() {
             helper: 'Shown as coming soon, but not yet available.',
             items: comingSoon,
             muted: false,
+            badgeStyle: { background: 'rgba(212,176,72,0.13)', color: '#8a6a10' },
+            cardStyle: {
+              border: '1px solid rgba(212,176,72,0.22)',
+              borderTop: '2px solid rgba(196,158,52,0.60)',
+              background: '#ffffff',
+            },
+            titleColor: '#152236',
+            opacity: 1,
           },
           {
             key: 'drafts',
@@ -163,6 +179,14 @@ export default async function PathwaysPage() {
             helper: 'Only visible to you while you build.',
             items: drafts,
             muted: false,
+            badgeStyle: { background: 'rgba(0,0,0,0.05)', color: '#64748b' },
+            cardStyle: {
+              border: '1px solid rgba(0,0,0,0.08)',
+              borderTop: '2px solid rgba(148,163,184,0.45)',
+              background: '#ffffff',
+            },
+            titleColor: '#152236',
+            opacity: 1,
           },
           {
             key: 'archived',
@@ -170,6 +194,13 @@ export default async function PathwaysPage() {
             helper: 'Hidden from members and kept for your records.',
             items: archived,
             muted: true,
+            badgeStyle: { background: 'rgba(0,0,0,0.04)', color: '#94a3b8' },
+            cardStyle: {
+              border: '1px solid rgba(0,0,0,0.05)',
+              background: 'rgba(0,0,0,0.018)',
+            },
+            titleColor: '#94a3b8',
+            opacity: 0.70,
           },
         ].filter((s) => s.items.length > 0)
 
@@ -187,11 +218,7 @@ export default async function PathwaysPage() {
                   </h2>
                   <span
                     className="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                    style={
-                      section.muted
-                        ? { background: 'rgba(0,0,0,0.04)', color: '#94a3b8' }
-                        : { background: 'rgba(56,160,158,0.09)', color: '#38A09E' }
-                    }
+                    style={section.badgeStyle}
                   >
                     {section.items.length}
                   </span>
@@ -212,18 +239,15 @@ export default async function PathwaysPage() {
                     return (
                       <div
                         key={pathway.id}
-                        className="group rounded-2xl border bg-white p-5 transition-all hover:shadow-sm"
-                        style={{
-                          borderColor: section.muted ? 'rgba(0,0,0,0.06)' : undefined,
-                          opacity: section.muted ? 0.72 : 1,
-                        }}
+                        className="group overflow-hidden rounded-2xl p-5 transition-all hover:shadow-sm"
+                        style={{ ...section.cardStyle, opacity: section.opacity }}
                       >
                         <div className="flex items-start gap-4">
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <p
                                 className="text-[15px] font-semibold"
-                                style={{ color: section.muted ? '#64748b' : '#152236' }}
+                                style={{ color: section.titleColor }}
                               >
                                 {pathway.title}
                               </p>
@@ -252,7 +276,7 @@ export default async function PathwaysPage() {
                           </div>
                           <Link
                             href={`/creator-studio/pathways/${pathway.slug}`}
-                            className="shrink-0 rounded-lg border border-border px-3 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+                            className="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-500 transition-colors hover:border-teal-200 hover:text-teal-700"
                           >
                             Edit →
                           </Link>
