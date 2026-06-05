@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
 import type { CreatorSpaceDetail, PricingType } from '@/types/platform'
-import AboutEditor from '@/components/ui/AboutEditor'
+import AboutRichTextEditor from '@/components/ui/AboutRichTextEditor'
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
 const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png']
@@ -278,7 +278,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
             <p className="mb-2 text-[13px] text-slate-500">
               This appears on your public About page. Use headings, bold text, bullets, and links to help people understand your collective.
             </p>
-            <AboutEditor
+            <AboutRichTextEditor
               id="s-desc"
               value={description}
               onChange={setDescription}
