@@ -90,17 +90,17 @@ export function formatCollectivePricingSummary(space: FullPricingSource): string
     if (!effectivePaid) {
       return 'Free to join · all included'
     }
-    // 1. Creator-entered copy wins
+    // 1. Auto-derived pathway price wins when active paid pathways exist
+    if (min_paid_pathway_price_cents != null && min_paid_pathway_price_cents > 0) {
+      return `Free to join · pathways from ${formatAmount(min_paid_pathway_price_cents, currency)}`
+    }
+    // 2. Creator-entered copy fallback when no price is derivable
     const manualSummary = paid_content_summary?.trim()
     if (manualSummary) {
       return `Free to join · ${inlineCase(manualSummary)}`
     }
-    // 2. Auto-derived pathway price fallback
-    if (min_paid_pathway_price_cents != null && min_paid_pathway_price_cents > 0) {
-      return `Free to join · pathways from ${formatAmount(min_paid_pathway_price_cents, currency)}`
-    }
     // 3. Generic fallback
-    return 'Free to join · paid pathways available'
+    return 'Free to join · paid content available'
   }
 
   // Paid collective

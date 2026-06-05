@@ -92,7 +92,10 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
 
     pathway_counts: dict[str, int] = dict(
         db.query(Pathway.space_id, func.count(Pathway.id))
-        .filter(Pathway.space_id.in_(space_ids))
+        .filter(
+            Pathway.space_id.in_(space_ids),
+            Pathway.status != "archived",
+        )
         .group_by(Pathway.space_id)
         .all()
     )
