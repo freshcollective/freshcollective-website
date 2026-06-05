@@ -1,9 +1,9 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getSpace, getSpaceEvent } from '@/lib/serverApi'
+import { getSpace, getSpaceEvent, getMe } from '@/lib/serverApi'
 import type { EventDetail } from '@/types/platform'
 import { formatGatheringFullDate, formatGatheringTime } from '@/lib/dateTime'
-import BookingPanel from '@/components/spaces/BookingPanel'
+import GatheringBookingClient from '@/components/spaces/GatheringBookingClient'
 
 interface Props {
   params: Promise<{ slug: string; eventId: string }>
@@ -78,14 +78,22 @@ const STATE_BADGE: Record<EventState | 'cancelled', { label: string; bg: string;
   'cancelled':      { label: 'Cancelled',           bg: 'rgba(239,68,68,0.08)',  color: '#b91c1c' },
 }
 
+// Shared classes for calendar export buttons — smaller on mobile, full size on desktop
+const calBtnClass =
+  'inline-flex items-center rounded-full border border-slate-200 px-4 py-2 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900 md:px-6 md:py-2.5 md:text-sm'
+
 export default async function EventDetailPage({ params }: Props) {
   const { slug, eventId } = await params
-  const [space, event] = await Promise.all([
+  const [space, event, me] = await Promise.all([
     getSpace(slug),
     getSpaceEvent(slug, eventId),
+    getMe(),
   ])
 
   if (!event) notFound()
+
+  const isAuthenticated = !!me
+  const loginHref = `/login?next=/spaces/${slug}/events/${eventId}`
 
   const timezone = space?.timezone ?? 'Australia/Melbourne'
   const formatFullDate = (iso: string) => formatGatheringFullDate(iso, timezone)
@@ -98,8 +106,11 @@ export default async function EventDetailPage({ params }: Props) {
   const { google: googleCalUrl, outlook: outlookCalUrl } = calendarUrls(event)
   const icsUrl = `/api/spaces/${slug}/events/${eventId}/calendar.ics`
 
+  const isPast = state === 'past-replay' || state === 'past-no-replay'
+  const showMobileCTA = event.requires_booking && !isCancelled && !isPast
+
   return (
-    <div className="max-w-3xl">
+    <div className={`max-w-3xl${showMobileCTA ? ' pb-20 md:pb-0' : ''}`}>
 
       {/* Back link */}
       <div className="mb-6">
@@ -222,38 +233,24 @@ export default async function EventDetailPage({ params }: Props) {
 
           {/* State-aware action buttons */}
           {state === 'upcoming' && (
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2 md:gap-3">
               {event.location_url && (
                 <a
                   href={event.location_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center rounded-full bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700"
+                  className="inline-flex items-center rounded-full bg-teal-600 px-5 py-2 text-xs font-semibold text-white transition-colors hover:bg-teal-700 md:px-6 md:py-2.5 md:text-sm"
                 >
                   Join session →
                 </a>
               )}
-              <a
-                href={googleCalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900"
-              >
+              <a href={googleCalUrl} target="_blank" rel="noopener noreferrer" className={calBtnClass}>
                 Google Calendar
               </a>
-              <a
-                href={outlookCalUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900"
-              >
+              <a href={outlookCalUrl} target="_blank" rel="noopener noreferrer" className={calBtnClass}>
                 Outlook
               </a>
-              <a
-                href={icsUrl}
-                download
-                className="inline-flex items-center rounded-full border border-slate-200 px-6 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-navy-900"
-              >
+              <a href={icsUrl} download className={calBtnClass}>
                 Download .ics
               </a>
             </div>
@@ -314,7 +311,7 @@ export default async function EventDetailPage({ params }: Props) {
                 <p className="text-[15px] font-semibold text-red-700">This event has been cancelled</p>
               </>
             ) : event.requires_booking ? (
-              <BookingPanel
+              <GatheringBookingClient
                 eventId={event.id}
                 spaceSlug={slug}
                 requiresBooking={event.requires_booking}
@@ -325,10 +322,13 @@ export default async function EventDetailPage({ params }: Props) {
                 initialMyBookingStatus={event.my_booking_status as 'confirmed' | 'cancelled' | null}
                 initialCanBook={event.can_book}
                 initialCanCancelBooking={event.can_cancel_booking}
-                isPast={state === 'past-replay' || state === 'past-no-replay'}
+                isPast={isPast}
+                isCancelled={isCancelled}
                 recurrenceSeriesId={event.recurrence_series_id}
                 accessType={event.booking_access_type}
                 userHasPathwayAccess={event.user_has_pathway_access}
+                isAuthenticated={isAuthenticated}
+                loginHref={loginHref}
               />
             ) : (
               <>
@@ -336,9 +336,7 @@ export default async function EventDetailPage({ params }: Props) {
                   Access
                 </p>
                 <p className="mb-4 text-[15px] font-semibold text-navy-900">
-                  {state === 'past-replay' || state === 'past-no-replay'
-                    ? 'Session ended'
-                    : 'Open to all members'}
+                  {isPast ? 'Session ended' : 'Open to all members'}
                 </p>
               </>
             )}

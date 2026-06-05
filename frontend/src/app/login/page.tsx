@@ -11,8 +11,8 @@ export default async function LoginPage({
 
   return (
     <SiteShell>
-      <section className="relative flex min-h-[80vh] items-center overflow-hidden py-20">
-        <div className="absolute inset-0 flex" aria-hidden="true">
+      <section className="relative flex min-h-[80vh] items-center overflow-hidden bg-ivory py-20 md:bg-transparent">
+        <div className="absolute inset-0 hidden md:flex" aria-hidden="true">
           <div className="w-1/2 bg-ivory" />
           <div className="w-1/2 bg-navy-950" />
         </div>

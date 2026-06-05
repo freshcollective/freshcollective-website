@@ -170,13 +170,19 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6"
+      className="fixed inset-0 z-50 flex items-end justify-center md:items-center md:px-4 md:py-6"
       style={{ background: 'rgba(7,24,36,0.55)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
-        style={{ maxHeight: 'calc(100vh - 48px)' }}
+      <div
+        className="flex w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl md:max-w-2xl md:rounded-2xl"
+        style={{ maxHeight: '90vh' }}
       >
+        {/* Mobile drag handle */}
+        <div className="flex shrink-0 justify-center pt-3 md:hidden" aria-hidden="true">
+          <div className="h-1 w-10 rounded-full bg-slate-200" />
+        </div>
+
         {/* ── Header ── */}
         <div
           className="flex shrink-0 items-center justify-between border-b border-border px-6 py-4"
@@ -198,16 +204,17 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
         </div>
 
         {/* ── Body: tab rail + content ── */}
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Mobile: vertical stack (tab rail on top). Desktop: side-by-side. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
 
-          {/* Tab rail */}
-          <div className="shrink-0 border-r border-border bg-slate-50/60 px-3 py-4 w-40">
+          {/* Tab rail — horizontal on mobile, vertical sidebar on desktop */}
+          <div className="flex shrink-0 flex-row overflow-x-auto border-b border-border bg-slate-50/60 px-3 py-2 md:w-40 md:flex-col md:overflow-visible md:border-b-0 md:border-r md:py-4">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id)}
                 className={[
-                  'w-full rounded-xl px-3 py-2 text-left text-[13px] font-medium transition-colors',
+                  'shrink-0 rounded-xl px-3 py-1.5 text-left text-[13px] font-medium transition-colors md:w-full md:py-2',
                   activeTab === t.id
                     ? 'bg-white text-navy-900 shadow-sm'
                     : 'text-slate-500 hover:text-navy-800',
@@ -218,7 +225,7 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
             ))}
           </div>
 
-          {/* Content pane */}
+          {/* Content pane — full width on mobile */}
           <div className="flex-1 overflow-y-auto px-6 py-5">
             {activeTab === 'notifications' && (
               <>
