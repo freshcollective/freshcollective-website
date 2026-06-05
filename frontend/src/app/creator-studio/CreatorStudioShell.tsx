@@ -4,6 +4,8 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import LogoutButton from '@/components/layout/LogoutButton'
+import CreatorStudioLiteMobile from './CreatorStudioLiteMobile'
+import type { LiteData } from './CreatorStudioLiteMobile'
 import type { SpaceSummary } from '@/types/platform'
 
 interface User {
@@ -13,25 +15,31 @@ interface User {
   role: string
 }
 
+const EMPTY_LITE_DATA: LiteData = {
+  pathwayCounts: { published: 0, comingSoon: 0, drafts: 0, archived: 0 },
+  upcomingGatherings: [],
+  memberCount: 0,
+  leaderCount: 0,
+  pendingInvites: 0,
+  pendingRequests: 0,
+}
+
 interface Props {
   children: React.ReactNode
   user: User
   spaces: SpaceSummary[]
   activeSpace: SpaceSummary | null
   collectiveLimit: number
+  liteData?: LiteData
 }
 
 interface NavItem {
   href: string
   label: string
   exact?: boolean
-  // Also mark this item active when the pathname matches this pattern.
-  // Used so legacy /creator/spaces/[slug]/... routes highlight the correct
-  // sidebar item even though their URL doesn't start with /creator-studio/.
   activeOnPath?: RegExp
 }
 
-// Two-section nav structure
 const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: 'ACCOUNT',
@@ -48,7 +56,7 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       { href: '/creator-studio/pathways',   label: 'Pathways',      activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/ },
       { href: '/creator-studio/gatherings', label: 'Gatherings',    activeOnPath: /^\/creator\/spaces\/[^/]+\/events/ },
       { href: '/creator-studio/resources',  label: 'Resources' },
-      { href: '/creator-studio/media',      label: 'Brand Library' }, // TODO: rename route to /brand-library
+      { href: '/creator-studio/media',      label: 'Brand Library' },
       { href: '/creator-studio/community',  label: 'Community',     activeOnPath: /^\/creator\/spaces\/[^/]+\/community/ },
       { href: '/creator-studio/people',     label: 'People' },
       { href: '/creator-studio/setup',      label: 'Setup' },
@@ -71,19 +79,15 @@ function CollectiveSwitcher({
   collectiveLimit: number
 }) {
   const router = useRouter()
-  // Optimistic selected slug — updates immediately on click so the sidebar
-  // never shows the wrong collective as Current while the page is navigating.
-  // The cookie/server state remains the real source of truth after re-render.
   const [selectedSlug, setSelectedSlug] = useState<string | null>(activeSpace?.slug ?? null)
   const [isPending, startTransition] = useTransition()
 
-  // Count only non-archived spaces — matches the billing endpoint's definition
   const activeSpaceCount = spaces.filter((s) => s.status !== 'archived').length
   const atLimit = activeSpaceCount >= collectiveLimit
 
   function switchTo(slug: string) {
     if (slug === selectedSlug) return
-    setSelectedSlug(slug)   // immediate optimistic update
+    setSelectedSlug(slug)
     startTransition(() => {
       document.cookie = `fc_creator_space=${slug}; path=/; max-age=86400`
       router.push('/creator-studio/collective')
@@ -108,7 +112,6 @@ function CollectiveSwitcher({
           </p>
           <div className="space-y-1.5">
             {spaces.map((s) => {
-              // Use optimistic selectedSlug so the UI updates immediately on click.
               const isCurrent = s.slug === selectedSlug
               const isPendingThis = isPending && s.slug === selectedSlug
               return (
@@ -127,8 +130,7 @@ function CollectiveSwitcher({
                   }}
                   onMouseEnter={(e) => {
                     if (!isCurrent && !isPending)
-                      (e.currentTarget as HTMLButtonElement).style.background =
-                        'rgba(56,160,158,0.06)'
+                      (e.currentTarget as HTMLButtonElement).style.background = 'rgba(56,160,158,0.06)'
                   }}
                   onMouseLeave={(e) => {
                     if (!isCurrent)
@@ -145,10 +147,7 @@ function CollectiveSwitcher({
                     <span
                       className="rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
                       style={{
-                        background:
-                          s.status === 'active'
-                            ? 'rgba(56,160,158,0.14)'
-                            : 'rgba(0,0,0,0.07)',
+                        background: s.status === 'active' ? 'rgba(56,160,158,0.14)' : 'rgba(0,0,0,0.07)',
                         color: s.status === 'active' ? '#38A09E' : '#94a3b8',
                       }}
                     >
@@ -174,7 +173,6 @@ function CollectiveSwitcher({
         </div>
       )}
 
-      {/* Create / limit */}
       <div className="mt-2.5 px-1">
         {!atLimit ? (
           <Link
@@ -205,7 +203,7 @@ function CollectiveSwitcher({
 }
 
 // ---------------------------------------------------------------------------
-// Sidebar inner (shared between desktop and mobile)
+// Sidebar inner
 // ---------------------------------------------------------------------------
 
 function SidebarInner({
@@ -239,26 +237,21 @@ function SidebarInner({
         background: 'linear-gradient(180deg, #073B3A 0%, #062F35 45%, #051C27 100%)',
       }}
     >
-      {/* Subtle top glow */}
       <div
         className="pointer-events-none absolute inset-0 z-0"
         aria-hidden="true"
         style={{
-          background:
-            'radial-gradient(circle at 20% 0%, rgba(66,199,198,0.20), transparent 32%)',
+          background: 'radial-gradient(circle at 20% 0%, rgba(66,199,198,0.20), transparent 32%)',
         }}
       />
 
-      {/* Logo + space name + switcher */}
+      {/* Logo */}
       <div
         className="relative z-10 px-5 py-5"
         style={{ borderBottom: '1px solid rgba(255,255,255,0.09)' }}
       >
         <Link href="/creator-studio" className="flex flex-col gap-1" onClick={onNavClick}>
-          <span
-            className="font-serif text-[18px] leading-tight"
-            style={{ color: '#FFFFFF' }}
-          >
+          <span className="font-serif text-[18px] leading-tight" style={{ color: '#FFFFFF' }}>
             Creator Studio
           </span>
           <span
@@ -268,7 +261,6 @@ function SidebarInner({
             Fresh Collective
           </span>
         </Link>
-
         <CollectiveSwitcher spaces={spaces} activeSpace={activeSpace} collectiveLimit={collectiveLimit} />
       </div>
 
@@ -285,7 +277,6 @@ function SidebarInner({
             <ul className="space-y-0.5">
               {items.map(({ href, label: itemLabel, exact, activeOnPath }) => {
                 const active = isActive(href, exact, activeOnPath)
-                // Dim collective-specific items when no collective is selected
                 const dimmed = label === 'CURRENT COLLECTIVE' && !hasCollective
                 return (
                   <li key={href}>
@@ -331,7 +322,6 @@ function SidebarInner({
           <LogoutButton className="shrink-0 text-[12px] text-white/60 transition-colors hover:text-white/90" />
         </div>
       </div>
-
     </div>
   )
 }
@@ -340,104 +330,42 @@ function SidebarInner({
 // Shell
 // ---------------------------------------------------------------------------
 
-export default function CreatorStudioShell({ children, user, spaces, activeSpace, collectiveLimit }: Props) {
+export default function CreatorStudioShell({
+  children,
+  user,
+  spaces,
+  activeSpace,
+  collectiveLimit,
+  liteData = EMPTY_LITE_DATA,
+}: Props) {
   const pathname = usePathname()
-  const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
-    <div className="flex min-h-screen" style={{ background: '#F7F8FA' }}>
-
-      {/* Desktop sidebar */}
-      <aside
-        className="hidden w-[248px] shrink-0 md:block"
-        style={{ position: 'sticky', top: 0, height: '100vh' }}
-      >
-        <SidebarInner
-          user={user}
-          spaces={spaces}
-          activeSpace={activeSpace}
-          collectiveLimit={collectiveLimit}
-          pathname={pathname}
-        />
-      </aside>
-
-      {/* Mobile overlay + drawer */}
-      {mobileOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-40 bg-black/50 md:hidden"
-            onClick={() => setMobileOpen(false)}
-            aria-hidden="true"
-          />
-          <aside className="fixed inset-y-0 left-0 z-50 w-60 md:hidden">
-            <SidebarInner
-              user={user}
-              spaces={spaces}
-              activeSpace={activeSpace}
-              collectiveLimit={collectiveLimit}
-              pathname={pathname}
-              onNavClick={() => setMobileOpen(false)}
-            />
-          </aside>
-        </>
-      )}
-
-      {/* Content column */}
-      <div className="flex min-w-0 flex-1 flex-col">
-
-        {/* Mobile topbar */}
-        <div
-          className="flex items-center justify-between px-4 py-3 md:hidden"
-          style={{
-            background: '#073B3A',
-            borderBottom: '1px solid rgba(255,255,255,0.09)',
-          }}
-        >
-          <Link href="/creator-studio" className="flex flex-col">
-            <span
-              className="font-serif text-[16px] leading-tight"
-              style={{ color: '#FFFFFF' }}
-            >
-              Creator Studio
-            </span>
-            <span
-              className="text-[11px] font-bold uppercase tracking-[0.16em]"
-              style={{ color: 'rgba(255,255,255,0.42)' }}
-            >
-              Fresh Collective
-            </span>
-          </Link>
-          <button
-            type="button"
-            onClick={() => setMobileOpen(true)}
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-white/70 transition-colors hover:text-white"
-            aria-label="Open navigation"
-          >
-            <svg width="20" height="15" fill="none" viewBox="0 0 20 15" aria-hidden="true">
-              <path
-                d="M0 1.5h20M0 7.5h20M0 13.5h20"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-        </div>
-
-        {/* Desktop-recommended nudge — mobile only */}
-        <div
-          className="flex items-center gap-2 px-4 py-2 md:hidden"
-          style={{ background: 'rgba(0,0,0,0.04)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}
-        >
-          <span className="text-[11px] leading-snug text-slate-500">
-            Creator Studio is easier to manage on a larger screen.
-          </span>
-        </div>
-
-        {/* Page content */}
-        <main className="flex-1">{children}</main>
-
+    <>
+      {/* ── Mobile: Creator Studio Lite (full replacement) ── */}
+      <div className="md:hidden">
+        <CreatorStudioLiteMobile user={user} activeSpace={activeSpace} liteData={liteData} />
       </div>
-    </div>
+
+      {/* ── Desktop: Full Creator Studio ── */}
+      <div className="hidden min-h-screen md:flex" style={{ background: '#F7F8FA' }}>
+        <aside
+          className="w-[248px] shrink-0"
+          style={{ position: 'sticky', top: 0, height: '100vh' }}
+        >
+          <SidebarInner
+            user={user}
+            spaces={spaces}
+            activeSpace={activeSpace}
+            collectiveLimit={collectiveLimit}
+            pathname={pathname}
+          />
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <main className="flex-1">{children}</main>
+        </div>
+      </div>
+    </>
   )
 }
