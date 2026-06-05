@@ -18,6 +18,7 @@ interface User {
 const EMPTY_LITE_DATA: LiteData = {
   pathwayCounts: { published: 0, comingSoon: 0, drafts: 0, archived: 0 },
   publishedPathways: [],
+  allPathways: [],
   upcomingGatherings: [],
   memberCount: 0,
   leaderCount: 0,

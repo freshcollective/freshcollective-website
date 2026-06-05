@@ -63,6 +63,7 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
   const liteData: LiteData = {
     pathwayCounts: { published: 0, comingSoon: 0, drafts: 0, archived: 0 },
     publishedPathways: [],
+    allPathways: [],
     upcomingGatherings: [],
     memberCount: 0,
     leaderCount: 0,
@@ -102,16 +103,17 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
       archived:   pathways.filter(p => p.status === 'archived').length,
     }
 
-    liteData.publishedPathways = pathways
-      .filter(p => p.status === 'active')
-      .map(p => ({
-        slug:        p.slug,
-        title:       p.title,
-        status:      p.status,
-        access_type: p.access_type,
-        price_cents: p.price_cents ?? null,
-        currency:    p.currency ?? null,
-      }))
+    const pathwayShape = (p: CreatorPathway) => ({
+      slug:        p.slug,
+      title:       p.title,
+      status:      p.status,
+      access_type: p.access_type,
+      price_cents: p.price_cents ?? null,
+      currency:    p.currency ?? null,
+    })
+
+    liteData.publishedPathways = pathways.filter(p => p.status === 'active').map(pathwayShape)
+    liteData.allPathways = pathways.map(pathwayShape)
 
     liteData.upcomingGatherings = events
       .filter(e => e.status === 'active' && new Date(e.starts_at).getTime() >= now)
