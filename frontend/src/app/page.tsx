@@ -23,29 +23,29 @@ function DualIntent() {
           </p>
           <div className="mb-6">
             <p style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 650, color: '#0F172A' }}>
-              Some people come to explore new ways of{' '}
+              Some people come here to learn.{' '}
               <span style={{
                 backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
               }}>
-                living, learning, and growing.
+                Some come to share what they know.
               </span>
             </p>
             <p className="mt-4" style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 650, color: '#0F172A' }}>
-              Others come to build spaces for{' '}
+              Some come to find{' '}
               <span style={{
                 backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
                 WebkitBackgroundClip: 'text',
                 backgroundClip: 'text',
                 color: 'transparent',
               }}>
-                conversation, practice, creativity, and real change.
+                community, conversation, and a more human way to grow.
               </span>
             </p>
             <p className="mt-5" style={{ fontSize: 'clamp(0.9rem, 1.4vw, 1rem)', color: 'rgba(15,23,42,0.42)', letterSpacing: '-0.01em', lineHeight: '1.5' }}>
-              Fresh Collective brings both together.
+              Fresh Collective is a home for creator-led collectives shaped around connection, belonging, and positive change.
             </p>
           </div>
         </div>
@@ -77,18 +77,18 @@ function DualIntent() {
               For learners
             </p>
             <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
-              Collectives to join
+              Find your collective
             </h3>
             <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.62)' }}>
-              Discover new ideas and ways of living, leading, and creating with others on the same path.
+              Explore communities built around shared interests, meaningful learning, honest conversation, and supportive connection.
             </p>
 
             <div className="mb-6" style={{ height: '1px', background: 'rgba(15,23,42,0.07)' }} />
 
             <div className="mb-8 space-y-5">
               {[
-                { num: '1', heading: 'Meaningful conversations', body: 'Engage in thoughtful dialogue and shared learning.' },
-                { num: '2', heading: 'Practical tools and practices', body: 'Access resources and practices for real life.' },
+                { num: '1', heading: 'Connection and belonging', body: 'Join a community where you can show up as you are.' },
+                { num: '2', heading: 'Shared learning and growth', body: 'Explore pathways and ideas alongside others on a similar path.' },
               ].map(({ num, heading, body }) => (
                 <div key={num} className="flex gap-4">
                   <div
@@ -142,18 +142,18 @@ function DualIntent() {
               For creators
             </p>
             <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: 'rgba(255,255,255,0.92)', lineHeight: '1.2' }}>
-              Create your own collective
+              Create your collective
             </h3>
             <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(255,255,255,0.64)' }}>
-              Spread your ideas with people who are craving a different way of living, leading, and exploring life.
+              Build a space for your people to gather, learn, contribute, and grow — without losing the human heart of your work.
             </p>
 
             <div className="mb-6" style={{ height: '1px', background: 'rgba(255,255,255,0.14)' }} />
 
             <div className="mb-8 space-y-5">
               {[
-                { num: '1', heading: 'Build your space', body: 'Design your collective around your purpose and vision.' },
-                { num: '2', heading: 'Gather and guide people', body: 'Bring the right people together around what matters.' },
+                { num: '1', heading: 'Build your space', body: 'Design a community around your work, purpose, or area of care.' },
+                { num: '2', heading: 'Gather and guide people', body: 'Share your knowledge while keeping the human heart of your work.' },
               ].map(({ num, heading, body }) => (
                 <div key={num} className="flex gap-4">
                   <div
@@ -220,11 +220,11 @@ function EcosystemStatement() {
               backgroundClip: 'text',
               color: 'transparent',
             }}>
-              ecosystem.
+              ecosystem for human connection.
             </span>
           </h2>
           <p style={{ fontSize: '16px', lineHeight: '1.78', color: 'rgba(15,23,42,0.58)' }}>
-            A connected platform for guided collectives, practical pathways, live gatherings, and creator-led learning experiences.
+            A creator-led platform where communities can grow through shared knowledge, meaningful relationships, and collective contribution.
           </p>
         </div>
 
@@ -243,10 +243,10 @@ function EcosystemStatement() {
                 </svg>
               </div>
               <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
-                Collectives to join
+                Collectives for belonging
               </h3>
               <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
-                Find guided learning communities built around real practice, shared conversation, and new ways of living, leading, creating, and growing.
+                Each collective is its own community space where people can connect around shared values, interests, learning, or lived experience.
               </p>
             </div>
 
@@ -349,10 +349,10 @@ function EcosystemStatement() {
                 </svg>
               </div>
               <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
-                Pathways that turn ideas into practice
+                Pathways for growth
               </h3>
               <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
-                Move through structured learning journeys with lessons, reflections, tools, and gentle progress that helps ideas land in real life.
+                Guide your people through courses, practices, reflections, or learning journeys that help them move from interest to integration.
               </p>
             </div>
           </div>
@@ -367,10 +367,10 @@ function EcosystemStatement() {
                 </svg>
               </div>
               <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
-                Live gatherings and community rhythm
+                Gatherings for real connection
               </h3>
               <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
-                Join conversations, prompts, and live sessions that create connection, accountability, and shared momentum.
+                Host live sessions, workshops, circles, classes, or community touchpoints that bring people together in real time.
               </p>
             </div>
 
@@ -488,10 +488,10 @@ function EcosystemStatement() {
                 </svg>
               </div>
               <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
-                Tools for creators
+                For creators with something meaningful to share
               </h3>
               <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
-                Build your own collective with pathways, events, posts, resources, and the structure to guide people through meaningful change.
+                Fresh Collective is for teachers, facilitators, coaches, practitioners, guides, and community builders. Your work deserves a space that feels clear, supportive, and human.
               </p>
             </div>
           </div>
@@ -540,7 +540,7 @@ function FreshIdeas() {
             <div className="mb-10 flex items-center gap-3">
               <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.60)' }} />
               <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.68)' }}>
-                A different kind of space
+                Built for human connection
               </span>
             </div>
 
@@ -555,7 +555,7 @@ function FreshIdeas() {
                 maxWidth: '640px',
               }}
             >
-              <span style={{ color: '#FFFFFF' }}>Fresh ideas need</span>
+              <span style={{ color: '#FFFFFF' }}>Meaningful communities</span>
               <br />
               <span
                 style={{
@@ -565,7 +565,7 @@ function FreshIdeas() {
                   color: 'transparent',
                 }}
               >
-                spaces to grow.
+                need space to breathe.
               </span>
             </h2>
 
@@ -580,7 +580,7 @@ function FreshIdeas() {
                   letterSpacing: '-0.01em',
                 }}
               >
-                Fresh Collective is built for ideas that are ready to move beyond content and become lived experience.
+                Fresh Collective is built for communities that believe meaningful relationships, shared experience, and supportive belonging are worth protecting.
               </p>
               <p
                 style={{
@@ -590,7 +590,7 @@ function FreshIdeas() {
                   letterSpacing: '-0.01em',
                 }}
               >
-                Not more noise. Not passive learning. A place where meaningful work can be held, practised, shared, and grown over time.
+                Not more noise. Not passive content. A place where people, ideas, and communities can gather, grow, and contribute to something real.
               </p>
             </div>
 
@@ -613,7 +613,7 @@ function TheWayWeFeelSection() {
           <div className="mb-6 flex items-center justify-center gap-3">
             <div style={{ height: '1px', width: '1.5rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
             <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E' }}>
-              The real shift
+              Our belief
             </span>
             <div style={{ height: '1px', width: '1.5rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
           </div>
@@ -628,7 +628,7 @@ function TheWayWeFeelSection() {
               marginBottom: '1.5rem',
             }}
           >
-            <span style={{ display: 'block', color: '#0F172A' }}>The way we feel changes</span>
+            <span style={{ display: 'block', color: '#0F172A' }}>Humans thrive through</span>
             <span
               style={{
                 display: 'block',
@@ -638,7 +638,7 @@ function TheWayWeFeelSection() {
                 color: 'transparent',
               }}
             >
-              what becomes possible.
+              connection, belonging, and contribution.
             </span>
           </h2>
 
@@ -653,7 +653,7 @@ function TheWayWeFeelSection() {
               letterSpacing: '-0.01em',
             }}
           >
-            Growth lands differently when the body feels safe, the pace feels human, and the work has somewhere to go.
+            As technology evolves, meaningful relationships, shared experiences, and supportive communities become more important than ever.
           </p>
 
         </div>
@@ -667,32 +667,32 @@ function TheWayWeFeelSection() {
 function WhereTheLearningLives() {
   const features: { title: string; desc: string; iconBg: string; iconColor: string }[] = [
     {
-      title: 'Guided pathways',
-      desc: 'Structured journeys that move people from insight into practice.',
+      title: 'A public About page',
+      desc: 'Create a clear, welcoming space that explains your community and invites the right people in.',
       iconBg: 'rgba(56,160,158,0.12)',
       iconColor: '#38A09E',
     },
     {
-      title: 'Live rhythm',
-      desc: 'Gatherings, prompts, and shared touchpoints that keep people connected.',
+      title: 'Pathways, resources, and gatherings',
+      desc: 'Offer guided learning, shared materials, and live sessions — all in one organised place.',
       iconBg: 'rgba(56,160,158,0.12)',
       iconColor: '#38A09E',
     },
     {
-      title: 'Focused rooms',
-      desc: 'Dedicated areas for deeper learning, reflection, resources, and practice.',
+      title: 'Members, access, and bookings',
+      desc: 'Manage your community with less friction, whether it is free, paid, or invite-only.',
       iconBg: 'rgba(56,160,158,0.12)',
       iconColor: '#38A09E',
     },
     {
-      title: 'Practical tools',
-      desc: 'Reflections, exercises, and resources designed to land in real life.',
+      title: 'Free or paid spaces',
+      desc: 'Build open or paid collectives without making the experience feel transactional.',
       iconBg: 'rgba(56,160,158,0.12)',
       iconColor: '#38A09E',
     },
     {
-      title: 'Community rhythm',
-      desc: 'A place to return to, reconnect, and keep moving with others.',
+      title: 'Warm and easy to navigate',
+      desc: 'Keep your community organised, calm, and clear — for you and for the people who join.',
       iconBg: 'rgba(56,160,158,0.12)',
       iconColor: '#38A09E',
     },
@@ -835,7 +835,7 @@ function WhereTheLearningLives() {
                 marginBottom: '1.25rem',
               }}
             >
-              Everything your collective needs to become{' '}
+              Everything your collective needs to{' '}
               <span
                 style={{
                   backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
@@ -844,7 +844,7 @@ function WhereTheLearningLives() {
                   color: 'transparent',
                 }}
               >
-                lived practice.
+                breathe and grow.
               </span>
             </h2>
 
@@ -859,7 +859,7 @@ function WhereTheLearningLives() {
                 maxWidth: '420px',
               }}
             >
-              Fresh Collective brings together the structure, rhythm, and community that help ideas move from insight into everyday life.
+              Fresh Collective gives creators the tools to build communities that feel clear, supportive, and genuinely human.
             </p>
 
             {/* Feature rows */}
@@ -912,44 +912,28 @@ function WhereTheLearningLives() {
 function GoodQuestions() {
   const qa = [
     {
-      q: 'What if I am already overwhelmed?',
-      a: 'That is exactly the right time to start. Fresh Collective is designed to be light enough to enter gently, while still giving you structure, rhythm, and something steady to return to.',
+      q: 'What is Fresh Collective?',
+      a: 'Fresh Collective is a platform for creator-led communities. It brings together collectives, pathways, gatherings, resources, and community spaces in one simple place.',
     },
     {
-      q: 'Is this another online course I will not finish?',
-      a: 'No. Fresh Collective is built around practice, rhythm, and community — not passive consumption. You are not here to race through content. You are here to let the work land.',
+      q: 'Who is it for?',
+      a: 'Fresh Collective is for creators, facilitators, teachers, coaches, practitioners, and community builders who want to bring people together around meaningful learning, connection, and growth.',
     },
     {
-      q: 'What types of collectives are available to join?',
-      a: 'Fresh Collective is designed for collectives centred around intentional growth, creativity, leadership, wellbeing, embodiment, learning, and new ways of living. As the platform grows, you will be able to explore different collectives and choose the ones that feel most relevant to where you are.',
+      q: 'What is a collective?',
+      a: 'A collective is a community space built around a shared purpose, interest, practice, or body of work. Each collective can include pathways, live gatherings, resources, conversations, and member access.',
     },
     {
-      q: 'What is the difference between a collective and a pathway?',
-      a: 'A collective is the wider learning environment. A pathway is a structured journey inside it. You can join a collective for the community, the rhythm, the live gatherings, and the pathways that help you go deeper.',
+      q: 'Can I join more than one collective?',
+      a: 'Yes. You can explore and join the collectives that feel relevant to you.',
     },
     {
-      q: 'How much time do I need each week?',
-      a: 'Enough to stay connected, not enough to overwhelm you. Most pathways are designed around small, steady touchpoints that can fit into real life.',
+      q: 'Can I create my own collective?',
+      a: 'Yes. Fresh Collective is being built to support creators who want to gather their people, share their work, and build community in a more connected way.',
     },
     {
-      q: 'Can I build my own collective?',
-      a: 'Yes. Fresh Collective is also for creators, educators, practitioners, and guides who want to build intentional learning environments around their work.',
-    },
-    {
-      q: 'How do I create my own collective?',
-      a: 'You can create a collective around your work, ideas, practice, or area of expertise. A collective can include pathways, resources, live gatherings, prompts, and community conversation. The creator experience is designed to help you build a thoughtful learning environment, not just upload content.',
-    },
-    {
-      q: 'What is the cost?',
-      a: 'Pricing depends on the collective you join. Some collectives may be free, while others may be paid depending on what is included. For creators, founding creator access includes a 14-day free trial, then starts at $19/month. It includes up to 2 collectives, so you can build more than one learning environment under the same account.',
-    },
-    {
-      q: 'What does it cost to create a collective?',
-      a: 'Founding creator access includes a 14-day free trial, then starts at $19/month. It includes up to 2 collectives, so you can build more than one learning environment under the same account.',
-    },
-    {
-      q: 'Can I build more than one collective?',
-      a: 'Yes. Founding Creator access includes up to 2 collectives under one account. If you need more, Creator Plus is planned for creators who want to run multiple collectives.',
+      q: 'Is Fresh Collective just for courses?',
+      a: 'No. Courses can live here, but Fresh Collective is bigger than that. It is designed for communities, learning journeys, live sessions, shared resources, conversations, and ongoing connection.',
     },
   ]
 
@@ -1087,7 +1071,7 @@ function FinalCTA() {
                   color: 'transparent',
                 }}
               >
-                Or build one.
+                Or create one.
               </span>
             </h2>
 
@@ -1101,8 +1085,7 @@ function FinalCTA() {
                 letterSpacing: '-0.01em',
               }}
             >
-              There&apos;s a collective for where you are now.
-              Or build the one that doesn&apos;t exist yet.
+              Fresh Collective is for people who believe there is a better way — built on connection, kindness, curiosity, authenticity, collaboration, and positive change.
             </p>
 
             {/* Buttons */}

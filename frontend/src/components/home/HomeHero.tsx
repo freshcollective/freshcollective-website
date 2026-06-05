@@ -82,7 +82,7 @@ export default function HomeHero() {
               color: '#ffffff',
             }}
           >
-            <span className="block">Exploring better ways to</span>
+            <span className="block">Human connection is</span>
             <span
               className="block"
               style={{
@@ -92,8 +92,8 @@ export default function HomeHero() {
                 color: 'transparent',
               }}
             >
-              <span className="block">live, learn, create,</span>
-              <span className="block">and lead.</span>
+              <span className="block">our greatest</span>
+              <span className="block">advantage.</span>
             </span>
           </h1>
 
@@ -103,11 +103,11 @@ export default function HomeHero() {
               fontSize: 'clamp(1rem, 1.4vw, 1.0625rem)',
               lineHeight: '1.80',
               color: 'rgba(255,255,255,0.46)',
-              maxWidth: '420px',
+              maxWidth: '460px',
               letterSpacing: '-0.01em',
             }}
           >
-            Creator-led collectives where new ideas are explored, practised, and lived.
+            Fresh Collective brings together people, ideas, and communities built on trust, curiosity, kindness, and collaboration — because as technology evolves, meaningful connection matters more than ever.
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
