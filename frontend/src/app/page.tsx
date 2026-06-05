@@ -204,15 +204,15 @@ function PanelChrome({ title }: { title: string }) {
 
 function EcosystemStatement() {
   return (
-    <section className="py-20 sm:py-28" style={{ background: '#FAFAF8' }}>
+    <section className="py-14 sm:py-28" style={{ background: '#FAFAF8' }}>
       <Container>
 
         {/* Centred heading */}
-        <div className="mx-auto mb-20 max-w-[640px] text-center">
+        <div className="mx-auto mb-12 sm:mb-20 max-w-[640px] text-center">
           <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '16px' }}>
             Platform
           </p>
-          <h2 style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.1', fontWeight: 660, color: '#0F172A', marginBottom: '16px' }}>
+          <h2 style={{ fontSize: 'clamp(1.75rem, 4vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.15', fontWeight: 660, color: '#0F172A', marginBottom: '16px' }}>
             Fresh Collective is an{' '}
             <span style={{
               backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
@@ -229,7 +229,7 @@ function EcosystemStatement() {
         </div>
 
         {/* Feature rows */}
-        <div className="space-y-20 sm:space-y-28">
+        <div className="space-y-12 sm:space-y-28">
 
           {/* ROW 1 — Collectives: text left, visual right */}
           <div className="grid items-center gap-12 sm:grid-cols-[42fr_58fr] sm:gap-16">
@@ -251,7 +251,7 @@ function EcosystemStatement() {
             </div>
 
             {/* Panel 1 — Collective browse */}
-            <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
+            <div className="hidden sm:block" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
               <PanelChrome title="Explore Collectives" />
               <div style={{ background: '#fff', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {/* Hero collective card */}
@@ -296,7 +296,7 @@ function EcosystemStatement() {
           <div className="grid items-center gap-12 sm:grid-cols-[58fr_42fr] sm:gap-16">
 
             {/* Panel 2 — Pathway progress */}
-            <div className="order-2 sm:order-1" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
+            <div className="hidden sm:block sm:order-1" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
               <PanelChrome title="Guided Pathway" />
               <div style={{ background: '#fff', display: 'flex', minHeight: '280px' }}>
                 {/* Left sidebar — step list */}
@@ -375,7 +375,7 @@ function EcosystemStatement() {
             </div>
 
             {/* Panel 3 — Gatherings & community */}
-            <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
+            <div className="hidden sm:block" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
               <PanelChrome title="Community" />
               <div style={{ background: '#fff', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {/* Event card */}
@@ -425,7 +425,7 @@ function EcosystemStatement() {
           <div className="grid items-center gap-12 sm:grid-cols-[58fr_42fr] sm:gap-16">
 
             {/* Panel 4 — Creator workspace */}
-            <div style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
+            <div className="hidden sm:block" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
               <PanelChrome title="Creator Workspace" />
               <div style={{ background: '#fff', display: 'flex', minHeight: '280px' }}>
                 {/* Sidebar nav */}
@@ -705,7 +705,7 @@ function WhereTheLearningLives() {
 
           {/* ── Visual panel ────────────────────────────────────────────────── */}
           <div
-            className="relative overflow-hidden"
+            className="relative overflow-hidden order-2 sm:order-1"
             style={{
               borderRadius: '20px',
               background: 'linear-gradient(155deg, #0A1F20 0%, #0D2B2B 55%, #091C1C 100%)',
@@ -814,7 +814,7 @@ function WhereTheLearningLives() {
           </div>
 
           {/* ── Text + feature list ──────────────────────────────────────────── */}
-          <div>
+          <div className="order-1 sm:order-2">
 
             {/* Eyebrow */}
             <div className="mb-6 flex items-center gap-3">
@@ -975,7 +975,7 @@ function GoodQuestions() {
           </div>
 
           {/* Right: accordion */}
-          <div className="flex flex-col gap-3 pr-2 sm:pr-8">
+          <div className="flex flex-col gap-3 sm:pr-8">
             {qa.map(({ q, a }) => (
               <details
                 key={q}
@@ -1089,10 +1089,10 @@ function FinalCTA() {
             </p>
 
             {/* Buttons */}
-            <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+            <div className="flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row sm:gap-x-5">
               <Link
                 href="/spaces"
-                className="inline-flex items-center rounded-xl px-8 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90"
+                className="inline-flex w-full items-center justify-center rounded-xl px-8 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90 sm:w-auto"
                 style={{
                   background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
                   boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
@@ -1102,6 +1102,7 @@ function FinalCTA() {
               </Link>
 
               <span
+                className="hidden sm:inline"
                 style={{
                   fontSize: '13px',
                   color: 'rgba(255,255,255,0.30)',
@@ -1114,7 +1115,7 @@ function FinalCTA() {
 
               <Link
                 href="/for-creators"
-                className="inline-flex items-center rounded-xl px-8 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px hover:bg-[#E8FAFA]"
+                className="inline-flex w-full items-center justify-center rounded-xl px-8 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px hover:bg-[#E8FAFA] sm:w-auto"
                 style={{
                   background: '#ffffff',
                   color: '#38A09E',

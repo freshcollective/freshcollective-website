@@ -5,7 +5,7 @@ export default function HomeHero() {
   return (
     <section
       className="relative flex overflow-hidden"
-      style={{ background: '#071014', minHeight: 'clamp(560px, 70vh, 700px)' }}
+      style={{ background: '#071014', minHeight: 'clamp(480px, 70vh, 700px)' }}
     >
 
       {/* ── Video layer ──────────────────────────────────────────────────────── */}
