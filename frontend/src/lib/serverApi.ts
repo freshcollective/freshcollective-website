@@ -17,7 +17,7 @@ async function fetchWithSession(path: string): Promise<Response> {
 
 export const getPublicSpaces = cache(async (): Promise<PublicSpaceCard[]> => {
   try {
-    const res = await fetch(apiUrl('/api/public/spaces'), { next: { revalidate: 60 } })
+    const res = await fetch(apiUrl('/api/public/spaces'), { cache: 'no-store' })
     if (!res.ok) return []
     return res.json()
   } catch {
