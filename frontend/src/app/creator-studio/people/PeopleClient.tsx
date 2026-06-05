@@ -858,10 +858,8 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
   }
 
   const now = new Date()
-  const newThisMonth = members.filter((m) => {
-    const d = new Date(m.joined_at)
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
-  }).length
+  const memberOnlyCount  = members.filter((m) => m.space_role === 'learner').length
+  const leaderCount      = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
 
   return (
     <div className="w-full max-w-[1100px] space-y-8 px-8 py-8 md:px-10 md:py-10">
@@ -892,10 +890,10 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
       {/* ── Stats ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: 'Active members', value: members.length },
-          { label: 'Access requests', value: accessRequests.length },
+          { label: 'Active people',   value: members.length },
+          { label: 'Members',         value: memberOnlyCount },
+          { label: 'Leaders',         value: leaderCount },
           { label: 'Pending invites', value: invitations.length },
-          { label: 'New this month', value: newThisMonth },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-xl border border-border bg-white p-4">
             <p className="font-serif text-2xl text-navy-900">{value}</p>

@@ -25,6 +25,8 @@ export default async function SpaceAboutPage({ params }: Props) {
 
   if (!space) notFound()
 
+  const learnerCount   = members.filter((m) => m.space_role === 'learner').length
+  const leaderCount    = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
   const memberCount    = members.length
   const pathwayCount   = space.pathways?.length ?? 0
   const gatheringCount = events.length
@@ -127,10 +129,16 @@ export default async function SpaceAboutPage({ params }: Props) {
                   <span>{space.is_public ? '🌐' : '🔒'}</span>
                   <span>{space.is_public ? 'Public' : 'Private'}</span>
                 </span>
-                {memberCount > 0 && (
+                {learnerCount > 0 && (
                   <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
                     <span>👥</span>
-                    <span>{memberCount} {memberCount === 1 ? 'member' : 'members'}</span>
+                    <span>{learnerCount} {learnerCount === 1 ? 'member' : 'members'}</span>
+                  </span>
+                )}
+                {leaderCount > 0 && (
+                  <span className="flex items-center gap-1.5 text-[13px] text-slate-500">
+                    <span>✦</span>
+                    <span>{leaderCount} {leaderCount === 1 ? 'leader' : 'leaders'}</span>
                   </span>
                 )}
                 {pathwayCount > 0 && (
@@ -238,10 +246,16 @@ export default async function SpaceAboutPage({ params }: Props) {
               {/* Stats */}
               {(memberCount > 0 || pathwayCount > 0 || gatheringCount > 0) && (
                 <div className="mb-4 flex gap-5">
-                  {memberCount > 0 && (
+                  {learnerCount > 0 && (
                     <div>
-                      <p className="text-[20px] font-semibold text-navy-900">{memberCount}</p>
-                      <p className="text-[11px] text-slate-400">{memberCount === 1 ? 'member' : 'members'}</p>
+                      <p className="text-[20px] font-semibold text-navy-900">{learnerCount}</p>
+                      <p className="text-[11px] text-slate-400">{learnerCount === 1 ? 'member' : 'members'}</p>
+                    </div>
+                  )}
+                  {leaderCount > 0 && (
+                    <div>
+                      <p className="text-[20px] font-semibold text-navy-900">{leaderCount}</p>
+                      <p className="text-[11px] text-slate-400">{leaderCount === 1 ? 'leader' : 'leaders'}</p>
                     </div>
                   )}
                   {pathwayCount > 0 && (
