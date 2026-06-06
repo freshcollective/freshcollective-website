@@ -59,7 +59,6 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: 'CURRENT COLLECTIVE',
     items: [
-      { href: '/creator-studio/collective', label: 'Collective Overview' },
       { href: '/creator-studio/pathways',   label: 'Pathways',      activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/ },
       { href: '/creator-studio/gatherings', label: 'Gatherings',    activeOnPath: /^\/creator\/spaces\/[^/]+\/events/ },
       { href: '/creator-studio/resources',  label: 'Resources' },
@@ -97,7 +96,7 @@ function CollectiveSwitcher({
     setSelectedSlug(slug)
     startTransition(() => {
       document.cookie = `fc_creator_space=${slug}; path=/; max-age=86400`
-      router.push('/creator-studio/collective')
+      router.push('/creator-studio')
     })
   }
 

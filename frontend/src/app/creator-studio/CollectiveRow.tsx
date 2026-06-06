@@ -14,7 +14,7 @@ export default function CollectiveRow({
 
   function open() {
     document.cookie = `fc_creator_space=${space.slug}; path=/; max-age=86400`
-    router.push('/creator-studio/collective')
+    router.push('/creator-studio')
   }
 
   return (
