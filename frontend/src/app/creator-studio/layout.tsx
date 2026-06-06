@@ -104,6 +104,7 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
     }
 
     const pathwayShape = (p: CreatorPathway) => ({
+      id:          p.id,
       slug:        p.slug,
       title:       p.title,
       status:      p.status,

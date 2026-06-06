@@ -38,6 +38,7 @@ export interface LiteAccessRequest {
 }
 
 export interface LitePathway {
+  id: string
   slug: string
   title: string
   status: string
@@ -223,6 +224,33 @@ function CopyButton({
     })
   }
   return <GhostBtn onClick={handleCopy}>{copied ? copiedLabel : label}</GhostBtn>
+}
+
+function Toggle({
+  value,
+  onChange,
+  label,
+}: {
+  value: boolean
+  onChange: (v: boolean) => void
+  label: string
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2.5">
+      <span className="text-[13px] font-medium text-slate-700">{label}</span>
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        className="relative h-5 w-9 shrink-0 rounded-full transition-colors"
+        style={{ background: value ? '#38A09E' : '#cbd5e1' }}
+      >
+        <span
+          className="absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all"
+          style={{ left: value ? '1.125rem' : '0.125rem' }}
+        />
+      </button>
+    </div>
+  )
 }
 
 function AttendancePill({ status }: { status: string | null }) {
@@ -1112,11 +1140,304 @@ function OverviewTab({
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Gatherings
+// Tab: Gatherings — creation form + list
 // ---------------------------------------------------------------------------
 
+const LOCATION_TYPE_OPTIONS = [
+  { value: 'zoom' as const, label: 'Zoom / Online' },
+  { value: 'in_person' as const, label: 'In Person' },
+  { value: 'async_recorded' as const, label: 'Recorded / Async' },
+]
+
+function AddGatheringForm({
+  spaceSlug,
+  onCreated,
+  onClose,
+}: {
+  spaceSlug: string
+  onCreated: (g: LiteGathering) => void
+  onClose: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [date, setDate] = useState('')
+  const [startTime, setStartTime] = useState('')
+  const [endTime, setEndTime] = useState('')
+  const [locationType, setLocationType] = useState<'zoom' | 'in_person' | 'async_recorded'>('zoom')
+  const [locationUrl, setLocationUrl] = useState('')
+  const [description, setDescription] = useState('')
+  const [isPublished, setIsPublished] = useState(false)
+  const [isPublic, setIsPublic] = useState(false)
+  const [requiresBooking, setRequiresBooking] = useState(false)
+  const [capacity, setCapacity] = useState('')
+  const [bookingNote, setBookingNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+
+  const locationUrlLabel =
+    locationType === 'zoom'
+      ? 'Zoom / join link'
+      : locationType === 'in_person'
+        ? 'Location / address'
+        : 'Recording URL'
+  const locationUrlPlaceholder =
+    locationType === 'zoom'
+      ? 'https://zoom.us/j/…'
+      : locationType === 'in_person'
+        ? 'Address or venue name'
+        : 'https://…'
+
+  function validate(): string | null {
+    if (!title.trim()) return 'Title is required.'
+    if (!date) return 'Date is required.'
+    if (!startTime) return 'Start time is required.'
+    if (endTime && endTime <= startTime) return 'End time must be after start time.'
+    if (requiresBooking && capacity) {
+      const n = parseInt(capacity, 10)
+      if (isNaN(n) || n <= 0) return 'Capacity must be a positive number.'
+    }
+    return null
+  }
+
+  async function handleCreate() {
+    const validationError = validate()
+    if (validationError) { setError(validationError); return }
+    setSaving(true)
+    setError(null)
+    try {
+      const startsAtISO = new Date(`${date}T${startTime}`).toISOString()
+      const endsAtISO = endTime ? new Date(`${date}T${endTime}`).toISOString() : null
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/events`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || null,
+          starts_at: startsAtISO,
+          ends_at: endsAtISO,
+          location_type: locationType,
+          location_url: locationUrl.trim() || null,
+          recording_url: null,
+          is_published: isPublished,
+          is_public: isPublic,
+          requires_booking: requiresBooking,
+          capacity: requiresBooking && capacity ? parseInt(capacity, 10) : null,
+          booking_closes_at: null,
+          booking_note: bookingNote.trim() || null,
+        }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(typeof b.detail === 'string' ? b.detail : `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setDone(true)
+      onCreated({
+        id: data.id,
+        title: data.title,
+        starts_at: data.starts_at,
+        booked_count: 0,
+        capacity: data.capacity ?? null,
+        requires_booking: data.requires_booking,
+        is_published: data.is_published,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create gathering.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (done) {
+    return (
+      <div
+        className="rounded-xl border bg-slate-50 px-4 py-5 text-center"
+        style={{ borderColor: 'rgba(56,160,158,0.20)' }}
+      >
+        <p className="mb-1 text-[14px] font-semibold" style={{ color: '#0f766e' }}>
+          Gathering created!
+        </p>
+        <p className="mb-3 text-[12px] text-slate-400">It has been added to the list below.</p>
+        <button
+          onClick={onClose}
+          className="rounded-xl px-5 py-2 text-[13px] font-semibold text-white"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Done
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="space-y-3.5 rounded-xl border bg-slate-50 px-4 py-4"
+      style={{ borderColor: 'rgba(56,160,158,0.18)' }}
+    >
+      <p className="text-[13px] font-semibold text-slate-700">New gathering</p>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+          Title <span className="font-normal text-slate-400">(required)</span>
+        </label>
+        <input
+          type="text"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="e.g. Monthly Q&A"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold text-slate-500">Date</label>
+          <input
+            type="date"
+            value={date}
+            onChange={e => setDate(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold text-slate-500">Start time</label>
+          <input
+            type="time"
+            value={startTime}
+            onChange={e => setStartTime(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+          End time <span className="font-normal text-slate-400">(optional)</span>
+        </label>
+        <input
+          type="time"
+          value={endTime}
+          onChange={e => setEndTime(e.target.value)}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-[11px] font-semibold text-slate-500">Format</label>
+        <div className="flex flex-wrap gap-1.5">
+          {LOCATION_TYPE_OPTIONS.map(lt => (
+            <button
+              key={lt.value}
+              type="button"
+              onClick={() => setLocationType(lt.value)}
+              className="rounded-xl border px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              style={
+                locationType === lt.value
+                  ? {
+                      background: 'rgba(56,160,158,0.10)',
+                      border: '1px solid rgba(56,160,158,0.35)',
+                      color: '#0f766e',
+                    }
+                  : { border: '1px solid rgba(0,0,0,0.10)', color: '#64748b' }
+              }
+            >
+              {lt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+          {locationUrlLabel} <span className="font-normal text-slate-400">(optional)</span>
+        </label>
+        <input
+          type="text"
+          value={locationUrl}
+          onChange={e => setLocationUrl(e.target.value)}
+          placeholder={locationUrlPlaceholder}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+          Description <span className="font-normal text-slate-400">(optional)</span>
+        </label>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          rows={2}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+        />
+      </div>
+
+      <Toggle value={isPublished} onChange={setIsPublished} label="Published" />
+      <Toggle value={isPublic} onChange={setIsPublic} label="Public preview" />
+      <Toggle value={requiresBooking} onChange={setRequiresBooking} label="Require booking" />
+
+      {requiresBooking && (
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+            Capacity <span className="font-normal text-slate-400">(leave empty for unlimited)</span>
+          </label>
+          <input
+            type="number"
+            value={capacity}
+            onChange={e => setCapacity(e.target.value)}
+            min="1"
+            placeholder="e.g. 20"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+          />
+        </div>
+      )}
+
+      {requiresBooking && (
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+            Booking note <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <input
+            type="text"
+            value={bookingNote}
+            onChange={e => setBookingNote(e.target.value)}
+            placeholder="e.g. Zoom link sent on confirmation"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400"
+          />
+        </div>
+      )}
+
+      {error && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">{error}</p>
+      )}
+
+      <p className="text-[11px] text-slate-400">
+        Create recurring sessions and edit advanced details on desktop.
+      </p>
+
+      <div className="flex gap-2.5 pt-1">
+        <button
+          onClick={handleCreate}
+          disabled={saving}
+          className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          {saving ? 'Creating…' : 'Create gathering'}
+        </button>
+        <button
+          onClick={onClose}
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-[13px] text-slate-500 hover:bg-slate-100"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function GatheringsTabContent({
-  gatherings,
+  gatherings: initGatherings,
   spaceSlug,
   members,
 }: {
@@ -1124,78 +1445,104 @@ function GatheringsTabContent({
   spaceSlug: string
   members: LiteMember[]
 }) {
+  const [gatherings, setGatherings] = useState(initGatherings)
   const [openId, setOpenId] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
 
-  if (gatherings.length === 0) {
-    return (
-      <Card>
-        <CardBody>
-          <p className="text-[14px] font-semibold" style={{ color: '#152236' }}>
-            No upcoming gatherings
-          </p>
-          <p className="mt-1 text-[13px] text-slate-400">
-            Schedule your next gathering from desktop.
-          </p>
-        </CardBody>
-      </Card>
+  function handleGatheringCreated(g: LiteGathering) {
+    setGatherings(prev =>
+      [...prev, g].sort(
+        (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
+      ),
     )
   }
 
   return (
     <div className="space-y-4">
-      <Card>
-        <div className="border-b px-5 pb-3 pt-4" style={{ borderColor: 'rgba(0,0,0,0.07)' }}>
-          <SectionLabel>Upcoming gatherings · {gatherings.length}</SectionLabel>
-        </div>
-        <div className="divide-y" style={{ borderColor: 'rgba(0,0,0,0.07)' }}>
-          {gatherings.map(g => (
-            <div key={g.id}>
-              <div className="px-5 py-3.5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p
-                      className="text-[13px] font-semibold leading-snug"
-                      style={{ color: '#152236' }}
-                    >
-                      {g.title}
-                    </p>
-                    <p className="mt-0.5 text-[12px] text-slate-400">
-                      {formatDate(g.starts_at)}
-                    </p>
-                    {g.requires_booking && (
-                      <p className="mt-0.5 text-[11px]" style={{ color: '#38A09E' }}>
-                        {g.booked_count} booked
-                        {g.capacity != null ? ` / ${g.capacity}` : ''}
+      {showAddForm ? (
+        <AddGatheringForm
+          spaceSlug={spaceSlug}
+          onCreated={g => { handleGatheringCreated(g); }}
+          onClose={() => setShowAddForm(false)}
+        />
+      ) : (
+        <button
+          onClick={() => setShowAddForm(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-teal-300 px-4 py-3 text-[13px] font-semibold transition-colors hover:bg-teal-50"
+          style={{ color: '#38A09E' }}
+        >
+          + Add gathering
+        </button>
+      )}
+
+      {gatherings.length === 0 && !showAddForm && (
+        <Card>
+          <CardBody>
+            <p className="text-[14px] font-semibold" style={{ color: '#152236' }}>
+              No upcoming gatherings
+            </p>
+            <p className="mt-1 text-[13px] text-slate-400">
+              Use the button above to create one, or use desktop for advanced options.
+            </p>
+          </CardBody>
+        </Card>
+      )}
+
+      {gatherings.length > 0 && (
+        <Card>
+          <div className="border-b px-5 pb-3 pt-4" style={{ borderColor: 'rgba(0,0,0,0.07)' }}>
+            <SectionLabel>Upcoming gatherings · {gatherings.length}</SectionLabel>
+          </div>
+          <div className="divide-y" style={{ borderColor: 'rgba(0,0,0,0.07)' }}>
+            {gatherings.map(g => (
+              <div key={g.id}>
+                <div className="px-5 py-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className="text-[13px] font-semibold leading-snug"
+                        style={{ color: '#152236' }}
+                      >
+                        {g.title}
                       </p>
+                      <p className="mt-0.5 text-[12px] text-slate-400">
+                        {formatDate(g.starts_at)}
+                      </p>
+                      {g.requires_booking && (
+                        <p className="mt-0.5 text-[11px]" style={{ color: '#38A09E' }}>
+                          {g.booked_count} booked
+                          {g.capacity != null ? ` / ${g.capacity}` : ''}
+                        </p>
+                      )}
+                    </div>
+                    {g.requires_booking && (
+                      <button
+                        onClick={() => setOpenId(openId === g.id ? null : g.id)}
+                        className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-teal-200 hover:text-teal-700"
+                      >
+                        {openId === g.id ? 'Close ↑' : 'Bookings ↓'}
+                      </button>
                     )}
                   </div>
-                  {g.requires_booking && (
-                    <button
-                      onClick={() => setOpenId(openId === g.id ? null : g.id)}
-                      className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:border-teal-200 hover:text-teal-700"
-                    >
-                      {openId === g.id ? 'Close ↑' : 'Bookings ↓'}
-                    </button>
-                  )}
                 </div>
+                {openId === g.id && (
+                  <GatheringBookingsPanel
+                    gathering={g}
+                    spaceSlug={spaceSlug}
+                    members={members}
+                    onClose={() => setOpenId(null)}
+                  />
+                )}
               </div>
-              {openId === g.id && (
-                <GatheringBookingsPanel
-                  gathering={g}
-                  spaceSlug={spaceSlug}
-                  members={members}
-                  onClose={() => setOpenId(null)}
-                />
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="border-t px-5 py-3" style={{ borderColor: 'rgba(0,0,0,0.07)' }}>
-          <p className="text-[11px] text-slate-400">
-            Create and edit gathering details on desktop.
-          </p>
-        </div>
-      </Card>
+            ))}
+          </div>
+          <div className="border-t px-5 py-3" style={{ borderColor: 'rgba(0,0,0,0.07)' }}>
+            <p className="text-[11px] text-slate-400">
+              Edit details and create recurring sessions on desktop.
+            </p>
+          </div>
+        </Card>
+      )}
     </div>
   )
 }
@@ -1333,8 +1680,246 @@ function PeopleTabContent({
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Pathways
+// Tab: Pathways — creation form + grouped list
 // ---------------------------------------------------------------------------
+
+const ACCESS_TYPE_OPTIONS = [
+  { value: 'free', label: 'Free' },
+  { value: 'included', label: 'Included' },
+  { value: 'one_time', label: 'One-time payment' },
+  { value: 'subscription', label: 'Subscription' },
+] as const
+
+function AddPathwayForm({
+  spaceSlug,
+  onCreated,
+  onClose,
+}: {
+  spaceSlug: string
+  onCreated: (p: LitePathway) => void
+  onClose: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [status, setStatus] = useState<'draft' | 'active' | 'coming_soon'>('draft')
+  const [accessType, setAccessType] = useState<'free' | 'included' | 'one_time' | 'subscription'>('free')
+  const [priceDollars, setPriceDollars] = useState('')
+  const [currency] = useState('AUD')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+
+  const isPaid = accessType === 'one_time' || accessType === 'subscription'
+
+  const STATUS_OPTIONS = [
+    { value: 'draft' as const, label: 'Draft' },
+    { value: 'active' as const, label: 'Published' },
+    { value: 'coming_soon' as const, label: 'Coming soon' },
+  ]
+
+  function validate(): string | null {
+    if (!title.trim()) return 'Title is required.'
+    if (isPaid) {
+      const d = parseFloat(priceDollars)
+      if (!priceDollars.trim() || isNaN(d) || d <= 0) return 'Enter a valid price greater than 0.'
+    }
+    return null
+  }
+
+  async function handleCreate() {
+    const validationError = validate()
+    if (validationError) { setError(validationError); return }
+    setSaving(true)
+    setError(null)
+    try {
+      const priceCents = isPaid ? Math.round(parseFloat(priceDollars) * 100) : null
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/pathways`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || null,
+          practice_body: null,
+          status,
+          access_type: accessType,
+          price_cents: priceCents,
+          currency: isPaid ? currency : null,
+          billing_interval: accessType === 'subscription' ? 'month' : null,
+        }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(typeof b.detail === 'string' ? b.detail : `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setDone(true)
+      onCreated({
+        id: data.id,
+        slug: data.slug,
+        title: data.title,
+        status: data.status,
+        access_type: data.access_type,
+        price_cents: data.price_cents ?? null,
+        currency: data.currency ?? null,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create pathway.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (done) {
+    return (
+      <div
+        className="rounded-xl border bg-slate-50 px-4 py-5 text-center"
+        style={{ borderColor: 'rgba(56,160,158,0.20)' }}
+      >
+        <p className="mb-1 text-[14px] font-semibold" style={{ color: '#0f766e' }}>
+          Pathway created!
+        </p>
+        <p className="mb-3 text-[12px] text-slate-400">Add steps and full content on desktop.</p>
+        <button
+          onClick={onClose}
+          className="rounded-xl px-5 py-2 text-[13px] font-semibold text-white"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Done
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="space-y-3.5 rounded-xl border bg-slate-50 px-4 py-4"
+      style={{ borderColor: 'rgba(56,160,158,0.18)' }}
+    >
+      <p className="text-[13px] font-semibold text-slate-700">New pathway</p>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+          Title <span className="font-normal text-slate-400">(required)</span>
+        </label>
+        <input
+          type="text"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="e.g. 30-Day Reset"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+          Short description <span className="font-normal text-slate-400">(optional)</span>
+        </label>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          rows={2}
+          placeholder="What is this pathway about?"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-[11px] font-semibold text-slate-500">Status</label>
+        <div className="flex flex-wrap gap-1.5">
+          {STATUS_OPTIONS.map(s => (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() => setStatus(s.value)}
+              className="rounded-xl border px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              style={
+                status === s.value
+                  ? {
+                      background: 'rgba(56,160,158,0.10)',
+                      border: '1px solid rgba(56,160,158,0.35)',
+                      color: '#0f766e',
+                    }
+                  : { border: '1px solid rgba(0,0,0,0.10)', color: '#64748b' }
+              }
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-[11px] font-semibold text-slate-500">Access</label>
+        <div className="flex flex-wrap gap-1.5">
+          {ACCESS_TYPE_OPTIONS.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setAccessType(opt.value)}
+              className="rounded-xl border px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              style={
+                accessType === opt.value
+                  ? {
+                      background: 'rgba(56,160,158,0.10)',
+                      border: '1px solid rgba(56,160,158,0.35)',
+                      color: '#0f766e',
+                    }
+                  : { border: '1px solid rgba(0,0,0,0.10)', color: '#64748b' }
+              }
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isPaid && (
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+            Price ({currency}) <span className="font-normal text-slate-400">(required)</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-[14px] text-slate-400">$</span>
+            <input
+              type="number"
+              value={priceDollars}
+              onChange={e => setPriceDollars(e.target.value)}
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+            />
+            <span className="text-[13px] font-medium text-slate-500">
+              {accessType === 'subscription' ? '/mo' : ''}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">{error}</p>
+      )}
+
+      <div className="flex gap-2.5 pt-1">
+        <button
+          onClick={handleCreate}
+          disabled={saving}
+          className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          {saving ? 'Creating…' : 'Create pathway'}
+        </button>
+        <button
+          onClick={onClose}
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-[13px] text-slate-500 hover:bg-slate-100"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function PathwaysTabContent({
   allPathways,
@@ -1345,6 +1930,7 @@ function PathwaysTabContent({
 }) {
   const [pathways, setPathways] = useState(allPathways)
   const [togglingSlug, setTogglingSlug] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
 
   const STATUS_GROUPS: { label: string; status: string }[] = [
     { label: 'Published', status: 'active' },
@@ -1376,21 +1962,37 @@ function PathwaysTabContent({
     }
   }
 
-  if (pathways.length === 0) {
-    return (
-      <Card>
-        <CardBody>
-          <p className="text-[14px] font-semibold" style={{ color: '#152236' }}>
-            No pathways yet
-          </p>
-          <p className="mt-1 text-[13px] text-slate-400">Create your first pathway on desktop.</p>
-        </CardBody>
-      </Card>
-    )
-  }
-
   return (
     <div className="space-y-4">
+      {showAddForm ? (
+        <AddPathwayForm
+          spaceSlug={spaceSlug}
+          onCreated={p => setPathways(prev => [...prev, p])}
+          onClose={() => setShowAddForm(false)}
+        />
+      ) : (
+        <button
+          onClick={() => setShowAddForm(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-teal-300 px-4 py-3 text-[13px] font-semibold transition-colors hover:bg-teal-50"
+          style={{ color: '#38A09E' }}
+        >
+          + Add pathway
+        </button>
+      )}
+
+      {pathways.length === 0 && !showAddForm && (
+        <Card>
+          <CardBody>
+            <p className="text-[14px] font-semibold" style={{ color: '#152236' }}>
+              No pathways yet
+            </p>
+            <p className="mt-1 text-[13px] text-slate-400">
+              Use the button above to create a pathway shell, then add steps on desktop.
+            </p>
+          </CardBody>
+        </Card>
+      )}
+
       {STATUS_GROUPS.map(({ label, status }) => {
         const items = pathways.filter(p => p.status === status)
         if (items.length === 0) return null
@@ -1442,13 +2044,16 @@ function PathwaysTabContent({
           </Card>
         )
       })}
-      <p className="px-1 text-[12px] text-slate-400">Content editing is only available on desktop.</p>
+
+      <p className="px-1 text-[12px] text-slate-400">
+        Add steps and edit pathway content on desktop.
+      </p>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Tab: Resources (lazy fetch)
+// Tab: Resources — creation form + list
 // ---------------------------------------------------------------------------
 
 interface MobileResource {
@@ -1459,6 +2064,296 @@ interface MobileResource {
   status: string
   url: string | null
   file_name: string | null
+}
+
+const MOBILE_RESOURCE_TYPES = [
+  { value: 'link' as const,     label: 'Link',     needsUrl: true },
+  { value: 'video' as const,    label: 'Video',    needsUrl: true },
+  { value: 'replay' as const,   label: 'Replay',   needsUrl: true },
+  { value: 'guide' as const,    label: 'Guide',    needsUrl: false },
+  { value: 'template' as const, label: 'Template', needsUrl: true },
+  { value: 'audio' as const,    label: 'Audio',    needsUrl: true },
+  { value: 'other' as const,    label: 'Other',    needsUrl: false },
+]
+
+function AddResourceForm({
+  spaceSlug,
+  pathways,
+  onCreated,
+  onClose,
+}: {
+  spaceSlug: string
+  pathways: LitePathway[]
+  onCreated: (r: MobileResource) => void
+  onClose: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [resourceType, setResourceType] = useState<'link' | 'video' | 'replay' | 'guide' | 'template' | 'audio' | 'other'>('link')
+  const [url, setUrl] = useState('')
+  const [status, setStatus] = useState<'draft' | 'published'>('draft')
+  const [scope, setScope] = useState<'general' | 'pathway'>('general')
+  const [pathwayId, setPathwayId] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+
+  const selectedType = MOBILE_RESOURCE_TYPES.find(t => t.value === resourceType)
+  const needsUrl = selectedType?.needsUrl ?? false
+
+  const activePaths = pathways.filter(p => p.status !== 'archived')
+
+  function validate(): string | null {
+    if (!title.trim()) return 'Title is required.'
+    if (needsUrl) {
+      if (!url.trim()) return 'URL is required for this resource type.'
+      try { new URL(url.trim()) } catch { return 'Enter a valid URL (include https://).' }
+    }
+    if (scope === 'pathway' && !pathwayId) return 'Select a pathway for pathway-specific resources.'
+    return null
+  }
+
+  async function handleCreate() {
+    const validationError = validate()
+    if (validationError) { setError(validationError); return }
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim() || null,
+          resource_type: resourceType,
+          url: url.trim() || null,
+          status,
+          scope,
+          pathway_id: scope === 'pathway' ? pathwayId : null,
+        }),
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(typeof b.detail === 'string' ? b.detail : `HTTP ${res.status}`)
+      }
+      const data = await res.json()
+      setDone(true)
+      onCreated({
+        id: data.id,
+        title: data.title,
+        description: data.description ?? null,
+        resource_type: data.resource_type,
+        status: data.status,
+        url: data.url ?? null,
+        file_name: null,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create resource.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (done) {
+    return (
+      <div
+        className="rounded-xl border bg-slate-50 px-4 py-5 text-center"
+        style={{ borderColor: 'rgba(56,160,158,0.20)' }}
+      >
+        <p className="mb-1 text-[14px] font-semibold" style={{ color: '#0f766e' }}>
+          Resource created!
+        </p>
+        <p className="mb-3 text-[12px] text-slate-400">It has been added to the list.</p>
+        <button
+          onClick={onClose}
+          className="rounded-xl px-5 py-2 text-[13px] font-semibold text-white"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Done
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="space-y-3.5 rounded-xl border bg-slate-50 px-4 py-4"
+      style={{ borderColor: 'rgba(56,160,158,0.18)' }}
+    >
+      <p className="text-[13px] font-semibold text-slate-700">New resource</p>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+          Title <span className="font-normal text-slate-400">(required)</span>
+        </label>
+        <input
+          type="text"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          placeholder="e.g. Getting Started Guide"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1.5 block text-[11px] font-semibold text-slate-500">Type</label>
+        <div className="flex flex-wrap gap-1.5">
+          {MOBILE_RESOURCE_TYPES.map(t => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => setResourceType(t.value)}
+              className="rounded-xl border px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              style={
+                resourceType === t.value
+                  ? {
+                      background: 'rgba(56,160,158,0.10)',
+                      border: '1px solid rgba(56,160,158,0.35)',
+                      color: '#0f766e',
+                    }
+                  : { border: '1px solid rgba(0,0,0,0.10)', color: '#64748b' }
+              }
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+          Description <span className="font-normal text-slate-400">(optional)</span>
+        </label>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          rows={2}
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+        />
+      </div>
+
+      {needsUrl && (
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+            URL <span className="font-normal text-slate-400">(required)</span>
+          </label>
+          <input
+            type="url"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            placeholder="https://…"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400"
+          />
+        </div>
+      )}
+
+      <div>
+        <label className="mb-1.5 block text-[11px] font-semibold text-slate-500">Scope</label>
+        <div className="flex gap-1.5">
+          {[
+            { value: 'general' as const, label: 'General / shared' },
+            { value: 'pathway' as const, label: 'Pathway-specific' },
+          ].map(s => (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() => setScope(s.value)}
+              className="rounded-xl border px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              style={
+                scope === s.value
+                  ? {
+                      background: 'rgba(56,160,158,0.10)',
+                      border: '1px solid rgba(56,160,158,0.35)',
+                      color: '#0f766e',
+                    }
+                  : { border: '1px solid rgba(0,0,0,0.10)', color: '#64748b' }
+              }
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {scope === 'pathway' && (
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold text-slate-500">
+            Pathway <span className="font-normal text-slate-400">(required)</span>
+          </label>
+          {activePaths.length === 0 ? (
+            <p className="text-[12px] text-slate-400">No active pathways found.</p>
+          ) : (
+            <select
+              value={pathwayId}
+              onChange={e => setPathwayId(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400"
+            >
+              <option value="">Select a pathway…</option>
+              {activePaths.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
+
+      <div>
+        <label className="mb-1.5 block text-[11px] font-semibold text-slate-500">Status</label>
+        <div className="flex gap-1.5">
+          {[
+            { value: 'draft' as const, label: 'Draft' },
+            { value: 'published' as const, label: 'Published' },
+          ].map(s => (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() => setStatus(s.value)}
+              className="rounded-xl border px-3 py-1.5 text-[12px] font-semibold transition-colors"
+              style={
+                status === s.value
+                  ? {
+                      background: 'rgba(56,160,158,0.10)',
+                      border: '1px solid rgba(56,160,158,0.35)',
+                      color: '#0f766e',
+                    }
+                  : { border: '1px solid rgba(0,0,0,0.10)', color: '#64748b' }
+              }
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600">{error}</p>
+      )}
+
+      <p className="text-[11px] text-slate-400">
+        Upload files and organise larger resources on desktop.
+      </p>
+
+      <div className="flex gap-2.5 pt-1">
+        <button
+          onClick={handleCreate}
+          disabled={saving}
+          className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          {saving ? 'Creating…' : 'Create resource'}
+        </button>
+        <button
+          onClick={onClose}
+          className="rounded-xl border border-slate-200 px-4 py-2.5 text-[13px] text-slate-500 hover:bg-slate-100"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
 }
 
 function ResourceRow({
@@ -1627,11 +2522,18 @@ function ResourceRow({
   )
 }
 
-function ResourcesTabContent({ spaceSlug }: { spaceSlug: string }) {
+function ResourcesTabContent({
+  spaceSlug,
+  pathways,
+}: {
+  spaceSlug: string
+  pathways: LitePathway[]
+}) {
   const [resources, setResources] = useState<MobileResource[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
 
   useEffect(() => {
     fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources`), { credentials: 'include' })
@@ -1674,26 +2576,43 @@ function ResourcesTabContent({ spaceSlug }: { spaceSlug: string }) {
     )
   }
 
-  if (!resources || resources.length === 0) {
-    return (
-      <Card>
-        <CardBody>
-          <p className="text-[14px] font-semibold" style={{ color: '#152236' }}>
-            No resources yet
-          </p>
-          <p className="mt-1 text-[13px] text-slate-400">
-            Upload resources from desktop to share with your collective.
-          </p>
-        </CardBody>
-      </Card>
-    )
-  }
-
-  const published = resources.filter(r => r.status === 'published')
-  const drafts = resources.filter(r => r.status !== 'published')
+  const published = (resources ?? []).filter(r => r.status === 'published')
+  const drafts = (resources ?? []).filter(r => r.status !== 'published')
 
   return (
     <div className="space-y-4">
+      {showAddForm ? (
+        <AddResourceForm
+          spaceSlug={spaceSlug}
+          pathways={pathways}
+          onCreated={r => {
+            setResources(prev => (prev ? [r, ...prev] : [r]))
+          }}
+          onClose={() => setShowAddForm(false)}
+        />
+      ) : (
+        <button
+          onClick={() => setShowAddForm(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-teal-300 px-4 py-3 text-[13px] font-semibold transition-colors hover:bg-teal-50"
+          style={{ color: '#38A09E' }}
+        >
+          + Add resource
+        </button>
+      )}
+
+      {!loading && resources !== null && resources.length === 0 && !showAddForm && (
+        <Card>
+          <CardBody>
+            <p className="text-[14px] font-semibold" style={{ color: '#152236' }}>
+              No resources yet
+            </p>
+            <p className="mt-1 text-[13px] text-slate-400">
+              Use the button above to add a link or guide, or upload files on desktop.
+            </p>
+          </CardBody>
+        </Card>
+      )}
+
       {published.length > 0 && (
         <Card>
           <div className="border-b px-5 pb-3 pt-4" style={{ borderColor: 'rgba(0,0,0,0.07)' }}>
@@ -2186,7 +3105,9 @@ export default function CreatorStudioLiteMobile({ user, activeSpace, spaces, lit
             {activeTab === 'pathways' && (
               <PathwaysTabContent allPathways={allPathways} spaceSlug={slug} />
             )}
-            {activeTab === 'resources' && <ResourcesTabContent spaceSlug={slug} />}
+            {activeTab === 'resources' && (
+              <ResourcesTabContent spaceSlug={slug} pathways={allPathways} />
+            )}
             {activeTab === 'payments' && billing ? (
               <PaymentsTabContent billing={billing} />
             ) : activeTab === 'payments' ? (
