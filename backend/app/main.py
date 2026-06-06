@@ -16,6 +16,8 @@ from app.community.routes import router as community_router
 from app.members.routes import members_router, profiles_router
 from app.creator.routes import router as creator_router
 from app.uploads.routes import uploads_router
+from app.checkout.routes import router as checkout_router
+from app.webhooks.routes import router as webhooks_router
 from app.core.config import settings
 
 logging.basicConfig(
@@ -67,6 +69,8 @@ app.include_router(profiles_router)
 app.include_router(creator_router)
 app.include_router(uploads_router)
 app.include_router(invites_router)
+app.include_router(checkout_router)
+app.include_router(webhooks_router)
 
 
 # ---------------------------------------------------------------------------

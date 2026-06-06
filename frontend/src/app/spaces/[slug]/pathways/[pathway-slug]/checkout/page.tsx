@@ -4,10 +4,12 @@ import { getPathwayOverview, getSpace } from '@/lib/serverApi'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import { isPathwayLocked, formatPathwayPrice } from '@/lib/pathwayAccess'
+import { CheckoutButton } from '@/components/checkout/CheckoutButton'
 import type { PathwayWithSteps } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string }>
+  searchParams: Promise<{ success?: string; cancelled?: string; session_id?: string }>
 }
 
 export async function generateMetadata({ params }: Props) {
@@ -16,8 +18,9 @@ export async function generateMetadata({ params }: Props) {
   return { title: pathway ? `Unlock ${pathway.title}` : 'Checkout' }
 }
 
-export default async function PathwayCheckoutPage({ params }: Props) {
+export default async function PathwayCheckoutPage({ params, searchParams }: Props) {
   const { slug, 'pathway-slug': pathwaySlug } = await params
+  const { success, cancelled } = await searchParams
 
   const [pathway, space]: [PathwayWithSteps | null, { name: string; slug: string } | null] =
     await Promise.all([
@@ -30,22 +33,21 @@ export default async function PathwayCheckoutPage({ params }: Props) {
   const isComingSoon = pathway.status === 'coming_soon'
   const locked = !isComingSoon && isPathwayLocked(pathway.access_type)
 
-  // Free or included pathways don't need checkout — redirect to overview
+  // Free or included pathways don't need checkout
   if (!locked && !isComingSoon) {
     redirect(`/spaces/${slug}/pathways/${pathwaySlug}`)
   }
 
+  const isSubscription = pathway.access_type === 'subscription'
+  const overviewHref = `/spaces/${slug}/pathways/${pathwaySlug}`
+  const aboutHref = `/spaces/${slug}/pathways/${pathwaySlug}/about`
   const cs = getPathwayCoverStyle(pathwaySlug)
   const coverImageUrl = resolveMediaUrl(pathway.cover_image_url)
   const priceLabel = locked
     ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
     : null
 
-  const isSubscription = pathway.access_type === 'subscription'
-  const overviewHref = `/spaces/${slug}/pathways/${pathwaySlug}`
-  const aboutHref = `/spaces/${slug}/pathways/${pathwaySlug}/about`
-
-  // Already has access
+  // ── Access already granted (after successful purchase or admin grant) ──
   if (pathway.user_has_access && locked) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
@@ -64,10 +66,21 @@ export default async function PathwayCheckoutPage({ params }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h1 className="font-serif text-2xl text-navy-900">You already have access</h1>
-          <p className="mt-2 text-[14px] text-slate-500">
-            You already have access to <span className="font-semibold text-navy-900">{pathway.title}</span>.
-          </p>
+          {success ? (
+            <>
+              <h1 className="font-serif text-2xl text-navy-900">Payment successful</h1>
+              <p className="mt-2 text-[14px] text-slate-500">
+                You now have access to <span className="font-semibold text-navy-900">{pathway.title}</span>.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="font-serif text-2xl text-navy-900">You already have access</h1>
+              <p className="mt-2 text-[14px] text-slate-500">
+                You already have access to <span className="font-semibold text-navy-900">{pathway.title}</span>.
+              </p>
+            </>
+          )}
           <Link
             href={overviewHref}
             className="mt-6 inline-block rounded-full px-7 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
@@ -80,7 +93,36 @@ export default async function PathwayCheckoutPage({ params }: Props) {
     )
   }
 
-  // Coming soon
+  // ── Payment received but webhook not yet processed ──
+  // (success param is set but user_has_access is still false)
+  if (success) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
+        <div
+          className="rounded-2xl border bg-white p-8 text-center"
+          style={{ borderColor: '#E2E8F0' }}
+        >
+          <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-amber-50">
+            <svg className="h-7 w-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h1 className="font-serif text-2xl text-navy-900">Payment received</h1>
+          <p className="mt-2 text-[14px] text-slate-500">
+            We&apos;re finalising your access to <span className="font-semibold text-navy-900">{pathway.title}</span>. This usually takes a moment.
+          </p>
+          <Link
+            href={`/spaces/${slug}/pathways/${pathwaySlug}/checkout?success=true`}
+            className="mt-6 inline-block rounded-full border border-teal-200 bg-teal-50 px-7 py-2.5 text-[14px] font-semibold text-teal-700 transition-colors hover:bg-teal-100"
+          >
+            Refresh to check access
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Coming soon ──
   if (isComingSoon) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
@@ -98,7 +140,53 @@ export default async function PathwayCheckoutPage({ params }: Props) {
     )
   }
 
-  // Checkout shell (locked, no access)
+  // ── Checkout cancelled ──
+  if (cancelled) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
+        <Link href={aboutHref} className="mb-6 block text-sm text-slate-400 hover:text-teal-600">
+          ← Back to pathway
+        </Link>
+        <div
+          className="rounded-2xl border bg-white p-8 text-center"
+          style={{ borderColor: '#E2E8F0' }}
+        >
+          <h1 className="font-serif text-2xl text-navy-900">Checkout cancelled</h1>
+          <p className="mt-2 text-[14px] text-slate-500">
+            No payment was taken. You can try again whenever you&apos;re ready.
+          </p>
+          <Link
+            href={`/spaces/${slug}/pathways/${pathwaySlug}/checkout`}
+            className="mt-6 inline-block rounded-full border border-slate-200 bg-white px-7 py-2.5 text-[14px] font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            Back to checkout
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Subscription pathway — not yet wired (Phase 3) ──
+  if (isSubscription) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
+        <Link href={aboutHref} className="mb-6 block text-sm text-slate-400 hover:text-teal-600">
+          ← Back to pathway
+        </Link>
+        <div
+          className="rounded-2xl border bg-white p-8 text-center"
+          style={{ borderColor: '#E2E8F0' }}
+        >
+          <p className="font-serif text-2xl text-navy-900">{pathway.title}</p>
+          <p className="mt-4 text-[14px] text-slate-500">
+            Subscription billing is coming soon. Check back shortly.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Main checkout UI (locked one-time pathway, no access) ──
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 md:px-6">
 
@@ -166,13 +254,9 @@ export default async function PathwayCheckoutPage({ params }: Props) {
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               Access type
             </p>
-            <p className="text-[14px] font-medium text-navy-900">
-              {isSubscription ? 'Monthly subscription' : 'One-off purchase'}
-            </p>
+            <p className="text-[14px] font-medium text-navy-900">One-off purchase</p>
             <p className="mt-0.5 text-[13px] text-slate-500">
-              {isSubscription
-                ? 'Pay monthly to maintain access.'
-                : 'Unlock permanently with a single payment.'}
+              Unlock permanently with a single payment.
             </p>
           </div>
 
@@ -208,16 +292,14 @@ export default async function PathwayCheckoutPage({ params }: Props) {
 
             <div className="space-y-3 text-[14px]">
               <div className="flex items-center justify-between">
-                <span className="text-slate-600">
-                  {isSubscription ? 'Monthly subscription' : 'One-off purchase'}
-                </span>
+                <span className="text-slate-600">One-off purchase</span>
                 <span className="font-semibold text-navy-900">
                   {priceLabel ?? '—'}
                 </span>
               </div>
               <div className="flex items-start justify-between gap-2">
                 <span className="text-[12px] text-slate-400">
-                  Payment processing fees apply at checkout (Stripe)
+                  Processed securely via Stripe
                 </span>
               </div>
               <div
@@ -229,32 +311,16 @@ export default async function PathwayCheckoutPage({ params }: Props) {
               </div>
             </div>
 
-            {/* Disabled checkout button */}
-            <button
-              disabled
-              type="button"
-              className="mt-5 w-full cursor-not-allowed rounded-full px-5 py-3 text-[14px] font-semibold opacity-60"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)', color: '#fff' }}
-            >
-              Checkout coming soon
-            </button>
+            <div className="mt-5">
+              <CheckoutButton
+                pathwayId={pathway.id}
+                label={priceLabel ? `Unlock for ${priceLabel}` : 'Unlock pathway'}
+              />
+            </div>
 
             <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
-              Payments are not connected yet. This page is ready for Stripe integration later.
+              Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
             </p>
-
-            {/*
-              TODO: Stripe Checkout integration
-              1. On button click → POST /api/checkout/pathway/{pathway_id}/session
-                 → Create pending PaymentTransaction row
-                 → Create Stripe Checkout Session with price_id
-                 → Return session URL
-              2. Redirect member to Stripe Checkout
-              3. On Stripe webhook (checkout.session.completed):
-                 → Mark PaymentTransaction as succeeded
-                 → Create PathwayEntitlement (source=one_time_purchase or subscription)
-                 → Send access-granted email
-            */}
           </div>
 
           <Link
