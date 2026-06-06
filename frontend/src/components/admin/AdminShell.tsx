@@ -5,15 +5,50 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 
-const NAV_ITEMS = [
-  { href: '/admin/sales', label: 'Sales Overview', exact: true },
-  { href: '/admin/sales/leads', label: 'Leads' },
-  { href: '/admin/sales/opportunities', label: 'Opportunities' },
-  { href: '/admin/sales/tasks', label: 'Tasks' },
-  { href: '/admin/sales/subscriptions', label: 'Subscriptions' },
-  { href: '/admin/sales/pricing', label: 'Pricing' },
-  { href: '/admin/billing',   label: 'Creator Billing' },
-  { href: '/admin/payments',  label: 'Payments' },
+interface NavItem {
+  href: string
+  label: string
+  exact?: boolean
+}
+
+const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
+  {
+    label: 'PLATFORM',
+    items: [
+      { href: '/admin/overview',    label: 'Overview', exact: true },
+      { href: '/admin/collectives', label: 'Collectives' },
+      { href: '/admin/creators',    label: 'Creators' },
+      { href: '/admin/users',       label: 'Users' },
+      { href: '/admin/access',      label: 'Access & Invites' },
+    ],
+  },
+  {
+    label: 'SALES',
+    items: [
+      { href: '/admin/sales',                label: 'Sales Overview', exact: true },
+      { href: '/admin/sales/leads',          label: 'Leads' },
+      { href: '/admin/sales/opportunities',  label: 'Opportunities' },
+      { href: '/admin/sales/tasks',          label: 'Tasks' },
+    ],
+  },
+  {
+    label: 'MONEY',
+    items: [
+      { href: '/admin/revenue',       label: 'Revenue' },
+      { href: '/admin/payments',      label: 'Payments' },
+      { href: '/admin/billing',       label: 'Creator Billing' },
+      { href: '/admin/subscriptions', label: 'Subscriptions' },
+      { href: '/admin/pricing',       label: 'Pricing' },
+    ],
+  },
+  {
+    label: 'OPERATIONS',
+    items: [
+      { href: '/admin/moderation', label: 'Moderation' },
+      { href: '/admin/settings',   label: 'Settings' },
+      { href: '/admin/audit',      label: 'Audit Logs' },
+    ],
+  },
 ]
 
 function SidebarContent({
@@ -47,27 +82,36 @@ function SidebarContent({
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
-        {NAV_ITEMS.map(({ href, label, exact }) => {
-          const active = exact
-            ? pathname === href
-            : pathname === href || pathname.startsWith(href + '/')
-          return (
-            <Link
-              key={href}
-              href={href}
-              onClick={onNav}
-              className={`flex items-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
-                active
-                  ? 'bg-teal-50 text-teal-700'
-                  : 'text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]'
-              }`}
-              style={active ? { border: '1px solid rgba(56,160,158,0.2)' } : { border: '1px solid transparent' }}
-            >
+      <nav className="flex-1 overflow-y-auto px-2 py-3">
+        {NAV_SECTIONS.map(({ label, items }) => (
+          <div key={label} className="mb-4">
+            <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-[#94A3B8]">
               {label}
-            </Link>
-          )
-        })}
+            </p>
+            <div className="space-y-0.5">
+              {items.map(({ href, label: itemLabel, exact }) => {
+                const active = exact
+                  ? pathname === href
+                  : pathname === href || pathname.startsWith(href + '/')
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={onNav}
+                    className={`flex items-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
+                      active
+                        ? 'bg-teal-50 text-teal-700'
+                        : 'text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]'
+                    }`}
+                    style={active ? { border: '1px solid rgba(56,160,158,0.2)' } : { border: '1px solid transparent' }}
+                  >
+                    {itemLabel}
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Footer */}

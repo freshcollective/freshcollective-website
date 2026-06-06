@@ -18,9 +18,20 @@ from sqlalchemy.orm import Session
 
 from app.admin import service
 from app.admin.schemas import (
+    AdminAccessRequestRow,
+    AdminAccessResponse,
+    AdminCollectiveRow,
+    AdminCreatorPlanRow,
+    AdminCreatorRow,
+    AdminCreatorSubscriptionRow,
+    AdminInvitationRow,
     AdminPaymentSummary,
     AdminPlanChangeRequest,
+    AdminPlatformOverview,
+    AdminRevenueByCreatorRow,
+    AdminRevenueSummary,
     AdminUserResponse,
+    AdminUserRow,
     CreatorBillingRow,
     ManualPaymentCreateRequest,
     ManualPathwayPurchaseRequest,
@@ -43,10 +54,14 @@ from app.models.payment import (
 from app.models.platform import (
     EntitlementSource,
     EntitlementStatus,
+    Event,
     Pathway,
     PathwayEntitlement,
     Space,
+    SpaceAccessRequest,
+    SpaceInvitation,
     SpaceMembership,
+    SpaceResource,
 )
 from app.models.user import User
 
@@ -684,3 +699,610 @@ def create_manual_payment(
     db.commit()
     db.refresh(txn)
     return PaymentTransactionOut.model_validate(txn)
+
+
+# ---------------------------------------------------------------------------
+# Platform admin — owner/admin panel endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/platform/overview", response_model=AdminPlatformOverview)
+def get_platform_overview(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> AdminPlatformOverview:
+    """Platform-wide stats for the admin overview page. Admin only."""
+    from app.models.user import User as UserModel
+
+    total_collectives   = db.query(func.count(Space.id)).scalar() or 0
+    active_collectives  = db.query(func.count(Space.id)).filter(Space.status == "active").scalar() or 0
+    draft_collectives   = db.query(func.count(Space.id)).filter(Space.status == "draft").scalar() or 0
+    archived_collectives = db.query(func.count(Space.id)).filter(Space.status == "archived").scalar() or 0
+
+    total_users   = db.query(func.count(UserModel.id)).scalar() or 0
+    admin_users   = db.query(func.count(UserModel.id)).filter(UserModel.role == "admin").scalar() or 0
+    creator_users = db.query(func.count(UserModel.id)).filter(UserModel.role == "creator").scalar() or 0
+    member_users  = total_users - admin_users - creator_users
+
+    pending_access_requests = (
+        db.query(func.count(SpaceAccessRequest.id))
+        .filter(SpaceAccessRequest.status == "pending")
+        .scalar() or 0
+    )
+    pending_invitations = db.query(func.count(SpaceInvitation.id)).scalar() or 0
+
+    succeeded_transactions = (
+        db.query(func.count(PaymentTransaction.id))
+        .filter(
+            PaymentTransaction.status == PaymentTransactionStatus.succeeded,
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+        )
+        .scalar() or 0
+    )
+    total_gross_cents = int(
+        db.query(func.sum(PaymentTransaction.gross_amount_cents))
+        .filter(
+            PaymentTransaction.status == PaymentTransactionStatus.succeeded,
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+        )
+        .scalar() or 0
+    )
+
+    return AdminPlatformOverview(
+        total_collectives=total_collectives,
+        active_collectives=active_collectives,
+        draft_collectives=draft_collectives,
+        archived_collectives=archived_collectives,
+        total_users=total_users,
+        admin_users=admin_users,
+        creator_users=creator_users,
+        member_users=member_users,
+        pending_access_requests=pending_access_requests,
+        pending_invitations=pending_invitations,
+        total_gross_cents=total_gross_cents,
+        succeeded_transactions=succeeded_transactions,
+    )
+
+
+@router.get("/platform/collectives", response_model=list[AdminCollectiveRow])
+def list_all_collectives(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[AdminCollectiveRow]:
+    """All spaces with member/pathway/event/resource counts. Admin only."""
+    spaces = db.query(Space).order_by(Space.created_at.desc()).all()
+
+    # Batch counts to avoid N+1
+    from sqlalchemy import case, distinct
+
+    # member counts (learner role, active status)
+    mem_counts = dict(
+        db.query(SpaceMembership.space_id, func.count(SpaceMembership.id))
+        .filter(SpaceMembership.role == "learner", SpaceMembership.status == "active")
+        .group_by(SpaceMembership.space_id)
+        .all()
+    )
+    pathway_counts = dict(
+        db.query(Pathway.space_id, func.count(Pathway.id))
+        .group_by(Pathway.space_id)
+        .all()
+    )
+    gathering_counts = dict(
+        db.query(Event.space_id, func.count(Event.id))
+        .filter(Event.is_published.is_(True))
+        .group_by(Event.space_id)
+        .all()
+    )
+    resource_counts = dict(
+        db.query(SpaceResource.space_id, func.count(SpaceResource.id))
+        .filter(SpaceResource.status == "published")
+        .group_by(SpaceResource.space_id)
+        .all()
+    )
+
+    # Creator lookup
+    creator_ids = {s.creator_id for s in spaces if s.creator_id}
+    from app.models.user import User as UserModel
+    creator_map = {
+        u.id: u
+        for u in db.query(UserModel).filter(UserModel.id.in_(creator_ids)).all()
+    } if creator_ids else {}
+
+    rows: list[AdminCollectiveRow] = []
+    for s in spaces:
+        creator = creator_map.get(s.creator_id) if s.creator_id else None
+        status_val = s.status.value if hasattr(s.status, "value") else str(s.status)
+        rows.append(AdminCollectiveRow(
+            id=s.id,
+            name=s.name,
+            slug=s.slug,
+            status=status_val,
+            is_public=s.is_public,
+            has_paid_internal_content=getattr(s, "has_paid_internal_content", False),
+            creator_name=creator.name if creator else None,
+            creator_email=creator.email if creator else None,
+            member_count=mem_counts.get(s.id, 0),
+            pathway_count=pathway_counts.get(s.id, 0),
+            gathering_count=gathering_counts.get(s.id, 0),
+            resource_count=resource_counts.get(s.id, 0),
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+        ))
+    return rows
+
+
+@router.get("/platform/creators", response_model=list[AdminCreatorRow])
+def list_platform_creators(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[AdminCreatorRow]:
+    """All creator and admin users with plan/usage summary. Admin only."""
+    from app.models.user import User as UserModel
+
+    creators = (
+        db.query(UserModel)
+        .filter(UserModel.role.in_(["creator", "admin"]))
+        .order_by(UserModel.created_at)
+        .all()
+    )
+
+    plans_by_id = {p.id: p for p in db.query(CreatorPlan).all()}
+    subs = (
+        db.query(CreatorSubscription)
+        .filter(CreatorSubscription.status.in_(["active", "trialing"]))
+        .all()
+    )
+    sub_map: dict[str, CreatorSubscription] = {s.user_id: s for s in subs}
+
+    fallback_plan = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.is_active.is_(True))
+        .order_by(CreatorPlan.monthly_price_cents)
+        .first()
+    )
+
+    rows: list[AdminCreatorRow] = []
+    for creator in creators:
+        sub = sub_map.get(creator.id)
+        plan = (plans_by_id.get(sub.creator_plan_id) if sub else None) or fallback_plan
+        plan_name = plan.name if plan else "—"
+        sub_status = "none"
+        if sub:
+            sub_status = sub.status.value if hasattr(sub.status, "value") else str(sub.status)
+
+        collective_count = len(_creator_managed_space_ids(creator.id, db))
+        rows.append(AdminCreatorRow(
+            id=creator.id,
+            name=creator.name,
+            email=creator.email,
+            role=creator.role,
+            created_at=creator.created_at,
+            collective_count=collective_count,
+            plan_name=plan_name,
+            subscription_status=sub_status,
+        ))
+    return rows
+
+
+@router.get("/platform/users", response_model=list[AdminUserRow])
+def list_platform_users(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[AdminUserRow]:
+    """All users with collective membership and ownership counts. Admin only."""
+    from app.models.user import User as UserModel
+
+    users = db.query(UserModel).order_by(UserModel.created_at.desc()).all()
+
+    # Batch counts
+    joined_counts = dict(
+        db.query(SpaceMembership.user_id, func.count(SpaceMembership.id))
+        .filter(SpaceMembership.role == "learner", SpaceMembership.status == "active")
+        .group_by(SpaceMembership.user_id)
+        .all()
+    )
+    owned_counts = dict(
+        db.query(Space.creator_id, func.count(Space.id))
+        .filter(Space.creator_id.isnot(None), Space.status != "archived")
+        .group_by(Space.creator_id)
+        .all()
+    )
+
+    return [
+        AdminUserRow(
+            id=u.id,
+            name=u.name,
+            email=u.email,
+            role=u.role,
+            created_at=u.created_at,
+            joined_collectives=joined_counts.get(u.id, 0),
+            owned_collectives=owned_counts.get(u.id, 0),
+        )
+        for u in users
+    ]
+
+
+@router.get("/platform/access", response_model=AdminAccessResponse)
+def list_access_and_invites(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> AdminAccessResponse:
+    """Platform-wide access requests and pending invitations. Admin only."""
+    from app.models.user import User as UserModel
+
+    access_reqs = (
+        db.query(SpaceAccessRequest)
+        .order_by(SpaceAccessRequest.created_at.desc())
+        .all()
+    )
+    invitations = (
+        db.query(SpaceInvitation)
+        .order_by(SpaceInvitation.created_at.desc())
+        .all()
+    )
+
+    space_ids = {r.space_id for r in access_reqs} | {i.space_id for i in invitations}
+    spaces = {s.id: s for s in db.query(Space).filter(Space.id.in_(space_ids)).all()} if space_ids else {}
+
+    user_ids = (
+        {r.user_id for r in access_reqs}
+        | {i.invited_by_id for i in invitations}
+    )
+    users: dict[str, UserModel] = {
+        u.id: u for u in db.query(UserModel).filter(UserModel.id.in_(user_ids)).all()
+    } if user_ids else {}
+
+    req_rows: list[AdminAccessRequestRow] = []
+    for r in access_reqs:
+        space = spaces.get(r.space_id)
+        requester = users.get(r.user_id)
+        req_rows.append(AdminAccessRequestRow(
+            id=r.id,
+            space_id=r.space_id,
+            space_name=space.name if space else r.space_id,
+            space_slug=space.slug if space else r.space_id,
+            user_id=r.user_id,
+            user_name=requester.name if requester else None,
+            user_email=requester.email if requester else r.user_id,
+            status=r.status,
+            message=r.message,
+            created_at=r.created_at,
+        ))
+
+    inv_rows: list[AdminInvitationRow] = []
+    for i in invitations:
+        space = spaces.get(i.space_id)
+        inviter = users.get(i.invited_by_id)
+        role_val = i.role.value if hasattr(i.role, "value") else str(i.role)
+        inv_rows.append(AdminInvitationRow(
+            id=i.id,
+            space_id=i.space_id,
+            space_name=space.name if space else i.space_id,
+            space_slug=space.slug if space else i.space_id,
+            email=i.email,
+            name=i.name,
+            role=role_val,
+            invited_by_name=inviter.name if inviter else None,
+            invited_by_email=inviter.email if inviter else None,
+            created_at=i.created_at,
+        ))
+
+    return AdminAccessResponse(access_requests=req_rows, invitations=inv_rows)
+
+
+# ---------------------------------------------------------------------------
+# Creator plans & subscriptions (Money section)
+# ---------------------------------------------------------------------------
+
+@router.get("/creator-plans", response_model=list[AdminCreatorPlanRow])
+def list_creator_plans(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[AdminCreatorPlanRow]:
+    """All creator billing plans with active subscriber counts. Admin only."""
+    plans = db.query(CreatorPlan).order_by(CreatorPlan.monthly_price_cents).all()
+
+    sub_counts: dict[str, int] = dict(
+        db.query(CreatorSubscription.creator_plan_id, func.count(CreatorSubscription.id))
+        .filter(CreatorSubscription.status.in_([
+            CreatorSubscriptionStatus.active,
+            CreatorSubscriptionStatus.trialing,
+        ]))
+        .group_by(CreatorSubscription.creator_plan_id)
+        .all()
+    )
+
+    rows: list[AdminCreatorPlanRow] = []
+    for plan in plans:
+        rows.append(AdminCreatorPlanRow(
+            id=plan.id,
+            name=plan.name,
+            slug=plan.slug,
+            description=plan.description,
+            monthly_price_cents=plan.monthly_price_cents,
+            currency=plan.currency,
+            transaction_fee_basis_points=plan.transaction_fee_basis_points,
+            collective_limit=plan.collective_limit,
+            is_active=plan.is_active,
+            active_subscriptions=sub_counts.get(plan.id, 0),
+            created_at=plan.created_at,
+        ))
+    return rows
+
+
+@router.get("/creator-subscriptions", response_model=list[AdminCreatorSubscriptionRow])
+def list_creator_subscriptions_admin(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[AdminCreatorSubscriptionRow]:
+    """All creator billing subscriptions with user and plan details. Admin only."""
+    from app.models.user import User as UserModel
+
+    subs = db.query(CreatorSubscription).order_by(CreatorSubscription.created_at.desc()).all()
+    if not subs:
+        return []
+
+    user_ids = {s.user_id for s in subs}
+    plan_ids = {s.creator_plan_id for s in subs}
+
+    user_map: dict[str, UserModel] = {
+        u.id: u for u in db.query(UserModel).filter(UserModel.id.in_(user_ids)).all()
+    }
+    plan_map: dict[str, CreatorPlan] = {
+        p.id: p for p in db.query(CreatorPlan).filter(CreatorPlan.id.in_(plan_ids)).all()
+    }
+
+    rows: list[AdminCreatorSubscriptionRow] = []
+    for sub in subs:
+        user = user_map.get(sub.user_id)
+        plan = plan_map.get(sub.creator_plan_id)
+        status_val = sub.status.value if hasattr(sub.status, "value") else str(sub.status)
+        rows.append(AdminCreatorSubscriptionRow(
+            id=sub.id,
+            user_id=sub.user_id,
+            user_name=user.name if user else None,
+            user_email=user.email if user else sub.user_id,
+            plan_id=sub.creator_plan_id,
+            plan_name=plan.name if plan else "—",
+            plan_slug=plan.slug if plan else "—",
+            monthly_price_cents=plan.monthly_price_cents if plan else 0,
+            currency=plan.currency if plan else "AUD",
+            transaction_fee_basis_points=plan.transaction_fee_basis_points if plan else 0,
+            status=status_val,
+            starts_at=sub.starts_at,
+            ends_at=sub.ends_at,
+            stripe_subscription_id=getattr(sub, "stripe_subscription_id", None),
+            stripe_customer_id=getattr(sub, "stripe_customer_id", None),
+            created_at=sub.created_at,
+            updated_at=sub.updated_at,
+        ))
+    return rows
+
+
+# ---------------------------------------------------------------------------
+# Revenue dashboard
+# ---------------------------------------------------------------------------
+
+@router.get("/revenue/summary", response_model=AdminRevenueSummary)
+def get_revenue_summary(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> AdminRevenueSummary:
+    """Platform revenue summary for admin revenue dashboard. Admin only."""
+    succeeded = PaymentTransactionStatus.succeeded
+
+    # Creator subscription fees paid to FC (gross = FC revenue)
+    sub_revenue = int(
+        db.query(func.sum(PaymentTransaction.gross_amount_cents))
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.transaction_type == PaymentTransactionType.creator_subscription_payment,
+        )
+        .scalar() or 0
+    )
+
+    # Platform fees retained from member purchases
+    platform_fee_revenue = int(
+        db.query(func.sum(PaymentTransaction.platform_fee_cents))
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+        )
+        .scalar() or 0
+    )
+
+    # Gross member sales (total of what members paid for creator content)
+    gross_sales = int(
+        db.query(func.sum(PaymentTransaction.gross_amount_cents))
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+        )
+        .scalar() or 0
+    )
+
+    # Creator net from member sales
+    creator_net = int(
+        db.query(func.sum(PaymentTransaction.net_creator_amount_cents))
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+            PaymentTransaction.net_creator_amount_cents.isnot(None),
+        )
+        .scalar() or 0
+    )
+
+    # Paid out
+    paid_out = int(
+        db.query(func.sum(PaymentTransaction.net_creator_amount_cents))
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.payout_status == PayoutStatus.paid,
+            PaymentTransaction.net_creator_amount_cents.isnot(None),
+        )
+        .scalar() or 0
+    )
+
+    # Pending payout (member sales only — creator subs go to FC directly)
+    pending_payout = int(
+        db.query(func.sum(PaymentTransaction.net_creator_amount_cents))
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.payout_status == PayoutStatus.pending,
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+            PaymentTransaction.net_creator_amount_cents.isnot(None),
+        )
+        .scalar() or 0
+    )
+
+    succeeded_count = int(
+        db.query(func.count(PaymentTransaction.id))
+        .filter(PaymentTransaction.status == succeeded)
+        .scalar() or 0
+    )
+    refunded_count = int(
+        db.query(func.count(PaymentTransaction.id))
+        .filter(PaymentTransaction.status.in_([
+            PaymentTransactionStatus.refunded,
+            PaymentTransactionStatus.partially_refunded,
+        ]))
+        .scalar() or 0
+    )
+    failed_count = int(
+        db.query(func.count(PaymentTransaction.id))
+        .filter(PaymentTransaction.status == PaymentTransactionStatus.failed)
+        .scalar() or 0
+    )
+
+    return AdminRevenueSummary(
+        total_fc_revenue_cents=sub_revenue + platform_fee_revenue,
+        subscription_revenue_cents=sub_revenue,
+        platform_fee_revenue_cents=platform_fee_revenue,
+        total_gross_sales_cents=gross_sales,
+        total_creator_net_cents=creator_net,
+        paid_out_cents=paid_out,
+        pending_payout_cents=pending_payout,
+        succeeded_transactions=succeeded_count,
+        refunded_transactions=refunded_count,
+        failed_transactions=failed_count,
+    )
+
+
+@router.get("/revenue/by-creator", response_model=list[AdminRevenueByCreatorRow])
+def get_revenue_by_creator(
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> list[AdminRevenueByCreatorRow]:
+    """Per-creator revenue breakdown. Admin only."""
+    from app.models.user import User as UserModel
+
+    succeeded = PaymentTransactionStatus.succeeded
+
+    # Member sales by creator_user_id (gross, FC fee, creator net)
+    member_sales = (
+        db.query(
+            PaymentTransaction.creator_user_id,
+            func.sum(PaymentTransaction.gross_amount_cents).label("gross"),
+            func.sum(PaymentTransaction.platform_fee_cents).label("fc_fees"),
+            func.sum(PaymentTransaction.net_creator_amount_cents).label("creator_net"),
+        )
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+            PaymentTransaction.creator_user_id.isnot(None),
+        )
+        .group_by(PaymentTransaction.creator_user_id)
+        .all()
+    )
+
+    # Creator subscription payments by payer_user_id (the creator paid FC)
+    sub_payments = (
+        db.query(
+            PaymentTransaction.payer_user_id,
+            func.sum(PaymentTransaction.gross_amount_cents).label("sub_revenue"),
+        )
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.transaction_type == PaymentTransactionType.creator_subscription_payment,
+            PaymentTransaction.payer_user_id.isnot(None),
+        )
+        .group_by(PaymentTransaction.payer_user_id)
+        .all()
+    )
+
+    # Paid-out amounts by creator
+    paid_rows = (
+        db.query(
+            PaymentTransaction.creator_user_id,
+            func.sum(PaymentTransaction.net_creator_amount_cents).label("paid"),
+        )
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.payout_status == PayoutStatus.paid,
+            PaymentTransaction.creator_user_id.isnot(None),
+            PaymentTransaction.net_creator_amount_cents.isnot(None),
+        )
+        .group_by(PaymentTransaction.creator_user_id)
+        .all()
+    )
+
+    # Pending payout by creator
+    pending_rows = (
+        db.query(
+            PaymentTransaction.creator_user_id,
+            func.sum(PaymentTransaction.net_creator_amount_cents).label("pending"),
+        )
+        .filter(
+            PaymentTransaction.status == succeeded,
+            PaymentTransaction.payout_status == PayoutStatus.pending,
+            PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+            PaymentTransaction.creator_user_id.isnot(None),
+            PaymentTransaction.net_creator_amount_cents.isnot(None),
+        )
+        .group_by(PaymentTransaction.creator_user_id)
+        .all()
+    )
+
+    sales_map = {r.creator_user_id: r for r in member_sales}
+    sub_map: dict[str, int] = {r.payer_user_id: int(r.sub_revenue) for r in sub_payments}
+    paid_map: dict[str, int] = {r.creator_user_id: int(r.paid) for r in paid_rows}
+    pending_map: dict[str, int] = {r.creator_user_id: int(r.pending) for r in pending_rows}
+
+    all_creator_ids = set(sales_map.keys()) | set(sub_map.keys())
+    if not all_creator_ids:
+        return []
+
+    user_map: dict[str, UserModel] = {
+        u.id: u for u in db.query(UserModel).filter(UserModel.id.in_(all_creator_ids)).all()
+    }
+    space_counts: dict[str, int] = dict(
+        db.query(Space.creator_id, func.count(Space.id))
+        .filter(Space.creator_id.in_(all_creator_ids), Space.status != "archived")
+        .group_by(Space.creator_id)
+        .all()
+    )
+
+    rows: list[AdminRevenueByCreatorRow] = []
+    for creator_id in all_creator_ids:
+        user = user_map.get(creator_id)
+        sales = sales_map.get(creator_id)
+        gross_sales = int(sales.gross) if sales and sales.gross else 0
+        fc_fees = int(sales.fc_fees) if sales and sales.fc_fees else 0
+        creator_net = int(sales.creator_net) if sales and sales.creator_net else 0
+        sub_rev = sub_map.get(creator_id, 0)
+
+        rows.append(AdminRevenueByCreatorRow(
+            creator_user_id=creator_id,
+            creator_name=user.name if user else None,
+            creator_email=user.email if user else creator_id,
+            collective_count=space_counts.get(creator_id, 0),
+            gross_sales_cents=gross_sales,
+            platform_fees_cents=fc_fees,
+            creator_net_cents=creator_net,
+            subscription_revenue_cents=sub_rev,
+            total_fc_revenue_cents=fc_fees + sub_rev,
+            paid_out_cents=paid_map.get(creator_id, 0),
+            pending_payout_cents=pending_map.get(creator_id, 0),
+        ))
+
+    rows.sort(key=lambda r: r.total_fc_revenue_cents, reverse=True)
+    return rows

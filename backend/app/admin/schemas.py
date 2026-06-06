@@ -183,3 +183,172 @@ class SimplePaidPathwayRow(BaseModel):
     currency: str
     billing_interval: str | None
     creator_fee_basis_points: int
+
+
+# ---------------------------------------------------------------------------
+# Platform admin — new owner/admin panel
+# ---------------------------------------------------------------------------
+
+class AdminPlatformOverview(BaseModel):
+    # Collectives
+    total_collectives: int
+    active_collectives: int
+    draft_collectives: int
+    archived_collectives: int
+    # Users by role
+    total_users: int
+    admin_users: int
+    creator_users: int
+    member_users: int
+    # Access queue
+    pending_access_requests: int
+    pending_invitations: int
+    # Revenue (succeeded member-purchase transactions)
+    total_gross_cents: int
+    succeeded_transactions: int
+
+
+class AdminCollectiveRow(BaseModel):
+    id: str
+    name: str
+    slug: str
+    status: str
+    is_public: bool
+    has_paid_internal_content: bool
+    creator_name: str | None
+    creator_email: str | None
+    member_count: int
+    pathway_count: int
+    gathering_count: int
+    resource_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminCreatorRow(BaseModel):
+    id: str
+    name: str | None
+    email: str
+    role: str
+    created_at: datetime
+    collective_count: int
+    plan_name: str
+    subscription_status: str
+
+
+class AdminUserRow(BaseModel):
+    id: str
+    name: str | None
+    email: str
+    role: str
+    created_at: datetime
+    joined_collectives: int
+    owned_collectives: int
+
+
+class AdminAccessRequestRow(BaseModel):
+    id: str
+    space_id: str
+    space_name: str
+    space_slug: str
+    user_id: str
+    user_name: str | None
+    user_email: str
+    status: str
+    message: str | None
+    created_at: datetime
+
+
+class AdminInvitationRow(BaseModel):
+    id: str
+    space_id: str
+    space_name: str
+    space_slug: str
+    email: str
+    name: str | None
+    role: str
+    invited_by_name: str | None
+    invited_by_email: str | None
+    created_at: datetime
+
+
+class AdminAccessResponse(BaseModel):
+    access_requests: list[AdminAccessRequestRow]
+    invitations: list[AdminInvitationRow]
+
+
+# ---------------------------------------------------------------------------
+# Creator plans + subscriptions (Money section)
+# ---------------------------------------------------------------------------
+
+class AdminCreatorPlanRow(BaseModel):
+    id: str
+    name: str
+    slug: str
+    description: str | None
+    monthly_price_cents: int
+    currency: str
+    transaction_fee_basis_points: int
+    collective_limit: int
+    is_active: bool
+    active_subscriptions: int
+    created_at: datetime
+
+
+class AdminCreatorSubscriptionRow(BaseModel):
+    id: str
+    user_id: str
+    user_name: str | None
+    user_email: str
+    plan_id: str
+    plan_name: str
+    plan_slug: str
+    monthly_price_cents: int
+    currency: str
+    transaction_fee_basis_points: int
+    status: str
+    starts_at: datetime
+    ends_at: datetime | None
+    stripe_subscription_id: str | None
+    stripe_customer_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Revenue
+# ---------------------------------------------------------------------------
+
+class AdminRevenueSummary(BaseModel):
+    # Fresh Collective revenue
+    total_fc_revenue_cents: int
+    subscription_revenue_cents: int   # creator sub fees paid to FC
+    platform_fee_revenue_cents: int   # platform fees retained from member purchases
+    # Gross creator sales (member purchases of creator content)
+    total_gross_sales_cents: int
+    total_creator_net_cents: int
+    # Payout tracking
+    paid_out_cents: int
+    pending_payout_cents: int
+    # Transaction counts (all types)
+    succeeded_transactions: int
+    refunded_transactions: int
+    failed_transactions: int
+
+
+class AdminRevenueByCreatorRow(BaseModel):
+    creator_user_id: str
+    creator_name: str | None
+    creator_email: str
+    collective_count: int
+    # From member purchases of creator content
+    gross_sales_cents: int
+    platform_fees_cents: int
+    creator_net_cents: int
+    # Creator subscription fees paid to FC
+    subscription_revenue_cents: int
+    # Total FC revenue attributable to this creator
+    total_fc_revenue_cents: int
+    # Payout tracking
+    paid_out_cents: int
+    pending_payout_cents: int
