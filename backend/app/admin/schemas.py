@@ -295,6 +295,17 @@ class AdminCreatorPlanRow(BaseModel):
     created_at: datetime
 
 
+class AdminCreatorPlanCreate(BaseModel):
+    name: str
+    slug: str
+    description: str | None = None
+    monthly_price_cents: int
+    currency: str = "AUD"
+    transaction_fee_basis_points: int
+    collective_limit: int
+    is_active: bool = True
+
+
 class AdminCreatorSubscriptionRow(BaseModel):
     id: str
     user_id: str

@@ -448,8 +448,8 @@ export default function AdminPaymentsPage() {
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-[1.5rem] font-bold text-[#0F172A]">Payment Transactions</h1>
-            <p className="mt-1 text-[14px] text-[#64748B]">
-              Future payment activity, platform fees, refunds, and creator earnings will appear here.
+            <p className="mt-1 text-[13px] text-[#64748B]">
+              All platform transaction records — Stripe payments, manual entries, and test/admin-simulated purchases.
             </p>
           </div>
           <button
@@ -484,13 +484,23 @@ export default function AdminPaymentsPage() {
           />
         </div>
 
-        {/* Payout helper */}
+        {/* Status notes */}
         <div
-          className="mb-6 rounded-xl px-4 py-3 text-[12px] text-[#64748B]"
+          className="mb-6 space-y-2 rounded-xl px-4 py-3 text-[12px] text-[#64748B]"
           style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}
         >
-          Payouts are not connected yet. These figures show what would be owed to creators once payout processing is enabled.{' '}
-          <span className="font-medium text-[#94A3B8]">Mark payouts as paid — coming soon.</span>
+          <p>
+            <strong className="text-[#475569]">Manual / test transactions:</strong>{' '}
+            Transactions with provider <span className="font-mono text-[11px] text-[#475569]">manual</span> are
+            admin-simulated or manually entered records — not Stripe-processed payments. These are useful for
+            testing and beta access grants. All figures shown include these records.
+          </p>
+          <p>
+            <strong className="text-[#475569]">Payouts:</strong>{' '}
+            Payouts are not yet connected to Stripe Connect. The pending payout figure shows what would be owed
+            to creators once payout processing is enabled.{' '}
+            <span className="text-[#94A3B8]">Mark payouts as paid — coming soon.</span>
+          </p>
         </div>
 
         {/* Transactions */}

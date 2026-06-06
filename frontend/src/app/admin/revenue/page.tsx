@@ -117,15 +117,15 @@ export default function AdminRevenuePage() {
         Gross creator sales are shown separately — they belong to creators, not Fresh Collective.
       </p>
 
-      {noTransactions && (
-        <div
-          className="mb-6 rounded-xl bg-slate-50 px-4 py-3 text-[13px] text-[#64748B]"
-          style={{ border: '1px solid #E2E8F0' }}
-        >
-          No payment transactions recorded yet. Revenue will appear here once creator subscriptions
-          and member purchases are processed.
-        </div>
-      )}
+      <div
+        className="mb-6 rounded-xl bg-slate-50 px-4 py-3 text-[12px] text-[#64748B]"
+        style={{ border: '1px solid #E2E8F0' }}
+      >
+        <strong className="text-[#475569]">Note:</strong>{' '}
+        {noTransactions
+          ? 'No payment transactions recorded yet. Revenue will appear here once creator subscriptions and member purchases are processed.'
+          : 'Current figures may include manually entered and admin-simulated (test) transactions until Stripe processing is connected. Manual transactions have provider = "manual".'}
+      </div>
 
       {/* Fresh Collective Revenue */}
       <div className="mb-6">

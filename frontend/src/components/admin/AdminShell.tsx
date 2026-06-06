@@ -34,11 +34,10 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: 'MONEY',
     items: [
-      { href: '/admin/revenue',       label: 'Revenue' },
-      { href: '/admin/payments',      label: 'Payments' },
-      { href: '/admin/billing',       label: 'Creator Billing' },
-      { href: '/admin/subscriptions', label: 'Subscriptions' },
-      { href: '/admin/pricing',       label: 'Pricing' },
+      { href: '/admin/revenue',  label: 'Revenue' },
+      { href: '/admin/payments', label: 'Payments' },
+      { href: '/admin/billing',  label: 'Creator Billing' },
+      { href: '/admin/pricing',  label: 'Pricing' },
     ],
   },
   {

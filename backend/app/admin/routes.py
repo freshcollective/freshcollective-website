@@ -21,6 +21,7 @@ from app.admin.schemas import (
     AdminAccessRequestRow,
     AdminAccessResponse,
     AdminCollectiveRow,
+    AdminCreatorPlanCreate,
     AdminCreatorPlanRow,
     AdminCreatorRow,
     AdminCreatorSubscriptionRow,
@@ -1027,6 +1028,54 @@ def list_creator_plans(
             created_at=plan.created_at,
         ))
     return rows
+
+
+@router.post("/creator-plans", response_model=AdminCreatorPlanRow, status_code=201)
+def create_creator_plan(
+    body: AdminCreatorPlanCreate,
+    _: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> AdminCreatorPlanRow:
+    """Create a new creator billing plan. Slug must be unique. Admin only."""
+    existing = db.query(CreatorPlan).filter(CreatorPlan.slug == body.slug).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"A plan with slug '{body.slug}' already exists.")
+
+    if body.monthly_price_cents < 0:
+        raise HTTPException(status_code=422, detail="monthly_price_cents must be >= 0.")
+    if body.transaction_fee_basis_points < 0 or body.transaction_fee_basis_points > 10000:
+        raise HTTPException(status_code=422, detail="transaction_fee_basis_points must be 0–10000.")
+    if body.collective_limit < 1:
+        raise HTTPException(status_code=422, detail="collective_limit must be >= 1.")
+
+    plan = CreatorPlan(
+        id=str(uuid4()),
+        name=body.name,
+        slug=body.slug,
+        description=body.description,
+        monthly_price_cents=body.monthly_price_cents,
+        currency=body.currency.upper(),
+        transaction_fee_basis_points=body.transaction_fee_basis_points,
+        collective_limit=body.collective_limit,
+        is_active=body.is_active,
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+
+    return AdminCreatorPlanRow(
+        id=plan.id,
+        name=plan.name,
+        slug=plan.slug,
+        description=plan.description,
+        monthly_price_cents=plan.monthly_price_cents,
+        currency=plan.currency,
+        transaction_fee_basis_points=plan.transaction_fee_basis_points,
+        collective_limit=plan.collective_limit,
+        is_active=plan.is_active,
+        active_subscriptions=0,
+        created_at=plan.created_at,
+    )
 
 
 @router.get("/creator-subscriptions", response_model=list[AdminCreatorSubscriptionRow])
