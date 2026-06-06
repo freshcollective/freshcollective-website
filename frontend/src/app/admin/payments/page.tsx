@@ -565,8 +565,14 @@ export default function AdminPaymentsPage() {
                           ? fmt(row.net_creator_amount_cents, row.currency)
                           : '—'}
                       </td>
-                      <td className="px-4 py-3 text-[12px] capitalize text-[#94A3B8]">
-                        {row.payment_provider}
+                      <td className="px-4 py-3">
+                        {row.payment_provider === 'manual' ? (
+                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+                            Manual
+                          </span>
+                        ) : (
+                          <span className="text-[12px] capitalize text-[#94A3B8]">{row.payment_provider}</span>
+                        )}
                       </td>
                     </tr>
                   ))}

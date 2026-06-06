@@ -19,6 +19,13 @@ const ROLE_COLORS: Record<string, string> = {
   user: 'bg-slate-100 text-slate-500 border-slate-200',
 }
 
+function roleLabel(role: string) {
+  if (role === 'user') return 'Member'
+  if (role === 'creator') return 'Creator'
+  if (role === 'admin') return 'Admin'
+  return role
+}
+
 export default function AdminUsersPage() {
   const [rows, setRows] = useState<UserRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -63,8 +70,10 @@ export default function AdminUsersPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-[1.5rem] font-bold text-[#0F172A]">Users</h1>
-      <p className="mb-4 text-[13px] text-[#64748B]">{rows.length} total user{rows.length !== 1 ? 's' : ''}</p>
+      <div className="mb-4">
+        <h1 className="text-[1.5rem] font-bold text-[#0F172A]">All Users</h1>
+        <p className="mt-1 text-[13px] text-[#64748B]">Every account on Fresh Collective — members, creators, and platform admins. {rows.length} total.</p>
+      </div>
 
       <input
         type="search"
@@ -80,7 +89,7 @@ export default function AdminUsersPage() {
           <table className="w-full text-left">
             <thead>
               <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                {['Name', 'Email', 'Role', 'Joined Collectives', 'Owned Collectives', 'Registered'].map((h) => (
+                {['Name', 'Email', 'Role', 'Joined', 'Owns', 'Registered'].map((h) => (
                   <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
                     {h}
                   </th>
@@ -96,8 +105,8 @@ export default function AdminUsersPage() {
                   <td className="px-4 py-3 text-[13px] font-medium text-[#0F172A]">{row.name ?? '—'}</td>
                   <td className="px-4 py-3 text-[13px] text-[#475569]">{row.email}</td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${ROLE_COLORS[row.role] ?? 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                      {row.role}
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${ROLE_COLORS[row.role] ?? 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                      {roleLabel(row.role)}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-[13px] text-[#475569]">{row.joined_collectives}</td>

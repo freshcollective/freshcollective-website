@@ -200,6 +200,14 @@ export default function AdminShell({
           <span className="text-[14px] font-semibold text-[#0F172A]">Admin</span>
         </header>
 
+        {/* Mobile desktop notice */}
+        <div
+          className="lg:hidden px-4 py-2 text-center text-[12px] text-amber-700"
+          style={{ background: '#FFFBEB', borderBottom: '1px solid #FCD34D' }}
+        >
+          Fresh Collective Admin is best managed on desktop.
+        </div>
+
         <main className="flex-1 p-5 lg:p-8">{children}</main>
       </div>
     </div>

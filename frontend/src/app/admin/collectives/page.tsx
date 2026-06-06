@@ -80,7 +80,10 @@ export default function AdminCollectivesPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-[1.5rem] font-bold text-[#0F172A]">Collectives</h1>
+      <div className="mb-6">
+        <h1 className="text-[1.5rem] font-bold text-[#0F172A]">Collectives</h1>
+        <p className="mt-1 text-[13px] text-[#64748B]">All spaces on the platform. Creator details and billing are managed via Creator Billing.</p>
+      </div>
 
       {/* Tabs */}
       <div className="mb-4 flex gap-1">

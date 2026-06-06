@@ -96,7 +96,13 @@ export default function AdminAccessPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-[1.5rem] font-bold text-[#0F172A]">Access & Invites</h1>
+      <div className="mb-4">
+        <h1 className="text-[1.5rem] font-bold text-[#0F172A]">Access & Invites</h1>
+        <p className="mt-1 text-[13px] text-[#64748B]">
+          Platform-wide view of access requests and open invitations across all collectives.
+          Requests are approved or declined by each collective&rsquo;s creator.
+        </p>
+      </div>
 
       {pendingRequests.length > 0 && (
         <div
@@ -105,7 +111,7 @@ export default function AdminAccessPage() {
         >
           <span className="text-[16px]">⚠</span>
           <p className="text-[13px] font-medium text-amber-800">
-            {pendingRequests.length} pending access request{pendingRequests.length !== 1 ? 's' : ''} awaiting approval by collective creators.
+            {pendingRequests.length} pending access request{pendingRequests.length !== 1 ? 's' : ''} awaiting creator approval.
           </p>
         </div>
       )}

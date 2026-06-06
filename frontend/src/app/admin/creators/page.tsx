@@ -65,8 +65,10 @@ export default function AdminCreatorsPage() {
 
   return (
     <div>
-      <h1 className="mb-1 text-[1.5rem] font-bold text-[#0F172A]">Creators</h1>
-      <p className="mb-6 text-[13px] text-[#64748B]">{rows.length} creator{rows.length !== 1 ? 's' : ''}</p>
+      <div className="mb-6">
+        <h1 className="text-[1.5rem] font-bold text-[#0F172A]">Creators & Admins</h1>
+        <p className="mt-1 text-[13px] text-[#64748B]">Accounts with creator or admin roles — can own collectives and manage platform content. {rows.length} total.</p>
+      </div>
 
       <div className="overflow-hidden rounded-xl bg-white" style={{ border: '1px solid #E2E8F0' }}>
         {/* Desktop */}
@@ -74,7 +76,7 @@ export default function AdminCreatorsPage() {
           <table className="w-full text-left">
             <thead>
               <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                {['Name', 'Email', 'Plan', 'Subscription', 'Collectives', 'Joined'].map((h) => (
+                {['Name', 'Email', 'Plan', 'Billing Status', 'Collectives', 'Registered'].map((h) => (
                   <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
                     {h}
                   </th>

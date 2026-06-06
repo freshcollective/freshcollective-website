@@ -135,6 +135,9 @@ function PlanDropdown({
           <span className="text-[11px] font-medium text-teal-600">Saved ✓</span>
         )}
       </div>
+      {dirty && (
+        <p className="text-[10px] text-[#94A3B8]">Updates internal records only — Stripe billing will not change yet.</p>
+      )}
       {overLimit && dirty && (
         <p className="text-[10px] text-amber-600">Creator has {row.collectives_used} collectives — Basic limit is 1.</p>
       )}

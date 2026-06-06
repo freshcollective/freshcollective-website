@@ -90,7 +90,10 @@ export default function AdminOverviewPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-[1.5rem] font-bold text-[#0F172A]">Platform Overview</h1>
+      <div className="mb-6">
+        <h1 className="text-[1.5rem] font-bold text-[#0F172A]">Platform Overview</h1>
+        <p className="mt-1 text-[13px] text-[#64748B]">Platform-wide snapshot — collectives, users, revenue, and pending queue.</p>
+      </div>
 
       {needsAttention > 0 && (
         <div
@@ -135,7 +138,7 @@ export default function AdminOverviewPage() {
       <div className="mb-8">
         <h2 className="mb-3 text-[11px] font-bold uppercase tracking-wider text-[#94A3B8]">Revenue</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <StatCard label="Total Gross (AUD)" value={fmt(data.total_gross_cents)} />
+          <StatCard label="Gross Member Sales" value={fmt(data.total_gross_cents)} sub="succeeded only" />
           <StatCard label="Succeeded Transactions" value={data.succeeded_transactions} />
         </div>
       </div>
