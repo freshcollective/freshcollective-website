@@ -175,7 +175,7 @@ with something different.
 **R — Recognise** what is actually happening, beneath the surface\
 **E — Explore** where the pattern comes from and what it has been protecting\
 **A — Align** with what feels more true — not perfect, just truer\
-**L — Live** it in a real, small, experimental way
+**L — Lead** your leadership in a real, small, experimental way
 
 You will move through this framework in different seasons, with different questions. \
 Each cycle adds a layer. Each time, the shift becomes a little less effortful.
@@ -328,7 +328,7 @@ def main():  # noqa: C901
         )
         space.guidance_focus_title = "The R.E.A.L. Framework"
         space.guidance_focus_body = (
-            "Recognise · Explore · Align · Live. This four-phase framework is the through-line "
+            "Recognise · Explore · Align · Lead. This four-phase framework is the through-line "
             "of everything in the Hub. You will return to it in different seasons and with "
             "different questions."
         )
@@ -380,7 +380,7 @@ def main():  # noqa: C901
                     "The core pathway of The Natural Leader Hub. A guided journey to help you "
                     "recognise old patterns, explore what is really happening, align with your "
                     "natural design, and live your leadership in practical, everyday ways.\n\n"
-                    "Moves through four phases: Recognise · Explore · Align · Live."
+                    "Moves through four phases: Recognise · Explore · Align · Lead."
                 ),
                 "status": "active",
                 "position": 2,
@@ -565,7 +565,7 @@ def main():  # noqa: C901
                     "* **R — Recognise** the pattern\n"
                     "* **E — Explore** what is underneath it\n"
                     "* **A — Align** with something truer\n"
-                    "* **L — Live** it in a small, real way\n\n"
+                    "* **L — Lead** your leadership in a real, everyday way\n\n"
                     "You will find this framework woven through every pathway.\n\n"
                     "**Where to begin:**\n"
                     "If you are new, start with **The R.E.A.L. Journey** — it is the core pathway and "
@@ -1134,7 +1134,7 @@ def main():  # noqa: C901
                 "content_body": (
                     "A simple 90-day planning template for integrating what you are learning "
                     "in the Hub into your real life — at work, at home, in your relationships.\n\n"
-                    "Designed to work with the Live phase of the R.E.A.L. Framework.\n\n"
+                    "Designed to work with the Lead phase of the R.E.A.L. Framework.\n\n"
                     "*[Placeholder — the 90-Day Integration Plan template will be added here.]*"
                 ),
             },
@@ -1378,7 +1378,7 @@ def main():  # noqa: C901
                 "title": "90-Day Leadership Integration Plan",
                 "description": (
                     "A planning template for integrating what you are learning in the Hub into "
-                    "your real life over 90 days. Supports the Live phase of the R.E.A.L. Framework."
+                    "your real life over 90 days. Supports the Lead phase of the R.E.A.L. Framework."
                 ),
                 "sort_order": 6,
             },

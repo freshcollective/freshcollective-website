@@ -148,7 +148,7 @@ function ResourceCard({
           <p className="mb-4 truncate text-[11.5px] text-slate-400">{meta}</p>
         )}
 
-        {resolvedUrl && (
+        {resolvedUrl ? (
           <a
             href={resolvedUrl}
             target={isFile ? undefined : '_blank'}
@@ -159,6 +159,13 @@ function ResourceCard({
           >
             {actionLabel}
           </a>
+        ) : (
+          <span
+            className="inline-flex items-center rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide"
+            style={{ background: 'rgba(0,0,0,0.05)', color: 'rgba(0,0,0,0.35)' }}
+          >
+            Coming soon
+          </span>
         )}
       </div>
     </div>
