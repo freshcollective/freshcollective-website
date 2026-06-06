@@ -31,7 +31,9 @@ interface PaymentTransaction {
   platform_fee_cents: number
   net_creator_amount_cents: number | null
   net_platform_amount_cents: number | null
+  provider_checkout_session_id: string | null
   provider_payment_intent_id: string | null
+  payout_status: string
   notes: string | null
   created_at: string
 }
@@ -105,6 +107,40 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${cls}`}>
       {status.replace(/_/g, ' ')}
+    </span>
+  )
+}
+
+function ProviderBadge({ provider }: { provider: string }) {
+  if (provider === 'manual') {
+    return (
+      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
+        Manual
+      </span>
+    )
+  }
+  if (provider === 'stripe') {
+    return (
+      <span className="inline-flex items-center rounded-full border border-teal-200 bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-700">
+        Stripe
+      </span>
+    )
+  }
+  return <span className="text-[12px] capitalize text-[#94A3B8]">{provider}</span>
+}
+
+function PayoutBadge({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    pending:        'bg-amber-50 text-amber-700 border-amber-200',
+    paid:           'bg-teal-50 text-teal-700 border-teal-200',
+    not_applicable: 'bg-slate-100 text-slate-400 border-slate-200',
+    held:           'bg-purple-50 text-purple-700 border-purple-200',
+  }
+  const cls = styles[status] ?? 'bg-slate-100 text-slate-400 border-slate-200'
+  const label = status === 'not_applicable' ? 'N/A' : status.replace(/_/g, ' ')
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${cls}`}>
+      {label}
     </span>
   )
 }
@@ -521,7 +557,7 @@ export default function AdminPaymentsPage() {
               <table className="w-full text-left">
                 <thead>
                   <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                    {['Date', 'Type', 'Status', 'Payer', 'Creator', 'Space / Pathway', 'Gross', 'FC Fee', 'Creator Net', 'Provider'].map((h) => (
+                    {['Date', 'Type', 'Status', 'Payer', 'Creator', 'Space / Pathway', 'Gross', 'FC Fee', 'Creator Net', 'Payout', 'Provider', 'Session'].map((h) => (
                       <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
                         {h}
                       </th>
@@ -566,13 +602,15 @@ export default function AdminPaymentsPage() {
                           : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        {row.payment_provider === 'manual' ? (
-                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
-                            Manual
-                          </span>
-                        ) : (
-                          <span className="text-[12px] capitalize text-[#94A3B8]">{row.payment_provider}</span>
-                        )}
+                        <PayoutBadge status={row.payout_status} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <ProviderBadge provider={row.payment_provider} />
+                      </td>
+                      <td className="px-4 py-3 text-[11px] font-mono text-[#94A3B8]">
+                        {row.provider_checkout_session_id
+                          ? row.provider_checkout_session_id.slice(0, 16) + '…'
+                          : '—'}
                       </td>
                     </tr>
                   ))}

@@ -5,13 +5,14 @@ Flow:
   1. Validate pathway exists, is active, is one_time, has a price.
   2. Check the member does not already have an active entitlement.
   3. Resolve the creator's platform fee rate from their active plan.
-  4. Create a pending PaymentTransaction.
-  5. Create a Stripe Checkout Session with all metadata.
-  6. Store the Stripe session ID on the transaction.
+  4. Pre-generate a transaction UUID.
+  5. Create the Stripe Checkout Session (no DB writes yet, so nothing to undo on failure).
+  6. Create the pending PaymentTransaction with provider_checkout_session_id already
+     set — single atomic commit.
   7. Return the Stripe-hosted checkout_url for the frontend to redirect to.
 
 Access is NOT granted here — it is granted by the webhook handler when
-Stripe confirms the payment.
+Stripe confirms the payment via checkout.session.completed.
 """
 
 import logging
@@ -117,13 +118,17 @@ def create_pathway_checkout_session(
         raise HTTPException(status_code=404, detail="Pathway not found.")
 
     p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
-    if p_status not in ("active",):
+    if p_status != "active":
         raise HTTPException(
             status_code=400,
             detail=f"Pathway is not available for purchase (status: {p_status}).",
         )
 
-    access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
+    access_type = (
+        pathway.access_type.value
+        if hasattr(pathway.access_type, "value")
+        else str(pathway.access_type or "free")
+    )
     if access_type != "one_time":
         raise HTTPException(
             status_code=400,
@@ -170,39 +175,24 @@ def create_pathway_checkout_session(
 
     fee_bps, creator_plan_id, creator_sub_id = _resolve_fee_bps(creator_id, db)
 
-    # --- Fee calculation ------------------------------------------------------
+    # --- Fee calculation (all calculations done before any Stripe call) ------
     gross = pathway.price_cents
     currency = (pathway.currency or "AUD").upper()
     platform_fee = round(gross * fee_bps / 10000)
     net_creator = gross - platform_fee
 
-    # --- Create pending PaymentTransaction ------------------------------------
-    now = datetime.utcnow()
-    txn = PaymentTransaction(
-        id=str(uuid4()),
-        transaction_type=PaymentTransactionType.member_pathway_purchase,
-        status=PaymentTransactionStatus.pending,
-        payment_provider=PaymentProvider.stripe,
-        payer_user_id=current_user.id,
-        creator_user_id=creator_id,
-        space_id=space.id,
-        pathway_id=pathway.id,
-        creator_plan_id=creator_plan_id,
-        creator_subscription_id=creator_sub_id,
-        currency=currency,
-        gross_amount_cents=gross,
-        platform_fee_basis_points=fee_bps,
-        platform_fee_cents=platform_fee,
-        net_creator_amount_cents=net_creator,
-        net_platform_amount_cents=platform_fee,
-        payout_status=PayoutStatus.pending,
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(txn)
-    db.flush()  # get txn.id before Stripe call
+    # --- Pre-generate transaction ID -----------------------------------------
+    # We generate the ID here so it can be embedded in Stripe metadata before
+    # the DB row is created. This allows the webhook to find the transaction
+    # even if the DB commit races with the Stripe call.
+    txn_id = str(uuid4())
 
-    # --- Create Stripe Checkout Session ---------------------------------------
+    # --- Create Stripe Checkout Session (no DB writes yet) -------------------
+    # Creating the session before any DB writes means there is nothing to roll
+    # back if Stripe fails. If Stripe succeeds but the DB commit fails below,
+    # the session will exist in Stripe but have no corresponding record here —
+    # this is logged and the webhook will handle it gracefully by logging an
+    # error (no duplicate entitlements, no money moved until paid).
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
@@ -219,8 +209,9 @@ def create_pathway_checkout_session(
                     "quantity": 1,
                 }
             ],
+            # Metadata on the Checkout Session — used by checkout.session.completed
             metadata={
-                "transaction_id": txn.id,
+                "transaction_id": txn_id,
                 "pathway_id": pathway.id,
                 "space_id": space.id,
                 "payer_user_id": current_user.id,
@@ -228,26 +219,57 @@ def create_pathway_checkout_session(
                 "platform_fee_bps": str(fee_bps),
                 "creator_plan_id": creator_plan_id or "",
             },
+            # Metadata mirrored onto the PaymentIntent — used by payment_intent.payment_failed
+            payment_intent_data={
+                "metadata": {
+                    "transaction_id": txn_id,
+                    "pathway_id": pathway.id,
+                    "payer_user_id": current_user.id,
+                }
+            },
             customer_email=current_user.email,
             success_url=body.success_url,
             cancel_url=body.cancel_url,
         )
     except stripe.StripeError as exc:
-        logger.error("Stripe session creation failed: %s", exc)
-        db.rollback()
+        logger.error("Stripe session creation failed for pathway=%s user=%s: %s", pathway.id, current_user.id, exc)
         raise HTTPException(
             status_code=502,
             detail="Failed to create checkout session. Please try again.",
         )
 
-    # --- Store session ID on the transaction ----------------------------------
-    txn.provider_checkout_session_id = session.id
-    txn.updated_at = datetime.utcnow()
+    # --- Create pending PaymentTransaction with session ID already set -------
+    # Single atomic commit: the transaction row is complete from the start.
+    # The unique index on provider_checkout_session_id prevents duplicates.
+    now = datetime.utcnow()
+    txn = PaymentTransaction(
+        id=txn_id,
+        transaction_type=PaymentTransactionType.member_pathway_purchase,
+        status=PaymentTransactionStatus.pending,
+        payment_provider=PaymentProvider.stripe,
+        payer_user_id=current_user.id,
+        creator_user_id=creator_id,
+        space_id=space.id,
+        pathway_id=pathway.id,
+        creator_plan_id=creator_plan_id,
+        creator_subscription_id=creator_sub_id,
+        currency=currency,
+        gross_amount_cents=gross,
+        platform_fee_basis_points=fee_bps,
+        platform_fee_cents=platform_fee,
+        net_creator_amount_cents=net_creator,
+        net_platform_amount_cents=platform_fee,
+        provider_checkout_session_id=session.id,
+        payout_status=PayoutStatus.pending,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(txn)
     db.commit()
 
     logger.info(
-        "Checkout session created: txn=%s session=%s pathway=%s user=%s",
-        txn.id, session.id, pathway.id, current_user.id,
+        "Checkout session created: txn=%s session=%s pathway=%s user=%s fee_bps=%s",
+        txn_id, session.id, pathway.id, current_user.id, fee_bps,
     )
 
     return PathwayCheckoutResponse(checkout_url=session.url)

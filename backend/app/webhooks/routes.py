@@ -4,16 +4,22 @@ POST /api/webhooks/stripe — Stripe webhook receiver.
 IMPORTANT: This endpoint must read the raw request body BEFORE any JSON
 parsing, otherwise Stripe signature verification will fail.
 
+Idempotency strategy:
+  - Transaction rows are locked with SELECT FOR UPDATE before any update,
+    preventing concurrent webhook deliveries from racing into duplicate processing.
+  - Status checks after the lock ensure idempotent handling of re-delivered events.
+  - A partial unique index on provider_checkout_session_id prevents duplicate rows.
+
 Handled events:
-  checkout.session.completed  → grant access, update PaymentTransaction
-  checkout.session.expired    → mark PaymentTransaction cancelled
+  checkout.session.completed    → grant access, update PaymentTransaction
+  checkout.session.expired      → mark PaymentTransaction cancelled
   payment_intent.payment_failed → mark PaymentTransaction failed
 
 TODO (Phase 2+):
-  charge.refunded             → revoke entitlement, update payout_status
-  charge.dispute.created      → hold payout
-  invoice.payment_succeeded   → creator subscription billing (Phase 3)
-  invoice.payment_failed      → creator subscription past_due (Phase 3)
+  charge.refunded               → revoke entitlement, update payout_status
+  charge.dispute.created        → hold payout
+  invoice.payment_succeeded     → creator subscription billing (Phase 3)
+  invoice.payment_failed        → creator subscription past_due (Phase 3)
 """
 
 import logging
@@ -99,13 +105,8 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     """
     checkout.session.completed — payment confirmed by Stripe.
 
-    1. Find the pending PaymentTransaction via provider_checkout_session_id.
-    2. Idempotency: skip if already succeeded.
-    3. Confirm payment_status == 'paid'.
-    4. Update transaction to succeeded, store Stripe IDs.
-    5. Optionally capture Stripe processing fee from balance_transaction.
-    6. Create or reactivate PathwayEntitlement.
-    7. Link entitlement to transaction.
+    Idempotency: rows are locked with SELECT FOR UPDATE before mutation.
+    Re-delivered events that arrive after status==succeeded are skipped cleanly.
     """
     session_id: str = session.get("id", "")
     payment_status: str = session.get("payment_status", "")
@@ -126,24 +127,34 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
 
     if payment_status != "paid":
         logger.warning(
-            "checkout.session.completed with payment_status=%s for session=%s — skipping.",
+            "checkout.session.completed payment_status=%s session=%s — skipping.",
             payment_status, session_id,
         )
         return
 
-    # --- Find transaction via session ID (fast path) or metadata (fallback) --
+    # --- Lock transaction row to prevent concurrent duplicate processing -----
+    # with_for_update() issues SELECT ... FOR UPDATE, serialising concurrent
+    # webhook deliveries for the same session. The second delivery will wait
+    # for the first to commit, then see status==succeeded and return early.
     txn = (
         db.query(PaymentTransaction)
         .filter(PaymentTransaction.provider_checkout_session_id == session_id)
+        .with_for_update()
         .first()
     )
     if txn is None:
-        # Fallback: look up by ID from metadata
-        txn = db.query(PaymentTransaction).filter(PaymentTransaction.id == transaction_id).first()
+        # Fallback: look up by transaction_id from metadata (handles edge case
+        # where session_id was not stored before server restart)
+        txn = (
+            db.query(PaymentTransaction)
+            .filter(PaymentTransaction.id == transaction_id)
+            .with_for_update()
+            .first()
+        )
 
     if txn is None:
         logger.error(
-            "checkout.session.completed: no PaymentTransaction found for session=%s txn_id=%s",
+            "checkout.session.completed: no PaymentTransaction found session=%s txn_id=%s",
             session_id, transaction_id,
         )
         return
@@ -151,12 +162,14 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     # --- Idempotency: already processed? ------------------------------------
     if txn.status == PaymentTransactionStatus.succeeded:
         logger.info(
-            "checkout.session.completed: already processed for session=%s txn=%s — skipping.",
+            "checkout.session.completed: already processed session=%s txn=%s — skipping.",
             session_id, txn.id,
         )
         return
 
-    # --- Retrieve Stripe processing fee (best-effort) -----------------------
+    # --- Retrieve Stripe processing fee (best-effort, informational only) ---
+    # FC absorbs the Stripe fee — it is NOT deducted from creator net.
+    # Stored for reporting purposes only.
     processing_fee_cents: int | None = None
     if payment_intent_id:
         try:
@@ -170,12 +183,12 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
                 if bt and hasattr(bt, "fee"):
                     processing_fee_cents = int(bt.fee)
         except Exception as exc:
-            logger.warning("Could not retrieve processing fee from Stripe: %s", exc)
+            logger.warning("Could not retrieve Stripe processing fee: %s", exc)
 
     # --- Update transaction to succeeded ------------------------------------
     now = datetime.utcnow()
     txn.status = PaymentTransactionStatus.succeeded
-    txn.provider_checkout_session_id = session_id
+    txn.provider_checkout_session_id = session_id   # ensure it's set (fallback path)
     txn.provider_payment_intent_id = payment_intent_id
     txn.processing_fee_cents = processing_fee_cents
     txn.payout_status = PayoutStatus.pending
@@ -185,7 +198,7 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     pathway = db.query(Pathway).filter(Pathway.id == pathway_id).first()
     if not pathway:
         logger.error(
-            "checkout.session.completed: pathway %s not found — transaction updated but no entitlement created.",
+            "checkout.session.completed: pathway %s not found — txn updated but no entitlement.",
             pathway_id,
         )
         db.commit()
@@ -202,17 +215,17 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     )
 
     if existing_ent and existing_ent.status == EntitlementStatus.active:
-        # Already active — update Stripe fields for completeness
+        # Already active (e.g. re-delivered after first processing) — update Stripe fields only
         existing_ent.stripe_checkout_session_id = session_id
         existing_ent.stripe_payment_intent_id = payment_intent_id
         existing_ent.updated_at = now
         ent = existing_ent
         logger.info(
-            "checkout.session.completed: entitlement already active for user=%s pathway=%s",
+            "checkout.session.completed: entitlement already active user=%s pathway=%s",
             payer_user_id, pathway_id,
         )
     elif existing_ent:
-        # Reactivate an inactive/revoked entitlement
+        # Reactivate a revoked/expired/cancelled entitlement
         existing_ent.status = EntitlementStatus.active
         existing_ent.source = EntitlementSource.one_time_purchase
         existing_ent.stripe_checkout_session_id = session_id
@@ -223,11 +236,10 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
         existing_ent.updated_at = now
         ent = existing_ent
         logger.info(
-            "checkout.session.completed: reactivated entitlement for user=%s pathway=%s",
+            "checkout.session.completed: reactivated entitlement user=%s pathway=%s",
             payer_user_id, pathway_id,
         )
     else:
-        # New entitlement
         ent = PathwayEntitlement(
             id=str(uuid4()),
             user_id=payer_user_id,
@@ -242,9 +254,9 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
             updated_at=now,
         )
         db.add(ent)
-        db.flush()
+        db.flush()  # populate ent.id so we can reference it below
         logger.info(
-            "checkout.session.completed: created entitlement %s for user=%s pathway=%s",
+            "checkout.session.completed: created entitlement %s user=%s pathway=%s",
             ent.id, payer_user_id, pathway_id,
         )
 
@@ -259,13 +271,14 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
 
 def _handle_checkout_expired(session: dict, db: Session) -> None:
     """
-    checkout.session.expired — member did not complete checkout.
-    Mark the pending PaymentTransaction as cancelled if it still exists.
+    checkout.session.expired — member did not complete checkout within the session window.
+    Cancel the pending PaymentTransaction if it still exists and is still pending.
     """
     session_id: str = session.get("id", "")
     txn = (
         db.query(PaymentTransaction)
         .filter(PaymentTransaction.provider_checkout_session_id == session_id)
+        .with_for_update()
         .first()
     )
     if txn and txn.status == PaymentTransactionStatus.pending:
@@ -279,17 +292,47 @@ def _handle_checkout_expired(session: dict, db: Session) -> None:
 def _handle_payment_failed(payment_intent: dict, db: Session) -> None:
     """
     payment_intent.payment_failed — Stripe could not collect payment.
-    Mark the associated PaymentTransaction as failed.
+
+    Lookup strategy:
+      1. transaction_id from payment intent metadata (set via payment_intent_data at session creation)
+      2. provider_payment_intent_id (set once checkout.session.completed fires — usually not needed here)
+
+    Note: For Stripe Checkout, this event fires when the customer's payment attempt
+    fails mid-session (e.g. card declined). Stripe will let them retry within the
+    same session. The session only fully fails once it expires, at which point
+    checkout.session.expired fires. This handler is a belt-and-suspenders cleanup.
     """
     pi_id: str = payment_intent.get("id", "")
-    txn = (
-        db.query(PaymentTransaction)
-        .filter(PaymentTransaction.provider_payment_intent_id == pi_id)
-        .first()
-    )
+    pi_metadata: dict = payment_intent.get("metadata") or {}
+    txn_id_from_meta: str = pi_metadata.get("transaction_id", "")
+
+    txn = None
+
+    # Primary: look up by transaction_id embedded in PI metadata
+    if txn_id_from_meta:
+        txn = (
+            db.query(PaymentTransaction)
+            .filter(PaymentTransaction.id == txn_id_from_meta)
+            .with_for_update()
+            .first()
+        )
+
+    # Fallback: look up by PI ID (only works if checkout.session.completed already ran,
+    # which shouldn't happen here, but covers edge cases)
+    if txn is None and pi_id:
+        txn = (
+            db.query(PaymentTransaction)
+            .filter(PaymentTransaction.provider_payment_intent_id == pi_id)
+            .with_for_update()
+            .first()
+        )
+
     if txn and txn.status == PaymentTransactionStatus.pending:
         txn.status = PaymentTransactionStatus.failed
         txn.payout_status = PayoutStatus.not_applicable
+        txn.provider_payment_intent_id = pi_id
         txn.updated_at = datetime.utcnow()
         db.commit()
         logger.info("payment_intent.payment_failed: failed txn=%s pi=%s", txn.id, pi_id)
+    elif txn is None:
+        logger.warning("payment_intent.payment_failed: no txn found for pi=%s meta_txn=%s", pi_id, txn_id_from_meta)
