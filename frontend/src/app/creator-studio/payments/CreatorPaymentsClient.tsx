@@ -298,6 +298,16 @@ export default function CreatorPaymentsClient({
         </p>
       </div>
 
+      {stripeTestMode && (
+        <div
+          className="mb-4 flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px]"
+          style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}
+        >
+          <span className="font-semibold" style={{ color: '#92400E' }}>Test mode — sandbox data only.</span>
+          <span style={{ color: '#78350F' }}>These transactions were made using Stripe test cards and are not real payments.</span>
+        </div>
+      )}
+
       {/* Loading */}
       {loading && (
         <div className="flex items-center gap-2 text-[14px] text-[#64748B]">
@@ -325,6 +335,7 @@ export default function CreatorPaymentsClient({
             <SummaryCard
               label="FC Fee"
               value={summary ? fmt(summary.total_platform_fee_cents, displayCurrency) : '—'}
+              sub="platform fee retained"
               accent
             />
             <SummaryCard
@@ -383,6 +394,7 @@ export default function CreatorPaymentsClient({
                     {rows.map((row, i) => (
                       <tr
                         key={row.id}
+                        className={row.status !== 'succeeded' ? 'opacity-50' : undefined}
                         style={{ borderBottom: i < rows.length - 1 ? '1px solid #F1F5F9' : undefined }}
                       >
                         <td className="px-4 py-3 text-[12px] text-[#475569] whitespace-nowrap">
@@ -419,7 +431,7 @@ export default function CreatorPaymentsClient({
               {/* Mobile cards */}
               <div className="divide-y divide-[#F1F5F9] lg:hidden">
                 {rows.map((row) => (
-                  <div key={row.id} className="p-4">
+                  <div key={row.id} className={`p-4${row.status !== 'succeeded' ? ' opacity-50' : ''}`}>
                     <div className="mb-2 flex items-start justify-between gap-2">
                       <div>
                         <p className="text-[13px] font-medium text-[#0F172A]">{labelType(row.transaction_type)}</p>

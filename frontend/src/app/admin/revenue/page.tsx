@@ -71,6 +71,7 @@ function SummaryCard({
 export default function AdminRevenuePage() {
   const [summary, setSummary] = useState<RevenueSummary | null>(null)
   const [byCreator, setByCreator] = useState<RevenueByCreatorRow[]>([])
+  const [stripeTestMode, setStripeTestMode] = useState<boolean | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -84,8 +85,15 @@ export default function AdminRevenuePage() {
         if (!r.ok) throw new Error(`By-creator: Error ${r.status}`)
         return r.json() as Promise<RevenueByCreatorRow[]>
       }),
+      fetch(apiUrl('/api/checkout/status'), { credentials: 'include' }).then((r) =>
+        r.ok ? r.json() as Promise<{ stripe_enabled: boolean; stripe_test_mode: boolean }> : null
+      ),
     ])
-      .then(([s, c]) => { setSummary(s); setByCreator(c) })
+      .then(([s, c, status]) => {
+        setSummary(s)
+        setByCreator(c)
+        if (status) setStripeTestMode(status.stripe_test_mode)
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
@@ -116,6 +124,16 @@ export default function AdminRevenuePage() {
         Fresh Collective revenue from creator subscriptions and platform fees on member purchases.
         Gross creator sales are shown separately — they belong to creators, not Fresh Collective.
       </p>
+
+      {stripeTestMode && (
+        <div
+          className="mb-4 flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px]"
+          style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}
+        >
+          <span className="font-semibold" style={{ color: '#92400E' }}>Test mode — sandbox data only.</span>
+          <span style={{ color: '#78350F' }}>All figures below reflect Stripe test transactions, not real revenue.</span>
+        </div>
+      )}
 
       <div
         className="mb-6 rounded-xl bg-slate-50 px-4 py-3 text-[12px] text-[#64748B]"

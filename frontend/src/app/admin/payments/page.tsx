@@ -583,6 +583,11 @@ export default function AdminPaymentsPage() {
           style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}
         >
           <p>
+            <strong className="text-[#475569]">Summary totals:</strong>{' '}
+            Gross sales, FC fees, and creator net figures only include <strong className="text-[#475569]">succeeded</strong> transactions.
+            Pending, failed, and cancelled rows are shown in the table below but excluded from all totals.
+          </p>
+          <p>
             <strong className="text-[#475569]">Manual / test transactions:</strong>{' '}
             Transactions with provider <span className="font-mono text-[11px] text-[#475569]">manual</span> are
             admin-simulated or manually entered records — not Stripe-processed payments. These are useful for
@@ -624,6 +629,7 @@ export default function AdminPaymentsPage() {
                   {rows.map((row, i) => (
                     <tr
                       key={row.id}
+                      className={row.status !== 'succeeded' ? 'opacity-50' : undefined}
                       style={{ borderBottom: i < rows.length - 1 ? '1px solid #F1F5F9' : undefined }}
                     >
                       <td className="px-4 py-3 text-[12px] text-[#475569] whitespace-nowrap">
@@ -677,7 +683,7 @@ export default function AdminPaymentsPage() {
             {/* Mobile cards */}
             <div className="divide-y divide-[#F1F5F9] lg:hidden">
               {rows.map((row) => (
-                <div key={row.id} className="p-4">
+                <div key={row.id} className={`p-4${row.status !== 'succeeded' ? ' opacity-50' : ''}`}>
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <div>
                       <p className="text-[13px] font-medium text-[#0F172A]">{labelType(row.transaction_type)}</p>
