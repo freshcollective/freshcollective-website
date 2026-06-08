@@ -207,7 +207,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
 
           {/* Cover / hero */}
           <div
-            className="overflow-hidden rounded-2xl"
+            className="relative overflow-hidden rounded-2xl"
             style={{ background: cs.background, backgroundSize: cs.backgroundSize ?? 'auto' }}
           >
             {coverImageUrl && (

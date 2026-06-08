@@ -386,7 +386,7 @@ export default async function PathwayAboutPage({ params }: Props) {
                 >
                   {unlockLabel ?? 'Unlock'}
                 </Link>
-                <p className="mt-2 text-center text-[11px] text-slate-400">Checkout coming soon</p>
+                <p className="mt-2 text-center text-[11px] text-slate-400">Secure checkout via Stripe</p>
               </>
             ) : pathway.steps.length > 0 && continueHref ? (
               <Link

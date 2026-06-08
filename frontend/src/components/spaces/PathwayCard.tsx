@@ -101,7 +101,7 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
                   Learn more →
                 </span>
                 <span className="block text-[10px] text-slate-400 mt-0.5">
-                  Unlocking coming soon
+                  Secure checkout via Stripe
                 </span>
               </div>
             </div>
