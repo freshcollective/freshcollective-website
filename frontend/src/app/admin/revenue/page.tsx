@@ -123,8 +123,8 @@ export default function AdminRevenuePage() {
       >
         <strong className="text-[#475569]">Note:</strong>{' '}
         {noTransactions
-          ? 'No payment transactions recorded yet. Revenue will appear here once creator subscriptions and member purchases are processed.'
-          : 'Current figures may include manually entered and admin-simulated (test) transactions until Stripe processing is connected. Manual transactions have provider = "manual".'}
+          ? 'No payment transactions recorded yet. Revenue will appear here once member purchases are processed through Stripe.'
+          : 'Figures include all succeeded transactions. Manual/admin-simulated transactions have provider = "manual". Stripe transactions have provider = "stripe". Creator payouts are tracked as pending and disbursed manually in Phase 1.'}
       </div>
 
       {/* Fresh Collective Revenue */}

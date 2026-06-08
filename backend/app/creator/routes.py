@@ -18,6 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.dependencies import get_creator_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.storage import delete_file, save_file, save_media_file
 from app.creator.schemas import (
@@ -325,9 +326,13 @@ def get_creator_billing(
         ),
         available_plans=[CreatorPlanOut.model_validate(p) for p in available_plans],
         payment_setup=CreatorPaymentSetup(
-            creator_billing_connected=False,   # TODO: Stripe billing — True when subscription is Stripe-managed
-            member_payments_connected=False,   # TODO: Stripe Connect — True when member checkout is live
-            stripe_connect_connected=False,    # TODO: Stripe Connect — True when creator's Connect account is set up
+            creator_billing_connected=False,   # Phase 3: True when creator subscription is Stripe-managed
+            member_payments_connected=settings.stripe_enabled,  # Phase 1: True when FC platform Stripe is configured
+            stripe_connect_connected=False,    # Phase 2+: True when creator's own Stripe Connect account is active
+            stripe_test_mode=bool(
+                settings.stripe_secret_key
+                and settings.stripe_secret_key.startswith("sk_test_")
+            ),
         ),
     )
 

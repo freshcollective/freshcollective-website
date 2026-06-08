@@ -116,9 +116,13 @@ const PRICING_OPTIONS = [
 export default function CreatorPaymentsClient({
   feeBasisPoints,
   currency,
+  stripeEnabled,
+  stripeTestMode,
 }: {
   feeBasisPoints: number
   currency: string
+  stripeEnabled: boolean
+  stripeTestMode: boolean
 }) {
   const [summary, setSummary] = useState<CreatorPaymentSummary | null>(null)
   const [rows, setRows] = useState<CreatorPaymentTransaction[]>([])
@@ -161,38 +165,64 @@ export default function CreatorPaymentsClient({
         </p>
       </div>
 
-      {/* Payment setup status */}
-      <div
-        className="mb-6 rounded-2xl p-5"
-        style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}
-      >
-        <div className="flex items-start gap-3">
-          <div
-            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-            style={{ background: '#FEF3C7', color: '#92400E' }}
-          >
-            !
-          </div>
-          <div className="flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[14px] font-semibold" style={{ color: '#92400E' }}>
-                Payment setup not connected
-              </p>
-              <span
-                className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                style={{ background: '#FDE68A', color: '#78350F' }}
-              >
-                Stripe not configured
-              </span>
+      {/* Platform payment status */}
+      {stripeEnabled ? (
+        <div
+          className="mb-6 rounded-2xl p-5"
+          style={{ background: '#F0FDFB', border: '1px solid #99E6E4' }}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+              style={{ background: '#38A09E' }}
+            >
+              ✓
             </div>
-            <p className="mt-1 text-[13px] leading-relaxed" style={{ color: '#78350F' }}>
-              Stripe is not yet connected to this collective. Members cannot purchase access until
-              payment processing is set up. Your earnings estimates below are based on any
-              manually recorded transactions only.
-            </p>
+            <div className="flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[14px] font-semibold" style={{ color: '#0F766E' }}>
+                  Paid pathway checkout is available
+                </p>
+                {stripeTestMode && (
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                    style={{ background: '#FDE68A', color: '#78350F' }}
+                  >
+                    Test mode
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-[13px] leading-relaxed" style={{ color: '#0F766E' }}>
+                Payments are processed through Fresh Collective during this phase. Members can
+                purchase paid pathways now. You do not need to connect your own Stripe account.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div
+          className="mb-6 rounded-2xl p-5"
+          style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+              style={{ background: '#FEF3C7', color: '#92400E' }}
+            >
+              !
+            </div>
+            <div className="flex-1">
+              <p className="text-[14px] font-semibold" style={{ color: '#92400E' }}>
+                Payments are not configured yet
+              </p>
+              <p className="mt-1 text-[13px] leading-relaxed" style={{ color: '#78350F' }}>
+                The Fresh Collective platform Stripe account has not been set up. Members cannot
+                purchase paid pathways until this is resolved. Contact Fresh Collective support.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Creator plan */}
       <div
@@ -237,8 +267,8 @@ export default function CreatorPaymentsClient({
           </span>
         </div>
         <p className="mb-4 text-[13px]" style={{ color: '#64748B' }}>
-          Choose how members access your collective. Pricing configuration will be available once
-          Stripe is connected.
+          Choose how members access your collective. Pricing configuration will be available in a
+          future update.
         </p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {PRICING_OPTIONS.map((opt) => (
@@ -316,8 +346,9 @@ export default function CreatorPaymentsClient({
           >
             <span className="mt-0.5 shrink-0 text-[#94A3B8]">ℹ</span>
             <span>
-              Payouts are not connected yet. This page estimates your earnings from member payments.
-              Your transaction fee is{' '}
+              Your creator earnings are tracked as pending payout. Automatic payouts via Stripe
+              Connect are coming in a future update — for now, payouts are handled manually by
+              Fresh Collective. Your transaction fee is{' '}
               <span className="font-semibold text-[#0F172A]">{feeDisplay}</span>{' '}
               per sale.
             </span>
@@ -331,7 +362,7 @@ export default function CreatorPaymentsClient({
             >
               <p className="text-[15px] font-medium text-[#0F172A]">No member payments yet.</p>
               <p className="mt-2 text-[13px] text-[#94A3B8]">
-                Checkout is not connected yet. When members purchase pathways, transactions will appear here.
+                When members purchase paid pathways, transactions will appear here.
               </p>
             </div>
           ) : (

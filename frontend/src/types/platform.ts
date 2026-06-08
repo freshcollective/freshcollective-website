@@ -672,8 +672,9 @@ export interface CreatorUsage {
 
 export interface CreatorPaymentSetup {
   creator_billing_connected: boolean
-  member_payments_connected: boolean
-  stripe_connect_connected: boolean
+  member_payments_connected: boolean  // True when FC platform Stripe is configured for member checkout
+  stripe_connect_connected: boolean   // True when creator's own Stripe Connect account is active (Phase 2+)
+  stripe_test_mode: boolean           // True when platform is using Stripe test keys
 }
 
 export interface CreatorBillingResponse {

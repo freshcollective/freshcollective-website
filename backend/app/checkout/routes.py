@@ -52,6 +52,24 @@ router = APIRouter(prefix="/api/checkout", tags=["checkout"])
 _DEFAULT_FEE_BPS = 800
 
 
+@router.get("/status")
+def checkout_status(
+    _: User = Depends(get_current_user),
+) -> dict:
+    """
+    Return platform payment configuration status.
+    Used by Admin and Creator Studio to show accurate Stripe setup state.
+    """
+    test_mode = bool(
+        settings.stripe_secret_key
+        and settings.stripe_secret_key.startswith("sk_test_")
+    )
+    return {
+        "stripe_enabled": settings.stripe_enabled,
+        "stripe_test_mode": test_mode,
+    }
+
+
 def _resolve_fee_bps(creator_id: str | None, db: Session) -> tuple[int, str | None, str | None]:
     """
     Return (fee_bps, creator_plan_id, creator_subscription_id) for the creator.

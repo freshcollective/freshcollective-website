@@ -1018,9 +1018,10 @@ class CreatorUsage(BaseModel):
 
 
 class CreatorPaymentSetup(BaseModel):
-    creator_billing_connected: bool   # True when creator's Stripe billing is active
-    member_payments_connected: bool   # True when member checkout is live
-    stripe_connect_connected: bool    # True when Stripe Connect is configured
+    creator_billing_connected: bool   # True when creator's Stripe subscription billing is active
+    member_payments_connected: bool   # True when FC platform Stripe is configured for member checkout
+    stripe_connect_connected: bool    # True when creator's own Stripe Connect account is set up (Phase 2+)
+    stripe_test_mode: bool            # True when platform is using Stripe test keys
 
 
 class CreatorBillingResponse(BaseModel):

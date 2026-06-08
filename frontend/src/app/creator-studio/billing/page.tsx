@@ -278,7 +278,7 @@ export default async function BillingPage() {
       >
         <h2 className="mb-1 text-[15px] font-semibold text-navy-900">Plan comparison</h2>
         <p className="mb-5 text-[13px] text-slate-500">
-          Upgrade and downgrade will be available when Stripe billing is connected.
+          Plan changes are managed by Fresh Collective. Automatic plan upgrades will be available in a future update.
         </p>
         <div className="grid gap-4 md:grid-cols-2">
           {available_plans.map((plan) => (
@@ -310,8 +310,14 @@ export default async function BillingPage() {
             <div>
               <p className="text-[13px] font-medium text-navy-900">Member payments</p>
               <p className="text-[12px] text-slate-500">
-                Stripe Connect — coming soon
-                {/* TODO: Stripe Connect — show connected status when creator's Connect account is configured */}
+                {payment_setup.member_payments_connected
+                  ? 'Processed through Fresh Collective · Paid pathway checkout is live'
+                  : 'Platform Stripe not yet configured · Contact Fresh Collective'}
+                {payment_setup.member_payments_connected && payment_setup.stripe_test_mode && (
+                  <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                    Test mode
+                  </span>
+                )}
               </p>
             </div>
             <StatusBadge connected={payment_setup.member_payments_connected} />
@@ -319,24 +325,26 @@ export default async function BillingPage() {
 
           <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
             <div>
-              <p className="text-[13px] font-medium text-navy-900">Stripe Connect</p>
+              <p className="text-[13px] font-medium text-navy-900">Automatic creator payouts</p>
               <p className="text-[12px] text-slate-500">
-                Required to receive member payments — coming soon
-                {/* TODO: Stripe Connect onboarding — link to /creator-studio/billing/connect when live */}
+                Direct payouts via Stripe Connect — coming later
               </p>
             </div>
             <StatusBadge connected={payment_setup.stripe_connect_connected} />
           </div>
         </div>
 
-        {/* Placeholder links for future features */}
-        <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Coming soon</p>
+        <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-[13px] text-slate-500">
+          <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-slate-400">Phase 1 — current</p>
+          <p>Payments are processed through the Fresh Collective Stripe account. Your earnings are tracked as pending payout and disbursed manually.</p>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Coming later</p>
           <ul className="mt-2 space-y-1 text-[13px] text-slate-500">
-            <li>· Stripe Connect onboarding for creator payouts</li>
-            <li>· Member checkout for paid pathways and collectives</li>
-            <li>· Subscription and one-time payment management</li>
+            <li>· Stripe Connect onboarding for automatic creator payouts</li>
             <li>· Refunds, disputes, and payout reporting</li>
+            <li>· Creator subscription billing via Stripe</li>
             <li>· GST/tax reporting and invoicing</li>
           </ul>
         </div>

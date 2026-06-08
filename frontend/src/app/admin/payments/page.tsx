@@ -426,9 +426,15 @@ function ManualPurchaseModal({
 // Main page
 // ---------------------------------------------------------------------------
 
+interface PlatformStatus {
+  stripe_enabled: boolean
+  stripe_test_mode: boolean
+}
+
 export default function AdminPaymentsPage() {
   const [rows, setRows] = useState<PaymentTransaction[]>([])
   const [summary, setSummary] = useState<AdminPaymentSummary | null>(null)
+  const [platformStatus, setPlatformStatus] = useState<PlatformStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -444,8 +450,15 @@ export default function AdminPaymentsPage() {
         if (!r.ok) throw new Error(`Error ${r.status}`)
         return r.json() as Promise<AdminPaymentSummary>
       }),
+      fetch(apiUrl('/api/checkout/status'), { credentials: 'include' }).then((r) =>
+        r.ok ? r.json() as Promise<PlatformStatus> : null
+      ),
     ])
-      .then(([txns, sum]) => { setRows(txns); setSummary(sum) })
+      .then(([txns, sum, status]) => {
+        setRows(txns)
+        setSummary(sum)
+        if (status) setPlatformStatus(status)
+      })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
   }
@@ -497,6 +510,50 @@ export default function AdminPaymentsPage() {
           </button>
         </div>
 
+        {/* Platform Stripe status */}
+        <div className="mb-5 overflow-hidden rounded-xl bg-white" style={{ border: '1px solid #E2E8F0' }}>
+          <div className="border-b px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]" style={{ borderColor: '#E2E8F0' }}>
+            Fresh Collective Stripe Account
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-[#F1F5F9] sm:grid-cols-4">
+            {[
+              {
+                label: 'Platform payments',
+                value: platformStatus == null ? '…' : platformStatus.stripe_enabled ? 'Configured' : 'Not configured',
+                ok: platformStatus?.stripe_enabled,
+              },
+              {
+                label: 'Mode',
+                value: platformStatus == null ? '…' : !platformStatus.stripe_enabled ? '—' : platformStatus.stripe_test_mode ? 'Test mode' : 'Live mode',
+                ok: platformStatus?.stripe_enabled && !platformStatus?.stripe_test_mode,
+                warn: platformStatus?.stripe_test_mode,
+              },
+              {
+                label: 'Webhook',
+                value: platformStatus?.stripe_enabled ? 'Configured' : '—',
+                ok: platformStatus?.stripe_enabled,
+              },
+              {
+                label: 'Paid pathway checkout',
+                value: platformStatus?.stripe_enabled ? 'Active' : 'Inactive',
+                ok: platformStatus?.stripe_enabled,
+              },
+            ].map(({ label, value, ok, warn }) => (
+              <div key={label} className="px-4 py-3">
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">{label}</p>
+                <p className={`text-[13px] font-semibold ${ok ? 'text-teal-700' : warn ? 'text-amber-600' : 'text-[#94A3B8]'}`}>
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="border-t px-4 py-2.5 text-[11px] text-[#94A3B8]" style={{ borderColor: '#F1F5F9' }}>
+            <span className="font-semibold text-[#64748B]">Payouts:</span> Manual for now — pending payout tracked per transaction.&ensp;
+            <span className="font-semibold text-[#64748B]">Stripe Connect:</span> Coming later (Phase 2+).&ensp;
+            <span className="font-semibold text-[#64748B]">Creator subscription billing:</span> Coming later (Phase 3).
+          </div>
+        </div>
+
         {/* Summary cards */}
         <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetricCard
@@ -533,9 +590,8 @@ export default function AdminPaymentsPage() {
           </p>
           <p>
             <strong className="text-[#475569]">Payouts:</strong>{' '}
-            Payouts are not yet connected to Stripe Connect. The pending payout figure shows what would be owed
-            to creators once payout processing is enabled.{' '}
-            <span className="text-[#94A3B8]">Mark payouts as paid — coming soon.</span>
+            Creator payouts are manual for Phase 1 — Stripe Connect is not yet enabled. The pending payout figure
+            shows creator net earnings not yet disbursed. Mark as paid functionality coming soon.
           </p>
         </div>
 
