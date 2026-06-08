@@ -51,11 +51,11 @@ export default async function SpaceCommunityPage({ params }: Props) {
                 backgroundClip: 'text',
               }}
             >
-              Collective
+              Community
             </span>
           </h2>
           <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
-            A place to reflect, share, ask questions, and move through the work together.
+            A place to reflect, ask questions, and connect with others in this space.
           </p>
         </div>
 

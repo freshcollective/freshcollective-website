@@ -6,5 +6,5 @@ interface Props {
 
 export default async function SpacePage({ params }: Props) {
   const { slug } = await params
-  redirect(`/spaces/${slug}/community`)
+  redirect(`/spaces/${slug}/pathways`)
 }

@@ -25,10 +25,9 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavPro
 
   const tabs: Tab[] = [
     {
-      label: 'Collective',
+      label: 'Community',
       href: `${base}/community`,
       icon: '◈',
-      alsoActiveOn: new RegExp(`^/spaces/${spaceSlug}$`),
     },
     { label: 'Pathways',  href: `${base}/pathways`, icon: '◎' },
     { label: 'Gatherings', href: `${base}/events`,    icon: '◷' },
