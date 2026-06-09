@@ -173,6 +173,14 @@ class PaymentTransaction(Base):
         String(200), nullable=True
     )
 
+    # Payment option selected at checkout (null for legacy single-price pathway purchases)
+    payment_option_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("payment_options.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Payout tracking — populated by admin when transfer is processed

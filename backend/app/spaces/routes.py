@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
+from app.models.payment_option import PaymentOption
 from app.models.platform import (
     BookingStatus,
     Enrollment,
@@ -46,6 +47,7 @@ from app.spaces.schemas import (
     PathwayProgress,
     PathwaySummary,
     PathwayWithSteps,
+    PaymentOptionSummary,
     PublicSpaceCard,
     SaveNotesRequest,
     SaveNotesResponse,
@@ -273,13 +275,15 @@ def _compute_pathway_access(user: User, pathway: Pathway, space: Space, db: Sess
             .first()
         )
         return mem is not None
-    # one_time or subscription — requires active PathwayEntitlement
+    # one_time or subscription — requires active PathwayEntitlement that hasn't expired
+    now = datetime.utcnow()
     ent = (
         db.query(PathwayEntitlement.id)
         .filter(
             PathwayEntitlement.user_id == user.id,
             PathwayEntitlement.pathway_id == pathway.id,
             PathwayEntitlement.status == EntitlementStatus.active,
+            (PathwayEntitlement.ends_at.is_(None) | (PathwayEntitlement.ends_at > now)),
         )
         .first()
     )
@@ -347,13 +351,15 @@ def _check_pathway_access(
             return
         raise HTTPException(status_code=403, detail="This pathway is included with space membership.")
 
-    # one_time / subscription — require an active entitlement
+    # one_time / subscription — require an active entitlement that hasn't expired
+    now = datetime.utcnow()
     entitlement = (
         db.query(PathwayEntitlement.id)
         .filter(
             PathwayEntitlement.user_id == user.id,
             PathwayEntitlement.pathway_id == pathway.id,
             PathwayEntitlement.status == EntitlementStatus.active,
+            (PathwayEntitlement.ends_at.is_(None) | (PathwayEntitlement.ends_at > now)),
         )
         .first()
     )
@@ -1589,6 +1595,37 @@ def get_pathway_overview(
 
     user_has_access = _compute_pathway_access(current_user, pathway, space, db)
 
+    published_options = (
+        db.query(PaymentOption)
+        .filter(
+            PaymentOption.pathway_id == pathway.id,
+            PaymentOption.status == "published",
+        )
+        .order_by(PaymentOption.position)
+        .all()
+    )
+    option_summaries = [
+        PaymentOptionSummary(
+            id=opt.id,
+            name=opt.name,
+            description=opt.description,
+            payment_type=opt.payment_type.value if hasattr(opt.payment_type, "value") else str(opt.payment_type),
+            status=opt.status.value if hasattr(opt.status, "value") else str(opt.status),
+            term_start_date=opt.term_start_date,
+            term_end_date=opt.term_end_date,
+            sessions_per_week=opt.sessions_per_week,
+            total_sessions=opt.total_sessions,
+            price_per_session_cents=opt.price_per_session_cents,
+            calculated_total_cents=opt.calculated_total_cents,
+            override_total_cents=opt.override_total_cents,
+            effective_price_cents=opt.effective_price_cents,
+            currency=opt.currency,
+            buyer_note=opt.buyer_note,
+            position=opt.position,
+        )
+        for opt in published_options
+    ]
+
     return PathwayWithSteps(
         id=pathway.id,
         slug=pathway.slug,
@@ -1605,6 +1642,7 @@ def get_pathway_overview(
         currency=pathway.currency,
         billing_interval=pathway.billing_interval,
         user_has_access=user_has_access,
+        payment_options=option_summaries,
     )
 
 

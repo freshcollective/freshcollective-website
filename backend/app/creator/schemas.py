@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, field_validator
 
 ALLOWED_THEMES: set[str] = {
@@ -1102,6 +1102,7 @@ class CreatorPaymentTransactionOut(BaseModel):
     payer_user_id: str | None
     space_id: str | None
     pathway_id: str | None
+    payment_option_id: str | None = None
 
     currency: str
     gross_amount_cents: int
@@ -1110,5 +1111,111 @@ class CreatorPaymentTransactionOut(BaseModel):
     net_creator_amount_cents: int | None
 
     notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Payment Options
+# ---------------------------------------------------------------------------
+
+_VALID_OPTION_TYPES = ("free", "one_time", "term_pass", "subscription")
+_VALID_OPTION_STATUSES = ("draft", "published", "archived")
+
+
+class PaymentOptionCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    payment_type: str = "one_time"
+    status: str = "draft"
+    term_start_date: date | None = None
+    term_end_date: date | None = None
+    sessions_per_week: int | None = None
+    total_sessions: int | None = None
+    price_per_session_cents: int | None = None
+    calculated_total_cents: int | None = None
+    override_total_cents: int | None = None
+    currency: str = "AUD"
+    buyer_note: str | None = None
+    internal_note: str | None = None
+    grants_pathway_id: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name is required.")
+        return v
+
+    @field_validator("payment_type")
+    @classmethod
+    def validate_payment_type(cls, v: str) -> str:
+        if v not in _VALID_OPTION_TYPES:
+            raise ValueError(f"payment_type must be one of: {_VALID_OPTION_TYPES}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        if v not in _VALID_OPTION_STATUSES:
+            raise ValueError(f"status must be one of: {_VALID_OPTION_STATUSES}")
+        return v
+
+
+class PaymentOptionUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    payment_type: str | None = None
+    status: str | None = None
+    term_start_date: date | None = None
+    term_end_date: date | None = None
+    sessions_per_week: int | None = None
+    total_sessions: int | None = None
+    price_per_session_cents: int | None = None
+    calculated_total_cents: int | None = None
+    override_total_cents: int | None = None
+    currency: str | None = None
+    buyer_note: str | None = None
+    internal_note: str | None = None
+    grants_pathway_id: str | None = None
+
+    @field_validator("payment_type")
+    @classmethod
+    def validate_payment_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_OPTION_TYPES:
+            raise ValueError(f"payment_type must be one of: {_VALID_OPTION_TYPES}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_OPTION_STATUSES:
+            raise ValueError(f"status must be one of: {_VALID_OPTION_STATUSES}")
+        return v
+
+
+class PaymentOptionResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    space_id: str
+    pathway_id: str | None
+    grants_pathway_id: str | None
+    name: str
+    description: str | None
+    payment_type: str
+    status: str
+    term_start_date: date | None
+    term_end_date: date | None
+    sessions_per_week: int | None
+    total_sessions: int | None
+    price_per_session_cents: int | None
+    calculated_total_cents: int | None
+    override_total_cents: int | None
+    effective_price_cents: int | None
+    currency: str
+    buyer_note: str | None
+    internal_note: str | None
+    position: int
     created_at: datetime
     updated_at: datetime

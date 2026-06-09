@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
@@ -809,6 +809,352 @@ function centsToDisplay(cents: number | null): string {
   return Number.isInteger(dollars) ? `${dollars}` : dollars.toFixed(2)
 }
 
+// ---------------------------------------------------------------------------
+// PaymentOptionsSection
+// ---------------------------------------------------------------------------
+
+interface PaymentOption {
+  id: string
+  name: string
+  description: string | null
+  payment_type: string
+  status: string
+  term_start_date: string | null
+  term_end_date: string | null
+  sessions_per_week: number | null
+  total_sessions: number | null
+  price_per_session_cents: number | null
+  calculated_total_cents: number | null
+  override_total_cents: number | null
+  effective_price_cents: number | null
+  currency: string
+  buyer_note: string | null
+  internal_note: string | null
+  position: number
+}
+
+function fmtOptionPrice(cents: number | null, currency: string): string {
+  if (cents == null) return '—'
+  const amount = cents / 100
+  return `$${Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(2)} ${currency}`
+}
+
+function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; pathwaySlug: string }) {
+  const [options, setOptions] = useState<PaymentOption[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // New option form state
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [paymentType, setPaymentType] = useState('one_time')
+  const [sessionsPerWeek, setSessionsPerWeek] = useState('')
+  const [totalSessions, setTotalSessions] = useState('')
+  const [pricePerSession, setPricePerSession] = useState('')
+  const [overrideTotal, setOverrideTotal] = useState('')
+  const [termStart, setTermStart] = useState('')
+  const [termEnd, setTermEnd] = useState('')
+  const [currency, setCurrency] = useState('AUD')
+  const [buyerNote, setBuyerNote] = useState('')
+  const [internalNote, setInternalNote] = useState('')
+
+  async function load() {
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options`),
+        { credentials: 'include' },
+      )
+      if (!res.ok) { setLoadError('Could not load payment options.'); return }
+      setOptions(await res.json())
+    } catch { setLoadError('Could not load payment options.') }
+  }
+
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleCreate() {
+    if (!name.trim()) { setSaveError('Name is required.'); return }
+    setSaving(true); setSaveError(null)
+    try {
+      const payload: Record<string, unknown> = {
+        name: name.trim(),
+        description: description.trim() || null,
+        payment_type: paymentType,
+        status: 'draft',
+        currency,
+        buyer_note: buyerNote.trim() || null,
+        internal_note: internalNote.trim() || null,
+      }
+      if (sessionsPerWeek) payload.sessions_per_week = parseInt(sessionsPerWeek)
+      if (totalSessions) payload.total_sessions = parseInt(totalSessions)
+      if (pricePerSession) payload.price_per_session_cents = Math.round(parseFloat(pricePerSession) * 100)
+      if (overrideTotal) payload.override_total_cents = Math.round(parseFloat(overrideTotal) * 100)
+      if (termStart) payload.term_start_date = termStart
+      if (termEnd) payload.term_end_date = termEnd
+
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options`),
+        { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) },
+      )
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        setSaveError(typeof b.detail === 'string' ? b.detail : 'Could not create option.')
+        return
+      }
+      await load()
+      setShowForm(false)
+      setName(''); setDescription(''); setSessionsPerWeek(''); setTotalSessions('')
+      setPricePerSession(''); setOverrideTotal(''); setTermStart(''); setTermEnd('')
+      setBuyerNote(''); setInternalNote('')
+    } catch { setSaveError('Could not create option.') }
+    finally { setSaving(false) }
+  }
+
+  async function handleStatusChange(optId: string, newStatus: string) {
+    try {
+      await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options/${optId}`),
+        { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) },
+      )
+      await load()
+    } catch { /* ignore */ }
+  }
+
+  async function handleArchive(optId: string) {
+    if (!confirm('Archive this payment option? It will no longer appear to members.')) return
+    try {
+      await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options/${optId}`),
+        { method: 'DELETE', credentials: 'include' },
+      )
+      await load()
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-white p-6">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-[15px] font-semibold text-navy-900">Payment options</h2>
+          <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+            Create tiered or term-based pricing options for this pathway.
+            Published options appear on the checkout page for members to choose from.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => { setShowForm(true); setSaveError(null) }}
+          className="shrink-0 rounded-xl border border-teal-200 bg-teal-50 px-3 py-1.5 text-[12px] font-semibold text-teal-700 transition-colors hover:bg-teal-100"
+        >
+          + Add option
+        </button>
+      </div>
+
+      {/* Phase A notice */}
+      <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
+        <strong>Phase A:</strong> Booking limits are not enforced yet. Session counts are shown to members for transparency but do not restrict access.
+      </div>
+
+      {loadError && <p className="mb-3 text-[12px] text-red-600">{loadError}</p>}
+
+      {/* Existing options */}
+      {options.length > 0 && (
+        <div className="mb-4 space-y-3">
+          {options.map(opt => (
+            <div key={opt.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-semibold text-navy-900">{opt.name}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      opt.status === 'published' ? 'bg-teal-100 text-teal-700'
+                      : opt.status === 'archived' ? 'bg-slate-200 text-slate-500'
+                      : 'bg-amber-100 text-amber-700'
+                    }`}>
+                      {opt.status}
+                    </span>
+                  </div>
+                  {opt.description && <p className="mt-0.5 text-[12px] text-slate-500">{opt.description}</p>}
+                  <div className="mt-2 flex flex-wrap gap-3 text-[12px] text-slate-500">
+                    <span>Type: {opt.payment_type}</span>
+                    {opt.sessions_per_week != null && <span>{opt.sessions_per_week}×/week</span>}
+                    {opt.total_sessions != null && <span>{opt.total_sessions} sessions</span>}
+                    {opt.price_per_session_cents != null && (
+                      <span>{fmtOptionPrice(opt.price_per_session_cents, opt.currency)}/session</span>
+                    )}
+                    {opt.term_end_date && <span>Until {opt.term_end_date}</span>}
+                  </div>
+                  <div className="mt-1 text-[13px] font-semibold text-navy-900">
+                    Effective price: {fmtOptionPrice(opt.effective_price_cents, opt.currency)}
+                    {opt.calculated_total_cents != null && opt.override_total_cents != null && (
+                      <span className="ml-1 text-[11px] font-normal text-slate-400">
+                        (override; calculated {fmtOptionPrice(opt.calculated_total_cents, opt.currency)})
+                      </span>
+                    )}
+                  </div>
+                  {opt.internal_note && (
+                    <p className="mt-1 text-[11px] italic text-slate-400">Note: {opt.internal_note}</p>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-col gap-1.5 items-end">
+                  {opt.status === 'draft' && (
+                    <button
+                      type="button"
+                      onClick={() => handleStatusChange(opt.id, 'published')}
+                      className="rounded-lg border border-teal-200 bg-white px-2 py-1 text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-50"
+                    >
+                      Publish
+                    </button>
+                  )}
+                  {opt.status === 'published' && (
+                    <button
+                      type="button"
+                      onClick={() => handleStatusChange(opt.id, 'draft')}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                    >
+                      Unpublish
+                    </button>
+                  )}
+                  {opt.status !== 'archived' && (
+                    <button
+                      type="button"
+                      onClick={() => handleArchive(opt.id)}
+                      className="rounded-lg px-2 py-1 text-[11px] text-slate-400 transition-colors hover:text-red-500"
+                    >
+                      Archive
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {options.length === 0 && !showForm && (
+        <p className="text-[13px] text-slate-400">No payment options yet. Add one above.</p>
+      )}
+
+      {/* Add option form */}
+      {showForm && (
+        <div className="rounded-xl border border-teal-200 bg-teal-50/30 p-4 space-y-3">
+          <p className="text-[13px] font-semibold text-navy-900">New payment option</p>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Name *</label>
+              <input
+                type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Awaken — 1 session/week"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Description</label>
+              <input
+                type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional short description"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Payment type</label>
+              <select value={paymentType} onChange={e => setPaymentType(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] outline-none focus:border-teal-400">
+                <option value="one_time">One-time</option>
+                <option value="term_pass">Term pass</option>
+                <option value="free">Free</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Currency</label>
+              <select value={currency} onChange={e => setCurrency(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] outline-none focus:border-teal-400">
+                <option value="AUD">AUD</option>
+                <option value="USD">USD</option>
+                <option value="NZD">NZD</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Sessions/week</label>
+              <input type="number" min="1" value={sessionsPerWeek} onChange={e => setSessionsPerWeek(e.target.value)}
+                placeholder="e.g. 1"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Total sessions</label>
+              <input type="number" min="1" value={totalSessions} onChange={e => setTotalSessions(e.target.value)}
+                placeholder="e.g. 10"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Price per session ($)</label>
+              <input type="number" min="0" step="0.01" value={pricePerSession} onChange={e => setPricePerSession(e.target.value)}
+                placeholder="e.g. 20"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Override total ($)</label>
+              <input type="number" min="0" step="0.01" value={overrideTotal} onChange={e => setOverrideTotal(e.target.value)}
+                placeholder="Leave blank to use calculated"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
+            </div>
+
+            {paymentType === 'term_pass' && (
+              <>
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-slate-600">Term start</label>
+                  <input type="date" value={termStart} onChange={e => setTermStart(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-slate-600">Term end</label>
+                  <input type="date" value={termEnd} onChange={e => setTermEnd(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
+                </div>
+              </>
+            )}
+
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Member-facing note</label>
+              <input type="text" value={buyerNote} onChange={e => setBuyerNote(e.target.value)}
+                placeholder="Short note shown to members at checkout"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-[12px] font-semibold text-slate-600">Internal note</label>
+              <input type="text" value={internalNote} onChange={e => setInternalNote(e.target.value)}
+                placeholder="Not shown to members"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
+            </div>
+          </div>
+
+          {saveError && <p className="text-[12px] text-red-600">{saveError}</p>}
+
+          <div className="flex gap-2">
+            <button type="button" onClick={handleCreate} disabled={saving}
+              className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}>
+              {saving ? 'Saving…' : 'Save as draft'}
+            </button>
+            <button type="button" onClick={() => { setShowForm(false); setSaveError(null) }}
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function EditPathwayClient({ pathway, steps: initialSteps, sections: initialSections, spaceSlug }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -1083,6 +1429,9 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
           </Link>
         </div>
       </div>
+
+      {/* ── Payment options — full width ── */}
+      <PaymentOptionsSection spaceSlug={spaceSlug} pathwaySlug={pathway.slug} />
 
       {/* ── Pathway structure — full width ── */}
       <PathwayStructure

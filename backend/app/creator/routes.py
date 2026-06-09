@@ -57,6 +57,9 @@ from app.creator.schemas import (
     PathwayCreateRequest,
     PathwayResponse,
     PathwayUpdateRequest,
+    PaymentOptionCreateRequest,
+    PaymentOptionResponse,
+    PaymentOptionUpdateRequest,
     ResourceCreateRequest,
     ResourceResponse,
     ResourceUpdateRequest,
@@ -84,6 +87,7 @@ from app.creator.schemas import (
 )
 from app.models.creator_billing import CreatorPlan, CreatorSubscription
 from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentTransactionType, PayoutStatus
+from app.models.payment_option import PaymentOption
 from app.models.platform import (
     BookingStatus,
     EntitlementSource,
@@ -3516,3 +3520,182 @@ def list_creator_payments(
         .all()
     )
     return [CreatorPaymentTransactionOut.model_validate(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Payment Options — CRUD per pathway
+# ---------------------------------------------------------------------------
+
+def _get_payment_option(option_id: str, pathway: Pathway, db: Session) -> PaymentOption:
+    opt = (
+        db.query(PaymentOption)
+        .filter(PaymentOption.id == option_id, PaymentOption.pathway_id == pathway.id)
+        .first()
+    )
+    if not opt:
+        raise HTTPException(status_code=404, detail="Payment option not found.")
+    return opt
+
+
+def _option_to_dict(opt: PaymentOption) -> dict:
+    return {
+        "id": opt.id,
+        "space_id": opt.space_id,
+        "pathway_id": opt.pathway_id,
+        "grants_pathway_id": opt.grants_pathway_id,
+        "name": opt.name,
+        "description": opt.description,
+        "payment_type": opt.payment_type.value if hasattr(opt.payment_type, "value") else str(opt.payment_type),
+        "status": opt.status.value if hasattr(opt.status, "value") else str(opt.status),
+        "term_start_date": opt.term_start_date,
+        "term_end_date": opt.term_end_date,
+        "sessions_per_week": opt.sessions_per_week,
+        "total_sessions": opt.total_sessions,
+        "price_per_session_cents": opt.price_per_session_cents,
+        "calculated_total_cents": opt.calculated_total_cents,
+        "override_total_cents": opt.override_total_cents,
+        "effective_price_cents": opt.effective_price_cents,
+        "currency": opt.currency,
+        "buyer_note": opt.buyer_note,
+        "internal_note": opt.internal_note,
+        "position": opt.position,
+        "created_at": opt.created_at,
+        "updated_at": opt.updated_at,
+    }
+
+
+@router.get(
+    "/spaces/{slug}/pathways/{pathway_slug}/payment-options",
+    response_model=list[PaymentOptionResponse],
+)
+def list_payment_options(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[dict]:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    opts = (
+        db.query(PaymentOption)
+        .filter(PaymentOption.pathway_id == pathway.id)
+        .order_by(PaymentOption.position, PaymentOption.created_at)
+        .all()
+    )
+    return [_option_to_dict(o) for o in opts]
+
+
+@router.post(
+    "/spaces/{slug}/pathways/{pathway_slug}/payment-options",
+    response_model=PaymentOptionResponse,
+    status_code=201,
+)
+def create_payment_option(
+    slug: str,
+    pathway_slug: str,
+    body: PaymentOptionCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+
+    # Validate grants_pathway_id if supplied
+    if body.grants_pathway_id:
+        gp = db.query(Pathway).filter(Pathway.id == body.grants_pathway_id, Pathway.space_id == space.id).first()
+        if not gp:
+            raise HTTPException(status_code=400, detail="grants_pathway_id references a pathway not found in this space.")
+
+    max_pos = (
+        db.query(PaymentOption.position)
+        .filter(PaymentOption.pathway_id == pathway.id)
+        .order_by(PaymentOption.position.desc())
+        .first()
+    )
+    position = (max_pos[0] + 1) if max_pos else 0
+
+    now = datetime.utcnow()
+    opt = PaymentOption(
+        id=str(uuid4()),
+        space_id=space.id,
+        pathway_id=pathway.id,
+        grants_pathway_id=body.grants_pathway_id,
+        name=body.name.strip(),
+        description=body.description,
+        payment_type=body.payment_type,
+        status=body.status,
+        term_start_date=body.term_start_date,
+        term_end_date=body.term_end_date,
+        sessions_per_week=body.sessions_per_week,
+        total_sessions=body.total_sessions,
+        price_per_session_cents=body.price_per_session_cents,
+        calculated_total_cents=body.calculated_total_cents,
+        override_total_cents=body.override_total_cents,
+        currency=body.currency.upper(),
+        buyer_note=body.buyer_note,
+        internal_note=body.internal_note,
+        position=position,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(opt)
+    db.commit()
+    db.refresh(opt)
+    return _option_to_dict(opt)
+
+
+@router.patch(
+    "/spaces/{slug}/pathways/{pathway_slug}/payment-options/{option_id}",
+    response_model=PaymentOptionResponse,
+)
+def update_payment_option(
+    slug: str,
+    pathway_slug: str,
+    option_id: str,
+    body: PaymentOptionUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    opt = _get_payment_option(option_id, pathway, db)
+
+    updates = body.model_dump(exclude_unset=True)
+    for field, val in updates.items():
+        if field == "name" and val is not None:
+            setattr(opt, field, val.strip())
+        elif field == "currency" and val is not None:
+            opt.currency = val.upper()
+        elif field == "grants_pathway_id":
+            if val:
+                gp = db.query(Pathway).filter(Pathway.id == val, Pathway.space_id == space.id).first()
+                if not gp:
+                    raise HTTPException(status_code=400, detail="grants_pathway_id not found in this space.")
+            opt.grants_pathway_id = val
+        else:
+            setattr(opt, field, val)
+
+    opt.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(opt)
+    return _option_to_dict(opt)
+
+
+@router.delete(
+    "/spaces/{slug}/pathways/{pathway_slug}/payment-options/{option_id}",
+    status_code=204,
+)
+def archive_payment_option(
+    slug: str,
+    pathway_slug: str,
+    option_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    """Soft-delete: set status to archived. Content and IDs are preserved."""
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    opt = _get_payment_option(option_id, pathway, db)
+    opt.status = "archived"
+    opt.updated_at = datetime.utcnow()
+    db.commit()

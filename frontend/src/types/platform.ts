@@ -77,6 +77,25 @@ export interface PathwaySection {
   steps: StepSummary[]
 }
 
+export interface PaymentOptionSummary {
+  id: string
+  name: string
+  description: string | null
+  payment_type: 'free' | 'one_time' | 'term_pass' | 'subscription'
+  status: string
+  term_start_date: string | null
+  term_end_date: string | null
+  sessions_per_week: number | null
+  total_sessions: number | null
+  price_per_session_cents: number | null
+  calculated_total_cents: number | null
+  override_total_cents: number | null
+  effective_price_cents: number | null
+  currency: string
+  buyer_note: string | null
+  position: number
+}
+
 export interface PathwayWithSteps {
   id: string
   slug: string
@@ -93,6 +112,7 @@ export interface PathwayWithSteps {
   currency: string | null
   billing_interval: string | null
   user_has_access: boolean
+  payment_options: PaymentOptionSummary[]
 }
 
 export interface CreatorSection {

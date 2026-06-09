@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, computed_field, field_validator
 
 
@@ -129,6 +129,27 @@ class SectionWithSteps(BaseModel):
     steps: list[StepSummary]
 
 
+class PaymentOptionSummary(BaseModel):
+    """Member-facing payment option — internal_note excluded."""
+
+    id: str
+    name: str
+    description: str | None
+    payment_type: str
+    status: str
+    term_start_date: date | None = None
+    term_end_date: date | None = None
+    sessions_per_week: int | None = None
+    total_sessions: int | None = None
+    price_per_session_cents: int | None = None
+    calculated_total_cents: int | None = None
+    override_total_cents: int | None = None
+    effective_price_cents: int | None = None
+    currency: str
+    buyer_note: str | None = None
+    position: int
+
+
 class PathwayWithSteps(BaseModel):
     """Pathway overview with ordered steps and progress summary."""
 
@@ -147,6 +168,7 @@ class PathwayWithSteps(BaseModel):
     currency: str | None = None
     billing_interval: str | None = None
     user_has_access: bool = False
+    payment_options: list[PaymentOptionSummary] = []
 
 
 class CompleteStepRequest(BaseModel):

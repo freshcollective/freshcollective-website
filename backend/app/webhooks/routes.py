@@ -37,6 +37,7 @@ from app.models.payment import (
     PaymentTransactionStatus,
     PayoutStatus,
 )
+from app.models.payment_option import PaymentOption
 from app.models.platform import (
     EntitlementSource,
     EntitlementStatus,
@@ -117,6 +118,7 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     pathway_id: str = metadata.get("pathway_id", "")
     payer_user_id: str = metadata.get("payer_user_id", "")
     space_id: str = metadata.get("space_id", "")
+    payment_option_id: str = metadata.get("payment_option_id", "")
 
     if not all([transaction_id, pathway_id, payer_user_id, space_id]):
         logger.error(
@@ -194,12 +196,41 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     txn.payout_status = PayoutStatus.pending
     txn.updated_at = now
 
+    # --- Resolve payment option for term_pass expiry / grants_pathway_id -----
+    payment_option: PaymentOption | None = None
+    if payment_option_id:
+        payment_option = db.query(PaymentOption).filter(PaymentOption.id == payment_option_id).first()
+        if not payment_option:
+            logger.warning(
+                "checkout.session.completed: payment_option %s not found — proceeding without option",
+                payment_option_id,
+            )
+
+    # Entitlement targets the grants_pathway_id if set, otherwise pathway_id
+    entitlement_pathway_id = (
+        payment_option.grants_pathway_id
+        if payment_option and payment_option.grants_pathway_id
+        else pathway_id
+    )
+
+    # For term_pass options, set ends_at to term_end_date (as a datetime)
+    from datetime import datetime as _dt
+    term_ends_at: _dt | None = None
+    if payment_option and payment_option.term_end_date:
+        opt_type = (
+            payment_option.payment_type.value
+            if hasattr(payment_option.payment_type, "value")
+            else str(payment_option.payment_type)
+        )
+        if opt_type == "term_pass":
+            term_ends_at = _dt.combine(payment_option.term_end_date, _dt.min.time())
+
     # --- Create or reactivate PathwayEntitlement ----------------------------
-    pathway = db.query(Pathway).filter(Pathway.id == pathway_id).first()
+    pathway = db.query(Pathway).filter(Pathway.id == entitlement_pathway_id).first()
     if not pathway:
         logger.error(
             "checkout.session.completed: pathway %s not found — txn updated but no entitlement.",
-            pathway_id,
+            entitlement_pathway_id,
         )
         db.commit()
         return
@@ -208,7 +239,7 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
         db.query(PathwayEntitlement)
         .filter(
             PathwayEntitlement.user_id == payer_user_id,
-            PathwayEntitlement.pathway_id == pathway_id,
+            PathwayEntitlement.pathway_id == entitlement_pathway_id,
         )
         .order_by(PathwayEntitlement.created_at.desc())
         .first()
@@ -222,7 +253,7 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
         ent = existing_ent
         logger.info(
             "checkout.session.completed: entitlement already active user=%s pathway=%s",
-            payer_user_id, pathway_id,
+            payer_user_id, entitlement_pathway_id,
         )
     elif existing_ent:
         # Reactivate a revoked/expired/cancelled entitlement
@@ -232,22 +263,23 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
         existing_ent.stripe_payment_intent_id = payment_intent_id
         existing_ent.revoked_by_user_id = None
         existing_ent.revoked_at = None
-        existing_ent.ends_at = None
+        existing_ent.ends_at = term_ends_at
         existing_ent.updated_at = now
         ent = existing_ent
         logger.info(
             "checkout.session.completed: reactivated entitlement user=%s pathway=%s",
-            payer_user_id, pathway_id,
+            payer_user_id, entitlement_pathway_id,
         )
     else:
         ent = PathwayEntitlement(
             id=str(uuid4()),
             user_id=payer_user_id,
             space_id=space_id,
-            pathway_id=pathway_id,
+            pathway_id=entitlement_pathway_id,
             source=EntitlementSource.one_time_purchase,
             status=EntitlementStatus.active,
             starts_at=now,
+            ends_at=term_ends_at,
             stripe_checkout_session_id=session_id,
             stripe_payment_intent_id=payment_intent_id,
             created_at=now,
@@ -256,8 +288,8 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
         db.add(ent)
         db.flush()  # populate ent.id so we can reference it below
         logger.info(
-            "checkout.session.completed: created entitlement %s user=%s pathway=%s",
-            ent.id, payer_user_id, pathway_id,
+            "checkout.session.completed: created entitlement %s user=%s pathway=%s ends_at=%s",
+            ent.id, payer_user_id, entitlement_pathway_id, term_ends_at,
         )
 
     txn.entitlement_id = ent.id

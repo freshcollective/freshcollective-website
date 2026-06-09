@@ -25,6 +25,7 @@ interface PaymentTransaction {
   creator_user_id: string | null
   space_id: string | null
   pathway_id: string | null
+  payment_option_id: string | null
   currency: string
   gross_amount_cents: number
   platform_fee_basis_points: number
@@ -651,6 +652,11 @@ export default function AdminPaymentsPage() {
                         {row.space_id || row.pathway_id
                           ? [row.space_id?.slice(0, 6), row.pathway_id?.slice(0, 6)].filter(Boolean).join(' / ')
                           : '—'}
+                        {row.payment_option_id && (
+                          <span className="ml-1 rounded-full bg-teal-50 border border-teal-200 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">
+                            opt:{row.payment_option_id.slice(0, 6)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-[12px] font-semibold text-[#0F172A] whitespace-nowrap">
                         {fmt(row.gross_amount_cents, row.currency)}

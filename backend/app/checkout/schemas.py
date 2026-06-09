@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel
 
 
 class PathwayCheckoutRequest(BaseModel):
@@ -6,6 +6,8 @@ class PathwayCheckoutRequest(BaseModel):
     # Frontend constructs these URLs; {CHECKOUT_SESSION_ID} is replaced by Stripe
     success_url: str
     cancel_url: str
+    # Optional: when set, price and metadata come from this payment option
+    payment_option_id: str | None = None
 
 
 class PathwayCheckoutResponse(BaseModel):

@@ -5,6 +5,7 @@ import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import { isPathwayLocked, formatPathwayPrice } from '@/lib/pathwayAccess'
 import { CheckoutButton } from '@/components/checkout/CheckoutButton'
+import { PaymentOptionSelector } from '@/components/checkout/PaymentOptionSelector'
 import type { PathwayWithSteps } from '@/types/platform'
 
 interface Props {
@@ -287,40 +288,47 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
             style={{ border: '1px solid #E2E8F0' }}
           >
             <p className="mb-4 text-[13px] font-semibold text-slate-400 uppercase tracking-wide">
-              Payment summary
+              {pathway.payment_options.length > 0 ? 'Choose your option' : 'Payment summary'}
             </p>
 
-            <div className="space-y-3 text-[14px]">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-600">One-off purchase</span>
-                <span className="font-semibold text-navy-900">
-                  {priceLabel ?? '—'}
-                </span>
-              </div>
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-[12px] text-slate-400">
-                  Processed securely via Stripe
-                </span>
-              </div>
-              <div
-                className="flex items-center justify-between border-t pt-3 font-semibold"
-                style={{ borderColor: '#E2E8F0' }}
-              >
-                <span className="text-navy-900">Total</span>
-                <span className="text-navy-900">{priceLabel ?? '—'}</span>
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <CheckoutButton
+            {pathway.payment_options.length > 0 ? (
+              <PaymentOptionSelector
                 pathwayId={pathway.id}
-                label={priceLabel ? `Unlock for ${priceLabel}` : 'Unlock pathway'}
+                options={pathway.payment_options}
               />
-            </div>
-
-            <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
-              Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
-            </p>
+            ) : (
+              <>
+                <div className="space-y-3 text-[14px]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">One-off purchase</span>
+                    <span className="font-semibold text-navy-900">
+                      {priceLabel ?? '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[12px] text-slate-400">
+                      Processed securely via Stripe
+                    </span>
+                  </div>
+                  <div
+                    className="flex items-center justify-between border-t pt-3 font-semibold"
+                    style={{ borderColor: '#E2E8F0' }}
+                  >
+                    <span className="text-navy-900">Total</span>
+                    <span className="text-navy-900">{priceLabel ?? '—'}</span>
+                  </div>
+                </div>
+                <div className="mt-5">
+                  <CheckoutButton
+                    pathwayId={pathway.id}
+                    label={priceLabel ? `Unlock for ${priceLabel}` : 'Unlock pathway'}
+                  />
+                </div>
+                <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
+                  Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
+                </p>
+              </>
+            )}
           </div>
 
           <Link

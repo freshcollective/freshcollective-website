@@ -5,10 +5,11 @@ import { apiUrl } from '@/lib/api'
 
 interface CheckoutButtonProps {
   pathwayId: string
+  paymentOptionId?: string | null
   label?: string
 }
 
-export function CheckoutButton({ pathwayId, label = 'Unlock pathway' }: CheckoutButtonProps) {
+export function CheckoutButton({ pathwayId, paymentOptionId, label = 'Unlock pathway' }: CheckoutButtonProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -29,6 +30,7 @@ export function CheckoutButton({ pathwayId, label = 'Unlock pathway' }: Checkout
           pathway_id: pathwayId,
           success_url: successUrl,
           cancel_url: cancelUrl,
+          ...(paymentOptionId ? { payment_option_id: paymentOptionId } : {}),
         }),
       })
 

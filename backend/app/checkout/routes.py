@@ -35,6 +35,7 @@ from app.models.payment import (
     PaymentTransactionType,
     PayoutStatus,
 )
+from app.models.payment_option import PaymentOption
 from app.models.platform import (
     EntitlementStatus,
     Pathway,
@@ -142,19 +143,40 @@ def create_pathway_checkout_session(
             detail=f"Pathway is not available for purchase (status: {p_status}).",
         )
 
-    access_type = (
-        pathway.access_type.value
-        if hasattr(pathway.access_type, "value")
-        else str(pathway.access_type or "free")
-    )
-    if access_type != "one_time":
-        raise HTTPException(
-            status_code=400,
-            detail="Only one-time purchase pathways can be checked out via this endpoint.",
+    # --- Resolve price from payment option (if provided) or pathway -----------
+    payment_option: PaymentOption | None = None
+    if body.payment_option_id:
+        payment_option = (
+            db.query(PaymentOption)
+            .filter(
+                PaymentOption.id == body.payment_option_id,
+                PaymentOption.pathway_id == pathway.id,
+                PaymentOption.status == "published",
+            )
+            .first()
         )
-
-    if not pathway.price_cents or pathway.price_cents <= 0:
-        raise HTTPException(status_code=400, detail="Pathway has no valid price.")
+        if not payment_option:
+            raise HTTPException(
+                status_code=404,
+                detail="Payment option not found or not available for this pathway.",
+            )
+        price_cents = payment_option.effective_price_cents
+        if not price_cents or price_cents <= 0:
+            raise HTTPException(status_code=400, detail="Payment option has no valid price.")
+    else:
+        access_type = (
+            pathway.access_type.value
+            if hasattr(pathway.access_type, "value")
+            else str(pathway.access_type or "free")
+        )
+        if access_type != "one_time":
+            raise HTTPException(
+                status_code=400,
+                detail="Only one-time purchase pathways can be checked out via this endpoint.",
+            )
+        if not pathway.price_cents or pathway.price_cents <= 0:
+            raise HTTPException(status_code=400, detail="Pathway has no valid price.")
+        price_cents = pathway.price_cents
 
     # --- Space ---------------------------------------------------------------
     space = db.query(Space).filter(Space.id == pathway.space_id).first()
@@ -194,8 +216,12 @@ def create_pathway_checkout_session(
     fee_bps, creator_plan_id, creator_sub_id = _resolve_fee_bps(creator_id, db)
 
     # --- Fee calculation (all calculations done before any Stripe call) ------
-    gross = pathway.price_cents
-    currency = (pathway.currency or "AUD").upper()
+    gross = price_cents
+    currency = (
+        (payment_option.currency if payment_option else None)
+        or pathway.currency
+        or "AUD"
+    ).upper()
     platform_fee = round(gross * fee_bps / 10000)
     net_creator = gross - platform_fee
 
@@ -236,6 +262,7 @@ def create_pathway_checkout_session(
                 "creator_user_id": creator_id or "",
                 "platform_fee_bps": str(fee_bps),
                 "creator_plan_id": creator_plan_id or "",
+                "payment_option_id": payment_option.id if payment_option else "",
             },
             # Metadata mirrored onto the PaymentIntent — used by payment_intent.payment_failed
             payment_intent_data={
@@ -278,6 +305,7 @@ def create_pathway_checkout_session(
         net_creator_amount_cents=net_creator,
         net_platform_amount_cents=platform_fee,
         provider_checkout_session_id=session.id,
+        payment_option_id=payment_option.id if payment_option else None,
         payout_status=PayoutStatus.pending,
         created_at=now,
         updated_at=now,

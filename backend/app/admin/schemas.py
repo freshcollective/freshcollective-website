@@ -100,6 +100,8 @@ class PaymentTransactionOut(BaseModel):
     provider_invoice_id: str | None
     provider_subscription_id: str | None
 
+    payment_option_id: str | None = None
+
     notes: str | None
     payout_status: str
     payout_marked_at: datetime | None

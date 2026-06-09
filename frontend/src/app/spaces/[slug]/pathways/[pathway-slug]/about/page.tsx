@@ -5,7 +5,7 @@ import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl, apiUrl } from '@/lib/api'
 import { isPathwayLocked, formatPathwayPrice, unlockCtaLabel } from '@/lib/pathwayAccess'
 import RichTextRenderer from '@/components/RichTextRenderer'
-import type { PathwayWithSteps, PathwayAboutBlock, StepBlockMedia } from '@/types/platform'
+import type { PathwayWithSteps, PathwayAboutBlock, StepBlockMedia, PaymentOptionSummary } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string }>
@@ -221,11 +221,23 @@ export default async function PathwayAboutPage({ params }: Props) {
   // Use server-computed user_has_access — covers free, included, paid+entitlement, admin/creator
   const locked = !isComingSoon && !pathway.user_has_access
 
+  const publishedOptions: PaymentOptionSummary[] = pathway.payment_options ?? []
+  const hasOptions = publishedOptions.length > 0
+
+  const lowestOptionPrice = hasOptions
+    ? publishedOptions.reduce((min, o) =>
+        o.effective_price_cents != null && (min == null || o.effective_price_cents < min)
+          ? o.effective_price_cents : min,
+        null as number | null)
+    : null
+
   const priceLabel = locked
-    ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
+    ? (hasOptions && lowestOptionPrice != null
+        ? `From $${(lowestOptionPrice / 100).toFixed(0)}`
+        : formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval))
     : null
   const unlockLabel = locked
-    ? unlockCtaLabel(pathway.access_type, pathway.price_cents, pathway.currency, pathway.billing_interval)
+    ? (hasOptions ? 'Choose your option' : unlockCtaLabel(pathway.access_type, pathway.price_cents, pathway.currency, pathway.billing_interval))
     : null
 
   const nextIncomplete = pathway.steps.find(s => !s.is_completed)
