@@ -19,8 +19,8 @@ function GatheringRow({
 }) {
   const isCancelled = event.status === 'cancelled'
   const day = new Date(event.starts_at).getDate()
-  const month = new Date(event.starts_at).toLocaleDateString('en-GB', { month: 'short' })
-  const time = new Date(event.starts_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const month = new Date(event.starts_at).toLocaleDateString('en-AU', { month: 'short' })
+  const time = new Date(event.starts_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
 
   return (
     <div

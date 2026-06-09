@@ -16,7 +16,7 @@ function roleBadgeClass(role: string): string {
 
 function formatJoined(isoString: string): string {
   const d = new Date(isoString)
-  return d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+  return d.toLocaleDateString('en-AU', { month: 'short', year: 'numeric' })
 }
 
 interface MemberCardProps {

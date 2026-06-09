@@ -9,7 +9,7 @@ interface Props {
 
 function formatJoined(isoString: string): string {
   const d = new Date(isoString)
-  return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  return d.toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })
 }
 
 export default async function PublicProfilePage({ params }: Props) {

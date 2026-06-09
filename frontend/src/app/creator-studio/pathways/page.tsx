@@ -48,7 +48,7 @@ function accessLabel(p: CreatorPathway): string {
 }
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', {
+  return new Date(iso).toLocaleDateString('en-AU', {
     day: 'numeric', month: 'short', year: 'numeric',
   })
 }

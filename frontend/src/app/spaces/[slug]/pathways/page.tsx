@@ -1,7 +1,7 @@
-import { getSpace, getSpaceMembers, getSpacePathways } from '@/lib/serverApi'
+import { getSpace, getSpaceMembers, getSpacePathways, getMe } from '@/lib/serverApi'
 import PathwayCard from '@/components/spaces/PathwayCard'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
-import type { MemberProfile, PathwaySummary, SpaceResponse } from '@/types/platform'
+import type { MemberProfile, PathwaySummary, SpaceResponse, UserProfile } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -9,11 +9,13 @@ interface Props {
 
 export default async function SpacePathwaysPage({ params }: Props) {
   const { slug } = await params
-  const [pathways, space, members]: [PathwaySummary[], SpaceResponse | null, MemberProfile[]] = await Promise.all([
+  const [pathways, space, members, user]: [PathwaySummary[], SpaceResponse | null, MemberProfile[], UserProfile | null] = await Promise.all([
     getSpacePathways(slug),
     getSpace(slug),
     getSpaceMembers(slug),
+    getMe(),
   ])
+  const isAuthenticated = user !== null
 
   const active = pathways.filter((p) => p.status === 'active')
   const soon = pathways.filter((p) => p.status === 'coming_soon')
@@ -70,7 +72,7 @@ export default async function SpacePathwaysPage({ params }: Props) {
             {active.length > 0 && (
               <div className="mb-10 grid gap-5 sm:grid-cols-2">
                 {active.map((pathway) => (
-                  <PathwayCard key={pathway.id} pathway={pathway} spaceSlug={slug} />
+                  <PathwayCard key={pathway.id} pathway={pathway} spaceSlug={slug} isAuthenticated={isAuthenticated} />
                 ))}
               </div>
             )}
@@ -82,7 +84,7 @@ export default async function SpacePathwaysPage({ params }: Props) {
                 </p>
                 <div className="grid gap-5 sm:grid-cols-2">
                   {soon.map((pathway) => (
-                    <PathwayCard key={pathway.id} pathway={pathway} spaceSlug={slug} />
+                    <PathwayCard key={pathway.id} pathway={pathway} spaceSlug={slug} isAuthenticated={isAuthenticated} />
                   ))}
                 </div>
               </div>

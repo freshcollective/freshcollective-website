@@ -102,14 +102,14 @@ const TABS: { id: Tab; label: string }[] = [
 
 function formatDate(iso: string) {
   return (
-    new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) +
+    new Date(iso).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) +
     ' · ' +
-    new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    new Date(iso).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
   )
 }
 
 function formatShortDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 function accessLabel(p: LitePathway): string {

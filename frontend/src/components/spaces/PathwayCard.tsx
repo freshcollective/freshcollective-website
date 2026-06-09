@@ -10,6 +10,7 @@ import type { PathwaySummary } from '@/types/platform'
 interface PathwayCardProps {
   pathway: PathwaySummary
   spaceSlug: string
+  isAuthenticated?: boolean
 }
 
 const LockIcon = () => (
@@ -18,7 +19,7 @@ const LockIcon = () => (
   </svg>
 )
 
-export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
+export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true }: PathwayCardProps) {
   const isComingSoon = pathway.status === 'coming_soon'
   // Locked only if paid AND the user does not already have access
   const locked = !isComingSoon && isPathwayLocked(pathway.access_type) && !pathway.user_has_access
@@ -111,13 +112,17 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
     )
   }
 
+  // For anonymous visitors on included pathways, prompt them to join instead of "Begin"
+  const isIncluded = pathway.access_type === 'included'
+  const anonIncluded = !isAuthenticated && isIncluded
+
   // ── Accessible: stretched link for click-anywhere + secondary About link ──
   // The absolute <Link> covers the card (z-0); card content sits in z-10 layer.
   // Secondary links (About, Begin) are siblings of the stretched link — valid HTML.
   return (
     <div className={`${cardClass} relative`}>
       <Link
-        href={overviewHref}
+        href={anonIncluded ? '/login' : overviewHref}
         className="absolute inset-0 z-0 rounded-2xl"
         tabIndex={-1}
         aria-hidden="true"
@@ -132,7 +137,7 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
         <div className="flex items-center justify-between border-t border-border pt-3">
           <div className="flex w-full items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              {badge && (
+              {!anonIncluded && badge && (
                 <span
                   className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
                   style={
@@ -151,18 +156,29 @@ export default function PathwayCard({ pathway, spaceSlug }: PathwayCardProps) {
               )}
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Link
-                href={aboutHref}
-                className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:border-teal-200 hover:text-teal-600"
-              >
-                About
-              </Link>
-              <Link
-                href={overviewHref}
-                className="text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
-              >
-                Begin →
-              </Link>
+              {anonIncluded ? (
+                <Link
+                  href="/login"
+                  className="text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
+                >
+                  Join to begin →
+                </Link>
+              ) : (
+                <>
+                  <Link
+                    href={aboutHref}
+                    className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:border-teal-200 hover:text-teal-600"
+                  >
+                    About
+                  </Link>
+                  <Link
+                    href={overviewHref}
+                    className="text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
+                  >
+                    Begin →
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>

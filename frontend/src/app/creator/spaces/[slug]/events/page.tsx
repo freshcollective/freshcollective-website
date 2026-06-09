@@ -3,7 +3,7 @@ import { getCreatorEvents } from '@/lib/serverApi'
 import type { CreatorEvent } from '@/types/platform'
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', {
+  return new Date(iso).toLocaleDateString('en-AU', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',

@@ -38,12 +38,24 @@ export default async function SpaceLayout({ children, params }: Props) {
             userRole={user?.role ?? 'learner'}
           />
           <div className="flex items-center gap-4">
-            <Link href="/settings" className="text-sm text-slate-500 transition-colors hover:text-navy-700">
-              Settings
-            </Link>
-            <Link href="/dashboard" className="text-sm text-slate-500 transition-colors hover:text-navy-700">
-              ← Dashboard
-            </Link>
+            {user ? (
+              <>
+                <Link href="/settings" className="text-sm text-slate-500 transition-colors hover:text-navy-700">
+                  Settings
+                </Link>
+                <Link href="/dashboard" className="text-sm text-slate-500 transition-colors hover:text-navy-700">
+                  ← Dashboard
+                </Link>
+              </>
+            ) : (
+              <Link
+                href="/login"
+                className="rounded-full px-4 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              >
+                Log in
+              </Link>
+            )}
           </div>
         </div>
       </header>

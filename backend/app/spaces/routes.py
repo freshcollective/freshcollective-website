@@ -272,12 +272,17 @@ def _ensure_enrollment(user_id: str, pathway_id: str, db: Session) -> None:
         db.flush()
 
 
-def _compute_pathway_access(user: User, pathway: Pathway, space: Space, db: Session) -> bool:
+def _compute_pathway_access(user: "User | None", pathway: Pathway, space: Space, db: Session) -> bool:
     """
     Return True if user has access to this pathway; False otherwise.
-    Same rules as _check_pathway_access but returns a bool instead of raising.
-    Used by the checkout page to determine which state to show.
+    Accepts None for unauthenticated visitors — they never have access to paid/included pathways.
     """
+    if user is None:
+        p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
+        access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
+        if p_status in ("draft", "archived", "coming_soon"):
+            return False
+        return access_type == "free"
     if user.role in ("creator", "admin"):
         return True
     space_role = (
@@ -674,25 +679,27 @@ def accept_invite(
 def list_pathways(
     slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: "User | None" = Depends(get_optional_user),
 ) -> list[PathwaySummary]:
     space = _get_space_or_404(slug, db)
-    is_creator_or_admin = current_user.role in ("creator", "admin")
-    space_role = (
-        db.query(SpaceMembership.role)
-        .filter(
-            SpaceMembership.user_id == current_user.id,
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.role.in_(["creator", "moderator"]),
-            SpaceMembership.status == "active",
+    is_creator_or_admin = current_user is not None and current_user.role in ("creator", "admin")
+    is_space_manager = False
+    if current_user is not None:
+        space_role = (
+            db.query(SpaceMembership.role)
+            .filter(
+                SpaceMembership.user_id == current_user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.role.in_(["creator", "moderator"]),
+                SpaceMembership.status == "active",
+            )
+            .first()
         )
-        .first()
-    )
-    is_space_manager = bool(space_role)
+        is_space_manager = bool(space_role)
 
     query = db.query(Pathway).filter(Pathway.space_id == space.id)
     if not (is_creator_or_admin or is_space_manager):
-        # Regular members only see published pathways (active + coming_soon)
+        # Anonymous visitors and regular members only see published pathways (active + coming_soon)
         query = query.filter(Pathway.status.in_(["active", "coming_soon"]))
 
     pathways = query.order_by(Pathway.position).all()

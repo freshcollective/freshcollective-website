@@ -15,7 +15,7 @@ function roleBadge(role: string): { label: string; bg: string; color: string } {
 }
 
 function formatDate(iso: string, opts: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' }): string {
-  return new Date(iso).toLocaleDateString('en-GB', opts)
+  return new Date(iso).toLocaleDateString('en-AU', opts)
 }
 
 export default async function MemberProfilePage({ params }: Props) {

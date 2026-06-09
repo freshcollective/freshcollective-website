@@ -10,7 +10,7 @@ function formatPostDate(isoString: string): string {
   if (diffDays === 0) return 'Today'
   if (diffDays === 1) return 'Yesterday'
   if (diffDays < 7) return `${diffDays} days ago`
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 }
 
 interface PostCardProps {

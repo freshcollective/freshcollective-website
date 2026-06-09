@@ -13,7 +13,7 @@ import type { StepComment } from '@/types/platform'
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function Avatar({ author }: { author: StepComment['author'] }) {

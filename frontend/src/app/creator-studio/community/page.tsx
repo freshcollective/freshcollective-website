@@ -3,7 +3,7 @@ import { getActiveCreatorSpace, getCreatorPosts } from '@/lib/serverApi'
 import type { CreatorPost } from '@/types/platform'
 
 function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 }
 
 const POST_TYPE_LABEL: Record<string, string> = {

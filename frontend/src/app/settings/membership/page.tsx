@@ -3,7 +3,7 @@ import Link from 'next/link'
 import type { UserProfile, SpaceMembership } from '@/types/platform'
 
 function formatDate(isoString: string): string {
-  return new Date(isoString).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
+  return new Date(isoString).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' })
 }
 
 function RolePill({ role }: { role: string }) {

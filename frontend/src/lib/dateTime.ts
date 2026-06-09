@@ -31,7 +31,7 @@ export function formatGatheringTime(iso: string, timezone: string): string {
 
 /** "10:00" without timezone label — for compact calendar chips. */
 export function formatGatheringTimeShort(iso: string, timezone: string): string {
-  return new Date(iso).toLocaleTimeString('en-GB', {
+  return new Date(iso).toLocaleTimeString('en-AU', {
     hour: '2-digit',
     minute: '2-digit',
     timeZone: timezone,
@@ -41,14 +41,14 @@ export function formatGatheringTimeShort(iso: string, timezone: string): string 
 /** { day: "28", month: "MAY", time: "10:00 AEST" } */
 export function formatGatheringDate(iso: string, timezone: string): { day: string; month: string; time: string } {
   const d = new Date(iso)
-  const day   = d.toLocaleDateString('en-GB', { day: '2-digit',  timeZone: timezone })
-  const month = d.toLocaleDateString('en-GB', { month: 'short', timeZone: timezone }).toUpperCase()
+  const day   = d.toLocaleDateString('en-AU', { day: '2-digit',  timeZone: timezone })
+  const month = d.toLocaleDateString('en-AU', { month: 'short', timeZone: timezone }).toUpperCase()
   return { day, month, time: formatGatheringTime(iso, timezone) }
 }
 
 /** "Thursday, 28 May 2026" in the given timezone. */
 export function formatGatheringFullDate(iso: string, timezone: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', {
+  return new Date(iso).toLocaleDateString('en-AU', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -59,7 +59,7 @@ export function formatGatheringFullDate(iso: string, timezone: string): string {
 
 /** "Thursday, 28 May" label for mobile calendar day groups. */
 export function formatGatheringMobileDayLabel(iso: string, timezone: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', {
+  return new Date(iso).toLocaleDateString('en-AU', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',

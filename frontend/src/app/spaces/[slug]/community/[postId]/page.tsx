@@ -12,7 +12,7 @@ interface Props {
 
 function formatDate(isoString: string): string {
   const d = new Date(isoString)
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
 function CommentBlock({ comment }: { comment: CommentItem }) {
