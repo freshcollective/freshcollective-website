@@ -181,6 +181,14 @@ class PaymentTransaction(Base):
         index=True,
     )
 
+    # Payment schedule selected at checkout (null when no schedules on the option)
+    payment_option_schedule_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("payment_option_schedules.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Payout tracking — populated by admin when transfer is processed

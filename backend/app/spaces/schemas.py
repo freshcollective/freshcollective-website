@@ -130,6 +130,23 @@ class SectionWithSteps(BaseModel):
     steps: list[StepSummary]
 
 
+class PaymentOptionScheduleSummary(BaseModel):
+    """Member-facing payment schedule — internal_note excluded."""
+
+    id: str
+    name: str
+    description: str | None = None
+    schedule_type: str
+    status: str
+    total_amount_cents: int | None = None
+    installment_amount_cents: int | None = None
+    installment_count: int | None = None
+    interval: str | None = None
+    currency: str
+    buyer_note: str | None = None
+    position: int
+
+
 class PaymentOptionSummary(BaseModel):
     """Member-facing payment option — internal_note excluded."""
 
@@ -149,6 +166,7 @@ class PaymentOptionSummary(BaseModel):
     currency: str
     buyer_note: str | None = None
     position: int
+    schedules: list[PaymentOptionScheduleSummary] = []
 
 
 class PathwayWithSteps(BaseModel):

@@ -36,6 +36,7 @@ from app.models.payment import (
     PayoutStatus,
 )
 from app.models.payment_option import PaymentOption
+from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     EntitlementStatus,
     Pathway,
@@ -147,6 +148,8 @@ def create_pathway_checkout_session(
 
     # --- Resolve price from payment option (if provided) or pathway -----------
     payment_option: PaymentOption | None = None
+    payment_schedule: PaymentOptionSchedule | None = None
+
     if body.payment_option_id:
         payment_option = (
             db.query(PaymentOption)
@@ -162,7 +165,39 @@ def create_pathway_checkout_session(
                 status_code=404,
                 detail="Payment option not found or not available for this pathway.",
             )
-        price_cents = payment_option.effective_price_cents
+
+        # --- Resolve schedule (if provided) ------------------------------------
+        if body.payment_option_schedule_id:
+            payment_schedule = (
+                db.query(PaymentOptionSchedule)
+                .filter(
+                    PaymentOptionSchedule.id == body.payment_option_schedule_id,
+                    PaymentOptionSchedule.payment_option_id == payment_option.id,
+                    PaymentOptionSchedule.status == "published",
+                )
+                .first()
+            )
+            if not payment_schedule:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Payment schedule not found or not available for this option.",
+                )
+            if payment_schedule.schedule_type == "recurring_installments":
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "Recurring instalment payment plans are not yet available for checkout. "
+                        "Please choose 'Pay in full' or contact support."
+                    ),
+                )
+            if payment_schedule.schedule_type == "pay_in_full":
+                price_cents = payment_schedule.total_amount_cents
+            else:
+                # manual or future types — fall back to option effective price
+                price_cents = payment_option.effective_price_cents
+        else:
+            price_cents = payment_option.effective_price_cents
+
         if not price_cents or price_cents <= 0:
             raise HTTPException(status_code=400, detail="Payment option has no valid price.")
     elif pathway_pricing_mode == "payment_options":
@@ -270,6 +305,7 @@ def create_pathway_checkout_session(
                 "platform_fee_bps": str(fee_bps),
                 "creator_plan_id": creator_plan_id or "",
                 "payment_option_id": payment_option.id if payment_option else "",
+                "payment_option_schedule_id": payment_schedule.id if payment_schedule else "",
             },
             # Metadata mirrored onto the PaymentIntent — used by payment_intent.payment_failed
             payment_intent_data={
@@ -313,6 +349,7 @@ def create_pathway_checkout_session(
         net_platform_amount_cents=platform_fee,
         provider_checkout_session_id=session.id,
         payment_option_id=payment_option.id if payment_option else None,
+        payment_option_schedule_id=payment_schedule.id if payment_schedule else None,
         payout_status=PayoutStatus.pending,
         created_at=now,
         updated_at=now,

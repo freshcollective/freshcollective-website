@@ -78,6 +78,21 @@ export interface PathwaySection {
   steps: StepSummary[]
 }
 
+export interface PaymentOptionScheduleSummary {
+  id: string
+  name: string
+  description: string | null
+  schedule_type: 'pay_in_full' | 'recurring_installments' | 'manual'
+  status: string
+  total_amount_cents: number | null
+  installment_amount_cents: number | null
+  installment_count: number | null
+  interval: string | null
+  currency: string
+  buyer_note: string | null
+  position: number
+}
+
 export interface PaymentOptionSummary {
   id: string
   name: string
@@ -95,6 +110,7 @@ export interface PaymentOptionSummary {
   currency: string
   buyer_note: string | null
   position: number
+  schedules: PaymentOptionScheduleSummary[]
 }
 
 export interface PathwayWithSteps {

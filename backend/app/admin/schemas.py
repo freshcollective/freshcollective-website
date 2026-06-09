@@ -101,6 +101,7 @@ class PaymentTransactionOut(BaseModel):
     provider_subscription_id: str | None
 
     payment_option_id: str | None = None
+    payment_option_schedule_id: str | None = None
 
     notes: str | None
     payout_status: str

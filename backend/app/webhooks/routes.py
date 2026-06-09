@@ -38,6 +38,7 @@ from app.models.payment import (
     PayoutStatus,
 )
 from app.models.payment_option import PaymentOption
+from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     EntitlementSource,
     EntitlementStatus,
@@ -119,6 +120,7 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     payer_user_id: str = metadata.get("payer_user_id", "")
     space_id: str = metadata.get("space_id", "")
     payment_option_id: str = metadata.get("payment_option_id", "")
+    payment_option_schedule_id: str = metadata.get("payment_option_schedule_id", "")
 
     if not all([transaction_id, pathway_id, payer_user_id, space_id]):
         logger.error(
@@ -195,6 +197,16 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     txn.processing_fee_cents = processing_fee_cents
     txn.payout_status = PayoutStatus.pending
     txn.updated_at = now
+
+    # --- Store schedule_id on transaction (best-effort) -----------------------
+    if payment_option_schedule_id and txn.payment_option_schedule_id is None:
+        sched = (
+            db.query(PaymentOptionSchedule)
+            .filter(PaymentOptionSchedule.id == payment_option_schedule_id)
+            .first()
+        )
+        if sched:
+            txn.payment_option_schedule_id = sched.id
 
     # --- Resolve payment option for term_pass expiry / grants_pathway_id -----
     payment_option: PaymentOption | None = None

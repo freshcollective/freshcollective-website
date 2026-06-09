@@ -1112,6 +1112,7 @@ class CreatorPaymentTransactionOut(BaseModel):
     space_id: str | None
     pathway_id: str | None
     payment_option_id: str | None = None
+    payment_option_schedule_id: str | None = None
 
     currency: str
     gross_amount_cents: int
@@ -1228,3 +1229,115 @@ class PaymentOptionResponse(BaseModel):
     position: int
     created_at: datetime
     updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Payment option schedules
+# ---------------------------------------------------------------------------
+
+_VALID_SCHEDULE_TYPES = ("pay_in_full", "recurring_installments", "manual")
+_VALID_SCHEDULE_STATUSES = ("draft", "published", "archived")
+
+
+class PaymentOptionScheduleCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    schedule_type: str = "pay_in_full"
+    status: str = "draft"
+    total_amount_cents: int | None = None
+    upfront_amount_cents: int | None = None
+    installment_amount_cents: int | None = None
+    installment_count: int | None = None
+    interval: str | None = None
+    stripe_interval: str | None = None
+    stripe_interval_count: int | None = None
+    currency: str = "AUD"
+    buyer_note: str | None = None
+    internal_note: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("name is required")
+        return v.strip()
+
+    @field_validator("schedule_type")
+    @classmethod
+    def validate_schedule_type(cls, v: str) -> str:
+        if v not in _VALID_SCHEDULE_TYPES:
+            raise ValueError(f"schedule_type must be one of: {_VALID_SCHEDULE_TYPES}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        if v not in _VALID_SCHEDULE_STATUSES:
+            raise ValueError(f"status must be one of: {_VALID_SCHEDULE_STATUSES}")
+        return v
+
+
+class PaymentOptionScheduleUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    schedule_type: str | None = None
+    status: str | None = None
+    total_amount_cents: int | None = None
+    upfront_amount_cents: int | None = None
+    installment_amount_cents: int | None = None
+    installment_count: int | None = None
+    interval: str | None = None
+    stripe_interval: str | None = None
+    stripe_interval_count: int | None = None
+    currency: str | None = None
+    buyer_note: str | None = None
+    internal_note: str | None = None
+
+    @field_validator("schedule_type")
+    @classmethod
+    def validate_schedule_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_SCHEDULE_TYPES:
+            raise ValueError(f"schedule_type must be one of: {_VALID_SCHEDULE_TYPES}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_SCHEDULE_STATUSES:
+            raise ValueError(f"status must be one of: {_VALID_SCHEDULE_STATUSES}")
+        return v
+
+
+class PaymentOptionScheduleResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: str
+    payment_option_id: str
+    name: str
+    description: str | None
+    schedule_type: str
+    status: str
+    total_amount_cents: int | None
+    upfront_amount_cents: int | None
+    installment_amount_cents: int | None
+    installment_count: int | None
+    interval: str | None
+    stripe_interval: str | None
+    stripe_interval_count: int | None
+    currency: str
+    buyer_note: str | None
+    internal_note: str | None
+    position: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class GenerateSchedulesRequest(BaseModel):
+    """
+    Request body for the 'generate standard schedules' convenience endpoint.
+
+    Generates draft pay_in_full, weekly, and fortnightly schedules based
+    on the payment option's effective_price_cents. Caller supplies installment
+    counts (defaults to 10 weekly / 5 fortnightly if not provided).
+    """
+    weekly_installment_count: int = 10
+    fortnightly_installment_count: int = 5

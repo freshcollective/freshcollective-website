@@ -9,6 +9,7 @@ from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.payment_option import PaymentOption
+from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     BookingStatus,
     Enrollment,
@@ -47,6 +48,7 @@ from app.spaces.schemas import (
     PathwayProgress,
     PathwaySummary,
     PathwayWithSteps,
+    PaymentOptionScheduleSummary,
     PaymentOptionSummary,
     PublicSpaceCard,
     SaveNotesRequest,
@@ -1637,6 +1639,23 @@ def get_pathway_overview(
         .order_by(PaymentOption.position)
         .all()
     )
+
+    # Fetch published schedules for each option in one query
+    opt_ids = [o.id for o in published_options]
+    schedules_by_opt: dict[str, list[PaymentOptionSchedule]] = {oid: [] for oid in opt_ids}
+    if opt_ids:
+        pub_schedules = (
+            db.query(PaymentOptionSchedule)
+            .filter(
+                PaymentOptionSchedule.payment_option_id.in_(opt_ids),
+                PaymentOptionSchedule.status == "published",
+            )
+            .order_by(PaymentOptionSchedule.position)
+            .all()
+        )
+        for s in pub_schedules:
+            schedules_by_opt[s.payment_option_id].append(s)
+
     option_summaries = [
         PaymentOptionSummary(
             id=opt.id,
@@ -1655,6 +1674,23 @@ def get_pathway_overview(
             currency=opt.currency,
             buyer_note=opt.buyer_note,
             position=opt.position,
+            schedules=[
+                PaymentOptionScheduleSummary(
+                    id=s.id,
+                    name=s.name,
+                    description=s.description,
+                    schedule_type=s.schedule_type,
+                    status=s.status,
+                    total_amount_cents=s.total_amount_cents,
+                    installment_amount_cents=s.installment_amount_cents,
+                    installment_count=s.installment_count,
+                    interval=s.interval,
+                    currency=s.currency,
+                    buyer_note=s.buyer_note,
+                    position=s.position,
+                )
+                for s in schedules_by_opt.get(opt.id, [])
+            ],
         )
         for opt in published_options
     ]

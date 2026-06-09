@@ -2,12 +2,44 @@
 
 import { useState } from 'react'
 import { CheckoutButton } from './CheckoutButton'
-import type { PaymentOptionSummary } from '@/types/platform'
+import type { PaymentOptionSummary, PaymentOptionScheduleSummary } from '@/types/platform'
 
 function formatPrice(cents: number, currency: string): string {
   const amount = cents / 100
   const symbol = currency.toUpperCase() === 'AUD' ? '$' : currency
   return `${symbol}${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)}`
+}
+
+function formatScheduleLabel(s: PaymentOptionScheduleSummary): string {
+  if (s.schedule_type === 'pay_in_full' && s.total_amount_cents != null) {
+    return formatPrice(s.total_amount_cents, s.currency)
+  }
+  if (s.schedule_type === 'recurring_installments') {
+    const count = s.installment_count
+    const amount = s.installment_amount_cents != null
+      ? formatPrice(s.installment_amount_cents, s.currency)
+      : '—'
+    const intervalLabel =
+      s.interval === 'fortnight' ? 'fortnightly'
+      : s.interval === 'week' ? 'weekly'
+      : (s.interval ?? '')
+    return count ? `${count} × ${amount} ${intervalLabel}` : `${amount} ${intervalLabel}`
+  }
+  return s.name
+}
+
+function scheduleCheckoutLabel(s: PaymentOptionScheduleSummary): string {
+  if (s.schedule_type === 'pay_in_full' && s.total_amount_cents != null) {
+    return `Pay ${formatPrice(s.total_amount_cents, s.currency)} AUD`
+  }
+  if (s.schedule_type === 'recurring_installments') {
+    const intervalLabel =
+      s.interval === 'fortnight' ? 'fortnightly'
+      : s.interval === 'week' ? 'weekly'
+      : 'recurring'
+    return `Start ${intervalLabel} payments`
+  }
+  return 'Unlock pathway'
 }
 
 interface Props {
@@ -16,22 +48,59 @@ interface Props {
 }
 
 export function PaymentOptionSelector({ pathwayId, options }: Props) {
-  const [selectedId, setSelectedId] = useState<string>(options[0]?.id ?? '')
-  const selected = options.find(o => o.id === selectedId)
+  const [selectedOptionId, setSelectedOptionId] = useState<string>(options[0]?.id ?? '')
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
+
+  const selectedOption = options.find(o => o.id === selectedOptionId)
+  const publishedSchedules = selectedOption?.schedules ?? []
+  const hasSchedules = publishedSchedules.length > 0
+
+  function handleOptionSelect(id: string) {
+    setSelectedOptionId(id)
+    setSelectedScheduleId(null)
+  }
+
+  // Default to first schedule when none explicitly chosen
+  const effectiveScheduleId = hasSchedules
+    ? (selectedScheduleId ?? publishedSchedules[0]?.id ?? null)
+    : null
+  const selectedSchedule = effectiveScheduleId
+    ? (publishedSchedules.find(s => s.id === effectiveScheduleId) ?? null)
+    : null
+
+  const ctaLabel = (() => {
+    if (selectedSchedule) return scheduleCheckoutLabel(selectedSchedule)
+    if (selectedOption?.effective_price_cents != null) {
+      return `Pay ${formatPrice(selectedOption.effective_price_cents, selectedOption.currency)} AUD`
+    }
+    return 'Unlock pathway'
+  })()
+
+  const summaryPrice = (() => {
+    if (selectedSchedule?.schedule_type === 'pay_in_full' && selectedSchedule.total_amount_cents != null) {
+      return formatPrice(selectedSchedule.total_amount_cents, selectedSchedule.currency)
+    }
+    if (selectedOption?.effective_price_cents != null) {
+      return formatPrice(selectedOption.effective_price_cents, selectedOption.currency)
+    }
+    return '—'
+  })()
 
   return (
     <div className="space-y-4">
+
+      {/* Step 1: Choose payment option */}
       <div className="space-y-3">
         {options.map(opt => {
           const price = opt.effective_price_cents != null
             ? formatPrice(opt.effective_price_cents, opt.currency)
             : null
-          const isSelected = opt.id === selectedId
+          const isSelected = opt.id === selectedOptionId
           return (
             <button
               key={opt.id}
               type="button"
-              onClick={() => setSelectedId(opt.id)}
+              onClick={() => handleOptionSelect(opt.id)}
               className="w-full rounded-xl border-2 bg-white p-4 text-left transition-colors"
               style={{
                 borderColor: isSelected ? '#38A09E' : '#E2E8F0',
@@ -62,6 +131,9 @@ export function PaymentOptionSelector({ pathwayId, options }: Props) {
                   {price && (
                     <p className="font-bold text-navy-900 text-[16px]">{price}</p>
                   )}
+                  {opt.schedules.length > 0 && (
+                    <p className="mt-0.5 text-[11px] text-slate-400">{opt.schedules.length} pay option{opt.schedules.length > 1 ? 's' : ''}</p>
+                  )}
                   <div
                     className="mt-1 ml-auto h-4 w-4 rounded-full border-2 flex items-center justify-center"
                     style={{ borderColor: isSelected ? '#38A09E' : '#CBD5E1' }}
@@ -77,35 +149,81 @@ export function PaymentOptionSelector({ pathwayId, options }: Props) {
         })}
       </div>
 
-      {selected && (
+      {/* Step 2: Choose payment schedule (shown when the selected option has published schedules) */}
+      {hasSchedules && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Payment schedule
+          </p>
+          <div className="space-y-2">
+            {publishedSchedules.map(s => {
+              const isSelSched = s.id === effectiveScheduleId
+              const isRecurring = s.schedule_type === 'recurring_installments'
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => { if (!isRecurring) setSelectedScheduleId(s.id) }}
+                  disabled={isRecurring}
+                  className="w-full rounded-lg border-2 bg-white px-4 py-3 text-left transition-colors disabled:opacity-50"
+                  style={{
+                    borderColor: isSelSched && !isRecurring ? '#38A09E' : '#E2E8F0',
+                    background: isSelSched && !isRecurring ? 'rgba(56,160,158,0.04)' : '#FFFFFF',
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[13px] font-semibold text-navy-900">{s.name}</p>
+                      {s.buyer_note && (
+                        <p className="mt-0.5 text-[11px] text-slate-500">{s.buyer_note}</p>
+                      )}
+                      {isRecurring && (
+                        <p className="mt-0.5 text-[11px] text-amber-600">Coming soon — not yet available</p>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-[13px] font-bold text-navy-900">{formatScheduleLabel(s)}</p>
+                      <div
+                        className="mt-1 ml-auto h-4 w-4 rounded-full border-2 flex items-center justify-center"
+                        style={{ borderColor: isSelSched && !isRecurring ? '#38A09E' : '#CBD5E1' }}
+                      >
+                        {isSelSched && !isRecurring && (
+                          <div className="h-2 w-2 rounded-full" style={{ background: '#38A09E' }} />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Payment summary */}
+      {selectedOption && (
         <div className="rounded-xl border border-border bg-white p-4 space-y-2">
           <div className="flex items-center justify-between text-[14px]">
-            <span className="text-slate-600">{selected.name}</span>
-            <span className="font-semibold text-navy-900">
-              {selected.effective_price_cents != null
-                ? formatPrice(selected.effective_price_cents, selected.currency)
-                : '—'}
-            </span>
+            <span className="text-slate-600">{selectedOption.name}</span>
+            <span className="font-semibold text-navy-900">{summaryPrice}</span>
           </div>
+          {selectedSchedule && selectedSchedule.schedule_type !== 'pay_in_full' && selectedSchedule.installment_count && (
+            <div className="flex items-center justify-between text-[12px] text-slate-500">
+              <span>{selectedSchedule.name}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between border-t pt-2 font-semibold text-[14px]" style={{ borderColor: '#E2E8F0' }}>
             <span className="text-navy-900">Total</span>
-            <span className="text-navy-900">
-              {selected.effective_price_cents != null
-                ? formatPrice(selected.effective_price_cents, selected.currency)
-                : '—'}
-            </span>
+            <span className="text-navy-900">{summaryPrice}</span>
           </div>
         </div>
       )}
 
       <CheckoutButton
         pathwayId={pathwayId}
-        paymentOptionId={selectedId || null}
-        label={
-          selected?.effective_price_cents != null
-            ? `Unlock for ${formatPrice(selected.effective_price_cents, selected.currency)}`
-            : 'Unlock pathway'
-        }
+        paymentOptionId={selectedOptionId || null}
+        paymentOptionScheduleId={effectiveScheduleId}
+        label={ctaLabel}
       />
 
       <p className="text-center text-[11px] leading-relaxed text-slate-400">

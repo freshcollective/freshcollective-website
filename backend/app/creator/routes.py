@@ -57,8 +57,12 @@ from app.creator.schemas import (
     PathwayCreateRequest,
     PathwayResponse,
     PathwayUpdateRequest,
+    GenerateSchedulesRequest,
     PaymentOptionCreateRequest,
     PaymentOptionResponse,
+    PaymentOptionScheduleCreateRequest,
+    PaymentOptionScheduleResponse,
+    PaymentOptionScheduleUpdateRequest,
     PaymentOptionUpdateRequest,
     ResourceCreateRequest,
     ResourceResponse,
@@ -88,6 +92,7 @@ from app.creator.schemas import (
 from app.models.creator_billing import CreatorPlan, CreatorSubscription
 from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentTransactionType, PayoutStatus
 from app.models.payment_option import PaymentOption
+from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     BookingStatus,
     EntitlementSource,
@@ -3713,4 +3718,305 @@ def archive_payment_option(
     opt = _get_payment_option(option_id, pathway, db)
     opt.status = "archived"
     opt.updated_at = datetime.utcnow()
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Payment option schedules
+# ---------------------------------------------------------------------------
+
+def _get_payment_option_schedule(
+    schedule_id: str,
+    option: PaymentOption,
+    db: Session,
+) -> PaymentOptionSchedule:
+    sched = (
+        db.query(PaymentOptionSchedule)
+        .filter(
+            PaymentOptionSchedule.id == schedule_id,
+            PaymentOptionSchedule.payment_option_id == option.id,
+        )
+        .first()
+    )
+    if not sched:
+        raise HTTPException(status_code=404, detail="Payment schedule not found.")
+    return sched
+
+
+def _schedule_to_dict(s: PaymentOptionSchedule) -> dict:
+    return {
+        "id": s.id,
+        "payment_option_id": s.payment_option_id,
+        "name": s.name,
+        "description": s.description,
+        "schedule_type": s.schedule_type,
+        "status": s.status,
+        "total_amount_cents": s.total_amount_cents,
+        "upfront_amount_cents": s.upfront_amount_cents,
+        "installment_amount_cents": s.installment_amount_cents,
+        "installment_count": s.installment_count,
+        "interval": s.interval,
+        "stripe_interval": s.stripe_interval,
+        "stripe_interval_count": s.stripe_interval_count,
+        "currency": s.currency,
+        "buyer_note": s.buyer_note,
+        "internal_note": s.internal_note,
+        "position": s.position,
+        "created_at": s.created_at,
+        "updated_at": s.updated_at,
+    }
+
+
+@router.get(
+    "/spaces/{slug}/pathways/{pathway_slug}/payment-options/{option_id}/schedules",
+    response_model=list[PaymentOptionScheduleResponse],
+)
+def list_payment_option_schedules(
+    slug: str,
+    pathway_slug: str,
+    option_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[dict]:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    _get_payment_option(option_id, pathway, db)  # validates ownership
+    schedules = (
+        db.query(PaymentOptionSchedule)
+        .filter(PaymentOptionSchedule.payment_option_id == option_id)
+        .order_by(PaymentOptionSchedule.position, PaymentOptionSchedule.created_at)
+        .all()
+    )
+    return [_schedule_to_dict(s) for s in schedules]
+
+
+@router.post(
+    "/spaces/{slug}/pathways/{pathway_slug}/payment-options/{option_id}/schedules",
+    response_model=PaymentOptionScheduleResponse,
+    status_code=201,
+)
+def create_payment_option_schedule(
+    slug: str,
+    pathway_slug: str,
+    option_id: str,
+    body: PaymentOptionScheduleCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    _get_payment_option(option_id, pathway, db)  # validates ownership
+
+    max_pos = (
+        db.query(PaymentOptionSchedule.position)
+        .filter(PaymentOptionSchedule.payment_option_id == option_id)
+        .order_by(PaymentOptionSchedule.position.desc())
+        .first()
+    )
+    position = (max_pos[0] + 1) if max_pos else 0
+
+    now = datetime.utcnow()
+    sched = PaymentOptionSchedule(
+        id=str(uuid4()),
+        payment_option_id=option_id,
+        name=body.name,
+        description=body.description,
+        schedule_type=body.schedule_type,
+        status=body.status,
+        total_amount_cents=body.total_amount_cents,
+        upfront_amount_cents=body.upfront_amount_cents,
+        installment_amount_cents=body.installment_amount_cents,
+        installment_count=body.installment_count,
+        interval=body.interval,
+        stripe_interval=body.stripe_interval,
+        stripe_interval_count=body.stripe_interval_count,
+        currency=body.currency.upper(),
+        buyer_note=body.buyer_note,
+        internal_note=body.internal_note,
+        position=position,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(sched)
+    db.commit()
+    db.refresh(sched)
+    return _schedule_to_dict(sched)
+
+
+@router.post(
+    "/spaces/{slug}/pathways/{pathway_slug}/payment-options/{option_id}/schedules/generate",
+    response_model=list[PaymentOptionScheduleResponse],
+    status_code=201,
+)
+def generate_payment_option_schedules(
+    slug: str,
+    pathway_slug: str,
+    option_id: str,
+    body: GenerateSchedulesRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[dict]:
+    """
+    Generate draft pay_in_full, weekly, and fortnightly schedules for this option.
+    Skips any schedule_type that already exists (non-archived) for this option.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    opt = _get_payment_option(option_id, pathway, db)
+
+    total = opt.effective_price_cents
+    if not total or total <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot generate schedules: payment option has no valid effective price.",
+        )
+
+    # Existing non-archived schedule types (avoid duplicating)
+    existing_types = {
+        r[0]
+        for r in db.query(PaymentOptionSchedule.schedule_type)
+        .filter(
+            PaymentOptionSchedule.payment_option_id == option_id,
+            PaymentOptionSchedule.status != "archived",
+        )
+        .all()
+    }
+
+    max_pos_row = (
+        db.query(PaymentOptionSchedule.position)
+        .filter(PaymentOptionSchedule.payment_option_id == option_id)
+        .order_by(PaymentOptionSchedule.position.desc())
+        .first()
+    )
+    next_pos = (max_pos_row[0] + 1) if max_pos_row else 0
+
+    currency = opt.currency or "AUD"
+    now = datetime.utcnow()
+    created = []
+
+    # --- Pay in full ---
+    if "pay_in_full" not in existing_types:
+        s = PaymentOptionSchedule(
+            id=str(uuid4()),
+            payment_option_id=option_id,
+            name="Pay in full",
+            schedule_type="pay_in_full",
+            status="draft",
+            total_amount_cents=total,
+            currency=currency,
+            position=next_pos,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(s)
+        created.append(s)
+        next_pos += 1
+
+    # --- Weekly ---
+    if "recurring_installments" not in existing_types and body.weekly_installment_count > 0:
+        weekly_amount = round(total / body.weekly_installment_count)
+        s = PaymentOptionSchedule(
+            id=str(uuid4()),
+            payment_option_id=option_id,
+            name=f"Weekly — {body.weekly_installment_count} payments",
+            schedule_type="recurring_installments",
+            status="draft",
+            total_amount_cents=total,
+            installment_amount_cents=weekly_amount,
+            installment_count=body.weekly_installment_count,
+            interval="week",
+            stripe_interval="week",
+            stripe_interval_count=1,
+            currency=currency,
+            buyer_note=f"{body.weekly_installment_count} weekly payments of ${weekly_amount / 100:.0f} {currency}",
+            position=next_pos,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(s)
+        created.append(s)
+        next_pos += 1
+
+    # --- Fortnightly ---
+    if "recurring_installments" not in existing_types and body.fortnightly_installment_count > 0:
+        fort_amount = round(total / body.fortnightly_installment_count)
+        s = PaymentOptionSchedule(
+            id=str(uuid4()),
+            payment_option_id=option_id,
+            name=f"Fortnightly — {body.fortnightly_installment_count} payments",
+            schedule_type="recurring_installments",
+            status="draft",
+            total_amount_cents=total,
+            installment_amount_cents=fort_amount,
+            installment_count=body.fortnightly_installment_count,
+            interval="fortnight",
+            stripe_interval="week",
+            stripe_interval_count=2,
+            currency=currency,
+            buyer_note=f"{body.fortnightly_installment_count} fortnightly payments of ${fort_amount / 100:.0f} {currency}",
+            position=next_pos,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(s)
+        created.append(s)
+
+    db.commit()
+    for s in created:
+        db.refresh(s)
+    return [_schedule_to_dict(s) for s in created]
+
+
+@router.patch(
+    "/spaces/{slug}/pathways/{pathway_slug}/payment-options/{option_id}/schedules/{schedule_id}",
+    response_model=PaymentOptionScheduleResponse,
+)
+def update_payment_option_schedule(
+    slug: str,
+    pathway_slug: str,
+    option_id: str,
+    schedule_id: str,
+    body: PaymentOptionScheduleUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    opt = _get_payment_option(option_id, pathway, db)
+    sched = _get_payment_option_schedule(schedule_id, opt, db)
+
+    updates = body.model_dump(exclude_unset=True)
+    for field, val in updates.items():
+        if field == "name" and val is not None:
+            setattr(sched, field, val.strip())
+        elif field == "currency" and val is not None:
+            sched.currency = val.upper()
+        else:
+            setattr(sched, field, val)
+
+    sched.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(sched)
+    return _schedule_to_dict(sched)
+
+
+@router.delete(
+    "/spaces/{slug}/pathways/{pathway_slug}/payment-options/{option_id}/schedules/{schedule_id}",
+    status_code=204,
+)
+def archive_payment_option_schedule(
+    slug: str,
+    pathway_slug: str,
+    option_id: str,
+    schedule_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    """Soft-delete: set status to archived."""
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    opt = _get_payment_option(option_id, pathway, db)
+    sched = _get_payment_option_schedule(schedule_id, opt, db)
+    sched.status = "archived"
+    sched.updated_at = datetime.utcnow()
     db.commit()

@@ -877,6 +877,367 @@ function fmtOptionPrice(cents: number | null, currency: string): string {
   return `$${Number.isInteger(amount) ? amount.toFixed(0) : amount.toFixed(2)} ${currency}`
 }
 
+interface PaymentSchedule {
+  id: string
+  payment_option_id: string
+  name: string
+  description: string | null
+  schedule_type: string
+  status: string
+  total_amount_cents: number | null
+  upfront_amount_cents: number | null
+  installment_amount_cents: number | null
+  installment_count: number | null
+  interval: string | null
+  stripe_interval: string | null
+  stripe_interval_count: number | null
+  currency: string
+  buyer_note: string | null
+  internal_note: string | null
+  position: number
+}
+
+function scheduleTypeLabel(t: string): string {
+  if (t === 'pay_in_full') return 'Pay in full'
+  if (t === 'recurring_installments') return 'Recurring instalments'
+  if (t === 'manual') return 'Manual'
+  return t
+}
+
+function PaymentSchedulesSection({
+  spaceSlug,
+  pathwaySlug,
+  optionId,
+  effectivePrice,
+  currency: optCurrency,
+}: {
+  spaceSlug: string
+  pathwaySlug: string
+  optionId: string
+  effectivePrice: number | null
+  currency: string
+}) {
+  const [schedules, setSchedules] = useState<PaymentSchedule[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  // null = list view; 'new' = adding; <id> = editing
+  const [formMode, setFormMode] = useState<'new' | string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
+
+  // Form fields
+  const [sName, setSName] = useState('')
+  const [sDesc, setSDesc] = useState('')
+  const [sType, setSType] = useState('pay_in_full')
+  const [sTotalAmount, setSTotalAmount] = useState('')
+  const [sInstAmount, setSInstAmount] = useState('')
+  const [sInstCount, setSInstCount] = useState('')
+  const [sInterval, setSInterval] = useState('week')
+  const [sCurrency, setSCurrency] = useState(optCurrency)
+  const [sBuyerNote, setSBuyerNote] = useState('')
+  const [sInternalNote, setSInternalNote] = useState('')
+
+  async function loadSchedules() {
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options/${optionId}/schedules`),
+        { credentials: 'include' },
+      )
+      if (!res.ok) { setLoadError('Could not load schedules.'); return }
+      setSchedules(await res.json())
+      setLoaded(true)
+    } catch { setLoadError('Could not load schedules.') }
+  }
+
+  function toggleExpand() {
+    if (!expanded && !loaded) loadSchedules()
+    setExpanded(v => !v)
+    setFormMode(null)
+  }
+
+  function resetSchedForm(s?: PaymentSchedule) {
+    setSName(s?.name ?? '')
+    setSDesc(s?.description ?? '')
+    setSType(s?.schedule_type ?? 'pay_in_full')
+    setSTotalAmount(s?.total_amount_cents != null ? String(s.total_amount_cents / 100) : (effectivePrice != null ? String(effectivePrice / 100) : ''))
+    setSInstAmount(s?.installment_amount_cents != null ? String(s.installment_amount_cents / 100) : '')
+    setSInstCount(s?.installment_count != null ? String(s.installment_count) : '')
+    setSInterval(s?.interval ?? 'week')
+    setSCurrency(s?.currency ?? optCurrency)
+    setSBuyerNote(s?.buyer_note ?? '')
+    setSInternalNote(s?.internal_note ?? '')
+  }
+
+  function openNew() { resetSchedForm(); setFormMode('new'); setSaveError(null) }
+  function openEdit(s: PaymentSchedule) { resetSchedForm(s); setFormMode(s.id); setSaveError(null) }
+  function closeForm() { setFormMode(null); setSaveError(null) }
+
+  function buildSchedPayload() {
+    return {
+      name: sName.trim(),
+      description: sDesc.trim() || null,
+      schedule_type: sType,
+      total_amount_cents: sTotalAmount ? Math.round(parseFloat(sTotalAmount) * 100) : null,
+      installment_amount_cents: sInstAmount ? Math.round(parseFloat(sInstAmount) * 100) : null,
+      installment_count: sInstCount ? parseInt(sInstCount) : null,
+      interval: sType === 'recurring_installments' ? sInterval : null,
+      stripe_interval: sType === 'recurring_installments' ? (sInterval === 'fortnight' ? 'week' : sInterval) : null,
+      stripe_interval_count: sType === 'recurring_installments' ? (sInterval === 'fortnight' ? 2 : 1) : null,
+      currency: sCurrency,
+      buyer_note: sBuyerNote.trim() || null,
+      internal_note: sInternalNote.trim() || null,
+    }
+  }
+
+  async function handleCreate() {
+    if (!sName.trim()) { setSaveError('Name is required.'); return }
+    setSaving(true); setSaveError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options/${optionId}/schedules`),
+        { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...buildSchedPayload(), status: 'draft' }) },
+      )
+      if (!res.ok) { const b = await res.json().catch(() => ({})); setSaveError((b as {detail?: string}).detail ?? 'Could not create schedule.'); return }
+      await loadSchedules(); closeForm()
+    } catch { setSaveError('Could not create schedule.') }
+    finally { setSaving(false) }
+  }
+
+  async function handleUpdate(schedId: string) {
+    if (!sName.trim()) { setSaveError('Name is required.'); return }
+    setSaving(true); setSaveError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options/${optionId}/schedules/${schedId}`),
+        { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildSchedPayload()) },
+      )
+      if (!res.ok) { const b = await res.json().catch(() => ({})); setSaveError((b as {detail?: string}).detail ?? 'Could not save changes.'); return }
+      await loadSchedules(); closeForm()
+    } catch { setSaveError('Could not save changes.') }
+    finally { setSaving(false) }
+  }
+
+  async function handleStatusChange(schedId: string, newStatus: string) {
+    try {
+      await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options/${optionId}/schedules/${schedId}`),
+        { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: newStatus }) },
+      )
+      await loadSchedules()
+    } catch { /* ignore */ }
+  }
+
+  async function handleArchive(schedId: string) {
+    if (!confirm('Archive this schedule? It will no longer appear to members.')) return
+    try {
+      await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options/${optionId}/schedules/${schedId}`),
+        { method: 'DELETE', credentials: 'include' },
+      )
+      await loadSchedules()
+    } catch { /* ignore */ }
+  }
+
+  async function handleGenerate() {
+    if (!effectivePrice || effectivePrice <= 0) { alert('This option needs a valid effective price before generating schedules.'); return }
+    setGenerating(true)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathwaySlug}/payment-options/${optionId}/schedules/generate`),
+        { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ weekly_installment_count: 10, fortnightly_installment_count: 5 }) },
+      )
+      if (!res.ok) { const b = await res.json().catch(() => ({})); alert((b as {detail?: string}).detail ?? 'Could not generate schedules.'); return }
+      await loadSchedules()
+    } catch { alert('Could not generate schedules.') }
+    finally { setGenerating(false) }
+  }
+
+  const isEditing = formMode !== null && formMode !== 'new'
+  const editingSchedId = isEditing ? formMode : null
+
+  function SchedForm({ schedId }: { schedId: string | null }) {
+    return (
+      <div className="rounded-lg border border-teal-200 bg-teal-50/30 p-3 space-y-3 mt-2">
+        <p className="text-[12px] font-semibold text-navy-900">{schedId ? 'Edit schedule' : 'New schedule'}</p>
+        {schedId && <p className="text-[11px] text-slate-400">Changes affect future checkouts only.</p>}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name *</label>
+            <input type="text" value={sName} onChange={e => setSName(e.target.value)} placeholder="e.g. Pay in full"
+              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Schedule type</label>
+            <select value={sType} onChange={e => setSType(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-teal-400">
+              <option value="pay_in_full">Pay in full</option>
+              <option value="recurring_installments">Recurring instalments</option>
+              <option value="manual">Manual</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Currency</label>
+            <select value={sCurrency} onChange={e => setSCurrency(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-teal-400">
+              <option value="AUD">AUD</option>
+              <option value="USD">USD</option>
+              <option value="NZD">NZD</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Total amount ($)</label>
+            <input type="number" min="0" step="0.01" value={sTotalAmount} onChange={e => setSTotalAmount(e.target.value)}
+              placeholder="e.g. 200"
+              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
+          </div>
+          {sType === 'recurring_installments' && (
+            <>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Instalment amount ($)</label>
+                <input type="number" min="0" step="0.01" value={sInstAmount} onChange={e => setSInstAmount(e.target.value)}
+                  placeholder="e.g. 20"
+                  className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Number of instalments</label>
+                <input type="number" min="1" value={sInstCount} onChange={e => setSInstCount(e.target.value)}
+                  placeholder="e.g. 10"
+                  className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Interval</label>
+                <select value={sInterval} onChange={e => setSInterval(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-teal-400">
+                  <option value="week">Weekly</option>
+                  <option value="fortnight">Fortnightly</option>
+                  <option value="month">Monthly</option>
+                </select>
+              </div>
+            </>
+          )}
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Member-facing note</label>
+            <input type="text" value={sBuyerNote} onChange={e => setSBuyerNote(e.target.value)}
+              placeholder="Short note shown at checkout"
+              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Internal note</label>
+            <input type="text" value={sInternalNote} onChange={e => setSInternalNote(e.target.value)}
+              placeholder="Not shown to members"
+              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
+          </div>
+        </div>
+
+        {saveError && <p className="text-[11px] text-red-600">{saveError}</p>}
+
+        <div className="flex gap-2">
+          <button type="button" onClick={schedId ? () => handleUpdate(schedId) : handleCreate} disabled={saving}
+            className="rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}>
+            {saving ? 'Saving…' : schedId ? 'Save changes' : 'Save as draft'}
+          </button>
+          <button type="button" onClick={closeForm}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-slate-50">
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <button type="button" onClick={toggleExpand}
+        className="flex items-center gap-1.5 text-[12px] font-semibold text-teal-700 hover:text-teal-800">
+        <span>{expanded ? '▾' : '▸'}</span>
+        Payment schedules
+        {loaded && schedules.length > 0 && (
+          <span className="rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] text-teal-700">{schedules.length}</span>
+        )}
+      </button>
+
+      {expanded && (
+        <div className="mt-2 space-y-2">
+          {loadError && <p className="text-[11px] text-red-600">{loadError}</p>}
+
+          {formMode === 'new' && <SchedForm schedId={null} />}
+
+          {schedules.map(s => (
+            <div key={s.id}>
+              {editingSchedId === s.id ? (
+                <SchedForm schedId={s.id} />
+              ) : (
+                <div className="rounded-lg border border-slate-100 bg-white px-3 py-2 text-[12px]">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-semibold text-navy-900">{s.name}</span>
+                        <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                          s.status === 'published' ? 'bg-teal-100 text-teal-700'
+                          : s.status === 'archived' ? 'bg-slate-200 text-slate-500'
+                          : 'bg-amber-100 text-amber-700'
+                        }`}>{s.status}</span>
+                        <span className="text-slate-400">({scheduleTypeLabel(s.schedule_type)})</span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap gap-2 text-slate-500">
+                        {s.total_amount_cents != null && <span>Total: {fmtOptionPrice(s.total_amount_cents, s.currency)}</span>}
+                        {s.installment_count != null && s.installment_amount_cents != null && (
+                          <span>{s.installment_count} × {fmtOptionPrice(s.installment_amount_cents, s.currency)} {s.interval}</span>
+                        )}
+                      </div>
+                    </div>
+                    {formMode === null && (
+                      <div className="flex shrink-0 flex-col gap-1 items-end">
+                        {s.status !== 'archived' && (
+                          <button type="button" onClick={() => openEdit(s)}
+                            className="text-[10px] font-semibold text-slate-500 hover:text-navy-900">Edit</button>
+                        )}
+                        {s.status === 'draft' && (
+                          <button type="button" onClick={() => handleStatusChange(s.id, 'published')}
+                            className="text-[10px] font-semibold text-teal-700 hover:text-teal-800">Publish</button>
+                        )}
+                        {s.status === 'published' && (
+                          <button type="button" onClick={() => handleStatusChange(s.id, 'draft')}
+                            className="text-[10px] text-slate-500 hover:text-slate-700">Unpublish</button>
+                        )}
+                        {s.status !== 'archived' && (
+                          <button type="button" onClick={() => handleArchive(s.id)}
+                            className="text-[10px] text-slate-400 hover:text-red-500">Archive</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {schedules.length === 0 && formMode === null && !loadError && (
+            <p className="text-[12px] text-slate-400">No schedules yet.</p>
+          )}
+
+          {formMode === null && (
+            <div className="flex gap-2 pt-1">
+              <button type="button" onClick={openNew}
+                className="rounded-lg border border-teal-200 bg-white px-2 py-1 text-[11px] font-semibold text-teal-700 transition-colors hover:bg-teal-50">
+                + Add schedule
+              </button>
+              <button type="button" onClick={handleGenerate} disabled={generating}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50">
+                {generating ? 'Generating…' : '⚡ Generate standard'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function resetFormFields(
   setters: {
     setName: (v: string) => void
@@ -1283,6 +1644,16 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
                       )}
                     </div>
                   </div>
+                  {/* Nested payment schedules */}
+                  {opt.status !== 'archived' && (
+                    <PaymentSchedulesSection
+                      spaceSlug={spaceSlug}
+                      pathwaySlug={pathwaySlug}
+                      optionId={opt.id}
+                      effectivePrice={opt.effective_price_cents}
+                      currency={opt.currency}
+                    />
+                  )}
                 </div>
               )}
             </div>
