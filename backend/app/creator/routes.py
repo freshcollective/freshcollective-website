@@ -1233,8 +1233,8 @@ def create_pathway(
     db.refresh(pathway)
     return {
         **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
-                                             "cover_image_url", "access_type", "price_cents", "currency",
-                                             "billing_interval", "is_sequential", "position",
+                                             "cover_image_url", "access_type", "pricing_mode", "price_cents",
+                                             "currency", "billing_interval", "is_sequential", "position",
                                              "updated_at", "created_at"]},
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
         "step_count": 0,
@@ -1264,6 +1264,8 @@ def update_pathway(
             pathway.is_sequential = val
         elif field == "access_type" and val is not None:
             pathway.access_type = val
+        elif field == "pricing_mode" and val is not None:
+            pathway.pricing_mode = val
         elif field in ("price_cents", "billing_interval"):
             setattr(pathway, field, val)
         elif field == "currency" and val is not None:
@@ -1274,8 +1276,8 @@ def update_pathway(
     step_count = db.query(PathwayStep).filter(PathwayStep.pathway_id == pathway.id).count()
     return {
         **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
-                                             "cover_image_url", "access_type", "price_cents", "currency",
-                                             "billing_interval", "is_sequential", "position",
+                                             "cover_image_url", "access_type", "pricing_mode", "price_cents",
+                                             "currency", "billing_interval", "is_sequential", "position",
                                              "updated_at", "created_at"]},
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
         "step_count": step_count,
@@ -1307,8 +1309,8 @@ async def upload_pathway_cover(
     step_count = db.query(PathwayStep).filter(PathwayStep.pathway_id == pathway.id).count()
     return {
         **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
-                                             "cover_image_url", "access_type", "price_cents", "currency",
-                                             "billing_interval", "is_sequential", "position",
+                                             "cover_image_url", "access_type", "pricing_mode", "price_cents",
+                                             "currency", "billing_interval", "is_sequential", "position",
                                              "updated_at", "created_at"]},
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
         "step_count": step_count,
@@ -3614,6 +3616,11 @@ def create_payment_option(
     )
     position = (max_pos[0] + 1) if max_pos else 0
 
+    # Auto-compute calculated_total_cents if not explicitly provided
+    calculated_total = body.calculated_total_cents
+    if calculated_total is None and body.total_sessions and body.price_per_session_cents:
+        calculated_total = body.total_sessions * body.price_per_session_cents
+
     now = datetime.utcnow()
     opt = PaymentOption(
         id=str(uuid4()),
@@ -3629,7 +3636,7 @@ def create_payment_option(
         sessions_per_week=body.sessions_per_week,
         total_sessions=body.total_sessions,
         price_per_session_cents=body.price_per_session_cents,
-        calculated_total_cents=body.calculated_total_cents,
+        calculated_total_cents=calculated_total,
         override_total_cents=body.override_total_cents,
         currency=body.currency.upper(),
         buyer_note=body.buyer_note,
@@ -3674,6 +3681,14 @@ def update_payment_option(
             opt.grants_pathway_id = val
         else:
             setattr(opt, field, val)
+
+    # Recompute calculated_total_cents when session breakdown fields change
+    # Only auto-compute if caller didn't explicitly send calculated_total_cents
+    if "calculated_total_cents" not in updates:
+        total_sess = opt.total_sessions
+        price_sess = opt.price_per_session_cents
+        if total_sess is not None and price_sess is not None:
+            opt.calculated_total_cents = total_sess * price_sess
 
     opt.updated_at = datetime.utcnow()
     db.commit()

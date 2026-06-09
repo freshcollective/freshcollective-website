@@ -7,6 +7,7 @@ export interface PathwaySummary {
   status: 'draft' | 'active' | 'coming_soon' | 'archived'
   position: number
   access_type: 'free' | 'included' | 'one_time' | 'subscription'
+  pricing_mode: 'legacy' | 'payment_options'
   price_cents: number | null
   currency: string | null
   billing_interval: string | null
@@ -108,6 +109,7 @@ export interface PathwayWithSteps {
   steps: StepSummary[]
   sections: PathwaySection[]
   access_type: 'free' | 'included' | 'one_time' | 'subscription'
+  pricing_mode: 'legacy' | 'payment_options'
   price_cents: number | null
   currency: string | null
   billing_interval: string | null
@@ -381,6 +383,7 @@ export interface CreatorPathway {
   cover_image_url: string | null
   status: 'draft' | 'active' | 'coming_soon' | 'archived'
   access_type: 'free' | 'included' | 'one_time' | 'subscription'
+  pricing_mode: 'legacy' | 'payment_options'
   price_cents: number | null
   currency: string | null
   billing_interval: string | null

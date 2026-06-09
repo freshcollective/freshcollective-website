@@ -222,22 +222,22 @@ export default async function PathwayAboutPage({ params }: Props) {
   const locked = !isComingSoon && !pathway.user_has_access
 
   const publishedOptions: PaymentOptionSummary[] = pathway.payment_options ?? []
-  const hasOptions = publishedOptions.length > 0
+  const isPaymentOptionsMode = pathway.pricing_mode === 'payment_options'
 
-  const lowestOptionPrice = hasOptions
-    ? publishedOptions.reduce((min, o) =>
-        o.effective_price_cents != null && (min == null || o.effective_price_cents < min)
-          ? o.effective_price_cents : min,
-        null as number | null)
-    : null
+  const lowestOptionPrice = publishedOptions.reduce((min, o) =>
+    o.effective_price_cents != null && (min == null || o.effective_price_cents < min)
+      ? o.effective_price_cents : min,
+    null as number | null)
 
   const priceLabel = locked
-    ? (hasOptions && lowestOptionPrice != null
-        ? `From $${(lowestOptionPrice / 100).toFixed(0)}`
+    ? (isPaymentOptionsMode
+        ? (lowestOptionPrice != null
+            ? `From $${(lowestOptionPrice / 100).toFixed(0)} AUD`
+            : publishedOptions.length > 0 ? `${publishedOptions.length} options available` : 'Multiple options')
         : formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval))
     : null
   const unlockLabel = locked
-    ? (hasOptions ? 'Choose your option' : unlockCtaLabel(pathway.access_type, pathway.price_cents, pathway.currency, pathway.billing_interval))
+    ? (isPaymentOptionsMode ? 'Choose your option' : unlockCtaLabel(pathway.access_type, pathway.price_cents, pathway.currency, pathway.billing_interval))
     : null
 
   const nextIncomplete = pathway.steps.find(s => !s.is_completed)
@@ -350,11 +350,17 @@ export default async function PathwayAboutPage({ params }: Props) {
                     <p className="font-serif text-2xl font-bold text-navy-900">{priceLabel}</p>
                   )}
                   <p className="text-[13px] text-slate-500">
-                    {pathway.access_type === 'subscription' ? 'Monthly access required' : 'One-off purchase'}
+                    {isPaymentOptionsMode
+                      ? (publishedOptions.length > 1
+                          ? `${publishedOptions.length} options — choose at checkout`
+                          : 'Select a payment option')
+                      : pathway.access_type === 'subscription' ? 'Monthly access required' : 'One-off purchase'}
                   </p>
                 </>
               ) : isComingSoon ? (
                 <p className="text-[14px] font-semibold text-slate-500">Coming soon</p>
+              ) : locked && isPaymentOptionsMode && publishedOptions.length === 0 ? (
+                <p className="text-[14px] text-slate-500">Opening soon — options coming</p>
               ) : pathway.step_count > 0 ? (
                 <>
                   <div className="mb-1 flex items-baseline justify-between text-xs text-slate-400">

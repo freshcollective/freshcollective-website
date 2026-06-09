@@ -300,6 +300,7 @@ class PathwayUpdateRequest(BaseModel):
     status: str | None = None
     is_sequential: bool | None = None
     access_type: str | None = None
+    pricing_mode: str | None = None
     price_cents: int | None = None
     currency: str | None = None
     billing_interval: str | None = None
@@ -318,6 +319,13 @@ class PathwayUpdateRequest(BaseModel):
             raise ValueError("Invalid access type.")
         return v
 
+    @field_validator("pricing_mode")
+    @classmethod
+    def validate_pricing_mode(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("legacy", "payment_options"):
+            raise ValueError("pricing_mode must be 'legacy' or 'payment_options'.")
+        return v
+
 
 class PathwayResponse(BaseModel):
     model_config = {"from_attributes": True}
@@ -329,6 +337,7 @@ class PathwayResponse(BaseModel):
     cover_image_url: str | None = None
     status: str
     access_type: str = "free"
+    pricing_mode: str = "legacy"
     price_cents: int | None = None
     currency: str = "AUD"
     billing_interval: str | None = None

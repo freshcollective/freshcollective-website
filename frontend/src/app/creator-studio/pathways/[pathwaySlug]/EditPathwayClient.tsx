@@ -13,9 +13,11 @@ import { apiUrl, resolveMediaUrl } from '@/lib/api'
 const ACCESS_OPTIONS = [
   { value: 'free', label: 'Free', description: 'Anyone with access to the collective can begin this pathway.' },
   { value: 'included', label: 'Included in collective access', description: 'Available to members who already have access to this collective.' },
-  { value: 'one_time', label: 'One-off payment', description: 'People pay once to access this pathway.' },
+  { value: 'one_time', label: 'One-off payment — single price', description: 'People pay a single fixed price to access this pathway.' },
   { value: 'subscription', label: 'Monthly subscription', description: 'People pay monthly for ongoing access to this pathway.' },
 ]
+
+const PRICING_MODE_PAYMENT_OPTIONS_VALUE = 'payment_options'
 
 const CONTENT_TYPE_LABEL: Record<string, string> = {
   text: 'Text', video: 'Video', audio: 'Audio', reflection: 'Reflection', exercise: 'Exercise',
@@ -26,29 +28,58 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 function AccessPricingSection({
-  accessType, setAccessType, priceDollars, setPriceDollars, currency, setCurrency, priceError,
+  accessType, setAccessType, pricingMode, setPricingMode,
+  priceDollars, setPriceDollars, currency, setCurrency, priceError,
 }: {
   accessType: string
   setAccessType: (v: string) => void
+  pricingMode: string
+  setPricingMode: (v: string) => void
   priceDollars: string
   setPriceDollars: (v: string) => void
   currency: string
   setCurrency: (v: string) => void
   priceError: string | null
 }) {
-  const isPaid = accessType === 'one_time' || accessType === 'subscription'
+  const isPaymentOptions = pricingMode === PRICING_MODE_PAYMENT_OPTIONS_VALUE
+  const showSinglePrice = (accessType === 'one_time' || accessType === 'subscription') && !isPaymentOptions
+
+  const ALL_CHOICES: { value: string; label: string; description: string; isPaymentOptions?: boolean }[] = [
+    { value: 'free', label: 'Free', description: 'Anyone with access to the collective can begin this pathway.' },
+    { value: 'included', label: 'Included in collective access', description: 'Available to members who already have access to this collective.' },
+    { value: 'one_time', label: 'One-off payment — single price', description: 'People pay a single fixed price to access this pathway.' },
+    { value: 'subscription', label: 'Monthly subscription', description: 'People pay monthly for ongoing access to this pathway.' },
+    {
+      value: PRICING_MODE_PAYMENT_OPTIONS_VALUE,
+      label: 'Multiple payment options',
+      description: 'Members choose from tiered or term-based options (e.g. Awaken / Activate / Empower). Manage options in the Payment Options section below.',
+      isPaymentOptions: true,
+    },
+  ]
+
+  function handleChoiceClick(value: string) {
+    if (value === PRICING_MODE_PAYMENT_OPTIONS_VALUE) {
+      setPricingMode('payment_options')
+      setAccessType('one_time') // entitlement access type stays one_time
+    } else {
+      setPricingMode('legacy')
+      setAccessType(value)
+    }
+  }
+
+  const selectedChoiceValue = isPaymentOptions ? PRICING_MODE_PAYMENT_OPTIONS_VALUE : accessType
 
   return (
     <div>
       <label className="mb-2 block text-[12px] font-semibold text-slate-600">Access and pricing</label>
       <div className="space-y-2">
-        {ACCESS_OPTIONS.map((opt) => {
-          const selected = accessType === opt.value
+        {ALL_CHOICES.map((opt) => {
+          const selected = selectedChoiceValue === opt.value
           return (
             <button
               key={opt.value}
               type="button"
-              onClick={() => setAccessType(opt.value)}
+              onClick={() => handleChoiceClick(opt.value)}
               className="w-full rounded-xl border px-4 py-3 text-left transition-colors"
               style={
                 selected
@@ -71,7 +102,13 @@ function AccessPricingSection({
         })}
       </div>
 
-      {isPaid && (
+      {isPaymentOptions && (
+        <div className="mt-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3 text-[12px] text-teal-800">
+          Pricing is controlled by the Payment Options section below. The single-price field is not used.
+        </div>
+      )}
+
+      {showSinglePrice && (
         <div className="mt-3 flex gap-3">
           <div className="flex-1">
             <label className="mb-1 block text-[12px] font-semibold text-slate-600">
@@ -103,7 +140,7 @@ function AccessPricingSection({
         </div>
       )}
 
-      {isPaid && (
+      {showSinglePrice && (
         <p className="mt-2 text-[11px] text-slate-400">
           Pricing is saved for configuration. Payment processing will be connected when Stripe is set up.
         </p>
@@ -111,6 +148,7 @@ function AccessPricingSection({
     </div>
   )
 }
+
 
 // ---------------------------------------------------------------------------
 // AddStepForm — supports section selection and default section
@@ -1164,6 +1202,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
   const [practiceBody, setPracticeBody] = useState(pathway.practice_body ?? '')
   const [status, setStatus]             = useState<string>(pathway.status)
   const [accessType, setAccessType]     = useState<string>(pathway.access_type ?? 'free')
+  const [pricingMode, setPricingMode]   = useState<string>(pathway.pricing_mode ?? 'legacy')
   const [priceDollars, setPriceDollars] = useState(centsToDisplay(pathway.price_cents))
   const [currency, setCurrency]         = useState(pathway.currency ?? 'AUD')
   const [loading, setLoading]           = useState(false)
@@ -1181,10 +1220,11 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
   const [coverSaved, setCoverSaved]         = useState(false)
 
   const isPaid = accessType === 'one_time' || accessType === 'subscription'
+  const needsSinglePrice = isPaid && pricingMode === 'legacy'
 
   function validate(): boolean {
     if (!title.trim()) { setError('Pathway title is required.'); return false }
-    if (isPaid) {
+    if (needsSinglePrice) {
       const dollars = parseFloat(priceDollars)
       if (!priceDollars.trim() || isNaN(dollars)) { setPriceError('Enter a price for this paid pathway.'); return false }
       if (dollars <= 0) { setPriceError('Price must be greater than 0.'); return false }
@@ -1197,7 +1237,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
     setPriceError(null)
     setSaved(false)
     if (!validate()) return
-    const priceCents = isPaid ? Math.round(parseFloat(priceDollars) * 100) : null
+    const priceCents = needsSinglePrice ? Math.round(parseFloat(priceDollars) * 100) : null
     setLoading(true)
     try {
       const res = await fetch(
@@ -1212,8 +1252,9 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
             practice_body: practiceBody.trim() || null,
             status,
             access_type: accessType,
+            pricing_mode: pricingMode,
             price_cents: priceCents,
-            currency: isPaid ? currency : 'AUD',
+            currency: needsSinglePrice ? currency : 'AUD',
             billing_interval: accessType === 'subscription' ? 'month' : null,
           }),
         },
@@ -1325,6 +1366,8 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
             <AccessPricingSection
               accessType={accessType}
               setAccessType={(v) => { setAccessType(v); setPriceError(null) }}
+              pricingMode={pricingMode}
+              setPricingMode={(v) => { setPricingMode(v); setPriceError(null) }}
               priceDollars={priceDollars}
               setPriceDollars={(v) => { setPriceDollars(v); setPriceError(null) }}
               currency={currency}

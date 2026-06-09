@@ -28,6 +28,7 @@ class PathwaySummary(BaseModel):
     status: str
     position: int
     access_type: str = 'free'
+    pricing_mode: str = 'legacy'
     price_cents: int | None = None
     currency: str | None = None
     billing_interval: str | None = None
@@ -164,6 +165,7 @@ class PathwayWithSteps(BaseModel):
     steps: list[StepSummary]
     sections: list[SectionWithSteps] = []
     access_type: str = 'free'
+    pricing_mode: str = 'legacy'
     price_cents: int | None = None
     currency: str | None = None
     billing_interval: str | None = None

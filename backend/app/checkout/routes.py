@@ -143,6 +143,8 @@ def create_pathway_checkout_session(
             detail=f"Pathway is not available for purchase (status: {p_status}).",
         )
 
+    pathway_pricing_mode = getattr(pathway, "pricing_mode", "legacy") or "legacy"
+
     # --- Resolve price from payment option (if provided) or pathway -----------
     payment_option: PaymentOption | None = None
     if body.payment_option_id:
@@ -163,6 +165,11 @@ def create_pathway_checkout_session(
         price_cents = payment_option.effective_price_cents
         if not price_cents or price_cents <= 0:
             raise HTTPException(status_code=400, detail="Payment option has no valid price.")
+    elif pathway_pricing_mode == "payment_options":
+        raise HTTPException(
+            status_code=400,
+            detail="This pathway requires selecting a payment option. Please choose one and try again.",
+        )
     else:
         access_type = (
             pathway.access_type.value

@@ -356,6 +356,8 @@ class Pathway(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     # Access / pricing — see access_type values: free | included | one_time | subscription
     access_type: Mapped[str] = mapped_column(String(20), nullable=False, default="free", server_default="free")
+    # pricing_mode: legacy (single price_cents) | payment_options (multiple PaymentOption rows)
+    pricing_mode: Mapped[str] = mapped_column(String(20), nullable=False, default="legacy", server_default="legacy")
     price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="AUD", server_default="AUD")
     billing_interval: Mapped[str | None] = mapped_column(String(10), nullable=True)

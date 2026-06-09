@@ -40,11 +40,12 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   }
 
   const isSubscription = pathway.access_type === 'subscription'
+  const isPaymentOptionsMode = pathway.pricing_mode === 'payment_options'
   const overviewHref = `/spaces/${slug}/pathways/${pathwaySlug}`
   const aboutHref = `/spaces/${slug}/pathways/${pathwaySlug}/about`
   const cs = getPathwayCoverStyle(pathwaySlug)
   const coverImageUrl = resolveMediaUrl(pathway.cover_image_url)
-  const priceLabel = locked
+  const priceLabel = locked && !isPaymentOptionsMode
     ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
     : null
 
@@ -255,10 +256,21 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               Access type
             </p>
-            <p className="text-[14px] font-medium text-navy-900">One-off purchase</p>
-            <p className="mt-0.5 text-[13px] text-slate-500">
-              Unlock permanently with a single payment.
-            </p>
+            {isPaymentOptionsMode ? (
+              <>
+                <p className="text-[14px] font-medium text-navy-900">Multiple payment options</p>
+                <p className="mt-0.5 text-[13px] text-slate-500">
+                  Choose the option that suits you. Each grants access with a single payment.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-[14px] font-medium text-navy-900">One-off purchase</p>
+                <p className="mt-0.5 text-[13px] text-slate-500">
+                  Unlock permanently with a single payment.
+                </p>
+              </>
+            )}
           </div>
 
           {/* What you get */}
