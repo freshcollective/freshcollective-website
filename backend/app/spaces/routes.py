@@ -102,24 +102,56 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
         .all()
     )
 
-    # Minimum price among active paid pathways per space
+    # Minimum price among active paid pathways per space.
+    # - Legacy pathways (pricing_mode='legacy'): use pathway.price_cents.
+    # - Payment-options pathways (pricing_mode='payment_options'): use minimum
+    #   effective price from PUBLISHED options only (draft/archived excluded).
+    #   effective_price_cents = COALESCE(override_total_cents, calculated_total_cents)
     _paid_access_types = ('one_time', 'subscription')
     min_pathway_prices: dict[str, int] = {}
-    paid_pathway_rows = (
+
+    # Legacy pathway prices
+    legacy_rows = (
         db.query(Pathway.space_id, func.min(Pathway.price_cents))
         .filter(
             Pathway.space_id.in_(space_ids),
             Pathway.status == "active",
             Pathway.access_type.in_(_paid_access_types),
+            Pathway.pricing_mode == "legacy",
             Pathway.price_cents.isnot(None),
             Pathway.price_cents > 0,
         )
         .group_by(Pathway.space_id)
         .all()
     )
-    for space_id, min_cents in paid_pathway_rows:
+    for space_id, min_cents in legacy_rows:
         if min_cents is not None:
             min_pathway_prices[space_id] = int(min_cents)
+
+    # Payment-options pathway prices — derived from published options only
+    from sqlalchemy import case as sa_case
+    effective_price_expr = func.coalesce(
+        PaymentOption.override_total_cents,
+        PaymentOption.calculated_total_cents,
+    )
+    options_rows = (
+        db.query(Pathway.space_id, func.min(effective_price_expr))
+        .join(PaymentOption, PaymentOption.pathway_id == Pathway.id)
+        .filter(
+            Pathway.space_id.in_(space_ids),
+            Pathway.status == "active",
+            Pathway.pricing_mode == "payment_options",
+            PaymentOption.status == "published",
+            effective_price_expr.isnot(None),
+            effective_price_expr > 0,
+        )
+        .group_by(Pathway.space_id)
+        .all()
+    )
+    for space_id, min_cents in options_rows:
+        if min_cents is not None:
+            existing = min_pathway_prices.get(space_id)
+            min_pathway_prices[space_id] = int(min_cents) if existing is None else min(existing, int(min_cents))
 
     member_counts: dict[str, int] = dict(
         db.query(Pathway.space_id, func.count(func.distinct(Enrollment.user_id)))
