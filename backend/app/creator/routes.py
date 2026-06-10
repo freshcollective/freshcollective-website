@@ -2212,20 +2212,33 @@ def cancel_event(
     """Cancel a single event occurrence. Does not affect other events in the series.
     TODO: Add cancel entire series endpoint later.
     """
+    from app.models.access_pass import AccessPass as _AccessPass
     space = _get_managed_space(slug, current_user, db)
     event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found.")
     if event.status == "cancelled":
         raise HTTPException(status_code=400, detail="Event is already cancelled.")
+
+    # Restore credits for all confirmed bookings — creator cancellation always restores
+    confirmed_bookings = (
+        db.query(EventBooking)
+        .filter(EventBooking.event_id == event.id, EventBooking.status == BookingStatus.confirmed)
+        .all()
+    )
+    now_ts = datetime.utcnow()
+    for bk in confirmed_bookings:
+        bk.status = BookingStatus.cancelled
+        bk.cancelled_at = now_ts
+        if bk.access_pass_id and bk.credits_used > 0:
+            ap = db.query(_AccessPass).filter(_AccessPass.id == bk.access_pass_id).first()
+            if ap:
+                ap.used_credits = max(0, ap.used_credits - bk.credits_used)
+
     event.status = "cancelled"
     db.commit()
     db.refresh(event)
-    booked_count = (
-        db.query(func.count(EventBooking.id))
-        .filter(EventBooking.event_id == event.id, EventBooking.status == "confirmed")
-        .scalar()
-    ) or 0
+    booked_count = 0  # all bookings are now cancelled
     return _event_to_dict(event, booked_count)
 
 
@@ -4021,3 +4034,102 @@ def archive_payment_option_schedule(
     sched.status = "archived"
     sched.updated_at = datetime.utcnow()
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Member Passes (Phase B)
+# ---------------------------------------------------------------------------
+
+@router.get("/spaces/{slug}/passes", response_model=list["AccessPassAdminOut"])
+def list_space_passes(
+    slug: str,
+    status_filter: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list:
+    """List all AccessPasses for a space. Creator/admin only."""
+    from app.models.access_pass import AccessPass, AccessPassStatus
+    from app.models.payment_option import PaymentOption as _PO
+    from app.models.platform import Pathway as _Pathway
+    from app.models.user import User as _User
+    from app.creator.schemas import AccessPassAdminOut
+
+    space = _get_managed_space(slug, current_user, db)
+
+    query = db.query(AccessPass).filter(AccessPass.space_id == space.id)
+    if status_filter:
+        query = query.filter(AccessPass.status == status_filter)
+    else:
+        # Default: active passes only
+        query = query.filter(AccessPass.status == AccessPassStatus.active)
+
+    passes = query.order_by(AccessPass.created_at.desc()).all()
+
+    # Bulk-fetch related records to avoid N+1
+    user_ids = {ap.user_id for ap in passes}
+    option_ids = {ap.payment_option_id for ap in passes if ap.payment_option_id}
+    pathway_ids = {ap.eligible_pathway_id for ap in passes if ap.eligible_pathway_id}
+
+    users = {u.id: u for u in db.query(_User).filter(_User.id.in_(user_ids)).all()} if user_ids else {}
+    options = {o.id: o for o in db.query(_PO).filter(_PO.id.in_(option_ids)).all()} if option_ids else {}
+    pathways = {p.id: p for p in db.query(_Pathway).filter(_Pathway.id.in_(pathway_ids)).all()} if pathway_ids else {}
+
+    # Booking counts per pass
+    from sqlalchemy import case, and_
+    booking_counts = (
+        db.query(
+            EventBooking.access_pass_id,
+            func.count(EventBooking.id).label("total_bookings"),
+        )
+        .filter(
+            EventBooking.access_pass_id.in_([ap.id for ap in passes]),
+            EventBooking.status == BookingStatus.confirmed,
+        )
+        .group_by(EventBooking.access_pass_id)
+        .all()
+    )
+    total_bookings_map = {r.access_pass_id: r.total_bookings for r in booking_counts}
+
+    thirty_days_ago = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    from datetime import timedelta as _td
+    thirty_days_ago = thirty_days_ago - _td(days=30)
+    recent_booking_counts = (
+        db.query(
+            EventBooking.access_pass_id,
+            func.count(EventBooking.id).label("recent_bookings"),
+        )
+        .filter(
+            EventBooking.access_pass_id.in_([ap.id for ap in passes]),
+            EventBooking.status == BookingStatus.confirmed,
+            EventBooking.booked_at >= thirty_days_ago,
+        )
+        .group_by(EventBooking.access_pass_id)
+        .all()
+    )
+    recent_bookings_map = {r.access_pass_id: r.recent_bookings for r in recent_booking_counts}
+
+    results = []
+    for ap in passes:
+        user = users.get(ap.user_id)
+        opt = options.get(ap.payment_option_id) if ap.payment_option_id else None
+        pathway = pathways.get(ap.eligible_pathway_id) if ap.eligible_pathway_id else None
+        results.append(AccessPassAdminOut(
+            id=ap.id,
+            pass_type=ap.pass_type.value if hasattr(ap.pass_type, "value") else str(ap.pass_type),
+            status=ap.status.value if hasattr(ap.status, "value") else str(ap.status),
+            valid_from=ap.valid_from,
+            valid_until=ap.valid_until,
+            total_credits=ap.total_credits,
+            used_credits=ap.used_credits,
+            remaining_credits=ap.remaining_credits,
+            credits_per_week=ap.credits_per_week,
+            eligible_pathway_id=ap.eligible_pathway_id,
+            option_name=opt.name if opt else None,
+            pathway_title=pathway.title if pathway else None,
+            created_at=ap.created_at,
+            member_name=user.name if user else None,
+            member_email=user.email if user else None,
+            total_bookings=total_bookings_map.get(ap.id, 0),
+            recent_bookings=recent_bookings_map.get(ap.id, 0),
+        ))
+    return results

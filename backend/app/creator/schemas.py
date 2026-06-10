@@ -1341,3 +1341,31 @@ class GenerateSchedulesRequest(BaseModel):
     """
     weekly_installment_count: int = 10
     fortnightly_installment_count: int = 5
+
+
+# ---------------------------------------------------------------------------
+# Access Passes (Phase B)
+# ---------------------------------------------------------------------------
+
+class AccessPassAdminOut(BaseModel):
+    """Creator-facing AccessPass summary, includes member info and booking stats."""
+
+    id: str
+    pass_type: str
+    status: str
+    valid_from: datetime
+    valid_until: datetime | None = None
+    total_credits: int | None = None
+    used_credits: int
+    remaining_credits: int | None = None
+    credits_per_week: int | None = None
+    eligible_pathway_id: str | None = None
+    option_name: str | None = None
+    pathway_title: str | None = None
+    created_at: datetime
+    # Member info
+    member_name: str | None = None
+    member_email: str | None = None
+    # Booking stats
+    total_bookings: int = 0
+    recent_bookings: int = 0  # last 30 days

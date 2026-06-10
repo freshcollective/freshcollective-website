@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessRequest, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, MemberBookingItem, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, MemberBookingItem, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 export const ACTIVE_SPACE_COOKIE = 'fc_creator_space'
 
@@ -319,6 +319,18 @@ export const getInviteByToken = cache(async (token: string): Promise<InviteLooku
 
 export const getCreatorAccessRequests = cache(async (slug: string): Promise<AccessRequest[]> => {
   const res = await fetchWithSession(`/api/creator/spaces/${slug}/access-requests`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCreatorPasses = cache(async (slug: string): Promise<AccessPassAdminSummary[]> => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/passes`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getMyPasses = cache(async (slug: string): Promise<AccessPassSummary[]> => {
+  const res = await fetchWithSession(`/api/spaces/${slug}/my-passes`)
   if (!res.ok) return []
   return res.json()
 })

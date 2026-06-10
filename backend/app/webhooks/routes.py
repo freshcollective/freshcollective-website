@@ -39,6 +39,7 @@ from app.models.payment import (
 )
 from app.models.payment_option import PaymentOption
 from app.models.payment_option_schedule import PaymentOptionSchedule
+from app.models.access_pass import AccessPass, AccessPassSource, AccessPassStatus, AccessPassType
 from app.models.platform import (
     EntitlementSource,
     EntitlementStatus,
@@ -305,6 +306,67 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
         )
 
     txn.entitlement_id = ent.id
+
+    # --- Create AccessPass for term_pass purchases (Phase B) ----------------
+    # Only create for payment types that require booking credit enforcement.
+    # Legacy one_time purchases (R.E.A.L. Journey) do NOT create AccessPass.
+    if payment_option:
+        opt_type_val = (
+            payment_option.payment_type.value
+            if hasattr(payment_option.payment_type, "value")
+            else str(payment_option.payment_type)
+        )
+        if opt_type_val in ("term_pass",):
+            # Idempotency: skip if an AccessPass already exists for this transaction
+            existing_pass = (
+                db.query(AccessPass)
+                .filter(AccessPass.payment_transaction_id == txn.id)
+                .first()
+            )
+            if existing_pass is None:
+                valid_from_dt = (
+                    _dt.combine(payment_option.term_start_date, _dt.min.time())
+                    if payment_option.term_start_date
+                    else now
+                )
+                access_pass = AccessPass(
+                    id=str(uuid4()),
+                    user_id=payer_user_id,
+                    space_id=space_id,
+                    payment_transaction_id=txn.id,
+                    payment_option_id=payment_option.id,
+                    payment_option_schedule_id=payment_option_schedule_id or None,
+                    pass_type=AccessPassType.term_pass,
+                    status=AccessPassStatus.active,
+                    valid_from=valid_from_dt,
+                    valid_until=term_ends_at,
+                    total_credits=payment_option.total_sessions,
+                    used_credits=0,
+                    credits_per_week=payment_option.sessions_per_week,
+                    eligible_pathway_id=entitlement_pathway_id,
+                    grants_pathway_id=entitlement_pathway_id,
+                    pathway_entitlement_id=ent.id,
+                    source=AccessPassSource.one_time_purchase,
+                    created_at=now,
+                    updated_at=now,
+                )
+                db.add(access_pass)
+                logger.info(
+                    "checkout.session.completed: created AccessPass %s type=term_pass "
+                    "credits=%s credits_per_week=%s valid=%s→%s user=%s",
+                    access_pass.id,
+                    payment_option.total_sessions,
+                    payment_option.sessions_per_week,
+                    valid_from_dt,
+                    term_ends_at,
+                    payer_user_id,
+                )
+            else:
+                logger.info(
+                    "checkout.session.completed: AccessPass already exists for txn=%s — skipping",
+                    txn.id,
+                )
+
     db.commit()
 
     logger.info(

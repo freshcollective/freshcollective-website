@@ -183,6 +183,7 @@ export interface EventSummary {
   booking_access_type: 'all_members' | 'pathway_required'
   booking_required_pathway_id: string | null
   user_has_pathway_access: boolean
+  pass_credits_remaining?: number | null
 }
 
 export interface EventDetail extends EventSummary {
@@ -735,4 +736,31 @@ export interface EditorBlock {
   embed_url: string | null
   media_asset_id: string | null
   media_asset: StepBlockMedia | null
+}
+
+// ---------------------------------------------------------------------------
+// Access Passes (Phase B)
+// ---------------------------------------------------------------------------
+
+export interface AccessPassSummary {
+  id: string
+  pass_type: 'pathway_access' | 'term_pass' | 'class_pass' | 'event_ticket' | 'retreat_booking' | 'membership' | 'bundle'
+  status: 'pending' | 'active' | 'used' | 'expired' | 'cancelled' | 'suspended'
+  valid_from: string
+  valid_until: string | null
+  total_credits: number | null
+  used_credits: number
+  remaining_credits: number | null
+  credits_per_week: number | null
+  eligible_pathway_id: string | null
+  option_name: string | null
+  pathway_title: string | null
+  created_at: string
+}
+
+export interface AccessPassAdminSummary extends AccessPassSummary {
+  member_name: string | null
+  member_email: string | null
+  total_bookings: number
+  recent_bookings: number
 }

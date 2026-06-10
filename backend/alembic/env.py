@@ -15,6 +15,8 @@ import app.models.platform        # noqa: F401 — registers Space-based platfor
 import app.models.creator_billing  # noqa: F401 — registers creator plan/subscription models
 import app.models.payment          # noqa: F401 — registers payment transaction ledger
 import app.models.payment_option   # noqa: F401 — registers payment options model
+import app.models.payment_option_schedule  # noqa: F401 — registers payment option schedules
+import app.models.access_pass      # noqa: F401 — registers access pass / booking credit model
 
 config = context.config
 

@@ -751,6 +751,11 @@ class EventBooking(Base):
     attendance_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     attendance_marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attendance_marked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # AccessPass credit tracking (Phase B+)
+    access_pass_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("access_passes.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    credits_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )

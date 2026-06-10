@@ -1,9 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
+
+from app.models.access_pass import AccessPass, AccessPassStatus
 
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
@@ -900,6 +902,28 @@ def list_events(
         if membership and getattr(membership, 'role', None) in (SpaceRole.creator, SpaceRole.moderator):
             user_pathway_access = required_pathway_ids
 
+    # Bulk-fetch active AccessPass remaining credits per pathway for the current user
+    # Used to populate pass_credits_remaining on each event (member-facing credit display)
+    user_pass_credits: dict[str, int | None] = {}  # pathway_id → remaining credits (None = unlimited)
+    if current_user and required_pathway_ids:
+        pass_rows = (
+            db.query(AccessPass)
+            .filter(
+                AccessPass.user_id == current_user.id,
+                AccessPass.space_id == space.id,
+                AccessPass.status == AccessPassStatus.active,
+                AccessPass.eligible_pathway_id.in_(required_pathway_ids),
+                or_(
+                    AccessPass.valid_until.is_(None),
+                    AccessPass.valid_until > now,
+                ),
+            )
+            .all()
+        )
+        for ap in pass_rows:
+            if ap.eligible_pathway_id:
+                user_pass_credits[ap.eligible_pathway_id] = ap.remaining_credits
+
     result = []
     for e in events:
         booked = booked_counts.get(e.id, 0)
@@ -914,10 +938,19 @@ def list_events(
             or required_pid is None
             or required_pid in user_pathway_access
         )
+        # Credits remaining on the user's active AccessPass for this pathway (None = no pass or unlimited)
+        pass_credits_remaining: int | None = (
+            user_pass_credits.get(required_pid) if required_pid else None
+        )
+        # If user has an AccessPass with zero credits remaining, they cannot book
+        credits_exhausted = (
+            pass_credits_remaining is not None and pass_credits_remaining <= 0
+        )
         can_book = (
             e.requires_booking
             and is_member
             and has_pathway_access
+            and not credits_exhausted
             and my_status != "confirmed"
             and not booking_closed
             and not is_full
@@ -953,6 +986,7 @@ def list_events(
             booking_access_type=event_access_type,
             booking_required_pathway_id=required_pid,
             user_has_pathway_access=has_pathway_access,
+            pass_credits_remaining=pass_credits_remaining,
         ))
     return result
 
@@ -992,25 +1026,88 @@ def book_event(
     if getattr(event, 'status', 'active') == 'cancelled':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering has been cancelled.")
 
-    # Check pathway access restriction
+    # Check pathway access restriction (existing logic — unchanged)
     event_access_type = getattr(event, 'booking_access_type', 'all_members') or 'all_members'
-    if event_access_type == 'pathway_required':
-        required_pid = getattr(event, 'booking_required_pathway_id', None)
-        if required_pid:
-            entitlement = (
-                db.query(PathwayEntitlement)
-                .filter(
-                    PathwayEntitlement.user_id == current_user.id,
-                    PathwayEntitlement.pathway_id == required_pid,
-                    PathwayEntitlement.status == EntitlementStatus.active,
-                )
-                .first()
+    required_pid = getattr(event, 'booking_required_pathway_id', None)
+    is_privileged = getattr(membership, 'role', None) in (SpaceRole.creator, SpaceRole.moderator)
+
+    if event_access_type == 'pathway_required' and required_pid:
+        entitlement = (
+            db.query(PathwayEntitlement)
+            .filter(
+                PathwayEntitlement.user_id == current_user.id,
+                PathwayEntitlement.pathway_id == required_pid,
+                PathwayEntitlement.status == EntitlementStatus.active,
             )
-            # Creators and moderators bypass the pathway restriction
-            if not entitlement and getattr(membership, 'role', None) not in (SpaceRole.creator, SpaceRole.moderator):
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You must have access to the required pathway to book this session.")
+            .first()
+        )
+        if not entitlement and not is_privileged:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You must have access to the required pathway to book this session.",
+            )
 
     now = datetime.utcnow()
+
+    # --- AccessPass credit check (Phase B) ---
+    # Layered on top of the existing pathway access check.
+    # If the user has an AccessPass for this pathway: hard-enforce total credits and weekly cap.
+    # If no AccessPass exists (legacy/manual PathwayEntitlement): allow without credit tracking.
+    # Creators and moderators bypass all credit checks.
+    access_pass_to_charge: AccessPass | None = None
+
+    if not is_privileged and event_access_type == 'pathway_required' and required_pid:
+        candidate_pass = (
+            db.query(AccessPass)
+            .filter(
+                AccessPass.user_id == current_user.id,
+                AccessPass.eligible_pathway_id == required_pid,
+                AccessPass.status == AccessPassStatus.active,
+                or_(
+                    AccessPass.valid_until.is_(None),
+                    AccessPass.valid_until > now,
+                ),
+            )
+            .order_by(AccessPass.created_at.desc())
+            .first()
+        )
+
+        if candidate_pass is not None:
+            # Hard enforce: total credits exhausted
+            if (
+                candidate_pass.total_credits is not None
+                and candidate_pass.used_credits >= candidate_pass.total_credits
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="You have no remaining sessions on your current pass.",
+                )
+
+            # Hard enforce: weekly cap
+            if candidate_pass.credits_per_week is not None:
+                week_start = now - timedelta(days=now.weekday())
+                week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                weekly_used = (
+                    db.query(func.count(EventBooking.id))
+                    .filter(
+                        EventBooking.access_pass_id == candidate_pass.id,
+                        EventBooking.status == BookingStatus.confirmed,
+                        EventBooking.booked_at >= week_start,
+                    )
+                    .scalar()
+                ) or 0
+                if weekly_used >= candidate_pass.credits_per_week:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"You have reached your weekly limit of "
+                            f"{candidate_pass.credits_per_week} session(s)."
+                        ),
+                    )
+
+            access_pass_to_charge = candidate_pass
+        # else: no AccessPass found → legacy/manual path, booking proceeds without credit tracking
+
     if event.starts_at <= now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering has already started.")
     if event.booking_closes_at and event.booking_closes_at <= now:
@@ -1038,19 +1135,26 @@ def book_event(
         existing.status = BookingStatus.confirmed
         existing.booked_at = now
         existing.cancelled_at = None
+        existing.access_pass_id = access_pass_to_charge.id if access_pass_to_charge else None
+        existing.credits_used = 1 if access_pass_to_charge else 0
+        if access_pass_to_charge:
+            access_pass_to_charge.used_credits += 1
         db.commit()
         db.refresh(existing)
         return BookingResponse(status="confirmed", booking_id=existing.id)
 
-    import uuid
     booking = EventBooking(
         id=str(uuid.uuid4()),
         event_id=event.id,
         user_id=current_user.id,
         status=BookingStatus.confirmed,
         booked_at=now,
+        access_pass_id=access_pass_to_charge.id if access_pass_to_charge else None,
+        credits_used=1 if access_pass_to_charge else 0,
     )
     db.add(booking)
+    if access_pass_to_charge:
+        access_pass_to_charge.used_credits += 1
     db.commit()
     db.refresh(booking)
     return BookingResponse(status="confirmed", booking_id=booking.id)
@@ -1088,8 +1192,80 @@ def cancel_booking(
     now = datetime.utcnow()
     booking.status = BookingStatus.cancelled
     booking.cancelled_at = now
+
+    # Credit restoration: restore if cancelling more than 24h before gathering start
+    if booking.access_pass_id and booking.credits_used > 0:
+        access_pass = db.query(AccessPass).filter(AccessPass.id == booking.access_pass_id).first()
+        if access_pass:
+            hours_until = (event.starts_at - now).total_seconds() / 3600
+            if hours_until > 24:
+                access_pass.used_credits = max(0, access_pass.used_credits - booking.credits_used)
+
     db.commit()
     return BookingResponse(status="cancelled", booking_id=booking.id)
+
+
+@router.get("/{slug}/my-passes", response_model=list["AccessPassOut"])
+def get_my_passes(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list:
+    """Return the current user's active AccessPasses for this space."""
+    space = _get_space_or_404(slug, db)
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Must be a member.")
+
+    now = datetime.utcnow()
+    passes = (
+        db.query(AccessPass)
+        .filter(
+            AccessPass.user_id == current_user.id,
+            AccessPass.space_id == space.id,
+            AccessPass.status == AccessPassStatus.active,
+            or_(
+                AccessPass.valid_until.is_(None),
+                AccessPass.valid_until > now,
+            ),
+        )
+        .order_by(AccessPass.created_at.desc())
+        .all()
+    )
+
+    from app.spaces.schemas import AccessPassOut
+    from app.models.payment_option import PaymentOption as _PO
+    results = []
+    for ap in passes:
+        opt_name = None
+        if ap.payment_option_id:
+            opt = db.query(_PO).filter(_PO.id == ap.payment_option_id).first()
+            if opt:
+                opt_name = opt.name
+        results.append(AccessPassOut(
+            id=ap.id,
+            pass_type=ap.pass_type.value if hasattr(ap.pass_type, "value") else str(ap.pass_type),
+            status=ap.status.value if hasattr(ap.status, "value") else str(ap.status),
+            valid_from=ap.valid_from,
+            valid_until=ap.valid_until,
+            total_credits=ap.total_credits,
+            used_credits=ap.used_credits,
+            remaining_credits=ap.remaining_credits,
+            credits_per_week=ap.credits_per_week,
+            eligible_pathway_id=ap.eligible_pathway_id,
+            option_name=opt_name,
+            pathway_title=None,
+            created_at=ap.created_at,
+        ))
+    return results
 
 
 @router.get("/{slug}/events/{event_id}", response_model=EventDetail)

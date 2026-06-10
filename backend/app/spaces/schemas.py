@@ -258,6 +258,8 @@ class EventSummary(BaseModel):
     booking_required_pathway_id: str | None = None
     # Whether the current user has access to the required pathway (True when no restriction)
     user_has_pathway_access: bool = True
+    # Remaining credits on the user's active AccessPass for this pathway (None = no pass / unlimited)
+    pass_credits_remaining: int | None = None
 
 
 class EventDetail(EventSummary):
@@ -452,6 +454,24 @@ class InviteLookupResponse(BaseModel):
     email: str
     name: str | None
     role: str
+
+
+class AccessPassOut(BaseModel):
+    """Member-facing AccessPass summary."""
+
+    id: str
+    pass_type: str
+    status: str
+    valid_from: datetime
+    valid_until: datetime | None = None
+    total_credits: int | None = None
+    used_credits: int
+    remaining_credits: int | None = None
+    credits_per_week: int | None = None
+    eligible_pathway_id: str | None = None
+    option_name: str | None = None
+    pathway_title: str | None = None
+    created_at: datetime
 
 
 class NotificationPrefsUpdate(BaseModel):
