@@ -2307,6 +2307,9 @@ def manual_book_member(
         existing.cancelled_at = None
         existing.source = "creator_manual"
         existing.note = body.note
+        # Clear credit tracking — creator manual override does not consume pass credits
+        existing.access_pass_id = None
+        existing.credits_used = 0
         db.commit()
         db.refresh(existing)
         booking = existing
@@ -2366,6 +2369,14 @@ def cancel_member_booking(
     now = _dt.utcnow()
     booking.status = BookingStatus.cancelled
     booking.cancelled_at = now
+
+    # Creator cancellation always restores credits — no 24h cutoff applies
+    if booking.access_pass_id and booking.credits_used > 0:
+        from app.models.access_pass import AccessPass as _AP2
+        ap = db.query(_AP2).filter(_AP2.id == booking.access_pass_id).first()
+        if ap:
+            ap.used_credits = max(0, ap.used_credits - booking.credits_used)
+
     db.commit()
     return {"booking_id": booking_id, "status": "cancelled"}
 

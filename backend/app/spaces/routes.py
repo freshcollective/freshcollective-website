@@ -1084,15 +1084,24 @@ def book_event(
                 )
 
             # Hard enforce: weekly cap
+            # Uses the EVENT's starts_at week, not the booking creation time.
+            # This allows a member to book sessions in multiple future weeks on
+            # the same day, while still preventing two sessions in the same event week.
             if candidate_pass.credits_per_week is not None:
-                week_start = now - timedelta(days=now.weekday())
-                week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                # Determine the Monday of the week the target event falls in
+                event_weekday = event.starts_at.weekday()  # 0=Mon … 6=Sun
+                event_week_start = (event.starts_at - timedelta(days=event_weekday)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                event_week_end = event_week_start + timedelta(days=7)
                 weekly_used = (
                     db.query(func.count(EventBooking.id))
+                    .join(Event, EventBooking.event_id == Event.id)
                     .filter(
                         EventBooking.access_pass_id == candidate_pass.id,
                         EventBooking.status == BookingStatus.confirmed,
-                        EventBooking.booked_at >= week_start,
+                        Event.starts_at >= event_week_start,
+                        Event.starts_at < event_week_end,
                     )
                     .scalar()
                 ) or 0
