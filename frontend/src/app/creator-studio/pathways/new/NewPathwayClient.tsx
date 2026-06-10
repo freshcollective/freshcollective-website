@@ -262,10 +262,10 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
         />
       </div>
 
-      {/* What will people practise? */}
+      {/* What will people practice? */}
       <div>
         <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-          What will people practise?{' '}
+          What will people practice?{' '}
           <span className="font-normal text-slate-400">(optional)</span>
         </label>
         <textarea

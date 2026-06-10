@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import type { CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
+import { formatDisplayDate } from '@/lib/dateTime'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1591,7 +1592,7 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
                         {opt.price_per_session_cents != null && (
                           <span>{fmtOptionPrice(opt.price_per_session_cents, opt.currency)}/session</span>
                         )}
-                        {opt.term_end_date && <span>Until {opt.term_end_date}</span>}
+                        {opt.term_end_date && <span>Until {formatDisplayDate(opt.term_end_date)}</span>}
                       </div>
                       <div className="mt-1 text-[13px] font-semibold text-navy-900">
                         Effective price: {fmtOptionPrice(opt.effective_price_cents, opt.currency)}
@@ -1786,7 +1787,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
 
             <div>
               <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                What will people practise? <span className="font-normal text-slate-400">(optional)</span>
+                What will people practice? <span className="font-normal text-slate-400">(optional)</span>
               </label>
               <textarea
                 value={practiceBody}

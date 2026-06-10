@@ -1190,6 +1190,7 @@ def get_pathway(
         "cover_image_url": pathway.cover_image_url,
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
         "access_type": pathway.access_type,
+        "pricing_mode": getattr(pathway, "pricing_mode", "legacy") or "legacy",
         "price_cents": pathway.price_cents,
         "currency": pathway.currency,
         "billing_interval": pathway.billing_interval,

@@ -1582,7 +1582,7 @@ def get_pathway_overview(
     slug: str,
     pathway_slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: "User | None" = Depends(get_optional_user),
 ) -> PathwayWithSteps:
     """Pathway detail with ordered steps and this user's completion state."""
     space = _get_space_or_404(slug, db)
@@ -1596,7 +1596,7 @@ def get_pathway_overview(
     )
 
     step_ids = [s.id for s in steps]
-    completed = _completed_step_ids(current_user.id, step_ids, db)
+    completed = _completed_step_ids(current_user.id, step_ids, db) if current_user else set()
 
     step_summaries = [
         StepSummary(
@@ -1918,12 +1918,11 @@ def list_pathway_about_blocks(
     slug: str,
     pathway_slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: "User | None" = Depends(get_optional_user),
 ) -> list[PathwayAboutBlock]:
     """Return about-page blocks for a pathway.
 
-    Accessible to any authenticated user — locked pathways can still show
-    their About page as a preview/sales page before purchase.
+    Public — locked and anonymous visitors can view the About page as a preview/sales page.
     """
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)

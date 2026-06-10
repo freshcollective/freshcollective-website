@@ -66,3 +66,13 @@ export function formatGatheringMobileDayLabel(iso: string, timezone: string): st
     timeZone: timezone,
   })
 }
+
+/** "19 Sep 2026" — compact display date, no timezone conversion. */
+export function formatDisplayDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+/** "19/09/2026" — numeric form / helper display date. */
+export function formatNumericDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}

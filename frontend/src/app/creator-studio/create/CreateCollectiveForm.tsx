@@ -331,7 +331,7 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
       const description =
         [
           whoFor.trim() && `Who this is for: ${whoFor.trim()}`,
-          whatChange.trim() && `What people practise: ${whatChange.trim()}`,
+          whatChange.trim() && `What people practice: ${whatChange.trim()}`,
         ]
           .filter(Boolean)
           .join('\n\n') || null
@@ -530,13 +530,13 @@ export default function CreateCollectiveForm({ existingCount }: { existingCount:
                       htmlFor="collective-change"
                       className="mb-1.5 block text-[14px] font-semibold text-navy-900"
                     >
-                      What change does this collective help people practise?
+                      What change does this collective help people practice?
                     </label>
                     <textarea
                       id="collective-change"
                       value={whatChange}
                       onChange={(e) => setWhatChange(e.target.value)}
-                      placeholder="What will people begin to see, feel, practise, or live differently?"
+                      placeholder="What will people begin to see, feel, practice, or live differently?"
                       rows={2}
                       className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
                     />

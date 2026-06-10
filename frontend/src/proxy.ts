@@ -1,14 +1,21 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
 
-// /spaces (browse) and /spaces/[slug]/about are public.
-// All other /spaces/* sub-routes require authentication.
+// Public space routes:
+//   /spaces                                         — browse
+//   /spaces/[slug]                                  — redirects to /pathways
+//   /spaces/[slug]/about                            — space about page
+//   /spaces/[slug]/pathways                         — pathway list (public)
+//   /spaces/[slug]/pathways/[pathway-slug]/about    — pathway about/checkout page
+// Everything else requires authentication.
 function isSpacesRouteProtected(pathname: string): boolean {
   const segments = pathname.split('/').filter(Boolean)
   if (segments.length <= 1) return false  // /spaces
-  if (segments.length === 2) return false  // /spaces/[slug] — server-redirects to community
+  if (segments.length === 2) return false  // /spaces/[slug]
   if (segments[2] === 'about') return false  // /spaces/[slug]/about
-  return true  // /spaces/[slug]/community, /pathways, /members, /events, etc.
+  if (segments[2] === 'pathways' && segments.length === 3) return false  // /spaces/[slug]/pathways
+  if (segments[2] === 'pathways' && segments.length >= 5 && segments[4] === 'about') return false  // pathway about
+  return true
 }
 
 const PROTECTED_PREFIXES = ['/dashboard', '/admin', '/creator', '/profile', '/settings', '/onboarding']
