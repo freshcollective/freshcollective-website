@@ -1,6 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getPathwayOverview, getSpace } from '@/lib/serverApi'
+import { getPathwayOverview, getSpace, getMe } from '@/lib/serverApi'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import { isPathwayLocked, formatPathwayPrice } from '@/lib/pathwayAccess'
@@ -10,7 +10,13 @@ import type { PathwayWithSteps } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string }>
-  searchParams: Promise<{ success?: string; cancelled?: string; session_id?: string }>
+  searchParams: Promise<{
+    success?: string
+    cancelled?: string
+    session_id?: string
+    payment_option_id?: string
+    payment_option_schedule_id?: string
+  }>
 }
 
 export async function generateMetadata({ params }: Props) {
@@ -21,13 +27,14 @@ export async function generateMetadata({ params }: Props) {
 
 export default async function PathwayCheckoutPage({ params, searchParams }: Props) {
   const { slug, 'pathway-slug': pathwaySlug } = await params
-  const { success, cancelled } = await searchParams
+  const { success, cancelled, payment_option_id, payment_option_schedule_id } = await searchParams
 
-  const [pathway, space]: [PathwayWithSteps | null, { name: string; slug: string } | null] =
-    await Promise.all([
-      getPathwayOverview(slug, pathwaySlug),
-      getSpace(slug),
-    ])
+  const [pathway, space, me] = await Promise.all([
+    getPathwayOverview(slug, pathwaySlug),
+    getSpace(slug),
+    getMe(),
+  ])
+  const isAuthenticated = me !== null
 
   if (!pathway || !space) notFound()
 
@@ -307,6 +314,9 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
               <PaymentOptionSelector
                 pathwayId={pathway.id}
                 options={pathway.payment_options}
+                isAuthenticated={isAuthenticated}
+                initialOptionId={payment_option_id}
+                initialScheduleId={payment_option_schedule_id ?? null}
               />
             ) : (
               <>
@@ -334,11 +344,19 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
                   <CheckoutButton
                     pathwayId={pathway.id}
                     label={priceLabel ? `Unlock for ${priceLabel}` : 'Unlock pathway'}
+                    isAuthenticated={isAuthenticated}
                   />
                 </div>
-                <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
-                  Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
-                </p>
+                {!isAuthenticated && (
+                  <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-400">
+                    Create a free account so we can save your access and connect your payment to your profile.
+                  </p>
+                )}
+                {isAuthenticated && (
+                  <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
+                    Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
+                  </p>
+                )}
               </>
             )}
           </div>

@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { CheckoutButton } from './CheckoutButton'
 import type { PaymentOptionSummary, PaymentOptionScheduleSummary } from '@/types/platform'
 
@@ -42,14 +44,66 @@ function scheduleCheckoutLabel(s: PaymentOptionScheduleSummary): string {
   return 'Unlock pathway'
 }
 
+function AnonCheckoutCTAs({
+  pathname,
+  selectedOptionId,
+  effectiveScheduleId,
+}: {
+  pathname: string
+  selectedOptionId: string | null
+  effectiveScheduleId: string | null
+}) {
+  const params = new URLSearchParams()
+  if (selectedOptionId) params.set('payment_option_id', selectedOptionId)
+  if (effectiveScheduleId) params.set('payment_option_schedule_id', effectiveScheduleId)
+  const qs = params.toString()
+  const checkoutUrl = pathname + (qs ? `?${qs}` : '')
+  const encodedNext = encodeURIComponent(checkoutUrl)
+
+  return (
+    <div className="space-y-2">
+      <Link
+        href={`/signup?next=${encodedNext}`}
+        className="block w-full rounded-full px-5 py-3 text-center text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+      >
+        Create account to continue
+      </Link>
+      <Link
+        href={`/login?next=${encodedNext}`}
+        className="block w-full rounded-full border border-slate-200 px-5 py-2.5 text-center text-[14px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+      >
+        Already have an account? Log in
+      </Link>
+      <p className="pt-1 text-center text-[11px] leading-relaxed text-slate-400">
+        Create a free account so we can save your access and connect your payment to your profile.
+      </p>
+    </div>
+  )
+}
+
 interface Props {
   pathwayId: string
   options: PaymentOptionSummary[]
+  isAuthenticated?: boolean
+  initialOptionId?: string
+  initialScheduleId?: string | null
 }
 
-export function PaymentOptionSelector({ pathwayId, options }: Props) {
-  const [selectedOptionId, setSelectedOptionId] = useState<string>(options[0]?.id ?? '')
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
+export function PaymentOptionSelector({
+  pathwayId,
+  options,
+  isAuthenticated = true,
+  initialOptionId,
+  initialScheduleId,
+}: Props) {
+  const pathname = usePathname()
+  const [selectedOptionId, setSelectedOptionId] = useState<string>(
+    initialOptionId ?? options[0]?.id ?? ''
+  )
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(
+    initialScheduleId ?? null
+  )
 
   const selectedOption = options.find(o => o.id === selectedOptionId)
   const publishedSchedules = selectedOption?.schedules ?? []
@@ -219,16 +273,25 @@ export function PaymentOptionSelector({ pathwayId, options }: Props) {
         </div>
       )}
 
-      <CheckoutButton
-        pathwayId={pathwayId}
-        paymentOptionId={selectedOptionId || null}
-        paymentOptionScheduleId={effectiveScheduleId}
-        label={ctaLabel}
-      />
-
-      <p className="text-center text-[11px] leading-relaxed text-slate-400">
-        Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
-      </p>
+      {isAuthenticated ? (
+        <>
+          <CheckoutButton
+            pathwayId={pathwayId}
+            paymentOptionId={selectedOptionId || null}
+            paymentOptionScheduleId={effectiveScheduleId}
+            label={ctaLabel}
+          />
+          <p className="text-center text-[11px] leading-relaxed text-slate-400">
+            Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
+          </p>
+        </>
+      ) : (
+        <AnonCheckoutCTAs
+          pathname={pathname}
+          selectedOptionId={selectedOptionId || null}
+          effectiveScheduleId={effectiveScheduleId}
+        />
+      )}
     </div>
   )
 }

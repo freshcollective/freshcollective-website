@@ -15,6 +15,7 @@ function isSpacesRouteProtected(pathname: string): boolean {
   if (segments[2] === 'about') return false  // /spaces/[slug]/about
   if (segments[2] === 'pathways' && segments.length === 3) return false  // /spaces/[slug]/pathways
   if (segments[2] === 'pathways' && segments.length >= 5 && segments[4] === 'about') return false  // pathway about
+  if (segments[2] === 'pathways' && segments.length >= 5 && segments[4] === 'checkout') return false  // checkout (option selection public; Stripe creation gated in UI)
   return true
 }
 

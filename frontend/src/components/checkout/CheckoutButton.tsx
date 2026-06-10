@@ -1,6 +1,8 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 
 interface CheckoutButtonProps {
@@ -8,11 +10,41 @@ interface CheckoutButtonProps {
   paymentOptionId?: string | null
   paymentOptionScheduleId?: string | null
   label?: string
+  isAuthenticated?: boolean
 }
 
-export function CheckoutButton({ pathwayId, paymentOptionId, paymentOptionScheduleId, label = 'Unlock pathway' }: CheckoutButtonProps) {
+export function CheckoutButton({
+  pathwayId,
+  paymentOptionId,
+  paymentOptionScheduleId,
+  label = 'Unlock pathway',
+  isAuthenticated = true,
+}: CheckoutButtonProps) {
+  const pathname = usePathname()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // For anonymous visitors on single-price pathways, show auth CTAs
+  if (!isAuthenticated) {
+    const encodedNext = encodeURIComponent(pathname)
+    return (
+      <div className="space-y-2">
+        <Link
+          href={`/signup?next=${encodedNext}`}
+          className="block w-full rounded-full px-5 py-3 text-center text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Create account to continue
+        </Link>
+        <Link
+          href={`/login?next=${encodedNext}`}
+          className="block w-full rounded-full border border-slate-200 px-5 py-2.5 text-center text-[14px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+        >
+          Already have an account? Log in
+        </Link>
+      </div>
+    )
+  }
 
   async function handleClick() {
     setLoading(true)

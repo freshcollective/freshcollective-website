@@ -6,7 +6,13 @@ import Link from 'next/link'
 import Button from '@/components/ui/Button'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
 
-export default function SignupForm() {
+function getSafeRedirect(next?: string): string {
+  if (!next) return '/onboarding'
+  if (/^\/(?!\/|\\)/.test(next)) return next
+  return '/onboarding'
+}
+
+export default function SignupForm({ nextUrl }: { nextUrl?: string }) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -35,7 +41,7 @@ export default function SignupForm() {
         return
       }
 
-      router.push('/onboarding')
+      router.push(getSafeRedirect(nextUrl))
       router.refresh()
     } catch {
       setError('Unable to connect to the server. Please try again.')
@@ -62,7 +68,7 @@ export default function SignupForm() {
         <p className="text-sm text-[#718096]">
           Already a member?{' '}
           <Link
-            href="/login"
+            href={nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : '/login'}
             className="text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"
           >
             Log in

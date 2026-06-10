@@ -67,7 +67,7 @@ export default function LoginForm({ nextUrl }: { nextUrl?: string }) {
         <p className="text-sm text-[#718096]">
           Don&apos;t have an account?{' '}
           <Link
-            href="/signup"
+            href={nextUrl ? `/signup?next=${encodeURIComponent(nextUrl)}` : '/signup'}
             className="text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"
           >
             Sign up
