@@ -71,6 +71,7 @@ from app.spaces.schemas import (
     StepSummary,
     BookingResponse,
     SeriesBookingResponse,
+    AccessPassOut,
 )
 
 router = APIRouter(prefix="/api/spaces", tags=["spaces"])
@@ -1214,7 +1215,7 @@ def cancel_booking(
     return BookingResponse(status="cancelled", booking_id=booking.id)
 
 
-@router.get("/{slug}/my-passes", response_model=list["AccessPassOut"])
+@router.get("/{slug}/my-passes", response_model=list[AccessPassOut])
 def get_my_passes(
     slug: str,
     db: Session = Depends(get_db),
@@ -1250,7 +1251,6 @@ def get_my_passes(
         .all()
     )
 
-    from app.spaces.schemas import AccessPassOut
     from app.models.payment_option import PaymentOption as _PO
     results = []
     for ap in passes:

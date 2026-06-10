@@ -88,7 +88,9 @@ from app.creator.schemas import (
     StepResponse,
     StepUpdateRequest,
     slugify,
+    AccessPassAdminOut,
 )
+from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.creator_billing import CreatorPlan, CreatorSubscription
 from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentTransactionType, PayoutStatus
 from app.models.payment_option import PaymentOption
@@ -4051,7 +4053,7 @@ def archive_payment_option_schedule(
 # Member Passes (Phase B)
 # ---------------------------------------------------------------------------
 
-@router.get("/spaces/{slug}/passes", response_model=list["AccessPassAdminOut"])
+@router.get("/spaces/{slug}/passes", response_model=list[AccessPassAdminOut])
 def list_space_passes(
     slug: str,
     status_filter: str | None = None,
@@ -4059,11 +4061,9 @@ def list_space_passes(
     current_user: User = Depends(get_creator_user),
 ) -> list:
     """List all AccessPasses for a space. Creator/admin only."""
-    from app.models.access_pass import AccessPass, AccessPassStatus
     from app.models.payment_option import PaymentOption as _PO
     from app.models.platform import Pathway as _Pathway
     from app.models.user import User as _User
-    from app.creator.schemas import AccessPassAdminOut
 
     space = _get_managed_space(slug, current_user, db)
 
