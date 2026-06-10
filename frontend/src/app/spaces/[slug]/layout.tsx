@@ -36,6 +36,7 @@ export default async function SpaceLayout({ children, params }: Props) {
             currentSlug={slug}
             currentName={space.name}
             userRole={user?.role ?? 'learner'}
+            isAuthenticated={!!user}
           />
           <div className="flex items-center gap-4">
             {user ? (
