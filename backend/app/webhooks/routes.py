@@ -22,6 +22,7 @@ TODO (Phase 2+):
   invoice.payment_failed        → creator subscription past_due (Phase 3)
 """
 
+import json
 import logging
 from datetime import datetime
 from uuid import uuid4
@@ -88,12 +89,16 @@ async def stripe_webhook(
     event_type: str = event["type"]
     logger.info("Stripe webhook received: %s id=%s", event_type, event["id"])
 
+    # Convert the Stripe SDK object to a plain dict so handlers can use .get()
+    # (StripeObject does not expose a .get() method in newer stripe-python versions)
+    event_object: dict = json.loads(str(event["data"]["object"]))
+
     if event_type == "checkout.session.completed":
-        _handle_checkout_completed(event["data"]["object"], db)
+        _handle_checkout_completed(event_object, db)
     elif event_type == "checkout.session.expired":
-        _handle_checkout_expired(event["data"]["object"], db)
+        _handle_checkout_expired(event_object, db)
     elif event_type == "payment_intent.payment_failed":
-        _handle_payment_failed(event["data"]["object"], db)
+        _handle_payment_failed(event_object, db)
     else:
         logger.debug("Unhandled Stripe event type: %s", event_type)
 
