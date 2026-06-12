@@ -1,6 +1,26 @@
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import LoginForm from './LoginForm'
+import { getPathwayOverview } from '@/lib/serverApi'
+import type { PathwayWithSteps } from '@/types/platform'
+
+export type CheckoutContext = {
+  pathwayTitle: string
+}
+
+async function getCheckoutContext(next?: string): Promise<CheckoutContext | null> {
+  if (!next) return null
+  const match = next.match(/^\/spaces\/([^/?#]+)\/pathways\/([^/?#]+)\/checkout/)
+  if (!match) return null
+  const [, spaceSlug, pathwaySlug] = match
+  try {
+    const pathway = (await getPathwayOverview(spaceSlug, pathwaySlug)) as PathwayWithSteps | null
+    if (!pathway) return null
+    return { pathwayTitle: pathway.title }
+  } catch {
+    return null
+  }
+}
 
 export default async function LoginPage({
   searchParams,
@@ -8,6 +28,7 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>
 }) {
   const { next } = await searchParams
+  const checkoutContext = await getCheckoutContext(next)
 
   return (
     <SiteShell>
@@ -18,7 +39,7 @@ export default async function LoginPage({
         </div>
         <Container className="relative z-10">
           <div className="flex items-center justify-center">
-            <LoginForm nextUrl={next} />
+            <LoginForm nextUrl={next} checkoutContext={checkoutContext} />
           </div>
         </Container>
       </section>

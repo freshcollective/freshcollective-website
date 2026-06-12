@@ -12,7 +12,33 @@ function getSafeRedirect(next?: string): string {
   return '/onboarding'
 }
 
-export default function SignupForm({ nextUrl }: { nextUrl?: string }) {
+type CheckoutContext = {
+  pathwayTitle: string
+  optionName: string | null
+  optionDescription: string | null
+  priceLabel: string | null
+}
+
+function buildSignupSubcopy(ctx: CheckoutContext): string {
+  const tail = ' Create a free account so we can save your access and connect your payment to your profile.'
+  if (ctx.optionName) {
+    const desc = ctx.optionDescription ? ` — ${ctx.optionDescription}` : ''
+    const price = ctx.priceLabel ? ` for ${ctx.priceLabel}` : ''
+    return `You're choosing ${ctx.optionName}${desc}${price}.${tail}`
+  }
+  if (ctx.priceLabel) {
+    return `You're unlocking ${ctx.pathwayTitle} for ${ctx.priceLabel}.${tail}`
+  }
+  return `Create a free account to continue with ${ctx.pathwayTitle}.`
+}
+
+export default function SignupForm({
+  nextUrl,
+  checkoutContext,
+}: {
+  nextUrl?: string
+  checkoutContext?: CheckoutContext | null
+}) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -64,9 +90,18 @@ export default function SignupForm({ nextUrl }: { nextUrl?: string }) {
             style={{ height: '34px', width: 'auto' }}
           />
         </div>
-        <h1 className="mb-2 font-serif text-3xl text-navy-900">Create your account.</h1>
+        {checkoutContext ? (
+          <>
+            <h1 className="mb-2 font-serif text-3xl text-navy-900">Create your account to continue</h1>
+            <p className="mb-3 text-sm leading-relaxed text-[#718096]">
+              {buildSignupSubcopy(checkoutContext)}
+            </p>
+          </>
+        ) : (
+          <h1 className="mb-2 font-serif text-3xl text-navy-900">Create your account.</h1>
+        )}
         <p className="text-sm text-[#718096]">
-          Already a member?{' '}
+          Already have an account?{' '}
           <Link
             href={nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : '/login'}
             className="text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"

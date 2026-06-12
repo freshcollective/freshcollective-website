@@ -12,7 +12,17 @@ function getSafeRedirect(next?: string): string {
   return '/dashboard'
 }
 
-export default function LoginForm({ nextUrl }: { nextUrl?: string }) {
+type CheckoutContext = {
+  pathwayTitle: string
+}
+
+export default function LoginForm({
+  nextUrl,
+  checkoutContext,
+}: {
+  nextUrl?: string
+  checkoutContext?: CheckoutContext | null
+}) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -63,7 +73,17 @@ export default function LoginForm({ nextUrl }: { nextUrl?: string }) {
             style={{ height: '34px', width: 'auto' }}
           />
         </div>
-        <h1 className="mb-2 font-serif text-3xl text-navy-900">Welcome back.</h1>
+        {checkoutContext ? (
+          <>
+            <h1 className="mb-2 font-serif text-3xl text-navy-900">Log in to continue</h1>
+            <p className="mb-2 text-sm text-[#718096]">
+              Continuing with{' '}
+              <span className="font-medium text-navy-900">{checkoutContext.pathwayTitle}</span>.
+            </p>
+          </>
+        ) : (
+          <h1 className="mb-2 font-serif text-3xl text-navy-900">Welcome back.</h1>
+        )}
         <p className="text-sm text-[#718096]">
           Don&apos;t have an account?{' '}
           <Link
