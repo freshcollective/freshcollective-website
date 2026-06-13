@@ -28,7 +28,9 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
 
   const badge = cardAccessBadge(pathway.access_type, pathway.user_has_access)
   const priceLabel = locked
-    ? formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval)
+    ? (pathway.pricing_mode === 'payment_options'
+        ? 'Payment options'
+        : formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval))
     : null
   const stepLabel = pathway.step_count > 0
     ? `${pathway.step_count} step${pathway.step_count !== 1 ? 's' : ''}`

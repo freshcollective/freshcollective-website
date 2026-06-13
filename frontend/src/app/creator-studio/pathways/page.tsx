@@ -28,6 +28,7 @@ function statusLabel(status: string) {
 
 function accessLabel(p: CreatorPathway): string {
   if (p.access_type === 'included') return 'Included'
+  if (p.pricing_mode === 'payment_options') return 'Payment options'
   if (p.access_type === 'one_time') {
     if (p.price_cents) {
       const dollars = p.price_cents / 100

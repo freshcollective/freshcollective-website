@@ -1161,6 +1161,7 @@ def list_pathways(
             "cover_image_url": p.cover_image_url,
             "status": p.status.value if hasattr(p.status, "value") else str(p.status),
             "access_type": p.access_type,
+            "pricing_mode": getattr(p, "pricing_mode", "legacy") or "legacy",
             "price_cents": p.price_cents,
             "currency": p.currency,
             "billing_interval": p.billing_interval,
