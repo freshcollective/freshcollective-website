@@ -1,12 +1,13 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getPathwayOverview } from '@/lib/serverApi'
+import { getPathwayOverview, getMyPasses } from '@/lib/serverApi'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
-import type { PathwayWithSteps, StepSummary } from '@/types/platform'
+import type { PathwayWithSteps, StepSummary, AccessPassSummary } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }
 
 const CONTENT_TYPE_LABEL: Record<string, string> = {
@@ -73,8 +74,101 @@ function StepRow({
   )
 }
 
-export default async function PathwayDetailPage({ params }: Props) {
+function PassWidget({ pass }: { pass: AccessPassSummary }) {
+  const validUntil = pass.valid_until
+    ? new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null
+  const validFrom = pass.valid_from
+    ? new Date(pass.valid_from).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null
+  const remaining = pass.remaining_credits
+  const total = pass.total_credits
+
+  return (
+    <div
+      className="mb-6 rounded-2xl border p-5"
+      style={{ borderColor: 'rgba(56,160,158,0.25)', background: 'rgba(56,160,158,0.04)' }}
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <p className="text-[13px] font-semibold text-teal-700">
+            {pass.option_name ?? 'Term Pass'}
+          </p>
+          <p className="mt-0.5 text-[12px] text-slate-500">
+            {pass.status === 'active' ? 'Active' : pass.status}
+            {validUntil && ` · valid until ${validUntil}`}
+          </p>
+        </div>
+        <span
+          className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+          style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
+        >
+          Active
+        </span>
+      </div>
+
+      {total !== null && (
+        <div className="mb-3">
+          <div className="mb-1 flex items-baseline justify-between text-[12px]">
+            <span className="text-slate-500">{remaining ?? 0} of {total} sessions remaining</span>
+            {pass.credits_per_week && (
+              <span className="text-slate-400">{pass.credits_per_week}/week</span>
+            )}
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
+            <div
+              className="h-full rounded-full bg-teal-500 transition-all"
+              style={{ width: `${total > 0 ? Math.round(((remaining ?? 0) / total) * 100) : 0}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {validFrom && (
+        <p className="mb-3 text-[12px] text-slate-500">
+          Sessions start {validFrom}
+        </p>
+      )}
+
+      <Link
+        href={`/spaces/embody/sessions`}
+        className="inline-block rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+      >
+        Book your sessions →
+      </Link>
+    </div>
+  )
+}
+
+function SuccessBanner({ pass }: { pass: AccessPassSummary | null }) {
+  const validUntil = pass?.valid_until
+    ? new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+    : '19 September 2026'
+  const remaining = pass?.remaining_credits ?? pass?.total_credits ?? null
+  const optionName = pass?.option_name ?? 'Term Pass'
+
+  return (
+    <div
+      className="mb-6 rounded-2xl border p-5"
+      style={{ borderColor: 'rgba(56,160,158,0.30)', background: 'rgba(56,160,158,0.07)' }}
+    >
+      <p className="mb-1 text-[15px] font-semibold text-teal-700">
+        Your {optionName} is active.
+      </p>
+      <p className="text-[13px] leading-relaxed text-slate-600">
+        {remaining !== null ? `You have ${remaining} sessions available until ${validUntil}.` : `Your pass is valid until ${validUntil}.`}
+        {' '}Sessions start 13 July 2026.
+      </p>
+    </div>
+  )
+}
+
+export default async function PathwayDetailPage({ params, searchParams }: Props) {
   const { slug, 'pathway-slug': pathwaySlug } = await params
+  const sp = await searchParams
+  const isSuccess = sp.success === 'true'
+
   const pathway: PathwayWithSteps | null = await getPathwayOverview(slug, pathwaySlug)
 
   if (!pathway) notFound()
@@ -90,12 +184,26 @@ export default async function PathwayDetailPage({ params }: Props) {
     redirect(`/spaces/${slug}/pathways/${pathwaySlug}/about`)
   }
 
-  // For accessible users with steps, skip the overview and go straight to the right step.
-  // First incomplete step wins; fall back to first step if all are complete.
-  if (!isComingSoon && pathway.steps.length > 0) {
+  // For accessible users with steps, skip the overview and go straight to the right step —
+  // UNLESS they just completed checkout (?success=true), in which case show the overview with
+  // a success banner and pass widget first.
+  if (!isComingSoon && pathway.steps.length > 0 && !isSuccess) {
     const nextIncomplete = pathway.steps.find((s) => !s.is_completed)
     const continueSlug = nextIncomplete?.slug ?? pathway.steps[0].slug
     redirect(`/spaces/${slug}/pathways/${pathwaySlug}/${continueSlug}`)
+  }
+
+  // Fetch pass data for the success banner / pass widget
+  let activePass: AccessPassSummary | null = null
+  if (isSuccess || pathway.user_has_access) {
+    try {
+      const passes = await getMyPasses(slug)
+      activePass = passes.find(
+        (p) => p.eligible_pathway_id === pathway.id && p.status === 'active'
+      ) ?? passes[0] ?? null
+    } catch {
+      // Non-fatal — widget simply won't show
+    }
   }
 
   const progressPct =
@@ -166,6 +274,12 @@ export default async function PathwayDetailPage({ params }: Props) {
           )}
         </div>
       </div>
+
+      {/* ── Post-checkout success banner ── */}
+      {isSuccess && <SuccessBanner pass={activePass} />}
+
+      {/* ── Active pass widget (shown on success view) ── */}
+      {isSuccess && activePass && <PassWidget pass={activePass} />}
 
       {/* ── Coming soon or accessible pathway view ── */}
       {isComingSoon ? (
@@ -250,6 +364,18 @@ export default async function PathwayDetailPage({ params }: Props) {
                   index={i}
                 />
               ))}
+            </div>
+          )}
+
+          {isSuccess && pathway.steps.length > 0 && (
+            <div className="mt-6">
+              <Link
+                href={`/spaces/${slug}/pathways/${pathwaySlug}/${pathway.steps[0].slug}`}
+                className="inline-block rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              >
+                Start reading →
+              </Link>
             </div>
           )}
         </>
