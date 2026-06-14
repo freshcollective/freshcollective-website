@@ -46,6 +46,7 @@ from app.models.platform import (
     EntitlementStatus,
     Pathway,
     PathwayEntitlement,
+    SpaceMembership,
 )
 
 logger = logging.getLogger(__name__)
@@ -311,6 +312,30 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
         )
 
     txn.entitlement_id = ent.id
+
+    # --- Auto-join space as learner if not already a member -----------------
+    existing_membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.space_id == space_id,
+            SpaceMembership.user_id == payer_user_id,
+        )
+        .first()
+    )
+    if not existing_membership:
+        membership = SpaceMembership(
+            id=str(uuid4()),
+            space_id=space_id,
+            user_id=payer_user_id,
+            role="learner",
+            status="active",
+            joined_at=now,
+        )
+        db.add(membership)
+        logger.info(
+            "checkout.session.completed: auto-joined user=%s as learner in space=%s",
+            payer_user_id, space_id,
+        )
 
     # --- Create AccessPass for term_pass purchases (Phase B) ----------------
     # Only create for payment types that require booking credit enforcement.
