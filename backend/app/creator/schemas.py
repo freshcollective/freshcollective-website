@@ -583,11 +583,27 @@ class BookedMemberItem(BaseModel):
     note: str | None = None
     attendance_status: str | None = None
     attendance_marked_at: datetime | None = None
+    credits_used: int = 0
+    access_pass_id: str | None = None
 
 
 class ManualBookingRequest(BaseModel):
     user_id: str
     note: str | None = None
+    use_pass: bool = False          # if True: find active pass, enforce caps, deduct credit
+    access_pass_id: str | None = None  # optional: use specific pass; auto-detected if omitted
+
+
+class MemberActivePassOut(BaseModel):
+    pass_id: str
+    option_name: str | None
+    pathway_title: str | None
+    total_credits: int | None
+    used_credits: int
+    remaining_credits: int | None
+    credits_per_week: int | None
+    valid_until: str | None  # ISO date string
+    status: str
 
 
 class AttendanceUpdateRequest(BaseModel):

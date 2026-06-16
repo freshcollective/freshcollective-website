@@ -112,7 +112,7 @@ function PassWidget({ pass }: { pass: AccessPassSummary }) {
           <div className="mb-1 flex items-baseline justify-between text-[12px]">
             <span className="text-slate-500">{remaining ?? 0} of {total} sessions remaining</span>
             {pass.credits_per_week && (
-              <span className="text-slate-400">{pass.credits_per_week}/week</span>
+              <span className="text-slate-400">{pass.credits_per_week} session{pass.credits_per_week !== 1 ? 's' : ''} per week</span>
             )}
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
@@ -121,6 +121,7 @@ function PassWidget({ pass }: { pass: AccessPassSummary }) {
               style={{ width: `${total > 0 ? Math.round(((remaining ?? 0) / total) * 100) : 0}%` }}
             />
           </div>
+          <p className="mt-2 text-[12px] leading-relaxed text-teal-600/70">Need help booking? Message Lindsey and she can book your regular sessions for you.</p>
         </div>
       )}
 

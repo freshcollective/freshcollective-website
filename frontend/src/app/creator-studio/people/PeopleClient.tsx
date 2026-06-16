@@ -675,12 +675,223 @@ function MemberPassesSection({ member, spaceSlug }: { member: CreatorMemberDetai
 }
 
 // ---------------------------------------------------------------------------
+// Book session modal
+// ---------------------------------------------------------------------------
+
+interface ActivePassInfo {
+  pass_id: string
+  option_name: string | null
+  pathway_title: string | null
+  total_credits: number | null
+  used_credits: number
+  remaining_credits: number | null
+  credits_per_week: number | null
+  valid_until: string | null
+  status: string
+}
+
+interface SpaceEvent {
+  id: string
+  title: string
+  starts_at: string
+  location_type: string
+}
+
+function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
+  spaceSlug: string
+  member: CreatorMemberDetail
+  onClose: () => void
+  onBooked: () => void
+}) {
+  const [events, setEvents] = useState<SpaceEvent[]>([])
+  const [selectedEventId, setSelectedEventId] = useState('')
+  const [activePass, setActivePass] = useState<ActivePassInfo | null | undefined>(undefined) // undefined=loading, null=none
+  const [mode, setMode] = useState<'pass' | 'override'>('pass')
+  const [note, setNote] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+
+  useEffect(() => {
+    Promise.all([
+      fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/events`), { credentials: 'include' })
+        .then(r => r.ok ? r.json() : []),
+      fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/members/${member.id}/active-pass`), { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null),
+    ]).then(([eventsData, passData]: [SpaceEvent[], ActivePassInfo | null]) => {
+      const now = new Date()
+      const upcoming = (eventsData || []).filter((e: SpaceEvent) => new Date(e.starts_at) > now)
+      setEvents(upcoming)
+      if (upcoming.length > 0) setSelectedEventId(upcoming[0].id)
+      setActivePass(passData)
+      if (!passData) setMode('override')
+    }).catch(() => { setEvents([]); setActivePass(null); setMode('override') })
+  }, [spaceSlug, member.id])
+
+  async function handleSubmit() {
+    if (!selectedEventId) { setError('Select a session.'); return }
+    if (mode === 'pass' && !activePass) { setError('No active pass found for this member.'); return }
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/events/${selectedEventId}/bookings/manual`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          user_id: member.id,
+          use_pass: mode === 'pass',
+          access_pass_id: mode === 'pass' ? activePass?.pass_id : null,
+          note: note.trim() || null,
+        }),
+      })
+      if (res.ok) { setSuccess(true); onBooked() }
+      else {
+        const body = await res.json().catch(() => ({}))
+        setError(typeof body.detail === 'string' ? body.detail : 'Could not book session.')
+      }
+    } catch { setError('Something went wrong. Please try again.') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl overflow-y-auto max-h-[90vh]">
+        {success ? (
+          <div className="py-4 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full text-xl"
+              style={{ background: 'rgba(56,160,158,0.12)', color: '#38A09E' }}>✓</div>
+            <p className="text-[16px] font-semibold text-navy-900">Session booked</p>
+            <p className="mt-1 text-[13px] text-slate-500">
+              {member.display_name} has been booked into the session.
+              {mode === 'pass' ? ' 1 session deducted from their pass.' : ' No sessions deducted (manual override).'}
+            </p>
+            <button onClick={onClose} className="mt-4 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white" style={{ background: '#38A09E' }}>Done</button>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-[16px] font-semibold text-navy-900">Book {member.display_name} into a session</h2>
+              <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-[12px] font-semibold text-slate-500">Session</label>
+                {events.length === 0 ? (
+                  <p className="text-[12px] text-slate-400">No upcoming sessions found.</p>
+                ) : (
+                  <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
+                    {events.map(ev => (
+                      <option key={ev.id} value={ev.id}>
+                        {new Date(ev.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })} — {ev.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[12px] font-semibold text-slate-500">Booking mode</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMode('pass')}
+                    className={`flex-1 rounded-xl border px-3 py-2.5 text-[12px] font-semibold transition-colors ${mode === 'pass' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                  >
+                    Use member pass
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode('override')}
+                    className={`flex-1 rounded-xl border px-3 py-2.5 text-[12px] font-semibold transition-colors ${mode === 'override' ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                  >
+                    Manual override
+                  </button>
+                </div>
+              </div>
+
+              {mode === 'pass' && (
+                <div>
+                  {activePass === undefined && <p className="text-[12px] text-slate-400">Loading pass info…</p>}
+                  {activePass === null && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+                      <p className="text-[12px] font-semibold text-amber-700">No active pass</p>
+                      <p className="mt-0.5 text-[11px] text-amber-600">This member has no active pass. Use Manual override or grant them a pass first.</p>
+                    </div>
+                  )}
+                  {activePass && (
+                    <div className="rounded-xl border border-teal-100 bg-teal-50/40 px-3 py-2.5">
+                      <p className="text-[12px] font-semibold text-teal-700">{activePass.option_name ?? 'Active pass'}</p>
+                      <p className="mt-0.5 text-[11px] text-slate-600">
+                        {activePass.remaining_credits ?? '?'} of {activePass.total_credits ?? '?'} sessions remaining
+                        {activePass.credits_per_week ? ` · ${activePass.credits_per_week}/week` : ''}
+                      </p>
+                      {activePass.valid_until && (
+                        <p className="mt-0.5 text-[11px] text-slate-400">
+                          Valid until {new Date(activePass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        </p>
+                      )}
+                      <p className="mt-1.5 text-[11px] text-teal-600">Booking will deduct 1 session from this pass.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {mode === 'override' && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2.5">
+                  <p className="text-[11px] text-amber-700">This booking will not use the member&apos;s pass. No sessions will be deducted. Use for exceptions, make-ups, or trials.</p>
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1 block text-[12px] font-semibold text-slate-500">Note (optional)</label>
+                <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
+                  placeholder="e.g. Regular Tuesday session, make-up booking…"
+                  className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              </div>
+
+              {error && <p className="text-[12px] text-red-500">{error}</p>}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={handleSubmit}
+                  disabled={loading || !selectedEventId || events.length === 0 || (mode === 'pass' && !activePass)}
+                  className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: mode === 'override' ? '#B45309' : '#38A09E' }}
+                >
+                  {loading ? 'Booking…' : mode === 'pass' ? 'Book (use pass)' : 'Book (override)'}
+                </button>
+                <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Gathering history (member detail)
 // ---------------------------------------------------------------------------
 
 function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberDetail; spaceSlug: string }) {
   const [bookings, setBookings] = useState<MemberBookingItem[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [showBookModal, setShowBookModal] = useState(false)
+
+  function loadBookings() {
+    setLoading(true)
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/members/${member.id}/bookings`), { credentials: 'include' })
+      .then((r) => r.ok ? r.json() : [])
+      .then((data: MemberBookingItem[]) => setBookings(data))
+      .catch(() => setBookings([]))
+      .finally(() => setLoading(false))
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -700,7 +911,14 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
 
   return (
     <div>
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Gathering history</p>
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Gathering history</p>
+        <button onClick={() => setShowBookModal(true)}
+          className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors"
+          style={{ background: 'rgba(56,160,158,0.10)', color: '#0f766e' }}>
+          + Book session
+        </button>
+      </div>
       {loading && <p className="text-[13px] italic text-slate-400">Loading…</p>}
       {!loading && bookings?.length === 0 && (
         <p className="text-[13px] text-slate-400">No gathering bookings yet.</p>
@@ -740,6 +958,14 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
             </details>
           )}
         </div>
+      )}
+      {showBookModal && (
+        <BookSessionModal
+          spaceSlug={spaceSlug}
+          member={member}
+          onClose={() => setShowBookModal(false)}
+          onBooked={() => { setShowBookModal(false); loadBookings() }}
+        />
       )}
     </div>
   )

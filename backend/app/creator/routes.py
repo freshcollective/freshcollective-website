@@ -10,7 +10,7 @@ Permission model:
 import json
 import pathlib
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -51,6 +51,7 @@ from app.creator.schemas import (
     EventResponse,
     EventUpdateRequest,
     ManualBookingRequest,
+    MemberActivePassOut,
     InvitationCreateRequest,
     InvitationResponse,
     BlockMediaInfo,
@@ -2298,6 +2299,59 @@ def manual_book_member(
         if confirmed >= event.capacity:
             raise HTTPException(status_code=400, detail="Event is at full capacity.")
 
+    # Resolve pass to charge (if use_pass mode)
+    access_pass_to_charge: AccessPass | None = None
+    if body.use_pass:
+        if body.access_pass_id:
+            # Specific pass requested — verify it belongs to this member + space
+            ap = db.query(AccessPass).filter(
+                AccessPass.id == body.access_pass_id,
+                AccessPass.user_id == body.user_id,
+                AccessPass.space_id == space.id,
+                AccessPass.status == AccessPassStatus.active,
+            ).first()
+            if not ap:
+                raise HTTPException(status_code=404, detail="Specified pass not found or not active for this member.")
+        else:
+            # Auto-detect: most recent active pass for this space
+            ap = db.query(AccessPass).filter(
+                AccessPass.user_id == body.user_id,
+                AccessPass.space_id == space.id,
+                AccessPass.status == AccessPassStatus.active,
+            ).order_by(AccessPass.created_at.desc()).first()
+            if not ap:
+                raise HTTPException(status_code=409, detail="This member has no active pass for this space.")
+
+        # Check total credits
+        if ap.total_credits is not None and ap.used_credits >= ap.total_credits:
+            raise HTTPException(status_code=409, detail="This member has no remaining sessions on their pass.")
+
+        # Check weekly cap (uses event's starts_at week, same logic as member book_event)
+        if ap.credits_per_week is not None:
+            event_weekday = event.starts_at.weekday()  # 0=Mon … 6=Sun
+            event_week_start = (event.starts_at - timedelta(days=event_weekday)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            event_week_end = event_week_start + timedelta(days=7)
+            weekly_used = (
+                db.query(func.count(EventBooking.id))
+                .join(Event, EventBooking.event_id == Event.id)
+                .filter(
+                    EventBooking.access_pass_id == ap.id,
+                    EventBooking.status == BookingStatus.confirmed,
+                    Event.starts_at >= event_week_start,
+                    Event.starts_at < event_week_end,
+                )
+                .scalar()
+            ) or 0
+            if weekly_used >= ap.credits_per_week:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"This member has reached their weekly limit of {ap.credits_per_week} session(s) for this week.",
+                )
+
+        access_pass_to_charge = ap
+
     # Reactivate cancelled booking or create new
     existing = (
         db.query(EventBooking)
@@ -2310,11 +2364,12 @@ def manual_book_member(
         existing.status = BookingStatus.confirmed
         existing.booked_at = now
         existing.cancelled_at = None
-        existing.source = "creator_manual"
+        existing.source = "creator_pass" if body.use_pass else "creator_manual"
         existing.note = body.note
-        # Clear credit tracking — creator manual override does not consume pass credits
-        existing.access_pass_id = None
-        existing.credits_used = 0
+        existing.access_pass_id = access_pass_to_charge.id if access_pass_to_charge else None
+        existing.credits_used = 1 if access_pass_to_charge else 0
+        if access_pass_to_charge:
+            access_pass_to_charge.used_credits += 1
         db.commit()
         db.refresh(existing)
         booking = existing
@@ -2325,10 +2380,14 @@ def manual_book_member(
             user_id=body.user_id,
             status=BookingStatus.confirmed,
             booked_at=now,
-            source="creator_manual",
+            source="creator_pass" if body.use_pass else "creator_manual",
             note=body.note,
+            access_pass_id=access_pass_to_charge.id if access_pass_to_charge else None,
+            credits_used=1 if access_pass_to_charge else 0,
         )
         db.add(booking)
+        if access_pass_to_charge:
+            access_pass_to_charge.used_credits += 1
         db.commit()
         db.refresh(booking)
 
@@ -2339,10 +2398,12 @@ def manual_book_member(
         "email": target_user.email,
         "booked_at": booking.booked_at,
         "status": "confirmed",
-        "source": "creator_manual",
+        "source": booking.source,
         "note": body.note,
         "attendance_status": booking.attendance_status,
         "attendance_marked_at": booking.attendance_marked_at,
+        "credits_used": booking.credits_used,
+        "access_pass_id": booking.access_pass_id,
     }
 
 
@@ -4436,3 +4497,49 @@ def get_member_passes(
             recent_bookings=recent_map.get(ap.id, 0),
         ))
     return results
+
+
+@router.get("/spaces/{slug}/members/{user_id}/active-pass", response_model=MemberActivePassOut | None)
+def get_member_active_pass(
+    slug: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    """Get the most recent active AccessPass for a member in this space."""
+    from app.models.access_pass import AccessPass as _AP, AccessPassStatus as _APS
+    from app.models.payment_option import PaymentOption as _PO
+    from app.models.platform import Pathway as _Pathway
+
+    space = _get_managed_space(slug, current_user, db)
+    membership = db.query(SpaceMembership).filter(
+        SpaceMembership.space_id == space.id,
+        SpaceMembership.user_id == user_id,
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=404, detail="Member not found in this space.")
+
+    ap = db.query(_AP).filter(
+        _AP.user_id == user_id,
+        _AP.space_id == space.id,
+        _AP.status == _APS.active,
+    ).order_by(_AP.created_at.desc()).first()
+
+    if not ap:
+        return None
+
+    opt = db.query(_PO).filter(_PO.id == ap.payment_option_id).first() if ap.payment_option_id else None
+    pathway = db.query(_Pathway).filter(_Pathway.id == ap.eligible_pathway_id).first() if ap.eligible_pathway_id else None
+    remaining = (ap.total_credits - ap.used_credits) if ap.total_credits is not None else None
+
+    return MemberActivePassOut(
+        pass_id=ap.id,
+        option_name=opt.name if opt else None,
+        pathway_title=pathway.title if pathway else None,
+        total_credits=ap.total_credits,
+        used_credits=ap.used_credits,
+        remaining_credits=remaining,
+        credits_per_week=ap.credits_per_week,
+        valid_until=ap.valid_until.isoformat() if ap.valid_until else None,
+        status=ap.status.value if hasattr(ap.status, "value") else str(ap.status),
+    )

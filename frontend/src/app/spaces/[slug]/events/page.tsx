@@ -96,7 +96,7 @@ export default async function SpaceEventsPage({ params }: Props) {
                     className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
                     style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
                   >
-                    {pass.credits_per_week}/week
+                    {pass.credits_per_week} session{pass.credits_per_week !== 1 ? 's' : ''} per week
                   </span>
                 )}
               </div>
@@ -111,6 +111,7 @@ export default async function SpaceEventsPage({ params }: Props) {
                       style={{ width: `${total > 0 ? Math.round(((remaining ?? 0) / total) * 100) : 0}%` }}
                     />
                   </div>
+                  <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'rgba(56,160,158,0.75)' }}>Need help booking? Message Lindsey and she can book your regular sessions for you.</p>
                 </div>
               )}
             </div>
