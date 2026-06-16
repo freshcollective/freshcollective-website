@@ -1079,6 +1079,29 @@ class RevokeEntitlementRequest(BaseModel):
     notes: str | None = None
 
 
+class GrantPassRequest(BaseModel):
+    user_id: str
+    payment_option_id: str | None = None          # if set, auto-populate credits/dates from payment option
+    pass_type: str = "term_pass"
+    total_credits: int | None = None
+    credits_per_week: int | None = None
+    valid_from: date | None = None                # defaults to today
+    valid_until: date | None = None
+    eligible_pathway_id: str | None = None
+    source: str = "manual"                         # "manual" | "bank_transfer" | "cash" | "complimentary" | "test"
+    notes: str | None = None
+    also_grant_pathway_access: bool = True         # create PathwayEntitlement if eligible_pathway_id is set
+    record_payment: bool = False
+    payment_amount_cents: int | None = None        # only used if record_payment=True
+
+
+class GrantPassResponse(BaseModel):
+    pass_id: str
+    entitlement_id: str | None = None
+    transaction_id: str | None = None
+    message: str
+
+
 # ---------------------------------------------------------------------------
 # Payment Transactions (creator-visible)
 # ---------------------------------------------------------------------------

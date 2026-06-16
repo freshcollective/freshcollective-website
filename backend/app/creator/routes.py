@@ -37,6 +37,8 @@ from app.creator.schemas import (
     CreatorUsage,
     EntitlementOut,
     GrantEntitlementRequest,
+    GrantPassRequest,
+    GrantPassResponse,
     RevokeEntitlementRequest,
     AboutBlockReorderRequest,
     AboutBlockResponse,
@@ -4143,5 +4145,288 @@ def list_space_passes(
             member_email=user.email if user else None,
             total_bookings=total_bookings_map.get(ap.id, 0),
             recent_bookings=recent_bookings_map.get(ap.id, 0),
+        ))
+    return results
+
+
+@router.post("/spaces/{slug}/passes/grant", response_model=GrantPassResponse, status_code=201)
+def grant_pass_manually(
+    slug: str,
+    body: GrantPassRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> GrantPassResponse:
+    """Manually grant an AccessPass to a member. Optionally also grant PathwayEntitlement and record payment."""
+    from app.models.access_pass import AccessPass as _AP, AccessPassSource, AccessPassStatus, AccessPassType
+    from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentProvider, PayoutStatus
+    from app.models.payment_option import PaymentOption as _PO
+    from app.models.platform import PathwayEntitlement, EntitlementSource, EntitlementStatus, Pathway as _Pathway
+    from datetime import datetime as _dt, date as _date
+
+    space = _get_managed_space(slug, current_user, db)
+
+    # Verify member is in this space
+    membership = (
+        db.query(SpaceMembership)
+        .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == body.user_id)
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=404, detail="Member not found in this space.")
+
+    now = _dt.utcnow()
+
+    # --- Auto-populate from payment option if provided ---
+    total_credits = body.total_credits
+    credits_per_week = body.credits_per_week
+    valid_from = body.valid_from
+    valid_until = body.valid_until
+    eligible_pathway_id = body.eligible_pathway_id
+    payment_option_id = body.payment_option_id
+
+    if payment_option_id:
+        opt = db.query(_PO).filter(_PO.id == payment_option_id, _PO.pathway_id.isnot(None)).first()
+        if not opt:
+            raise HTTPException(status_code=404, detail="Payment option not found.")
+        # Verify the option belongs to a pathway in this space
+        pathway_check = db.query(_Pathway).filter(_Pathway.id == opt.pathway_id, _Pathway.space_id == space.id).first()
+        if not pathway_check:
+            raise HTTPException(status_code=403, detail="Payment option does not belong to a pathway in this space.")
+        if total_credits is None:
+            total_credits = opt.total_sessions
+        if credits_per_week is None:
+            credits_per_week = opt.sessions_per_week
+        if valid_from is None and opt.term_start_date:
+            valid_from = opt.term_start_date
+        if valid_until is None and opt.term_end_date:
+            valid_until = opt.term_end_date
+        if eligible_pathway_id is None:
+            eligible_pathway_id = opt.pathway_id
+
+    # Verify eligible_pathway_id belongs to this space
+    if eligible_pathway_id:
+        pathway_obj = db.query(_Pathway).filter(_Pathway.id == eligible_pathway_id, _Pathway.space_id == space.id).first()
+        if not pathway_obj:
+            raise HTTPException(status_code=404, detail="Pathway not found in this space.")
+
+    # Check for existing active pass for same pathway
+    if eligible_pathway_id:
+        existing_pass = (
+            db.query(_AP)
+            .filter(
+                _AP.user_id == body.user_id,
+                _AP.space_id == space.id,
+                _AP.eligible_pathway_id == eligible_pathway_id,
+                _AP.status == AccessPassStatus.active,
+            )
+            .first()
+        )
+        if existing_pass:
+            raise HTTPException(
+                status_code=409,
+                detail="Member already has an active pass for this pathway.",
+            )
+
+    # Map source string to enum
+    source_map = {
+        "manual": AccessPassSource.manual,
+        "bank_transfer": AccessPassSource.manual,
+        "cash": AccessPassSource.manual,
+        "complimentary": AccessPassSource.free,
+        "test": AccessPassSource.manual,
+        "admin_grant": AccessPassSource.admin_grant,
+    }
+    pass_source = source_map.get(body.source, AccessPassSource.manual)
+
+    # Map pass_type string to enum
+    pass_type_map = {
+        "term_pass": AccessPassType.term_pass,
+        "class_pass": AccessPassType.class_pass,
+        "pathway_access": AccessPassType.pathway_access,
+        "event_ticket": AccessPassType.event_ticket,
+    }
+    pass_type_enum = pass_type_map.get(body.pass_type, AccessPassType.term_pass)
+
+    valid_from_dt = _dt.combine(valid_from, _dt.min.time()) if valid_from else now
+    valid_until_dt = _dt.combine(valid_until, _dt.min.time()) if valid_until else None
+
+    # --- Create AccessPass ---
+    access_pass = _AP(
+        id=str(uuid4()),
+        user_id=body.user_id,
+        space_id=space.id,
+        payment_option_id=payment_option_id,
+        pass_type=pass_type_enum,
+        status=AccessPassStatus.active,
+        valid_from=valid_from_dt,
+        valid_until=valid_until_dt,
+        total_credits=total_credits,
+        used_credits=0,
+        credits_per_week=credits_per_week,
+        eligible_pathway_id=eligible_pathway_id,
+        grants_pathway_id=eligible_pathway_id,
+        source=pass_source,
+        notes=body.notes,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(access_pass)
+    db.flush()
+
+    # --- Optionally grant PathwayEntitlement ---
+    ent_id: str | None = None
+    if body.also_grant_pathway_access and eligible_pathway_id:
+        existing_ent = (
+            db.query(PathwayEntitlement)
+            .filter(
+                PathwayEntitlement.user_id == body.user_id,
+                PathwayEntitlement.pathway_id == eligible_pathway_id,
+                PathwayEntitlement.status == EntitlementStatus.active,
+            )
+            .first()
+        )
+        if not existing_ent:
+            ent = PathwayEntitlement(
+                id=str(uuid4()),
+                user_id=body.user_id,
+                space_id=space.id,
+                pathway_id=eligible_pathway_id,
+                source=EntitlementSource.manual_grant,
+                status=EntitlementStatus.active,
+                starts_at=valid_from_dt,
+                ends_at=valid_until_dt,
+                notes=body.notes,
+                granted_by_user_id=current_user.id,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(ent)
+            db.flush()
+            ent_id = ent.id
+            access_pass.pathway_entitlement_id = ent_id
+        else:
+            ent_id = existing_ent.id
+            access_pass.pathway_entitlement_id = ent_id
+
+    # --- Optionally record manual payment ---
+    txn_id: str | None = None
+    if body.record_payment and body.payment_amount_cents and body.payment_amount_cents > 0:
+        pathway_id_for_txn = eligible_pathway_id
+        txn = PaymentTransaction(
+            id=str(uuid4()),
+            transaction_type="member_pathway_purchase",
+            status=PaymentTransactionStatus.succeeded,
+            payment_provider=PaymentProvider.manual,
+            payer_user_id=body.user_id,
+            creator_user_id=current_user.id,
+            space_id=space.id,
+            pathway_id=pathway_id_for_txn,
+            payment_option_id=payment_option_id,
+            currency="AUD",
+            gross_amount_cents=body.payment_amount_cents,
+            platform_fee_basis_points=0,
+            platform_fee_cents=0,
+            net_creator_amount_cents=body.payment_amount_cents,
+            payout_status=PayoutStatus.not_applicable,
+            notes=f"Manual payment — {body.source}" + (f": {body.notes}" if body.notes else ""),
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(txn)
+        db.flush()
+        txn_id = txn.id
+        access_pass.payment_transaction_id = txn_id
+
+    db.commit()
+
+    source_label = {
+        "bank_transfer": "bank transfer",
+        "cash": "cash",
+        "complimentary": "complimentary",
+        "test": "test",
+    }.get(body.source, "manual grant")
+
+    return GrantPassResponse(
+        pass_id=access_pass.id,
+        entitlement_id=ent_id,
+        transaction_id=txn_id,
+        message=f"Pass granted ({source_label})." + (" Payment recorded." if txn_id else ""),
+    )
+
+
+@router.get("/spaces/{slug}/members/{user_id}/passes", response_model=list[AccessPassAdminOut])
+def get_member_passes(
+    slug: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list:
+    """Get a specific member's access passes for this space."""
+    from app.models.access_pass import AccessPass as _AP, AccessPassStatus
+    from app.models.payment_option import PaymentOption as _PO
+    from app.models.platform import Pathway as _Pathway
+    from app.models.user import User as _User
+    from datetime import timedelta as _td
+
+    space = _get_managed_space(slug, current_user, db)
+
+    membership = (
+        db.query(SpaceMembership)
+        .filter(SpaceMembership.space_id == space.id, SpaceMembership.user_id == user_id)
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=404, detail="Member not found in this space.")
+
+    passes = (
+        db.query(_AP)
+        .filter(_AP.user_id == user_id, _AP.space_id == space.id)
+        .order_by(_AP.created_at.desc())
+        .all()
+    )
+
+    user_obj = db.query(_User).filter(_User.id == user_id).first()
+    option_ids = {ap.payment_option_id for ap in passes if ap.payment_option_id}
+    pathway_ids = {ap.eligible_pathway_id for ap in passes if ap.eligible_pathway_id}
+    options = {o.id: o for o in db.query(_PO).filter(_PO.id.in_(option_ids)).all()} if option_ids else {}
+    pathways = {p.id: p for p in db.query(_Pathway).filter(_Pathway.id.in_(pathway_ids)).all()} if pathway_ids else {}
+
+    # Booking counts per pass
+    thirty_days_ago = datetime.utcnow() - _td(days=30)
+    booking_counts = (
+        db.query(EventBooking.access_pass_id, func.count(EventBooking.id).label("total"))
+        .filter(EventBooking.access_pass_id.in_([ap.id for ap in passes]), EventBooking.status == BookingStatus.confirmed)
+        .group_by(EventBooking.access_pass_id).all()
+    )
+    recent_counts = (
+        db.query(EventBooking.access_pass_id, func.count(EventBooking.id).label("recent"))
+        .filter(EventBooking.access_pass_id.in_([ap.id for ap in passes]), EventBooking.status == BookingStatus.confirmed, EventBooking.booked_at >= thirty_days_ago)
+        .group_by(EventBooking.access_pass_id).all()
+    )
+    total_map = {r.access_pass_id: r.total for r in booking_counts}
+    recent_map = {r.access_pass_id: r.recent for r in recent_counts}
+
+    results = []
+    for ap in passes:
+        opt = options.get(ap.payment_option_id) if ap.payment_option_id else None
+        pathway = pathways.get(ap.eligible_pathway_id) if ap.eligible_pathway_id else None
+        results.append(AccessPassAdminOut(
+            id=ap.id,
+            pass_type=ap.pass_type.value if hasattr(ap.pass_type, "value") else str(ap.pass_type),
+            status=ap.status.value if hasattr(ap.status, "value") else str(ap.status),
+            valid_from=ap.valid_from,
+            valid_until=ap.valid_until,
+            total_credits=ap.total_credits,
+            used_credits=ap.used_credits,
+            remaining_credits=ap.remaining_credits,
+            credits_per_week=ap.credits_per_week,
+            eligible_pathway_id=ap.eligible_pathway_id,
+            option_name=opt.name if opt else None,
+            pathway_title=pathway.title if pathway else None,
+            created_at=ap.created_at,
+            member_name=user_obj.name if user_obj else None,
+            member_email=user_obj.email if user_obj else None,
+            total_bookings=total_map.get(ap.id, 0),
+            recent_bookings=recent_map.get(ap.id, 0),
         ))
     return results
