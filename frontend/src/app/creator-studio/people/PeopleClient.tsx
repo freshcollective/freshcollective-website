@@ -436,6 +436,7 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
   }, [selectedPathwaySlug, spaceSlug])
 
   async function handleSubmit() {
+    if (!selectedOptionId) { setError('Select a pass option before granting.'); return }
     const paymentAmountCents = recordPayment && paymentAmountStr
       ? Math.round(parseFloat(paymentAmountStr) * 100)
       : null
@@ -448,7 +449,7 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
         credentials: 'include',
         body: JSON.stringify({
           user_id: member.id,
-          payment_option_id: selectedOptionId || null,
+          payment_option_id: selectedOptionId,
           source,
           notes: notes.trim() || null,
           also_grant_pathway_access: true,
@@ -495,9 +496,11 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
                   </select>
                 </div>
               )}
-              {paymentOptions.length > 0 && (
-                <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Pass option</label>
+              <div>
+                <label className="mb-1 block text-[12px] font-semibold text-slate-500">
+                  Pass option <span className="text-red-400">*</span>
+                </label>
+                {paymentOptions.length > 0 ? (
                   <select value={selectedOptionId} onChange={e => setSelectedOptionId(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
                     {paymentOptions.map(o => (
@@ -506,11 +509,16 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
                       </option>
                     ))}
                   </select>
-                </div>
-              )}
-              {pathways.length === 0 && (
-                <p className="text-[13px] text-slate-500">No active paid pathways found in this collective.</p>
-              )}
+                ) : pathways.length === 0 ? (
+                  <p className="text-[12px] text-slate-500">No active pathways found in this collective.</p>
+                ) : selectedPathwaySlug ? (
+                  <p className="text-[12px] text-amber-600">
+                    No published payment options for this pathway. Publish at least one option before granting a pass.
+                  </p>
+                ) : (
+                  <p className="text-[12px] text-slate-400">Select a pathway first.</p>
+                )}
+              </div>
               <div>
                 <label className="mb-1 block text-[12px] font-semibold text-slate-500">Payment source</label>
                 <select value={source} onChange={e => setSource(e.target.value)}
@@ -542,8 +550,8 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
               </div>
               {error && <p className="text-[12px] text-red-500">{error}</p>}
               <div className="flex gap-2 pt-1">
-                <button onClick={handleSubmit} disabled={loading}
-                  className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
+                <button onClick={handleSubmit} disabled={loading || !selectedOptionId}
+                  className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ background: '#38A09E' }}>
                   {loading ? 'Granting…' : 'Grant pass'}
                 </button>

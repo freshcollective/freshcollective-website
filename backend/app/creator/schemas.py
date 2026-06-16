@@ -1081,7 +1081,7 @@ class RevokeEntitlementRequest(BaseModel):
 
 class GrantPassRequest(BaseModel):
     user_id: str
-    payment_option_id: str | None = None          # if set, auto-populate credits/dates from payment option
+    payment_option_id: str                         # required — auto-populates credits/dates/pathway
     pass_type: str = "term_pass"
     total_credits: int | None = None
     credits_per_week: int | None = None

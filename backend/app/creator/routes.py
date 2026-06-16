@@ -4165,6 +4165,12 @@ def grant_pass_manually(
 
     space = _get_managed_space(slug, current_user, db)
 
+    if not body.payment_option_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Please select a payment option before granting a pass.",
+        )
+
     # Verify member is in this space
     membership = (
         db.query(SpaceMembership)
@@ -4176,7 +4182,7 @@ def grant_pass_manually(
 
     now = _dt.utcnow()
 
-    # --- Auto-populate from payment option if provided ---
+    # --- Auto-populate from payment option ---
     total_credits = body.total_credits
     credits_per_week = body.credits_per_week
     valid_from = body.valid_from
