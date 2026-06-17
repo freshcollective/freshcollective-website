@@ -120,9 +120,9 @@ STEP_BLOCKS = {
     "cancellation-policy": [
         ("heading", "Cancellation policy."),
         ("text",
-         "**Cancelling a booking** — Cancel at least 12 hours before the session and your session will be "
+         "**Cancelling a booking** — Cancel more than 24 hours before the session and your session will be "
          "restored to your pass so you can rebook.\n\n"
-         "**Late cancellations and no-shows** — Cancellations within 12 hours of the session, or not showing up, "
+         "**Late cancellations and no-shows** — Cancellations within 24 hours of the session, or not showing up, "
          "will use your session. We are not able to restore sessions in these cases.\n\n"
          "**If Lindsey cancels** — If a session is cancelled by Lindsey, your session will always be restored to your pass.\n\n"
          "If something unexpected comes up, please reach out as soon as you can. "
