@@ -177,7 +177,7 @@ export function PaymentOptionSelector({
                   )}
                   {opt.sessions_per_week != null && opt.total_sessions != null && (
                     <p className="mt-1 text-[12px] text-slate-400">
-                      {opt.sessions_per_week}×/week · {opt.total_sessions} sessions total
+                      {opt.sessions_per_week} session{opt.sessions_per_week !== 1 ? 's' : ''} per week · {opt.total_sessions} sessions included
                     </p>
                   )}
                 </div>
@@ -185,8 +185,8 @@ export function PaymentOptionSelector({
                   {price && (
                     <p className="font-bold text-navy-900 text-[16px]">{price}</p>
                   )}
-                  {opt.schedules.length > 0 && (
-                    <p className="mt-0.5 text-[11px] text-slate-400">{opt.schedules.length} pay option{opt.schedules.length > 1 ? 's' : ''}</p>
+                  {opt.schedules.length > 1 && (
+                    <p className="mt-0.5 text-[11px] text-slate-400">{opt.schedules.length} payment options</p>
                   )}
                   <div
                     className="mt-1 ml-auto h-4 w-4 rounded-full border-2 flex items-center justify-center"

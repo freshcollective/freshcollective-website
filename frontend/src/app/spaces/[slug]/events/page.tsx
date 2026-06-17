@@ -60,12 +60,11 @@ export default async function SpaceEventsPage({ params }: Props) {
                 backgroundClip: 'text',
               }}
             >
-              Live Gatherings
+              Gatherings
             </span>
           </h2>
           <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
-            Live calls, workshops, and integration sessions. These are moments to gather,
-            reflect, and move through the work together.
+            Live sessions, workshops and movement practice. Book the sessions that suit you, or message Lindsey and she can lock in your regular slot.
           </p>
         </div>
 
@@ -74,44 +73,52 @@ export default async function SpaceEventsPage({ params }: Props) {
           const validUntil = pass.valid_until
             ? new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
             : null
-          const remaining = pass.remaining_credits
+          const remaining = pass.remaining_credits ?? 0
           const total = pass.total_credits
+          const exhausted = total !== null && remaining <= 0
           return (
             <div
               key={pass.id}
               className="mb-6 rounded-2xl border p-5"
               style={{ borderColor: 'rgba(56,160,158,0.25)', background: 'rgba(56,160,158,0.04)' }}
             >
-              <div className="mb-3 flex items-center justify-between">
+              <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[13px] font-semibold text-teal-700">
-                    {pass.option_name ?? 'Term Pass'}
+                    {pass.option_name ?? 'Your pass'}
                   </p>
                   <p className="mt-0.5 text-[12px] text-slate-500">
-                    Active{validUntil && ` · valid until ${validUntil}`}
+                    {pass.credits_per_week ? `${pass.credits_per_week} session${pass.credits_per_week !== 1 ? 's' : ''} per week` : 'Active'}
+                    {validUntil && ` · valid until ${validUntil}`}
                   </p>
                 </div>
-                {pass.credits_per_week && (
-                  <span
-                    className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-                    style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
-                  >
-                    {pass.credits_per_week} session{pass.credits_per_week !== 1 ? 's' : ''} per week
-                  </span>
-                )}
+                <span
+                  className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                  style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
+                >
+                  Active
+                </span>
               </div>
               {total !== null && (
-                <div className="mb-1">
+                <div>
                   <div className="mb-1 flex items-baseline justify-between text-[12px]">
-                    <span className="text-slate-500">{remaining ?? 0} of {total} sessions remaining</span>
+                    <span className="font-medium text-slate-600">{remaining} of {total} sessions remaining</span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
                     <div
                       className="h-full rounded-full bg-teal-500"
-                      style={{ width: `${total > 0 ? Math.round(((remaining ?? 0) / total) * 100) : 0}%` }}
+                      style={{ width: `${total > 0 ? Math.round((remaining / total) * 100) : 0}%` }}
                     />
                   </div>
-                  <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'rgba(56,160,158,0.75)' }}>Need help booking? Message Lindsey and she can book your regular sessions for you.</p>
+                  {exhausted ? (
+                    <p className="mt-2 text-[12px] leading-relaxed text-slate-500">
+                      You have used all included sessions for this term. Message Lindsey if you think this doesn&apos;t look right.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'rgba(56,160,158,0.80)' }}>
+                      Book your sessions below, or message Lindsey and she can book your regular sessions for you.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

@@ -352,9 +352,9 @@ export default async function PathwayAboutPage({ params }: Props) {
                   <p className="text-[13px] text-slate-500">
                     {isPaymentOptionsMode
                       ? (publishedOptions.length > 1
-                          ? `${publishedOptions.length} options — choose at checkout`
-                          : 'Select a payment option')
-                      : pathway.access_type === 'subscription' ? 'Monthly access required' : 'One-off purchase'}
+                          ? `${publishedOptions.length} pass options — pay in full`
+                          : 'Select a pass at checkout')
+                      : pathway.access_type === 'subscription' ? 'Monthly access required' : 'Pay in full'}
                   </p>
                 </>
               ) : isComingSoon ? (

@@ -338,7 +338,7 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="font-serif text-2xl text-navy-900">Member Passes</h1>
-          <p className="text-[14px] text-slate-500">{spaceName} · Session allowances and access passes</p>
+          <p className="text-[14px] text-slate-500">{spaceName} · Member term passes and session balances</p>
         </div>
         <button
           onClick={() => setShowGrantModal(true)}
@@ -386,7 +386,7 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
                 <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Pass</th>
                 <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status</th>
                 <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Valid</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Credits</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Sessions</th>
                 <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Per week</th>
                 <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bookings (30d)</th>
               </tr>

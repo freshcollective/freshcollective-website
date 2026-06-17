@@ -261,20 +261,20 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
           {/* Access type */}
           <div className="rounded-xl border border-border bg-white p-4">
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-              Access type
+              Payment
             </p>
             {isPaymentOptionsMode ? (
               <>
-                <p className="text-[14px] font-medium text-navy-900">Multiple payment options</p>
+                <p className="text-[14px] font-medium text-navy-900">Choose your term pass</p>
                 <p className="mt-0.5 text-[13px] text-slate-500">
-                  Choose the option that suits you. Each grants access with a single payment.
+                  Select the pass that suits your schedule. Pay in full to lock in your term.
                 </p>
               </>
             ) : (
               <>
-                <p className="text-[14px] font-medium text-navy-900">One-off purchase</p>
+                <p className="text-[14px] font-medium text-navy-900">Pay in full</p>
                 <p className="mt-0.5 text-[13px] text-slate-500">
-                  Unlock permanently with a single payment.
+                  One payment to secure your term pass.
                 </p>
               </>
             )}
@@ -286,11 +286,17 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
               What&apos;s included
             </p>
             <ul className="space-y-2">
-              {[
+              {(isPaymentOptionsMode ? [
+                'In-person sessions across the 10-week term',
+                'Monday evenings, Thursday evenings and Saturday mornings',
+                'South Croydon, Victoria',
+                'Full address shared after enrolment',
+                'Session guidance and member information pathway',
+              ] : [
                 `Access to all ${pathway.step_count > 0 ? pathway.step_count : ''} pathway steps`,
                 'Progress tracking',
                 'Resources attached to steps',
-              ].map((item) => (
+              ]).map((item) => (
                 <li key={item} className="flex items-start gap-2 text-[13px] text-slate-600">
                   <span className="mt-0.5 shrink-0 text-[#38A09E]">✓</span>
                   {item}

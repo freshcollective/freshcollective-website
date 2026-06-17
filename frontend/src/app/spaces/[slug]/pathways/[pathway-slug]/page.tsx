@@ -74,33 +74,31 @@ function StepRow({
   )
 }
 
-function PassWidget({ pass }: { pass: AccessPassSummary }) {
+function PassWidget({ pass, spaceSlug }: { pass: AccessPassSummary; spaceSlug: string }) {
   const validUntil = pass.valid_until
     ? new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
     : null
-  const validFrom = pass.valid_from
-    ? new Date(pass.valid_from).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
-    : null
-  const remaining = pass.remaining_credits
+  const remaining = pass.remaining_credits ?? 0
   const total = pass.total_credits
+  const exhausted = total !== null && remaining <= 0
 
   return (
     <div
       className="mb-6 rounded-2xl border p-5"
       style={{ borderColor: 'rgba(56,160,158,0.25)', background: 'rgba(56,160,158,0.04)' }}
     >
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <p className="text-[13px] font-semibold text-teal-700">
-            {pass.option_name ?? 'Term Pass'}
+            Your EMBODY pass — {pass.option_name ?? 'Term Pass'}
           </p>
           <p className="mt-0.5 text-[12px] text-slate-500">
-            {pass.status === 'active' ? 'Active' : pass.status}
+            {pass.credits_per_week ? `${pass.credits_per_week} session${pass.credits_per_week !== 1 ? 's' : ''} per week` : 'Active'}
             {validUntil && ` · valid until ${validUntil}`}
           </p>
         </div>
         <span
-          className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+          className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
           style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
         >
           Active
@@ -110,57 +108,87 @@ function PassWidget({ pass }: { pass: AccessPassSummary }) {
       {total !== null && (
         <div className="mb-3">
           <div className="mb-1 flex items-baseline justify-between text-[12px]">
-            <span className="text-slate-500">{remaining ?? 0} of {total} sessions remaining</span>
-            {pass.credits_per_week && (
-              <span className="text-slate-400">{pass.credits_per_week} session{pass.credits_per_week !== 1 ? 's' : ''} per week</span>
-            )}
+            <span className="text-slate-600 font-medium">{remaining} of {total} sessions remaining</span>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
             <div
               className="h-full rounded-full bg-teal-500 transition-all"
-              style={{ width: `${total > 0 ? Math.round(((remaining ?? 0) / total) * 100) : 0}%` }}
+              style={{ width: `${total > 0 ? Math.round((remaining / total) * 100) : 0}%` }}
             />
           </div>
-          <p className="mt-2 text-[12px] leading-relaxed text-teal-600/70">Need help booking? Message Lindsey and she can book your regular sessions for you.</p>
+          {exhausted ? (
+            <p className="mt-2 text-[12px] leading-relaxed text-slate-500">
+              You have used all included sessions for this term. Message Lindsey if you think this doesn&apos;t look right.
+            </p>
+          ) : (
+            <p className="mt-2 text-[12px] leading-relaxed text-teal-600/80">
+              Need help booking? Message Lindsey and she can book your regular sessions for you.
+            </p>
+          )}
         </div>
       )}
 
-      {validFrom && (
-        <p className="mb-3 text-[12px] text-slate-500">
-          Sessions start {validFrom}
-        </p>
+      {!exhausted && (
+        <Link
+          href={`/spaces/${spaceSlug}/events`}
+          className="inline-block rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Book sessions →
+        </Link>
       )}
-
-      <Link
-        href={`/spaces/embody/sessions`}
-        className="inline-block rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-      >
-        Book your sessions →
-      </Link>
     </div>
   )
 }
 
-function SuccessBanner({ pass }: { pass: AccessPassSummary | null }) {
-  const validUntil = pass?.valid_until
-    ? new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
-    : '19 September 2026'
+function SuccessBanner({ pass, spaceSlug, pathwaySlug }: { pass: AccessPassSummary | null; spaceSlug: string; pathwaySlug: string }) {
+  const optionName = pass?.option_name ?? 'EMBODY pass'
   const remaining = pass?.remaining_credits ?? pass?.total_credits ?? null
-  const optionName = pass?.option_name ?? 'Term Pass'
 
   return (
     <div
-      className="mb-6 rounded-2xl border p-5"
+      className="mb-6 rounded-2xl border p-6"
       style={{ borderColor: 'rgba(56,160,158,0.30)', background: 'rgba(56,160,158,0.07)' }}
     >
-      <p className="mb-1 text-[15px] font-semibold text-teal-700">
-        Your {optionName} is active.
+      <div className="mb-3 flex items-center gap-3">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px]"
+          style={{ background: 'rgba(56,160,158,0.15)', color: '#0f766e' }}
+        >
+          ✓
+        </div>
+        <div>
+          <p className="text-[15px] font-semibold text-teal-700">Your EMBODY pass is active.</p>
+          <p className="text-[12px] text-slate-500">{optionName}{remaining !== null ? ` · ${remaining} sessions included` : ''}</p>
+        </div>
+      </div>
+
+      <p className="mb-4 text-[13px] leading-relaxed text-slate-700">
+        <strong>Next step: book your regular sessions.</strong>
+        {' '}You can book yourself from the Gatherings page, or message Lindsey with your preferred regular session day/s and she will book your regular sessions for the term.
       </p>
-      <p className="text-[13px] leading-relaxed text-slate-600">
-        {remaining !== null ? `You have ${remaining} sessions available until ${validUntil}.` : `Your pass is valid until ${validUntil}.`}
-        {' '}Sessions start 13 July 2026.
-      </p>
+
+      <div className="flex flex-wrap gap-2">
+        <Link
+          href={`/spaces/${spaceSlug}/events`}
+          className="inline-block rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Book sessions →
+        </Link>
+        <Link
+          href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/how-your-pass-works`}
+          className="inline-block rounded-xl border border-teal-200 bg-white px-4 py-2 text-[13px] font-medium text-teal-700 transition-colors hover:bg-teal-50"
+        >
+          How your pass works
+        </Link>
+        <Link
+          href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/what-to-bring`}
+          className="inline-block rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-slate-300"
+        >
+          What to bring
+        </Link>
+      </div>
     </div>
   )
 }
@@ -277,10 +305,10 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
       </div>
 
       {/* ── Post-checkout success banner ── */}
-      {isSuccess && <SuccessBanner pass={activePass} />}
+      {isSuccess && <SuccessBanner pass={activePass} spaceSlug={slug} pathwaySlug={pathwaySlug} />}
 
       {/* ── Active pass widget (shown on success view) ── */}
-      {isSuccess && activePass && <PassWidget pass={activePass} />}
+      {isSuccess && activePass && <PassWidget pass={activePass} spaceSlug={slug} />}
 
       {/* ── Coming soon or accessible pathway view ── */}
       {isComingSoon ? (
