@@ -52,6 +52,10 @@ from app.creator.schemas import (
     EventUpdateRequest,
     ManualBookingRequest,
     MemberActivePassOut,
+    RecurringBookingRequest,
+    RecurringBookingResponse,
+    RecurringBookingItem,
+    PassSummary,
     InvitationCreateRequest,
     InvitationResponse,
     BlockMediaInfo,
@@ -4540,6 +4544,185 @@ def get_member_active_pass(
         used_credits=ap.used_credits,
         remaining_credits=remaining,
         credits_per_week=ap.credits_per_week,
+        valid_from=ap.valid_from.isoformat() if ap.valid_from else None,
         valid_until=ap.valid_until.isoformat() if ap.valid_until else None,
         status=ap.status.value if hasattr(ap.status, "value") else str(ap.status),
+    )
+
+
+@router.post("/spaces/{slug}/members/{user_id}/bookings/recurring", response_model=RecurringBookingResponse)
+def book_recurring_sessions(
+    slug: str,
+    user_id: str,
+    body: RecurringBookingRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    """Book a member into multiple upcoming sessions at once, respecting pass credits and weekly caps."""
+    space = _get_managed_space(slug, current_user, db)
+
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.user_id == user_id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == "active",
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=400, detail="User is not an active member of this space.")
+
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    # Resolve pass once
+    ap: AccessPass | None = None
+    if body.use_pass:
+        if body.access_pass_id:
+            ap = db.query(AccessPass).filter(
+                AccessPass.id == body.access_pass_id,
+                AccessPass.user_id == user_id,
+                AccessPass.space_id == space.id,
+                AccessPass.status == AccessPassStatus.active,
+            ).first()
+            if not ap:
+                raise HTTPException(status_code=404, detail="Specified pass not found or not active for this member.")
+        else:
+            ap = db.query(AccessPass).filter(
+                AccessPass.user_id == user_id,
+                AccessPass.space_id == space.id,
+                AccessPass.status == AccessPassStatus.active,
+            ).order_by(AccessPass.created_at.desc()).first()
+            if not ap:
+                raise HTTPException(status_code=409, detail="This member has no active pass for this space.")
+
+    booked_list: list[dict] = []
+    skipped_list: list[dict] = []
+    now = datetime.utcnow()
+
+    for event_id in body.event_ids:
+        event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
+        if not event:
+            skipped_list.append({"event_id": event_id, "event_title": "Unknown", "starts_at": "",
+                                  "status": "skipped", "reason": "Event not found."})
+            continue
+
+        if event.status == "cancelled":
+            skipped_list.append({"event_id": event_id, "event_title": event.title,
+                                  "starts_at": event.starts_at.isoformat(),
+                                  "status": "skipped", "reason": "Event is cancelled."})
+            continue
+
+        existing = (
+            db.query(EventBooking)
+            .filter(EventBooking.event_id == event.id, EventBooking.user_id == user_id)
+            .first()
+        )
+        if existing and existing.status == "confirmed":
+            skipped_list.append({"event_id": event_id, "event_title": event.title,
+                                  "starts_at": event.starts_at.isoformat(),
+                                  "status": "skipped", "reason": "Already booked."})
+            continue
+
+        if event.capacity is not None:
+            confirmed_count = (
+                db.query(func.count(EventBooking.id))
+                .filter(EventBooking.event_id == event.id, EventBooking.status == "confirmed")
+                .scalar()
+            ) or 0
+            if confirmed_count >= event.capacity:
+                skipped_list.append({"event_id": event_id, "event_title": event.title,
+                                      "starts_at": event.starts_at.isoformat(),
+                                      "status": "skipped", "reason": "Session is at full capacity."})
+                continue
+
+        if body.use_pass and ap:
+            db.refresh(ap)  # reflect credits from bookings made earlier in this batch
+
+            if ap.total_credits is not None and ap.used_credits >= ap.total_credits:
+                skipped_list.append({"event_id": event_id, "event_title": event.title,
+                                      "starts_at": event.starts_at.isoformat(),
+                                      "status": "skipped", "reason": "No remaining sessions on pass."})
+                continue
+
+            if ap.credits_per_week is not None:
+                event_weekday = event.starts_at.weekday()
+                event_week_start = (event.starts_at - timedelta(days=event_weekday)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                event_week_end = event_week_start + timedelta(days=7)
+                weekly_used = (
+                    db.query(func.count(EventBooking.id))
+                    .join(Event, EventBooking.event_id == Event.id)
+                    .filter(
+                        EventBooking.access_pass_id == ap.id,
+                        EventBooking.status == BookingStatus.confirmed,
+                        Event.starts_at >= event_week_start,
+                        Event.starts_at < event_week_end,
+                    )
+                    .scalar()
+                ) or 0
+                if weekly_used >= ap.credits_per_week:
+                    skipped_list.append({"event_id": event_id, "event_title": event.title,
+                                          "starts_at": event.starts_at.isoformat(),
+                                          "status": "skipped",
+                                          "reason": f"Weekly limit of {ap.credits_per_week} session(s) reached for this week."})
+                    continue
+
+        access_pass_to_charge = ap if body.use_pass else None
+        if existing:
+            existing.status = BookingStatus.confirmed
+            existing.booked_at = now
+            existing.cancelled_at = None
+            existing.source = "creator_pass" if body.use_pass else "creator_manual"
+            existing.note = body.note
+            existing.access_pass_id = access_pass_to_charge.id if access_pass_to_charge else None
+            existing.credits_used = 1 if access_pass_to_charge else 0
+            if access_pass_to_charge:
+                access_pass_to_charge.used_credits += 1
+            db.commit()
+            db.refresh(existing)
+            booking = existing
+        else:
+            booking = EventBooking(
+                id=str(uuid4()),
+                event_id=event.id,
+                user_id=user_id,
+                status=BookingStatus.confirmed,
+                booked_at=now,
+                source="creator_pass" if body.use_pass else "creator_manual",
+                note=body.note,
+                access_pass_id=access_pass_to_charge.id if access_pass_to_charge else None,
+                credits_used=1 if access_pass_to_charge else 0,
+            )
+            db.add(booking)
+            if access_pass_to_charge:
+                access_pass_to_charge.used_credits += 1
+            db.commit()
+            db.refresh(booking)
+
+        booked_list.append({"event_id": event_id, "event_title": event.title,
+                             "starts_at": event.starts_at.isoformat(),
+                             "booking_id": booking.id, "status": "booked"})
+
+    pass_summary: dict | None = None
+    if ap:
+        db.refresh(ap)
+        remaining = (ap.total_credits - ap.used_credits) if ap.total_credits is not None else None
+        opt = db.query(PaymentOption).filter(PaymentOption.id == ap.payment_option_id).first() if ap.payment_option_id else None
+        pass_summary = {
+            "pass_id": ap.id,
+            "option_name": opt.name if opt else None,
+            "total_credits": ap.total_credits,
+            "used_credits": ap.used_credits,
+            "remaining_credits": remaining,
+            "credits_per_week": ap.credits_per_week,
+        }
+
+    return RecurringBookingResponse(
+        booked=[RecurringBookingItem(**item) for item in booked_list],
+        skipped=[RecurringBookingItem(**item) for item in skipped_list],
+        pass_summary=PassSummary(**pass_summary) if pass_summary else None,
     )

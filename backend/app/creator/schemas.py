@@ -602,8 +602,40 @@ class MemberActivePassOut(BaseModel):
     used_credits: int
     remaining_credits: int | None
     credits_per_week: int | None
-    valid_until: str | None  # ISO date string
+    valid_from: str | None = None  # ISO date string
+    valid_until: str | None = None  # ISO date string
     status: str
+
+
+class RecurringBookingRequest(BaseModel):
+    event_ids: list[str]
+    use_pass: bool = True
+    access_pass_id: str | None = None
+    note: str | None = None
+
+
+class RecurringBookingItem(BaseModel):
+    event_id: str
+    event_title: str
+    starts_at: str
+    booking_id: str | None = None
+    status: str  # "booked" | "skipped"
+    reason: str | None = None
+
+
+class PassSummary(BaseModel):
+    pass_id: str
+    option_name: str | None
+    total_credits: int | None
+    used_credits: int
+    remaining_credits: int | None
+    credits_per_week: int | None
+
+
+class RecurringBookingResponse(BaseModel):
+    booked: list[RecurringBookingItem]
+    skipped: list[RecurringBookingItem]
+    pass_summary: PassSummary | None = None
 
 
 class AttendanceUpdateRequest(BaseModel):

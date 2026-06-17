@@ -686,6 +686,7 @@ interface ActivePassInfo {
   used_credits: number
   remaining_credits: number | null
   credits_per_week: number | null
+  valid_from: string | null
   valid_until: string | null
   status: string
 }
@@ -697,20 +698,87 @@ interface SpaceEvent {
   location_type: string
 }
 
+// ---------------------------------------------------------------------------
+// BookSessionModal — single session or recurring (book regular sessions)
+// ---------------------------------------------------------------------------
+
+const WEEKDAY_PLURAL: Record<number, string> = {
+  0: 'Mondays', 1: 'Tuesdays', 2: 'Wednesdays', 3: 'Thursdays',
+  4: 'Fridays', 5: 'Saturdays', 6: 'Sundays',
+}
+
+interface RecurringResultItem {
+  event_id: string
+  event_title: string
+  starts_at: string
+  booking_id: string | null
+  status: 'booked' | 'skipped'
+  reason: string | null
+}
+
+interface RecurringResult {
+  booked: RecurringResultItem[]
+  skipped: RecurringResultItem[]
+  pass_summary: {
+    pass_id: string
+    option_name: string | null
+    total_credits: number | null
+    used_credits: number
+    remaining_credits: number | null
+    credits_per_week: number | null
+  } | null
+}
+
+interface EventPattern {
+  key: string
+  label: string
+  events: SpaceEvent[]
+}
+
+function PassInfoCard({ pass, deductNote }: { pass: ActivePassInfo; deductNote?: string }) {
+  return (
+    <div className="rounded-xl border border-teal-100 bg-teal-50/40 px-3 py-2.5">
+      <p className="text-[12px] font-semibold text-teal-700">{pass.option_name ?? 'Active pass'}</p>
+      <p className="mt-0.5 text-[11px] text-slate-600">
+        {pass.remaining_credits ?? '?'} of {pass.total_credits ?? '?'} sessions remaining
+        {pass.credits_per_week ? ` · ${pass.credits_per_week}/week` : ''}
+      </p>
+      {pass.valid_until && (
+        <p className="mt-0.5 text-[11px] text-slate-400">
+          Valid until {new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
+        </p>
+      )}
+      {deductNote && <p className="mt-1.5 text-[11px] text-teal-600">{deductNote}</p>}
+    </div>
+  )
+}
+
 function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
   spaceSlug: string
   member: CreatorMemberDetail
   onClose: () => void
   onBooked: () => void
 }) {
+  // Shared data
   const [events, setEvents] = useState<SpaceEvent[]>([])
+  const [activePass, setActivePass] = useState<ActivePassInfo | null | undefined>(undefined)
+  const [bookView, setBookView] = useState<'single' | 'recurring'>('single')
+
+  // Single-session state
   const [selectedEventId, setSelectedEventId] = useState('')
-  const [activePass, setActivePass] = useState<ActivePassInfo | null | undefined>(undefined) // undefined=loading, null=none
   const [mode, setMode] = useState<'pass' | 'override'>('pass')
   const [note, setNote] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+
+  // Recurring state
+  const [recurringMode, setRecurringMode] = useState<'pass' | 'override'>('pass')
+  const [selectedPatterns, setSelectedPatterns] = useState<Set<string>>(new Set())
+  const [recurringNote, setRecurringNote] = useState('')
+  const [recurringLoading, setRecurringLoading] = useState(false)
+  const [recurringError, setRecurringError] = useState<string | null>(null)
+  const [recurringResult, setRecurringResult] = useState<RecurringResult | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -725,15 +793,65 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
       setEvents(upcoming)
       if (upcoming.length > 0) setSelectedEventId(upcoming[0].id)
       setActivePass(passData)
-      if (!passData) setMode('override')
-    }).catch(() => { setEvents([]); setActivePass(null); setMode('override') })
+      if (!passData) { setMode('override'); setRecurringMode('override') }
+    }).catch(() => { setEvents([]); setActivePass(null); setMode('override'); setRecurringMode('override') })
   }, [spaceSlug, member.id])
 
+  // Compute event patterns from upcoming events, filtered by pass dates if in pass mode
+  const eligibleEvents = useMemo(() => {
+    if (recurringMode !== 'pass' || !activePass) return events
+    const from = activePass.valid_from ? new Date(activePass.valid_from) : null
+    const until = activePass.valid_until ? new Date(activePass.valid_until) : null
+    return events.filter(e => {
+      const d = new Date(e.starts_at)
+      if (from && d < from) return false
+      if (until && d > until) return false
+      return true
+    })
+  }, [events, recurringMode, activePass])
+
+  const patterns = useMemo((): EventPattern[] => {
+    const map = new Map<string, SpaceEvent[]>()
+    for (const ev of eligibleEvents) {
+      const d = new Date(ev.starts_at)
+      const weekday = d.getDay() // 0=Sun, 1=Mon…
+      const jsWeekday = weekday // 0=Sun
+      // Convert JS weekday (0=Sun) to Python weekday (0=Mon)
+      const h = d.getHours().toString().padStart(2, '0')
+      const m = d.getMinutes().toString().padStart(2, '0')
+      const key = `${jsWeekday}|${h}:${m}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(ev)
+    }
+    return Array.from(map.entries()).map(([key, evs]) => {
+      const d = new Date(evs[0].starts_at)
+      const weekday = d.getDay()
+      const weekdayName = WEEKDAY_PLURAL[weekday === 0 ? 6 : weekday - 1] ?? WEEKDAY_PLURAL[weekday]
+      const timeStr = d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })
+      return { key, label: `${weekdayName} at ${timeStr}`, events: evs.sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()) }
+    }).sort((a, b) => new Date(a.events[0].starts_at).getTime() - new Date(b.events[0].starts_at).getTime())
+  }, [eligibleEvents])
+
+  const previewEvents = useMemo(() => {
+    return patterns
+      .filter(p => selectedPatterns.has(p.key))
+      .flatMap(p => p.events)
+      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+  }, [patterns, selectedPatterns])
+
+  function togglePattern(key: string) {
+    setSelectedPatterns(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
+  }
+
+  // Single-session submit
   async function handleSubmit() {
     if (!selectedEventId) { setError('Select a session.'); return }
     if (mode === 'pass' && !activePass) { setError('No active pass found for this member.'); return }
-    setError(null)
-    setLoading(true)
+    setError(null); setLoading(true)
     try {
       const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/events/${selectedEventId}/bookings/manual`), {
         method: 'POST',
@@ -755,119 +873,297 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
     finally { setLoading(false) }
   }
 
+  // Recurring submit
+  async function handleRecurringSubmit() {
+    if (previewEvents.length === 0) { setRecurringError('Select at least one session pattern.'); return }
+    if (recurringMode === 'pass' && !activePass) { setRecurringError('No active pass found for this member.'); return }
+    setRecurringError(null); setRecurringLoading(true)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/members/${member.id}/bookings/recurring`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          event_ids: previewEvents.map(e => e.id),
+          use_pass: recurringMode === 'pass',
+          access_pass_id: recurringMode === 'pass' ? activePass?.pass_id : null,
+          note: recurringNote.trim() || null,
+        }),
+      })
+      if (res.ok) {
+        const result: RecurringResult = await res.json()
+        setRecurringResult(result)
+        if (result.booked.length > 0) onBooked()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setRecurringError(typeof body.detail === 'string' ? body.detail : 'Could not book sessions.')
+      }
+    } catch { setRecurringError('Something went wrong. Please try again.') }
+    finally { setRecurringLoading(false) }
+  }
+
+  const CloseBtn = () => (
+    <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+    </button>
+  )
+
+  const ModeToggle = ({ value, onChange }: { value: 'pass' | 'override'; onChange: (v: 'pass' | 'override') => void }) => (
+    <div>
+      <label className="mb-1.5 block text-[12px] font-semibold text-slate-500">Booking mode</label>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => onChange('pass')}
+          className={`flex-1 rounded-xl border px-3 py-2.5 text-[12px] font-semibold transition-colors ${value === 'pass' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+          Use member pass
+        </button>
+        <button type="button" onClick={() => onChange('override')}
+          className={`flex-1 rounded-xl border px-3 py-2.5 text-[12px] font-semibold transition-colors ${value === 'override' ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+          Manual override
+        </button>
+      </div>
+    </div>
+  )
+
+  const PassSection = ({ passMode }: { passMode: 'pass' | 'override' }) => (
+    <>
+      {passMode === 'pass' && (
+        <div>
+          {activePass === undefined && <p className="text-[12px] text-slate-400">Loading pass info…</p>}
+          {activePass === null && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+              <p className="text-[12px] font-semibold text-amber-700">No active pass</p>
+              <p className="mt-0.5 text-[11px] text-amber-600">This member has no active pass. Use Manual override or grant them a pass first.</p>
+            </div>
+          )}
+          {activePass && <PassInfoCard pass={activePass} deductNote="Sessions will be deducted from this pass." />}
+        </div>
+      )}
+      {passMode === 'override' && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2.5">
+          <p className="text-[11px] text-amber-700">No sessions will be deducted from the member&apos;s pass.</p>
+        </div>
+      )}
+    </>
+  )
+
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl overflow-y-auto max-h-[90vh]">
-        {success ? (
+      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl overflow-y-auto max-h-[90vh]">
+
+        {/* ── Single session success ── */}
+        {bookView === 'single' && success ? (
           <div className="py-4 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full text-xl"
               style={{ background: 'rgba(56,160,158,0.12)', color: '#38A09E' }}>✓</div>
             <p className="text-[16px] font-semibold text-navy-900">Session booked</p>
             <p className="mt-1 text-[13px] text-slate-500">
-              {member.display_name} has been booked into the session.
+              {member.display_name} has been booked.
               {mode === 'pass' ? ' 1 session deducted from their pass.' : ' No sessions deducted (manual override).'}
             </p>
             <button onClick={onClose} className="mt-4 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white" style={{ background: '#38A09E' }}>Done</button>
           </div>
+
+        /* ── Recurring result ── */
+        ) : bookView === 'recurring' && recurringResult ? (
+          <div>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-[16px] font-semibold text-navy-900">Booking complete</h2>
+              <CloseBtn />
+            </div>
+            <div className="space-y-4">
+              {recurringResult.booked.length > 0 && (
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-teal-600">
+                    Booked ({recurringResult.booked.length})
+                  </p>
+                  <div className="space-y-1">
+                    {recurringResult.booked.map(item => (
+                      <div key={item.event_id} className="flex items-center gap-2 rounded-lg bg-teal-50 px-3 py-1.5">
+                        <span className="text-teal-500 text-[12px]">✓</span>
+                        <div>
+                          <span className="text-[12px] font-medium text-teal-800">{item.event_title}</span>
+                          <span className="ml-2 text-[11px] text-slate-400">
+                            {new Date(item.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {recurringResult.skipped.length > 0 && (
+                <details open={recurringResult.booked.length === 0}>
+                  <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600">
+                    Skipped ({recurringResult.skipped.length})
+                  </summary>
+                  <div className="mt-2 space-y-1">
+                    {recurringResult.skipped.map(item => (
+                      <div key={item.event_id} className="rounded-lg bg-slate-50 px-3 py-1.5">
+                        <span className="text-[12px] font-medium text-slate-600">{item.event_title}</span>
+                        <span className="ml-2 text-[11px] text-slate-400">
+                          {item.starts_at ? new Date(item.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}
+                        </span>
+                        {item.reason && <p className="mt-0.5 text-[11px] text-slate-400">{item.reason}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+              {recurringResult.pass_summary && (
+                <div className="rounded-xl border border-teal-100 bg-teal-50/40 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold text-teal-700">Pass balance after booking</p>
+                  <p className="mt-0.5 text-[11px] text-slate-600">
+                    {recurringResult.pass_summary.remaining_credits ?? '?'} of {recurringResult.pass_summary.total_credits ?? '?'} sessions remaining
+                  </p>
+                </div>
+              )}
+              <button onClick={onClose} className="w-full rounded-xl py-2.5 text-[13px] font-semibold text-white" style={{ background: '#38A09E' }}>Done</button>
+            </div>
+          </div>
+
         ) : (
           <>
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-[16px] font-semibold text-navy-900">Book {member.display_name} into a session</h2>
-              <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+              <h2 className="text-[16px] font-semibold text-navy-900">Book {member.display_name}</h2>
+              <CloseBtn />
+            </div>
+
+            {/* ── View tabs ── */}
+            <div className="mb-4 flex gap-1 rounded-xl bg-slate-100 p-1">
+              <button type="button" onClick={() => setBookView('single')}
+                className={`flex-1 rounded-lg py-1.5 text-[12px] font-semibold transition-colors ${bookView === 'single' ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                Single session
+              </button>
+              <button type="button" onClick={() => setBookView('recurring')}
+                className={`flex-1 rounded-lg py-1.5 text-[12px] font-semibold transition-colors ${bookView === 'recurring' ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                Book regular sessions
               </button>
             </div>
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-500">Session</label>
-                {events.length === 0 ? (
-                  <p className="text-[12px] text-slate-400">No upcoming sessions found.</p>
-                ) : (
-                  <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
-                    {events.map(ev => (
-                      <option key={ev.id} value={ev.id}>
-                        {new Date(ev.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })} — {ev.title}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
 
-              <div>
-                <label className="mb-1.5 block text-[12px] font-semibold text-slate-500">Booking mode</label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMode('pass')}
-                    className={`flex-1 rounded-xl border px-3 py-2.5 text-[12px] font-semibold transition-colors ${mode === 'pass' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
-                  >
-                    Use member pass
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode('override')}
-                    className={`flex-1 rounded-xl border px-3 py-2.5 text-[12px] font-semibold transition-colors ${mode === 'override' ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
-                  >
-                    Manual override
-                  </button>
-                </div>
-              </div>
-
-              {mode === 'pass' && (
+            {/* ── Single session view ── */}
+            {bookView === 'single' && (
+              <div className="space-y-4">
                 <div>
-                  {activePass === undefined && <p className="text-[12px] text-slate-400">Loading pass info…</p>}
-                  {activePass === null && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-                      <p className="text-[12px] font-semibold text-amber-700">No active pass</p>
-                      <p className="mt-0.5 text-[11px] text-amber-600">This member has no active pass. Use Manual override or grant them a pass first.</p>
-                    </div>
+                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Session</label>
+                  {events.length === 0 ? (
+                    <p className="text-[12px] text-slate-400">No upcoming sessions found.</p>
+                  ) : (
+                    <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
+                      {events.map(ev => (
+                        <option key={ev.id} value={ev.id}>
+                          {new Date(ev.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })} — {ev.title}
+                        </option>
+                      ))}
+                    </select>
                   )}
-                  {activePass && (
-                    <div className="rounded-xl border border-teal-100 bg-teal-50/40 px-3 py-2.5">
-                      <p className="text-[12px] font-semibold text-teal-700">{activePass.option_name ?? 'Active pass'}</p>
-                      <p className="mt-0.5 text-[11px] text-slate-600">
-                        {activePass.remaining_credits ?? '?'} of {activePass.total_credits ?? '?'} sessions remaining
-                        {activePass.credits_per_week ? ` · ${activePass.credits_per_week}/week` : ''}
-                      </p>
-                      {activePass.valid_until && (
-                        <p className="mt-0.5 text-[11px] text-slate-400">
-                          Valid until {new Date(activePass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        </p>
-                      )}
-                      <p className="mt-1.5 text-[11px] text-teal-600">Booking will deduct 1 session from this pass.</p>
+                </div>
+                <ModeToggle value={mode} onChange={v => setMode(v)} />
+                <PassSection passMode={mode} />
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Note (optional)</label>
+                  <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
+                    placeholder="e.g. Regular Tuesday session, make-up booking…"
+                    className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+                {error && <p className="text-[12px] text-red-500">{error}</p>}
+                <div className="flex gap-2 pt-1">
+                  <button onClick={handleSubmit}
+                    disabled={loading || !selectedEventId || events.length === 0 || (mode === 'pass' && !activePass)}
+                    className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ background: mode === 'override' ? '#B45309' : '#38A09E' }}>
+                    {loading ? 'Booking…' : mode === 'pass' ? 'Book (use pass)' : 'Book (override)'}
+                  </button>
+                  <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Recurring view ── */}
+            {bookView === 'recurring' && (
+              <div className="space-y-4">
+                <ModeToggle value={recurringMode} onChange={v => { setRecurringMode(v); setSelectedPatterns(new Set()) }} />
+                <PassSection passMode={recurringMode} />
+
+                <div>
+                  <label className="mb-2 block text-[12px] font-semibold text-slate-500">
+                    Select session patterns
+                    {recurringMode === 'pass' && activePass?.valid_until && (
+                      <span className="ml-1 font-normal text-slate-400">
+                        (showing sessions within pass dates)
+                      </span>
+                    )}
+                  </label>
+                  {activePass === undefined && <p className="text-[12px] text-slate-400">Loading…</p>}
+                  {patterns.length === 0 && activePass !== undefined && (
+                    <p className="text-[12px] text-slate-400">No eligible upcoming sessions found.</p>
+                  )}
+                  {patterns.length > 0 && (
+                    <div className="space-y-2">
+                      {patterns.map(pattern => (
+                        <label key={pattern.key}
+                          className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-2.5 transition-colors ${selectedPatterns.has(pattern.key) ? 'border-teal-300 bg-teal-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                          <input type="checkbox" checked={selectedPatterns.has(pattern.key)} onChange={() => togglePattern(pattern.key)}
+                            className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-teal-600" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-semibold text-navy-900">{pattern.label}</p>
+                            <p className="text-[11px] text-slate-400">
+                              {pattern.events.length} session{pattern.events.length !== 1 ? 's' : ''}
+                              {pattern.events.length > 0 && (
+                                <> · {new Date(pattern.events[0].starts_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                                  {' → '}{new Date(pattern.events[pattern.events.length - 1].starts_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</>
+                              )}
+                            </p>
+                          </div>
+                        </label>
+                      ))}
                     </div>
                   )}
                 </div>
-              )}
-              {mode === 'override' && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/50 px-3 py-2.5">
-                  <p className="text-[11px] text-amber-700">This booking will not use the member&apos;s pass. No sessions will be deducted. Use for exceptions, make-ups, or trials.</p>
+
+                {previewEvents.length > 0 && (
+                  <details open>
+                    <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600">
+                      Preview — {previewEvents.length} session{previewEvents.length !== 1 ? 's' : ''} selected
+                    </summary>
+                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1 pr-1">
+                      {previewEvents.map(ev => (
+                        <div key={ev.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5">
+                          <span className="text-[11px] text-slate-500 w-24 shrink-0">
+                            {new Date(ev.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
+                          </span>
+                          <span className="text-[12px] text-navy-900 truncate">{ev.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Note (optional)</label>
+                  <textarea rows={2} value={recurringNote} onChange={e => setRecurringNote(e.target.value)}
+                    placeholder="e.g. Term 3 regular sessions"
+                    className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 </div>
-              )}
 
-              <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-500">Note (optional)</label>
-                <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
-                  placeholder="e.g. Regular Tuesday session, make-up booking…"
-                  className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                {recurringError && <p className="text-[12px] text-red-500">{recurringError}</p>}
+
+                <div className="flex gap-2 pt-1">
+                  <button onClick={handleRecurringSubmit}
+                    disabled={recurringLoading || previewEvents.length === 0 || (recurringMode === 'pass' && !activePass)}
+                    className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ background: recurringMode === 'override' ? '#B45309' : '#38A09E' }}>
+                    {recurringLoading
+                      ? 'Booking…'
+                      : previewEvents.length === 0
+                        ? 'Select sessions first'
+                        : `Book ${previewEvents.length} session${previewEvents.length !== 1 ? 's' : ''}${recurringMode === 'pass' ? ' (use pass)' : ' (override)'}`}
+                  </button>
+                  <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
+                </div>
               </div>
-
-              {error && <p className="text-[12px] text-red-500">{error}</p>}
-
-              <div className="flex gap-2 pt-1">
-                <button
-                  onClick={handleSubmit}
-                  disabled={loading || !selectedEventId || events.length === 0 || (mode === 'pass' && !activePass)}
-                  className="flex-1 rounded-xl py-2.5 text-[13px] font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ background: mode === 'override' ? '#B45309' : '#38A09E' }}
-                >
-                  {loading ? 'Booking…' : mode === 'pass' ? 'Book (use pass)' : 'Book (override)'}
-                </button>
-                <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
-              </div>
-            </div>
+            )}
           </>
         )}
       </div>
