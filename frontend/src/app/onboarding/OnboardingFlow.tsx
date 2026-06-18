@@ -45,7 +45,7 @@ export default function OnboardingFlow({ firstName }: Props) {
     } catch {
       // Non-critical — proceed regardless
     }
-    router.push('/spaces/the-natural-leader-hub')
+    router.push('/spaces')
     router.refresh()
   }
 
@@ -301,27 +301,24 @@ function StepStartingPoint({
         Where you begin.
       </h2>
       <p className="mb-8 text-sm text-slate-500">
-        Every journey here starts from the same foundation.
+        Fresh Collective is made up of different collectives, pathways and live experiences.
+        Start by exploring what&apos;s available, then continue from the space you joined.
       </p>
 
-      {/* REAL Journey card */}
+      {/* Explore card */}
       <div
         className="mb-6 rounded-xl border border-teal-200 bg-teal-50/40 px-7 py-6"
         style={{ borderLeft: '3px solid var(--color-teal-500)' }}
       >
         <p className="mb-1 text-xs font-semibold uppercase tracking-widest text-teal-600">
-          Flagship pathway
+          Your starting point
         </p>
-        <p className="mb-2 font-serif text-xl text-navy-900">The REAL Journey</p>
+        <p className="mb-2 font-serif text-xl text-navy-900">Explore Collectives</p>
         <p className="text-sm leading-relaxed text-slate-500">
-          A structured sequence designed to help you reconnect with yourself — your values,
-          your patterns, and your direction. The natural place to begin.
+          Browse available collectives and continue from the one you joined. Everything is here —
+          pathways, community, and live sessions.
         </p>
       </div>
-
-      <p className="mb-8 text-sm text-slate-400">
-        You&apos;ll find everything — community, events, and other pathways — once you&apos;re inside.
-      </p>
 
       <div className="flex items-center gap-4">
         <button
@@ -337,7 +334,7 @@ function StepStartingPoint({
           disabled={submitting}
           className="ml-auto rounded-lg bg-teal-600 px-8 py-3 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:opacity-40"
         >
-          {submitting ? 'Entering…' : 'Enter the Collective →'}
+          {submitting ? 'Opening…' : 'Explore Collectives →'}
         </button>
       </div>
     </div>

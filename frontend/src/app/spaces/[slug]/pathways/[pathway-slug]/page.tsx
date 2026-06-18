@@ -107,18 +107,29 @@ function PassWidget({ pass, spaceSlug }: { pass: AccessPassSummary; spaceSlug: s
 
       {total !== null && (
         <div className="mb-3">
-          <div className="mb-1 flex items-baseline justify-between text-[12px]">
-            <span className="text-slate-600 font-medium">{remaining} of {total} sessions remaining</span>
+          <div className="space-y-1 mb-2">
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-slate-500">Sessions included</span>
+              <span className="font-semibold text-navy-900">{total}</span>
+            </div>
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-slate-500">Booked</span>
+              <span className="font-semibold text-navy-900">{pass.used_credits}</span>
+            </div>
+            <div className="flex items-center justify-between text-[12px]">
+              <span className="text-slate-500">Available to book</span>
+              <span className={`font-semibold ${remaining > 0 ? 'text-teal-700' : 'text-slate-400'}`}>{remaining}</span>
+            </div>
           </div>
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
             <div
               className="h-full rounded-full bg-teal-500 transition-all"
-              style={{ width: `${total > 0 ? Math.round((remaining / total) * 100) : 0}%` }}
+              style={{ width: `${total > 0 ? Math.round((pass.used_credits / total) * 100) : 0}%` }}
             />
           </div>
           {exhausted ? (
             <p className="mt-2 text-[12px] leading-relaxed text-slate-500">
-              You have used all included sessions for this term. Message Lindsey if you think this doesn&apos;t look right.
+              All included sessions are booked for this term. Message Lindsey if you need help changing a session.
             </p>
           ) : (
             <p className="mt-2 text-[12px] leading-relaxed text-teal-600/80">

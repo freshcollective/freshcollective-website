@@ -20,7 +20,7 @@ export default function ContinueCard({
 }: ContinueCardProps) {
   const href = data
     ? `/spaces/${data.space_slug}/pathways/${data.pathway_slug}/${data.step_slug}`
-    : '/spaces/the-natural-leader-hub/pathways/real-journey'
+    : '/spaces'
 
   const label = data?.all_complete
     ? 'Journey complete'
@@ -68,7 +68,7 @@ export default function ContinueCard({
             backgroundClip: 'text',
           }}
         >
-          {data ? data.step_title : 'Welcome to the REAL Journey'}
+          {data ? data.step_title : 'Explore Collectives'}
         </p>
 
         {/* Pathway name — muted white */}

@@ -141,15 +141,18 @@ STEP_BLOCKS = {
     "health-and-injury": [
         ("heading", "Health and injuries."),
         ("text",
-         "Your wellbeing is the priority.\n\n"
-         "If you have an injury, a health condition, or anything that might affect how you move, "
-         "please let Lindsey know before your first session. A quick message is enough — "
-         "you do not need a full medical history, just anything relevant to how you move and feel in your body.\n\n"
-         "Modifications are always available. You can pause, rest, or skip any part of any session at any time. "
-         "There is no expectation to push through.\n\n"
-         "If something comes up during a session, let Lindsey know and she will adjust.\n\n"
-         "By attending sessions, you acknowledge that you are responsible for your own body and will communicate anything "
-         "relevant to your safety and participation."),
+         "Before attending your first EMBODY session, you are required to complete a PAR-Q "
+         "(Physical Activity Readiness Questionnaire).\n\n"
+         "This short health questionnaire helps Lindsey understand anything relevant to your participation — "
+         "including injuries, health conditions, pregnancy or postpartum status, medications, pain, dizziness, "
+         "or anything else that may affect how you move.\n\n"
+         "**Complete your PAR-Q here: [PAR-Q form link to be added]**\n\n"
+         "Modifications are always available in every session. You can pause, rest, or skip any movement at any time — "
+         "there is no expectation to push through.\n\n"
+         "If anything changes after you complete your PAR-Q, or if you are ever unsure about something, "
+         "please message Lindsey directly before your next session.\n\n"
+         "By attending sessions, you acknowledge that you are responsible for listening to your body and "
+         "communicating anything relevant to your safety and participation."),
     ],
     "questions-and-contact": [
         ("heading", "Questions or need to reach out?"),
