@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import Container from './Container'
 import LogoutButton from './LogoutButton'
 import MobileNav from './MobileNav'
+import NotificationBell from './NotificationBell'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
 
@@ -137,6 +138,7 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
         <div className="hidden shrink-0 items-center gap-3 md:flex">
           {user ? (
             <>
+              <NotificationBell initialCount={0} />
               <Link
                 href="/dashboard"
                 className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"

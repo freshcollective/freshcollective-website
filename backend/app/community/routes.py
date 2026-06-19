@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
@@ -16,6 +16,7 @@ from app.community.schemas import (
     PostDetail,
     PostSummary,
 )
+from app.services.notification_service import trigger_comment_reply, trigger_new_post
 
 router = APIRouter(prefix="/api/spaces", tags=["community"])
 
@@ -142,6 +143,7 @@ def get_community_post(
 def create_community_post(
     slug: str,
     body: CreatePostRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> PostSummary:
@@ -160,6 +162,8 @@ def create_community_post(
     db.add(post)
     db.commit()
     db.refresh(post)
+
+    background_tasks.add_task(trigger_new_post, post.id, space.id, current_user.id)
 
     return PostSummary(
         id=post.id,
@@ -186,6 +190,7 @@ def create_comment(
     slug: str,
     post_id: str,
     body: CreateCommentRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> CommentItem:
@@ -212,6 +217,8 @@ def create_comment(
     db.add(comment)
     db.commit()
     db.refresh(comment)
+
+    background_tasks.add_task(trigger_comment_reply, post.id, comment.id, current_user.id)
 
     return CommentItem(
         id=comment.id,

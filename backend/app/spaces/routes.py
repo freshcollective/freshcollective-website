@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
@@ -73,6 +73,8 @@ from app.spaces.schemas import (
     SeriesBookingResponse,
     AccessPassOut,
 )
+
+from app.services.notification_service import trigger_event_booking_creator  # noqa: E402
 
 router = APIRouter(prefix="/api/spaces", tags=["spaces"])
 me_router = APIRouter(prefix="/api/me", tags=["me"])
@@ -996,6 +998,7 @@ def list_events(
 def book_event(
     slug: str,
     event_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> BookingResponse:
@@ -1151,6 +1154,7 @@ def book_event(
             access_pass_to_charge.used_credits += 1
         db.commit()
         db.refresh(existing)
+        background_tasks.add_task(trigger_event_booking_creator, event.id, current_user.id)
         return BookingResponse(status="confirmed", booking_id=existing.id)
 
     booking = EventBooking(
@@ -1167,6 +1171,7 @@ def book_event(
         access_pass_to_charge.used_credits += 1
     db.commit()
     db.refresh(booking)
+    background_tasks.add_task(trigger_event_booking_creator, event.id, current_user.id)
     return BookingResponse(status="confirmed", booking_id=booking.id)
 
 

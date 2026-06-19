@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.auth.routes import router as auth_router
+from app.notifications.routes import router as notifications_router
 from app.client.routes import router as client_router
 from app.admin.routes import router as admin_router
 from app.sales.routes import router as sales_router
@@ -71,6 +72,7 @@ app.include_router(uploads_router)
 app.include_router(invites_router)
 app.include_router(checkout_router)
 app.include_router(webhooks_router)
+app.include_router(notifications_router)
 
 
 # ---------------------------------------------------------------------------

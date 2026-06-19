@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
 
+    # Email (Resend) — optional; if unset, email sending is skipped gracefully.
+    resend_api_key: str | None = None
+    email_from: str = "Fresh Collective <notifications@mail.freshcollective.com>"
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

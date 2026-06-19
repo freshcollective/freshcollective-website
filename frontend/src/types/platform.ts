@@ -347,6 +347,22 @@ export interface NotificationPrefs {
   push_announcements: boolean
 }
 
+export interface NotificationItem {
+  id: string
+  notification_type: string
+  title: string
+  message: string
+  url: string | null
+  is_read: boolean
+  created_at: string
+  read_at: string | null
+}
+
+export interface NotificationsResponse {
+  notifications: NotificationItem[]
+  unread_count: number
+}
+
 export interface SpaceMembership {
   space_id: string
   space_name: string
