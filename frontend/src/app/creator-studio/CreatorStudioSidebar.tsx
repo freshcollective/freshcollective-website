@@ -43,7 +43,7 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     items: [
       { href: '/creator-studio',          label: 'Dashboard',     exact: true },
       { href: '/creator-studio/settings', label: 'Settings',      activeOnPath: /^\/creator\/spaces\/[^/]+$/, requiresCollective: true },
-      { href: '/creator-studio/media',    label: 'Brand Library', requiresCollective: true },
+      { href: '/creator-studio/assets',   label: 'Assets',        requiresCollective: true },
     ],
   },
   {
