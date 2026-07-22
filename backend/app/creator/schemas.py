@@ -1201,7 +1201,7 @@ class MediaUsageResponse(BaseModel):
 VALID_BLOCK_TYPES = (
     "heading", "text", "image", "video_embed", "audio",
     "file_download", "link", "reflection_prompt", "exercise", "callout", "divider",
-    "embed", "button", "resource",
+    "embed", "button", "resource", "columns",
 )
 
 # Soft container palette keys. NULL = no container. Must mirror the

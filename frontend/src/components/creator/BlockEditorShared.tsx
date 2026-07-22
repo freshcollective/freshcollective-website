@@ -88,6 +88,7 @@ export const BLOCK_TYPE_OPTIONS: {
   { value: 'file_download',     icon: '↓',  label: 'File download',     description: 'Attach a downloadable file', group: 'share' },
   { value: 'button',            icon: '▢',  label: 'Button',            description: 'A call-to-action button with a destination', group: 'share' },
 
+  { value: 'columns',           icon: '▥',  label: 'Columns',           description: 'Side-by-side columns of content — stack on mobile', group: 'layout' },
   { value: 'divider',           icon: '—',  label: 'Divider',           description: 'Visual separator', group: 'layout' },
 
   // Hidden — kept for back-compat labelling on existing blocks

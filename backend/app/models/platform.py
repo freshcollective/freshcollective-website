@@ -113,6 +113,10 @@ class StepBlockType(str, enum.Enum):
     # the FK (resource_id) plus optional overrides; everything else is
     # read live from the linked resource so edits flow through.
     resource = "resource"
+    # Multi-column layout container. Structured JSON in ``content`` holds
+    # one TipTap document per column plus a layout descriptor; extensible
+    # to further layouts (cards, comparison) via layout.kind/variant.
+    columns = "columns"
 
 
 class EnrollmentStatus(str, enum.Enum):
