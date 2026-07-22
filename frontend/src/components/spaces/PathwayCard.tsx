@@ -27,7 +27,11 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
   const aboutHref = `/spaces/${spaceSlug}/pathways/${pathway.slug}/about`
 
   const badge = cardAccessBadge(pathway.access_type, pathway.user_has_access)
-  const priceLabel = locked
+  const isIncludedWithOffer = pathway.access_type === 'included_with_offer'
+  const offerLabel = isIncludedWithOffer && locked && pathway.unlock_offer_names?.length
+    ? `Included with ${pathway.unlock_offer_names[0]}`
+    : null
+  const priceLabel = locked && !isIncludedWithOffer
     ? (pathway.pricing_mode === 'payment_options'
         ? 'Payment options'
         : formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval))
@@ -41,7 +45,7 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
   const cardClass = `${baseClass} ${isComingSoon ? 'opacity-75' : hoverClass}`
 
   const descriptionEl = pathway.description ? (
-    <p className="mb-4 flex-1 text-[13px] leading-relaxed text-slate-500 line-clamp-2">
+    <p className="mb-4 flex-1 text-[13px] leading-relaxed text-black line-clamp-2">
       {pathway.description}
     </p>
   ) : <div className="flex-1" />
@@ -61,7 +65,7 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
               Coming soon
             </span>
             {stepLabel && (
-              <span className="text-[11px] text-slate-400">{stepLabel}</span>
+              <span className="text-[11px] text-black">{stepLabel}</span>
             )}
           </div>
         </div>
@@ -87,6 +91,14 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
           <div className="flex items-center justify-between border-t border-border pt-3">
             <div className="flex w-full items-center justify-between gap-3">
               <div className="flex items-center gap-2">
+                {offerLabel && (
+                  <span
+                    className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                    style={{ background: 'rgba(56,160,158,0.10)', color: '#073B3A' }}
+                  >
+                    {offerLabel}
+                  </span>
+                )}
                 {priceLabel && (
                   <span
                     className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
@@ -96,16 +108,18 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
                   </span>
                 )}
                 {stepLabel && (
-                  <span className="text-[11px] text-slate-400">{stepLabel}</span>
+                  <span className="text-[11px] text-black">{stepLabel}</span>
                 )}
               </div>
               <div className="ml-auto text-right">
                 <span className="block text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
                   Learn more →
                 </span>
-                <span className="block text-[10px] text-slate-400 mt-0.5">
-                  Secure checkout via Stripe
-                </span>
+                {!isIncludedWithOffer && (
+                  <span className="block text-[10px] text-black mt-0.5">
+                    Secure checkout via Stripe
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -115,7 +129,7 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
   }
 
   // For anonymous visitors on included pathways, prompt them to join instead of "Begin"
-  const isIncluded = pathway.access_type === 'included'
+  const isIncluded = pathway.access_type === 'included' || pathway.access_type === 'included_with_offer'
   const anonIncluded = !isAuthenticated && isIncluded
 
   // ── Accessible: stretched link for click-anywhere + secondary About link ──
@@ -154,7 +168,7 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
                 </span>
               )}
               {stepLabel && (
-                <span className="text-[11px] text-slate-400">{stepLabel}</span>
+                <span className="text-[11px] text-black">{stepLabel}</span>
               )}
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -169,7 +183,7 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
                 <>
                   <Link
                     href={aboutHref}
-                    className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:border-teal-200 hover:text-teal-600"
+                    className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-600"
                   >
                     About
                   </Link>

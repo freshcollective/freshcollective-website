@@ -44,7 +44,7 @@ function DualIntent() {
                 community, conversation, and a more human way to grow.
               </span>
             </p>
-            <p className="mt-5" style={{ fontSize: 'clamp(0.9rem, 1.4vw, 1rem)', color: 'rgba(15,23,42,0.42)', letterSpacing: '-0.01em', lineHeight: '1.5' }}>
+            <p className="mt-5" style={{ fontSize: 'clamp(0.9rem, 1.4vw, 1rem)', color: '#000000', letterSpacing: '-0.01em', lineHeight: '1.5' }}>
               Fresh Collective is a home for creator-led collectives shaped around connection, belonging, and positive change.
             </p>
           </div>
@@ -79,7 +79,7 @@ function DualIntent() {
             <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
               Find your collective
             </h3>
-            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.62)' }}>
+            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: '#000000' }}>
               Explore communities built around shared interests, meaningful learning, honest conversation, and supportive connection.
             </p>
 
@@ -99,7 +99,7 @@ function DualIntent() {
                   </div>
                   <div>
                     <p style={{ fontSize: '13.5px', fontWeight: 630, color: '#08101E', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
-                    <p style={{ fontSize: '13px', color: 'rgba(15,23,42,0.56)', lineHeight: '1.6' }}>{body}</p>
+                    <p style={{ fontSize: '13px', color: '#000000', lineHeight: '1.6' }}>{body}</p>
                   </div>
                 </div>
               ))}
@@ -144,7 +144,7 @@ function DualIntent() {
             <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: 'rgba(255,255,255,0.92)', lineHeight: '1.2' }}>
               Create your collective
             </h3>
-            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(255,255,255,0.64)' }}>
+            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: '#FFFFFF' }}>
               Build a space for your people to gather, learn, contribute, and grow — without losing the human heart of your work.
             </p>
 
@@ -164,7 +164,7 @@ function DualIntent() {
                   </div>
                   <div>
                     <p style={{ fontSize: '13.5px', fontWeight: 630, color: 'rgba(255,255,255,0.90)', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
-                    <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.52)', lineHeight: '1.6' }}>{body}</p>
+                    <p style={{ fontSize: '13px', color: '#FFFFFF', lineHeight: '1.6' }}>{body}</p>
                   </div>
                 </div>
               ))}
@@ -197,7 +197,7 @@ function PanelChrome({ title }: { title: string }) {
       <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#F87171' }} />
       <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#FBBF24' }} />
       <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#34D399' }} />
-      <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.40)', marginLeft: '10px', letterSpacing: '0.01em' }}>{title}</span>
+      <span style={{ fontSize: '11px', fontWeight: 600, color: '#000000', marginLeft: '10px', letterSpacing: '0.01em' }}>{title}</span>
     </div>
   )
 }
@@ -223,7 +223,7 @@ function EcosystemStatement() {
               ecosystem for human connection.
             </span>
           </h2>
-          <p style={{ fontSize: '16px', lineHeight: '1.78', color: 'rgba(15,23,42,0.58)' }}>
+          <p style={{ fontSize: '16px', lineHeight: '1.78', color: '#000000' }}>
             A creator-led platform where communities can grow through shared knowledge, meaningful relationships, and collective contribution.
           </p>
         </div>
@@ -245,7 +245,7 @@ function EcosystemStatement() {
               <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
                 Collectives for belonging
               </h3>
-              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: '#000000' }}>
                 Each collective is its own community space where people can connect around shared values, interests, learning, or lived experience.
               </p>
             </div>
@@ -257,16 +257,16 @@ function EcosystemStatement() {
                 {/* Hero collective card */}
                 <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.07)' }}>
                   <div style={{ height: '64px', background: 'linear-gradient(135deg, #0D2B2B 0%, #1A4A4A 50%, #38A09E 100%)', position: 'relative', padding: '14px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                    <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.55)', marginBottom: '3px' }}>Creator-led Collective</div>
+                    <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#FFFFFF', marginBottom: '3px' }}>Creator-led Collective</div>
                     <div style={{ fontSize: '14px', fontWeight: 660, color: '#fff', letterSpacing: '-0.02em' }}>Living Intentionally</div>
                   </div>
                   <div style={{ padding: '12px 16px', background: '#fff' }}>
-                    <div style={{ fontSize: '12px', color: 'rgba(15,23,42,0.52)', lineHeight: '1.55', marginBottom: '10px' }}>Slow down, reflect, and build a life that actually fits.</div>
+                    <div style={{ fontSize: '12px', color: '#000000', lineHeight: '1.55', marginBottom: '10px' }}>Slow down, reflect, and build a life that actually fits.</div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.45)' }}>24 members</span>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#000000' }}>24 members</span>
                         <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'rgba(15,23,42,0.20)', display: 'inline-block' }} />
-                        <span style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(15,23,42,0.45)' }}>3 pathways</span>
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#000000' }}>3 pathways</span>
                       </div>
                       <div className="flex items-center gap-1.5" style={{ background: 'rgba(56,160,158,0.08)', borderRadius: '999px', padding: '3px 8px' }}>
                         <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#38A09E' }} />
@@ -284,7 +284,7 @@ function EcosystemStatement() {
                     <div key={name} style={{ borderRadius: '8px', border: '1px solid rgba(15,23,42,0.07)', padding: '12px', background: '#FAFAF8' }}>
                       <div style={{ width: '20px', height: '3px', borderRadius: '2px', background: accent, marginBottom: '8px', opacity: 0.7 }} />
                       <div style={{ fontSize: '11.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.01em', marginBottom: '4px', lineHeight: '1.3' }}>{name}</div>
-                      <div style={{ fontSize: '10.5px', color: 'rgba(15,23,42,0.40)' }}>{count} members</div>
+                      <div style={{ fontSize: '10.5px', color: '#000000' }}>{count} members</div>
                     </div>
                   ))}
                 </div>
@@ -301,7 +301,7 @@ function EcosystemStatement() {
               <div style={{ background: '#fff', display: 'flex', minHeight: '280px' }}>
                 {/* Left sidebar — step list */}
                 <div style={{ width: '42%', borderRight: '1px solid rgba(15,23,42,0.07)', padding: '16px' }}>
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(15,23,42,0.35)', marginBottom: '12px' }}>Modules</div>
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#000000', marginBottom: '12px' }}>Modules</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     {[
                       { label: 'Week 1', done: true, active: false },
@@ -313,12 +313,12 @@ function EcosystemStatement() {
                         <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, background: done ? '#38A09E' : active ? 'rgba(56,160,158,0.15)' : 'rgba(15,23,42,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {done && <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3l2 2 4-4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                         </div>
-                        <span style={{ fontSize: '12px', color: done ? '#0F172A' : active ? '#38A09E' : 'rgba(15,23,42,0.38)', fontWeight: active ? 640 : done ? 540 : 400 }}>{label}</span>
+                        <span style={{ fontSize: '12px', color: done ? '#0F172A' : active ? '#38A09E' : '#000000', fontWeight: active ? 640 : done ? 540 : 400 }}>{label}</span>
                       </div>
                     ))}
                   </div>
                   <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(15,23,42,0.07)' }}>
-                    <div style={{ fontSize: '10px', color: 'rgba(15,23,42,0.40)', marginBottom: '6px' }}>Overall progress</div>
+                    <div style={{ fontSize: '10px', color: '#000000', marginBottom: '6px' }}>Overall progress</div>
                     <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(15,23,42,0.08)' }}>
                       <div style={{ width: '50%', height: '100%', borderRadius: '2px', background: 'linear-gradient(to right, #38A09E, #55C4C2)' }} />
                     </div>
@@ -329,15 +329,15 @@ function EcosystemStatement() {
                 <div style={{ flex: 1, padding: '16px' }}>
                   <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '6px' }}>Current · Week 3</div>
                   <div style={{ fontSize: '13.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '10px', lineHeight: '1.35' }}>What shifts when you slow down and notice?</div>
-                  <div style={{ fontSize: '11.5px', color: 'rgba(15,23,42,0.52)', lineHeight: '1.62', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '11.5px', color: '#000000', lineHeight: '1.62', marginBottom: '14px' }}>
                     Reflect on a moment when a decision felt completely right — not exciting, just settled. What was present?
                   </div>
                   <div style={{ borderRadius: '8px', padding: '10px 12px', background: '#F4FBFA', border: '1px solid rgba(56,160,158,0.14)', marginBottom: '12px' }}>
                     <div style={{ fontSize: '10px', fontWeight: 700, color: '#38A09E', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '5px' }}>Reflection prompt</div>
-                    <div style={{ fontSize: '11.5px', color: 'rgba(15,23,42,0.60)', lineHeight: '1.55', fontStyle: 'italic' }}>"What would I choose if I wasn't afraid of it being wrong?"</div>
+                    <div style={{ fontSize: '11.5px', color: '#000000', lineHeight: '1.55', fontStyle: 'italic' }}>"What would I choose if I wasn't afraid of it being wrong?"</div>
                   </div>
                   <div style={{ height: '1px', background: 'rgba(15,23,42,0.06)', marginBottom: '10px' }} />
-                  <div style={{ fontSize: '11px', color: 'rgba(15,23,42,0.38)' }}>3 lessons · 1 reflection · Est. 20 min</div>
+                  <div style={{ fontSize: '11px', color: '#000000' }}>3 lessons · 1 reflection · Est. 20 min</div>
                 </div>
               </div>
             </div>
@@ -351,7 +351,7 @@ function EcosystemStatement() {
               <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
                 Pathways for growth
               </h3>
-              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: '#000000' }}>
                 Guide your people through courses, practices, reflections, or learning journeys that help them move from interest to integration.
               </p>
             </div>
@@ -369,14 +369,14 @@ function EcosystemStatement() {
               <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
                 Gatherings for real connection
               </h3>
-              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: '#000000' }}>
                 Host live sessions, workshops, circles, classes, or community touchpoints that bring people together in real time.
               </p>
             </div>
 
             {/* Panel 3 — Gatherings & community */}
             <div className="hidden sm:block" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
-              <PanelChrome title="Community" />
+              <PanelChrome title="Conversations" />
               <div style={{ background: '#fff', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {/* Event card */}
                 <div style={{ borderRadius: '10px', border: '1px solid rgba(56,160,158,0.18)', padding: '14px 16px', background: '#F4FBFA' }}>
@@ -384,7 +384,7 @@ function EcosystemStatement() {
                     <div>
                       <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '4px' }}>Live Gathering</div>
                       <div style={{ fontSize: '14px', fontWeight: 650, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '2px' }}>Monthly open call</div>
-                      <div style={{ fontSize: '11px', color: 'rgba(15,23,42,0.50)' }}>60 min · structured · led</div>
+                      <div style={{ fontSize: '11px', color: '#000000' }}>60 min · structured · led</div>
                     </div>
                     <div style={{ borderRadius: '8px', padding: '6px 10px', background: '#38A09E', textAlign: 'center', flexShrink: 0 }}>
                       <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff', lineHeight: 1 }}>14</div>
@@ -395,12 +395,12 @@ function EcosystemStatement() {
                     {[1,2,3,4].map(i => (
                       <div key={i} style={{ width: '22px', height: '22px', borderRadius: '50%', background: `rgba(56,160,158,${0.18 + i*0.07})`, border: '2px solid #fff', marginLeft: i > 1 ? '-6px' : 0 }} />
                     ))}
-                    <span style={{ fontSize: '11px', color: 'rgba(15,23,42,0.45)', marginLeft: '8px' }}>+21 attending</span>
+                    <span style={{ fontSize: '11px', color: '#000000', marginLeft: '8px' }}>+21 attending</span>
                   </div>
                 </div>
                 {/* Community prompt thread */}
                 <div style={{ borderRadius: '10px', border: '1px solid rgba(15,23,42,0.07)', padding: '14px 16px', background: '#FAFAF8' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.13em', textTransform: 'uppercase', color: 'rgba(15,23,42,0.38)', marginBottom: '8px' }}>This week's prompt</div>
+                  <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.13em', textTransform: 'uppercase', color: '#000000', marginBottom: '8px' }}>This week's prompt</div>
                   <div style={{ fontSize: '13px', color: '#0F172A', fontWeight: 540, lineHeight: '1.58', marginBottom: '10px', fontStyle: 'italic' }}>
                     "What would you do if you stopped waiting to feel ready?"
                   </div>
@@ -413,7 +413,7 @@ function EcosystemStatement() {
                       <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: `${color}22`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <span style={{ fontSize: '8.5px', fontWeight: 700, color }}>{initials}</span>
                       </div>
-                      <div style={{ fontSize: '11.5px', color: 'rgba(15,23,42,0.58)', lineHeight: '1.55', paddingTop: '2px' }}>{text}</div>
+                      <div style={{ fontSize: '11.5px', color: '#000000', lineHeight: '1.55', paddingTop: '2px' }}>{text}</div>
                     </div>
                   ))}
                 </div>
@@ -430,19 +430,19 @@ function EcosystemStatement() {
               <div style={{ background: '#fff', display: 'flex', minHeight: '280px' }}>
                 {/* Sidebar nav */}
                 <div style={{ width: '38%', borderRight: '1px solid rgba(15,23,42,0.07)', padding: '16px', background: '#FAFAF8' }}>
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(15,23,42,0.35)', marginBottom: '10px' }}>My Collective</div>
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#000000', marginBottom: '10px' }}>My Collective</div>
                   {[
                     { label: 'Pathways', active: true },
                     { label: 'Events', active: false },
-                    { label: 'Community', active: false },
+                    { label: 'Conversations', active: false },
                     { label: 'Resources', active: false },
                   ].map(({ label, active }) => (
                     <div key={label} style={{ padding: '7px 10px', borderRadius: '6px', marginBottom: '2px', background: active ? 'rgba(212,176,72,0.10)' : 'transparent', cursor: 'default' }}>
-                      <span style={{ fontSize: '12px', color: active ? '#B8891A' : 'rgba(15,23,42,0.48)', fontWeight: active ? 640 : 400 }}>{label}</span>
+                      <span style={{ fontSize: '12px', color: active ? '#B8891A' : '#000000', fontWeight: active ? 640 : 400 }}>{label}</span>
                     </div>
                   ))}
                   <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(15,23,42,0.07)' }}>
-                    <div style={{ fontSize: '10px', color: 'rgba(15,23,42,0.38)', marginBottom: '4px' }}>Members</div>
+                    <div style={{ fontSize: '10px', color: '#000000', marginBottom: '4px' }}>Members</div>
                     <div style={{ fontSize: '18px', fontWeight: 660, color: '#0F172A', letterSpacing: '-0.03em' }}>34</div>
                     <div style={{ fontSize: '10px', color: '#38A09E', fontWeight: 600 }}>+3 this week</div>
                   </div>
@@ -462,11 +462,11 @@ function EcosystemStatement() {
                       <div key={name} className="flex items-center justify-between" style={{ borderRadius: '7px', padding: '9px 11px', background: '#F8F8F6', border: '1px solid rgba(15,23,42,0.06)' }}>
                         <div>
                           <div style={{ fontSize: '12px', fontWeight: 580, color: '#0F172A', marginBottom: '2px' }}>{name}</div>
-                          <div style={{ fontSize: '10.5px', color: 'rgba(15,23,42,0.40)' }}>{steps}</div>
+                          <div style={{ fontSize: '10.5px', color: '#000000' }}>{steps}</div>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: dot }} />
-                          <span style={{ fontSize: '10.5px', color: 'rgba(15,23,42,0.50)', fontWeight: 500 }}>{status}</span>
+                          <span style={{ fontSize: '10.5px', color: '#000000', fontWeight: 500 }}>{status}</span>
                         </div>
                       </div>
                     ))}
@@ -490,7 +490,7 @@ function EcosystemStatement() {
               <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
                 For creators with something meaningful to share
               </h3>
-              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: 'rgba(15,23,42,0.60)' }}>
+              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: '#000000' }}>
                 Fresh Collective is for teachers, facilitators, coaches, practitioners, guides, and community builders. Your work deserves a space that feels clear, supportive, and human.
               </p>
             </div>
@@ -539,7 +539,7 @@ function FreshIdeas() {
             {/* Eyebrow */}
             <div className="mb-6 sm:mb-10 flex items-center gap-3">
               <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.60)' }} />
-              <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.68)' }}>
+              <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#FFFFFF' }}>
                 Built for human connection
               </span>
             </div>
@@ -575,7 +575,7 @@ function FreshIdeas() {
                 style={{
                   fontSize: 'clamp(1rem, 1.5vw, 1.125rem)',
                   lineHeight: '1.85',
-                  color: 'rgba(255,255,255,0.88)',
+                  color: '#FFFFFF',
                   marginBottom: '1.25rem',
                   letterSpacing: '-0.01em',
                 }}
@@ -586,7 +586,7 @@ function FreshIdeas() {
                 style={{
                   fontSize: 'clamp(1rem, 1.5vw, 1.125rem)',
                   lineHeight: '1.85',
-                  color: 'rgba(255,255,255,0.72)',
+                  color: '#FFFFFF',
                   letterSpacing: '-0.01em',
                 }}
               >
@@ -647,7 +647,7 @@ function TheWayWeFeelSection() {
             style={{
               fontSize: 'clamp(0.9375rem, 1.3vw, 1.0625rem)',
               lineHeight: '1.78',
-              color: 'rgba(15,23,42,0.52)',
+              color: '#000000',
               maxWidth: '480px',
               margin: '0 auto',
               letterSpacing: '-0.01em',
@@ -765,7 +765,7 @@ function WhereTheLearningLives() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}
                     >
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: i === 0 ? '#7FDAD9' : 'rgba(255,255,255,0.28)' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: i === 0 ? '#7FDAD9' : '#FFFFFF' }}>
                         {label}
                       </span>
                     </div>
@@ -789,7 +789,7 @@ function WhereTheLearningLives() {
                   <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#D4B048', marginBottom: '6px' }}>
                     Live Layer
                   </div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.55)', lineHeight: '1.5' }}>
+                  <div style={{ fontSize: '12px', color: '#FFFFFF', lineHeight: '1.5' }}>
                     Monthly gathering
                   </div>
                 </div>
@@ -801,10 +801,10 @@ function WhereTheLearningLives() {
                     padding: '14px 15px',
                   }}
                 >
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: 'rgba(255,255,255,0.32)', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#FFFFFF', marginBottom: '6px' }}>
                     Practice
                   </div>
-                  <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.55)', lineHeight: '1.5' }}>
+                  <div style={{ fontSize: '12px', color: '#FFFFFF', lineHeight: '1.5' }}>
                     One experiment this week
                   </div>
                 </div>
@@ -853,7 +853,7 @@ function WhereTheLearningLives() {
               style={{
                 fontSize: 'clamp(0.9375rem, 1.2vw, 1rem)',
                 lineHeight: '1.78',
-                color: 'rgba(15,23,42,0.54)',
+                color: '#000000',
                 marginBottom: '2rem',
                 letterSpacing: '-0.01em',
                 maxWidth: '420px',
@@ -892,7 +892,7 @@ function WhereTheLearningLives() {
                     <div style={{ fontSize: '14px', fontWeight: 650, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: '1.3', marginBottom: '2px' }}>
                       {title}
                     </div>
-                    <div style={{ fontSize: '13px', color: 'rgba(15,23,42,0.56)', lineHeight: '1.55', letterSpacing: '-0.01em' }}>
+                    <div style={{ fontSize: '13px', color: '#000000', lineHeight: '1.55', letterSpacing: '-0.01em' }}>
                       {desc}
                     </div>
                   </div>
@@ -1004,7 +1004,7 @@ function GoodQuestions() {
                 </summary>
                 <div style={{ padding: '0 1.5rem 1.25rem' }}>
                   <div style={{ height: '1px', background: 'rgba(56,160,158,0.12)', marginBottom: '1rem' }} />
-                  <p style={{ fontSize: '15px', lineHeight: '1.78', color: 'rgba(15,23,42,0.60)', letterSpacing: '-0.01em' }}>
+                  <p style={{ fontSize: '15px', lineHeight: '1.78', color: '#000000', letterSpacing: '-0.01em' }}>
                     {a}
                   </p>
                 </div>
@@ -1080,7 +1080,7 @@ function FinalCTA() {
               style={{
                 fontSize: 'clamp(0.9375rem, 1.3vw, 1rem)',
                 lineHeight: '1.80',
-                color: 'rgba(255,255,255,0.52)',
+                color: '#FFFFFF',
                 maxWidth: '400px',
                 letterSpacing: '-0.01em',
               }}
@@ -1105,7 +1105,7 @@ function FinalCTA() {
                 className="hidden sm:inline"
                 style={{
                   fontSize: '13px',
-                  color: 'rgba(255,255,255,0.30)',
+                  color: '#FFFFFF',
                   letterSpacing: '0.02em',
                   userSelect: 'none',
                 }}

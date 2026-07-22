@@ -72,7 +72,7 @@ export default function AdminAccessPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-[14px] text-[#64748B]">
+      <div className="flex items-center gap-2 text-[14px] text-[#000000]">
         <div className="h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
         Loading…
       </div>
@@ -97,10 +97,10 @@ export default function AdminAccessPage() {
   return (
     <div>
       <div className="mb-4">
-        <h1 className="text-[1.5rem] font-bold text-[#0F172A]">Access & Invites</h1>
-        <p className="mt-1 text-[13px] text-[#64748B]">
-          Platform-wide view of access requests and open invitations across all collectives.
-          Requests are approved or declined by each collective&rsquo;s creator.
+        <h1 className="text-[1.5rem] font-bold text-[#0F172A]">Invitations</h1>
+        <p className="mt-1 text-[13px] text-[#000000]">
+          Invitations sent, doorways being opened, and members waiting to walk through.
+          Every collective&rsquo;s creator decides who joins their world.
         </p>
       </div>
 
@@ -124,7 +124,7 @@ export default function AdminAccessPage() {
             type="button"
             onClick={() => setTab(key)}
             className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
-              tab === key ? 'bg-teal-500 text-white' : 'bg-white text-[#475569] hover:bg-[#F1F5F9]'
+              tab === key ? 'bg-teal-500 text-white' : 'bg-white text-[#000000] hover:bg-[#F1F5F9]'
             }`}
             style={{ border: '1px solid #E2E8F0' }}
           >
@@ -140,7 +140,7 @@ export default function AdminAccessPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
                   {['User', 'Collective', 'Status', 'Message', 'Requested'].map((h) => (
-                    <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
+                    <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#000000]">
                       {h}
                     </th>
                   ))}
@@ -157,26 +157,26 @@ export default function AdminAccessPage() {
                   >
                     <td className="px-4 py-3">
                       <p className="text-[13px] font-medium text-[#0F172A]">{row.user_name ?? '—'}</p>
-                      <p className="text-[11px] text-[#94A3B8]">{row.user_email}</p>
+                      <p className="text-[11px] text-[#000000]">{row.user_email}</p>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-[13px] text-[#0F172A]">{row.space_name}</p>
-                      <p className="text-[11px] text-[#94A3B8]">{row.space_slug}</p>
+                      <p className="text-[11px] text-[#000000]">{row.space_slug}</p>
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
-                    <td className="max-w-[220px] px-4 py-3 text-[12px] text-[#64748B]">
+                    <td className="max-w-[220px] px-4 py-3 text-[12px] text-[#000000]">
                       {row.message ? (
                         <span className="line-clamp-2">{row.message}</span>
                       ) : (
-                        <span className="text-[#CBD5E1]">—</span>
+                        <span className="text-[#000000]">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[12px] text-[#94A3B8]">{fmtDate(row.created_at)}</td>
+                    <td className="px-4 py-3 text-[12px] text-[#000000]">{fmtDate(row.created_at)}</td>
                   </tr>
                 ))}
                 {data.access_requests.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-[13px] text-[#94A3B8]">
+                    <td colSpan={5} className="px-4 py-8 text-center text-[13px] text-[#000000]">
                       No access requests.
                     </td>
                   </tr>
@@ -195,19 +195,19 @@ export default function AdminAccessPage() {
                 <div className="mb-1 flex items-start justify-between gap-2">
                   <div>
                     <p className="text-[14px] font-semibold text-[#0F172A]">{row.user_name ?? row.user_email}</p>
-                    <p className="text-[12px] text-[#64748B]">{row.user_email}</p>
+                    <p className="text-[12px] text-[#000000]">{row.user_email}</p>
                   </div>
                   <StatusBadge status={row.status} />
                 </div>
-                <p className="text-[12px] text-[#64748B]">Collective: {row.space_name}</p>
+                <p className="text-[12px] text-[#000000]">Collective: {row.space_name}</p>
                 {row.message && (
-                  <p className="mt-1 text-[12px] italic text-[#94A3B8]">&ldquo;{row.message}&rdquo;</p>
+                  <p className="mt-1 text-[12px] italic text-[#000000]">&ldquo;{row.message}&rdquo;</p>
                 )}
-                <p className="mt-1 text-[11px] text-[#CBD5E1]">{fmtDate(row.created_at)}</p>
+                <p className="mt-1 text-[11px] text-[#000000]">{fmtDate(row.created_at)}</p>
               </div>
             ))}
             {data.access_requests.length === 0 && (
-              <p className="p-6 text-center text-[13px] text-[#94A3B8]">No access requests.</p>
+              <p className="p-6 text-center text-[13px] text-[#000000]">No access requests.</p>
             )}
           </div>
         </div>
@@ -220,7 +220,7 @@ export default function AdminAccessPage() {
               <thead>
                 <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
                   {['Invited Email', 'Name', 'Collective', 'Role', 'Invited By', 'Sent'].map((h) => (
-                    <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
+                    <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#000000]">
                       {h}
                     </th>
                   ))}
@@ -233,22 +233,22 @@ export default function AdminAccessPage() {
                     style={{ borderBottom: i < data.invitations.length - 1 ? '1px solid #F1F5F9' : undefined }}
                   >
                     <td className="px-4 py-3 text-[13px] font-medium text-[#0F172A]">{row.email}</td>
-                    <td className="px-4 py-3 text-[13px] text-[#475569]">{row.name ?? '—'}</td>
+                    <td className="px-4 py-3 text-[13px] text-[#000000]">{row.name ?? '—'}</td>
                     <td className="px-4 py-3">
                       <p className="text-[13px] text-[#0F172A]">{row.space_name}</p>
-                      <p className="text-[11px] text-[#94A3B8]">{row.space_slug}</p>
+                      <p className="text-[11px] text-[#000000]">{row.space_slug}</p>
                     </td>
-                    <td className="px-4 py-3 text-[12px] capitalize text-[#475569]">{row.role}</td>
+                    <td className="px-4 py-3 text-[12px] capitalize text-[#000000]">{row.role}</td>
                     <td className="px-4 py-3">
                       <p className="text-[13px] text-[#0F172A]">{row.invited_by_name ?? '—'}</p>
-                      <p className="text-[11px] text-[#94A3B8]">{row.invited_by_email ?? ''}</p>
+                      <p className="text-[11px] text-[#000000]">{row.invited_by_email ?? ''}</p>
                     </td>
-                    <td className="px-4 py-3 text-[12px] text-[#94A3B8]">{fmtDate(row.created_at)}</td>
+                    <td className="px-4 py-3 text-[12px] text-[#000000]">{fmtDate(row.created_at)}</td>
                   </tr>
                 ))}
                 {data.invitations.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-[13px] text-[#94A3B8]">
+                    <td colSpan={6} className="px-4 py-8 text-center text-[13px] text-[#000000]">
                       No open invitations.
                     </td>
                   </tr>
@@ -261,18 +261,18 @@ export default function AdminAccessPage() {
             {data.invitations.map((row) => (
               <div key={row.id} className="p-4">
                 <p className="text-[14px] font-semibold text-[#0F172A]">{row.email}</p>
-                {row.name && <p className="text-[12px] text-[#64748B]">{row.name}</p>}
-                <p className="mt-1 text-[12px] text-[#64748B]">Collective: {row.space_name}</p>
-                <p className="text-[12px] text-[#94A3B8]">
+                {row.name && <p className="text-[12px] text-[#000000]">{row.name}</p>}
+                <p className="mt-1 text-[12px] text-[#000000]">Collective: {row.space_name}</p>
+                <p className="text-[12px] text-[#000000]">
                   Role: {row.role} · Sent {fmtDate(row.created_at)}
                 </p>
                 {row.invited_by_name && (
-                  <p className="text-[11px] text-[#CBD5E1]">By {row.invited_by_name}</p>
+                  <p className="text-[11px] text-[#000000]">By {row.invited_by_name}</p>
                 )}
               </div>
             ))}
             {data.invitations.length === 0 && (
-              <p className="p-6 text-center text-[13px] text-[#94A3B8]">No open invitations.</p>
+              <p className="p-6 text-center text-[13px] text-[#000000]">No open invitations.</p>
             )}
           </div>
         </div>

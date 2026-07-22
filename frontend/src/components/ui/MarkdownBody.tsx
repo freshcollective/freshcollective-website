@@ -167,7 +167,7 @@ function renderHtml(html: string): React.ReactNode {
       return (
         <ul key={k} className="mb-4 space-y-1.5 pl-1">
           {b.items.map((item, idx) => (
-            <li key={idx} className="flex items-start gap-2 text-[15px] leading-[1.75] text-slate-600">
+            <li key={idx} className="flex items-start gap-2 text-[15px] leading-[1.75] text-black">
               <span className="mt-[0.35em] h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
               <span>{parseInlineHtml(item, `${k}-li${idx}`)}</span>
             </li>
@@ -177,7 +177,7 @@ function renderHtml(html: string): React.ReactNode {
     }
     // p
     return (
-      <p key={k} className="mb-4 text-[15px] leading-[1.85] text-slate-600">
+      <p key={k} className="mb-4 text-[15px] leading-[1.85] text-black">
         {parseInlineHtml(b.inner, k)}
       </p>
     )
@@ -308,7 +308,7 @@ function renderMarkdown(md: string): React.ReactNode {
       nodes.push(
         <ul key={key++} className="mb-4 space-y-1.5 pl-1">
           {token.items.map((item, idx) => (
-            <li key={idx} className="flex items-start gap-2 text-[15px] leading-[1.75] text-slate-600">
+            <li key={idx} className="flex items-start gap-2 text-[15px] leading-[1.75] text-black">
               <span className="mt-[0.35em] h-1.5 w-1.5 shrink-0 rounded-full bg-teal-500" />
               <span>{renderMdInline(item, `li${key}-${idx}`)}</span>
             </li>
@@ -317,7 +317,7 @@ function renderMarkdown(md: string): React.ReactNode {
       )
     } else if (token.type === 'paragraph') {
       nodes.push(
-        <p key={key++} className="mb-4 text-[15px] leading-[1.85] text-slate-600" style={{ whiteSpace: 'pre-wrap' }}>
+        <p key={key++} className="mb-4 text-[15px] leading-[1.85] text-black" style={{ whiteSpace: 'pre-wrap' }}>
           {renderMdInline(token.segments, `p${key}`)}
         </p>,
       )

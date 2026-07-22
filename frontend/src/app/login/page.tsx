@@ -1,27 +1,61 @@
-import SiteShell from '@/components/layout/SiteShell'
-import Container from '@/components/layout/Container'
+import AuthPageShell, { AuthTitleAccent } from '@/components/layout/AuthPageShell'
 import LoginForm from './LoginForm'
-import { getPathwayOverview } from '@/lib/serverApi'
-import type { PathwayWithSteps } from '@/types/platform'
+import { getPathwayOverview, getSpaceEvent } from '@/lib/serverApi'
+import type { PathwayWithSteps, EventDetail } from '@/types/platform'
 
-export type CheckoutContext = {
-  pathwayTitle: string
-}
+/**
+ * Discriminated shape so the login form can render either
+ *   "Log in to continue with <pathway title>"
+ * or
+ *   "Log in to buy your ticket for <Gathering title>"
+ * with a single prop.
+ */
+export type CheckoutContext =
+  | { kind: 'pathway'; pathwayTitle: string }
+  | { kind: 'gathering'; gatheringTitle: string }
 
 async function getCheckoutContext(next?: string): Promise<CheckoutContext | null> {
   if (!next) return null
-  const match = next.match(/^\/spaces\/([^/?#]+)\/pathways\/([^/?#]+)\/checkout/)
-  if (!match) return null
-  const [, spaceSlug, pathwaySlug] = match
-  try {
-    const pathway = (await getPathwayOverview(spaceSlug, pathwaySlug)) as PathwayWithSteps | null
-    if (!pathway) return null
-    return { pathwayTitle: pathway.title }
-  } catch {
-    return null
+
+  // Pathway purchase — existing pattern (unchanged).
+  const pathwayMatch = next.match(/^\/spaces\/([^/?#]+)\/pathways\/([^/?#]+)\/checkout/)
+  if (pathwayMatch) {
+    const [, spaceSlug, pathwaySlug] = pathwayMatch
+    try {
+      const pathway = (await getPathwayOverview(spaceSlug, pathwaySlug)) as PathwayWithSteps | null
+      if (!pathway) return null
+      return { kind: 'pathway', pathwayTitle: pathway.title }
+    } catch {
+      return null
+    }
   }
+
+  // Standalone Gathering ticket — the buyer clicked "Buy your ticket"
+  // while signed out. The return URL round-trips them back to the
+  // detail page (see GatheringTicketPurchaseClient.nextForAuth).
+  // Trust boundary: we only look up the title for the auth-page copy;
+  // no price / access / user state is read from the URL.
+  const gatheringMatch = next.match(/^\/spaces\/([^/?#]+)\/events\/([^/?#]+)/)
+  if (gatheringMatch) {
+    const [, spaceSlug, eventId] = gatheringMatch
+    try {
+      const event = (await getSpaceEvent(spaceSlug, eventId)) as EventDetail | null
+      if (!event) return null
+      if (event.booking_access_type !== 'paid_separately') return null
+      return { kind: 'gathering', gatheringTitle: event.title }
+    } catch {
+      return null
+    }
+  }
+
+  return null
 }
 
+/**
+ * Login page — uses the shared AuthPageShell (full-bleed Atlas artwork,
+ * navy overlay, transparent header, minimal footer). This file owns only
+ * the login-specific welcome copy and the login form.
+ */
 export default async function LoginPage({
   searchParams,
 }: {
@@ -31,18 +65,17 @@ export default async function LoginPage({
   const checkoutContext = await getCheckoutContext(next)
 
   return (
-    <SiteShell>
-      <section className="relative flex min-h-[80vh] items-center overflow-hidden bg-ivory py-20 md:bg-transparent">
-        <div className="absolute inset-0 hidden md:flex" aria-hidden="true">
-          <div className="w-1/2 bg-ivory" />
-          <div className="w-1/2 bg-navy-950" />
-        </div>
-        <Container className="relative z-10">
-          <div className="flex items-center justify-center">
-            <LoginForm nextUrl={next} checkoutContext={checkoutContext} />
-          </div>
-        </Container>
-      </section>
-    </SiteShell>
+    <AuthPageShell
+      welcomeTitle={
+        <>
+          <AuthTitleAccent>Welcome back</AuthTitleAccent>
+          <br />
+          to your world.
+        </>
+      }
+      welcomeSubtitle="Return to your Collectives, pathways and Gatherings."
+    >
+      <LoginForm nextUrl={next} checkoutContext={checkoutContext} />
+    </AuthPageShell>
   )
 }

@@ -1,12 +1,8 @@
-import type { Metadata } from 'next'
-import { getCreatorSpaces } from '@/lib/serverApi'
-import CreateCollectiveForm from './CreateCollectiveForm'
+import { redirect } from 'next/navigation'
 
-export const metadata: Metadata = {
-  title: 'Create a Collective — Fresh Collective',
-}
-
-export default async function CreateCollectivePage() {
-  const spaces = await getCreatorSpaces()
-  return <CreateCollectiveForm existingCount={spaces.length} />
+/**
+ * Legacy route → the guided ritual at `/build-your-collective` (Atlas v1.2).
+ */
+export default function CreateRedirect() {
+  redirect('/build-your-collective')
 }

@@ -57,6 +57,21 @@ async def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
         )
+    # Community Care — suspension (Stage 2C) and cancellation (Stage 2D)
+    # both block sign-in. Suspension is temporary and reversible;
+    # cancellation is terminal. The message distinguishes them so the
+    # person hears the truth about the state of their account.
+    from app.community_care.shared import is_user_cancelled, is_user_suspended
+    if is_user_suspended(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account access is temporarily suspended pending review.",
+        )
+    if is_user_cancelled(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account has been cancelled.",
+        )
     token = service.create_session_token(user)
     _set_session_cookie(response, token)
     return UserResponse.model_validate(user)

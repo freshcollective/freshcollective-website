@@ -43,7 +43,7 @@ export default function ForCreatorsPage() {
                   />
                   <span
                     className="text-[10.5px] font-semibold uppercase tracking-[0.20em]"
-                    style={{ color: 'rgba(255,255,255,0.38)' }}
+                    style={{ color: '#FFFFFF' }}
                   >
                     For Creators
                   </span>
@@ -80,7 +80,7 @@ export default function ForCreatorsPage() {
                   style={{
                     fontSize: 'clamp(0.9375rem, 1.4vw, 1.0625rem)',
                     lineHeight: '1.80',
-                    color: 'rgba(255,255,255,0.88)',
+                    color: '#FFFFFF',
                     maxWidth: '440px',
                     letterSpacing: '-0.01em',
                   }}
@@ -127,20 +127,20 @@ export default function ForCreatorsPage() {
                     style={{
                       fontSize: '17px',
                       fontWeight: 400,
-                      color: 'rgba(255,255,255,0.55)',
+                      color: '#FFFFFF',
                       letterSpacing: '-0.01em',
                       marginBottom: '8px',
                     }}
                   >
                     then{' '}
-                    <span style={{ fontWeight: 600, color: 'rgba(255,255,255,0.80)' }}>
+                    <span style={{ fontWeight: 600, color: '#FFFFFF' }}>
                       $19/month
                     </span>
                   </p>
                   <p
                     style={{
                       fontSize: '13px',
-                      color: 'rgba(255,255,255,0.80)',
+                      color: '#FFFFFF',
                       letterSpacing: '-0.01em',
                     }}
                   >
@@ -150,7 +150,7 @@ export default function ForCreatorsPage() {
                     className="mt-3"
                     style={{
                       fontSize: '12px',
-                      color: 'rgba(255,255,255,0.75)',
+                      color: '#FFFFFF',
                       letterSpacing: '-0.01em',
                       lineHeight: 1.6,
                     }}

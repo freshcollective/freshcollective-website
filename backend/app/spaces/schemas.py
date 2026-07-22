@@ -34,6 +34,7 @@ class PathwaySummary(BaseModel):
     billing_interval: str | None = None
     user_has_access: bool = False
     step_count: int = 0
+    unlock_offer_names: list[str] = []
 
 
 class SpaceResponse(BaseModel):
@@ -49,6 +50,9 @@ class SpaceResponse(BaseModel):
     status: str
     timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
+    # Optional "hosted by" mark. Rendered subtly beside the collective name
+    # in the header. Location artwork is still the primary visual identity.
+    logo_url: str | None = None
     pathways: list[PathwaySummary] = []
     pricing_type: str = 'free'
     pricing_amount_cents: int | None = None
@@ -66,6 +70,27 @@ class SpaceResponse(BaseModel):
     show_member_directory: bool = False
     # Count of active learner members — injected by the get_space route, not from ORM
     learner_count: int = 0
+    # Atlas v1.2 identity fields — Location provides artwork, Colour Palette
+    # drives the collective's visual interface, atmosphere + identity + welcome
+    # personalise the experience. All nullable while existing collectives
+    # migrate.
+    location: dict | None = None
+    colour_palette: dict | None = None
+    colour_palette_key: str | None = None
+    atmosphere_keys: list[str] = []
+    # Human-readable atmosphere names, resolved via atmosphere_options.
+    # Same order as `atmosphere_keys` but with any unknown keys dropped.
+    atmosphere_labels: list[str] = []
+    identity_statement: str | None = None
+    welcome_message: str | None = None
+
+    @field_validator("atmosphere_keys", mode="before")
+    @classmethod
+    def _coerce_atmosphere_keys(cls, v: object) -> list[str]:
+        # Legacy rows may store None where the migration expected a list.
+        if v is None:
+            return []
+        return v  # type: ignore[return-value]
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -92,6 +117,22 @@ class SpaceSummary(BaseModel):
     is_public: bool
 
 
+class StepAvailability(BaseModel):
+    """Whether a step is available to the current member right now, and
+    why not if it isn't. See app.services.pathway_release for the rules."""
+    is_locked: bool = False
+    reason: str | None = None
+    unlocks_at: datetime | None = None
+    message: str | None = None
+    # Echoed so the client can render creator-friendly summaries even
+    # while a step is locked (e.g. "Releases 7 days after enrolment").
+    release_type: str = "immediate"
+    release_offset_days: int | None = None
+    release_at: datetime | None = None
+    release_timezone: str | None = None
+    release_previous_state: str = "completed"
+
+
 class StepSummary(BaseModel):
     """Step within a pathway list — includes current user's completion state."""
 
@@ -103,6 +144,8 @@ class StepSummary(BaseModel):
     is_required: bool
     position: int
     is_completed: bool
+    banner_image_url: str | None = None
+    availability: StepAvailability = StepAvailability()
 
 
 class StepDetail(BaseModel):
@@ -119,6 +162,14 @@ class StepDetail(BaseModel):
     position: int
     is_completed: bool
     reflection_text: str | None
+    reflection_enabled: bool = True
+    discussion_enabled: bool = True
+    banner_image_url: str | None = None
+    # Set ONLY when this step is the first step in its section — used by the
+    # member step page to render a "welcome to Week N" banner at the top.
+    section_banner_image_url: str | None = None
+    section_title: str | None = None
+    availability: StepAvailability = StepAvailability()
 
 
 class SectionWithSteps(BaseModel):
@@ -128,6 +179,7 @@ class SectionWithSteps(BaseModel):
     title: str
     position: int
     steps: list[StepSummary]
+    banner_image_url: str | None = None
 
 
 class PaymentOptionScheduleSummary(BaseModel):
@@ -253,18 +305,44 @@ class EventSummary(BaseModel):
     thumbnail_url: str | None = None
     # Lifecycle: active | cancelled | archived
     status: str = "active"
-    # Booking access control
-    booking_access_type: str = "all_members"
+    # Booking access control — Gatherings 2.0 vocabulary. See
+    # services/gathering_types.py. Values: free | included_with_collective |
+    # included_with_pathway | paid_separately | invitation_only.
+    booking_access_type: str = "included_with_collective"
     booking_required_pathway_id: str | None = None
     # Whether the current user has access to the required pathway (True when no restriction)
     user_has_pathway_access: bool = True
     # Remaining credits on the user's active AccessPass for this pathway (None = no pass / unlimited)
     pass_credits_remaining: int | None = None
+    # Gatherings 2.0 — visible identity + attendance metadata.
+    gathering_type: str = "other"
+    attendance_format: str = "online"
+    venue_name: str | None = None
+    # Human name of the Gathering's host (the User who created the row).
+    # Kept as a plain string so the member-facing "Hosted by" line
+    # doesn't need an extra profile round-trip.
+    host_name: str | None = None
+    # Public recording URL, when the caretaker has added one. Kept on
+    # the summary so archive cards can surface a "Watch replay" CTA
+    # without an extra detail round-trip. Sensitive meeting links +
+    # arrival instructions remain on the detail endpoint (attendee-only).
+    recording_url: str | None = None
+    # Standalone paid Gatherings (Stage 4). Both are null for non-paid
+    # access types. `sales_enabled` mirrors the platform feature flag so
+    # the member UI can present a calm "Ticket sales aren't open yet"
+    # state instead of a Buy button that would immediately 503.
+    ticket_price_cents: int | None = None
+    ticket_currency: str | None = None
+    sales_enabled: bool = False
 
 
 class EventDetail(EventSummary):
     location_url: str | None = None
     recording_url: str | None = None
+    # Full venue details + access/arrival instructions. Endpoint scrubs
+    # these for non-attendees so the schema always includes them.
+    venue_address: str | None = None
+    access_instructions: str | None = None
 
 
 class SeriesBookingResponse(BaseModel):
@@ -315,6 +393,11 @@ class PublicSpaceCard(BaseModel):
     # Minimum price of any published paid pathway inside this collective (cents).
     # None means no paid pathways exist or pricing is not yet set.
     min_paid_pathway_price_cents: int | None = None
+    # Atlas v1.2 — the collective's assigned Location artwork. Consumers
+    # prefer the thumbnail for card displays and the hero for large previews,
+    # falling back to `cover_image_url` for legacy spaces with no Location.
+    location_hero_artwork_url: str | None = None
+    location_thumbnail_artwork_url: str | None = None
 
 
 # ---------------------------------------------------------------------------

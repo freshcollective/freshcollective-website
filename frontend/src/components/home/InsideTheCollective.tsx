@@ -82,7 +82,7 @@ export default function HowItWorks() {
           </Link>
           <Link
             href="/about"
-            className="inline-flex items-center rounded-xl border px-6 py-3 text-[14px] font-semibold text-navy-600 transition-colors hover:bg-navy-50"
+            className="inline-flex items-center rounded-xl border px-6 py-3 text-[14px] font-semibold text-black transition-colors hover:bg-navy-50"
             style={{ borderColor: '#D0D8E2' }}
           >
             About the platform

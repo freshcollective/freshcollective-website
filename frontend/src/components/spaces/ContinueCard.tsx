@@ -52,7 +52,7 @@ export default function ContinueCard({
         {/* Label — soft white */}
         <p
           className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em]"
-          style={{ color: 'rgba(255,255,255,0.78)' }}
+          style={{ color: '#FFFFFF' }}
         >
           {label}
         </p>
@@ -73,7 +73,7 @@ export default function ContinueCard({
 
         {/* Pathway name — muted white */}
         {data && (
-          <p className="mt-2 text-[13px]" style={{ color: 'rgba(255,255,255,0.72)' }}>
+          <p className="mt-2 text-[13px]" style={{ color: '#FFFFFF' }}>
             {data.pathway_title}
           </p>
         )}
@@ -83,7 +83,7 @@ export default function ContinueCard({
           <div className="mt-4">
             <div
               className="mb-1.5 flex items-center gap-3 text-[11px]"
-              style={{ color: 'rgba(255,255,255,0.68)' }}
+              style={{ color: '#FFFFFF' }}
             >
               <span>{completedCount} of {stepCount} steps</span>
               {estimatedMinutes && !data?.all_complete && (

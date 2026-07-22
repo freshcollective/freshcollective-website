@@ -55,8 +55,8 @@ export default async function SpaceMembersPage({ params }: Props) {
             Members
           </span>
         </h1>
-        <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
-          The people inside this collective — here to learn, reflect, and grow together.
+        <p className="text-[14px] leading-relaxed" style={{ color: '#FFFFFF' }}>
+          Meet the people who make up this collective.
         </p>
       </div>
 

@@ -90,7 +90,7 @@ export default function StepDiscussion({
     <div className="mt-10 pt-8 border-t border-border">
       <div className="mb-1 h-[2px] w-6 rounded-full bg-teal-400" />
       <h2 className="mb-1 text-lg font-semibold text-slate-900">Questions &amp; discussion</h2>
-      <p className="mb-6 text-sm text-slate-500">
+      <p className="mb-6 text-sm text-black">
         Visible to others in this pathway. Ask a question, share what landed, or add something others may find helpful.
       </p>
 
@@ -110,7 +110,7 @@ export default function StepDiscussion({
           {error ? (
             <span className="text-xs text-red-500">{error}</span>
           ) : (
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-black">
               {body.trim().length > 0 ? `${body.length}/2000` : 'Cmd+Enter to post'}
             </span>
           )}
@@ -131,7 +131,7 @@ export default function StepDiscussion({
 
       {/* Comment list */}
       {comments.length === 0 ? (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-black">
           No discussion yet. Be the first to ask a question or share a thought.
         </p>
       ) : (
@@ -144,11 +144,11 @@ export default function StepDiscussion({
                   <span className="text-[13px] font-semibold text-navy-900">
                     {comment.author.display_name}
                   </span>
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-[11px] text-black">
                     {formatDate(comment.created_at)}
                   </span>
                 </div>
-                <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-slate-600">
+                <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-black">
                   {comment.body}
                 </p>
               </div>

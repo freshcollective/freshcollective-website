@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import type { AccessRequest, AccessPassAdminSummary, AddMemberResponse, CreatorMemberDetail, CreatorPathway, MemberBookingItem, MemberPathwayAccessItem, SpaceInvitation } from '@/types/platform'
+import type { AccessRequest, AccessPassAdminSummary, AddMemberResponse, CreatorMemberDetail, CreatorPathway, DirectMessageItem, ManualMember, ManualMemberPathwayAccess, MemberBookingItem, MemberPathwayAccessItem, MessageThreadDetail, SpaceInvitation } from '@/types/platform'
 import { apiUrl } from '@/lib/api'
 import { formatPathwayPrice } from '@/lib/pathwayAccess'
 
@@ -73,7 +73,7 @@ function SectionHeading({ title, count }: { title: string; count?: number }) {
   return (
     <div className="mb-3 flex items-baseline gap-2">
       <h2 className="text-[16px] font-semibold text-navy-900">{title}</h2>
-      {count !== undefined && <span className="text-[13px] text-slate-400">{count}</span>}
+      {count !== undefined && <span className="text-[13px] text-black">{count}</span>}
     </div>
   )
 }
@@ -103,7 +103,7 @@ function InviteLinkCard({ spaceSlug, isPublic }: { spaceSlug: string; isPublic: 
       <div className="mb-3 flex items-start justify-between gap-2">
         <div>
           <p className="text-[14px] font-semibold text-navy-900">Collective link</p>
-          <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">
+          <p className="mt-0.5 text-[13px] leading-relaxed text-black">
             {isPublic
               ? 'People can view this collective and join if access is open. Share this link freely.'
               : 'This collective is private. Share this link — people can request access or accept a direct invite.'}
@@ -117,7 +117,7 @@ function InviteLinkCard({ spaceSlug, isPublic }: { spaceSlug: string; isPublic: 
         )}
       </div>
       <div className="flex items-center gap-2">
-        <div className="flex-1 truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-600 select-all" title={inviteUrl}>
+        <div className="flex-1 truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-black select-all" title={inviteUrl}>
           {inviteUrl}
         </div>
         <button onClick={copyLink}
@@ -190,20 +190,20 @@ function PathwayAccessRow({ item, spaceSlug, userId, onRevoked }: {
         <AccessPill state={item.access_state} label={item.access_label} />
       </div>
       {priceLabel ? (
-        <p className="mt-1 text-[11px] text-slate-400">{priceLabel}</p>
+        <p className="mt-1 text-[11px] text-black">{priceLabel}</p>
       ) : item.access_source ? (
-        <p className="mt-1 text-[11px] text-slate-400 capitalize">{item.access_source.replace(/_/g, ' ')}</p>
+        <p className="mt-1 text-[11px] text-black capitalize">{item.access_source.replace(/_/g, ' ')}</p>
       ) : null}
       {item.access_state === 'accessible' && item.total_steps > 0 && (
         <div className="mt-2.5">
-          <div className="mb-1 flex items-baseline justify-between text-[11px] text-slate-400">
+          <div className="mb-1 flex items-baseline justify-between text-[11px] text-black">
             <span>{item.completed_steps} of {item.total_steps} steps</span>
             <span>{item.progress_pct}%</span>
           </div>
           <div className="h-1 w-full overflow-hidden rounded-full bg-teal-100">
             <div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${item.progress_pct}%` }} />
           </div>
-          <p className="mt-1.5 text-[11px] text-slate-400">
+          <p className="mt-1.5 text-[11px] text-black">
             {item.last_activity_at ? `Last active: ${formatDate(item.last_activity_at)}` : 'No activity yet'}
           </p>
         </div>
@@ -273,25 +273,25 @@ function GrantAccessModal({ spaceSlug, userId, onClose, onGranted }: {
         {success ? (
           <div className="py-4 text-center">
             <p className="text-[16px] font-semibold text-navy-900">Access granted</p>
-            <p className="mt-1.5 text-[13px] text-slate-500">The member now has access to this pathway.</p>
+            <p className="mt-1.5 text-[13px] text-black">The member now has access to this pathway.</p>
             <button onClick={onClose} className="mt-4 rounded-xl px-4 py-2 text-[13px] font-semibold text-white" style={{ background: '#38A09E' }}>Done</button>
           </div>
         ) : (
           <>
             <h2 className="mb-4 text-[16px] font-semibold text-navy-900">Grant pathway access</h2>
-            {fetching ? <p className="text-[13px] text-slate-400">Loading pathways…</p>
-              : pathways.length === 0 ? <p className="text-[13px] text-slate-500">No paid pathways found. Manual grants are only available for paid pathways.</p>
+            {fetching ? <p className="text-[13px] text-black">Loading pathways…</p>
+              : pathways.length === 0 ? <p className="text-[13px] text-black">No paid pathways found. Manual grants are only available for paid pathways.</p>
               : (
                 <div className="space-y-4">
                   <div>
-                    <label className="mb-1 block text-[12px] font-semibold text-slate-500">Pathway</label>
+                    <label className="mb-1 block text-[12px] font-semibold text-black">Pathway</label>
                     <select value={pathwayId} onChange={(e) => setPathwayId(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
                       {pathways.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="mb-1 block text-[12px] font-semibold text-slate-500">Notes (optional)</label>
+                    <label className="mb-1 block text-[12px] font-semibold text-black">Notes (optional)</label>
                     <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
                       placeholder="Reason for grant, e.g. scholarship, beta tester…"
                       className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
@@ -303,7 +303,7 @@ function GrantAccessModal({ spaceSlug, userId, onClose, onGranted }: {
                       style={{ background: '#38A09E' }}>
                       {loading ? 'Granting…' : 'Grant access'}
                     </button>
-                    <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
+                    <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-black hover:bg-slate-50">Cancel</button>
                   </div>
                 </div>
               )}
@@ -344,18 +344,18 @@ function PathwayAccessSection({ member, spaceSlug }: { member: CreatorMemberDeta
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Pathway access</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-black">Pathway access</p>
         <button onClick={() => setShowGrant(true)}
           className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors"
           style={{ background: 'rgba(56,160,158,0.10)', color: '#0f766e' }}>
           + Grant access
         </button>
       </div>
-      {loading && <p className="text-[13px] italic text-slate-400">Loading…</p>}
+      {loading && <p className="text-[13px] italic text-black">Loading…</p>}
       {!loading && items?.length === 0 && (
         <div className="space-y-1">
-          <p className="text-[13px] font-medium text-slate-500">No pathway access yet.</p>
-          <p className="text-[12px] text-slate-400">Free and included pathways appear here once the member starts them.</p>
+          <p className="text-[13px] font-medium text-black">No pathway access yet.</p>
+          <p className="text-[12px] text-black">Free and included pathways appear here once the member starts them.</p>
         </div>
       )}
       {!loading && items && items.length > 0 && (
@@ -475,7 +475,7 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full text-xl"
               style={{ background: 'rgba(56,160,158,0.12)', color: '#38A09E' }}>✓</div>
             <p className="text-[16px] font-semibold text-navy-900">Pass granted</p>
-            <p className="mt-1 text-[13px] text-slate-500">{member.display_name} now has an active pass.</p>
+            <p className="mt-1 text-[13px] text-black">{member.display_name} now has an active pass.</p>
             <button onClick={onClose} className="mt-4 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white" style={{ background: '#38A09E' }}>Done</button>
           </div>
         ) : (
@@ -489,7 +489,7 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
             <div className="space-y-4">
               {pathways.length > 0 && (
                 <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Pathway</label>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">Pathway</label>
                   <select value={selectedPathwaySlug} onChange={e => setSelectedPathwaySlug(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
                     {pathways.map(p => <option key={p.slug} value={p.slug}>{p.title}</option>)}
@@ -497,7 +497,7 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
                 </div>
               )}
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-500">
+                <label className="mb-1 block text-[12px] font-semibold text-black">
                   Pass option <span className="text-red-400">*</span>
                 </label>
                 {paymentOptions.length > 0 ? (
@@ -510,17 +510,17 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
                     ))}
                   </select>
                 ) : pathways.length === 0 ? (
-                  <p className="text-[12px] text-slate-500">No active pathways found in this collective.</p>
+                  <p className="text-[12px] text-black">No active pathways found in this collective.</p>
                 ) : selectedPathwaySlug ? (
                   <p className="text-[12px] text-amber-600">
                     No published payment options for this pathway. Publish at least one option before granting a pass.
                   </p>
                 ) : (
-                  <p className="text-[12px] text-slate-400">Select a pathway first.</p>
+                  <p className="text-[12px] text-black">Select a pathway first.</p>
                 )}
               </div>
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-500">Payment source</label>
+                <label className="mb-1 block text-[12px] font-semibold text-black">Payment source</label>
                 <select value={source} onChange={e => setSource(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
                   {PASS_SOURCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -534,7 +534,7 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
                 </label>
                 {recordPayment && (
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="text-[13px] text-slate-500">AUD $</span>
+                    <span className="text-[13px] text-black">AUD $</span>
                     <input type="number" min="0" step="0.01" value={paymentAmountStr}
                       onChange={e => setPaymentAmountStr(e.target.value)}
                       placeholder="0.00"
@@ -543,7 +543,7 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
                 )}
               </div>
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-500">Notes (optional)</label>
+                <label className="mb-1 block text-[12px] font-semibold text-black">Notes (optional)</label>
                 <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}
                   placeholder="Scholarship, special arrangement…"
                   className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
@@ -555,7 +555,7 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
                   style={{ background: '#38A09E' }}>
                   {loading ? 'Granting…' : 'Grant pass'}
                 </button>
-                <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
+                <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-black hover:bg-slate-50">Cancel</button>
               </div>
             </div>
           </>
@@ -570,13 +570,13 @@ function GrantPassToMemberModal({ spaceSlug, member, onClose, onGranted }: {
 // ---------------------------------------------------------------------------
 
 function MemberPassCreditBar({ used, total }: { used: number; total: number | null }) {
-  if (total === null) return <span className="text-[12px] text-slate-400">Unlimited</span>
+  if (total === null) return <span className="text-[12px] text-black">Unlimited</span>
   const remaining = Math.max(0, total - used)
   const pct = total > 0 ? Math.round((remaining / total) * 100) : 0
   const barColour = pct > 40 ? '#38A09E' : pct > 15 ? '#F59E0B' : '#EF4444'
   return (
     <div className="mt-1.5">
-      <p className="text-[12px] text-slate-500">{remaining} of {total} sessions remaining</p>
+      <p className="text-[12px] text-black">{remaining} of {total} sessions remaining</p>
       <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: barColour }} />
       </div>
@@ -619,16 +619,16 @@ function MemberPassesSection({ member, spaceSlug }: { member: CreatorMemberDetai
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Passes</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-black">Passes</p>
         <button onClick={() => setShowGrantModal(true)}
           className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors"
           style={{ background: 'rgba(56,160,158,0.10)', color: '#0f766e' }}>
           + Grant pass
         </button>
       </div>
-      {loading && <p className="text-[13px] italic text-slate-400">Loading…</p>}
+      {loading && <p className="text-[13px] italic text-black">Loading…</p>}
       {!loading && passes?.length === 0 && (
-        <p className="text-[13px] text-slate-400">No passes yet.</p>
+        <p className="text-[13px] text-black">No passes yet.</p>
       )}
       {!loading && passes && passes.length > 0 && (
         <div className="flex flex-col gap-2">
@@ -651,11 +651,11 @@ function MemberPassesSection({ member, spaceSlug }: { member: CreatorMemberDetai
                   <p className="mt-0.5 text-[11px] text-teal-600">{pass.pathway_title}</p>
                 )}
                 {validUntil && (
-                  <p className="mt-0.5 text-[11px] text-slate-400">Valid until {validUntil}</p>
+                  <p className="mt-0.5 text-[11px] text-black">Valid until {validUntil}</p>
                 )}
                 <MemberPassCreditBar used={pass.used_credits} total={pass.total_credits} />
                 {pass.credits_per_week && (
-                  <p className="mt-1 text-[11px] text-slate-400">{pass.credits_per_week} sessions/week</p>
+                  <p className="mt-1 text-[11px] text-black">{pass.credits_per_week} sessions/week</p>
                 )}
               </div>
             )
@@ -739,12 +739,12 @@ function PassInfoCard({ pass, deductNote }: { pass: ActivePassInfo; deductNote?:
   return (
     <div className="rounded-xl border border-teal-100 bg-teal-50/40 px-3 py-2.5">
       <p className="text-[12px] font-semibold text-teal-700">{pass.option_name ?? 'Active pass'}</p>
-      <p className="mt-0.5 text-[11px] text-slate-600">
+      <p className="mt-0.5 text-[11px] text-black">
         {pass.remaining_credits ?? '?'} of {pass.total_credits ?? '?'} sessions remaining
         {pass.credits_per_week ? ` · ${pass.credits_per_week}/week` : ''}
       </p>
       {pass.valid_until && (
-        <p className="mt-0.5 text-[11px] text-slate-400">
+        <p className="mt-0.5 text-[11px] text-black">
           Valid until {new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       )}
@@ -910,7 +910,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
 
   const ModeToggle = ({ value, onChange }: { value: 'pass' | 'override'; onChange: (v: 'pass' | 'override') => void }) => (
     <div>
-      <label className="mb-1.5 block text-[12px] font-semibold text-slate-500">Booking mode</label>
+      <label className="mb-1.5 block text-[12px] font-semibold text-black">Booking mode</label>
       <div className="flex gap-2">
         <button type="button" onClick={() => onChange('pass')}
           className={`flex-1 rounded-xl border px-3 py-2.5 text-[12px] font-semibold transition-colors ${value === 'pass' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
@@ -928,7 +928,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
     <>
       {passMode === 'pass' && (
         <div>
-          {activePass === undefined && <p className="text-[12px] text-slate-400">Loading pass info…</p>}
+          {activePass === undefined && <p className="text-[12px] text-black">Loading pass info…</p>}
           {activePass === null && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
               <p className="text-[12px] font-semibold text-amber-700">No active pass</p>
@@ -957,7 +957,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full text-xl"
               style={{ background: 'rgba(56,160,158,0.12)', color: '#38A09E' }}>✓</div>
             <p className="text-[16px] font-semibold text-navy-900">Session booked</p>
-            <p className="mt-1 text-[13px] text-slate-500">
+            <p className="mt-1 text-[13px] text-black">
               {member.display_name} has been booked.
               {mode === 'pass' ? ' 1 session deducted from their pass.' : ' No sessions deducted (manual override).'}
             </p>
@@ -983,7 +983,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                         <span className="text-teal-500 text-[12px]">✓</span>
                         <div>
                           <span className="text-[12px] font-medium text-teal-800">{item.event_title}</span>
-                          <span className="ml-2 text-[11px] text-slate-400">
+                          <span className="ml-2 text-[11px] text-black">
                             {new Date(item.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
                           </span>
                         </div>
@@ -994,17 +994,17 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
               )}
               {recurringResult.skipped.length > 0 && (
                 <details open={recurringResult.booked.length === 0}>
-                  <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600">
+                  <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-black hover:text-slate-600">
                     Skipped ({recurringResult.skipped.length})
                   </summary>
                   <div className="mt-2 space-y-1">
                     {recurringResult.skipped.map(item => (
                       <div key={item.event_id} className="rounded-lg bg-slate-50 px-3 py-1.5">
-                        <span className="text-[12px] font-medium text-slate-600">{item.event_title}</span>
-                        <span className="ml-2 text-[11px] text-slate-400">
+                        <span className="text-[12px] font-medium text-black">{item.event_title}</span>
+                        <span className="ml-2 text-[11px] text-black">
                           {item.starts_at ? new Date(item.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}
                         </span>
-                        {item.reason && <p className="mt-0.5 text-[11px] text-slate-400">{item.reason}</p>}
+                        {item.reason && <p className="mt-0.5 text-[11px] text-black">{item.reason}</p>}
                       </div>
                     ))}
                   </div>
@@ -1013,7 +1013,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
               {recurringResult.pass_summary && (
                 <div className="rounded-xl border border-teal-100 bg-teal-50/40 px-3 py-2.5">
                   <p className="text-[11px] font-semibold text-teal-700">Pass balance after booking</p>
-                  <p className="mt-0.5 text-[11px] text-slate-600">
+                  <p className="mt-0.5 text-[11px] text-black">
                     {recurringResult.pass_summary.remaining_credits ?? '?'} of {recurringResult.pass_summary.total_credits ?? '?'} sessions remaining
                   </p>
                 </div>
@@ -1045,9 +1045,9 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
             {bookView === 'single' && (
               <div className="space-y-4">
                 <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Session</label>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">Session</label>
                   {events.length === 0 ? (
-                    <p className="text-[12px] text-slate-400">No upcoming sessions found.</p>
+                    <p className="text-[12px] text-black">No upcoming sessions found.</p>
                   ) : (
                     <select value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
@@ -1062,7 +1062,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                 <ModeToggle value={mode} onChange={v => setMode(v)} />
                 <PassSection passMode={mode} />
                 <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Note (optional)</label>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">Note (optional)</label>
                   <textarea rows={2} value={note} onChange={e => setNote(e.target.value)}
                     placeholder="e.g. Regular Tuesday session, make-up booking…"
                     className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
@@ -1075,7 +1075,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                     style={{ background: mode === 'override' ? '#B45309' : '#38A09E' }}>
                     {loading ? 'Booking…' : mode === 'pass' ? 'Book (use pass)' : 'Book (override)'}
                   </button>
-                  <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
+                  <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-black hover:bg-slate-50">Cancel</button>
                 </div>
               </div>
             )}
@@ -1087,17 +1087,17 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                 <PassSection passMode={recurringMode} />
 
                 <div>
-                  <label className="mb-2 block text-[12px] font-semibold text-slate-500">
+                  <label className="mb-2 block text-[12px] font-semibold text-black">
                     Select session patterns
                     {recurringMode === 'pass' && activePass?.valid_until && (
-                      <span className="ml-1 font-normal text-slate-400">
+                      <span className="ml-1 font-normal text-black">
                         (showing sessions within pass dates)
                       </span>
                     )}
                   </label>
-                  {activePass === undefined && <p className="text-[12px] text-slate-400">Loading…</p>}
+                  {activePass === undefined && <p className="text-[12px] text-black">Loading…</p>}
                   {patterns.length === 0 && activePass !== undefined && (
-                    <p className="text-[12px] text-slate-400">No eligible upcoming sessions found.</p>
+                    <p className="text-[12px] text-black">No eligible upcoming sessions found.</p>
                   )}
                   {patterns.length > 0 && (
                     <div className="space-y-2">
@@ -1108,7 +1108,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                             className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-teal-600" />
                           <div className="flex-1 min-w-0">
                             <p className="text-[13px] font-semibold text-navy-900">{pattern.label}</p>
-                            <p className="text-[11px] text-slate-400">
+                            <p className="text-[11px] text-black">
                               {pattern.events.length} session{pattern.events.length !== 1 ? 's' : ''}
                               {pattern.events.length > 0 && (
                                 <> · {new Date(pattern.events[0].starts_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
@@ -1124,13 +1124,13 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
 
                 {previewEvents.length > 0 && (
                   <details open>
-                    <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600">
+                    <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-black hover:text-slate-600">
                       Preview — {previewEvents.length} session{previewEvents.length !== 1 ? 's' : ''} selected
                     </summary>
                     <div className="mt-2 max-h-40 overflow-y-auto space-y-1 pr-1">
                       {previewEvents.map(ev => (
                         <div key={ev.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5">
-                          <span className="text-[11px] text-slate-500 w-24 shrink-0">
+                          <span className="text-[11px] text-black w-24 shrink-0">
                             {new Date(ev.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
                           </span>
                           <span className="text-[12px] text-navy-900 truncate">{ev.title}</span>
@@ -1141,7 +1141,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                 )}
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Note (optional)</label>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">Note (optional)</label>
                   <textarea rows={2} value={recurringNote} onChange={e => setRecurringNote(e.target.value)}
                     placeholder="e.g. Term 3 regular sessions"
                     className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
@@ -1160,7 +1160,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                         ? 'Select sessions first'
                         : `Book ${previewEvents.length} session${previewEvents.length !== 1 ? 's' : ''}${recurringMode === 'pass' ? ' (use pass)' : ' (override)'}`}
                   </button>
-                  <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
+                  <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-black hover:bg-slate-50">Cancel</button>
                 </div>
               </div>
             )}
@@ -1208,16 +1208,16 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Gathering history</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-black">Gathering history</p>
         <button onClick={() => setShowBookModal(true)}
           className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors"
           style={{ background: 'rgba(56,160,158,0.10)', color: '#0f766e' }}>
           + Book session
         </button>
       </div>
-      {loading && <p className="text-[13px] italic text-slate-400">Loading…</p>}
+      {loading && <p className="text-[13px] italic text-black">Loading…</p>}
       {!loading && bookings?.length === 0 && (
-        <p className="text-[13px] text-slate-400">No gathering bookings yet.</p>
+        <p className="text-[13px] text-black">No gathering bookings yet.</p>
       )}
       {!loading && bookings && bookings.length > 0 && (
         <div className="space-y-4">
@@ -1233,7 +1233,7 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
           )}
           {past.length > 0 && (
             <div>
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Past</p>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-black">Past</p>
               <div className="flex flex-col gap-1.5">
                 {past.map(b => (
                   <GatheringBookingRow key={b.booking_id} booking={b} />
@@ -1243,7 +1243,7 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
           )}
           {cancelled.length > 0 && (
             <details>
-              <summary className="cursor-pointer text-[11px] text-slate-400 hover:text-slate-600">
+              <summary className="cursor-pointer text-[11px] text-black hover:text-slate-600">
                 {cancelled.length} cancelled booking{cancelled.length !== 1 ? 's' : ''}
               </summary>
               <div className="mt-1.5 flex flex-col gap-1.5">
@@ -1290,7 +1290,7 @@ function GatheringBookingRow({ booking }: { booking: MemberBookingItem }) {
           </span>
         )}
       </div>
-      <p className="mt-0.5 text-[11px] text-slate-400">
+      <p className="mt-0.5 text-[11px] text-black">
         {formatDateTime(booking.event_starts_at)} · {LOCATION_LABEL[booking.event_location_type] ?? booking.event_location_type}
       </p>
     </div>
@@ -1298,65 +1298,345 @@ function GatheringBookingRow({ booking }: { booking: MemberBookingItem }) {
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Direct message modal (creator → member)
+// ---------------------------------------------------------------------------
+
+function DirectMessageModal({ member, spaceSlug, onClose }: {
+  member: CreatorMemberDetail
+  spaceSlug: string
+  onClose: () => void
+}) {
+  const [thread, setThread]     = useState<MessageThreadDetail | null>(null)
+  const [loading, setLoading]   = useState(true)
+  const [body, setBody]         = useState('')
+  const [sending, setSending]   = useState(false)
+  const [error, setError]       = useState<string | null>(null)
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+
+  // Load existing thread (if any) by sending a zero-length probe — instead,
+  // just list threads and find the one for this member.
+  useEffect(() => {
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/messages`), { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((threads: { thread_id: string; other_user_id: string }[]) => {
+        const existing = threads.find(t => t.other_user_id === member.id)
+        if (!existing) { setLoading(false); return }
+        return fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/messages/${existing.thread_id}`), { credentials: 'include' })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => { setThread(data); setLoading(false) })
+      })
+      .catch(() => setLoading(false))
+  }, [member.id, spaceSlug])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [thread?.messages])
+
+  // Mark creator's unread messages as read when modal opens
+  useEffect(() => {
+    if (thread) {
+      fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/messages/${thread.thread_id}/read`), {
+        method: 'POST', credentials: 'include',
+      }).catch(() => {})
+    }
+  }, [thread?.thread_id, spaceSlug])
+
+  async function handleSend() {
+    const text = body.trim()
+    if (!text) return
+    setSending(true)
+    setError(null)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/messages`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ member_id: member.id, body: text }),
+      })
+      if (res.ok) {
+        const data: MessageThreadDetail = await res.json()
+        setThread(data)
+        setBody('')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setError(typeof data.detail === 'string' ? data.detail : 'Could not send message.')
+      }
+    } catch { setError('Something went wrong.') }
+    finally { setSending(false) }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+  }
+
+  function formatTime(iso: string): string {
+    const d = new Date(iso)
+    const diffMin = Math.floor((Date.now() - d.getTime()) / 60000)
+    if (diffMin < 1) return 'Just now'
+    if (diffMin < 60) return `${diffMin}m ago`
+    if (diffMin < 1440) return d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
+    return d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+  }
+
+  const messages: DirectMessageItem[] = thread?.messages ?? []
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="fixed left-1/2 top-1/2 z-50 flex w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl bg-white shadow-2xl" style={{ maxHeight: '85vh' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <div>
+            <p className="text-[15px] font-semibold text-navy-900">Message {member.display_name}</p>
+            <p className="text-[12px] text-black">Direct message · private</p>
+          </div>
+          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </button>
+        </div>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto p-5">
+          {loading ? (
+            <p className="text-center text-[13px] text-black">Loading…</p>
+          ) : messages.length === 0 ? (
+            <p className="text-center text-[13px] text-black">
+              No messages yet. Send the first message below.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {messages.map(msg => {
+                const isMe = thread && msg.sender_id === thread.creator_id
+                return (
+                  <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                    <div className={[
+                      'max-w-[80%] rounded-2xl px-4 py-2.5',
+                      isMe ? 'rounded-br-sm text-white' : 'rounded-bl-sm bg-slate-100 text-navy-900',
+                    ].join(' ')}
+                      style={isMe ? { background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' } : undefined}>
+                      {!isMe && (
+                        <p className="mb-0.5 text-[11px] font-semibold text-teal-700">{msg.sender_name}</p>
+                      )}
+                      <p className="whitespace-pre-wrap text-[13px] leading-relaxed">{msg.body}</p>
+                      <p className={`mt-0.5 text-right text-[10px] ${isMe ? 'text-white' : 'text-black'}`}>
+                        {formatTime(msg.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+              <div ref={bottomRef} />
+            </div>
+          )}
+        </div>
+
+        {/* Composer */}
+        <div className="border-t border-border p-4">
+          <textarea
+            value={body}
+            onChange={e => { setBody(e.target.value); setError(null) }}
+            onKeyDown={handleKeyDown}
+            placeholder={`Message ${member.display_name}…`}
+            rows={2}
+            className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-[13px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
+          />
+          {error && <p className="mt-1 text-[11px] text-red-500">{error}</p>}
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-[11px] text-black">Enter to send</p>
+            <button onClick={handleSend} disabled={!body.trim() || sending}
+              className="rounded-xl px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              style={{ background: '#38A09E' }}>
+              {sending ? 'Sending…' : 'Send'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
 // Member detail panel
 // ---------------------------------------------------------------------------
 
-function MemberDetailPanel({ member, onClose, spaceSlug }: {
-  member: CreatorMemberDetail; onClose: () => void; spaceSlug: string
+function RemoveMemberModal({ member, spaceName, spaceSlug, onClose, onRemoved }: {
+  member: CreatorMemberDetail
+  spaceName: string
+  spaceSlug: string
+  onClose: () => void
+  onRemoved: () => void
 }) {
+  const [removing, setRemoving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleRemove() {
+    setRemoving(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/members/${member.id}`),
+        { method: 'DELETE', credentials: 'include' },
+      )
+      if (res.ok) {
+        onRemoved()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(typeof body.detail === 'string' ? body.detail : 'Could not remove member. Please try again.')
+      }
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setRemoving(false)
+    }
+  }
+
   return (
-    <div className="rounded-2xl border border-border bg-white">
-      <div className="flex items-center justify-between border-b border-border px-5 py-4">
-        <h2 className="text-[15px] font-semibold text-navy-900">Member details</h2>
-        <button onClick={onClose}
-          className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-          aria-label="Close">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-            <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
-
-      <div className="space-y-5 px-5 py-5">
-        <div className="flex items-center gap-3">
-          <Avatar name={member.display_name} size={10} />
-          <div>
-            <p className="text-[15px] font-semibold text-navy-900">{member.display_name}</p>
-            <p className="mt-0.5 text-[12px] text-slate-500">{member.email}</p>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-white shadow-xl">
+        <div className="px-6 py-5">
+          <h3 className="text-[16px] font-semibold text-navy-900">
+            Remove from {spaceName}?
+          </h3>
+          <p className="mt-3 text-[14px] leading-relaxed text-black">
+            <span className="font-medium">{member.display_name}</span> will lose access to this
+            collective, including pathways and member content. Their Fresh Collective account will
+            not be deleted.
+          </p>
+          {error && (
+            <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+              {error}
+            </p>
+          )}
         </div>
-
-        <div className="flex flex-wrap gap-5">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
-            <span className="mt-1 inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-              style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}>
-              Active
-            </span>
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
-            <div className="mt-1"><RoleBadge role={member.space_role} /></div>
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Joined</p>
-            <p className="mt-1 text-[13px] text-navy-900">{formatDate(member.joined_at)}</p>
-          </div>
-        </div>
-
-        <div className="border-t border-border pt-4">
-          <MemberPassesSection member={member} spaceSlug={spaceSlug} />
-        </div>
-
-        <div className="border-t border-border pt-4">
-          <GatheringHistorySection member={member} spaceSlug={spaceSlug} />
-        </div>
-
-        <div className="border-t border-border pt-4">
-          <PathwayAccessSection member={member} spaceSlug={spaceSlug} />
+        <div className="flex gap-2 border-t border-border px-6 py-4">
+          <button
+            onClick={handleRemove}
+            disabled={removing}
+            className="flex-1 rounded-xl px-4 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ background: '#dc2626' }}
+          >
+            {removing ? 'Removing…' : 'Remove member'}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={removing}
+            className="flex-1 rounded-xl border border-border px-4 py-2.5 text-[14px] font-medium text-black hover:bg-slate-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     </div>
+  )
+}
+
+function MemberDetailPanel({ member, onClose, spaceSlug, spaceName, onMemberRemoved }: {
+  member: CreatorMemberDetail
+  onClose: () => void
+  spaceSlug: string
+  spaceName: string
+  onMemberRemoved: (userId: string) => void
+}) {
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [showMessage, setShowMessage]     = useState(false)
+
+  return (
+    <>
+      <div className="rounded-2xl border border-border bg-white">
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+          <h2 className="text-[15px] font-semibold text-navy-900">Member details</h2>
+          <button onClick={onClose}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Close">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-5 px-5 py-5">
+          <div className="flex items-center gap-3">
+            <Avatar name={member.display_name} size={10} />
+            <div>
+              <p className="text-[15px] font-semibold text-navy-900">{member.display_name}</p>
+              <p className="mt-0.5 text-[12px] text-black">{member.email}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-5">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-black">Status</p>
+              <span className="mt-1 inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}>
+                Active
+              </span>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-black">Role</p>
+              <div className="mt-1"><RoleBadge role={member.space_role} /></div>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-black">Joined</p>
+              <p className="mt-1 text-[13px] text-navy-900">{formatDate(member.joined_at)}</p>
+            </div>
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <MemberPassesSection member={member} spaceSlug={spaceSlug} />
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <GatheringHistorySection member={member} spaceSlug={spaceSlug} />
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <PathwayAccessSection member={member} spaceSlug={spaceSlug} />
+          </div>
+
+          {/* Message member */}
+          <div className="border-t border-border pt-4">
+            <button
+              onClick={() => setShowMessage(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-1.5 text-[12px] font-semibold text-black transition-colors hover:border-teal-300 hover:text-teal-700"
+            >
+              <svg width="13" height="11" viewBox="0 0 13 11" fill="none" aria-hidden="true">
+                <rect x="0.5" y="0.5" width="12" height="9" rx="1.5" stroke="currentColor"/>
+                <path d="M1 3l5.5 3.5L12 3" stroke="currentColor" strokeLinecap="round"/>
+              </svg>
+              Message member
+            </button>
+          </div>
+
+          {/* Remove member */}
+          <div className="border-t border-border pt-4">
+            <button
+              onClick={() => setConfirmRemove(true)}
+              className="text-[13px] font-medium text-red-500 transition-colors hover:text-red-700"
+            >
+              Remove from collective…
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {confirmRemove && (
+        <RemoveMemberModal
+          member={member}
+          spaceName={spaceName}
+          spaceSlug={spaceSlug}
+          onClose={() => setConfirmRemove(false)}
+          onRemoved={() => onMemberRemoved(member.id)}
+        />
+      )}
+
+      {showMessage && (
+        <DirectMessageModal
+          member={member}
+          spaceSlug={spaceSlug}
+          onClose={() => setShowMessage(false)}
+        />
+      )}
+    </>
   )
 }
 
@@ -1371,15 +1651,26 @@ function AddPersonModal({ spaceSlug, existingMemberEmails, existingInviteEmails,
   onClose: () => void
   onSuccess: () => void
 }) {
-  const [name, setName]   = useState('')
-  const [email, setEmail] = useState('')
-  const [role, setRole]   = useState('learner')
-  const [note, setNote]   = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState<string | null>(null)
-  const [result, setResult]   = useState<AddMemberResponse | null>(null)
+  const [firstName, setFirstName]         = useState('')
+  const [lastName, setLastName]           = useState('')
+  const [email, setEmail]                 = useState('')
+  const [role, setRole]                   = useState('learner')
+  const [note, setNote]                   = useState('')
+  const [paymentOptions, setPaymentOptions] = useState<{ id: string; name: string }[]>([])
+  const [paymentOptionId, setPaymentOptionId] = useState('')
+  const [paymentStatus, setPaymentStatus] = useState('unpaid')
+  const [loading, setLoading]             = useState(false)
+  const [error, setError]                 = useState<string | null>(null)
+  const [result, setResult]               = useState<AddMemberResponse | null>(null)
 
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+  useEffect(() => {
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/payment-options`), { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setPaymentOptions(Array.isArray(data) ? data.filter((o: { status?: string }) => o.status === 'published') : []))
+      .catch(() => {})
+  }, [spaceSlug])
 
   async function handleSubmit() {
     setError(null)
@@ -1394,7 +1685,15 @@ function AddPersonModal({ spaceSlug, existingMemberEmails, existingInviteEmails,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ email: trimmedEmail, name: name.trim() || null, role, note: note.trim() || null }),
+        body: JSON.stringify({
+          email: trimmedEmail,
+          first_name: firstName.trim() || null,
+          last_name: lastName.trim() || null,
+          role,
+          note: note.trim() || null,
+          payment_option_id: paymentOptionId || null,
+          payment_status: paymentStatus,
+        }),
       })
       const data: AddMemberResponse = await res.json()
       if (!res.ok) {
@@ -1411,31 +1710,36 @@ function AddPersonModal({ spaceSlug, existingMemberEmails, existingInviteEmails,
   }
 
   const resultStyles: Record<string, { icon: string; color: string; bg: string }> = {
-    added_as_member:       { icon: '✓', color: '#0f766e', bg: 'rgba(56,160,158,0.10)' },
-    invite_created:        { icon: '✉', color: '#0f766e', bg: 'rgba(56,160,158,0.10)' },
-    already_member:        { icon: '·', color: '#64748b', bg: 'rgba(148,163,184,0.12)' },
-    invite_already_pending:{ icon: '·', color: '#64748b', bg: 'rgba(148,163,184,0.12)' },
+    added_as_member:        { icon: '✓', color: '#0f766e', bg: 'rgba(56,160,158,0.10)' },
+    pending_invite_created: { icon: '✉', color: '#0f766e', bg: 'rgba(56,160,158,0.10)' },
+    invite_created:         { icon: '✉', color: '#0f766e', bg: 'rgba(56,160,158,0.10)' },
+    already_member:         { icon: '·', color: '#64748b', bg: 'rgba(148,163,184,0.12)' },
+    invite_already_pending: { icon: '·', color: '#64748b', bg: 'rgba(148,163,184,0.12)' },
+  }
+
+  const resultTitle: Record<string, string> = {
+    added_as_member:        'Added to collective',
+    pending_invite_created: 'Draft invitation created',
+    invite_created:         'Invitation created',
+    already_member:         'Already a member',
+    invite_already_pending: 'Invite already pending',
   }
 
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl">
+      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl" style={{ maxHeight: '90vh' }}>
         {result ? (
           <div className="py-4 text-center">
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full text-lg"
               style={{ background: resultStyles[result.result]?.bg, color: resultStyles[result.result]?.color }}>
               {resultStyles[result.result]?.icon}
             </div>
-            <p className="text-[16px] font-semibold text-navy-900">
-              {result.result === 'added_as_member' ? 'Added to collective' :
-               result.result === 'invite_created' ? 'Invitation created' :
-               result.result === 'already_member' ? 'Already a member' : 'Invite already pending'}
-            </p>
-            <p className="mt-2 text-[13px] leading-relaxed text-slate-500">{result.message}</p>
-            {result.result === 'invite_created' && (
-              <p className="mt-2 text-[11px] text-slate-400">
-                Share the invite link from the Pending invites section. Email sending coming soon.
+            <p className="text-[16px] font-semibold text-navy-900">{resultTitle[result.result] ?? result.result}</p>
+            <p className="mt-2 text-[13px] leading-relaxed text-black">{result.message}</p>
+            {(result.result === 'pending_invite_created' || result.result === 'invite_created') && (
+              <p className="mt-2 text-[11px] text-black">
+                Use &quot;Send invite&quot; in the Pending invites section to email them their invitation link.
               </p>
             )}
             <button onClick={onClose}
@@ -1447,7 +1751,7 @@ function AddPersonModal({ spaceSlug, existingMemberEmails, existingInviteEmails,
         ) : (
           <>
             <div className="mb-1 flex items-center justify-between">
-              <h2 className="text-[17px] font-semibold text-navy-900">Add person</h2>
+              <h2 className="text-[17px] font-semibold text-navy-900">Add member</h2>
               <button onClick={onClose}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 aria-label="Close">
@@ -1456,28 +1760,34 @@ function AddPersonModal({ spaceSlug, existingMemberEmails, existingInviteEmails,
                 </svg>
               </button>
             </div>
-            <p className="mb-5 text-[13px] text-slate-500">
-              Add an existing Fresh Collective member directly, or invite someone by email.
+            <p className="mb-5 text-[13px] text-black">
+              If they have an account, they&apos;ll be added immediately. Otherwise a draft invitation is created — no email sent until you click &quot;Send invite&quot;.
             </p>
             <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">First name</label>
+                  <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Jane"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">Last name</label>
+                  <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Smith"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400" />
+                </div>
+              </div>
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                  Email address <span className="font-normal text-slate-400">(required)</span>
+                <label className="mb-1 block text-[12px] font-semibold text-black">
+                  Email address <span className="font-normal text-red-400">*</span>
                 </label>
                 <input type="email" value={email} onChange={(e) => { setEmail(e.target.value); setError(null) }}
                   placeholder="jane@example.com"
                   className={`w-full rounded-lg border px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400 ${error ? 'border-red-300' : 'border-slate-200'}`} />
               </div>
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                  Name <span className="font-normal text-slate-400">(optional)</span>
-                </label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)}
-                  placeholder="Jane Smith"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400" />
-              </div>
-              <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">Role</label>
+                <label className="mb-1 block text-[12px] font-semibold text-black">Role</label>
                 <select value={role} onChange={(e) => setRole(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400">
                   <option value="learner">Member</option>
@@ -1485,9 +1795,29 @@ function AddPersonModal({ spaceSlug, existingMemberEmails, existingInviteEmails,
                   <option value="creator">Leader</option>
                 </select>
               </div>
+              {paymentOptions.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">Offer / plan</label>
+                  <select value={paymentOptionId} onChange={(e) => setPaymentOptionId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400">
+                    <option value="">None</option>
+                    {paymentOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                  Note <span className="font-normal text-slate-400">(optional)</span>
+                <label className="mb-1 block text-[12px] font-semibold text-black">Payment status</label>
+                <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400">
+                  <option value="unpaid">Unpaid</option>
+                  <option value="pending">Payment pending</option>
+                  <option value="paid">Paid</option>
+                  <option value="complimentary">Complimentary</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-[12px] font-semibold text-black">
+                  Note <span className="font-normal text-black">(optional)</span>
                 </label>
                 <textarea value={note} onChange={(e) => setNote(e.target.value)}
                   placeholder="Context about this person…"
@@ -1500,9 +1830,9 @@ function AddPersonModal({ spaceSlug, existingMemberEmails, existingInviteEmails,
               <button disabled={!email.trim() || loading} onClick={handleSubmit}
                 className="flex-1 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}>
-                {loading ? 'Adding…' : 'Add person'}
+                {loading ? 'Adding…' : 'Add member'}
               </button>
-              <button onClick={onClose} className="rounded-xl border border-border px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">
+              <button onClick={onClose} className="rounded-xl border border-border px-4 py-2.5 text-[13px] font-medium text-black hover:bg-slate-50">
                 Cancel
               </button>
             </div>
@@ -1545,8 +1875,8 @@ function AccessRequestRow({ request, spaceSlug, isLast, onResolved }: {
       <Avatar name={request.user_display_name} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-[14px] font-medium text-navy-900">{request.user_display_name}</p>
-        <p className="mt-0.5 truncate text-[12px] text-slate-500">{request.user_email}</p>
-        <p className="mt-0.5 text-[11px] text-slate-400">Requested {formatDate(request.created_at)}</p>
+        <p className="mt-0.5 truncate text-[12px] text-black">{request.user_email}</p>
+        <p className="mt-0.5 text-[11px] text-black">Requested {formatDate(request.created_at)}</p>
       </div>
       <div className="flex shrink-0 gap-2">
         <button onClick={() => act('approve')} disabled={approving || declining}
@@ -1555,7 +1885,7 @@ function AccessRequestRow({ request, spaceSlug, isLast, onResolved }: {
           {approving ? 'Approving…' : 'Approve'}
         </button>
         <button onClick={() => act('decline')} disabled={approving || declining}
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-medium text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40">
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-medium text-black hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40">
           {declining ? 'Declining…' : 'Decline'}
         </button>
       </div>
@@ -1568,10 +1898,12 @@ function AccessRequestRow({ request, spaceSlug, isLast, onResolved }: {
 // Pending invites section
 // ---------------------------------------------------------------------------
 
-function PendingInviteRow({ invite, spaceSlug, onCancelled }: {
+function PendingInviteRow({ invite: initialInvite, spaceSlug, onCancelled }: {
   invite: SpaceInvitation; spaceSlug: string; onCancelled: () => void
 }) {
+  const [invite, setInvite]         = useState(initialInvite)
   const [cancelling, setCancelling] = useState(false)
+  const [sending, setSending]       = useState(false)
   const [copied, setCopied]         = useState(false)
   const [error, setError]           = useState<string | null>(null)
   const [origin, setOrigin]         = useState('')
@@ -1579,6 +1911,7 @@ function PendingInviteRow({ invite, spaceSlug, onCancelled }: {
   useEffect(() => { setOrigin(window.location.origin) }, [])
 
   const inviteLink = origin ? `${origin}/invites/${invite.token}` : `/invites/${invite.token}`
+  const isDraft = !invite.sent_at
 
   async function handleCancel() {
     if (!confirm(`Cancel invitation to ${invite.email}?`)) return
@@ -1591,6 +1924,22 @@ function PendingInviteRow({ invite, spaceSlug, onCancelled }: {
       else setError('Could not cancel invitation.')
     } catch { setError('Something went wrong.') }
     finally { setCancelling(false) }
+  }
+
+  async function handleSend() {
+    setSending(true)
+    setError(null)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/invitations/${invite.id}/send`),
+        { method: 'POST', credentials: 'include' })
+      if (res.ok) {
+        const updated: SpaceInvitation = await res.json()
+        setInvite(updated)
+      } else {
+        setError('Could not send invitation.')
+      }
+    } catch { setError('Something went wrong.') }
+    finally { setSending(false) }
   }
 
   async function copyLink() {
@@ -1609,20 +1958,42 @@ function PendingInviteRow({ invite, spaceSlug, onCancelled }: {
         <Avatar name={displayName} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[14px] font-medium text-navy-900">{displayName}</p>
-          {invite.name && <p className="mt-0.5 truncate text-[12px] text-slate-500">{invite.email}</p>}
+          {invite.name && <p className="mt-0.5 truncate text-[12px] text-black">{invite.email}</p>}
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <RoleBadge role={invite.role} />
+            {invite.payment_status && invite.payment_status !== 'unpaid' && (
+              <PaymentStatusBadge status={invite.payment_status} />
+            )}
+            {isDraft ? (
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{ background: 'rgba(251,191,36,0.14)', color: '#92400e' }}>
+                Draft
+              </span>
+            ) : (
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}>
+                Sent {formatDate(invite.sent_at!)}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <RoleBadge role={invite.role} />
-          <span className="hidden text-[12px] text-slate-400 sm:inline">{formatDate(invite.created_at)}</span>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {isDraft && (
+            <button onClick={handleSend} disabled={sending}
+              className="rounded-lg px-3 py-1 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              style={{ background: '#38A09E' }}>
+              {sending ? 'Sending…' : 'Send invite'}
+            </button>
+          )}
+          <button onClick={handleCancel} disabled={cancelling}
+            className="rounded-lg border border-slate-200 px-3 py-1 text-[12px] font-medium text-black hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40">
+            {cancelling ? 'Cancelling…' : 'Cancel'}
+          </button>
         </div>
-        <button onClick={handleCancel} disabled={cancelling}
-          className="shrink-0 rounded-lg border border-slate-200 px-3 py-1 text-[12px] font-medium text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-40">
-          {cancelling ? 'Cancelling…' : 'Cancel'}
-        </button>
       </div>
       {origin && (
         <div className="mt-2.5 flex items-center gap-2 pl-12">
-          <span className="flex-1 truncate rounded-md border border-slate-100 bg-slate-50 px-2.5 py-1 font-mono text-[11px] text-slate-500 select-all">
+          <span className="flex-1 truncate rounded-md border border-slate-100 bg-slate-50 px-2.5 py-1 font-mono text-[11px] text-black select-all">
             {inviteLink}
           </span>
           <button onClick={copyLink}
@@ -1638,6 +2009,634 @@ function PendingInviteRow({ invite, spaceSlug, onCancelled }: {
 }
 
 // ---------------------------------------------------------------------------
+// Manual / Offline Members
+// ---------------------------------------------------------------------------
+
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  unpaid: 'Unpaid',
+  pending: 'Payment pending',
+  paid: 'Paid',
+  complimentary: 'Complimentary',
+}
+
+const PAYMENT_STATUS_COLORS: Record<string, { bg: string; color: string }> = {
+  unpaid:        { bg: 'rgba(148,163,184,0.14)', color: '#64748b' },
+  pending:       { bg: 'rgba(251,191,36,0.18)',  color: '#92400e' },
+  paid:          { bg: 'rgba(56,160,158,0.14)',  color: '#0f766e' },
+  complimentary: { bg: 'rgba(139,92,246,0.14)',  color: '#6d28d9' },
+}
+
+function StatusBadge({ status }: { status: ManualMember['status'] }) {
+  if (status === 'managed') return (
+    <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+      style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}>
+      Managed
+    </span>
+  )
+  if (status === 'invited') return (
+    <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+      style={{ background: 'rgba(251,191,36,0.16)', color: '#92400e' }}>
+      Invited
+    </span>
+  )
+  return (
+    <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+      style={{ background: 'rgba(148,163,184,0.16)', color: '#64748b' }}>
+      Offline
+    </span>
+  )
+}
+
+function PaymentStatusBadge({ status }: { status: string }) {
+  const c = PAYMENT_STATUS_COLORS[status] ?? PAYMENT_STATUS_COLORS.unpaid
+  return (
+    <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+      style={{ background: c.bg, color: c.color }}>
+      {PAYMENT_STATUS_LABELS[status] ?? status}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Managed member pathway access panel
+// ---------------------------------------------------------------------------
+
+function ManagedPathwaySection({ member, spaceSlug }: { member: ManualMember; spaceSlug: string }) {
+  const [items, setItems]             = useState<ManualMemberPathwayAccess[] | null>(null)
+  const [showGrant, setShowGrant]     = useState(false)
+  const [allPathways, setAllPathways] = useState<CreatorPathway[]>([])
+  const [grantSlug, setGrantSlug]     = useState('')
+  const [grantNotes, setGrantNotes]   = useState('')
+  const [granting, setGranting]       = useState(false)
+  const [grantError, setGrantError]   = useState<string | null>(null)
+  const [revoking, setRevoking]       = useState<string | null>(null)
+
+  function load() {
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/manual-members/${member.id}/pathway-access`), { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setItems(data))
+      .catch(() => setItems([]))
+  }
+
+  useEffect(() => { load() }, [member.id])
+
+  useEffect(() => {
+    if (showGrant && allPathways.length === 0) {
+      fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/pathways`), { credentials: 'include' })
+        .then(r => r.ok ? r.json() : [])
+        .then(data => {
+          setAllPathways(data.filter((p: CreatorPathway) => p.status === 'active'))
+          if (data.length > 0) setGrantSlug(data.filter((p: CreatorPathway) => p.status === 'active')[0]?.slug ?? '')
+        })
+        .catch(() => {})
+    }
+  }, [showGrant])
+
+  async function handleGrant() {
+    if (!grantSlug) return
+    setGranting(true)
+    setGrantError(null)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/manual-members/${member.id}/pathway-access`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ pathway_slug: grantSlug, notes: grantNotes.trim() || null }),
+      })
+      if (res.ok) {
+        setShowGrant(false)
+        setGrantNotes('')
+        load()
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setGrantError(typeof body.detail === 'string' ? body.detail : 'Could not grant access.')
+      }
+    } catch { setGrantError('Something went wrong.') }
+    finally { setGranting(false) }
+  }
+
+  async function handleRevoke(pathwayId: string) {
+    if (!confirm('Remove pathway access for this member?')) return
+    setRevoking(pathwayId)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/manual-members/${member.id}/pathway-access/${pathwayId}`), {
+        method: 'DELETE', credentials: 'include',
+      })
+      if (res.ok || res.status === 204) load()
+    } catch { /* ignore */ }
+    finally { setRevoking(null) }
+  }
+
+  const grantedIds = new Set(items?.map(i => i.pathway_id) ?? [])
+  const availablePathways = allPathways.filter(p => !grantedIds.has(p.id))
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-black">Pathway access</p>
+        <button onClick={() => setShowGrant(true)}
+          className="text-[11px] font-semibold text-teal-600 hover:text-teal-800">
+          + Grant access
+        </button>
+      </div>
+
+      {items === null ? (
+        <p className="text-[12px] text-black">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="text-[12px] text-black">No pathway access granted yet.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.map(item => (
+            <li key={item.grant_id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-[12px] font-medium text-navy-900">{item.pathway_title}</p>
+                {item.notes && <p className="truncate text-[11px] text-black">{item.notes}</p>}
+              </div>
+              <button onClick={() => handleRevoke(item.pathway_id)}
+                disabled={revoking === item.pathway_id}
+                className="shrink-0 text-[11px] text-red-400 hover:text-red-600 disabled:opacity-40">
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {showGrant && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setShowGrant(false)} />
+          <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl">
+            <h3 className="mb-3 text-[15px] font-semibold text-navy-900">Grant pathway access</h3>
+            {availablePathways.length === 0 ? (
+              <p className="text-[13px] text-black">All active pathways have already been granted.</p>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">Pathway</label>
+                  <select value={grantSlug} onChange={e => setGrantSlug(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400">
+                    {availablePathways.map(p => <option key={p.id} value={p.slug}>{p.title}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">Note <span className="font-normal text-black">(optional)</span></label>
+                  <input value={grantNotes} onChange={e => setGrantNotes(e.target.value)} placeholder="e.g. Included in EMBODY package"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-teal-400" />
+                </div>
+                {grantError && <p className="text-[12px] text-red-500">{grantError}</p>}
+                <div className="flex gap-2 pt-1">
+                  <button onClick={handleGrant} disabled={granting || !grantSlug}
+                    className="flex-1 rounded-xl py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+                    style={{ background: '#38A09E' }}>
+                    {granting ? 'Granting…' : 'Grant access'}
+                  </button>
+                  <button onClick={() => setShowGrant(false)}
+                    className="rounded-xl border border-border px-4 py-2 text-[12px] font-medium text-black hover:bg-slate-50">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Invite managed member (add email + create invitation link)
+// ---------------------------------------------------------------------------
+
+function InviteManagedMemberSection({ member, spaceSlug, onInvited }: {
+  member: ManualMember
+  spaceSlug: string
+  onInvited: (updated: ManualMember) => void
+}) {
+  const [email, setEmail]       = useState(member.email ?? '')
+  const [sending, setSending]   = useState(false)
+  const [error, setError]       = useState<string | null>(null)
+  const [done, setDone]         = useState(member.status === 'invited')
+  const [origin, setOrigin]     = useState('')
+
+  useEffect(() => { setOrigin(window.location.origin) }, [])
+
+  async function handleInvite() {
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed || !trimmed.includes('@')) { setError('Enter a valid email address.'); return }
+    setSending(true)
+    setError(null)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/manual-members/${member.id}/invite`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: trimmed }),
+      })
+      if (res.ok) {
+        const updated: ManualMember = await res.json()
+        setDone(true)
+        onInvited(updated)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(typeof body.detail === 'string' ? body.detail : 'Could not send invitation.')
+      }
+    } catch { setError('Something went wrong. Please try again.') }
+    finally { setSending(false) }
+  }
+
+  if (done) return (
+    <div className="rounded-lg border border-teal-100 bg-teal-50 px-3 py-2.5">
+      <p className="text-[12px] font-medium text-teal-700">Invitation created</p>
+      <p className="mt-0.5 text-[11px] text-teal-600">
+        An invitation link has been created for {member.email}. Share the invite link from the Pending Invites section above, or copy it from there.
+      </p>
+    </div>
+  )
+
+  return (
+    <div>
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-black">Invite to platform</p>
+      <p className="mb-2 text-[12px] text-black">
+        Add an email address and create an invitation link. No email is sent automatically — you can share the link directly.
+      </p>
+      <div className="flex gap-2">
+        <input type="email" value={email} onChange={e => { setEmail(e.target.value); setError(null) }}
+          placeholder="jane@example.com"
+          className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-teal-400" />
+        <button onClick={handleInvite} disabled={sending || !email.trim()}
+          className="shrink-0 rounded-xl px-3 py-2 text-[12px] font-semibold text-white disabled:opacity-50"
+          style={{ background: '#38A09E' }}>
+          {sending ? 'Creating…' : 'Create invite'}
+        </button>
+      </div>
+      {error && <p className="mt-1.5 text-[12px] text-red-500">{error}</p>}
+    </div>
+  )
+}
+
+function AddManualMemberModal({ spaceSlug, onClose, onCreated }: {
+  spaceSlug: string
+  onClose: () => void
+  onCreated: (m: ManualMember) => void
+}) {
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName]   = useState('')
+  const [email, setEmail]         = useState('')
+  const [phone, setPhone]         = useState('')
+  const [passLabel, setPassLabel] = useState('')
+  const [notes, setNotes]         = useState('')
+  const [loading, setLoading]     = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+
+  async function handleSubmit() {
+    if (!firstName.trim()) { setError('First name is required.'); return }
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/manual-members`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          first_name: firstName.trim(),
+          last_name: lastName.trim() || null,
+          email: email.trim() || null,
+          phone: phone.trim() || null,
+          pass_label: passLabel.trim() || null,
+          notes: notes.trim() || null,
+        }),
+      })
+      if (res.ok) {
+        const created: ManualMember = await res.json()
+        onCreated(created)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(typeof body.detail === 'string' ? body.detail : 'Could not add member.')
+      }
+    } catch { setError('Something went wrong. Please try again.') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-6 shadow-xl overflow-y-auto max-h-[90vh]">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-[17px] font-semibold text-navy-900">Add offline member</h2>
+            <p className="mt-0.5 text-[12px] text-black">Name only required. You can assign passes, payment status, and pathway access after adding.</p>
+          </div>
+          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="mb-1 block text-[12px] font-semibold text-black">
+                First name <span className="text-red-400">*</span>
+              </label>
+              <input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="Jane"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400" />
+            </div>
+            <div className="flex-1">
+              <label className="mb-1 block text-[12px] font-semibold text-black">
+                Last name <span className="font-normal text-black">(optional)</span>
+              </label>
+              <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="Smith"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400" />
+            </div>
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-semibold text-black">
+              Email <span className="font-normal text-black">(optional — no invite will be sent)</span>
+            </label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@example.com"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-semibold text-black">
+              Phone <span className="font-normal text-black">(optional)</span>
+            </label>
+            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+61 400 000 000"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-semibold text-black">
+              Member pass / option <span className="font-normal text-black">(optional)</span>
+            </label>
+            <input value={passLabel} onChange={e => setPassLabel(e.target.value)} placeholder="e.g. EMBODY Monthly, Full Access…"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-semibold text-black">
+              Notes <span className="font-normal text-black">(optional)</span>
+            </label>
+            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="e.g. Current client, joined via referral…"
+              className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none focus:border-teal-400" />
+          </div>
+          {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleSubmit} disabled={loading || !firstName.trim()}
+              className="flex-1 rounded-xl py-2.5 text-[14px] font-semibold text-white disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}>
+              {loading ? 'Adding…' : 'Add offline member'}
+            </button>
+            <button onClick={onClose} className="rounded-xl border border-border px-4 py-2.5 text-[13px] font-medium text-black hover:bg-slate-50">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function EditManualMemberPanel({ member: initialMember, spaceSlug, onClose, onUpdated, onDeleted }: {
+  member: ManualMember
+  spaceSlug: string
+  onClose: () => void
+  onUpdated: (m: ManualMember) => void
+  onDeleted: (id: string) => void
+}) {
+  const [member, setMember]       = useState(initialMember)
+  const [firstName, setFirstName] = useState(member.first_name)
+  const [lastName, setLastName]   = useState(member.last_name ?? '')
+  const [phone, setPhone]         = useState(member.phone ?? '')
+  const [passLabel, setPassLabel] = useState(member.pass_label ?? '')
+  const [notes, setNotes]         = useState(member.notes ?? '')
+  const [paymentStatus, setPaymentStatus] = useState(member.payment_status)
+  const [paymentOptions, setPaymentOptions] = useState<{ id: string; name: string }[]>([])
+  const [selectedOptionId, setSelectedOptionId] = useState(member.payment_option_id ?? '')
+  const [saving, setSaving]       = useState(false)
+  const [promoting, setPromoting] = useState(false)
+  const [deleting, setDeleting]   = useState(false)
+  const [error, setError]         = useState<string | null>(null)
+
+  const isManaged = member.status === 'managed' || member.status === 'invited'
+
+  useEffect(() => {
+    if (isManaged) {
+      fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/payment-options`), { credentials: 'include' })
+        .then(r => r.ok ? r.json() : [])
+        .then((data: { id: string; name: string; status: string }[]) =>
+          setPaymentOptions(data.filter(o => o.status === 'published'))
+        )
+        .catch(() => {})
+    }
+  }, [isManaged, spaceSlug])
+
+  async function handleSave() {
+    if (!firstName.trim()) { setError('First name is required.'); return }
+    setError(null)
+    setSaving(true)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/manual-members/${member.id}`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          first_name: firstName.trim(),
+          last_name: lastName.trim() || null,
+          phone: phone.trim() || null,
+          pass_label: passLabel.trim() || null,
+          notes: notes.trim() || null,
+          ...(isManaged ? {
+            payment_option_id: selectedOptionId || null,
+            payment_status: paymentStatus,
+          } : {}),
+        }),
+      })
+      if (res.ok) {
+        const updated: ManualMember = await res.json()
+        setMember(updated)
+        onUpdated(updated)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(typeof body.detail === 'string' ? body.detail : 'Could not save changes.')
+      }
+    } catch { setError('Something went wrong. Please try again.') }
+    finally { setSaving(false) }
+  }
+
+  async function handlePromote() {
+    setPromoting(true)
+    setError(null)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/manual-members/${member.id}/promote`), {
+        method: 'POST', credentials: 'include',
+      })
+      if (res.ok) {
+        const updated: ManualMember = await res.json()
+        setMember(updated)
+        onUpdated(updated)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(typeof body.detail === 'string' ? body.detail : 'Could not promote member.')
+      }
+    } catch { setError('Something went wrong.') }
+    finally { setPromoting(false) }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Remove ${member.display_name} from this collective? This cannot be undone.`)) return
+    setDeleting(true)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/manual-members/${member.id}`), {
+        method: 'DELETE', credentials: 'include',
+      })
+      if (res.ok || res.status === 204) {
+        onDeleted(member.id)
+      } else {
+        setError('Could not remove member.')
+      }
+    } catch { setError('Something went wrong.') }
+    finally { setDeleting(false) }
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-white">
+      <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div>
+          <h2 className="text-[15px] font-semibold text-navy-900">{member.display_name}</h2>
+          <div className="mt-1 flex items-center gap-1.5">
+            <StatusBadge status={member.status} />
+            {member.status === 'offline' && (
+              <span className="text-[11px] text-black">Not yet on platform</span>
+            )}
+            {member.status === 'managed' && (
+              <span className="text-[11px] text-black">Managed — no login yet</span>
+            )}
+            {member.status === 'invited' && (
+              <span className="text-[11px] text-black">Invitation pending</span>
+            )}
+          </div>
+        </div>
+        <button onClick={onClose}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="space-y-4 px-5 py-5">
+        {/* Core fields */}
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-black">First name</label>
+            <input value={firstName} onChange={e => setFirstName(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400" />
+          </div>
+          <div className="flex-1">
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-black">Last name</label>
+            <input value={lastName} onChange={e => setLastName(e.target.value)} placeholder="—"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 outline-none focus:border-teal-400" />
+          </div>
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-black">Phone</label>
+          <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="—"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 outline-none focus:border-teal-400" />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-black">Notes</label>
+          <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="—"
+            className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 outline-none focus:border-teal-400" />
+        </div>
+
+        {/* Managed-only: pass assignment + payment status */}
+        {isManaged && (
+          <>
+            <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 space-y-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-black">
+                  Offer / pass
+                </label>
+                {paymentOptions.length > 0 ? (
+                  <select value={selectedOptionId} onChange={e => setSelectedOptionId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400">
+                    <option value="">— None assigned —</option>
+                    {paymentOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                ) : (
+                  <div>
+                    <input value={passLabel} onChange={e => setPassLabel(e.target.value)} placeholder="e.g. EMBODY Monthly"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 outline-none focus:border-teal-400" />
+                    <p className="mt-1 text-[11px] text-black">No published offers yet — enter a label manually.</p>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-black">Payment status</label>
+                <select value={paymentStatus} onChange={e => setPaymentStatus(e.target.value as ManualMember['payment_status'])}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 outline-none focus:border-teal-400">
+                  <option value="unpaid">Unpaid</option>
+                  <option value="pending">Payment pending</option>
+                  <option value="paid">Paid</option>
+                  <option value="complimentary">Complimentary</option>
+                </select>
+              </div>
+            </div>
+          </>
+        )}
+
+        {error && <p className="text-[12px] text-red-500">{error}</p>}
+        <div className="flex gap-2">
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 rounded-xl py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+            style={{ background: '#38A09E' }}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+
+        {/* Promote to managed (offline only) */}
+        {member.status === 'offline' && (
+          <div className="rounded-xl border border-teal-100 bg-teal-50/60 p-3">
+            <p className="mb-1.5 text-[12px] font-semibold text-teal-800">Promote to managed member</p>
+            <p className="mb-2 text-[11px] text-black">
+              Unlock pass assignment, payment tracking, and pathway access. No email is sent and no login is created.
+            </p>
+            <button onClick={handlePromote} disabled={promoting}
+              className="rounded-lg px-3 py-1.5 text-[12px] font-semibold text-teal-700 ring-1 ring-teal-300 hover:bg-teal-100 disabled:opacity-40">
+              {promoting ? 'Promoting…' : 'Promote to managed member'}
+            </button>
+          </div>
+        )}
+
+        {/* Managed: pathway access */}
+        {isManaged && (
+          <div className="border-t border-border pt-4">
+            <ManagedPathwaySection member={member} spaceSlug={spaceSlug} />
+          </div>
+        )}
+
+        {/* Managed: invite to platform */}
+        {(member.status === 'managed' || member.status === 'invited') && (
+          <div className="border-t border-border pt-4">
+            <InviteManagedMemberSection
+              member={member}
+              spaceSlug={spaceSlug}
+              onInvited={(updated) => { setMember(updated); onUpdated(updated) }}
+            />
+          </div>
+        )}
+
+        <div className="border-t border-border pt-4">
+          <button onClick={handleDelete} disabled={deleting}
+            className="text-[13px] font-medium text-red-500 transition-colors hover:text-red-700 disabled:opacity-40">
+            {deleting ? 'Removing…' : 'Remove from collective…'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -1645,21 +2644,30 @@ interface Props {
   members:        CreatorMemberDetail[]
   invitations:    SpaceInvitation[]
   accessRequests: AccessRequest[]
+  manualMembers:  ManualMember[]
   spaceName:      string
   spaceSlug:      string
   spaceIsPublic:  boolean
 }
 
-export default function PeopleClient({ members, invitations, accessRequests: initialAccessRequests, spaceName, spaceSlug, spaceIsPublic }: Props) {
+export default function PeopleClient({ members: initialMembers, invitations, accessRequests: initialAccessRequests, manualMembers: initialManualMembers, spaceName, spaceSlug, spaceIsPublic }: Props) {
   const router = useRouter()
-  const [addPersonOpen, setAddPersonOpen]       = useState(false)
-  const [selectedMember, setSelectedMember]     = useState<CreatorMemberDetail | null>(null)
-  const [search, setSearch]                     = useState('')
-  const [accessRequests, setAccessRequests]     = useState<AccessRequest[]>(initialAccessRequests)
+  const [membersList, setMembersList]                   = useState<CreatorMemberDetail[]>(initialMembers)
+  const [manualMembersList, setManualMembersList]       = useState<ManualMember[]>(initialManualMembers)
+  const [addPersonOpen, setAddPersonOpen]               = useState(false)
+  const [selectedMember, setSelectedMember]             = useState<CreatorMemberDetail | null>(null)
+  const [selectedManualMember, setSelectedManualMember] = useState<ManualMember | null>(null)
+  const [search, setSearch]                             = useState('')
+  const [accessRequests, setAccessRequests]             = useState<AccessRequest[]>(initialAccessRequests)
+
+  function handleMemberRemoved(userId: string) {
+    setMembersList((prev) => prev.filter((m) => m.id !== userId))
+    setSelectedMember(null)
+  }
 
   const existingMemberEmails = useMemo(
-    () => new Set(members.map((m) => m.email.toLowerCase())),
-    [members],
+    () => new Set(membersList.map((m) => m.email.toLowerCase())),
+    [membersList],
   )
   const existingInviteEmails = useMemo(
     () => new Set(invitations.map((i) => i.email.toLowerCase())),
@@ -1667,12 +2675,22 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
   )
 
   const filteredMembers = useMemo(() => {
-    if (!search.trim()) return members
+    if (!search.trim()) return membersList
     const q = search.trim().toLowerCase()
-    return members.filter((m) =>
+    return membersList.filter((m) =>
       m.display_name.toLowerCase().includes(q) || m.email.toLowerCase().includes(q)
     )
-  }, [members, search])
+  }, [membersList, search])
+
+  const filteredManualMembers = useMemo(() => {
+    if (!search.trim()) return manualMembersList
+    const q = search.trim().toLowerCase()
+    return manualMembersList.filter((m) =>
+      m.display_name.toLowerCase().includes(q) ||
+      (m.email ?? '').toLowerCase().includes(q) ||
+      (m.pass_label ?? '').toLowerCase().includes(q)
+    )
+  }, [manualMembersList, search])
 
   function handleAddSuccess() {
     router.refresh()
@@ -1684,8 +2702,8 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
   }
 
   const now = new Date()
-  const memberOnlyCount  = members.filter((m) => m.space_role === 'learner').length
-  const leaderCount      = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
+  const memberOnlyCount  = membersList.filter((m) => m.space_role === 'learner').length
+  const leaderCount      = membersList.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
 
   return (
     <div className="w-full max-w-[1100px] space-y-8 px-8 py-8 md:px-10 md:py-10">
@@ -1697,33 +2715,36 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
             {spaceName}
           </p>
           <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">People</h1>
-          <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
+          <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#000000' }}>
             Manage members, invitations, and access for this collective.
           </p>
         </div>
-        <button
-          onClick={() => setAddPersonOpen(true)}
-          className="mt-1 inline-flex shrink-0 items-center gap-2 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          Add person
-        </button>
+        <div className="mt-1 flex shrink-0 flex-col gap-2 sm:flex-row">
+          <button
+            onClick={() => setAddPersonOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            Add member
+          </button>
+        </div>
       </div>
 
       {/* ── Stats ── */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
         {[
-          { label: 'Active people',   value: members.length },
+          { label: 'Active people',   value: membersList.length },
           { label: 'Members',         value: memberOnlyCount },
           { label: 'Leaders',         value: leaderCount },
           { label: 'Pending invites', value: invitations.length },
+          { label: 'Offline / managed', value: manualMembersList.length },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-xl border border-border bg-white p-4">
             <p className="font-serif text-2xl text-navy-900">{value}</p>
-            <p className="mt-0.5 text-[13px] text-slate-500">{label}</p>
+            <p className="mt-0.5 text-[13px] text-black">{label}</p>
           </div>
         ))}
       </div>
@@ -1737,8 +2758,8 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
         <div className="rounded-2xl border border-border bg-white">
           {accessRequests.length === 0 ? (
             <div className="px-6 py-10 text-center">
-              <p className="text-[14px] font-medium text-slate-500">No pending access requests.</p>
-              <p className="mt-1 text-[13px] text-slate-400">
+              <p className="text-[14px] font-medium text-black">No pending access requests.</p>
+              <p className="mt-1 text-[13px] text-black">
                 When someone requests to join a private collective, their request appears here.
               </p>
             </div>
@@ -1759,8 +2780,8 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
         <div className="rounded-2xl border border-border bg-white">
           {invitations.length === 0 ? (
             <div className="px-6 py-10 text-center">
-              <p className="text-[14px] font-medium text-slate-500">No pending invites.</p>
-              <p className="mt-1 text-[13px] text-slate-400">
+              <p className="text-[14px] font-medium text-black">No pending invites.</p>
+              <p className="mt-1 text-[13px] text-black">
                 Invites you create will appear here until the person joins.
               </p>
             </div>
@@ -1774,10 +2795,98 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
         </div>
       </section>
 
+      {/* ── Offline / manual members ── */}
+      <section>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <SectionHeading title="Offline &amp; managed members" count={manualMembersList.length} />
+        </div>
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+          <div className="min-w-0 flex-1 rounded-2xl border border-border bg-white">
+            {filteredManualMembers.length === 0 ? (
+              <div className="px-6 py-10 text-center">
+                {manualMembersList.length === 0 ? (
+                  <>
+                    <p className="mb-1 text-[15px] font-semibold text-navy-900">No legacy offline members.</p>
+                    <p className="text-[13px] text-black">
+                      Use &quot;Add member&quot; to add new clients — they&apos;ll appear in Pending invites.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[14px] text-black">No members match your search.</p>
+                )}
+              </div>
+            ) : (
+              <ul>
+                {filteredManualMembers.map((m, i) => {
+                  const isLast = i === filteredManualMembers.length - 1
+                  const isSelected = selectedManualMember?.id === m.id
+                  const offerLabel = m.payment_option_name ?? m.pass_label
+                  return (
+                    <li key={m.id}>
+                      <button
+                        onClick={() => {
+                          setSelectedManualMember(isSelected ? null : m)
+                          setSelectedMember(null)
+                        }}
+                        className={`w-full cursor-pointer text-left transition-colors ${!isLast ? 'border-b border-border' : ''} ${isSelected ? 'bg-slate-50' : 'hover:bg-slate-50/60'}`}
+                        style={isSelected ? { borderLeft: '2px solid #94a3b8' } : undefined}
+                      >
+                        <div className="flex items-center gap-4 px-5 py-4">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                            style={{ background: 'rgba(148,163,184,0.15)', color: '#64748b' }}>
+                            {initials(m.display_name)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[14px] font-medium text-navy-900">{m.display_name}</p>
+                            <p className="mt-0.5 truncate text-[12px] text-black">
+                              {m.email ?? (m.phone ?? 'No contact info')}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap items-center gap-2">
+                            {offerLabel && (
+                              <span className="hidden rounded-full px-2 py-0.5 text-[10px] font-medium sm:inline"
+                                style={{ background: 'rgba(56,160,158,0.09)', color: '#0f766e' }}>
+                                {offerLabel}
+                              </span>
+                            )}
+                            {(m.status === 'managed' || m.status === 'invited') && m.payment_status !== 'unpaid' && (
+                              <PaymentStatusBadge status={m.payment_status} />
+                            )}
+                            <StatusBadge status={m.status} />
+                          </div>
+                        </div>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          {selectedManualMember && (
+            <div className="w-full xl:w-[360px] xl:shrink-0">
+              <EditManualMemberPanel
+                member={selectedManualMember}
+                spaceSlug={spaceSlug}
+                onClose={() => setSelectedManualMember(null)}
+                onUpdated={(updated) => {
+                  setManualMembersList(prev => prev.map(m => m.id === updated.id ? updated : m))
+                  setSelectedManualMember(updated)
+                }}
+                onDeleted={(id) => {
+                  setManualMembersList(prev => prev.filter(m => m.id !== id))
+                  setSelectedManualMember(null)
+                }}
+              />
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* ── Current people ── */}
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <SectionHeading title="Current people" count={members.length} />
+          <SectionHeading title="Current people" count={membersList.length} />
           <input
             type="text"
             placeholder="Search by name or email…"
@@ -1792,13 +2901,13 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
           <div className="min-w-0 flex-1 rounded-2xl border border-border bg-white">
             {filteredMembers.length === 0 ? (
               <div className="px-6 py-10 text-center">
-                {members.length === 0 ? (
+                {membersList.length === 0 ? (
                   <>
                     <p className="mb-1 text-[15px] font-semibold text-navy-900">No members yet.</p>
-                    <p className="text-[13px] text-slate-400">Add your first person to get started.</p>
+                    <p className="text-[13px] text-black">Add your first person to get started.</p>
                   </>
                 ) : (
-                  <p className="text-[14px] text-slate-400">No members match your search.</p>
+                  <p className="text-[14px] text-black">No members match your search.</p>
                 )}
               </div>
             ) : (
@@ -1817,11 +2926,11 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
                           <Avatar name={member.display_name} />
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-[14px] font-medium text-navy-900">{member.display_name}</p>
-                            <p className="mt-0.5 truncate text-[12px] text-slate-500">{member.email}</p>
+                            <p className="mt-0.5 truncate text-[12px] text-black">{member.email}</p>
                           </div>
                           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                             <RoleBadge role={member.space_role} />
-                            <span className="hidden text-[12px] text-slate-400 sm:inline">{formatDate(member.joined_at)}</span>
+                            <span className="hidden text-[12px] text-black sm:inline">{formatDate(member.joined_at)}</span>
                           </div>
                         </div>
                       </button>
@@ -1835,13 +2944,19 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
           {/* Detail panel */}
           {selectedMember && (
             <div className="w-full xl:w-[360px] xl:shrink-0">
-              <MemberDetailPanel member={selectedMember} onClose={() => setSelectedMember(null)} spaceSlug={spaceSlug} />
+              <MemberDetailPanel
+                member={selectedMember}
+                onClose={() => setSelectedMember(null)}
+                spaceSlug={spaceSlug}
+                spaceName={spaceName}
+                onMemberRemoved={handleMemberRemoved}
+              />
             </div>
           )}
         </div>
       </section>
 
-      <p className="text-[13px] text-slate-500">
+      <p className="text-[13px] text-black">
         <span className="font-medium">Private to creator admins.</span>{' '}
         Use member information respectfully and only for managing this collective.
       </p>
@@ -1855,6 +2970,7 @@ export default function PeopleClient({ members, invitations, accessRequests: ini
           onSuccess={handleAddSuccess}
         />
       )}
+
     </div>
   )
 }

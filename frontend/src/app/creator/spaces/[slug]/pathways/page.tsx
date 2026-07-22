@@ -21,7 +21,7 @@ export default async function CreatorPathwaysPage({ params }: { params: Promise<
         <div>
           <div className="mb-2 h-px w-6 bg-gold-400" />
           <h1 className="font-serif text-2xl text-navy-900">Pathways</h1>
-          <p className="mt-1 text-sm text-slate-400">
+          <p className="mt-1 text-sm text-black">
             {pathways.length === 0 ? 'No pathways yet.' : `${pathways.length} pathway${pathways.length !== 1 ? 's' : ''}`}
           </p>
         </div>
@@ -31,7 +31,7 @@ export default async function CreatorPathwaysPage({ params }: { params: Promise<
       {pathways.length === 0 ? (
         <div className="rounded-xl border border-border bg-surface px-8 py-10 text-center">
           <p className="font-serif text-lg text-navy-700">No pathways yet</p>
-          <p className="mt-1 text-sm text-slate-400">Create your first pathway to start building the learning journey.</p>
+          <p className="mt-1 text-sm text-black">Create your first pathway to start building the learning journey.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -39,10 +39,10 @@ export default async function CreatorPathwaysPage({ params }: { params: Promise<
             const st = STATUS_LABELS[pathway.status] ?? STATUS_LABELS.draft
             return (
               <div key={pathway.id} className="flex items-center gap-4 rounded-xl border border-border bg-surface px-5 py-4">
-                <span className="w-5 shrink-0 text-center text-sm text-slate-300">{i + 1}</span>
+                <span className="w-5 shrink-0 text-center text-sm text-black">{i + 1}</span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-navy-900">{pathway.title}</p>
-                  <p className="text-xs text-slate-400">{pathway.step_count} step{pathway.step_count !== 1 ? 's' : ''}</p>
+                  <p className="text-xs text-black">{pathway.step_count} step{pathway.step_count !== 1 ? 's' : ''}</p>
                 </div>
                 <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium ${st.color}`}>
                   {st.label}

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Button from '@/components/ui/Button'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
 
 function getSafeRedirect(next?: string): string {
@@ -12,15 +13,23 @@ function getSafeRedirect(next?: string): string {
   return '/onboarding'
 }
 
-type CheckoutContext = {
-  pathwayTitle: string
-  optionName: string | null
-  optionDescription: string | null
-  priceLabel: string | null
-}
+type CheckoutContext =
+  | {
+      kind: 'pathway'
+      pathwayTitle: string
+      optionName: string | null
+      optionDescription: string | null
+      priceLabel: string | null
+    }
+  | { kind: 'gathering'; gatheringTitle: string; priceLabel: string | null }
 
 function buildSignupSubcopy(ctx: CheckoutContext): string {
   const tail = ' Create a free account so we can save your access and connect your payment to your profile.'
+  if (ctx.kind === 'gathering') {
+    const price = ctx.priceLabel ? ` for ${ctx.priceLabel}` : ''
+    return `You're buying a ticket to ${ctx.gatheringTitle}${price}.${tail}`
+  }
+  // pathway
   if (ctx.optionName) {
     const desc = ctx.optionDescription ? ` — ${ctx.optionDescription}` : ''
     const price = ctx.priceLabel ? ` for ${ctx.priceLabel}` : ''
@@ -76,39 +85,50 @@ export default function SignupForm({
     }
   }
 
+  const loginHref = nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : '/login'
+
   return (
     <div
-      className="w-full max-w-sm rounded-xl border border-border bg-surface p-8 md:p-10"
-      style={{ boxShadow: 'var(--fc-shadow-md)' }}
+      className="w-full max-w-[440px] rounded-2xl bg-white p-8 md:p-10"
+      style={{
+        boxShadow: '0 24px 60px rgba(5, 11, 20, 0.35), 0 2px 8px rgba(5, 11, 20, 0.20)',
+      }}
     >
-      <div className="mb-8">
-        <div className="mb-5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand/fresh-collective-logo-navy-gold-white.png"
-            alt="Fresh Collective"
-            style={{ height: '34px', width: 'auto' }}
-          />
-        </div>
+      {/* Brand mark — matches the login card exactly. */}
+      <div className="mb-7 flex justify-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/fresh-collective-logo-navy-gold-white.png"
+          alt="Fresh Collective"
+          style={{ height: '44px', width: 'auto' }}
+        />
+      </div>
+
+      <div className="mb-7 text-center">
         {checkoutContext ? (
           <>
-            <h1 className="mb-2 font-serif text-3xl text-navy-900">Create your account to continue</h1>
-            <p className="mb-3 text-sm leading-relaxed text-[#718096]">
+            <h1 className="mb-2 font-serif text-[26px] leading-tight text-navy-900">
+              {checkoutContext.kind === 'gathering'
+                ? 'Create an account to continue to ticket checkout'
+                : 'Create your account to continue'}
+            </h1>
+            <p className="text-sm leading-relaxed" style={{ color: '#5A6B7D' }}>
               {buildSignupSubcopy(checkoutContext)}
             </p>
           </>
         ) : (
-          <h1 className="mb-2 font-serif text-3xl text-navy-900">Create your account.</h1>
+          <>
+            <h1 className="mb-2 font-serif text-[26px] leading-tight text-navy-900">
+              Create your account
+            </h1>
+            <p
+              className="text-[14px] italic leading-relaxed"
+              style={{ color: '#5A6B7D', fontFamily: 'Georgia, serif' }}
+            >
+              Your world begins here.
+            </p>
+          </>
         )}
-        <p className="text-sm text-[#718096]">
-          Already have an account?{' '}
-          <Link
-            href={nextUrl ? `/login?next=${encodeURIComponent(nextUrl)}` : '/login'}
-            className="text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"
-          >
-            Log in
-          </Link>
-        </p>
       </div>
 
       {error && (
@@ -155,17 +175,16 @@ export default function SignupForm({
           <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-navy-900">
             Password
           </label>
-          <input
+          <PasswordInput
             id="password"
             name="password"
-            type="password"
             autoComplete="new-password"
             required
             minLength={8}
             placeholder="At least 8 characters"
             className="w-full rounded-lg border border-border bg-surface px-4 py-3 text-sm text-navy-900 placeholder-[#718096] outline-none transition-colors focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
           />
-          <p className="mt-1.5 text-xs text-[#718096]">Minimum 8 characters.</p>
+          <p className="mt-1.5 text-xs" style={{ color: '#718096' }}>Minimum 8 characters.</p>
         </div>
 
         <Button type="submit" variant="primary" size="md" className="w-full" disabled={loading}>
@@ -179,6 +198,17 @@ export default function SignupForm({
           )}
         </Button>
       </form>
+
+      {/* Account-switch link — mirrors the login card's "New to FC?" line. */}
+      <p className="mt-6 text-center text-sm" style={{ color: '#5A6B7D' }}>
+        Already have an account?{' '}
+        <Link
+          href={loginHref}
+          className="font-medium text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"
+        >
+          Log in
+        </Link>
+      </p>
     </div>
   )
 }

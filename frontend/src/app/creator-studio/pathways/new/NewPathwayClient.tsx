@@ -52,7 +52,7 @@ function AccessPricingSection({
 
   return (
     <div>
-      <label className="mb-2 block text-[12px] font-semibold text-slate-600">
+      <label className="mb-2 block text-[12px] font-semibold text-black">
         Access and pricing
       </label>
       <div className="space-y-2">
@@ -81,7 +81,7 @@ function AccessPricingSection({
                 />
                 <div>
                   <p className="text-[14px] font-semibold text-navy-900">{opt.label}</p>
-                  <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-black">
                     {opt.description}
                   </p>
                 </div>
@@ -95,11 +95,11 @@ function AccessPricingSection({
       {isPaid && (
         <div className="mt-3 flex gap-3">
           <div className="flex-1">
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">
+            <label className="mb-1 block text-[12px] font-semibold text-black">
               {accessType === 'subscription' ? 'Monthly price' : 'Price'}
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-black">
                 $
               </span>
               <input
@@ -119,7 +119,7 @@ function AccessPricingSection({
             )}
           </div>
           <div className="w-28">
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Currency</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Currency</label>
             <select
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
@@ -137,7 +137,7 @@ function AccessPricingSection({
 
       {/* TODO: Connect pathway pricing to payment/checkout flow when Stripe is wired. */}
       {isPaid && (
-        <p className="mt-2 text-[11px] text-slate-400">
+        <p className="mt-2 text-[11px] text-black">
           Pricing is saved for configuration. Payment processing will be connected when Stripe is set up.
         </p>
       )}
@@ -161,6 +161,7 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
   const [loading, setLoading]           = useState(false)
   const [error, setError]               = useState<string | null>(null)
   const [priceError, setPriceError]     = useState<string | null>(null)
+  const [createChannel, setCreateChannel] = useState(true)
 
   const isPaid = accessType === 'one_time' || accessType === 'subscription'
 
@@ -206,6 +207,7 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
           price_cents: priceCents,
           currency: isPaid ? currency : null,
           billing_interval: accessType === 'subscription' ? 'month' : null,
+          create_channel: createChannel,
         }),
       })
 
@@ -233,8 +235,8 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
 
       {/* Title */}
       <div>
-        <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-          Pathway title <span className="font-normal text-slate-400">(required)</span>
+        <label className="mb-1 block text-[12px] font-semibold text-black">
+          Pathway title <span className="font-normal text-black">(required)</span>
         </label>
         <input
           type="text"
@@ -249,9 +251,9 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
 
       {/* Short description */}
       <div>
-        <label className="mb-1 block text-[12px] font-semibold text-slate-600">
+        <label className="mb-1 block text-[12px] font-semibold text-black">
           Short description{' '}
-          <span className="font-normal text-slate-400">(optional)</span>
+          <span className="font-normal text-black">(optional)</span>
         </label>
         <input
           type="text"
@@ -264,9 +266,9 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
 
       {/* What will people practice? */}
       <div>
-        <label className="mb-1 block text-[12px] font-semibold text-slate-600">
+        <label className="mb-1 block text-[12px] font-semibold text-black">
           What will people practice?{' '}
-          <span className="font-normal text-slate-400">(optional)</span>
+          <span className="font-normal text-black">(optional)</span>
         </label>
         <textarea
           value={practiceBody}
@@ -279,7 +281,7 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
 
       {/* Status */}
       <div>
-        <label className="mb-1 block text-[12px] font-semibold text-slate-600">Status</label>
+        <label className="mb-1 block text-[12px] font-semibold text-black">Status</label>
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value)}
@@ -289,6 +291,30 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
           <option value="active">Published</option>
           <option value="coming_soon">Coming soon</option>
         </select>
+      </div>
+
+      {/* Conversation channel */}
+      <div
+        className="rounded-xl px-4 py-3"
+        style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.20)' }}
+      >
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={createChannel}
+            onChange={(e) => setCreateChannel(e.target.checked)}
+            className="mt-0.5 h-4 w-4 accent-teal-500"
+          />
+          <div>
+            <p className="text-[13.5px] font-semibold text-navy-900">
+              🛤 Create pathway channel
+            </p>
+            <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+              Adds a Conversations channel just for members completing this
+              pathway. Enrollees are joined automatically.
+            </p>
+          </div>
+        </label>
       </div>
 
       {/* Access and pricing */}
@@ -312,7 +338,7 @@ export default function NewPathwayClient({ spaceSlug }: { spaceSlug: string }) {
         <button
           type="button"
           onClick={() => router.push('/creator-studio/pathways')}
-          className="text-[14px] text-slate-500 transition-colors hover:text-navy-900"
+          className="text-[14px] text-black transition-colors hover:text-navy-900"
         >
           ← Back to Pathways
         </button>

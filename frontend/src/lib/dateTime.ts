@@ -76,3 +76,47 @@ export function formatDisplayDate(iso: string): string {
 export function formatNumericDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
+
+/**
+ * Gentle countdown label for an upcoming Gathering, e.g.
+ *   "Starts in 3 days"  "Tomorrow"  "Today"  "Starting now"
+ *   "Live now"          "Ended"
+ *
+ * `endsAt` is optional; when provided we surface "Live now" during the
+ * event window and "Ended" once past. When absent we assume a 60-min
+ * window (matches the iCal fallback in the detail page).
+ *
+ * Computed at render time so a page refresh always shows fresh copy —
+ * the caller (typically a server component) can call this directly,
+ * or a client card can re-render on interval. Kept as a pure function.
+ */
+export function countdownLabel(
+  startsAt: string,
+  endsAt: string | null = null,
+  now: Date = new Date(),
+): string {
+  const start = new Date(startsAt)
+  const end = endsAt ? new Date(endsAt) : new Date(start.getTime() + 60 * 60 * 1000)
+
+  if (now >= end) return 'Ended'
+  if (now >= start) return 'Live now'
+
+  const msUntil = start.getTime() - now.getTime()
+  const minsUntil = Math.floor(msUntil / 60000)
+  if (minsUntil <= 15) return 'Starting soon'
+
+  // Day-based buckets keyed to local calendar days, not raw hours,
+  // so "Tomorrow" reads correctly whether it's 23h or 26h away.
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const daysUntil = Math.round((startDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+
+  if (daysUntil <= 0) return 'Today'
+  if (daysUntil === 1) return 'Tomorrow'
+  if (daysUntil < 7)  return `Starts in ${daysUntil} days`
+  if (daysUntil < 14) return 'Next week'
+  const weeks = Math.round(daysUntil / 7)
+  if (weeks < 5)  return `In ${weeks} weeks`
+  const months = Math.round(daysUntil / 30)
+  return `In ${months} month${months === 1 ? '' : 's'}`
+}

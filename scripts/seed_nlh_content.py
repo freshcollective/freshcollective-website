@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Content seed script: The Natural Leader Hub collective for Fresh Collective (dev/local).
+Content seed script: The Grove collective for Fresh Collective (dev/local).
 
 Creates or updates:
-  - Natural Leader Hub space identity, description, about page, guidance panel, access model
+  - The Grove space identity, description, about page, guidance panel, access model
   - 7 pathways (3 new + 4 repurposed) with placeholder steps
   - General and pathway-specific resources
   - Community starter posts
@@ -137,9 +137,9 @@ SEED_TS = datetime(2026, 6, 6, 10, 0, 0)
 # ── About page content ────────────────────────────────────────────────────────
 
 ABOUT_CONTENT = """\
-## 🌿 What is The Natural Leader Hub?
+## 🌿 What is The Grove?
 
-The Natural Leader Hub is a learning and community space for women who are ready to lead \
+The Grove is a learning and community space for women who are ready to lead \
 with more self-trust, authenticity, and alignment — not by doing more, but by coming \
 back to who they already are.
 
@@ -154,7 +154,7 @@ natural leadership — the kind that comes from alignment rather than performanc
 
 ## ✨ Who it's for
 
-The Natural Leader Hub is for women who:
+The Grove is for women who:
 
 * Feel like they are constantly over-functioning, over-giving, or running on empty
 * Know they are capable but keep second-guessing themselves
@@ -218,7 +218,7 @@ More pathways are being added over time. The Hub grows with you.
 
 ## 💛 Membership and access
 
-Joining The Natural Leader Hub is free. You get immediate access to the community, \
+Joining The Grove is free. You get immediate access to the community, \
 introductory content, and selected free resources.
 
 Paid pathways can be added at any time, separately or together. You choose the \
@@ -231,7 +231,7 @@ It is a library you return to — in your own time, with your own questions.
 
 ## 🦋 A note from Lindsey
 
-I built The Natural Leader Hub because I spent years performing a version of \
+I built The Grove because I spent years performing a version of \
 leadership that was exhausting me. It looked fine from the outside. It felt hollow \
 on the inside.
 
@@ -298,14 +298,16 @@ def main():  # noqa: C901
         print("\n── Part 1: Space identity ──")
         space = db.query(Space).filter_by(id=SPACE_ID).first()
         if not space:
-            print("ERROR: Natural Leader Hub space not found. Aborting.")
+            print("ERROR: The Grove space not found. Aborting.")
             return
 
-        space.name = "The Natural Leader Hub"
-        space.tagline = "Lead naturally. Trust yourself. Live aligned."
+        space.name = "The Grove"
+        space.tagline = "A collective for women choosing a more aligned way to live, lead and grow."
         space.description = (
-            "A learning and community space for women ready to lead with more "
-            "self-trust, authenticity, and alignment."
+            "The Grove is a women's collective inside Fresh Collective for those ready to live, "
+            "lead and grow in a more aligned way. Through guided pathways, live experiences, "
+            "reflection and community, The Grove supports women to reconnect with themselves, "
+            "trust their natural rhythm, and create a life that feels more honest, grounded and true."
         )
         space.about_content = ABOUT_CONTENT
         space.is_public = True
@@ -337,7 +339,7 @@ def main():  # noqa: C901
             "Visit Pathways for guided journeys. Visit Resources for tools, templates, and guides. "
             "Visit Community to connect, reflect, and share what is alive for you."
         )
-        print("  [updated] Natural Leader Hub — name, tagline, about, guidance panel, access model")
+        print("  [updated] The Grove — name, tagline, about, guidance panel, access model")
         db.flush()
 
         # ── Part 2: Pathways ───────────────────────────────────────────────
@@ -351,7 +353,7 @@ def main():  # noqa: C901
             fields={
                 "title": "Start Here",
                 "description": (
-                    "New to The Natural Leader Hub? Start here. This short orientation "
+                    "New to The Grove? Start here. This short orientation "
                     "pathway introduces how the Hub works, how to use the R.E.A.L. Framework, "
                     "and how to choose where to begin."
                 ),
@@ -377,7 +379,7 @@ def main():  # noqa: C901
             fields={
                 "title": "The R.E.A.L. Journey",
                 "description": (
-                    "The core pathway of The Natural Leader Hub. A guided journey to help you "
+                    "The core pathway of The Grove. A guided journey to help you "
                     "recognise old patterns, explore what is really happening, align with your "
                     "natural design, and live your leadership in practical, everyday ways.\n\n"
                     "Moves through four phases: Recognise · Explore · Align · Lead."
@@ -534,7 +536,7 @@ def main():  # noqa: C901
                 "estimated_minutes": 3,
                 "is_required": True,
                 "content_body": (
-                    "Welcome to The Natural Leader Hub.\n\n"
+                    "Welcome to The Grove.\n\n"
                     "If you are here, something in you is ready — ready to lead in a way that "
                     "feels more like you, and less like the version you have been performing.\n\n"
                     "This is a space for that work.\n\n"
@@ -554,7 +556,7 @@ def main():  # noqa: C901
                 "estimated_minutes": 5,
                 "is_required": True,
                 "content_body": (
-                    "The Natural Leader Hub is organised into guided **pathways** — each one focused "
+                    "The Grove is organised into guided **pathways** — each one focused "
                     "on a different aspect of aligned, natural leadership.\n\n"
                     "**How pathways work:**\n"
                     "Each pathway is a sequence of steps — reading, reflection, practice, or video. "
@@ -1196,7 +1198,7 @@ def main():  # noqa: C901
                 "estimated_minutes": 2,
                 "content_body": (
                     "This pathway is the home for recordings of live calls, integration circles, "
-                    "and community sessions from The Natural Leader Hub.\n\n"
+                    "and community sessions from The Grove.\n\n"
                     "Replays are added after each live event. You can watch them in your own time, "
                     "at your own pace.\n\n"
                     "**A note on replays:**\n"
@@ -1261,7 +1263,7 @@ def main():  # noqa: C901
         general_resources = [
             {
                 "id": RESOURCE_IDS["welcome-guide"],
-                "title": "Welcome to The Natural Leader Hub",
+                "title": "Welcome to The Grove",
                 "description": (
                     "A short welcome guide to help you orient in the Hub — what it is, "
                     "how the pathways work, and where to begin. A good first read."
@@ -1281,7 +1283,7 @@ def main():  # noqa: C901
                 "id": RESOURCE_IDS["community-guidelines"],
                 "title": "Community Guidelines",
                 "description": (
-                    "How we show up for each other in The Natural Leader Hub. "
+                    "How we show up for each other in The Grove. "
                     "Short, warm, and grounded in the same principles we practise in the pathways."
                 ),
                 "sort_order": 3,
@@ -1426,9 +1428,9 @@ def main():  # noqa: C901
         # Update the existing welcome post (seeded in migration 006) with NLH-specific content
         welcome_post = db.query(CommunityPost).filter_by(id=POST_IDS["welcome"]).first()
         if welcome_post:
-            welcome_post.title = "Welcome to The Natural Leader Hub"
+            welcome_post.title = "Welcome to The Grove"
             welcome_post.body = (
-                "Welcome to The Natural Leader Hub.\n\n"
+                "Welcome to The Grove.\n\n"
                 "This is a space for women ready to lead with more self-trust, authenticity, "
                 "and alignment — not by doing more, but by coming back to who they already are.\n\n"
                 "**To get started:**\n\n"
@@ -1442,7 +1444,7 @@ def main():  # noqa: C901
             )
             welcome_post.post_type = "announcement"
             welcome_post.is_pinned = True
-            print("  [updated] Welcome to The Natural Leader Hub (existing post refreshed)")
+            print("  [updated] Welcome to The Grove (existing post refreshed)")
         else:
             print("  [skipped] Welcome post not found — may not have been seeded yet")
 
@@ -1455,7 +1457,7 @@ def main():  # noqa: C901
                     "We would love to know who you are.\n\n"
                     "Share:\n\n"
                     "* Your name, and something about where you are in life right now\n"
-                    "* What brought you to The Natural Leader Hub\n"
+                    "* What brought you to The Grove\n"
                     "* Something you are learning to trust in yourself\n\n"
                     "There is no right answer. Even a few words is enough. "
                     "You are welcome here exactly as you are."
@@ -1511,7 +1513,7 @@ def main():  # noqa: C901
         # ── Commit ─────────────────────────────────────────────────────────
         db.commit()
 
-        print("\n✓  The Natural Leader Hub content seeded successfully.\n")
+        print("\n✓  The Grove content seeded successfully.\n")
         print("── Pathways ──────────────────────────────────────────────────")
         print("  1. Start Here              — included (free), active")
         print("  2. The R.E.A.L. Journey    — one_time (paid), active | steps 1–6 preserved from migration 004")

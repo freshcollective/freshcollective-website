@@ -1,9 +1,37 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
-import type { CreatorPathway, CreatorResource, ResourceType } from '@/types/platform'
+import OverflowMenu from '@/components/ui/OverflowMenu'
+import {
+  Badge, type BadgeTone,
+  Button,
+  Card,
+  Drawer, DrawerSection,
+  EmptyState,
+  FormField,
+  Input,
+  SearchInput,
+  Select,
+  StatusBadge,
+  Text,
+  TextArea,
+  cn,
+  useConfirm,
+  useToast,
+} from '@/components/platform'
+import type {
+  CreatorPathway,
+  CreatorResource,
+  ResourceType,
+  ResourceUsageReference,
+  ResourceUsageResponse,
+} from '@/types/platform'
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const RESOURCE_TYPES: { value: ResourceType; label: string; hint: string }[] = [
   { value: 'link',     label: 'Link',     hint: 'Article, tool, or external resource' },
@@ -16,19 +44,18 @@ const RESOURCE_TYPES: { value: ResourceType; label: string; hint: string }[] = [
   { value: 'other',    label: 'Other',    hint: 'Any other supporting material' },
 ]
 
-const STATUS_PILLS: Record<string, string> = {
-  published: 'bg-teal-50 text-teal-700 border-teal-200',
-  draft:     'bg-slate-50 text-slate-500 border-slate-200',
-}
+type FilterKey =
+  | 'all' | 'recent' | 'published' | 'drafts'
+  | 'files' | 'guides' | 'audio' | 'video' | 'links'
+  | 'unused' | 'archived'
 
 interface FormState {
   title: string
   description: string
   resource_type: ResourceType
   url: string
-  status: 'draft' | 'published'
-  scope: 'general' | 'pathway'
-  pathway_id: string
+  status: 'draft' | 'published' | 'archived'
+  pathway_ids: string[]
 }
 
 const EMPTY_FORM: FormState = {
@@ -37,8 +64,7 @@ const EMPTY_FORM: FormState = {
   resource_type: 'link',
   url: '',
   status: 'draft',
-  scope: 'general',
-  pathway_id: '',
+  pathway_ids: [],
 }
 
 interface Props {
@@ -47,8 +73,113 @@ interface Props {
   pathways: CreatorPathway[]
 }
 
+// Map resource type to Badge tone.
+const TYPE_TO_BADGE: Record<ResourceType, BadgeTone> = {
+  audio:    'audio',
+  video:    'video',
+  replay:   'video',
+  guide:    'guide',
+  template: 'guide',
+  file:     'file',
+  link:     'link',
+  other:    'other',
+}
+
+const TYPE_LABEL: Record<ResourceType, string> = {
+  audio: 'Audio', video: 'Video', replay: 'Replay', guide: 'Guide',
+  template: 'Template', file: 'File', link: 'Link', other: 'Other',
+}
+
+// ---------------------------------------------------------------------------
+// Pathway palette — dot colour on cards + 3px stripe on the drawer.
+// ---------------------------------------------------------------------------
+
+interface PathwayPalette {
+  dot:       string
+  drawerBar: string
+}
+
+const PAL: Record<string, PathwayPalette> = {
+  teal:  { dot: '#38A09E', drawerBar: '#38A09E' },
+  navy:  { dot: '#3D6289', drawerBar: '#3D6289' },
+  blue:  { dot: '#4F7ABE', drawerBar: '#4F7ABE' },
+  lilac: { dot: '#7C6BB0', drawerBar: '#7C6BB0' },
+  sage:  { dot: '#6B8E7F', drawerBar: '#6B8E7F' },
+  grey:  { dot: '#94A3B8', drawerBar: '#94A3B8' },
+}
+
+function hashSlug(s: string): number {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i)
+  return Math.abs(h)
+}
+const ROTATION: PathwayPalette[] = [PAL.blue, PAL.sage, PAL.lilac, PAL.navy]
+
+function paletteForPathway(pathway: { slug: string } | null | undefined, isArchived: boolean): PathwayPalette {
+  if (isArchived) return PAL.grey
+  if (!pathway) return PAL.teal
+  const s = pathway.slug.toLowerCase()
+  if (s.includes('life-in-alignment') || s === 'lia')      return PAL.navy
+  if (s.includes('human-design') || s.includes('shortcut')) return PAL.blue
+  if (s.includes('embody'))                                return PAL.lilac
+  if (s.includes('home-practice') || s.includes('home'))   return PAL.sage
+  return ROTATION[hashSlug(pathway.slug) % ROTATION.length]
+}
+
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
+
+function usageLabel(count: number): string {
+  if (count === 0) return 'Not linked'
+  if (count === 1) return 'Linked to 1 lesson'
+  return `Linked to ${count} lessons`
+}
+
+function formatBytes(bytes: number | null | undefined): string | null {
+  if (bytes === null || bytes === undefined) return null
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString('en-AU', {
+    day: 'numeric', month: 'short', year: 'numeric',
+  })
+}
+
+const STATUS_OPTIONS: { key: 'all' | 'published' | 'drafts'; label: string }[] = [
+  { key: 'all',       label: 'All' },
+  { key: 'published', label: 'Published' },
+  { key: 'drafts',    label: 'Draft' },
+]
+
+const CONTENT_OPTIONS: { key: 'all' | 'guides' | 'files' | 'audio' | 'video' | 'links'; label: string }[] = [
+  { key: 'all',    label: 'All' },
+  { key: 'guides', label: 'Guide' },
+  { key: 'files',  label: 'File'  },
+  { key: 'audio',  label: 'Audio' },
+  { key: 'video',  label: 'Video' },
+  { key: 'links',  label: 'Link'  },
+]
+
+const SECONDARY_FILTERS: { key: 'recent' | 'unused' | 'archived'; label: string }[] = [
+  { key: 'recent',   label: 'Recent'   },
+  { key: 'unused',   label: 'Unused'   },
+  { key: 'archived', label: 'Archived' },
+]
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export default function ResourcesManager({ spaceSlug, initialResources, pathways }: Props) {
   const router = useRouter()
+  const toast = useToast()
+  const confirm = useConfirm()
+
   const [resources, setResources] = useState<CreatorResource[]>(initialResources)
 
   const [formMode, setFormMode] = useState<null | 'create' | string>(null)
@@ -58,23 +189,78 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
   const [formError, setFormError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const inputCls = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 shadow-sm outline-none transition-colors focus:border-teal-400'
-  const tealBtn = 'inline-flex items-center rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50'
-  const tealStyle = { background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }
-  const ghostBtn = 'inline-flex items-center rounded-xl border border-slate-200 px-3.5 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700 disabled:opacity-50'
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<FilterKey>('all')
 
   const activePaths = pathways.filter((p) => p.status !== 'archived')
 
-  function pathwayTitle(id: string | null) {
-    if (!id) return null
-    return activePaths.find((p) => p.id === id)?.title ?? null
+  const editingResource = useMemo(
+    () => (formMode !== null && formMode !== 'create')
+      ? resources.find(r => r.id === formMode) ?? null
+      : null,
+    [formMode, resources],
+  )
+
+  // -- "Recently added" window ----------------------------------------------
+  const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000
+  const isRecent = useCallback((r: CreatorResource) => {
+    if (!r.created_at) return false
+    return (Date.now() - new Date(r.created_at).getTime()) < FOURTEEN_DAYS_MS
+  }, [FOURTEEN_DAYS_MS])
+
+  // -- Filtering + search ---------------------------------------------------
+  const filterMatches = (r: CreatorResource): boolean => {
+    switch (filter) {
+      case 'all':       return r.status !== 'archived'
+      case 'recent':    return isRecent(r) && r.status !== 'archived'
+      case 'published': return r.status === 'published'
+      case 'drafts':    return r.status === 'draft'
+      case 'files':     return r.resource_type === 'file'    && r.status !== 'archived'
+      case 'guides':    return r.resource_type === 'guide'   && r.status !== 'archived'
+      case 'audio':     return r.resource_type === 'audio'   && r.status !== 'archived'
+      case 'video':     return r.resource_type === 'video'   && r.status !== 'archived'
+      case 'links':     return r.resource_type === 'link'    && r.status !== 'archived'
+      case 'unused':    return r.usage_count === 0           && r.status !== 'archived'
+      case 'archived':  return r.status === 'archived'
+    }
+  }
+  const searchMatches = (r: CreatorResource): boolean => {
+    if (!search.trim()) return true
+    const q = search.toLowerCase()
+    return (
+      r.title.toLowerCase().includes(q) ||
+      (r.description?.toLowerCase().includes(q) ?? false) ||
+      (r.file_name?.toLowerCase().includes(q) ?? false)
+    )
   }
 
+  const statusRank = (s: CreatorResource['status']) =>
+    s === 'published' ? 0 : s === 'draft' ? 1 : 2
+
+  const visible: CreatorResource[] = useMemo(() => {
+    const list = resources.filter(r => searchMatches(r) && filterMatches(r))
+    if (filter === 'recent') {
+      return list.slice().sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    }
+    return list.slice().sort((a, b) => {
+      const s = statusRank(a.status) - statusRank(b.status)
+      if (s !== 0) return s
+      return a.title.localeCompare(b.title)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resources, filter, search])
+
+  // Segmented-control resolvers — same-shape mapping onto the single filter.
+  const statusValue: 'all' | 'published' | 'drafts' =
+    filter === 'published' || filter === 'drafts' ? filter : 'all'
+  const contentValue: 'all' | 'guides' | 'files' | 'audio' | 'video' | 'links' =
+    ['guides', 'files', 'audio', 'video', 'links'].includes(filter)
+      ? filter as 'guides' | 'files' | 'audio' | 'video' | 'links'
+      : 'all'
+
+  // -- Form helpers ---------------------------------------------------------
   function openCreate() {
-    setForm(EMPTY_FORM)
-    setUploadFile(null)
-    setFormError(null)
-    setFormMode('create')
+    setForm(EMPTY_FORM); setUploadFile(null); setFormError(null); setFormMode('create')
   }
 
   function openEdit(r: CreatorResource) {
@@ -84,35 +270,40 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
       resource_type: r.resource_type as ResourceType,
       url: r.url ?? '',
       status: r.status,
-      scope: r.scope ?? 'general',
-      pathway_id: r.pathway_id ?? '',
+      pathway_ids: (r.pathways ?? []).map(p => p.id),
     })
-    setUploadFile(null)
-    setFormError(null)
-    setFormMode(r.id)
+    setUploadFile(null); setFormError(null); setFormMode(r.id)
   }
 
-  function cancelForm() {
-    setFormMode(null)
-    setFormError(null)
-    setUploadFile(null)
+  function openDuplicate(r: CreatorResource) {
+    setForm({
+      title: `${r.title} (copy)`,
+      description: r.description ?? '',
+      resource_type: r.resource_type as ResourceType,
+      url: r.url ?? '',
+      status: 'draft',
+      pathway_ids: (r.pathways ?? []).map(p => p.id),
+    })
+    setUploadFile(null); setFormError(null); setFormMode('create')
+  }
+
+  const cancelForm = useCallback(() => {
+    setFormMode(null); setFormError(null); setUploadFile(null)
+  }, [])
+
+  function togglePathway(id: string) {
+    setForm(f => {
+      const has = f.pathway_ids.includes(id)
+      return { ...f, pathway_ids: has ? f.pathway_ids.filter(x => x !== id) : [...f.pathway_ids, id] }
+    })
   }
 
   async function handleSave() {
     if (!form.title.trim()) { setFormError('Title is required.'); return }
-    if (form.scope === 'pathway' && !form.pathway_id) {
-      setFormError('Please select a pathway for pathway-specific resources.')
-      return
-    }
+    const isCreate = formMode === 'create'
     setSaving(true); setFormError(null)
     try {
       let res: Response
-
-      const scopePayload = {
-        scope: form.scope,
-        pathway_id: form.scope === 'pathway' ? form.pathway_id : null,
-      }
-
       if (uploadFile) {
         const fd = new FormData()
         fd.append('file', uploadFile)
@@ -120,17 +311,13 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
         fd.append('description', form.description.trim())
         fd.append('resource_type', form.resource_type)
         fd.append('status', form.status)
-        fd.append('scope', scopePayload.scope)
-        if (scopePayload.pathway_id) fd.append('pathway_id', scopePayload.pathway_id)
+        fd.append('pathway_ids', JSON.stringify(form.pathway_ids))
         res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources/upload`), {
-          method: 'POST',
-          credentials: 'include',
-          body: fd,
+          method: 'POST', credentials: 'include', body: fd,
         })
-      } else if (formMode === 'create') {
+      } else if (isCreate) {
         res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources`), {
-          method: 'POST',
-          credentials: 'include',
+          method: 'POST', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: form.title.trim(),
@@ -138,13 +325,12 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
             resource_type: form.resource_type,
             url: form.url.trim() || null,
             status: form.status,
-            ...scopePayload,
+            pathway_ids: form.pathway_ids,
           }),
         })
       } else {
         res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources/${formMode}`), {
-          method: 'PATCH',
-          credentials: 'include',
+          method: 'PATCH', credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: form.title.trim(),
@@ -152,7 +338,7 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
             resource_type: form.resource_type,
             url: form.url.trim() || null,
             status: form.status,
-            ...scopePayload,
+            pathway_ids: form.pathway_ids,
           }),
         })
       }
@@ -163,155 +349,358 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
       }
 
       const saved: CreatorResource = await res.json()
-
-      if (formMode === 'create' || uploadFile) {
+      if (isCreate || uploadFile) {
         setResources((prev) => [...prev, saved])
       } else {
         setResources((prev) => prev.map((r) => r.id === saved.id ? saved : r))
       }
       setFormMode(null)
       router.refresh()
+      toast.show(isCreate ? 'Resource added' : 'Changes saved', { tone: 'success' })
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Something went wrong.')
+      const message = err instanceof Error ? err.message : 'Something went wrong.'
+      setFormError(message)
     } finally {
       setSaving(false)
     }
   }
 
+  async function patchResource(id: string, patch: Record<string, unknown>) {
+    const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources/${id}`), {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    if (!res.ok) return null
+    const updated: CreatorResource = await res.json()
+    setResources((prev) => prev.map((x) => x.id === updated.id ? updated : x))
+    return updated
+  }
+
+  async function handleTogglePublish(r: CreatorResource) {
+    const target = r.status === 'published' ? 'draft' : 'published'
+    const result = await patchResource(r.id, { status: target })
+    if (result) {
+      toast.show(target === 'published' ? 'Published' : 'Unpublished', { tone: 'success' })
+    } else {
+      toast.show('Could not update status', { tone: 'error' })
+    }
+  }
+
+  async function handleArchive(r: CreatorResource) {
+    const result = await patchResource(r.id, { status: 'archived' })
+    if (result) {
+      toast.show('Archived', { tone: 'success' })
+    } else {
+      toast.show('Could not archive', { tone: 'error' })
+    }
+  }
+
+  async function handleRestore(r: CreatorResource) {
+    const result = await patchResource(r.id, { status: 'draft' })
+    if (result) {
+      toast.show('Restored to draft', { tone: 'success' })
+    } else {
+      toast.show('Could not restore', { tone: 'error' })
+    }
+  }
+
   async function handleDelete(id: string) {
-    if (!confirm('Delete this resource? This cannot be undone.')) return
+    const target = resources.find(r => r.id === id)
+    const yes = await confirm({
+      title: target ? `Delete “${target.title}”?` : 'Delete this resource?',
+      body: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    })
+    if (!yes) return
+
     setDeletingId(id)
     try {
       const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources/${id}`), {
-        method: 'DELETE',
-        credentials: 'include',
+        method: 'DELETE', credentials: 'include',
       })
       if (!res.ok) throw new Error(`Delete failed (${res.status})`)
       setResources((prev) => prev.filter((r) => r.id !== id))
+      if (formMode === id) setFormMode(null)
       router.refresh()
+      toast.show('Resource deleted', { tone: 'success' })
     } catch {
-      // silently ignore
+      toast.show('Could not delete resource', { tone: 'error' })
     } finally {
       setDeletingId(null)
     }
   }
 
-  async function handleTogglePublish(r: CreatorResource) {
-    const newStatus = r.status === 'published' ? 'draft' : 'published'
-    try {
-      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources/${r.id}`), {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      })
-      if (!res.ok) return
-      const updated: CreatorResource = await res.json()
-      setResources((prev) => prev.map((x) => x.id === updated.id ? updated : x))
-    } catch { /* silent */ }
-  }
+  // -- Top stats ------------------------------------------------------------
+  const publishedCount = resources.filter((r) => r.status === 'published').length
+  const draftsCount    = resources.filter((r) => r.status === 'draft').length
+  const unusedCount    = resources.filter((r) => r.usage_count === 0 && r.status !== 'archived').length
+  const totalCount     = resources.filter(r => r.status !== 'archived').length
 
-  const published = resources.filter((r) => r.status === 'published').length
-  const drafts = resources.filter((r) => r.status === 'draft').length
+  const drawerAccent = editingResource
+    ? paletteForPathway(editingResource.pathways?.[0] ?? null, editingResource.status === 'archived').drawerBar
+    : PAL.teal.drawerBar
 
   return (
     <div>
-      {/* Stats row */}
-      <div className="mb-6 grid grid-cols-3 gap-4">
-        {[
-          { label: 'Total', value: resources.length },
-          { label: 'Published', value: published },
-          { label: 'Drafts', value: drafts },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-2xl border border-border bg-white px-5 py-4">
-            <p className="font-serif text-[26px] text-navy-900">{value}</p>
-            <p className="text-[12px] text-slate-400">{label}</p>
-          </div>
-        ))}
+      {/* Stats */}
+      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+        <StatCard label="Total"     value={totalCount} />
+        <StatCard label="Published" value={publishedCount} />
+        <StatCard label="Drafts"    value={draftsCount} />
+        <StatCard label="Unused"    value={unusedCount} />
       </div>
 
-      {formMode === null && (
-        <div className="mb-6">
-          <button onClick={openCreate} className={tealBtn} style={tealStyle}>
-            + Add resource
-          </button>
+      {/* Action row */}
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <Button variant="primary" onClick={openCreate}>+ Add resource</Button>
+        <SearchInput
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onClear={() => setSearch('')}
+          placeholder="Search resources…"
+          className="flex-1"
+        />
+      </div>
+
+      {/* Filters — two segmented controls + secondary text buttons */}
+      <div className="mb-8 space-y-2.5">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2.5">
+          <SegmentedControl
+            label="Status"
+            value={statusValue}
+            options={STATUS_OPTIONS}
+            onChange={(k) => setFilter(k)}
+          />
+          <SegmentedControl
+            label="Type"
+            value={contentValue}
+            options={CONTENT_OPTIONS}
+            onChange={(k) => setFilter(k)}
+          />
         </div>
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="mr-1 text-[10px] font-[var(--fc-fw-semibold)] uppercase tracking-[var(--fc-tracking-eyebrow)] text-[color:var(--fc-ink-primary)]">
+            View
+          </span>
+          {SECONDARY_FILTERS.map((f) => {
+            const active = filter === f.key
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(active ? 'all' : f.key)}
+                className={cn(
+                  'rounded-[var(--fc-radius-md)] px-2.5 py-1 text-[12px] font-[var(--fc-fw-semibold)] transition-colors duration-[var(--fc-motion-hover)]',
+                  active
+                    ? 'bg-[rgba(15,30,55,0.06)] text-[color:var(--fc-ink-heading)]'
+                    : 'text-[color:var(--fc-ink-disabled)] hover:text-[color:var(--fc-ink-heading)]',
+                )}
+              >
+                {f.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Grid or empty states */}
+      {resources.length === 0 ? (
+        <EmptyState
+          title="No resources yet"
+          description="Add links, files, guides, and tools for your members."
+          action={<Button variant="primary" onClick={openCreate}>+ Add first resource</Button>}
+        />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          title="No matches"
+          description="No resources match this search or filter."
+          action={
+            <Button variant="tertiary" onClick={() => { setSearch(''); setFilter('all') }}>
+              Clear filters
+            </Button>
+          }
+        />
+      ) : (
+        <>
+          <Text variant="meta" className="mb-4">
+            {visible.length} {visible.length === 1 ? 'resource' : 'resources'}
+          </Text>
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6 xl:grid-cols-3">
+            {visible.map((r) => (
+              <ResourceCard
+                key={r.id}
+                resource={r}
+                selected={formMode === r.id}
+                onOpen={() => openEdit(r)}
+                onTogglePublish={() => handleTogglePublish(r)}
+                onArchive={() => handleArchive(r)}
+                onRestore={() => handleRestore(r)}
+                onDelete={() => handleDelete(r.id)}
+                deleting={deletingId === r.id}
+              />
+            ))}
+          </div>
+        </>
       )}
 
-      {/* Create / Edit form */}
-      {formMode !== null && (
-        <div className="mb-6 rounded-2xl border border-border bg-white p-6">
-          <h3 className="mb-5 text-[16px] font-semibold text-navy-900">
-            {formMode === 'create' ? 'Add resource' : 'Edit resource'}
-          </h3>
-
+      {/* Right-hand details drawer */}
+      <Drawer
+        open={formMode !== null}
+        onClose={cancelForm}
+        eyebrow={formMode === 'create' ? 'New resource' : 'Resource'}
+        title={formMode === 'create' ? 'Add resource' : (editingResource?.title ?? 'Resource')}
+        accentColor={drawerAccent}
+        footer={
+          <>
+            <Button variant="primary" onClick={handleSave} loading={saving}>
+              {formMode === 'create' ? 'Add resource' : 'Save changes'}
+            </Button>
+            <Button variant="tertiary" onClick={cancelForm} disabled={saving}>Cancel</Button>
+            {editingResource && (
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                <Button variant="secondary" onClick={() => openDuplicate(editingResource)}>
+                  Duplicate
+                </Button>
+                {editingResource.status === 'archived' ? (
+                  <Button variant="secondary" onClick={() => handleRestore(editingResource)}>
+                    Restore
+                  </Button>
+                ) : (
+                  <Button variant="secondary" onClick={() => handleArchive(editingResource)}>
+                    Archive
+                  </Button>
+                )}
+                <Button
+                  variant="danger"
+                  onClick={() => handleDelete(editingResource.id)}
+                  loading={deletingId === editingResource.id}
+                >
+                  Delete
+                </Button>
+              </div>
+            )}
+          </>
+        }
+      >
+        <DrawerSection title="General" first>
           <div className="space-y-4">
-            {/* Title */}
-            <div>
-              <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
-                Title <span style={{ color: '#38A09E' }}>*</span>
-              </label>
-              <input
-                type="text"
+            <FormField label="Title" required error={formError && !form.title.trim() ? formError : undefined}>
+              <Input
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 maxLength={300}
                 placeholder="e.g. Breath awareness practice"
-                className={inputCls}
               />
-            </div>
+            </FormField>
 
-            {/* Resource type */}
-            <div>
-              <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">Type</label>
-              <select
-                value={form.resource_type}
-                onChange={(e) => setForm((f) => ({ ...f, resource_type: e.target.value as ResourceType }))}
-                className={inputCls}
-              >
-                {RESOURCE_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label} — {t.hint}</option>
-                ))}
-              </select>
-            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <FormField label="Type">
+                <Select
+                  value={form.resource_type}
+                  onChange={(e) => setForm((f) => ({ ...f, resource_type: e.target.value as ResourceType }))}
+                >
+                  {RESOURCE_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </Select>
+              </FormField>
 
-            {/* Description */}
-            <div>
-              <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
-                Description <span className="font-normal text-slate-400">(optional)</span>
-              </label>
-              <textarea
+              <FormField label="Status">
+                <div className="flex gap-2">
+                  {(['draft', 'published'] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, status: s }))}
+                      className={cn(
+                        'flex-1 rounded-[var(--fc-radius-md)] border px-3 py-2.5 text-[13px] font-[var(--fc-fw-semibold)] transition-all duration-[var(--fc-motion-hover)]',
+                        form.status === s
+                          ? 'border-[color:var(--fc-accent-500)]/40 bg-[color:var(--fc-accent-500)]/[0.06] text-[color:var(--fc-accent-700)]'
+                          : 'border-[color:var(--fc-border-input)] bg-transparent text-[color:var(--fc-ink-primary)]',
+                      )}
+                    >
+                      {s === 'draft' ? 'Draft' : 'Published'}
+                    </button>
+                  ))}
+                </div>
+              </FormField>
+            </div>
+          </div>
+        </DrawerSection>
+
+        <DrawerSection title="Content">
+          <div className="space-y-4">
+            <FormField label="Description">
+              <TextArea
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                rows={2}
+                rows={3}
                 placeholder="Brief description of this resource"
-                className={inputCls + ' resize-none'}
               />
-            </div>
+            </FormField>
 
-            {/* URL */}
+            {editingResource && (editingResource.file_name || editingResource.url) && (
+              <MetaBlock>
+                {editingResource.file_name && (
+                  <MetaLine
+                    label="File"
+                    value={
+                      <>
+                        <span className="text-[color:var(--fc-ink-heading)]">
+                          {editingResource.file_name}
+                        </span>
+                        {formatBytes(editingResource.file_size) && (
+                          <span className="text-[color:var(--fc-ink-primary)]">
+                            {' · '}
+                            {formatBytes(editingResource.file_size)}
+                          </span>
+                        )}
+                      </>
+                    }
+                  />
+                )}
+                {editingResource.url && !editingResource.file_name && (
+                  <MetaLine
+                    label="URL"
+                    value={
+                      <a
+                        href={editingResource.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="truncate text-[color:var(--fc-accent-700)] underline-offset-2 hover:underline"
+                      >
+                        {editingResource.url}
+                      </a>
+                    }
+                  />
+                )}
+                <MetaLine label="Added" value={formatDate(editingResource.created_at)} />
+              </MetaBlock>
+            )}
+
             {!uploadFile && (
-              <div>
-                <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
-                  URL <span className="font-normal text-slate-400">(for links, replays, etc.)</span>
-                </label>
-                <input
+              <FormField label="URL">
+                <Input
                   type="url"
                   value={form.url}
                   onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
                   placeholder="https://…"
-                  className={inputCls}
                 />
-              </div>
+              </FormField>
             )}
 
-            {/* File upload — only for new resources */}
             {formMode === 'create' && (
-              <div>
-                <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
-                  Or upload a file <span className="font-normal text-slate-400">(PDF, doc, audio, video…)</span>
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="fc-resource-file"
+                  className="text-[12px] font-[var(--fc-fw-semibold)] uppercase tracking-[var(--fc-tracking-eyebrow-tight)] text-[color:var(--fc-ink-primary)]"
+                >
+                  Or upload a file
                 </label>
                 <input
+                  id="fc-resource-file"
                   type="file"
                   accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.mp3,.wav,.m4a,.mp4,.mov"
                   onChange={(e) => {
@@ -319,207 +708,479 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
                     setUploadFile(f)
                     if (f) setForm((prev) => ({ ...prev, url: '' }))
                   }}
-                  className="block w-full text-[13px] text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-[12px] file:font-medium file:text-slate-600"
+                  className="block w-full text-[13px] text-[color:var(--fc-ink-primary)] file:mr-3 file:rounded-[var(--fc-radius-md)] file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-[12px] file:font-[var(--fc-fw-semibold)] file:text-[color:var(--fc-ink-primary)]"
                 />
                 {uploadFile && (
-                  <p className="mt-1 text-[12px] text-slate-400">
+                  <Text as="p" variant="meta">
                     {uploadFile.name} ({(uploadFile.size / 1024).toFixed(0)} KB)
-                  </p>
+                  </Text>
                 )}
               </div>
             )}
-
-            {/* Resource access (scope) */}
-            <div>
-              <label className="mb-1.5 block text-[13px] font-semibold text-navy-900">
-                Resource access
-              </label>
-              <div className="flex gap-3">
-                {([
-                  { value: 'general',  label: 'General',          hint: 'Visible to all members' },
-                  { value: 'pathway',  label: 'Pathway-specific', hint: 'Pathway members only'   },
-                ] as const).map((s) => {
-                  const isActive = form.scope === s.value
-                  const isGold   = s.value === 'pathway'
-                  return (
-                    <label
-                      key={s.value}
-                      className="flex cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2.5 text-[13px] font-medium transition-all"
-                      style={{
-                        borderColor: isActive
-                          ? (isGold ? 'rgba(214,177,63,0.55)' : 'rgba(56,160,158,0.40)')
-                          : '#e2e8f0',
-                        background: isActive
-                          ? (isGold ? 'rgba(226,193,79,0.10)' : 'rgba(56,160,158,0.06)')
-                          : 'transparent',
-                        color: isActive
-                          ? (isGold ? '#7A5A00' : '#1E6E6C')
-                          : '#6B7A8D',
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="res-scope"
-                        value={s.value}
-                        checked={form.scope === s.value}
-                        onChange={() => setForm((f) => ({ ...f, scope: s.value, pathway_id: '' }))}
-                        className={isGold ? 'accent-yellow-500' : 'accent-teal-500'}
-                      />
-                      {s.label}
-                    </label>
-                  )
-                })}
-              </div>
-
-              {/* Helper text — dynamic based on selected scope */}
-              <p className="mt-2 text-[12px]" style={{ color: form.scope === 'pathway' ? '#7A5A00' : '#94A3B8' }}>
-                {form.scope === 'pathway'
-                  ? 'This resource will only appear for members who have access to the selected pathway.'
-                  : 'This resource will appear for all members of this collective.'}
-              </p>
-
-              {/* Pathway dropdown — gold-tinted when pathway scope active */}
-              {form.scope === 'pathway' && (
-                <div
-                  className="mt-3 rounded-xl px-4 py-3"
-                  style={{ background: 'rgba(226,193,79,0.07)', border: '1px solid rgba(214,177,63,0.35)' }}
-                >
-                  <label className="mb-1.5 block text-[13px] font-semibold" style={{ color: '#7A5A00' }}>
-                    Pathway <span style={{ color: '#D6B13F' }}>*</span>
-                  </label>
-                  {activePaths.length === 0 ? (
-                    <p className="text-[13px] text-slate-400">No pathways found. Create a pathway first.</p>
-                  ) : (
-                    <select
-                      value={form.pathway_id}
-                      onChange={(e) => setForm((f) => ({ ...f, pathway_id: e.target.value }))}
-                      className={inputCls}
-                    >
-                      <option value="">Select a pathway…</option>
-                      {activePaths.map((p) => (
-                        <option key={p.id} value={p.id}>{p.title}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Status */}
-            <div>
-              <label className="mb-2 block text-[13px] font-semibold text-navy-900">Status</label>
-              <div className="flex gap-3">
-                {(['draft', 'published'] as const).map((s) => (
-                  <label
-                    key={s}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-xl border px-4 py-2.5 text-[13px] font-medium transition-all"
-                    style={{
-                      borderColor: form.status === s ? 'rgba(56,160,158,0.40)' : '#e2e8f0',
-                      background: form.status === s ? 'rgba(56,160,158,0.06)' : 'transparent',
-                      color: form.status === s ? '#1E6E6C' : '#6B7A8D',
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name="res-status"
-                      value={s}
-                      checked={form.status === s}
-                      onChange={() => setForm((f) => ({ ...f, status: s }))}
-                      className="accent-teal-500"
-                    />
-                    {s === 'draft' ? 'Draft' : 'Published'}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {formError && <p className="text-[13px] text-red-500">{formError}</p>}
-
-            <div className="flex items-center gap-3 pt-1">
-              <button onClick={handleSave} disabled={saving} className={tealBtn} style={tealStyle}>
-                {saving ? 'Saving…' : formMode === 'create' ? 'Add resource' : 'Save changes'}
-              </button>
-              <button onClick={cancelForm} disabled={saving} className={ghostBtn}>
-                Cancel
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        </DrawerSection>
 
-      {/* Resource list */}
-      {resources.length === 0 && formMode === null ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
-          <p className="mb-1 text-[16px] font-semibold text-navy-900">No resources yet</p>
-          <p className="mb-5 text-[14px] text-slate-500">Add links, files, guides, and tools for your members.</p>
-          <button onClick={openCreate} className={tealBtn} style={tealStyle}>+ Add first resource</button>
-        </div>
-      ) : resources.length > 0 ? (
-        <div className="space-y-3">
-          {resources.map((r) => {
-            const isPathway  = r.scope === 'pathway'
-            const scopeLabel = isPathway ? (pathwayTitle(r.pathway_id ?? null) ?? 'Pathway') : 'General'
-            const stripe     = isPathway
-              ? 'linear-gradient(90deg, #D6B13F 0%, rgba(214,177,63,0.15) 100%)'
-              : 'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.15) 100%)'
-            const pillStyle  = isPathway
-              ? { background: 'rgba(226,193,79,0.14)', color: '#7A5A00', borderColor: 'rgba(214,177,63,0.40)' }
-              : { background: 'rgba(56,160,158,0.10)', color: '#1E6E6C', borderColor: 'rgba(56,160,158,0.30)' }
+        <DrawerSection title="Availability">
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+            <PathwayToggle
+              checked={form.pathway_ids.length === 0}
+              onToggle={() => setForm(f => ({ ...f, pathway_ids: [] }))}
+              label="General"
+              hint="All members"
+            />
+            {activePaths.map((p) => (
+              <PathwayToggle
+                key={p.id}
+                checked={form.pathway_ids.includes(p.id)}
+                onToggle={() => togglePathway(p.id)}
+                label={p.title}
+              />
+            ))}
+          </div>
+        </DrawerSection>
 
-            return (
-              <div
-                key={r.id}
-                className="overflow-hidden rounded-2xl border border-border bg-white"
-              >
-                {/* Scope-coloured top stripe */}
-                <div className="h-[3px] w-full" style={{ background: stripe }} />
+        {editingResource && (
+          <DrawerSection title="Usage">
+            <DrawerUsage
+              resourceId={editingResource.id}
+              usageCount={editingResource.usage_count}
+              spaceSlug={spaceSlug}
+            />
+          </DrawerSection>
+        )}
 
-                <div className="flex items-start justify-between gap-4 px-5 py-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex flex-wrap items-center gap-2">
-                      <p className="text-[14px] font-semibold text-navy-900">{r.title}</p>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUS_PILLS[r.status] ?? STATUS_PILLS.draft}`}>
-                        {r.status}
-                      </span>
-                      <span
-                        className="rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                        style={pillStyle}
-                      >
-                        {scopeLabel}
-                      </span>
-                      <span className="rounded-full border border-slate-100 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">
-                        {r.resource_type}
-                      </span>
-                    </div>
-                    {r.description && (
-                      <p className="mb-1 line-clamp-1 text-[13px] text-slate-500">{r.description}</p>
-                    )}
-                    {(r.file_name || r.url) && (
-                      <p className="truncate text-[11.5px] text-slate-400">{r.file_name ?? r.url}</p>
-                    )}
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-2">
-                    <button onClick={() => handleTogglePublish(r)} className={ghostBtn}>
-                      {r.status === 'published' ? 'Unpublish' : 'Publish'}
-                    </button>
-                    <button onClick={() => openEdit(r)} className={ghostBtn}>
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(r.id)}
-                      disabled={deletingId === r.id}
-                      className="inline-flex items-center rounded-xl border border-red-100 px-3.5 py-2 text-[13px] font-medium text-red-500 transition-colors hover:border-red-200 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      {deletingId === r.id ? '…' : 'Delete'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : null}
+        {formError && form.title.trim() && (
+          <div
+            role="alert"
+            className="mt-6 rounded-[var(--fc-radius-md)] px-3 py-2 text-[13px] text-[color:var(--fc-status-error-text)]"
+            style={{ background: 'var(--fc-status-error-bg)' }}
+          >
+            {formError}
+          </div>
+        )}
+      </Drawer>
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// StatCard — Card with stat figure + eyebrow label.
+// ---------------------------------------------------------------------------
+
+function StatCard({ label, value }: { label: string; value: number }) {
+  return (
+    <Card padding="md">
+      <Text variant="stat">{value}</Text>
+      <Text variant="eyebrow" muted className="mt-2">{label}</Text>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// SegmentedControl — filter pattern (Fresh Collective does not ship a segmented-control
+// primitive; kept local per Phase 3 scope and re-styled with Fresh Collective tokens).
+// ---------------------------------------------------------------------------
+
+function SegmentedControl<T extends string>({
+  label, value, options, onChange,
+}: {
+  label: string
+  value: T
+  options: { key: T; label: string }[]
+  onChange: (key: T) => void
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span className="text-[10px] font-[var(--fc-fw-semibold)] uppercase tracking-[var(--fc-tracking-eyebrow)] text-[color:var(--fc-ink-primary)]">
+        {label}
+      </span>
+      <div
+        role="tablist"
+        className="inline-flex items-center rounded-[var(--fc-radius-lg)] p-0.5"
+        style={{ background: 'rgba(15,30,55,0.05)' }}
+      >
+        {options.map((opt) => {
+          const active = value === opt.key
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => onChange(opt.key)}
+              className={cn(
+                'rounded-[var(--fc-radius-md)] px-3 py-1 text-[12.5px] font-[var(--fc-fw-semibold)] transition-colors duration-[var(--fc-motion-hover)]',
+                active
+                  ? 'text-[color:var(--fc-ink-heading)]'
+                  : 'text-[color:var(--fc-ink-primary)] opacity-60 hover:opacity-100',
+              )}
+              style={
+                active
+                  ? {
+                      background: 'var(--fc-surface-card)',
+                      boxShadow: '0 1px 2px rgba(15,30,55,0.06)',
+                    }
+                  : undefined
+              }
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// PathwayToggle — pill-style checkbox for the "Available in" section.
+// ---------------------------------------------------------------------------
+
+function PathwayToggle({
+  checked, onToggle, label, hint,
+}: {
+  checked: boolean
+  onToggle: () => void
+  label: string
+  hint?: string
+}) {
+  return (
+    <label
+      className={cn(
+        'flex cursor-pointer items-center gap-2.5 rounded-[var(--fc-radius-md)] border px-3 py-2 text-[13px] font-[var(--fc-fw-semibold)] transition-all duration-[var(--fc-motion-hover)]',
+      )}
+      style={{
+        borderColor: checked ? 'rgba(56,160,158,0.40)' : 'var(--fc-border-input)',
+        background: checked ? 'rgba(56,160,158,0.06)' : 'transparent',
+        color: checked ? 'var(--fc-accent-700)' : 'var(--fc-ink-primary)',
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="accent-[color:var(--fc-accent-500)]"
+      />
+      <span>{label}</span>
+      {hint && (
+        <span className="ml-auto text-[11px] font-[var(--fc-fw-regular)] text-[color:var(--fc-ink-primary)]">
+          {hint}
+        </span>
+      )}
+    </label>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// MetaBlock / MetaLine — compact read-only key/value strip inside the drawer.
+// ---------------------------------------------------------------------------
+
+function MetaBlock({ children }: { children: ReactNode }) {
+  return (
+    <dl className="rounded-[var(--fc-radius-md)] bg-slate-50 px-4 py-3 text-[12.5px]">
+      {children}
+    </dl>
+  )
+}
+
+function MetaLine({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-baseline gap-3 py-0.5">
+      <dt className="w-14 shrink-0 text-[11px] font-[var(--fc-fw-semibold)] uppercase tracking-[var(--fc-tracking-eyebrow-tight)] text-[color:var(--fc-ink-primary)]">
+        {label}
+      </dt>
+      <dd className="min-w-0 flex-1 truncate text-[color:var(--fc-ink-primary)]">
+        {value}
+      </dd>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// DrawerUsage — "Linked to N lessons" + expand to show grouped references.
+// ---------------------------------------------------------------------------
+
+function DrawerUsage({
+  resourceId, usageCount, spaceSlug,
+}: {
+  resourceId: string
+  usageCount: number
+  spaceSlug: string
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [refs, setRefs] = useState<ResourceUsageReference[] | null>(null)
+
+  async function toggle() {
+    if (refs !== null) { setExpanded(v => !v); return }
+    setLoading(true)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources/${resourceId}/usage`), {
+        credentials: 'include',
+      })
+      if (res.ok) {
+        const body: ResourceUsageResponse = await res.json()
+        setRefs(body.references)
+      } else {
+        setRefs([])
+      }
+    } catch {
+      setRefs([])
+    } finally {
+      setLoading(false)
+      setExpanded(true)
+    }
+  }
+
+  const grouped = useMemo(() => {
+    if (!refs) return null
+    const buckets = new Map<string, { pathwayTitle: string; refs: ResourceUsageReference[] }>()
+    for (const ref of refs) {
+      const key = ref.pathway_id ?? '__none__'
+      const title = ref.pathway_title ?? '—'
+      if (!buckets.has(key)) buckets.set(key, { pathwayTitle: title, refs: [] })
+      buckets.get(key)!.refs.push(ref)
+    }
+    return Array.from(buckets.values())
+  }, [refs])
+
+  return (
+    <div>
+      <div className="flex items-center gap-2.5">
+        <Text variant="body-strong">{usageLabel(usageCount)}</Text>
+        {usageCount > 0 && (
+          <button
+            type="button"
+            onClick={toggle}
+            disabled={loading}
+            className="text-[12px] font-[var(--fc-fw-semibold)] text-[color:var(--fc-accent-700)] underline-offset-2 hover:underline"
+          >
+            {loading ? 'Loading…' : expanded ? 'Hide' : 'Show where'}
+          </button>
+        )}
+      </div>
+
+      {expanded && refs !== null && (
+        <div className="mt-3 rounded-[var(--fc-radius-md)] bg-slate-50 px-4 py-3 text-[12px]">
+          {refs.length === 0 ? (
+            <Text variant="meta" muted>Not referenced from any pathway yet.</Text>
+          ) : (
+            <ul className="space-y-2.5">
+              {grouped!.map((g) => (
+                <li key={g.pathwayTitle}>
+                  <Text variant="body-strong" className="text-[12px]">{g.pathwayTitle}</Text>
+                  <ul className="ml-3 mt-1 space-y-0.5">
+                    {g.refs.map((ref, i) => (
+                      <li key={i} className="text-[12px] text-[color:var(--fc-ink-primary)]">
+                        {ref.href ? (
+                          <a
+                            href={ref.href}
+                            className="underline-offset-2 hover:text-[color:var(--fc-accent-700)] hover:underline"
+                          >
+                            {ref.step_title ?? (ref.kind === 'about_block' ? 'About page' : 'Step')}
+                          </a>
+                        ) : (
+                          <span>{ref.step_title ?? 'About page'}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// ResourceCard — Card + Badge + StatusBadge composition.
+// ---------------------------------------------------------------------------
+
+function ResourceCard({
+  resource, selected, onOpen, onTogglePublish, onArchive, onRestore, onDelete, deleting,
+}: {
+  resource: CreatorResource
+  selected: boolean
+  onOpen: () => void
+  onTogglePublish: () => void
+  onArchive: () => void
+  onRestore: () => void
+  onDelete: () => void
+  deleting: boolean
+}) {
+  const r = resource
+  const isArchived = r.status === 'archived'
+  const primary = r.pathways?.[0] ?? null
+  const pathwayPalette = paletteForPathway(primary, isArchived)
+  const pathwayLabel = primary?.title ?? 'General'
+
+  const variant =
+    selected   ? 'selected' :
+    isArchived ? 'archived' :
+    'default'
+
+  const overflowItems = isArchived
+    ? [
+        { label: 'Restore', onClick: onRestore },
+        {
+          label: deleting ? 'Deleting…' : 'Delete',
+          onClick: onDelete, tone: 'danger' as const,
+          dividerAbove: true, disabled: deleting,
+        },
+      ]
+    : [
+        { label: r.status === 'published' ? 'Unpublish' : 'Publish', onClick: onTogglePublish },
+        { label: 'Archive', onClick: onArchive },
+        {
+          label: deleting ? 'Deleting…' : 'Delete',
+          onClick: onDelete, tone: 'danger' as const,
+          dividerAbove: true, disabled: deleting,
+        },
+      ]
+
+  const statusKind: 'published' | 'draft' | 'archived' =
+    r.status === 'published' ? 'published'
+    : r.status === 'archived' ? 'archived'
+    : 'draft'
+
+  return (
+    <Card
+      as="article"
+      variant={variant}
+      padding="lg"
+      interactive={!selected}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
+      }}
+      className="flex min-w-0 flex-col text-left"
+    >
+      {/* Row: icon circle + overflow */}
+      <div className="flex items-start justify-between">
+        <span
+          className="inline-flex h-11 w-11 items-center justify-center rounded-full"
+          style={{
+            background: `var(--fc-type-${TYPE_TO_BADGE[r.resource_type]}-bg)`,
+            color: `var(--fc-type-${TYPE_TO_BADGE[r.resource_type]})`,
+          }}
+          aria-hidden="true"
+        >
+          <ResourceTypeIcon type={r.resource_type} size={19} />
+        </span>
+        <div
+          className="-mr-2 -mt-2"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <OverflowMenu
+            ariaLabel={`Actions for ${r.title}`}
+            items={overflowItems}
+          />
+        </div>
+      </div>
+
+      {/* Title — dominant */}
+      <h4
+        className="mt-6 line-clamp-2 min-h-[2.75em] text-[17px] font-[var(--fc-fw-semibold)] leading-snug tracking-[-0.005em] text-[color:var(--fc-ink-heading)]"
+        title={r.title}
+      >
+        {r.title}
+      </h4>
+
+      {/* Type + status */}
+      <div className="mt-3 flex items-center gap-1.5">
+        <Badge tone={TYPE_TO_BADGE[r.resource_type]}>
+          {TYPE_LABEL[r.resource_type]}
+        </Badge>
+        <StatusBadge status={statusKind} />
+      </div>
+
+      {/* Spacer keeps pathway/usage flush at the bottom */}
+      <div className="flex-1" />
+
+      {/* Pathway */}
+      <div className="mt-7 flex items-center gap-2">
+        <span
+          className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+          style={{ background: pathwayPalette.dot }}
+          aria-hidden="true"
+        />
+        <span className="truncate text-[13px] font-[var(--fc-fw-semibold)] text-[color:var(--fc-ink-primary)]">
+          {pathwayLabel}
+        </span>
+      </div>
+
+      {/* Usage */}
+      <p className="mt-2 text-[12px] text-[color:var(--fc-ink-primary)]">
+        {usageLabel(r.usage_count)}
+      </p>
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Resource-type SVG icons — unchanged.
+// ---------------------------------------------------------------------------
+
+function ResourceTypeIcon({ type, size = 16 }: { type: ResourceType; size?: number }) {
+  const s = size
+  const props = { width: s, height: s, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+  switch (type) {
+    case 'audio':
+      return (
+        <svg {...props} aria-hidden="true">
+          <path d="M9 18V5l12-2v13" />
+          <circle cx="6" cy="18" r="3" />
+          <circle cx="18" cy="16" r="3" />
+        </svg>
+      )
+    case 'video':
+    case 'replay':
+      return (
+        <svg {...props} aria-hidden="true">
+          <rect x="2" y="6" width="15" height="12" rx="2" />
+          <path d="M17 9l5-3v12l-5-3V9z" />
+        </svg>
+      )
+    case 'file':
+    case 'template':
+      return (
+        <svg {...props} aria-hidden="true">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="8"  y1="13" x2="16" y2="13" />
+          <line x1="8"  y1="17" x2="12" y2="17" />
+        </svg>
+      )
+    case 'guide':
+      return (
+        <svg {...props} aria-hidden="true">
+          <path d="M4 5a2 2 0 012-2h11v18H6a2 2 0 01-2-2V5z" />
+          <line x1="8" y1="7" x2="15" y2="7" />
+          <line x1="8" y1="11" x2="15" y2="11" />
+          <line x1="8" y1="15" x2="12" y2="15" />
+        </svg>
+      )
+    case 'link':
+      return (
+        <svg {...props} aria-hidden="true">
+          <path d="M10 14a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1" />
+          <path d="M14 10a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1" />
+        </svg>
+      )
+    case 'other':
+    default:
+      return (
+        <svg {...props} aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12" y2="16" />
+        </svg>
+      )
+  }
 }

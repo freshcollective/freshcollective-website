@@ -11,41 +11,40 @@ interface NavItem {
   exact?: boolean
 }
 
+// World Management — information architecture per the "living world"
+// philosophy: this is not a SaaS dashboard, it's a caretaker's view of
+// the people, places and moments that make up Fresh Collective.
+//
+// Routes are deliberately preserved (e.g. /admin/users, /admin/revenue)
+// so existing bookmarks, deep links and backend endpoints keep working;
+// only the caretaker-facing labels change.
 const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
-    label: 'PLATFORM',
+    label: '🌍 OUR WORLD',
     items: [
-      { href: '/admin/overview',    label: 'Overview', exact: true },
+      { href: '/admin/overview',    label: 'Mother World', exact: true },
+      { href: '/admin/atlas',       label: 'Atlas' },
       { href: '/admin/collectives', label: 'Collectives' },
       { href: '/admin/creators',    label: 'Creators' },
-      { href: '/admin/users',       label: 'Users' },
-      { href: '/admin/access',      label: 'Access & Invites' },
+      { href: '/admin/users',       label: 'Members' },
     ],
   },
   {
-    label: 'SALES',
+    label: '💰 COMMERCE',
     items: [
-      { href: '/admin/sales',                label: 'Sales Overview', exact: true },
-      { href: '/admin/sales/leads',          label: 'Leads' },
-      { href: '/admin/sales/opportunities',  label: 'Opportunities' },
-      { href: '/admin/sales/tasks',          label: 'Tasks' },
+      { href: '/admin/revenue',  label: 'Commerce' },
+      { href: '/admin/payments', label: 'Transactions' },
+      { href: '/admin/billing',  label: 'Creator Subscriptions' },
+      { href: '/admin/pricing',  label: 'Fresh Collective Plans' },
     ],
   },
   {
-    label: 'MONEY',
+    label: '🤝 CARE',
     items: [
-      { href: '/admin/revenue',  label: 'Revenue' },
-      { href: '/admin/payments', label: 'Payments' },
-      { href: '/admin/billing',  label: 'Creator Billing' },
-      { href: '/admin/pricing',  label: 'Pricing' },
-    ],
-  },
-  {
-    label: 'OPERATIONS',
-    items: [
-      { href: '/admin/moderation', label: 'Moderation' },
-      { href: '/admin/settings',   label: 'Settings' },
-      { href: '/admin/audit',      label: 'Audit Logs' },
+      { href: '/admin/moderation',  label: 'Community Care' },
+      { href: '/admin/world-guide', label: 'World Guide' },
+      { href: '/admin/settings',    label: 'World Settings' },
+      { href: '/admin/audit',       label: 'World History' },
     ],
   },
 ]
@@ -76,7 +75,7 @@ function SidebarContent({
         </div>
         <div>
           <div className="text-[13px] font-bold text-[#0F172A] leading-none">Fresh Collective</div>
-          <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-teal-600">Admin</div>
+          <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-teal-600">World Management</div>
         </div>
       </div>
 
@@ -84,7 +83,7 @@ function SidebarContent({
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         {NAV_SECTIONS.map(({ label, items }) => (
           <div key={label} className="mb-4">
-            <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-[#94A3B8]">
+            <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-[#000000]">
               {label}
             </p>
             <div className="space-y-0.5">
@@ -100,7 +99,7 @@ function SidebarContent({
                     className={`flex items-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
                       active
                         ? 'bg-teal-50 text-teal-700'
-                        : 'text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]'
+                        : 'text-[#000000] hover:bg-[#F1F5F9] hover:text-[#0F172A]'
                     }`}
                     style={active ? { border: '1px solid rgba(56,160,158,0.2)' } : { border: '1px solid transparent' }}
                   >
@@ -115,17 +114,17 @@ function SidebarContent({
 
       {/* Footer */}
       <div className="px-4 py-3 space-y-2" style={{ borderTop: '1px solid #E2E8F0' }}>
-        <p className="truncate text-[11px] text-[#94A3B8]">{userEmail}</p>
+        <p className="truncate text-[11px] text-[#000000]">{userEmail}</p>
         <Link
           href="/"
-          className="block text-[12px] text-[#64748B] transition-colors hover:text-[#0F172A]"
+          className="block text-[12px] text-[#000000] transition-colors hover:text-[#0F172A]"
         >
           ← Back to site
         </Link>
         <button
           type="button"
           onClick={handleLogout}
-          className="block text-[12px] text-[#64748B] transition-colors hover:text-red-500"
+          className="block text-[12px] text-[#000000] transition-colors hover:text-red-500"
         >
           Sign out
         </button>

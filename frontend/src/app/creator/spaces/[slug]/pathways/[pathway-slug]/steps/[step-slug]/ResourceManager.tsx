@@ -88,7 +88,7 @@ function EditForm({
       onSubmit={handleSave}
       className="flex flex-col gap-3 rounded-xl border border-teal-200 bg-teal-50/30 px-4 py-3"
     >
-      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-black">
         Editing resource
       </p>
       <input
@@ -117,7 +117,7 @@ function EditForm({
         <button
           type="button"
           onClick={onCancel}
-          className="text-sm text-slate-400 hover:text-slate-600"
+          className="text-sm text-black hover:text-slate-600"
         >
           Cancel
         </button>
@@ -244,10 +244,10 @@ export default function ResourceManager({
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-black">
           Resources
         </p>
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="mt-1 text-xs text-black">
           Supplementary materials learners see below the step content.
         </p>
       </div>
@@ -271,19 +271,19 @@ export default function ResourceManager({
               >
                 <div className="min-w-0 flex-1">
                   <div className="mb-0.5 flex items-center gap-2">
-                    <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                    <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-black">
                       {TYPE_LABEL[resource.resource_type] ?? resource.resource_type}
                     </span>
                     {resource.file_size && (
-                      <span className="text-xs text-slate-400">{formatBytes(resource.file_size)}</span>
+                      <span className="text-xs text-black">{formatBytes(resource.file_size)}</span>
                     )}
                   </div>
                   <p className="text-sm font-medium text-navy-900">{resource.title}</p>
                   {resource.description && (
-                    <p className="mt-0.5 text-xs text-slate-500">{resource.description}</p>
+                    <p className="mt-0.5 text-xs text-black">{resource.description}</p>
                   )}
                   {resource.url && (
-                    <p className="mt-0.5 truncate text-xs text-slate-400">
+                    <p className="mt-0.5 truncate text-xs text-black">
                       {resource.file_name ?? resource.url}
                     </p>
                   )}
@@ -291,13 +291,13 @@ export default function ResourceManager({
                 <div className="flex shrink-0 items-center gap-3 pt-0.5">
                   <button
                     onClick={() => setEditingId(resource.id)}
-                    className="text-xs text-slate-400 hover:text-navy-700"
+                    className="text-xs text-black hover:text-navy-700"
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => handleDelete(resource)}
-                    className="text-xs text-slate-400 hover:text-red-500"
+                    className="text-xs text-black hover:text-red-500"
                   >
                     Delete
                   </button>
@@ -313,13 +313,13 @@ export default function ResourceManager({
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setMode('add-link')}
-            className="rounded-lg border border-border bg-white px-3.5 py-2 text-sm text-slate-600 transition-colors hover:border-navy-300 hover:text-navy-700"
+            className="rounded-lg border border-border bg-white px-3.5 py-2 text-sm text-black transition-colors hover:border-navy-300 hover:text-navy-700"
           >
             + Add link
           </button>
           <button
             onClick={() => setMode('upload')}
-            className="rounded-lg border border-border bg-white px-3.5 py-2 text-sm text-slate-600 transition-colors hover:border-navy-300 hover:text-navy-700"
+            className="rounded-lg border border-border bg-white px-3.5 py-2 text-sm text-black transition-colors hover:border-navy-300 hover:text-navy-700"
           >
             + Upload file
           </button>
@@ -332,7 +332,7 @@ export default function ResourceManager({
           onSubmit={handleAddLink}
           className="flex flex-col gap-3 rounded-xl border border-border bg-surface px-5 py-4"
         >
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-black">
             Add external link
           </p>
 
@@ -346,7 +346,7 @@ export default function ResourceManager({
                   'rounded-full border px-3 py-1 text-xs transition-colors',
                   linkType === t.value
                     ? 'border-navy-900 bg-navy-900 text-white'
-                    : 'border-border text-slate-500 hover:border-slate-400',
+                    : 'border-border text-black hover:border-slate-400',
                 ].join(' ')}
               >
                 {t.label}
@@ -380,7 +380,7 @@ export default function ResourceManager({
             <button
               type="button"
               onClick={resetForms}
-              className="text-sm text-slate-400 hover:text-slate-600"
+              className="text-sm text-black hover:text-slate-600"
             >
               Cancel
             </button>
@@ -404,10 +404,10 @@ export default function ResourceManager({
           onSubmit={handleUpload}
           className="flex flex-col gap-3 rounded-xl border border-border bg-surface px-5 py-4"
         >
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-black">
             Upload file
           </p>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-black">
             Allowed: PDF, MP4, MOV, MP3, WAV, M4A, DOCX, PNG, JPG · Max 200 MB
           </p>
 
@@ -426,11 +426,11 @@ export default function ResourceManager({
           />
 
           <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-white px-4 py-6 text-center transition-colors hover:border-navy-300">
-            <span className="text-sm text-slate-500">
+            <span className="text-sm text-black">
               {uploadFile ? uploadFile.name : 'Choose a file…'}
             </span>
             {uploadFile && (
-              <span className="text-xs text-slate-400">{formatBytes(uploadFile.size)}</span>
+              <span className="text-xs text-black">{formatBytes(uploadFile.size)}</span>
             )}
             <input
               ref={fileInputRef}
@@ -445,7 +445,7 @@ export default function ResourceManager({
             <button
               type="button"
               onClick={resetForms}
-              className="text-sm text-slate-400 hover:text-slate-600"
+              className="text-sm text-black hover:text-slate-600"
             >
               Cancel
             </button>

@@ -16,10 +16,12 @@ from app.core.database import SessionLocal
 from app.models.notification import Notification
 from app.models.platform import (
     CommunityPost,
+    ConversationChannel,
     Event,
     EventBooking,
     BookingStatus,
     Pathway,
+    PathwayStep,
     PostComment,
     Space,
     SpaceMembership,
@@ -31,6 +33,21 @@ from app.models.user import User
 from app.services.email_service import email_service, notification_email_html
 
 logger = logging.getLogger(__name__)
+
+
+def _channel_name(channel_id: str | None, db: Session) -> str | None:
+    """Human-readable Channel name for use inside notification copy.
+    Returns None for system Channels (Start Here + Common Room) so
+    notifications coming from them read as "New conversation" rather
+    than the noisier "New conversation in Common Room"."""
+    if not channel_id:
+        return None
+    c = db.query(ConversationChannel).filter(ConversationChannel.id == channel_id).first()
+    if c is None:
+        return None
+    if c.is_system:
+        return None
+    return c.name
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +105,7 @@ def _get_notification_pref(
             "comment_reply_email": True,
             "pathway_comment_email": True,
             "new_pathway_email": True,
+            "direct_message_email": True,
         }
         return defaults.get(pref_key, False)
     return bool(getattr(prefs, pref_key, False))
@@ -196,8 +214,15 @@ def trigger_new_post(post_id: str, space_id: str, author_id: str) -> None:
         author = db.query(User).filter(User.id == author_id).first()
         author_name = author.name or "A member" if author else "A member"
 
-        post_title = post.title or "a new post"
-        title = "New post in the community"
+        post_title = post.title or "a new conversation"
+        # Terminology shift — "the community" is retired as a visible label
+        # in favour of "Conversations". Backend internals + routes keep
+        # the community_posts naming for now.
+        # Include the Channel name so a member scanning notifications can
+        # tell where the conversation belongs (General vs. a specific
+        # Pathway / Private Channel).
+        channel_name = _channel_name(post.channel_id, db)
+        title = f"New conversation in {channel_name}" if channel_name else "New conversation"
         message = f"{author_name} shared {post_title}."
         space = db.query(Space).filter(Space.id == space_id).first()
         space_slug = space.slug if space else space_id
@@ -332,5 +357,221 @@ def trigger_new_pathway(pathway_id: str) -> None:
                 logger.exception("trigger_new_pathway failed for member %s", membership.user_id)
     except Exception:
         logger.exception("trigger_new_pathway failed for pathway %s", pathway_id)
+    finally:
+        db.close()
+
+
+def trigger_new_step(step_id: str, creator_id: str) -> None:
+    """Notify active space members when a new step is added to a pathway (excluding the creator)."""
+    db = SessionLocal()
+    try:
+        step = db.query(PathwayStep).filter(PathwayStep.id == step_id).first()
+        if not step:
+            return
+
+        pathway = db.query(Pathway).filter(Pathway.id == step.pathway_id).first()
+        if not pathway or not pathway.space_id:
+            return
+
+        space = db.query(Space).filter(Space.id == pathway.space_id).first()
+        if not space:
+            return
+
+        title = f"New step added: \"{step.title}\""
+        message = f"A new step has been added to the pathway \"{pathway.title}\"."
+        notif_url = f"/spaces/{space.slug}/pathways/{pathway.slug}/{step.slug}"
+
+        memberships = (
+            db.query(SpaceMembership)
+            .filter(
+                SpaceMembership.space_id == pathway.space_id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+                SpaceMembership.user_id != creator_id,
+            )
+            .all()
+        )
+
+        for membership in memberships:
+            try:
+                notif = create_notification(
+                    db=db,
+                    recipient_id=membership.user_id,
+                    notification_type="new_pathway_step",
+                    title=title,
+                    message=message,
+                    url=notif_url,
+                )
+
+                if _get_notification_pref(db, membership.user_id, pathway.space_id, "new_pathway_email"):
+                    member = db.query(User).filter(User.id == membership.user_id).first()
+                    if member:
+                        html = notification_email_html(title=title, message=message, url=notif_url)
+                        email_service.send(to=member.email, subject=title, html_body=html)
+                        notif.email_sent_at = datetime.utcnow()
+                        db.commit()
+            except Exception:
+                logger.exception("trigger_new_step failed for member %s", membership.user_id)
+    except Exception:
+        logger.exception("trigger_new_step failed for step %s", step_id)
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Community Phase 1 — reply, mention, caretaker-answer triggers
+# ---------------------------------------------------------------------------
+#
+# Each trigger creates a distinct notification_type so the notifications
+# UI can label + colour it appropriately. Email preferences reuse the
+# existing `comment_reply_email` flag for reply-shaped events; mentions
+# and caretaker-answers ignore email prefs for now (in-app only) so we
+# don't inbox-spam members while the feature settles.
+
+def _short(text: str, max_len: int = 120) -> str:
+    text = (text or "").strip().replace("\n", " ")
+    return text if len(text) <= max_len else text[: max_len - 1].rstrip() + "…"
+
+
+def trigger_reply_to_comment(
+    post_id: str,
+    comment_id: str,
+    parent_comment_id: str,
+    commenter_id: str,
+) -> None:
+    """Notify the parent comment's author when someone replies to them."""
+    db = SessionLocal()
+    try:
+        parent = db.query(PostComment).filter(PostComment.id == parent_comment_id).first()
+        if not parent or parent.author_id == commenter_id:
+            return
+        post = db.query(CommunityPost).filter(CommunityPost.id == post_id).first()
+        if not post:
+            return
+        commenter = db.query(User).filter(User.id == commenter_id).first()
+        commenter_name = (commenter.name if commenter and commenter.name else "Someone")
+        title = "New reply to your comment"
+        message = f"{commenter_name} replied to your comment."
+        space = db.query(Space).filter(Space.id == post.space_id).first()
+        notif_url = f"/spaces/{space.slug}/community/{post.id}" if space else None
+
+        notif = create_notification(
+            db=db,
+            recipient_id=parent.author_id,
+            notification_type="comment_reply",
+            title=title,
+            message=message,
+            url=notif_url,
+        )
+        if _get_notification_pref(db, parent.author_id, post.space_id, "comment_reply_email"):
+            recipient = db.query(User).filter(User.id == parent.author_id).first()
+            if recipient:
+                html = notification_email_html(title=title, message=message, url=notif_url)
+                email_service.send(to=recipient.email, subject=title, html_body=html)
+                notif.email_sent_at = datetime.utcnow()
+                db.commit()
+    except Exception:
+        logger.exception("trigger_reply_to_comment failed for comment %s", comment_id)
+    finally:
+        db.close()
+
+
+def trigger_mention(
+    post_id: str,
+    comment_id: str | None,
+    author_id: str,
+    mentioned_user_id: str,
+) -> None:
+    """Notify a member when they've been @mentioned in a post or comment.
+
+    Scope-safety: mention resolution already filtered to active members
+    of the target space, so this trigger only needs to render the
+    notification.
+    """
+    if mentioned_user_id == author_id:
+        return
+    db = SessionLocal()
+    try:
+        post = db.query(CommunityPost).filter(CommunityPost.id == post_id).first()
+        if not post:
+            return
+        author = db.query(User).filter(User.id == author_id).first()
+        author_name = (author.name if author and author.name else "Someone")
+        space = db.query(Space).filter(Space.id == post.space_id).first()
+        notif_url = f"/spaces/{space.slug}/community/{post.id}" if space else None
+        channel_name = _channel_name(post.channel_id, db)
+        where = "in a comment" if comment_id else (
+            f"in \"{post.title}\"" if post.title else "in a conversation"
+        )
+        if channel_name:
+            where = f"{where} in {channel_name}"
+        title = f"{author_name} mentioned you"
+        message = f"{author_name} mentioned you {where}."
+        create_notification(
+            db=db,
+            recipient_id=mentioned_user_id,
+            notification_type="mention",
+            title=title,
+            message=message,
+            url=notif_url,
+        )
+    except Exception:
+        logger.exception("trigger_mention failed for user %s", mentioned_user_id)
+    finally:
+        db.close()
+
+
+def trigger_caretaker_reply_to_question(
+    post_id: str,
+    comment_id: str,
+    responder_id: str,
+) -> None:
+    """When a caretaker (space creator/moderator, or platform admin) answers
+    a Question post, ping the question's author with a distinct notification.
+
+    This fires *in addition to* the normal comment_reply trigger, so the
+    original poster feels seen when the person who runs the collective
+    replies. Idempotent: if the responder is the question's own author,
+    or not a caretaker, we noop.
+    """
+    db = SessionLocal()
+    try:
+        post = db.query(CommunityPost).filter(CommunityPost.id == post_id).first()
+        if not post or post.author_id == responder_id:
+            return
+        responder = db.query(User).filter(User.id == responder_id).first()
+        if not responder:
+            return
+
+        is_caretaker = responder.role in ("admin", "creator")
+        if not is_caretaker:
+            membership_role = (
+                db.query(SpaceMembership.role)
+                .filter(
+                    SpaceMembership.space_id == post.space_id,
+                    SpaceMembership.user_id == responder_id,
+                    SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]),
+                    SpaceMembership.status == SpaceMembershipStatus.active,
+                )
+                .first()
+            )
+            is_caretaker = membership_role is not None
+        if not is_caretaker:
+            return
+
+        responder_name = responder.name or "A caretaker"
+        title = "A caretaker replied to your question"
+        message = f"{responder_name} replied to your question."
+        space = db.query(Space).filter(Space.id == post.space_id).first()
+        notif_url = f"/spaces/{space.slug}/community/{post.id}" if space else None
+        create_notification(
+            db=db,
+            recipient_id=post.author_id,
+            notification_type="caretaker_answer",
+            title=title,
+            message=message,
+            url=notif_url,
+        )
+    except Exception:
+        logger.exception("trigger_caretaker_reply_to_question failed for post %s", post_id)
     finally:
         db.close()

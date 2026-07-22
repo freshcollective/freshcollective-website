@@ -71,13 +71,13 @@ function StepNavItem({
               isActive
                 ? 'font-semibold text-navy-900'
                 : step.is_completed
-                  ? 'text-slate-400'
+                  ? 'text-black'
                   : 'text-navy-900 group-hover:text-teal-700'
             }`}
           >
             {step.title}
           </p>
-          <p className="mt-0.5 text-[11px] text-slate-400">
+          <p className="mt-0.5 text-[11px] text-black">
             {typeLabel}
             {step.estimated_minutes ? ` · ${step.estimated_minutes} min` : ''}
           </p>
@@ -102,7 +102,7 @@ function ProgressBar({
 }) {
   return (
     <>
-      <div className="mb-1 flex items-center justify-between text-[11px] text-slate-400">
+      <div className="mb-1 flex items-center justify-between text-[11px] text-black">
         <span>{completedCount} of {totalCount} complete</span>
         <span>{progressPct}%</span>
       </div>
@@ -145,10 +145,10 @@ function SectionGroup({
         className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left hover:bg-slate-50 transition-colors"
       >
         <div className="min-w-0">
-          <span className="block text-[12px] font-semibold text-slate-600 leading-snug">
+          <span className="block text-[12px] font-semibold text-black leading-snug">
             {section.title}
           </span>
-          <span className="text-[11px] text-slate-400">
+          <span className="text-[11px] text-black">
             {sectionCompleted} of {section.steps.length} complete
           </span>
         </div>
@@ -228,7 +228,7 @@ export default function PathwayStepNav({
       if (sections.length > 0) {
         items.push(
           <li key="__unsectioned-label" className="px-3 pt-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Other</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-black">Other</span>
           </li>
         )
       }
@@ -284,7 +284,7 @@ export default function PathwayStepNav({
             <p className="mt-0.5 text-[13px] font-medium text-navy-900">
               Step {currentIndex + 1} of {totalCount}
               {completedCount > 0 && (
-                <span className="ml-2 text-[12px] font-normal text-slate-400">
+                <span className="ml-2 text-[12px] font-normal text-black">
                   · {completedCount} complete
                 </span>
               )}
@@ -326,7 +326,7 @@ export default function PathwayStepNav({
           <div className="border-b border-slate-100 px-4 py-4">
             <Link
               href={pathwayHref}
-              className="mb-3 inline-block text-[12px] font-medium text-slate-400 transition-colors hover:text-teal-600"
+              className="mb-3 inline-block text-[12px] font-medium text-black transition-colors hover:text-teal-600"
             >
               ← {pathwayTitle}
             </Link>

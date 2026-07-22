@@ -48,14 +48,14 @@ export default async function AdminLayout({
       <div className="flex min-h-screen items-center justify-center bg-[#F8F9FA]">
         <div className="text-center">
           <h1 className="mb-2 text-xl font-bold text-[#0F172A]">Access denied</h1>
-          <p className="mb-6 text-[14px] text-[#64748B]">
+          <p className="mb-6 text-[14px] text-[#000000]">
             You need admin access to view this page.
           </p>
           <a
             href="/dashboard"
             className="rounded-lg bg-teal-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-teal-600"
           >
-            Back to dashboard
+            Back to Your World
           </a>
         </div>
       </div>

@@ -32,12 +32,12 @@ export default async function SettingsMembershipPage() {
     <div>
       <div className="mb-8">
         <h2 className="mb-1 text-lg font-semibold text-navy-900">Membership</h2>
-        <p className="text-sm text-slate-500">Your access and collectives on Fresh Collective.</p>
+        <p className="text-sm text-black">Your access and collectives on Fresh Collective.</p>
       </div>
 
       {/* Account status */}
       <section className="mb-8">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
           Account
         </p>
         <div
@@ -47,7 +47,7 @@ export default async function SettingsMembershipPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[14px] font-medium text-navy-800">{profile?.email}</p>
-              <p className="mt-0.5 text-[12px] text-slate-400 capitalize">{profile?.role} account</p>
+              <p className="mt-0.5 text-[12px] text-black capitalize">{profile?.role} account</p>
             </div>
             <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
               Active
@@ -58,7 +58,7 @@ export default async function SettingsMembershipPage() {
 
       {/* Collectives */}
       <section className="mb-8">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
           Collectives
         </p>
         {memberships.length > 0 ? (
@@ -76,7 +76,7 @@ export default async function SettingsMembershipPage() {
                   >
                     {m.space_name}
                   </Link>
-                  <p className="mt-0.5 text-[12px] text-slate-400">Joined {formatDate(m.joined_at)}</p>
+                  <p className="mt-0.5 text-[12px] text-black">Joined {formatDate(m.joined_at)}</p>
                 </div>
                 <RolePill role={m.role} />
               </div>
@@ -88,7 +88,7 @@ export default async function SettingsMembershipPage() {
             style={{ boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
           >
             <p className="text-[14px] font-medium text-navy-800">Your memberships</p>
-            <p className="mt-1 text-[13px] text-slate-400">
+            <p className="mt-1 text-[13px] text-black">
               Collectives and membership details will appear here.
             </p>
           </div>
@@ -97,14 +97,14 @@ export default async function SettingsMembershipPage() {
 
       {/* Subscription placeholder */}
       <section>
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
           Subscription
         </p>
         <div className="overflow-hidden rounded-2xl border border-dashed border-border bg-white px-6 py-8 text-center">
-          <p className="text-[14px] text-slate-400">
+          <p className="text-[14px] text-black">
             Subscription management coming soon.
           </p>
-          <p className="mt-1 text-[12px] text-slate-300">
+          <p className="mt-1 text-[12px] text-black">
             Billing and plan details will appear here once Stripe is connected.
           </p>
         </div>

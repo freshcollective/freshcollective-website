@@ -142,6 +142,7 @@ class SpaceDetail(BaseModel):
     status: str
     timezone: str = 'Australia/Melbourne'
     cover_image_url: str | None = None
+    logo_url: str | None = None
     themes: list[str] = []
     pricing_type: str = 'free'
     pricing_amount_cents: int | None = None
@@ -157,6 +158,26 @@ class SpaceDetail(BaseModel):
     guidance_focus_body: str | None = None
     guidance_links_title: str | None = None
     guidance_links_body: str | None = None
+    # Atlas v1.2 identity fields — Location provides artwork, Colour Palette
+    # drives the collective's visual interface, atmosphere + identity + welcome
+    # personalise the experience. Legacy collectives (created before v1.2)
+    # may have NULLs in the underlying columns; the pre-validator below
+    # coerces those NULLs into safe defaults so response shape stays stable.
+    location: dict | None = None
+    location_id: str | None = None
+    colour_palette: dict | None = None
+    colour_palette_key: str | None = None
+    atmosphere_keys: list[str] = []
+    identity_statement: str | None = None
+    welcome_message: str | None = None
+
+    @field_validator("atmosphere_keys", mode="before")
+    @classmethod
+    def _coerce_atmosphere_keys(cls, v: object) -> list[str]:
+        # Legacy rows may store None where the migration expected a list.
+        if v is None:
+            return []
+        return v  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +189,9 @@ ALLOWED_RESOURCE_TYPES: set[str] = {
 }
 
 
+ALLOWED_RESOURCE_STATUSES: set[str] = {"draft", "published", "archived"}
+
+
 class ResourceCreateRequest(BaseModel):
     title: str
     description: str | None = None
@@ -175,6 +199,12 @@ class ResourceCreateRequest(BaseModel):
     url: str | None = None
     status: str = "draft"
     sort_order: int = 0
+    # v2 multi-pathway. Empty/missing list = General. Legacy `scope` and
+    # `pathway_id` fields are still accepted from old clients but ignored
+    # whenever `pathway_ids` is provided; route writes both old + new for
+    # back-compat (see creator/routes.py).
+    pathway_ids: list[str] | None = None
+    # Legacy (kept for back-compat with older API consumers)
     scope: str = "general"
     pathway_id: str | None = None
 
@@ -198,8 +228,8 @@ class ResourceCreateRequest(BaseModel):
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str) -> str:
-        if v not in ("draft", "published"):
-            raise ValueError("Status must be 'draft' or 'published'.")
+        if v not in ALLOWED_RESOURCE_STATUSES:
+            raise ValueError(f"Status must be one of: {sorted(ALLOWED_RESOURCE_STATUSES)}.")
         return v
 
 
@@ -210,6 +240,8 @@ class ResourceUpdateRequest(BaseModel):
     url: str | None = None
     status: str | None = None
     sort_order: int | None = None
+    pathway_ids: list[str] | None = None
+    # Legacy (kept for back-compat)
     scope: str | None = None
     pathway_id: str | None = None
 
@@ -232,9 +264,17 @@ class ResourceUpdateRequest(BaseModel):
     @field_validator("status")
     @classmethod
     def validate_status(cls, v: str | None) -> str | None:
-        if v is not None and v not in ("draft", "published"):
-            raise ValueError("Status must be 'draft' or 'published'.")
+        if v is not None and v not in ALLOWED_RESOURCE_STATUSES:
+            raise ValueError(f"Status must be one of: {sorted(ALLOWED_RESOURCE_STATUSES)}.")
         return v
+
+
+class ResourcePathwayInfo(BaseModel):
+    """Minimal pathway info for resource badges in Creator Studio."""
+    model_config = {"from_attributes": True}
+    id: str
+    slug: str
+    title: str
 
 
 class ResourceResponse(BaseModel):
@@ -248,10 +288,33 @@ class ResourceResponse(BaseModel):
     file_size: int | None
     status: str
     sort_order: int
+    # v2: list of pathways this resource belongs to. Empty list = General.
+    pathways: list[ResourcePathwayInfo] = []
+    # Count of references from step + about blocks. Computed server-side
+    # in a single grouped query (see creator/routes.py).
+    usage_count: int = 0
+    # Legacy back-compat fields (still populated, but new UI uses `pathways`)
     scope: str = "general"
     pathway_id: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class ResourceUsageReference(BaseModel):
+    """One place where a resource is referenced."""
+    kind: str  # "step_block" | "about_block"
+    pathway_id: str | None = None
+    pathway_title: str | None = None
+    pathway_slug: str | None = None
+    step_id: str | None = None
+    step_title: str | None = None
+    step_slug: str | None = None
+    href: str | None = None  # creator-studio link to the location
+
+
+class ResourceUsageResponse(BaseModel):
+    resource_id: str
+    references: list[ResourceUsageReference]
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +332,10 @@ class PathwayCreateRequest(BaseModel):
     price_cents: int | None = None
     currency: str = "AUD"
     billing_interval: str | None = None
+    # When True (default), a 🛤 pathway-typed Conversation Channel is
+    # created alongside the Pathway. Members are auto-joined by their
+    # active Enrollment through the permissions layer.
+    create_channel: bool = True
 
     @field_validator("title")
     @classmethod
@@ -304,6 +371,7 @@ class PathwayUpdateRequest(BaseModel):
     price_cents: int | None = None
     currency: str | None = None
     billing_interval: str | None = None
+    cover_image_url: str | None = None
 
     @field_validator("status")
     @classmethod
@@ -315,7 +383,7 @@ class PathwayUpdateRequest(BaseModel):
     @field_validator("access_type")
     @classmethod
     def validate_access_type(cls, v: str | None) -> str | None:
-        if v is not None and v not in ("free", "included", "one_time", "subscription"):
+        if v is not None and v not in ("free", "included", "one_time", "subscription", "included_with_offer"):
             raise ValueError("Invalid access type.")
         return v
 
@@ -358,6 +426,7 @@ class ReorderRequest(BaseModel):
 
 class SectionCreateRequest(BaseModel):
     title: str
+    banner_image_url: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -372,6 +441,7 @@ class SectionCreateRequest(BaseModel):
 
 class SectionUpdateRequest(BaseModel):
     title: str | None = None
+    banner_image_url: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -389,6 +459,7 @@ class SectionResponse(BaseModel):
     pathway_id: str
     title: str
     position: int
+    banner_image_url: str | None = None
     created_at: datetime
 
 
@@ -405,6 +476,9 @@ class StepCreateRequest(BaseModel):
     estimated_minutes: int | None = None
     is_required: bool = True
     section_id: str | None = None
+    reflection_enabled: bool = True
+    discussion_enabled: bool = True
+    banner_image_url: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -422,6 +496,12 @@ class StepCreateRequest(BaseModel):
         return v
 
 
+_VALID_RELEASE_TYPES = {
+    "immediate", "days_after_enrollment", "fixed_date", "after_previous", "manual",
+}
+_VALID_PREVIOUS_STATES = {"completed", "started"}
+
+
 class StepUpdateRequest(BaseModel):
     title: str | None = None
     content_type: str | None = None
@@ -430,12 +510,35 @@ class StepUpdateRequest(BaseModel):
     estimated_minutes: int | None = None
     is_required: bool | None = None
     section_id: str | None = None
+    reflection_enabled: bool | None = None
+    discussion_enabled: bool | None = None
+    banner_image_url: str | None = None
+    # Drip scheduling — see app.services.pathway_release for the rules.
+    release_type: str | None = None
+    release_offset_days: int | None = None
+    release_at: datetime | None = None
+    release_timezone: str | None = None
+    release_previous_state: str | None = None
 
     @field_validator("content_type")
     @classmethod
     def validate_content_type(cls, v: str | None) -> str | None:
         if v is not None and v not in ("text", "video", "reflection", "exercise", "audio"):
             raise ValueError("Invalid content type.")
+        return v
+
+    @field_validator("release_type")
+    @classmethod
+    def validate_release_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_RELEASE_TYPES:
+            raise ValueError("Invalid release type.")
+        return v
+
+    @field_validator("release_previous_state")
+    @classmethod
+    def validate_release_previous_state(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_PREVIOUS_STATES:
+            raise ValueError("Invalid release_previous_state.")
         return v
 
 
@@ -452,6 +555,15 @@ class StepResponse(BaseModel):
     position: int
     section_position: int | None = None
     section_id: str | None = None
+    reflection_enabled: bool = True
+    discussion_enabled: bool = True
+    banner_image_url: str | None = None
+    # Drip scheduling — echoed so the editor form can populate itself.
+    release_type: str = "immediate"
+    release_offset_days: int | None = None
+    release_at: datetime | None = None
+    release_timezone: str | None = None
+    release_previous_state: str = "completed"
 
 
 # ---------------------------------------------------------------------------
@@ -494,6 +606,9 @@ class EventCreateRequest(BaseModel):
     description: str | None = None
     starts_at: datetime
     ends_at: datetime | None = None
+    # Legacy `location_type` is preserved for the older UI + iCal
+    # generator. New surfaces should send `attendance_format` +
+    # `venue_*` / `location_url` instead.
     location_type: str = "zoom"
     location_url: str | None = None
     recording_url: str | None = None
@@ -505,8 +620,25 @@ class EventCreateRequest(BaseModel):
     booking_note: str | None = None
     thumbnail_url: str | None = None
     recurrence: RecurrenceRequest | None = None
-    booking_access_type: str = "all_members"
+    # Gatherings 2.0 vocabulary — see services/gathering_types.py.
+    gathering_type: str = "other"
+    attendance_format: str = "online"
+    venue_name: str | None = None
+    venue_address: str | None = None
+    access_instructions: str | None = None
+    booking_access_type: str = "included_with_collective"
     booking_required_pathway_id: str | None = None
+    # Standalone paid Gatherings (booking_access_type='paid_separately').
+    # Draft-safe (nullable) — validation that publish requires both is
+    # applied server-side, not by field-level required.
+    ticket_price_cents: int | None = None
+    ticket_currency: str | None = None
+    # When True (default), a 📅 gathering-typed Conversation Channel is
+    # created alongside the Event. Confirmed attendees are auto-joined
+    # by their EventBooking through the permissions layer. For bulk
+    # (recurring) creation this flag is ignored — the series shares
+    # a single channel via the series-level flag if we add one later.
+    create_channel: bool = True
 
     @field_validator("location_type")
     @classmethod
@@ -514,6 +646,31 @@ class EventCreateRequest(BaseModel):
         if v not in ("zoom", "in_person", "async_recorded"):
             raise ValueError("Invalid location type.")
         return v
+
+    @field_validator("gathering_type")
+    @classmethod
+    def _validate_gathering_type(cls, v: str) -> str:
+        from app.services.gathering_types import GATHERING_TYPE_VALUES
+        if v not in GATHERING_TYPE_VALUES:
+            raise ValueError("Invalid gathering type.")
+        return v
+
+    @field_validator("attendance_format")
+    @classmethod
+    def _validate_attendance_format(cls, v: str) -> str:
+        from app.services.gathering_types import ATTENDANCE_FORMAT_VALUES
+        if v not in ATTENDANCE_FORMAT_VALUES:
+            raise ValueError("Invalid attendance format.")
+        return v
+
+    @field_validator("booking_access_type")
+    @classmethod
+    def _validate_access_type(cls, v: str) -> str:
+        from app.services.gathering_types import normalise_access_type, ACCESS_TYPE_VALUES
+        normalised = normalise_access_type(v)
+        if normalised not in ACCESS_TYPE_VALUES:
+            raise ValueError("Invalid access type.")
+        return normalised
 
 
 class EventUpdateRequest(BaseModel):
@@ -531,8 +688,17 @@ class EventUpdateRequest(BaseModel):
     booking_closes_at: datetime | None = None
     booking_note: str | None = None
     thumbnail_url: str | None = None
+    gathering_type: str | None = None
+    attendance_format: str | None = None
+    venue_name: str | None = None
+    venue_address: str | None = None
+    access_instructions: str | None = None
     booking_access_type: str | None = None
     booking_required_pathway_id: str | None = None
+    # Standalone paid Gatherings — nullable on update; edit-lock and
+    # publish validation are enforced in the route handler.
+    ticket_price_cents: int | None = None
+    ticket_currency: str | None = None
 
     @field_validator("location_type")
     @classmethod
@@ -540,6 +706,37 @@ class EventUpdateRequest(BaseModel):
         if v is not None and v not in ("zoom", "in_person", "async_recorded"):
             raise ValueError("Invalid location type.")
         return v
+
+    @field_validator("gathering_type")
+    @classmethod
+    def _validate_gathering_type(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from app.services.gathering_types import GATHERING_TYPE_VALUES
+        if v not in GATHERING_TYPE_VALUES:
+            raise ValueError("Invalid gathering type.")
+        return v
+
+    @field_validator("attendance_format")
+    @classmethod
+    def _validate_attendance_format(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from app.services.gathering_types import ATTENDANCE_FORMAT_VALUES
+        if v not in ATTENDANCE_FORMAT_VALUES:
+            raise ValueError("Invalid attendance format.")
+        return v
+
+    @field_validator("booking_access_type")
+    @classmethod
+    def _validate_access_type(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from app.services.gathering_types import normalise_access_type, ACCESS_TYPE_VALUES
+        normalised = normalise_access_type(v)
+        if normalised not in ACCESS_TYPE_VALUES:
+            raise ValueError("Invalid access type.")
+        return normalised
 
 
 class EventResponse(BaseModel):
@@ -567,9 +764,41 @@ class EventResponse(BaseModel):
     recurrence_label: str | None = None
     recurrence_index: int | None = None
     recurrence_total: int | None = None
-    booking_access_type: str = "all_members"
+    gathering_type: str = "other"
+    attendance_format: str = "online"
+    venue_name: str | None = None
+    venue_address: str | None = None
+    access_instructions: str | None = None
+    booking_access_type: str = "included_with_collective"
     booking_required_pathway_id: str | None = None
+    # Standalone paid Gatherings — always present on the wire (null for
+    # non-paid access types) so the creator UI doesn't need to branch.
+    ticket_price_cents: int | None = None
+    ticket_currency: str | None = None
+    # Ticket-sales aggregate, computed by `services/ticket_summary.py`.
+    # Null for non-paid Gatherings to keep the payload small.
+    ticket_sales: "TicketSalesSummaryOut | None" = None
     created_at: datetime
+
+
+class TicketSalesSummaryOut(BaseModel):
+    """Creator-facing aggregate for a standalone paid Gathering.
+
+    Mirror of `services.ticket_summary.TicketSalesSummary`. Never contains
+    Stripe internal identifiers or per-attendee data.
+    """
+    status: str
+    paid_ticket_count: int = 0
+    complimentary_count: int = 0
+    confirmed_booking_count: int = 0
+    active_hold_count: int = 0
+    remaining_capacity: int | None = None
+    gross_ticket_revenue_cents: int = 0
+    revenue_currency: str | None = None
+    has_completed_ticket_sales: bool = False
+    has_active_payment_holds: bool = False
+    sales_enabled: bool = False
+    stripe_mode: str = "test"
 
 
 class BookedMemberItem(BaseModel):
@@ -585,6 +814,14 @@ class BookedMemberItem(BaseModel):
     attendance_marked_at: datetime | None = None
     credits_used: int = 0
     access_pass_id: str | None = None
+    # Stage 3 additions — creator-facing, DB-authoritative labelling for
+    # standalone paid Gatherings. Non-paid Gatherings still get an
+    # access_source label ("Included" / "Creator added" / etc.) but
+    # amount_paid_cents/currency/purchased_at stay null.
+    access_source: str = "Complimentary"
+    amount_paid_cents: int | None = None
+    currency: str | None = None
+    purchased_at: datetime | None = None
 
 
 class ManualBookingRequest(BaseModel):
@@ -664,13 +901,17 @@ class MemberBookingItem(BaseModel):
 
 class AddMemberRequest(BaseModel):
     email: str
-    name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    name: str | None = None          # legacy / fallback
     role: str = "learner"
     note: str | None = None
+    payment_option_id: str | None = None
+    payment_status: str = "unpaid"
 
 
 class AddMemberResponse(BaseModel):
-    result: str  # 'added_as_member' | 'invite_created' | 'already_member' | 'invite_already_pending'
+    result: str  # 'added_as_member' | 'pending_invite_created' | 'already_member' | 'invite_already_pending'
     message: str
 
 
@@ -683,6 +924,7 @@ class PostCreateRequest(BaseModel):
     title: str | None = None
     body: str
     is_pinned: bool = False
+    image_url: str | None = None
 
     @field_validator("post_type")
     @classmethod
@@ -700,16 +942,29 @@ class PostCreateRequest(BaseModel):
         return v
 
 
+_VALID_POST_TYPES = {
+    "reflection", "question", "poll", "announcement", "celebration", "share",
+    # Legacy — round-trip cleanly.
+    "prompt", "discussion",
+}
+
+
 class PostUpdateRequest(BaseModel):
     post_type: str | None = None
     title: str | None = None
     body: str | None = None
     is_pinned: bool | None = None
+    image_url: str | None = None
+    # Community Phase 2 — reschedule support. `scheduled_for=None` on an
+    # already-scheduled post transitions it back to immediate publication;
+    # a datetime in the future keeps / updates the schedule.
+    scheduled_for: datetime | None = None
+    scheduling_timezone: str | None = None
 
     @field_validator("post_type")
     @classmethod
     def validate_post_type(cls, v: str | None) -> str | None:
-        if v is not None and v not in ("prompt", "reflection", "discussion", "announcement"):
+        if v is not None and v not in _VALID_POST_TYPES:
             raise ValueError("Invalid post type.")
         return v
 
@@ -729,10 +984,23 @@ class PostManageResponse(BaseModel):
     post_type: str
     title: str | None
     body: str
+    image_url: str | None = None
     is_pinned: bool
     is_visible: bool
     created_at: datetime
     author_name: str = ""
+    # Community Phase 2 — scheduling state, so the creator UI can render
+    # scheduled cards without a second lookup.
+    publication_status: str = "published"
+    scheduled_for: datetime | None = None
+    scheduling_timezone: str | None = None
+    published_at: datetime | None = None
+    # Channels — surfaced so the Queue timeline can label rows by
+    # destination Channel and flag archived-destination rows.
+    channel_id: str | None = None
+    channel_slug: str | None = None
+    channel_name: str | None = None
+    channel_archived: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -805,9 +1073,13 @@ class StepResourceResponse(BaseModel):
 
 class InvitationCreateRequest(BaseModel):
     email: str
-    name: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    name: str | None = None          # legacy / fallback
     role: str = "learner"
     note: str | None = None
+    payment_option_id: str | None = None
+    payment_status: str = "unpaid"
 
     @field_validator("email")
     @classmethod
@@ -842,6 +1114,10 @@ class InvitationResponse(BaseModel):
     note: str | None
     invited_by_id: str
     token: str
+    payment_option_id: str | None = None
+    payment_option_name: str | None = None
+    payment_status: str = "unpaid"
+    sent_at: datetime | None = None
     created_at: datetime
 
 
@@ -867,6 +1143,8 @@ class MediaAssetResponse(BaseModel):
     uploaded_by_user_id: str
     title: str
     description: str | None
+    alt_text: str | None = None
+    tags: str | None = None
     original_filename: str
     stored_filename: str
     storage_path: str
@@ -876,6 +1154,7 @@ class MediaAssetResponse(BaseModel):
     file_size_bytes: int
     extension: str
     status: str
+    usage_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -883,6 +1162,8 @@ class MediaAssetResponse(BaseModel):
 class MediaAssetUpdateRequest(BaseModel):
     title: str | None = None
     description: str | None = None
+    alt_text: str | None = None
+    tags: str | None = None
 
     @field_validator("title")
     @classmethod
@@ -896,6 +1177,23 @@ class MediaAssetUpdateRequest(BaseModel):
         return v
 
 
+class MediaUsageReference(BaseModel):
+    """One place where a media asset is referenced."""
+    kind: str  # "step_block_image" | "step_block_audio" | "step_block_file" | "about_block_image" | "about_block_audio" | "about_block_file" | "pathway_cover" | "step_banner"
+    pathway_id: str | None = None
+    pathway_title: str | None = None
+    pathway_slug: str | None = None
+    step_id: str | None = None
+    step_title: str | None = None
+    step_slug: str | None = None
+    label: str | None = None  # human-readable description of the location
+
+
+class MediaUsageResponse(BaseModel):
+    media_id: str
+    references: list[MediaUsageReference]
+
+
 # ---------------------------------------------------------------------------
 # Step Blocks
 # ---------------------------------------------------------------------------
@@ -903,7 +1201,24 @@ class MediaAssetUpdateRequest(BaseModel):
 VALID_BLOCK_TYPES = (
     "heading", "text", "image", "video_embed", "audio",
     "file_download", "link", "reflection_prompt", "exercise", "callout", "divider",
+    "embed", "button", "resource",
 )
+
+# Soft container palette keys. NULL = no container. Must mirror the
+# frontend palette in `frontend/src/lib/calloutPalette.ts`.
+VALID_CONTAINER_STYLES = (
+    "teal", "gold", "blue", "rose", "sage", "grey", "lilac", "orange",
+)
+
+
+def _validate_container_style(v: str | None) -> str | None:
+    if v is None or v == "":
+        return None
+    if v not in VALID_CONTAINER_STYLES:
+        raise ValueError(
+            f"Invalid container style. Must be one of: {', '.join(VALID_CONTAINER_STYLES)}"
+        )
+    return v
 
 
 class BlockMediaInfo(BaseModel):
@@ -914,6 +1229,24 @@ class BlockMediaInfo(BaseModel):
     media_type: str
     mime_type: str
     original_filename: str
+
+
+class BlockResourceInfo(BaseModel):
+    """Live snapshot of the linked SpaceResource served inside a block response.
+
+    The block itself only stores resource_id; this snapshot is read at request
+    time so any edit to the underlying Resource (title, description, status,
+    url) immediately flows through to every block that references it.
+    """
+    model_config = {"from_attributes": True}
+    id: str
+    title: str
+    description: str | None
+    resource_type: str
+    url: str | None
+    file_name: str | None
+    status: str
+    scope: str
 
 
 class StepBlockResponse(BaseModel):
@@ -928,6 +1261,9 @@ class StepBlockResponse(BaseModel):
     embed_url: str | None
     media_asset_id: str | None
     media_asset: BlockMediaInfo | None = None
+    resource_id: str | None = None
+    resource: BlockResourceInfo | None = None
+    container_style: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -940,6 +1276,8 @@ class StepBlockCreateRequest(BaseModel):
     caption: str | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
+    resource_id: str | None = None
+    container_style: str | None = None
 
     @field_validator("block_type")
     @classmethod
@@ -948,6 +1286,11 @@ class StepBlockCreateRequest(BaseModel):
             raise ValueError(f"Invalid block type. Must be one of: {', '.join(VALID_BLOCK_TYPES)}")
         return v
 
+    @field_validator("container_style")
+    @classmethod
+    def validate_container_style(cls, v: str | None) -> str | None:
+        return _validate_container_style(v)
+
 
 class StepBlockUpdateRequest(BaseModel):
     content: str | None = None
@@ -955,6 +1298,13 @@ class StepBlockUpdateRequest(BaseModel):
     caption: str | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
+    resource_id: str | None = None
+    container_style: str | None = None
+
+    @field_validator("container_style")
+    @classmethod
+    def validate_container_style(cls, v: str | None) -> str | None:
+        return _validate_container_style(v)
 
 
 class StepBlockReorderRequest(BaseModel):
@@ -977,6 +1327,9 @@ class AboutBlockResponse(BaseModel):
     embed_url: str | None
     media_asset_id: str | None
     media_asset: BlockMediaInfo | None = None
+    resource_id: str | None = None
+    resource: BlockResourceInfo | None = None
+    container_style: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -989,6 +1342,8 @@ class AboutBlockCreateRequest(BaseModel):
     caption: str | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
+    resource_id: str | None = None
+    container_style: str | None = None
 
     @field_validator("block_type")
     @classmethod
@@ -997,6 +1352,11 @@ class AboutBlockCreateRequest(BaseModel):
             raise ValueError(f"Invalid block type. Must be one of: {', '.join(VALID_BLOCK_TYPES)}")
         return v
 
+    @field_validator("container_style")
+    @classmethod
+    def validate_container_style(cls, v: str | None) -> str | None:
+        return _validate_container_style(v)
+
 
 class AboutBlockUpdateRequest(BaseModel):
     content: str | None = None
@@ -1004,6 +1364,13 @@ class AboutBlockUpdateRequest(BaseModel):
     caption: str | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
+    resource_id: str | None = None
+    container_style: str | None = None
+
+    @field_validator("container_style")
+    @classmethod
+    def validate_container_style(cls, v: str | None) -> str | None:
+        return _validate_container_style(v)
 
 
 class AboutBlockReorderRequest(BaseModel):
@@ -1041,19 +1408,52 @@ class MemberPathwayAccessItem(BaseModel):
 # ---------------------------------------------------------------------------
 
 class CreatorPlanOut(BaseModel):
-    model_config = {"from_attributes": True}
+    # Note: `model_config` intentionally omitted — this model is populated
+    # explicitly by `_creator_plan_out` in routes.py so the capability
+    # fields (which come from app.creator.plan_config, not the DB row)
+    # can be merged into the response.
 
+    # DB-backed identity + pricing
     id: str
     name: str
     slug: str
     description: str | None
-    monthly_price_cents: int
+    monthly_price_cents: int | None  # None for Organisation ("Talk to us")
     currency: str
-    transaction_fee_basis_points: int
-    collective_limit: int
+
+    # DB-backed numeric limits (legacy fields; capability fields below
+    # supersede them where they diverge)
+    transaction_fee_basis_points: int | None
+    collective_limit: int | None
     pathway_limit: int | None
     media_storage_limit_mb: int | None
     creator_admin_seat_limit: int | None
+
+    # ----- capability record (from app.creator.plan_config) -----
+    tagline: str = ""
+    positioning: str = ""
+
+    active_collective_limit: int | None = None
+    member_allowance_per_collective: int | None = None
+    pooled_member_allowance: int | None = None
+    caretaker_limit_per_collective: int | None = None
+    storage_allowance_mb: int | None = None
+
+    location_scope: str = "atlas_full"
+    analytics_level: str = "basic"
+
+    paid_offers_enabled: bool = False
+    pathways_enabled: bool = False
+    gatherings_enabled: bool = False
+    resources_enabled: bool = False
+    automations_enabled: bool = False
+    commercial_use: bool = False
+    approval_required: bool = False
+    is_self_service: bool = True
+    is_purchasable: bool = True
+
+    card_headline: str = ""
+    card_features: list[str] = []
 
 
 class CreatorSubscriptionOut(BaseModel):
@@ -1082,11 +1482,17 @@ class CreatorPaymentSetup(BaseModel):
 
 
 class CreatorBillingResponse(BaseModel):
-    current_plan: CreatorPlanOut
-    subscription: CreatorSubscriptionOut
+    # Platform Owners (role='admin') are a separate account type: they do not
+    # belong to any creator subscription plan and receive `current_plan`,
+    # `subscription`, and `available_plans` = None / []. Every other creator
+    # always has a plan and subscription. Usage counts and payment setup are
+    # populated for both account types.
+    current_plan: CreatorPlanOut | None = None
+    subscription: CreatorSubscriptionOut | None = None
     usage: CreatorUsage
-    available_plans: list[CreatorPlanOut]
+    available_plans: list[CreatorPlanOut] = []
     payment_setup: CreatorPaymentSetup
+    is_platform_owner: bool = False
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, MemberBookingItem, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 export const ACTIVE_SPACE_COOKIE = 'fc_creator_space'
 
@@ -14,6 +14,61 @@ async function fetchWithSession(path: string): Promise<Response> {
     next: { revalidate: 0 },
   })
 }
+
+/** Exported alias for pages that need to hit an endpoint outside the
+ *  helpers below (e.g. the manual-releases page). Same session cookie
+ *  wiring — do not re-implement this anywhere else. */
+export async function serverFetch(path: string): Promise<Response> {
+  return fetchWithSession(path)
+}
+
+
+// ---------------------------------------------------------------------------
+// Conversation Channels
+// ---------------------------------------------------------------------------
+
+export interface ChannelSummaryLite {
+  id: string
+  slug: string
+  name: string
+  description: string | null
+  /** Always populated by the server — either the type-driven default
+   *  icon (🌱🌍🛤📅🔒💬) or a stored override. */
+  icon_emoji: string | null
+  channel_type: string
+  /** Frontend groups channels under this heading. `null` means the
+   *  channel belongs in the un-headed system row at the very top. */
+  group_label: string | null
+  is_default: boolean
+  is_system: boolean
+  is_archived: boolean
+  show_in_navigation: boolean
+  member_posting_allowed: boolean
+  comments_allowed: boolean
+  polls_allowed: boolean
+  scheduling_allowed: boolean
+  pathway_id: string | null
+  gathering_id: string | null
+}
+
+export const getMemberChannels = cache(async (spaceSlug: string): Promise<ChannelSummaryLite[]> => {
+  const res = await fetchWithSession(`/api/spaces/${spaceSlug}/channels`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export interface ChannelManageDetail extends ChannelSummaryLite {
+  post_count: number
+  private_member_count: number
+  created_at: string
+  updated_at: string
+}
+
+export const getCreatorChannels = cache(async (spaceSlug: string): Promise<ChannelManageDetail[]> => {
+  const res = await fetchWithSession(`/api/creator/spaces/${spaceSlug}/channels`)
+  if (!res.ok) return []
+  return res.json()
+})
 
 export const getPublicSpaces = cache(async (): Promise<PublicSpaceCard[]> => {
   try {
@@ -75,8 +130,12 @@ export const getPublicProfile = cache(async (userId: string) => {
   return res.json()
 })
 
-export const getCommunityFeed = cache(async (spaceSlug: string) => {
-  const res = await fetchWithSession(`/api/spaces/${spaceSlug}/community`)
+export const getCommunityFeed = cache(async (
+  spaceSlug: string,
+  channelSlug?: string,
+) => {
+  const suffix = channelSlug ? `?channel=${encodeURIComponent(channelSlug)}` : ''
+  const res = await fetchWithSession(`/api/spaces/${spaceSlug}/community${suffix}`)
   if (!res.ok) return []
   return res.json()
 })
@@ -99,8 +158,12 @@ export const getSpacePathwaysProgress = cache(async (slug: string) => {
   return res.json()
 })
 
-export const getSpaceEvents = cache(async (slug: string) => {
-  const res = await fetchWithSession(`/api/spaces/${slug}/events`)
+export const getSpaceEvents = cache(async (
+  slug: string,
+  scope?: 'upcoming' | 'archive',
+) => {
+  const suffix = scope ? `?scope=${scope}` : ''
+  const res = await fetchWithSession(`/api/spaces/${slug}/events${suffix}`)
   if (!res.ok) return []
   return res.json()
 })
@@ -131,6 +194,202 @@ export const getCreatorSpaces = cache(async () => {
   const res = await fetchWithSession('/api/creator/spaces')
   if (!res.ok) return []
   return res.json()
+})
+
+// ---------------------------------------------------------------------------
+// The Atlas — admin surface for curated Locations (Atlas v1.1, Ch. 9-12)
+// ---------------------------------------------------------------------------
+
+export const getAdminLocations = cache(async () => {
+  const res = await fetchWithSession('/api/admin/atlas/locations')
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getAdminLocation = cache(async (key: string) => {
+  const res = await fetchWithSession(`/api/admin/atlas/locations/${key}`)
+  if (!res.ok) return null
+  return res.json()
+})
+
+// ---------------------------------------------------------------------------
+// Mother World — platform-wide snapshot used by the World Management overview
+// page. Mirrors the shape of `AdminPlatformOverview` in backend/schemas.py.
+// ---------------------------------------------------------------------------
+
+export interface MotherWorldMoment {
+  kind: 'collective' | 'creator' | 'transaction' | 'gathering' | 'signup'
+  message: string
+  when: string
+  href: string | null
+}
+
+export interface MotherWorldHealth {
+  platform_ok: boolean
+  stripe_ok: boolean
+  webhook_configured: boolean
+  standalone_gathering_sales_enabled: boolean
+  stripe_mode: 'test' | 'live' | string
+  last_backup_at: string | null
+}
+
+export interface MotherWorldOverview {
+  total_collectives: number
+  active_collectives: number
+  draft_collectives: number
+  archived_collectives: number
+  total_users: number
+  admin_users: number
+  creator_users: number
+  member_users: number
+  pending_access_requests: number
+  pending_invitations: number
+  total_gross_cents: number
+  succeeded_transactions: number
+  upcoming_gatherings: number
+  total_gross_cents_today: number
+  total_gross_cents_7d: number
+  failed_transactions_7d: number
+  recent_moments: MotherWorldMoment[]
+  world_health: MotherWorldHealth
+}
+
+export const getMotherWorldOverview = cache(async (): Promise<MotherWorldOverview | null> => {
+  const res = await fetchWithSession('/api/admin/platform/overview')
+  if (!res.ok) return null
+  return res.json()
+})
+
+// ---------------------------------------------------------------------------
+// Platform Artwork — shared interface assets owned by the platform itself
+// (not by any Atlas Location). Managed from /admin/settings/artwork.
+// ---------------------------------------------------------------------------
+
+export interface PlatformArtworkItem {
+  key: string
+  title: string
+  description: string
+  image_url: string | null
+  thumbnail_url: string | null
+  updated_at: string | null
+}
+
+export interface PublicPlatformArtwork {
+  key: string
+  image_url: string | null
+  thumbnail_url: string | null
+}
+
+export const getAdminPlatformArtwork = cache(async (): Promise<PlatformArtworkItem[]> => {
+  const res = await fetchWithSession('/api/admin/platform-artwork')
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getPublicPlatformArtwork = cache(async (): Promise<PublicPlatformArtwork[]> => {
+  const res = await fetchWithSession('/api/platform-artwork')
+  if (!res.ok) return []
+  return res.json()
+})
+
+// ---------------------------------------------------------------------------
+// Admin Collectives — Gallery/List redesign feed
+// ---------------------------------------------------------------------------
+
+export type AdminCollectiveHealth = 'healthy' | 'quiet' | 'needs_attention'
+
+export interface AdminCollectiveRow {
+  id: string
+  name: string
+  slug: string
+  status: 'active' | 'draft' | 'archived' | string
+  is_public: boolean
+  has_paid_internal_content: boolean
+  creator_id: string | null
+  creator_name: string | null
+  creator_email: string | null
+  member_count: number
+  pathway_count: number
+  gathering_count: number
+  resource_count: number
+  created_at: string
+  updated_at: string
+  cover_image_url: string | null
+  location_id: string | null
+  location_name: string | null
+  // Curated hero artwork of the Atlas Location the collective lives in.
+  // Same source the member-facing CollectiveIdentityHeader uses. This is
+  // the collective's true visual identity under Atlas v1.2.
+  location_hero_artwork_url: string | null
+  last_activity_at: string | null
+  next_gathering_at: string | null
+  new_members_7d: number
+  health: AdminCollectiveHealth
+  activity_phrase: string
+}
+
+export const getAdminCollectives = cache(async (): Promise<AdminCollectiveRow[]> => {
+  const res = await fetchWithSession('/api/admin/platform/collectives')
+  if (!res.ok) return []
+  return res.json()
+})
+
+// ---------------------------------------------------------------------------
+// Admin Creators — Gallery/List redesign feed
+// ---------------------------------------------------------------------------
+
+export type AdminCreatorHealth = 'flourishing' | 'new' | 'quiet' | 'needs_support'
+
+export interface AdminCreatorCollectiveChip {
+  id: string
+  slug: string
+  name: string
+  location_name: string | null
+  location_hero_artwork_url: string | null
+}
+
+export interface AdminCreatorRow {
+  id: string
+  name: string | null
+  email: string
+  role: string
+  created_at: string
+  collective_count: number
+  published_collective_count: number
+  draft_collective_count: number
+  plan_name: string
+  subscription_status: string
+  avatar_url: string | null
+  collectives: AdminCreatorCollectiveChip[]
+  total_members_reached: number
+  last_activity_at: string | null
+  next_gathering_at: string | null
+  new_members_30d: number
+  health: AdminCreatorHealth
+  activity_phrase: string
+}
+
+export const getAdminCreators = cache(async (): Promise<AdminCreatorRow[]> => {
+  const res = await fetchWithSession('/api/admin/platform/creators')
+  if (!res.ok) return []
+  return res.json()
+})
+
+// ---------------------------------------------------------------------------
+// Build Your Collective — the guided creator ritual (Atlas v1.2, Chapter 4)
+// ---------------------------------------------------------------------------
+
+export const getBuildYourCollectiveOptions = cache(async () => {
+  const res = await fetchWithSession('/api/creator/build-your-collective/options')
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getBuildYourCollectiveDraft = cache(async () => {
+  const res = await fetchWithSession('/api/creator/build-your-collective/draft')
+  if (!res.ok) return null
+  const data = await res.json()
+  return data // may be null (no draft yet) or { data: {...} }
 })
 
 export const getActiveCreatorSpace = cache(async (): Promise<SpaceSummary | null> => {
@@ -193,8 +452,12 @@ export const getCreatorStep = cache(async (slug: string, pathwaySlug: string, st
   return res.json()
 })
 
-export const getCreatorEvents = cache(async (slug: string) => {
-  const res = await fetchWithSession(`/api/creator/spaces/${slug}/events`)
+export const getCreatorEvents = cache(async (
+  slug: string,
+  scope?: 'upcoming' | 'archive',
+) => {
+  const suffix = scope ? `?scope=${scope}` : ''
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/events${suffix}`)
   if (!res.ok) return []
   return res.json()
 })
@@ -219,6 +482,12 @@ export const getCreatorMembers = cache(async (slug: string): Promise<CreatorMemb
 
 export const getMemberBookings = cache(async (slug: string, userId: string): Promise<MemberBookingItem[]> => {
   const res = await fetchWithSession(`/api/creator/spaces/${slug}/members/${userId}/bookings`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getManualMembers = cache(async (slug: string): Promise<ManualMember[]> => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/manual-members`)
   if (!res.ok) return []
   return res.json()
 })

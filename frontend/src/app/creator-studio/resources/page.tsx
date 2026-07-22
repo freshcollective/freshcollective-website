@@ -19,7 +19,7 @@ export default async function ResourcesPage() {
           Creator Studio
         </p>
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Resources</h1>
-        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
+        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#000000' }}>
           Add standalone links, files, guides, and tools for your members.
         </p>
       </div>
@@ -32,7 +32,7 @@ export default async function ResourcesPage() {
         <span className="mt-0.5 text-[15px]" style={{ color: '#D6B13F' }}>◫</span>
         <div>
           <p className="text-[13px] font-semibold" style={{ color: '#7A5A00' }}>Pathway resources</p>
-          <p className="mt-0.5 text-[13px] leading-relaxed text-slate-500">
+          <p className="mt-0.5 text-[13px] leading-relaxed text-black">
             Pathway resources appear automatically for members who have access to that pathway.
             Resources attached inside pathway steps are managed within each pathway.
           </p>
@@ -42,7 +42,7 @@ export default async function ResourcesPage() {
       {!space ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
           <p className="mb-2 text-[16px] font-semibold text-navy-900">No collective yet</p>
-          <p className="text-[14px] leading-relaxed text-slate-500">
+          <p className="text-[14px] leading-relaxed text-black">
             Set up your collective first to start adding resources.
           </p>
         </div>

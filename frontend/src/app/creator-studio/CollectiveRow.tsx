@@ -15,6 +15,13 @@ export default function CollectiveRow({
   function open() {
     document.cookie = `fc_creator_space=${space.slug}; path=/; max-age=86400`
     router.push('/creator-studio')
+    // See CreatorStudioSidebar.switchTo for the full explanation:
+    // Next's Client Router Cache would otherwise serve the previous
+    // creator-studio layout tree (built against the old cookie), and
+    // the collective palette + every other cookie-derived value
+    // would leak between collectives. ``refresh()`` forces the layout
+    // to re-render on the server with the new cookie.
+    router.refresh()
   }
 
   return (
@@ -67,7 +74,7 @@ export default function CollectiveRow({
           )}
         </div>
         {space.tagline && (
-          <p className="mt-0.5 truncate text-[13px] text-slate-500">{space.tagline}</p>
+          <p className="mt-0.5 truncate text-[13px] text-black">{space.tagline}</p>
         )}
       </div>
       <span className="shrink-0 text-[13px] font-medium text-teal-600 transition-colors group-hover:text-teal-700">

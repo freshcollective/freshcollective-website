@@ -1,15 +1,28 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
-import type { CreatorEvent } from '@/types/platform'
+import type { CreatorEvent, CreatorPathway } from '@/types/platform'
+import {
+  GATHERING_TYPES,
+  ATTENDANCE_FORMATS,
+  ACCESS_TYPES,
+  gatheringDescription,
+  normaliseAccessType,
+  type AccessTypeValue,
+} from '@/lib/gatheringTypes'
 
-const LOCATION_TYPES = [
-  { value: 'zoom', label: 'Zoom / online' },
-  { value: 'in_person', label: 'In person' },
-  { value: 'async_recorded', label: 'Recorded / async' },
+// Access types that imply "booking is required" — invitation_only
+// funnels every attendee through a caretaker add; paid_separately is
+// intrinsically ticketed. We flip Require Booking on automatically and
+// disable the toggle so a caretaker can't leave the Gathering in an
+// impossible state (e.g. Paid without booking).
+const ACCESS_REQUIRES_BOOKING: readonly AccessTypeValue[] = [
+  'invitation_only',
+  'paid_separately',
 ]
+
 
 const WEEKDAYS = [
   { value: 0, label: 'Sun' },
@@ -30,19 +43,23 @@ function toLocalDatetime(iso: string) {
 function Toggle({
   checked,
   onChange,
+  disabled = false,
 }: {
   checked: boolean
   onChange: (v: boolean) => void
+  disabled?: boolean
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
       className={[
         'relative h-5 w-9 rounded-full transition-colors',
         checked ? 'bg-teal-500' : 'bg-slate-200',
+        disabled ? 'cursor-not-allowed opacity-60' : '',
       ].join(' ')}
     >
       <span
@@ -55,12 +72,44 @@ function Toggle({
   )
 }
 
+/**
+ * Section — subtle editorial grouping used throughout the form.
+ * Uppercase teal label + optional italic subtitle, then a spaced
+ * column of controls. Kept understated so the whole form still reads
+ * as one calm surface, not a wizard.
+ */
+function Section({
+  title, subtitle, children,
+}: {
+  title: string
+  subtitle?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="border-t border-border pt-6 first:border-t-0 first:pt-0">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
+        {title}
+      </p>
+      {subtitle && (
+        <p className="mt-1 text-[13px] italic" style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}>
+          {subtitle}
+        </p>
+      )}
+      <div className="mt-4 flex flex-col gap-4">
+        {children}
+      </div>
+    </section>
+  )
+}
+
 export default function EventForm({
   spaceSlug,
   event,
+  pathways = [],
 }: {
   spaceSlug: string
   event?: CreatorEvent
+  pathways?: CreatorPathway[]
 }) {
   const router = useRouter()
   const isEdit = !!event
@@ -76,6 +125,21 @@ export default function EventForm({
   const [isPublished, setIsPublished] = useState(event?.is_published ?? false)
   const [isPublic, setIsPublic] = useState(event?.is_public ?? false)
 
+  // Gatherings 2.0 — identity + attendance + access.
+  const [gatheringType, setGatheringType] = useState<string>(event?.gathering_type ?? 'other')
+  const [attendanceFormat, setAttendanceFormat] = useState<'online' | 'in_person' | 'hybrid'>(
+    (event?.attendance_format as 'online' | 'in_person' | 'hybrid' | undefined) ?? 'online'
+  )
+  const [venueName, setVenueName] = useState(event?.venue_name ?? '')
+  const [venueAddress, setVenueAddress] = useState(event?.venue_address ?? '')
+  const [accessInstructions, setAccessInstructions] = useState(event?.access_instructions ?? '')
+  const [accessType, setAccessType] = useState<AccessTypeValue>(
+    normaliseAccessType(event?.booking_access_type)
+  )
+  const [bookingRequiredPathwayId, setBookingRequiredPathwayId] = useState<string>(
+    event?.booking_required_pathway_id ?? ''
+  )
+
   // Booking
   const [requiresBooking, setRequiresBooking] = useState(event?.requires_booking ?? false)
   const [capacity, setCapacity] = useState<string>(event?.capacity != null ? String(event.capacity) : '')
@@ -83,6 +147,26 @@ export default function EventForm({
     event?.booking_closes_at ? toLocalDatetime(event.booking_closes_at) : ''
   )
   const [bookingNote, setBookingNote] = useState(event?.booking_note ?? '')
+
+  // Standalone paid Gathering — decimal string in the form (e.g. "25.00");
+  // converted to integer cents before submission. Empty on new events.
+  const initialPriceDisplay =
+    event?.ticket_price_cents != null ? (event.ticket_price_cents / 100).toFixed(2) : ''
+  const [ticketPriceInput, setTicketPriceInput] = useState<string>(initialPriceDisplay)
+  const [ticketCurrency, setTicketCurrency] = useState<string>(event?.ticket_currency ?? 'AUD')
+  const [ticketPriceError, setTicketPriceError] = useState<string | null>(null)
+
+  // Backend read-only summary; edit-lock indicators live here.
+  const ticketSales = event?.ticket_sales ?? null
+  const salesEnabled = ticketSales?.sales_enabled ?? false
+  const hasCompletedSales = ticketSales?.has_completed_ticket_sales ?? false
+  const hasActiveHolds = ticketSales?.has_active_payment_holds ?? false
+  const accessTypeLocked = hasCompletedSales || hasActiveHolds
+  const accessTypeLockReason = hasCompletedSales
+    ? 'sales'
+    : hasActiveHolds
+      ? 'holds'
+      : null
 
   // Recurrence (new events only)
   const [isRecurring, setIsRecurring] = useState(false)
@@ -99,6 +183,29 @@ export default function EventForm({
 
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Which submission the caretaker asked for — set by the primary
+  // buttons at the bottom of the form. `handleSubmit` derives
+  // `is_published` from this, replacing the old toggle-style control.
+  const [submitMode, setSubmitMode] = useState<'draft' | 'publish' | null>(null)
+
+  // Conversation channel — new events only.
+  const [createChannel, setCreateChannel] = useState(true)
+
+  // Intelligent booking rules — some access types mandate booking, and
+  // any capacity value only makes sense with booking on. We flip
+  // Require Booking on automatically; the toggle is disabled when a
+  // rule is forcing it so the state can't drift back out of sync.
+  const capacityNum = capacity.trim() === '' ? null : Number(capacity)
+  const capacityForcesBooking = capacityNum != null && capacityNum > 0
+  const accessForcesBooking = ACCESS_REQUIRES_BOOKING.includes(accessType)
+  const bookingRequiredByRules = capacityForcesBooking || accessForcesBooking
+
+  useEffect(() => {
+    if (bookingRequiredByRules && !requiresBooking) {
+      setRequiresBooking(true)
+    }
+  }, [bookingRequiredByRules, requiresBooking])
 
   function toggleDay(day: number) {
     setSelectedDays(prev =>
@@ -149,6 +256,36 @@ export default function EventForm({
     setSaving(true)
     setError(null)
     try {
+      // Resolve the published flag from the primary button that was
+      // pressed. On edit-save without a button choice (Enter key
+      // etc.) we preserve the current published state.
+      const targetPublished =
+        submitMode === 'publish' ? true
+        : submitMode === 'draft' ? false
+        : isPublished
+
+      // Standalone paid Gatherings: parse decimal price → integer cents.
+      // Only require a price when actually publishing a paid Gathering;
+      // drafts may save with the field empty.
+      let ticketPriceCents: number | null = null
+      if (accessType === 'paid_separately') {
+        const trimmed = ticketPriceInput.trim()
+        if (trimmed) {
+          const parsed = Number(trimmed)
+          if (!Number.isFinite(parsed) || parsed < 0) {
+            setTicketPriceError('Enter a ticket price greater than $0.')
+            setSaving(false)
+            return
+          }
+          ticketPriceCents = Math.round(parsed * 100)
+        }
+        if (targetPublished && (!ticketPriceCents || ticketPriceCents <= 0)) {
+          setTicketPriceError('Enter a ticket price greater than $0.')
+          setSaving(false)
+          return
+        }
+      }
+      setTicketPriceError(null)
       const basePayload = {
         title,
         description: description || null,
@@ -157,12 +294,28 @@ export default function EventForm({
         location_type: locationType,
         location_url: locationUrl || null,
         recording_url: recordingUrl || null,
-        is_published: isPublished,
+        is_published: targetPublished,
         is_public: isPublic,
         requires_booking: requiresBooking,
         capacity: capacity ? parseInt(capacity, 10) : null,
         booking_closes_at: bookingClosesAt ? new Date(bookingClosesAt).toISOString() : null,
         booking_note: bookingNote || null,
+        // Gatherings 2.0 vocabulary — see `lib/gatheringTypes.ts`.
+        gathering_type: gatheringType,
+        attendance_format: attendanceFormat,
+        venue_name: venueName || null,
+        venue_address: venueAddress || null,
+        access_instructions: accessInstructions || null,
+        booking_access_type: accessType,
+        booking_required_pathway_id:
+          accessType === 'included_with_pathway' ? (bookingRequiredPathwayId || null) : null,
+        // Standalone paid Gathering: both fields null unless
+        // access is paid_separately, so we never accidentally
+        // persist stale ticket data on a free/included event.
+        ticket_price_cents:
+          accessType === 'paid_separately' ? ticketPriceCents : null,
+        ticket_currency:
+          accessType === 'paid_separately' ? ticketCurrency : null,
       }
 
       if (!isEdit && isRecurring) {
@@ -198,11 +351,14 @@ export default function EventForm({
           ? `/api/creator/spaces/${spaceSlug}/events/${event!.id}`
           : `/api/creator/spaces/${spaceSlug}/events`)
         const method = isEdit ? 'PATCH' : 'POST'
+        const payload = isEdit
+          ? basePayload
+          : { ...basePayload, create_channel: createChannel }
         const res = await fetch(url, {
           method,
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify(basePayload),
+          body: JSON.stringify(payload),
         })
         if (!res.ok) {
           let detail = `HTTP ${res.status}`
@@ -220,237 +376,96 @@ export default function EventForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-navy-800">Title</label>
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-          className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
-        />
-      </div>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-8">
 
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-navy-800">Description</label>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={3}
-          placeholder="What will happen in this session?"
-          className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
-        />
-      </div>
-
-      <div className="flex gap-4">
-        <div className="flex-1">
-          <label className="mb-1.5 block text-sm font-medium text-navy-800">
-            {isRecurring ? 'First session starts' : 'Starts'}
-          </label>
+      {/* ─────────── THE GATHERING ─────────── */}
+      <Section title="THE GATHERING" subtitle="What is this moment?">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-navy-800">Title</label>
           <input
-            type="datetime-local"
-            value={startsAt}
-            onChange={(e) => setStartsAt(e.target.value)}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
             required
-            className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
-          />
-        </div>
-        <div className="flex-1">
-          <label className="mb-1.5 block text-sm font-medium text-navy-800">
-            {isRecurring ? 'Duration (ends)' : 'Ends'}
-          </label>
-          <input
-            type="datetime-local"
-            value={endsAt}
-            onChange={(e) => setEndsAt(e.target.value)}
-            className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-navy-800">Location type</label>
-        <div className="flex flex-wrap gap-2">
-          {LOCATION_TYPES.map((lt) => (
-            <button
-              key={lt.value}
-              type="button"
-              onClick={() => setLocationType(lt.value)}
-              className={[
-                'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
-                locationType === lt.value
-                  ? 'border-navy-900 bg-navy-900 text-white'
-                  : 'border-border text-slate-500 hover:border-slate-400 hover:text-navy-700',
-              ].join(' ')}
-            >
-              {lt.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {locationType !== 'in_person' && (
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-navy-800">
-            {locationType === 'zoom' ? 'Zoom link' : 'Recording URL'}
-          </label>
-          <input
-            type="url"
-            value={locationType === 'zoom' ? locationUrl : recordingUrl}
-            onChange={(e) =>
-              locationType === 'zoom' ? setLocationUrl(e.target.value) : setRecordingUrl(e.target.value)
-            }
-            placeholder="https://…"
             className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
           />
         </div>
-      )}
 
-      {locationType === 'in_person' && (
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-navy-800">Location details</label>
-          <input
-            value={locationUrl}
-            onChange={(e) => setLocationUrl(e.target.value)}
-            placeholder="Address or venue name"
-            className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+          <label className="mb-1.5 block text-sm font-medium text-navy-800">Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            placeholder="What will happen in this Gathering?"
+            className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
           />
         </div>
-      )}
 
-      <div className="flex items-center gap-3">
-        <Toggle checked={isPublished} onChange={setIsPublished} />
-        <span className="text-sm text-slate-600">{isPublished ? 'Published' : 'Draft'}</span>
-      </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-navy-800">Gathering type</label>
+          <select
+            value={gatheringType}
+            onChange={(e) => setGatheringType(e.target.value)}
+            className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+          >
+            {GATHERING_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>{t.icon}  {t.label}</option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-[12.5px] italic" style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}>
+            {gatheringDescription(gatheringType)}
+          </p>
+        </div>
 
-      {/* ── Visibility section ── */}
-      <div className="rounded-xl border border-border bg-slate-50/50 p-5">
-        <p className="mb-3 text-sm font-semibold text-navy-800">Visibility</p>
-        <div className="flex items-start gap-3">
-          <Toggle checked={isPublic} onChange={setIsPublic} />
+        {isEdit && (
           <div>
-            <p className="text-sm font-medium text-navy-800">Public preview</p>
-            <p className="text-xs text-slate-400">
-              Non-members can see this gathering. They must join to book a spot.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Recurrence section (new events only) ── */}
-      {!isEdit && (
-        <div className="rounded-xl border border-border bg-slate-50/50 p-5">
-          <div className="mb-4 flex items-center gap-3">
-            <Toggle checked={isRecurring} onChange={setIsRecurring} />
-            <span className="text-sm font-medium text-navy-800">Recurring series</span>
-            <span className="text-xs text-slate-400">Repeat this session weekly</span>
-          </div>
-
-          {isRecurring && (
-            <div className="flex flex-col gap-4">
-              <div>
-                <p className="mb-2 text-sm font-medium text-navy-800">Repeats on</p>
-                <div className="flex flex-wrap gap-2">
-                  {WEEKDAYS.map((d) => (
-                    <button
-                      key={d.value}
-                      type="button"
-                      onClick={() => toggleDay(d.value)}
-                      className={[
-                        'rounded-full border px-3 py-1 text-sm transition-colors',
-                        selectedDays.includes(d.value)
-                          ? 'border-teal-600 bg-teal-600 text-white'
-                          : 'border-border text-slate-500 hover:border-teal-400 hover:text-teal-700',
-                      ].join(' ')}
-                    >
-                      {d.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-2 text-sm font-medium text-navy-800">Series name</p>
-                <input
-                  value={seriesLabel}
-                  onChange={(e) => setSeriesLabel(e.target.value)}
-                  placeholder="e.g. Weekly Accountability Call"
-                  className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+            <label className="mb-1.5 block text-sm font-medium text-navy-800">Cover image</label>
+            {thumbnailUrl ? (
+              <div className="flex flex-col gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={thumbnailUrl}
+                  alt="Gathering cover"
+                  className="h-36 w-full rounded-lg object-cover"
                 />
-              </div>
-
-              <div>
-                <p className="mb-2 text-sm font-medium text-navy-800">Ends</p>
-                <div className="mb-3 flex gap-3">
+                <div className="flex gap-3">
+                  <label className={[
+                    'cursor-pointer rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-black transition-colors hover:border-slate-400',
+                    thumbnailUploading ? 'opacity-50 cursor-not-allowed' : '',
+                  ].join(' ')}>
+                    Replace
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      disabled={thumbnailUploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) handleThumbnailUpload(f)
+                      }}
+                    />
+                  </label>
                   <button
                     type="button"
-                    onClick={() => setEndMode('count')}
-                    className={[
-                      'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
-                      endMode === 'count'
-                        ? 'border-navy-900 bg-navy-900 text-white'
-                        : 'border-border text-slate-500 hover:border-slate-400',
-                    ].join(' ')}
+                    disabled={thumbnailUploading}
+                    onClick={handleThumbnailRemove}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-300 disabled:opacity-50"
                   >
-                    After N sessions
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEndMode('date')}
-                    className={[
-                      'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
-                      endMode === 'date'
-                        ? 'border-navy-900 bg-navy-900 text-white'
-                        : 'border-border text-slate-500 hover:border-slate-400',
-                    ].join(' ')}
-                  >
-                    On a date
+                    Remove
                   </button>
                 </div>
-                {endMode === 'count' ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="2"
-                      max="52"
-                      value={endAfterN}
-                      onChange={(e) => setEndAfterN(e.target.value)}
-                      className="w-24 rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
-                    />
-                    <span className="text-sm text-slate-500">sessions total</span>
-                  </div>
-                ) : (
-                  <input
-                    type="date"
-                    value={repeatUntil}
-                    onChange={(e) => setRepeatUntil(e.target.value)}
-                    className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
-                  />
-                )}
+                {thumbnailError && <p className="text-xs text-red-500">{thumbnailError}</p>}
               </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Thumbnail section (edit only) ── */}
-      {isEdit && (
-        <div className="rounded-xl border border-border bg-slate-50/50 p-5">
-          <p className="mb-3 text-sm font-semibold text-navy-800">Cover image</p>
-          {thumbnailUrl ? (
-            <div className="flex flex-col gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={thumbnailUrl}
-                alt="Event thumbnail"
-                className="h-36 w-full rounded-lg object-cover"
-              />
-              <div className="flex gap-3">
+            ) : (
+              <div className="flex flex-col gap-2">
                 <label className={[
-                  'cursor-pointer rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-400',
+                  'flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-white px-4 py-6 text-center transition-colors hover:border-slate-400',
                   thumbnailUploading ? 'opacity-50 cursor-not-allowed' : '',
                 ].join(' ')}>
-                  Replace
+                  <span className="text-sm text-black">
+                    {thumbnailUploading ? 'Uploading…' : 'Click to upload an image'}
+                  </span>
+                  <span className="text-xs text-black">JPG, PNG, WebP — max 5 MB</span>
                   <input
                     type="file"
                     accept="image/*"
@@ -462,99 +477,532 @@ export default function EventForm({
                     }}
                   />
                 </label>
-                <button
-                  type="button"
-                  disabled={thumbnailUploading}
-                  onClick={handleThumbnailRemove}
-                  className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-300 disabled:opacity-50"
-                >
-                  Remove
-                </button>
+                {thumbnailError && <p className="text-xs text-red-500">{thumbnailError}</p>}
               </div>
-              {thumbnailError && <p className="text-xs text-red-500">{thumbnailError}</p>}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <label className={[
-                'flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-white px-4 py-6 text-center transition-colors hover:border-slate-400',
-                thumbnailUploading ? 'opacity-50 cursor-not-allowed' : '',
-              ].join(' ')}>
-                <span className="text-sm text-slate-400">
-                  {thumbnailUploading ? 'Uploading…' : 'Click to upload an image'}
-                </span>
-                <span className="text-xs text-slate-300">JPG, PNG, WebP — max 5 MB</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  disabled={thumbnailUploading}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0]
-                    if (f) handleThumbnailUpload(f)
-                  }}
-                />
-              </label>
-              {thumbnailError && <p className="text-xs text-red-500">{thumbnailError}</p>}
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </Section>
 
-      {/* ── Booking section ── */}
-      <div className="rounded-xl border border-border bg-slate-50/50 p-5">
-        <div className="mb-4 flex items-center gap-3">
-          <Toggle checked={requiresBooking} onChange={setRequiresBooking} />
-          <span className="text-sm font-medium text-navy-800">Require booking</span>
-          <span className="text-xs text-slate-400">Members must book a spot to attend</span>
+      {/* ─────────── WHEN ─────────── */}
+      <Section title="WHEN">
+        <div className="flex gap-4">
+          <div className="flex-1">
+            <label className="mb-1.5 block text-sm font-medium text-navy-800">
+              {isRecurring ? 'First Gathering starts' : 'Starts'}
+            </label>
+            <input
+              type="datetime-local"
+              value={startsAt}
+              onChange={(e) => setStartsAt(e.target.value)}
+              required
+              className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="mb-1.5 block text-sm font-medium text-navy-800">
+              {isRecurring ? 'Duration (ends)' : 'Ends'}
+            </label>
+            <input
+              type="datetime-local"
+              value={endsAt}
+              onChange={(e) => setEndsAt(e.target.value)}
+              className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+            />
+          </div>
         </div>
 
-        {requiresBooking && (
-          <div className="flex flex-col gap-4">
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <label className="mb-1.5 block text-sm font-medium text-navy-800">Capacity</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={capacity}
-                  onChange={(e) => setCapacity(e.target.value)}
-                  placeholder="Unlimited"
-                  className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="mb-1.5 block text-sm font-medium text-navy-800">Booking closes</label>
-                <input
-                  type="datetime-local"
-                  value={bookingClosesAt}
-                  onChange={(e) => setBookingClosesAt(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
-                />
-              </div>
+        {/* Recurring — new Gatherings only. Weekly is the only pattern
+            currently supported by the backend, so the label makes that
+            explicit rather than suggesting a broader picker. */}
+        {!isEdit && (
+          <div className="rounded-xl border border-border bg-slate-50/50 p-5">
+            <div className="mb-3 flex items-center gap-3">
+              <Toggle checked={isRecurring} onChange={setIsRecurring} />
+              <span className="text-sm font-medium text-navy-800">Recurring series</span>
             </div>
+            <p className="mb-4 text-xs italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+              Weekly recurrence is the only pattern currently supported.
+            </p>
+
+            {isRecurring && (
+              <div className="flex flex-col gap-4">
+                <div>
+                  <p className="mb-2 text-sm font-medium text-navy-800">Repeats on</p>
+                  <div className="flex flex-wrap gap-2">
+                    {WEEKDAYS.map((d) => (
+                      <button
+                        key={d.value}
+                        type="button"
+                        onClick={() => toggleDay(d.value)}
+                        className={[
+                          'rounded-full border px-3 py-1 text-sm transition-colors',
+                          selectedDays.includes(d.value)
+                            ? 'border-teal-600 bg-teal-600 text-white'
+                            : 'border-border text-black hover:border-teal-400 hover:text-teal-700',
+                        ].join(' ')}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-sm font-medium text-navy-800">Series name</p>
+                  <input
+                    value={seriesLabel}
+                    onChange={(e) => setSeriesLabel(e.target.value)}
+                    placeholder="e.g. Weekly Accountability Call"
+                    className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                  />
+                </div>
+
+                <div>
+                  <p className="mb-2 text-sm font-medium text-navy-800">Ends</p>
+                  <div className="mb-3 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setEndMode('count')}
+                      className={[
+                        'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
+                        endMode === 'count'
+                          ? 'border-navy-900 bg-navy-900 text-white'
+                          : 'border-border text-black hover:border-slate-400',
+                      ].join(' ')}
+                    >
+                      After N Gatherings
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEndMode('date')}
+                      className={[
+                        'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
+                        endMode === 'date'
+                          ? 'border-navy-900 bg-navy-900 text-white'
+                          : 'border-border text-black hover:border-slate-400',
+                      ].join(' ')}
+                    >
+                      On a date
+                    </button>
+                  </div>
+                  {endMode === 'count' ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="2"
+                        max="52"
+                        value={endAfterN}
+                        onChange={(e) => setEndAfterN(e.target.value)}
+                        className="w-24 rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                      />
+                      <span className="text-sm text-black">Gatherings total</span>
+                    </div>
+                  ) : (
+                    <input
+                      type="date"
+                      value={repeatUntil}
+                      onChange={(e) => setRepeatUntil(e.target.value)}
+                      className="rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Section>
+
+      {/* ─────────── WHERE ─────────── */}
+      <Section title="WHERE" subtitle="How will people gather?">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-navy-800">Attendance format</label>
+          <div className="flex flex-wrap gap-2">
+            {ATTENDANCE_FORMATS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => {
+                  setAttendanceFormat(f.value)
+                  // Keep the legacy `location_type` roughly in sync so the
+                  // iCal generator + older UI paths still render correctly.
+                  if (f.value === 'in_person') setLocationType('in_person')
+                  else if (locationType === 'in_person') setLocationType('zoom')
+                }}
+                className={[
+                  'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
+                  attendanceFormat === f.value
+                    ? 'border-navy-900 bg-navy-900 text-white'
+                    : 'border-border text-black hover:border-slate-400 hover:text-navy-700',
+                ].join(' ')}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {(attendanceFormat === 'online' || attendanceFormat === 'hybrid') && (
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-navy-800">Meeting link</label>
+            <input
+              type="url"
+              value={locationUrl}
+              onChange={(e) => setLocationUrl(e.target.value)}
+              placeholder="https://…"
+              className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+            />
+            <p className="mt-1 text-[12px] italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+              Only shown to registered attendees.
+            </p>
+          </div>
+        )}
+
+        {(attendanceFormat === 'in_person' || attendanceFormat === 'hybrid') && (
+          <>
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-navy-800">Booking note</label>
+              <label className="mb-1.5 block text-sm font-medium text-navy-800">Venue name</label>
               <input
-                value={bookingNote}
-                onChange={(e) => setBookingNote(e.target.value)}
-                placeholder="e.g. You'll receive the Zoom link 24 hours before the session."
+                value={venueName}
+                onChange={(e) => setVenueName(e.target.value)}
+                placeholder="e.g. The Studio, King Street"
                 className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
               />
             </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-navy-800">Venue address</label>
+              <textarea
+                value={venueAddress}
+                onChange={(e) => setVenueAddress(e.target.value)}
+                rows={2}
+                placeholder="Full address — shown only to registered attendees."
+                className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+              />
+            </div>
+          </>
+        )}
+
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-navy-800">
+            {attendanceFormat === 'online'
+              ? 'Access instructions'
+              : attendanceFormat === 'in_person'
+                ? 'Arrival instructions'
+                : 'Instructions for both attendance options'}
+          </label>
+          <textarea
+            value={accessInstructions}
+            onChange={(e) => setAccessInstructions(e.target.value)}
+            rows={2}
+            placeholder={
+              attendanceFormat === 'in_person'
+                ? 'Parking, entrance, what to bring…'
+                : 'Anything registrants need to know about joining.'
+            }
+            className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+          />
+          <p className="mt-1 text-[12px] italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+            Only shown to registered attendees.
+          </p>
+        </div>
+      </Section>
+
+      {/* ─────────── ACCESS ─────────── */}
+      <Section title="ACCESS" subtitle="Who may register?">
+        {accessTypeLocked && (
+          <div
+            className="rounded-xl px-4 py-3"
+            style={{ background: 'rgba(56,160,158,0.06)', border: '1px solid rgba(56,160,158,0.30)' }}
+          >
+            <p className="text-[13px]" style={{ color: 'rgba(12,24,38,0.75)' }}>
+              {accessTypeLockReason === 'sales' ? (
+                <>The access type can&rsquo;t be changed because tickets have already been sold. Existing ticket holders must keep their access.</>
+              ) : (
+                <>The access type can&rsquo;t be changed while a purchase is in progress. Try again after any pending checkouts have expired or been cancelled.</>
+              )}
+            </p>
           </div>
         )}
-      </div>
+        <div className="flex flex-col gap-2">
+          {ACCESS_TYPES.map((a) => (
+            <label
+              key={a.value}
+              className={[
+                'flex items-start gap-3 rounded-xl border px-4 py-3 transition-colors',
+                accessTypeLocked && a.value !== accessType ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+              ].join(' ')}
+              style={
+                accessType === a.value
+                  ? { borderColor: 'rgba(56,160,158,0.6)', background: 'rgba(56,160,158,0.05)' }
+                  : { borderColor: '#e2e8f0', background: 'white' }
+              }
+            >
+              <input
+                type="radio"
+                name="access-type"
+                checked={accessType === a.value}
+                onChange={() => setAccessType(a.value)}
+                disabled={accessTypeLocked && a.value !== accessType}
+                className="mt-1 h-4 w-4 accent-teal-500 disabled:opacity-40"
+              />
+              <div>
+                <p className="text-[14px] font-medium text-navy-900">{a.label}</p>
+                {a.value === 'free' && (
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+                    No payment is required. Visibility and membership requirements
+                    are controlled separately.
+                  </p>
+                )}
+                {a.value === 'included_with_collective' && (
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+                    Only active members of this Collective may register.
+                  </p>
+                )}
+                {a.value === 'included_with_pathway' && (
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+                    Only members enrolled in the linked Pathway may register.
+                  </p>
+                )}
+                {a.value === 'paid_separately' && (
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+                    Anyone can buy a ticket through Stripe. A ticket grants
+                    access to this Gathering only — not to the rest of the
+                    Collective.
+                  </p>
+                )}
+                {a.value === 'invitation_only' && (
+                  <p className="mt-0.5 text-[12px] italic leading-relaxed" style={{ color: 'rgba(12,24,38,0.55)' }}>
+                    Members register only when a caretaker adds them manually.
+                  </p>
+                )}
+              </div>
+            </label>
+          ))}
+        </div>
 
-      <div className="flex items-center gap-4 pt-2">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-lg bg-navy-900 px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : isEdit ? 'Save changes' : isRecurring ? 'Create series' : 'Create event'}
-        </button>
-        {error && <span className="text-sm text-red-500">{error}</span>}
-      </div>
+        {accessType === 'paid_separately' && (
+          <div
+            className="rounded-xl border p-4"
+            style={{ borderColor: 'rgba(56,160,158,0.35)', background: 'rgba(56,160,158,0.03)' }}
+          >
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: '#38A09E' }}>
+              TICKET DETAILS
+            </p>
+            <p className="mb-4 text-[13px] leading-relaxed text-black">
+              Members and visitors will purchase a ticket for this Gathering
+              through Stripe. A ticket grants access to this Gathering only.
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+              <div>
+                <label htmlFor="ticket-price" className="mb-1.5 block text-sm font-medium text-navy-800">
+                  Ticket price
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">
+                    $
+                  </span>
+                  <input
+                    id="ticket-price"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    placeholder="25.00"
+                    value={ticketPriceInput}
+                    onChange={(e) => {
+                      setTicketPriceInput(e.target.value)
+                      if (ticketPriceError) setTicketPriceError(null)
+                    }}
+                    className="w-full rounded-lg border border-border bg-white pl-7 pr-3 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                  />
+                </div>
+                {ticketPriceError && (
+                  <p className="mt-1 text-[12px] text-red-600">{ticketPriceError}</p>
+                )}
+                <p className="mt-1 text-[12px] italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+                  Enter a normal amount like 25 or 25.00. We store cents.
+                </p>
+              </div>
+              <div>
+                <label htmlFor="ticket-currency" className="mb-1.5 block text-sm font-medium text-navy-800">
+                  Currency
+                </label>
+                <select
+                  id="ticket-currency"
+                  value={ticketCurrency}
+                  onChange={(e) => setTicketCurrency(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                >
+                  {['AUD', 'USD', 'GBP', 'EUR', 'NZD', 'CAD'].map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {!salesEnabled && (
+              <p className="mt-3 text-[12px] italic" style={{ color: '#8A6A15' }}>
+                Ticket payments are currently available for testing only.
+              </p>
+            )}
+          </div>
+        )}
+
+        {accessType === 'included_with_pathway' && (
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-navy-800">Linked pathway</label>
+            <select
+              value={bookingRequiredPathwayId}
+              onChange={(e) => setBookingRequiredPathwayId(e.target.value)}
+              className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+            >
+              <option value="">Choose a Pathway…</option>
+              {pathways.filter((p) => p.status !== 'archived').map((p) => (
+                <option key={p.id} value={p.id}>{p.title}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </Section>
+
+      {/* ─────────── AVAILABILITY ─────────── */}
+      <Section title="AVAILABILITY" subtitle="How many people can join?">
+        <div className="rounded-xl border border-border bg-slate-50/50 p-5">
+          <div className="mb-3 flex items-center gap-3">
+            <Toggle
+              checked={requiresBooking}
+              onChange={(v) => {
+                // Rule-forced booking stays on regardless of user click.
+                if (bookingRequiredByRules) return
+                setRequiresBooking(v)
+              }}
+              disabled={bookingRequiredByRules}
+            />
+            <span className="text-sm font-medium text-navy-800">Require booking</span>
+            <span className="text-xs text-black">
+              {bookingRequiredByRules
+                ? 'Automatic — this Access type / capacity setting requires booking.'
+                : 'Members must book a spot to attend.'}
+            </span>
+          </div>
+
+          {requiresBooking && (
+            <div className="flex flex-col gap-4">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="mb-1.5 block text-sm font-medium text-navy-800">Capacity</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={capacity}
+                    onChange={(e) => setCapacity(e.target.value)}
+                    placeholder="Unlimited"
+                    className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="mb-1.5 block text-sm font-medium text-navy-800">Booking closes</label>
+                  <input
+                    type="datetime-local"
+                    value={bookingClosesAt}
+                    onChange={(e) => setBookingClosesAt(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-navy-800">Booking note</label>
+                <input
+                  value={bookingNote}
+                  onChange={(e) => setBookingNote(e.target.value)}
+                  placeholder="e.g. You'll receive the Zoom link 24 hours before the Gathering."
+                  className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </Section>
+
+      {/* ─────────── VISIBILITY ─────────── */}
+      <Section title="VISIBILITY" subtitle="Who can see this Gathering exists?">
+        <div className="rounded-xl border border-border bg-slate-50/50 p-5">
+          <div className="flex items-start gap-3">
+            <Toggle checked={isPublic} onChange={setIsPublic} />
+            <div>
+              <p className="text-sm font-medium text-navy-800">Public preview</p>
+              <p className="text-xs text-black">
+                Allow people outside this Collective to view this Gathering.
+                Registration requirements still apply.
+              </p>
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      {/* ─────────── CONVERSATIONS ─────────── */}
+      {!isEdit && !isRecurring && (
+        <Section title="CONVERSATIONS">
+          <div
+            className="rounded-xl px-4 py-3"
+            style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.20)' }}
+          >
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={createChannel}
+                onChange={(e) => setCreateChannel(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-teal-500"
+              />
+              <div>
+                <p className="text-[13.5px] font-semibold text-navy-900">
+                  📅 Create Gathering Channel
+                </p>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+                  Adds a Conversations channel for this Gathering. Registered
+                  attendees are joined automatically; conversations naturally
+                  continue before, during, and after.
+                </p>
+              </div>
+            </label>
+          </div>
+        </Section>
+      )}
+
+      {/* ─────────── PUBLICATION ─────────── */}
+      <Section title="PUBLICATION">
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <button
+            type="submit"
+            disabled={saving}
+            onClick={() => setSubmitMode('draft')}
+            className="rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-navy-900 transition-colors hover:border-navy-400 disabled:opacity-50"
+          >
+            {saving && submitMode === 'draft' ? 'Saving…' : 'Save as Draft'}
+          </button>
+
+          <button
+            type="submit"
+            disabled={saving}
+            onClick={() => setSubmitMode('publish')}
+            className="rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            {saving && submitMode === 'publish'
+              ? 'Publishing…'
+              : (isRecurring ? 'Publish Series' : 'Publish Gathering')}
+          </button>
+
+          {isEdit && event?.is_published && (
+            <span className="text-xs italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+              This Gathering is currently published — saving as Draft will hide it from members.
+            </span>
+          )}
+
+          {error && <span className="text-sm text-red-500">{error}</span>}
+        </div>
+      </Section>
     </form>
   )
 }

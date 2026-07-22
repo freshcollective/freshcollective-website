@@ -71,11 +71,11 @@ function AnonCheckoutCTAs({
       </Link>
       <Link
         href={`/login?next=${encodedNext}`}
-        className="block w-full rounded-full border border-slate-200 px-5 py-2.5 text-center text-[14px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+        className="block w-full rounded-full border border-slate-200 px-5 py-2.5 text-center text-[14px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-700"
       >
         Already have an account? Log in
       </Link>
-      <p className="pt-1 text-center text-[11px] leading-relaxed text-slate-400">
+      <p className="pt-1 text-center text-[11px] leading-relaxed text-black">
         Create a free account so we can save your access and connect your payment to your profile.
       </p>
     </div>
@@ -165,18 +165,18 @@ export function PaymentOptionSelector({
                 <div className="min-w-0">
                   <p className="font-semibold text-navy-900 text-[14px]">{opt.name}</p>
                   {opt.description && (
-                    <p className="mt-0.5 text-[13px] text-slate-500">{opt.description}</p>
+                    <p className="mt-0.5 text-[13px] text-black">{opt.description}</p>
                   )}
                   {opt.buyer_note && (
                     <p className="mt-1 text-[12px] text-teal-700">{opt.buyer_note}</p>
                   )}
                   {opt.payment_type === 'term_pass' && opt.term_end_date && (
-                    <p className="mt-1 text-[12px] text-slate-400">
+                    <p className="mt-1 text-[12px] text-black">
                       Access until {new Date(opt.term_end_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
                     </p>
                   )}
                   {opt.sessions_per_week != null && opt.total_sessions != null && (
-                    <p className="mt-1 text-[12px] text-slate-400">
+                    <p className="mt-1 text-[12px] text-black">
                       {opt.sessions_per_week} session{opt.sessions_per_week !== 1 ? 's' : ''} per week · {opt.total_sessions} sessions included
                     </p>
                   )}
@@ -186,7 +186,7 @@ export function PaymentOptionSelector({
                     <p className="font-bold text-navy-900 text-[16px]">{price}</p>
                   )}
                   {opt.schedules.length > 1 && (
-                    <p className="mt-0.5 text-[11px] text-slate-400">{opt.schedules.length} payment options</p>
+                    <p className="mt-0.5 text-[11px] text-black">{opt.schedules.length} payment options</p>
                   )}
                   <div
                     className="mt-1 ml-auto h-4 w-4 rounded-full border-2 flex items-center justify-center"
@@ -206,7 +206,7 @@ export function PaymentOptionSelector({
       {/* Step 2: Choose payment schedule (shown when the selected option has published schedules) */}
       {hasSchedules && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-black">
             Payment schedule
           </p>
           <div className="space-y-2">
@@ -229,7 +229,7 @@ export function PaymentOptionSelector({
                     <div>
                       <p className="text-[13px] font-semibold text-navy-900">{s.name}</p>
                       {s.buyer_note && (
-                        <p className="mt-0.5 text-[11px] text-slate-500">{s.buyer_note}</p>
+                        <p className="mt-0.5 text-[11px] text-black">{s.buyer_note}</p>
                       )}
                       {isRecurring && (
                         <p className="mt-0.5 text-[11px] text-amber-600">Coming soon — not yet available</p>
@@ -258,11 +258,11 @@ export function PaymentOptionSelector({
       {selectedOption && (
         <div className="rounded-xl border border-border bg-white p-4 space-y-2">
           <div className="flex items-center justify-between text-[14px]">
-            <span className="text-slate-600">{selectedOption.name}</span>
+            <span className="text-black">{selectedOption.name}</span>
             <span className="font-semibold text-navy-900">{summaryPrice}</span>
           </div>
           {selectedSchedule && selectedSchedule.schedule_type !== 'pay_in_full' && selectedSchedule.installment_count && (
-            <div className="flex items-center justify-between text-[12px] text-slate-500">
+            <div className="flex items-center justify-between text-[12px] text-black">
               <span>{selectedSchedule.name}</span>
             </div>
           )}
@@ -281,7 +281,7 @@ export function PaymentOptionSelector({
             paymentOptionScheduleId={effectiveScheduleId}
             label={ctaLabel}
           />
-          <p className="text-center text-[11px] leading-relaxed text-slate-400">
+          <p className="text-center text-[11px] leading-relaxed text-black">
             Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
           </p>
         </>

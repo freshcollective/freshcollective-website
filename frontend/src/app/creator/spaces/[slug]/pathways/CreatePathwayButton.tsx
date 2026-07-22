@@ -63,7 +63,7 @@ export default function CreatePathwayButton({ slug }: { slug: string }) {
       <button
         type="button"
         onClick={() => { setOpen(false); setTitle(''); setError(null) }}
-        className="text-sm text-slate-400 hover:text-slate-600"
+        className="text-sm text-black hover:text-slate-600"
       >
         Cancel
       </button>

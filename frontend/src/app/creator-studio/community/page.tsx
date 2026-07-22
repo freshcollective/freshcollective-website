@@ -1,53 +1,119 @@
 import Link from 'next/link'
-import { getActiveCreatorSpace, getCreatorPosts } from '@/lib/serverApi'
-import type { CreatorPost } from '@/types/platform'
+import {
+  getActiveCreatorSpace,
+  getCommunityFeed,
+  getMe,
+  getMemberChannels,
+  getSpaceMembers,
+  type ChannelSummaryLite,
+} from '@/lib/serverApi'
+import type { MemberProfile, PostSummary, SpaceSummary } from '@/types/platform'
+import CommunityFeed from '@/components/community/CommunityFeed'
+import ChannelSelector from '@/components/community/ChannelSelector'
+import ChannelHeader from '@/components/community/ChannelHeader'
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
+/**
+ * Creator Studio → Community
+ *
+ * The live Community experience, with caretaker controls layered on
+ * top through props. Uses the same feed, composer, search, poll view,
+ * mention rendering, and post cards as `/spaces/[slug]/community` —
+ * this page's only job is to select the currently active collective
+ * (via the `fc_creator_space` cookie honoured by getActiveCreatorSpace)
+ * and pass `canModerate`/`canPin`/`canEdit`/`showUnansweredFilter`.
+ */
+
+interface Props {
+  searchParams: Promise<{ channel?: string }>
 }
 
-const POST_TYPE_LABEL: Record<string, string> = {
-  prompt: 'Prompt',
-  reflection: 'Reflection',
-  discussion: 'Discussion',
-  announcement: 'Announcement',
-}
+export default async function CreatorStudioCommunityPage({ searchParams }: Props) {
+  const { channel: channelFromUrl } = await searchParams
+  const primarySpace: SpaceSummary | null = await getActiveCreatorSpace()
 
-export default async function CommunityPage() {
-  const primarySpace = await getActiveCreatorSpace()
-  const posts: CreatorPost[] = primarySpace ? await getCreatorPosts(primarySpace.slug) : []
+  const [channels, members, me]: [
+    ChannelSummaryLite[],
+    MemberProfile[],
+    { id: string; role: string } | null,
+  ] = primarySpace
+    ? await Promise.all([
+        getMemberChannels(primarySpace.slug),
+        getSpaceMembers(primarySpace.slug) as Promise<MemberProfile[]>,
+        getMe() as Promise<{ id: string; role: string } | null>,
+      ])
+    : [[], [], null]
+
+  const defaultChannel = channels.find((c) => c.is_default) ?? channels[0] ?? null
+  const activeChannel: ChannelSummaryLite | null = channelFromUrl
+    ? (channels.find((c) => c.slug === channelFromUrl) ?? defaultChannel)
+    : defaultChannel
+  const activeSlug = activeChannel?.slug ?? 'general'
+  const channelArchived = !!activeChannel?.is_archived
+
+  const posts: PostSummary[] = primarySpace
+    ? await (getCommunityFeed(primarySpace.slug, activeSlug) as Promise<PostSummary[]>)
+    : []
+
+  const memberNamesById: Record<string, string> = {}
+  for (const m of members) memberNamesById[m.id] = m.display_name
+
+  const isDraft = primarySpace?.status !== 'active'
 
   return (
-    <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
+    <div className="w-full max-w-[860px] px-8 py-8 md:px-10 md:py-10">
 
-      <div className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <p
-            className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
-            style={{ color: '#38A09E' }}
-          >
-            Creator Studio
-          </p>
-          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Community</h1>
-          <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
-            Create prompts and conversations that help people stay connected to the work.
-          </p>
-        </div>
+      <div className="mb-8">
+        <p
+          className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
+          style={{ color: '#38A09E' }}
+        >
+          Creator Studio
+        </p>
+        <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Conversations</h1>
+        <p className="mt-2 text-[14px] leading-relaxed text-black">
+          Start conversations, respond to members and care for the people who gather here.
+        </p>
         {primarySpace && (
-          <Link
-            href={`/creator/spaces/${primarySpace.slug}/community`}
-            className="mt-1 shrink-0 rounded-xl border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
-          >
-            Manage →
-          </Link>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            {isDraft ? (
+              <span
+                className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-medium"
+                style={{
+                  background: 'rgba(212,176,72,0.14)',
+                  color: '#8A6A15',
+                  border: '1px solid rgba(212,176,72,0.35)',
+                }}
+                title="Draft collectives are not yet open to members. Publish this collective from Settings to enable the member-facing view."
+              >
+                Draft — no member view yet
+              </span>
+            ) : (
+              <Link
+                href={`/spaces/${primarySpace.slug}/community${activeSlug && activeSlug !== 'general' ? `?channel=${activeSlug}` : ''}`}
+                className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
+              >
+                View as member →
+              </Link>
+            )}
+            <Link
+              href="/creator-studio/community/channels"
+              className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-medium transition-colors"
+              style={{
+                background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+                color: 'var(--fc-accent, #0f766e)',
+              }}
+            >
+              Manage Channels
+            </Link>
+          </div>
         )}
       </div>
 
-      {/* No collective yet */}
-      {!primarySpace && (
+      {!primarySpace ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
           <p className="mb-2 text-[16px] font-semibold text-navy-900">No collective yet</p>
-          <p className="mb-6 text-[14px] leading-relaxed text-slate-500">
+          <p className="mb-6 text-[14px] leading-relaxed text-black">
             Set up your collective first, then you can post prompts and start conversations.
           </p>
           <Link
@@ -58,56 +124,59 @@ export default async function CommunityPage() {
             Create collective
           </Link>
         </div>
-      )}
+      ) : (
+        <>
+          {channels.length > 0 && (
+            <ChannelSelector
+              channels={channels.map((c) => ({
+                id: c.id, slug: c.slug, name: c.name,
+                channel_type: c.channel_type, is_default: c.is_default,
+                is_system: c.is_system, is_archived: c.is_archived,
+                icon_emoji: c.icon_emoji, group_label: c.group_label,
+              }))}
+              activeSlug={activeSlug}
+            />
+          )}
 
-      {/* Collective exists but no posts */}
-      {primarySpace && posts.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
-          <p className="mb-2 text-[16px] font-semibold text-navy-900">No community posts yet.</p>
-          <p className="mb-6 text-[14px] leading-relaxed text-slate-500">
-            Start with a simple prompt to invite reflection, conversation, or shared practice.
-          </p>
-          <Link
-            href={`/creator/spaces/${primarySpace.slug}/community`}
-            className="inline-flex items-center rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-          >
-            Add community prompt
-          </Link>
-        </div>
-      )}
+          {activeChannel && (
+            <ChannelHeader
+              icon={activeChannel.icon_emoji}
+              name={activeChannel.name}
+              description={activeChannel.description}
+              archived={channelArchived}
+            />
+          )}
 
-      {/* Posts feed */}
-      {posts.length > 0 && (
-        <div className="space-y-3">
-          {posts.map((post) => (
-            <div key={post.id} className="rounded-2xl border border-border bg-white p-5">
-              <div className="mb-2.5 flex items-start justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                    style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
-                  >
-                    {POST_TYPE_LABEL[post.post_type] ?? post.post_type}
-                  </span>
-                  {post.is_pinned && (
-                    <span className="text-[12px] text-slate-400">Pinned</span>
-                  )}
-                </div>
-                <span className="shrink-0 text-[12px] text-slate-400">
-                  {formatDate(post.created_at)}
-                </span>
-              </div>
-              {post.title && (
-                <p className="mb-1.5 text-[15px] font-medium text-navy-900">{post.title}</p>
-              )}
-              <p className="line-clamp-2 text-[14px] leading-relaxed text-slate-500">
-                {post.body}
-              </p>
-              <p className="mt-2 text-[12px] text-slate-400">by {post.author_name}</p>
+          {channelArchived && (
+            <div
+              className="mb-4 rounded-2xl px-5 py-4 text-[13px]"
+              style={{
+                background: 'rgba(212,176,72,0.10)',
+                border: '1px solid rgba(212,176,72,0.30)',
+                color: '#8A6A15',
+              }}
+            >
+              This Channel is archived. It remains readable but no new
+              conversations can be started here until it is restored.
             </div>
-          ))}
-        </div>
+          )}
+
+          <CommunityFeed
+            key={activeSlug}
+            spaceSlug={primarySpace.slug}
+            channelSlug={activeSlug}
+            posts={posts}
+            memberNamesById={memberNamesById}
+            canModerate
+            canPin
+            canEdit
+            viewerId={me?.id}
+            showUnansweredFilter
+            canSchedule
+            isDraftCollective={isDraft}
+            canCompose={!channelArchived}
+          />
+        </>
       )}
 
     </div>

@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
+import EmojiPicker from '@/components/community/EmojiPicker'
 
 // ---------------------------------------------------------------------------
 // Toolbar button
@@ -31,7 +32,7 @@ function ToolBtn({
       className={`flex h-6 w-6 items-center justify-center rounded text-[12px] transition-colors ${
         active
           ? 'bg-teal-600 text-white'
-          : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
+          : 'text-black hover:bg-slate-100 hover:text-slate-800'
       }`}
     >
       {children}
@@ -120,6 +121,11 @@ export default function SimpleRichTextEditor({ value, onChange, placeholder, min
         >
           🔗
         </ToolBtn>
+        <EmojiPicker
+          variant="compact"
+          align="bottom"
+          onSelect={(emoji) => editor.chain().focus().insertContent(emoji).run()}
+        />
       </div>
 
       {/* Editable area */}

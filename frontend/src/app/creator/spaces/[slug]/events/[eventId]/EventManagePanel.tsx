@@ -23,6 +23,49 @@ const ATTENDANCE_STYLES: Record<string, { label: string; bg: string; color: stri
   pending:  { label: 'Pending',   bg: 'rgba(148,163,184,0.12)', color: '#64748b' },
 }
 
+// Access-source badge palette. All values are DB-authoritative — the
+// backend derives them in services/ticket_summary.py. Never inferred here.
+const ACCESS_SOURCE_STYLES: Record<string, { bg: string; color: string }> = {
+  'Paid ticket':      { bg: 'rgba(56,160,158,0.12)',  color: '#0f766e' },
+  'Complimentary':    { bg: 'rgba(148,163,184,0.14)', color: '#475569' },
+  'Creator added':    { bg: 'rgba(212,176,72,0.14)',  color: '#8A6A15' },
+  'Included':         { bg: 'rgba(148,163,184,0.10)', color: '#64748b' },
+  'Payment pending':  { bg: 'rgba(212,176,72,0.14)',  color: '#8A6A15' },
+  'Cancelled':        { bg: 'rgba(239,68,68,0.08)',   color: '#b91c1c' },
+}
+
+function AccessSourceBadge({ source }: { source: string }) {
+  const s = ACCESS_SOURCE_STYLES[source] ?? ACCESS_SOURCE_STYLES['Complimentary']
+  return (
+    <span
+      className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold"
+      style={{ background: s.bg, color: s.color }}
+    >
+      {source}
+    </span>
+  )
+}
+
+function formatMoneyCents(cents: number, currency: string): string {
+  const symbol =
+    currency === 'AUD' || currency === 'NZD' || currency === 'CAD' || currency === 'USD'
+      ? '$'
+      : currency === 'GBP' ? '£'
+      : currency === 'EUR' ? '€'
+      : ''
+  const dollars = cents / 100
+  return `${symbol}${dollars.toFixed(dollars % 1 === 0 ? 0 : 2)} ${currency}`
+}
+
+const TICKET_STATUS_STYLES: Record<string, { label: string; bg: string; color: string }> = {
+  open:      { label: 'Open',       bg: 'rgba(56,160,158,0.12)',  color: '#0f766e' },
+  sold_out:  { label: 'Sold out',   bg: 'rgba(239,68,68,0.10)',   color: '#b91c1c' },
+  closed:    { label: 'Closed',     bg: 'rgba(148,163,184,0.14)', color: '#475569' },
+  cancelled: { label: 'Cancelled',  bg: 'rgba(239,68,68,0.10)',   color: '#b91c1c' },
+  ended:     { label: 'Ended',      bg: 'rgba(148,163,184,0.14)', color: '#475569' },
+  not_paid:  { label: 'Not paid',   bg: 'rgba(148,163,184,0.14)', color: '#475569' },
+}
+
 function AttendancePill({ status }: { status: string | null }) {
   const s = status ? (ATTENDANCE_STYLES[status] ?? ATTENDANCE_STYLES.pending) : ATTENDANCE_STYLES.pending
   return (
@@ -80,7 +123,7 @@ function AttendanceButtons({ bookingId, eventId, spaceSlug, currentStatus, onUpd
       )}
       {currentStatus && currentStatus !== 'pending' && (
         <button onClick={() => mark('pending')} disabled={busy}
-          className="rounded-md px-2 py-0.5 text-[10px] font-medium text-slate-400 transition-colors hover:text-slate-600 disabled:opacity-40">
+          className="rounded-md px-2 py-0.5 text-[10px] font-medium text-black transition-colors hover:text-slate-600 disabled:opacity-40">
           Reset
         </button>
       )}
@@ -198,39 +241,116 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
     m => !confirmedBookings.some(b => b.user_id === m.id)
   )
 
+  const isPaid = event.booking_access_type === 'paid_separately'
+  const sales = event.ticket_sales
+  const canShowSalesCard = isPaid && sales
+
   return (
     <div className="mt-10 flex flex-col gap-8">
 
-      {/* ── Booked members ── */}
+      {/* ── Ticket sales (paid Gatherings only) ── */}
+      {canShowSalesCard && sales && (
+        <div className="rounded-2xl border border-border bg-white p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
+                Ticket sales
+              </p>
+              <p className="mt-1 font-serif text-lg text-navy-900">
+                {event.ticket_price_cents != null && event.ticket_currency
+                  ? formatMoneyCents(event.ticket_price_cents, event.ticket_currency)
+                  : 'Price not set'}
+                <span className="ml-2 text-xs text-black">per ticket</span>
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {(() => {
+                const s = TICKET_STATUS_STYLES[sales.status] ?? TICKET_STATUS_STYLES.closed
+                return (
+                  <span
+                    className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                    style={{ background: s.bg, color: s.color }}
+                  >
+                    {s.label}
+                  </span>
+                )
+              })()}
+              {!sales.sales_enabled && (
+                <span
+                  className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                  style={{ background: 'rgba(212,176,72,0.14)', color: '#8A6A15' }}
+                >
+                  Testing only
+                </span>
+              )}
+            </div>
+          </div>
+
+          <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+            <div>
+              <dt className="text-[11px] uppercase tracking-wider text-slate-500">Paid tickets</dt>
+              <dd className="mt-0.5 text-lg text-navy-900">{sales.paid_ticket_count}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] uppercase tracking-wider text-slate-500">Complimentary</dt>
+              <dd className="mt-0.5 text-lg text-navy-900">{sales.complimentary_count}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] uppercase tracking-wider text-slate-500">Active holds</dt>
+              <dd className="mt-0.5 text-lg text-navy-900">{sales.active_hold_count}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] uppercase tracking-wider text-slate-500">Remaining capacity</dt>
+              <dd className="mt-0.5 text-lg text-navy-900">
+                {sales.remaining_capacity == null ? 'No capacity limit' : sales.remaining_capacity}
+              </dd>
+            </div>
+          </dl>
+
+          <div className="mt-4 border-t border-border pt-4">
+            <p className="text-[11px] uppercase tracking-wider text-slate-500">Gross ticket revenue</p>
+            <p className="mt-0.5 font-serif text-xl text-navy-900">
+              {sales.revenue_currency
+                ? formatMoneyCents(sales.gross_ticket_revenue_cents, sales.revenue_currency)
+                : formatMoneyCents(sales.gross_ticket_revenue_cents, event.ticket_currency ?? 'AUD')}
+            </p>
+            <p className="mt-1 text-[12px] italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+              Gross ticket sales before platform fees, refunds and creator payouts.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reserved places ── */}
       {event.requires_booking && (
         <div>
           <div className="mb-4 h-px w-6 bg-gold-400" />
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="font-serif text-xl text-navy-900">
-                Bookings
+                Reserved places
                 {event.capacity != null && (
-                  <span className="ml-2 text-sm font-normal text-slate-400">
+                  <span className="ml-2 text-sm font-normal text-black">
                     {confirmedBookings.length} / {event.capacity}
                   </span>
                 )}
                 {event.capacity == null && confirmedBookings.length > 0 && (
-                  <span className="ml-2 text-sm font-normal text-slate-400">
-                    {confirmedBookings.length} booked
+                  <span className="ml-2 text-sm font-normal text-black">
+                    {confirmedBookings.length} reserved
                   </span>
                 )}
               </h2>
-              {/* Attendance summary for past sessions */}
+              {/* Attendance summary for past Gatherings */}
               {isPast && !isCancelled && confirmedBookings.length > 0 && (
-                <p className="mt-1 text-[12px] text-slate-400">
+                <p className="mt-1 text-[12px] text-black">
                   {attendedCount > 0 && <span className="mr-3 text-teal-600">{attendedCount} attended</span>}
                   {noShowCount > 0 && <span className="mr-3 text-red-500">{noShowCount} no show</span>}
                   {pendingCount > 0 && <span>{pendingCount} not marked</span>}
                 </p>
               )}
               {!isPast && !isCancelled && (
-                <p className="mt-1 text-[12px] text-slate-400">
-                  Attendance can be marked once this session has started.
+                <p className="mt-1 text-[12px] text-black">
+                  Attendance can be marked once this Gathering has started.
                 </p>
               )}
             </div>
@@ -239,18 +359,24 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
                 onClick={() => setShowAddBooking(v => !v)}
                 className="rounded-lg bg-navy-900 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
               >
-                {showAddBooking ? 'Cancel' : '+ Add booking'}
+                {showAddBooking ? 'Cancel' : '+ Add member'}
               </button>
             )}
           </div>
 
-          {/* Manual booking form */}
+          {/* Manual place-holding form */}
           {showAddBooking && (
             <div className="mb-5 rounded-xl border border-border bg-slate-50/50 p-5">
-              <p className="mb-3 text-sm font-semibold text-navy-800">Add a booking</p>
+              <p className="mb-1 text-sm font-semibold text-navy-800">Reserve a place for a member</p>
+              {isPaid && (
+                <p className="mb-3 text-[12px] leading-relaxed text-black">
+                  This reserves a <strong>complimentary</strong> place. No ticket payment
+                  will be collected.
+                </p>
+              )}
               <div className="flex flex-col gap-3">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-500">Member</label>
+                  <label className="mb-1 block text-xs font-medium text-black">Member</label>
                   <select
                     value={selectedUserId}
                     onChange={e => setSelectedUserId(e.target.value)}
@@ -263,11 +389,11 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-500">Note (optional)</label>
+                  <label className="mb-1 block text-xs font-medium text-black">Note (optional)</label>
                   <input
                     value={bookingNote}
                     onChange={e => setBookingNote(e.target.value)}
-                    placeholder="Internal note about this booking"
+                    placeholder="Internal note"
                     className="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
                   />
                 </div>
@@ -277,15 +403,15 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
                   disabled={!selectedUserId || addingBooking}
                   className="self-start rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
-                  {addingBooking ? 'Adding…' : 'Confirm booking'}
+                  {addingBooking ? 'Reserving…' : 'Reserve place'}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Confirmed bookings list */}
+          {/* Confirmed reservations list */}
           {confirmedBookings.length === 0 && !showAddBooking ? (
-            <p className="text-sm text-slate-400">No confirmed bookings yet.</p>
+            <p className="text-sm text-black">No places reserved yet.</p>
           ) : (
             <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-white">
               {confirmedBookings.map(b => (
@@ -295,22 +421,24 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-medium text-navy-900">{b.name ?? b.email}</p>
                         <AttendancePill status={b.attendance_status ?? null} />
-                        {b.source === 'creator_manual' && (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
-                            Manual
+                        <AccessSourceBadge source={b.access_source} />
+                      </div>
+                      <p className="text-xs text-black">
+                        {b.email}
+                        {b.access_source === 'Paid ticket' && b.amount_paid_cents != null && b.currency && (
+                          <span className="ml-2 text-black">
+                            · Paid {formatMoneyCents(b.amount_paid_cents, b.currency)}
+                            {b.purchased_at && ` on ${new Date(b.purchased_at).toLocaleDateString()}`}
                           </span>
                         )}
-                      </div>
-                      <p className="text-xs text-slate-400">
-                        {b.email}
-                        {b.note && <span className="ml-2 text-slate-300">· {b.note}</span>}
+                        {b.note && <span className="ml-2 text-black">· {b.note}</span>}
                       </p>
                     </div>
                     {!isCancelled && (
                       <button
                         onClick={() => handleCancelBooking(b.booking_id)}
                         disabled={cancellingBookingId === b.booking_id}
-                        className="shrink-0 text-xs text-slate-400 underline hover:text-slate-600 disabled:opacity-50"
+                        className="shrink-0 text-xs text-black underline hover:text-slate-600 disabled:opacity-50"
                       >
                         {cancellingBookingId === b.booking_id ? 'Removing…' : 'Remove'}
                       </button>
@@ -331,17 +459,17 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
             </div>
           )}
 
-          {/* Cancelled bookings */}
+          {/* Released places */}
           {cancelledBookings.length > 0 && (
             <details className="mt-3">
-              <summary className="cursor-pointer text-xs text-slate-400 hover:text-slate-600">
-                {cancelledBookings.length} cancelled booking{cancelledBookings.length !== 1 ? 's' : ''}
+              <summary className="cursor-pointer text-xs text-black hover:text-slate-600">
+                {cancelledBookings.length} released place{cancelledBookings.length !== 1 ? 's' : ''}
               </summary>
               <div className="mt-2 divide-y divide-border overflow-hidden rounded-xl border border-border bg-white opacity-60">
                 {cancelledBookings.map(b => (
                   <div key={b.booking_id} className="px-4 py-3">
-                    <p className="text-sm line-through text-slate-400">{b.name ?? b.email}</p>
-                    <p className="text-xs text-slate-300">{b.email}</p>
+                    <p className="text-sm line-through text-black">{b.name ?? b.email}</p>
+                    <p className="text-xs text-black">{b.email}</p>
                   </div>
                 ))}
               </div>
@@ -355,20 +483,40 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
         <div className="rounded-xl border border-red-100 bg-red-50/30 p-5">
           <p className="mb-1 text-sm font-semibold text-red-800">Danger zone</p>
           <p className="mb-4 text-xs text-red-600">
-            Cancelling this session cannot be undone. Existing bookings are kept for your records.
+            Cancelling this Gathering cannot be undone. Existing bookings are kept for your records.
           </p>
           {!showCancelConfirm ? (
             <button
               onClick={() => setShowCancelConfirm(true)}
               className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100"
             >
-              Cancel this session
+              Cancel this Gathering
             </button>
           ) : (
             <div className="flex flex-col gap-3">
-              <p className="text-sm text-red-700">
-                This cancels this session only. Other sessions in the series will not be changed.
-              </p>
+              {isPaid && sales && sales.has_completed_ticket_sales ? (
+                <div
+                  className="rounded-lg border p-4"
+                  style={{ borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.05)' }}
+                >
+                  <p className="text-sm font-semibold text-red-800">
+                    This Gathering has paid ticket holders.
+                  </p>
+                  <p className="mt-1.5 text-sm text-red-700">
+                    Cancelling it will stop future sales, but{' '}
+                    <strong>refunds are not issued automatically</strong>. Any
+                    required refunds must currently be managed through Stripe.
+                  </p>
+                  <p className="mt-1.5 text-xs text-red-600">
+                    {sales.paid_ticket_count} paid ticket
+                    {sales.paid_ticket_count === 1 ? '' : 's'} to review.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-red-700">
+                  This cancels this Gathering only. Other Gatherings in the series will not be changed.
+                </p>
+              )}
               {cancelError && <p className="text-xs text-red-500">{cancelError}</p>}
               <div className="flex gap-3">
                 <button
@@ -376,11 +524,11 @@ export default function EventManagePanel({ event, spaceSlug, initialBookings, me
                   disabled={cancelling}
                   className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
-                  {cancelling ? 'Cancelling…' : 'Yes, cancel this session'}
+                  {cancelling ? 'Cancelling…' : 'Yes, cancel this Gathering'}
                 </button>
                 <button
                   onClick={() => { setShowCancelConfirm(false); setCancelError(null) }}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-slate-400"
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-black transition-colors hover:border-slate-400"
                 >
                   Keep it
                 </button>

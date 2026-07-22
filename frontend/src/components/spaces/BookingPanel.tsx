@@ -127,7 +127,7 @@ export default function BookingPanel({
 
   return (
     <div>
-      <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+      <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-black">
         Booking
       </p>
 
@@ -136,12 +136,12 @@ export default function BookingPanel({
       ) : isBooked ? (
         <p className="mb-4 text-[15px] font-semibold text-teal-700">You&rsquo;re booked ✓</p>
       ) : isFull ? (
-        <p className="mb-4 text-[15px] font-semibold text-slate-500">Session full</p>
+        <p className="mb-4 text-[15px] font-semibold text-black">Session full</p>
       ) : (
         <p className="mb-4 text-[15px] font-semibold text-navy-900">Reserve your spot</p>
       )}
 
-      <div className="mb-4 space-y-2 text-[13px] text-slate-500">
+      <div className="mb-4 space-y-2 text-[13px] text-black">
         {capacity !== null && (
           <div className="flex items-center justify-between">
             <span>Spots</span>
@@ -194,7 +194,7 @@ export default function BookingPanel({
                 <button
                   onClick={handleCancelBooking}
                   disabled={loading}
-                  className="w-full rounded-xl border border-slate-200 py-2 text-sm text-slate-400 transition-colors hover:border-red-200 hover:text-red-500 disabled:opacity-50"
+                  className="w-full rounded-xl border border-slate-200 py-2 text-sm text-black transition-colors hover:border-red-200 hover:text-red-500 disabled:opacity-50"
                 >
                   {loading ? 'Cancelling…' : 'Cancel booking'}
                 </button>
@@ -229,7 +229,7 @@ export default function BookingPanel({
       )}
 
       {bookingNote && (
-        <p className="mt-3 text-[12px] leading-relaxed text-slate-400">{bookingNote}</p>
+        <p className="mt-3 text-[12px] leading-relaxed text-black">{bookingNote}</p>
       )}
 
       {error && (

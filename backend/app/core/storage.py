@@ -9,12 +9,19 @@ store the S3 key in the url column, and serve via presigned GET URLs instead of
 /api/uploads. The rest of the codebase does not need to change.
 """
 
+import io
 import pathlib
 import re
 from uuid import uuid4
 
 # Absolute path to the uploads root, resolved relative to this file.
 UPLOAD_DIR = pathlib.Path(__file__).parent.parent.parent / "uploads"
+
+# Target width for auto-generated thumbnails of curated artwork
+# (Locations, Platform Artwork). Chosen to look sharp at typical card
+# sizes on 2x displays without bloating page weight. Height derives
+# from the source aspect ratio; smaller sources are left untouched.
+THUMBNAIL_TARGET_WIDTH = 600
 
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB
 
@@ -167,3 +174,96 @@ def delete_file(rel_path: str) -> None:
             target.unlink()
     except Exception:
         pass
+
+
+# ---------------------------------------------------------------------------
+# Curated artwork — hero + auto-generated thumbnail
+# ---------------------------------------------------------------------------
+
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
+# Map source extension → (Pillow save format, output extension).
+_THUMBNAIL_FORMAT: dict[str, tuple[str, str]] = {
+    ".jpg":  ("JPEG", ".jpg"),
+    ".jpeg": ("JPEG", ".jpg"),
+    ".png":  ("PNG",  ".png"),
+    ".webp": ("WEBP", ".webp"),
+}
+
+
+def generate_thumbnail_bytes(
+    data: bytes,
+    original_name: str,
+    target_width: int = THUMBNAIL_TARGET_WIDTH,
+) -> tuple[bytes, str]:
+    """Resize a source image and return the thumbnail bytes plus a
+    suggested filename.
+
+    Preserves aspect ratio. Images narrower than `target_width` are not
+    upscaled — the "thumbnail" mirrors the source at its native size.
+
+    Returns:
+        thumb_bytes  — encoded thumbnail image
+        thumb_name   — filename with a `thumb_` prefix and the source's stem,
+                       suitable to pass to `save_file`.
+    """
+    # Local import so the storage module doesn't hard-require Pillow at
+    # import time — helpful for lightweight test environments that don't
+    # touch image uploads.
+    from PIL import Image  # type: ignore[import-not-found]
+
+    ext = pathlib.Path(original_name).suffix.lower()
+    if ext not in _IMAGE_EXTENSIONS:
+        raise ValueError("Only JPG, PNG, and WebP images are allowed.")
+
+    save_format, out_ext = _THUMBNAIL_FORMAT[ext]
+    with Image.open(io.BytesIO(data)) as im:
+        # Preserve transparency for PNG/WebP; JPEG needs an opaque base.
+        if save_format == "JPEG" and im.mode not in ("RGB", "L"):
+            im = im.convert("RGB")
+
+        width, height = im.size
+        if width > target_width:
+            new_height = max(1, round(height * (target_width / width)))
+            thumb = im.resize((target_width, new_height), Image.LANCZOS)
+        else:
+            thumb = im.copy()
+
+        buf = io.BytesIO()
+        save_kwargs: dict[str, object] = {"format": save_format}
+        if save_format == "JPEG":
+            save_kwargs["quality"] = 85
+            save_kwargs["optimize"] = True
+        elif save_format == "WEBP":
+            save_kwargs["quality"] = 85
+            save_kwargs["method"] = 6
+        elif save_format == "PNG":
+            save_kwargs["optimize"] = True
+        thumb.save(buf, **save_kwargs)
+
+    stem = pathlib.Path(original_name).stem
+    return buf.getvalue(), f"thumb_{stem}{out_ext}"
+
+
+def save_image_with_thumbnail(
+    data: bytes,
+    original_name: str,
+    mime_type: str,
+    subdir: str,
+    target_width: int = THUMBNAIL_TARGET_WIDTH,
+) -> tuple[str, str]:
+    """Persist a curated image and generate a proportional thumbnail.
+
+    The hero preserves the original bytes. The thumbnail is downscaled to
+    `target_width` while preserving aspect ratio; images narrower than the
+    target width are not upscaled — the thumbnail simply mirrors the hero
+    at its native size.
+
+    Returns:
+        hero_rel_path      — relative path used to construct the URL
+        thumbnail_rel_path — sibling path for the generated thumbnail
+    """
+    hero_rel, _resource, _size = save_file(data, original_name, mime_type, subdir)
+    thumb_bytes, thumb_name = generate_thumbnail_bytes(data, original_name, target_width)
+    thumb_rel, _r2, _s2 = save_file(thumb_bytes, thumb_name, mime_type, subdir)
+    return hero_rel, thumb_rel

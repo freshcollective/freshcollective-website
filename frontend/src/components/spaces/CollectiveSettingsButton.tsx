@@ -22,7 +22,7 @@ export default function CollectiveSettingsButton({ spaceSlug, spaceName }: Props
       )}
       <button
         onClick={() => setOpen(true)}
-        className="block w-full rounded-xl border border-slate-200 px-4 py-2 text-center text-[13px] font-medium text-slate-500 transition-colors hover:bg-slate-50"
+        className="block w-full rounded-xl border border-slate-200 px-4 py-2 text-center text-[13px] font-medium text-black transition-colors hover:bg-slate-50"
       >
         Settings
       </button>

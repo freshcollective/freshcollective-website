@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import { AddBlockPicker, BlockRow } from '@/components/creator/BlockEditorShared'
-import type { PathwayAboutBlock, StepBlockType, CreatorMediaAsset } from '@/types/platform'
+import type { PathwayAboutBlock, StepBlockType, CreatorMediaAsset, CreatorResource } from '@/types/platform'
 
 interface CreatorPathwayMin {
   id: string
@@ -18,19 +18,22 @@ interface Props {
   pathway: CreatorPathwayMin
   initialBlocks: PathwayAboutBlock[]
   mediaAssets: CreatorMediaAsset[]
+  resources?: CreatorResource[]
 }
 
-export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, mediaAssets }: Props) {
+export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, mediaAssets, resources = [] }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [blocks, setBlocks] = useState<PathwayAboutBlock[]>(initialBlocks)
   const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
   const [newBlockId, setNewBlockId] = useState<string | null>(null)
 
   const blocksUrl = apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/about-blocks`)
 
   async function addBlock(type: StepBlockType) {
     setAdding(true)
+    setAddError(null)
     try {
       const res = await fetch(blocksUrl, {
         method: 'POST',
@@ -38,10 +41,17 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
         credentials: 'include',
         body: JSON.stringify({ block_type: type }),
       })
-      if (!res.ok) return
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        const detail = typeof body.detail === 'string' ? body.detail : null
+        setAddError(detail ?? `Couldn't add ${type} block (${res.status}).`)
+        return
+      }
       const block: PathwayAboutBlock = await res.json()
       setBlocks(prev => [...prev, block])
       setNewBlockId(block.id)
+    } catch {
+      setAddError(`Couldn't add ${type} block. Please try again.`)
     } finally {
       setAdding(false)
     }
@@ -89,7 +99,7 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
       <div className="mb-6">
         <Link
           href={`/creator-studio/pathways/${pathway.slug}`}
-          className="text-[12px] font-medium text-slate-400 transition-colors hover:text-slate-600"
+          className="text-[12px] font-medium text-black transition-colors hover:text-slate-600"
         >
           ← Back to pathway
         </Link>
@@ -97,7 +107,7 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
           {pathway.title}
         </p>
         <h1 className="mt-0.5 text-2xl text-navy-900 md:text-3xl">Edit about page</h1>
-        <p className="mt-1.5 text-[14px] text-slate-500">
+        <p className="mt-1.5 text-[14px] text-black">
           Build the page people see before they start or unlock this pathway.
         </p>
       </div>
@@ -107,7 +117,7 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
         <Link
           href={`/spaces/${spaceSlug}/pathways/${pathway.slug}/about`}
           target="_blank"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-700"
         >
           Preview member view →
         </Link>
@@ -115,7 +125,7 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
 
       {/* Content blocks card */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-        <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-black">
           About page content
         </p>
 
@@ -123,7 +133,7 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
           {blocks.length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
               <p className="mb-1 text-[15px] font-semibold text-navy-900">No about page content yet</p>
-              <p className="text-[13px] text-slate-400">
+              <p className="text-[13px] text-black">
                 Add your first block to explain what this pathway is about, who it is for, and what people will experience.
               </p>
             </div>
@@ -136,6 +146,7 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
               index={i}
               total={blocks.length}
               assets={mediaAssets}
+              resources={resources}
               initialEditing={block.id === newBlockId}
               onMoveUp={() => moveBlock(i, 'up')}
               onMoveDown={() => moveBlock(i, 'down')}
@@ -147,9 +158,14 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
 
         <div className="mt-4">
           {adding ? (
-            <p className="text-[13px] text-slate-400">Adding block…</p>
+            <p className="text-[13px] text-black">Adding block…</p>
           ) : (
             <AddBlockPicker onSelect={addBlock} />
+          )}
+          {addError && (
+            <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
+              {addError}
+            </p>
           )}
         </div>
       </div>

@@ -27,7 +27,7 @@ export default function SettingsNav() {
                 'shrink-0 rounded-lg px-4 py-2 text-sm font-medium transition-colors',
                 active
                   ? 'bg-navy-900 text-white'
-                  : 'text-slate-500 hover:text-navy-700',
+                  : 'text-black hover:text-navy-700',
               ].join(' ')}
             >
               {item.label}
@@ -48,7 +48,7 @@ export default function SettingsNav() {
                 'rounded-lg px-4 py-2.5 text-sm font-medium transition-colors',
                 active
                   ? 'bg-navy-50 text-navy-900'
-                  : 'text-slate-500 hover:bg-slate-50 hover:text-navy-700',
+                  : 'text-black hover:bg-slate-50 hover:text-navy-700',
               ].join(' ')}
             >
               {item.label}

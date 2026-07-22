@@ -5,6 +5,7 @@ import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import { markdownToHtml } from '@/lib/markdownToHtml'
+import EmojiPicker from '@/components/community/EmojiPicker'
 
 // ---------------------------------------------------------------------------
 // Toolbar button
@@ -33,7 +34,7 @@ function ToolBtn({
       className={`rounded-lg border px-3 py-1 text-[12px] font-medium transition-colors ${
         active
           ? 'border-teal-300 bg-teal-50 text-teal-700'
-          : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700'
+          : 'border-slate-200 bg-white text-black hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700'
       }`}
     >
       {children}
@@ -160,6 +161,12 @@ export default function AboutRichTextEditor({ value, onChange, id }: Props) {
             Remove link
           </ToolBtn>
         )}
+
+        <EmojiPicker
+          variant="compact"
+          align="bottom"
+          onSelect={(emoji) => editor.chain().focus().insertContent(emoji).run()}
+        />
 
         <span className="mx-1 h-4 w-px bg-slate-200" aria-hidden="true" />
 

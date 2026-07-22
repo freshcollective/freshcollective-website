@@ -41,7 +41,7 @@ export default async function MemberProfilePage({ params }: Props) {
       <div className="mb-6">
         <Link
           href={`/spaces/${slug}/members`}
-          className="text-sm text-slate-400 transition-colors hover:text-teal-600"
+          className="text-sm text-black transition-colors hover:text-teal-600"
         >
           ← Back to members
         </Link>
@@ -88,12 +88,12 @@ export default async function MemberProfilePage({ params }: Props) {
                 </div>
 
                 {tagline && (
-                  <p className="mb-2 text-[14px] italic" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                  <p className="mb-2 text-[14px] italic" style={{ color: '#FFFFFF' }}>
                     {tagline}
                   </p>
                 )}
 
-                <p className="text-[13px]" style={{ color: 'rgba(255,255,255,0.40)' }}>
+                <p className="text-[13px]" style={{ color: '#FFFFFF' }}>
                   Member since {formatDate(profile.joined_platform)}
                 </p>
               </div>
@@ -103,13 +103,13 @@ export default async function MemberProfilePage({ params }: Props) {
           {/* About */}
           <div className="overflow-hidden rounded-2xl border border-border bg-white">
             <div className="border-b border-border px-5 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">About</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black">About</p>
             </div>
             <div className="px-5 py-4">
               {profile.bio ? (
-                <p className="text-[15px] leading-[1.8] text-slate-600">{profile.bio}</p>
+                <p className="text-[15px] leading-[1.8] text-black">{profile.bio}</p>
               ) : (
-                <p className="text-[14px] text-slate-400">No bio yet.</p>
+                <p className="text-[14px] text-black">No bio yet.</p>
               )}
             </div>
           </div>
@@ -117,13 +117,13 @@ export default async function MemberProfilePage({ params }: Props) {
           {/* Inside this collective */}
           <div className="overflow-hidden rounded-2xl border border-border bg-white">
             <div className="border-b border-border px-5 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
                 Inside this collective
               </p>
             </div>
             <div className="divide-y divide-border">
               <div className="flex items-start gap-4 px-5 py-3">
-                <span className="w-24 shrink-0 text-[12px] font-medium text-slate-400">Role</span>
+                <span className="w-24 shrink-0 text-[12px] font-medium text-black">Role</span>
                 <span
                   className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
                   style={{ background: badge.bg, color: badge.color }}
@@ -133,14 +133,14 @@ export default async function MemberProfilePage({ params }: Props) {
               </div>
               {joinedSpace && (
                 <div className="flex items-start gap-4 px-5 py-3">
-                  <span className="w-24 shrink-0 text-[12px] font-medium text-slate-400">Joined</span>
+                  <span className="w-24 shrink-0 text-[12px] font-medium text-black">Joined</span>
                   <span className="text-[14px] text-navy-900">{formatDate(joinedSpace)}</span>
                 </div>
               )}
               <div className="flex items-start gap-4 px-5 py-3">
-                <span className="w-24 shrink-0 text-[12px] font-medium text-slate-400">Pathways</span>
+                <span className="w-24 shrink-0 text-[12px] font-medium text-black">Pathways</span>
                 {/* TODO: show pathway progress once per-member pathway access data is available */}
-                <span className="text-[14px] text-slate-400">Coming soon.</span>
+                <span className="text-[14px] text-black">Coming soon.</span>
               </div>
             </div>
           </div>
@@ -149,7 +149,7 @@ export default async function MemberProfilePage({ params }: Props) {
           {profile.is_creator && profile.spaces_led.length > 0 && (
             <div className="overflow-hidden rounded-2xl border border-border bg-white">
               <div className="border-b border-border px-5 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
                   Collectives led
                 </p>
               </div>
@@ -164,13 +164,13 @@ export default async function MemberProfilePage({ params }: Props) {
           {/* Recent contributions placeholder */}
           <div className="overflow-hidden rounded-2xl border border-border bg-white">
             <div className="border-b border-border px-5 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
                 Recent contributions
               </p>
             </div>
             <div className="px-5 py-4">
               {/* TODO: show real contribution history once data is available */}
-              <p className="text-[14px] text-slate-400">Contributions coming soon.</p>
+              <p className="text-[14px] text-black">Contributions coming soon.</p>
             </div>
           </div>
 
@@ -187,28 +187,28 @@ export default async function MemberProfilePage({ params }: Props) {
               className="mb-4 h-[2px] w-5 rounded-full"
               style={{ background: 'linear-gradient(90deg, #BF9830 0%, transparent 100%)' }}
             />
-            <p className="mb-4 text-[13px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            <p className="mb-4 text-[13px] font-semibold uppercase tracking-[0.12em] text-black">
               Member profile
             </p>
 
             <div className="space-y-4">
               <div>
                 <p className="mb-1 text-[14px] font-semibold text-navy-900">Connect</p>
-                <p className="text-[13px] leading-relaxed text-slate-500">
+                <p className="text-[13px] leading-relaxed text-black">
                   Messaging and member connection tools can live here later.
                 </p>
               </div>
               <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
               <div>
                 <p className="mb-1 text-[14px] font-semibold text-navy-900">Activity</p>
-                <p className="text-[13px] leading-relaxed text-slate-500">
+                <p className="text-[13px] leading-relaxed text-black">
                   Contribution history and participation will appear here.
                 </p>
               </div>
               <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
               <div>
                 <p className="mb-1 text-[14px] font-semibold text-navy-900">Shared spaces</p>
-                <p className="text-[13px] leading-relaxed text-slate-500">
+                <p className="text-[13px] leading-relaxed text-black">
                   Collectives and pathways in common can appear here.
                 </p>
               </div>

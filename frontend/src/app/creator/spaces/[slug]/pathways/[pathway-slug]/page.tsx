@@ -23,7 +23,7 @@ export default async function CreatorPathwayPage({
         <div className="mb-2 h-px w-6 bg-gold-400" />
         <h1 className="font-serif text-2xl text-navy-900">{pathway.title}</h1>
         <div className="mt-1 flex items-center gap-3">
-          <p className="text-sm text-slate-400">{steps.length} step{steps.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-black">{steps.length} step{steps.length !== 1 ? 's' : ''}</p>
           <Link
             href={`/spaces/${slug}/pathways/${pathwaySlug}`}
             target="_blank"

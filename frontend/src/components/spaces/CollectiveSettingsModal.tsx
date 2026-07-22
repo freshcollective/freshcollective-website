@@ -59,7 +59,7 @@ function ToggleRow({ id, label, description, checked, onChange, disabled }: Togg
         <label htmlFor={id} className="block text-[14px] font-medium text-navy-900 cursor-pointer">
           {label}
         </label>
-        <p className="mt-0.5 text-[12px] leading-relaxed text-slate-400">{description}</p>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-black">{description}</p>
       </div>
       <div className="mt-0.5">
         <Toggle id={id} checked={checked} onChange={onChange} disabled={disabled} />
@@ -74,7 +74,7 @@ function ToggleRow({ id, label, description, checked, onChange, disabled }: Togg
 
 function SectionHeader({ label }: { label: string }) {
   return (
-    <p className="mb-1 pt-5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 first:pt-0">
+    <p className="mb-1 pt-5 text-[11px] font-semibold uppercase tracking-[0.12em] text-black first:pt-0">
       {label}
     </p>
   )
@@ -196,7 +196,7 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 transition-colors hover:text-navy-900"
+            className="text-black transition-colors hover:text-navy-900"
             aria-label="Close"
           >
             ✕
@@ -217,7 +217,7 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
                   'shrink-0 rounded-xl px-3 py-1.5 text-left text-[13px] font-medium transition-colors md:w-full md:py-2',
                   activeTab === t.id
                     ? 'bg-white text-navy-900 shadow-sm'
-                    : 'text-slate-500 hover:text-navy-800',
+                    : 'text-black hover:text-navy-800',
                 ].join(' ')}
               >
                 {t.label}
@@ -230,7 +230,7 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
             {activeTab === 'notifications' && (
               <>
                 <div className="mb-4 flex items-center justify-between">
-                  <p className="text-[13px] leading-relaxed text-slate-500">
+                  <p className="text-[13px] leading-relaxed text-black">
                     Choose what you want to hear about from this collective.
                   </p>
                   {savedAt && (
@@ -239,7 +239,7 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
                 </div>
 
                 {loading && (
-                  <div className="py-8 text-center text-[13px] text-slate-400">Loading…</div>
+                  <div className="py-8 text-center text-[13px] text-black">Loading…</div>
                 )}
 
                 {!loading && error && (
@@ -289,7 +289,7 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
                     </div>
 
                     <div>
-                      <SectionHeader label="Community" />
+                      <SectionHeader label="Conversations" />
                       <ToggleRow
                         id="new_post_email"
                         label="New post email"
@@ -328,7 +328,7 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
                     <div>
                       <SectionHeader label="Push notifications" />
                       <div className="py-3">
-                        <p className="text-[13px] text-slate-400">
+                        <p className="text-[13px] text-black">
                           Push notifications — coming soon.
                         </p>
                       </div>
@@ -340,7 +340,7 @@ export default function CollectiveSettingsModal({ spaceSlug, spaceName, onClose 
                 {/* Honest delivery note */}
                 <div className="mt-6 rounded-xl px-4 py-3"
                   style={{ background: 'rgba(55,160,158,0.06)', border: '1px solid rgba(55,160,158,0.12)' }}>
-                  <p className="text-[12px] leading-relaxed text-slate-500">
+                  <p className="text-[12px] leading-relaxed text-black">
                     Your preferences are saved immediately. Email delivery will be connected as notification features are released.
                   </p>
                 </div>

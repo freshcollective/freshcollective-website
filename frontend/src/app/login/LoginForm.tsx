@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Button from '@/components/ui/Button'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
 
 function getSafeRedirect(next?: string): string {
@@ -12,9 +13,9 @@ function getSafeRedirect(next?: string): string {
   return '/dashboard'
 }
 
-type CheckoutContext = {
-  pathwayTitle: string
-}
+type CheckoutContext =
+  | { kind: 'pathway'; pathwayTitle: string }
+  | { kind: 'gathering'; gatheringTitle: string }
 
 export default function LoginForm({
   nextUrl,
@@ -59,40 +60,60 @@ export default function LoginForm({
     }
   }
 
+  const signupHref = nextUrl ? `/signup?next=${encodeURIComponent(nextUrl)}` : '/signup'
+
   return (
     <div
-      className="w-full max-w-sm rounded-xl border border-border bg-surface p-8 md:p-10"
-      style={{ boxShadow: 'var(--fc-shadow-md)' }}
+      className="w-full max-w-[440px] rounded-2xl bg-white p-8 md:p-10"
+      style={{
+        boxShadow: '0 24px 60px rgba(5, 11, 20, 0.35), 0 2px 8px rgba(5, 11, 20, 0.20)',
+      }}
     >
-      <div className="mb-8">
-        <div className="mb-5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/brand/fresh-collective-logo-navy-gold-white.png"
-            alt="Fresh Collective"
-            style={{ height: '34px', width: 'auto' }}
-          />
-        </div>
-        {checkoutContext ? (
+      {/* Brand mark — full wordmark, centered and given room to breathe.
+          Larger and deliberately placed rather than a tiny floating icon. */}
+      <div className="mb-7 flex justify-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/brand/fresh-collective-logo-navy-gold-white.png"
+          alt="Fresh Collective"
+          style={{ height: '44px', width: 'auto' }}
+        />
+      </div>
+
+      <div className="mb-7 text-center">
+        {checkoutContext?.kind === 'pathway' ? (
           <>
-            <h1 className="mb-2 font-serif text-3xl text-navy-900">Log in to continue</h1>
-            <p className="mb-2 text-sm text-[#718096]">
+            <h1 className="mb-2 font-serif text-[26px] leading-tight text-navy-900">
+              Log in to continue
+            </h1>
+            <p className="text-sm text-[#5A6B7D]">
               Continuing with{' '}
               <span className="font-medium text-navy-900">{checkoutContext.pathwayTitle}</span>.
             </p>
           </>
+        ) : checkoutContext?.kind === 'gathering' ? (
+          <>
+            <h1 className="mb-2 font-serif text-[26px] leading-tight text-navy-900">
+              Log in to buy your ticket
+            </h1>
+            <p className="text-sm text-[#5A6B7D]">
+              For{' '}
+              <span className="font-medium text-navy-900">{checkoutContext.gatheringTitle}</span>.
+            </p>
+          </>
         ) : (
-          <h1 className="mb-2 font-serif text-3xl text-navy-900">Welcome back.</h1>
+          <>
+            <h1 className="mb-2 font-serif text-[26px] leading-tight text-navy-900">
+              Welcome back
+            </h1>
+            <p
+              className="text-[14px] italic leading-relaxed"
+              style={{ color: '#5A6B7D', fontFamily: 'Georgia, serif' }}
+            >
+              Your world is ready when you are.
+            </p>
+          </>
         )}
-        <p className="text-sm text-[#718096]">
-          Don&apos;t have an account?{' '}
-          <Link
-            href={nextUrl ? `/signup?next=${encodeURIComponent(nextUrl)}` : '/signup'}
-            className="text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"
-          >
-            Sign up
-          </Link>
-        </p>
       </div>
 
       {error && (
@@ -132,10 +153,9 @@ export default function LoginForm({
               Forgot password?
             </Link>
           </div>
-          <input
+          <PasswordInput
             id="password"
             name="password"
-            type="password"
             autoComplete="current-password"
             required
             placeholder="••••••••"
@@ -154,6 +174,18 @@ export default function LoginForm({
           )}
         </Button>
       </form>
+
+      {/* Sign-up prompt — sits below the primary action so returning users
+          hit Log in first; new visitors still find the invitation. */}
+      <p className="mt-6 text-center text-sm" style={{ color: '#5A6B7D' }}>
+        New to Fresh Collective?{' '}
+        <Link
+          href={signupHref}
+          className="font-medium text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline"
+        >
+          Join us
+        </Link>
+      </p>
     </div>
   )
 }

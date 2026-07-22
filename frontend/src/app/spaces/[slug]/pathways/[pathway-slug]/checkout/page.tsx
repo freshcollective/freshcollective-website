@@ -60,7 +60,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   if (pathway.user_has_access && locked) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
-        <Link href={aboutHref} className="mb-6 block text-sm text-slate-400 hover:text-teal-600">
+        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-teal-600">
           ← Back to pathway
         </Link>
         <div
@@ -78,14 +78,14 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
           {success ? (
             <>
               <h1 className="font-serif text-2xl text-navy-900">Payment successful</h1>
-              <p className="mt-2 text-[14px] text-slate-500">
+              <p className="mt-2 text-[14px] text-black">
                 You now have access to <span className="font-semibold text-navy-900">{pathway.title}</span>.
               </p>
             </>
           ) : (
             <>
               <h1 className="font-serif text-2xl text-navy-900">You already have access</h1>
-              <p className="mt-2 text-[14px] text-slate-500">
+              <p className="mt-2 text-[14px] text-black">
                 You already have access to <span className="font-semibold text-navy-900">{pathway.title}</span>.
               </p>
             </>
@@ -93,7 +93,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
           <Link
             href={overviewHref}
             className="mt-6 inline-block rounded-full px-7 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
           >
             {pathway.completed_count === 0 ? 'Begin pathway' : pathway.completed_count >= pathway.step_count ? 'Review' : 'Continue'}
           </Link>
@@ -117,12 +117,17 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
             </svg>
           </div>
           <h1 className="font-serif text-2xl text-navy-900">Payment received</h1>
-          <p className="mt-2 text-[14px] text-slate-500">
+          <p className="mt-2 text-[14px] text-black">
             We&apos;re finalising your access to <span className="font-semibold text-navy-900">{pathway.title}</span>. This usually takes a moment.
           </p>
           <Link
             href={`/spaces/${slug}/pathways/${pathwaySlug}/checkout?success=true`}
-            className="mt-6 inline-block rounded-full border border-teal-200 bg-teal-50 px-7 py-2.5 text-[14px] font-semibold text-teal-700 transition-colors hover:bg-teal-100"
+            className="mt-6 inline-block rounded-full border px-7 py-2.5 text-[14px] font-semibold transition-colors"
+            style={{
+              borderColor: 'var(--fc-accent-line, #99f6e4)',
+              background: 'var(--fc-accent-soft, #f0fdfa)',
+              color: 'var(--fc-accent, #0f766e)',
+            }}
           >
             Refresh to check access
           </Link>
@@ -135,7 +140,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   if (isComingSoon) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
-        <Link href={aboutHref} className="mb-6 block text-sm text-slate-400 hover:text-teal-600">
+        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-teal-600">
           ← Back to pathway
         </Link>
         <div
@@ -143,7 +148,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
           style={{ borderColor: '#E2E8F0' }}
         >
           <p className="font-serif text-2xl text-navy-900">{pathway.title}</p>
-          <p className="mt-4 text-[14px] text-slate-500">This pathway is coming soon.</p>
+          <p className="mt-4 text-[14px] text-black">This pathway is coming soon.</p>
         </div>
       </div>
     )
@@ -153,7 +158,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   if (cancelled) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
-        <Link href={aboutHref} className="mb-6 block text-sm text-slate-400 hover:text-teal-600">
+        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-teal-600">
           ← Back to pathway
         </Link>
         <div
@@ -161,12 +166,12 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
           style={{ borderColor: '#E2E8F0' }}
         >
           <h1 className="font-serif text-2xl text-navy-900">Checkout cancelled</h1>
-          <p className="mt-2 text-[14px] text-slate-500">
+          <p className="mt-2 text-[14px] text-black">
             No payment was taken. You can try again whenever you&apos;re ready.
           </p>
           <Link
             href={`/spaces/${slug}/pathways/${pathwaySlug}/checkout`}
-            className="mt-6 inline-block rounded-full border border-slate-200 bg-white px-7 py-2.5 text-[14px] font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+            className="mt-6 inline-block rounded-full border border-slate-200 bg-white px-7 py-2.5 text-[14px] font-semibold text-black transition-colors hover:bg-slate-50"
           >
             Back to checkout
           </Link>
@@ -179,7 +184,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   if (isSubscription) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
-        <Link href={aboutHref} className="mb-6 block text-sm text-slate-400 hover:text-teal-600">
+        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-teal-600">
           ← Back to pathway
         </Link>
         <div
@@ -187,7 +192,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
           style={{ borderColor: '#E2E8F0' }}
         >
           <p className="font-serif text-2xl text-navy-900">{pathway.title}</p>
-          <p className="mt-4 text-[14px] text-slate-500">
+          <p className="mt-4 text-[14px] text-black">
             Subscription billing is coming soon. Check back shortly.
           </p>
         </div>
@@ -207,7 +212,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
       <h1 className="mb-1 font-serif text-2xl text-navy-900 md:text-3xl">
         Unlock {pathway.title}
       </h1>
-      <p className="mb-8 text-[14px] text-slate-500">{space.name}</p>
+      <p className="mb-8 text-[14px] text-black">{space.name}</p>
 
       <div className="grid gap-6 md:grid-cols-[1fr_300px]">
 
@@ -237,7 +242,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
             <div className="relative px-6 py-8">
               <p
                 className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
-                style={{ color: coverImageUrl ? 'rgba(255,255,255,0.65)' : cs.labelColor }}
+                style={{ color: coverImageUrl ? '#FFFFFF' : cs.labelColor }}
               >
                 Pathway · {space.name}
               </p>
@@ -250,7 +255,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
               {pathway.description && (
                 <p
                   className="mt-2 max-w-md text-[13px] leading-relaxed"
-                  style={{ color: (coverImageUrl || cs.isDark) ? 'rgba(255,255,255,0.70)' : '#64748B' }}
+                  style={{ color: (coverImageUrl || cs.isDark) ? '#FFFFFF' : '#000000' }}
                 >
                   {pathway.description}
                 </p>
@@ -260,20 +265,20 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
 
           {/* Access type */}
           <div className="rounded-xl border border-border bg-white p-4">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-black">
               Payment
             </p>
             {isPaymentOptionsMode ? (
               <>
                 <p className="text-[14px] font-medium text-navy-900">Choose your term pass</p>
-                <p className="mt-0.5 text-[13px] text-slate-500">
+                <p className="mt-0.5 text-[13px] text-black">
                   Select the pass that suits your schedule. Pay in full to lock in your term.
                 </p>
               </>
             ) : (
               <>
                 <p className="text-[14px] font-medium text-navy-900">Pay in full</p>
-                <p className="mt-0.5 text-[13px] text-slate-500">
+                <p className="mt-0.5 text-[13px] text-black">
                   One payment to secure your term pass.
                 </p>
               </>
@@ -282,7 +287,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
 
           {/* What you get */}
           <div className="rounded-xl border border-border bg-white p-4">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-black">
               What&apos;s included
             </p>
             <ul className="space-y-2">
@@ -297,8 +302,8 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
                 'Progress tracking',
                 'Resources attached to steps',
               ]).map((item) => (
-                <li key={item} className="flex items-start gap-2 text-[13px] text-slate-600">
-                  <span className="mt-0.5 shrink-0 text-[#38A09E]">✓</span>
+                <li key={item} className="flex items-start gap-2 text-[13px] text-black">
+                  <span className="mt-0.5 shrink-0" style={{ color: 'var(--fc-accent, #38A09E)' }}>✓</span>
                   {item}
                 </li>
               ))}
@@ -312,7 +317,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
             className="rounded-2xl bg-white p-6"
             style={{ border: '1px solid #E2E8F0' }}
           >
-            <p className="mb-4 text-[13px] font-semibold text-slate-400 uppercase tracking-wide">
+            <p className="mb-4 text-[13px] font-semibold text-black uppercase tracking-wide">
               {pathway.payment_options.length > 0 ? 'Choose your option' : 'Payment summary'}
             </p>
 
@@ -328,13 +333,13 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
               <>
                 <div className="space-y-3 text-[14px]">
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-600">One-off purchase</span>
+                    <span className="text-black">One-off purchase</span>
                     <span className="font-semibold text-navy-900">
                       {priceLabel ?? '—'}
                     </span>
                   </div>
                   <div className="flex items-start justify-between gap-2">
-                    <span className="text-[12px] text-slate-400">
+                    <span className="text-[12px] text-black">
                       Processed securely via Stripe
                     </span>
                   </div>
@@ -354,12 +359,12 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
                   />
                 </div>
                 {!isAuthenticated && (
-                  <p className="mt-2 text-center text-[11px] leading-relaxed text-slate-400">
+                  <p className="mt-2 text-center text-[11px] leading-relaxed text-black">
                     Create a free account so we can save your access and connect your payment to your profile.
                   </p>
                 )}
                 {isAuthenticated && (
-                  <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
+                  <p className="mt-3 text-center text-[11px] leading-relaxed text-black">
                     Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
                   </p>
                 )}
@@ -369,7 +374,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
 
           <Link
             href={aboutHref}
-            className="block text-center text-[12px] text-slate-400 hover:text-teal-600 transition-colors"
+            className="block text-center text-[12px] text-black hover:text-teal-600 transition-colors"
           >
             ← View pathway details
           </Link>

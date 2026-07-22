@@ -9,13 +9,13 @@ export default async function SettingsProfilePage() {
     <div>
       <div className="mb-8">
         <h2 className="mb-1 text-lg font-semibold text-navy-900">Profile</h2>
-        <p className="text-sm text-slate-500">How you appear to others in the community.</p>
+        <p className="text-sm text-black">How you appear to others in the community.</p>
       </div>
 
       {profile ? (
         <ProfileForm profile={profile} />
       ) : (
-        <p className="text-sm text-slate-400">Unable to load profile.</p>
+        <p className="text-sm text-black">Unable to load profile.</p>
       )}
     </div>
   )

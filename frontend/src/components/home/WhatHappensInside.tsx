@@ -34,7 +34,7 @@ function MockPathwayCard() {
             >
               {i === 0 ? '✓' : i + 1}
             </div>
-            <span className={`text-[12px] ${i === 0 ? 'text-navy-300 line-through' : 'text-navy-700'}`}>{t}</span>
+            <span className={`text-[12px] ${i === 0 ? 'text-navy-300 line-through' : 'text-black'}`}>{t}</span>
           </div>
         ))}
       </div>
@@ -76,7 +76,7 @@ function MockCommunityCard() {
           className="rounded-lg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]"
           style={{ background: 'rgba(56,160,158,0.07)', color: '#2E8584' }}
         >
-          Community prompt
+          Conversation prompt
         </span>
       </div>
       <p className="mb-4 text-[13.5px] font-medium leading-[1.6] text-navy-800">
@@ -89,7 +89,7 @@ function MockCommunityCard() {
         ].map(({ color, text }, i) => (
           <div key={i} className="flex items-start gap-2.5 rounded-xl p-2.5" style={{ background: '#F5F7FA' }}>
             <div className="mt-0.5 h-5 w-5 flex-shrink-0 rounded-full border-2 border-white" style={{ background: color }} />
-            <p className="text-[11.5px] leading-[1.6] text-navy-600">{text}</p>
+            <p className="text-[11.5px] leading-[1.6] text-black">{text}</p>
           </div>
         ))}
       </div>
@@ -119,7 +119,7 @@ function MockCreatorCard() {
           { label: 'New reflections', value: '8 today' },
         ].map(({ label, value }) => (
           <div key={label} className="flex items-center justify-between rounded-xl px-3 py-2" style={{ background: '#F5F7FA' }}>
-            <span className="text-[11.5px] text-navy-500">{label}</span>
+            <span className="text-[11.5px] text-black">{label}</span>
             <span className="text-[11.5px] font-semibold text-navy-800">{value}</span>
           </div>
         ))}

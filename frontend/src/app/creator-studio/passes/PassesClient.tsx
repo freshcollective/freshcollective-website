@@ -45,7 +45,7 @@ function formatDate(iso: string | null): string {
 
 function CreditBar({ used, total }: { used: number; total: number | null }) {
   if (total === null) {
-    return <span className="text-[13px] text-slate-400">Unlimited</span>
+    return <span className="text-[13px] text-black">Unlimited</span>
   }
   const remaining = Math.max(0, total - used)
   const pct = total > 0 ? Math.round((remaining / total) * 100) : 0
@@ -53,7 +53,7 @@ function CreditBar({ used, total }: { used: number; total: number | null }) {
   return (
     <div>
       <span className="text-[13px] font-semibold text-navy-900">{remaining}</span>
-      <span className="text-[12px] text-slate-400"> / {total}</span>
+      <span className="text-[12px] text-black"> / {total}</span>
       <div className="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-slate-100">
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: barColour }} />
       </div>
@@ -177,7 +177,7 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full text-xl"
               style={{ background: 'rgba(56,160,158,0.12)', color: '#38A09E' }}>✓</div>
             <p className="text-[16px] font-semibold text-navy-900">Pass granted</p>
-            <p className="mt-1 text-[13px] text-slate-500">
+            <p className="mt-1 text-[13px] text-black">
               {selectedMember?.display_name} now has an active pass.
             </p>
             <button onClick={onClose} className="mt-4 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white" style={{ background: '#38A09E' }}>Done</button>
@@ -194,15 +194,15 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
             <div className="space-y-4">
               {/* Member search */}
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-500">Member</label>
+                <label className="mb-1 block text-[12px] font-semibold text-black">Member</label>
                 {selectedMember ? (
                   <div className="flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/40 px-3 py-2">
                     <div>
                       <p className="text-[13px] font-semibold text-navy-900">{selectedMember.display_name}</p>
-                      <p className="text-[11px] text-slate-500">{selectedMember.email}</p>
+                      <p className="text-[11px] text-black">{selectedMember.email}</p>
                     </div>
                     <button onClick={() => { setSelectedMember(null); setMemberSearch('') }}
-                      className="text-[11px] text-slate-400 hover:text-slate-600">Change</button>
+                      className="text-[11px] text-black hover:text-slate-600">Change</button>
                   </div>
                 ) : (
                   <div className="relative">
@@ -223,14 +223,14 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
                               className="w-full px-3 py-2.5 text-left hover:bg-teal-50/60 first:rounded-t-xl last:rounded-b-xl"
                             >
                               <p className="text-[13px] font-medium text-navy-900">{m.display_name}</p>
-                              <p className="text-[11px] text-slate-500">{m.email}</p>
+                              <p className="text-[11px] text-black">{m.email}</p>
                             </button>
                           </li>
                         ))}
                       </ul>
                     )}
                     {memberSearch.trim() && filteredMembers.length === 0 && (
-                      <p className="mt-1 text-[12px] text-slate-400">No members found.</p>
+                      <p className="mt-1 text-[12px] text-black">No members found.</p>
                     )}
                   </div>
                 )}
@@ -239,7 +239,7 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
               {/* Pathway */}
               {pathways.length > 0 && (
                 <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-500">Pathway</label>
+                  <label className="mb-1 block text-[12px] font-semibold text-black">Pathway</label>
                   <select value={selectedPathwaySlug} onChange={e => setSelectedPathwaySlug(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
                     {pathways.map(p => <option key={p.slug} value={p.slug}>{p.title}</option>)}
@@ -249,7 +249,7 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
 
               {/* Payment option */}
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-500">
+                <label className="mb-1 block text-[12px] font-semibold text-black">
                   Pass option <span className="text-red-400">*</span>
                 </label>
                 {paymentOptions.length > 0 ? (
@@ -266,13 +266,13 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
                     No published payment options for this pathway. Publish at least one option before granting a pass.
                   </p>
                 ) : (
-                  <p className="text-[12px] text-slate-400">Select a pathway first.</p>
+                  <p className="text-[12px] text-black">Select a pathway first.</p>
                 )}
               </div>
 
               {/* Payment source */}
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-500">Payment source</label>
+                <label className="mb-1 block text-[12px] font-semibold text-black">Payment source</label>
                 <select value={source} onChange={e => setSource(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
                   {SOURCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -288,7 +288,7 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
                 </label>
                 {recordPayment && (
                   <div className="mt-2 flex items-center gap-2">
-                    <span className="text-[13px] text-slate-500">AUD $</span>
+                    <span className="text-[13px] text-black">AUD $</span>
                     <input type="number" min="0" step="0.01" value={paymentAmountStr}
                       onChange={e => setPaymentAmountStr(e.target.value)}
                       placeholder="0.00"
@@ -299,7 +299,7 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
 
               {/* Notes */}
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-500">Notes (optional)</label>
+                <label className="mb-1 block text-[12px] font-semibold text-black">Notes (optional)</label>
                 <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}
                   placeholder="Scholarship, special arrangement…"
                   className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-400" />
@@ -313,7 +313,7 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
                   style={{ background: '#38A09E' }}>
                   {loading ? 'Granting…' : 'Grant pass'}
                 </button>
-                <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-slate-500 hover:bg-slate-50">Cancel</button>
+                <button onClick={onClose} className="rounded-xl px-4 py-2.5 text-[13px] font-medium text-black hover:bg-slate-50">Cancel</button>
               </div>
             </div>
           </>
@@ -337,8 +337,8 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-serif text-2xl text-navy-900">Member Passes</h1>
-          <p className="text-[14px] text-slate-500">{spaceName} · Member term passes and session balances</p>
+          <h1 className="font-serif text-2xl text-navy-900">Memberships</h1>
+          <p className="text-[14px] text-black">{spaceName} · Member term passes and session balances</p>
         </div>
         <button
           onClick={() => setShowGrantModal(true)}
@@ -364,7 +364,7 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
             {f === 'all' ? 'All statuses' : STATUS_LABELS[f] ?? f}
           </button>
         ))}
-        <span className="ml-auto text-[12px] text-slate-400 self-center">
+        <span className="ml-auto text-[12px] text-black self-center">
           {filtered.length} {filtered.length === 1 ? 'pass' : 'passes'}
         </span>
       </div>
@@ -373,7 +373,7 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
       {filtered.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
           <p className="text-[15px] font-semibold text-navy-900">No passes found.</p>
-          <p className="mt-1 text-[13px] text-slate-500">
+          <p className="mt-1 text-[13px] text-black">
             Passes are created via Stripe checkout or by granting a pass manually.
           </p>
         </div>
@@ -382,13 +382,13 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50">
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Member</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Pass</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Status</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Valid</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Sessions</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Per week</th>
-                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Bookings (30d)</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-black">Member</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-black">Pass</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-black">Status</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-black">Valid</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-black">Sessions</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-black">Per week</th>
+                <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-black">Bookings (30d)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -396,11 +396,11 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
                 <tr key={pass.id} className="hover:bg-slate-50/50 transition-colors">
                   <td className="px-4 py-3.5">
                     <p className="text-[13px] font-semibold text-navy-900">{pass.member_name ?? '—'}</p>
-                    <p className="text-[12px] text-slate-400">{pass.member_email ?? ''}</p>
+                    <p className="text-[12px] text-black">{pass.member_email ?? ''}</p>
                   </td>
                   <td className="px-4 py-3.5">
                     <p className="text-[13px] font-semibold text-navy-900">{pass.option_name ?? '—'}</p>
-                    <p className="text-[11px] text-slate-400">{PASS_TYPE_LABELS[pass.pass_type] ?? pass.pass_type}</p>
+                    <p className="text-[11px] text-black">{PASS_TYPE_LABELS[pass.pass_type] ?? pass.pass_type}</p>
                     {pass.pathway_title && (
                       <p className="text-[11px] text-teal-600">{pass.pathway_title}</p>
                     )}
@@ -415,7 +415,7 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
                   <td className="px-4 py-3.5">
                     <p className="text-[12px] text-navy-900">{formatDate(pass.valid_from)}</p>
                     {pass.valid_until && (
-                      <p className="text-[11px] text-slate-400">→ {formatDate(pass.valid_until)}</p>
+                      <p className="text-[11px] text-black">→ {formatDate(pass.valid_until)}</p>
                     )}
                   </td>
                   <td className="px-4 py-3.5">
@@ -425,12 +425,12 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
                     {pass.credits_per_week != null ? (
                       <span className="text-[13px] text-navy-900">{pass.credits_per_week}/wk</span>
                     ) : (
-                      <span className="text-[13px] text-slate-400">—</span>
+                      <span className="text-[13px] text-black">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3.5">
                     <span className="text-[13px] font-semibold text-navy-900">{pass.recent_bookings}</span>
-                    <span className="text-[12px] text-slate-400"> / {pass.total_bookings} total</span>
+                    <span className="text-[12px] text-black"> / {pass.total_bookings} total</span>
                   </td>
                 </tr>
               ))}

@@ -1,10 +1,14 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import SpaceNav from '@/components/spaces/SpaceNav'
 import CollectiveSwitcher from '@/components/spaces/CollectiveSwitcher'
+import CollectiveThemeProvider from '@/components/collective/CollectiveThemeProvider'
+import CollectiveIdentityHeader from '@/components/spaces/CollectiveIdentityHeader'
 import { getSpace, getMe, getMyMemberships } from '@/lib/serverApi'
-import { resolveMediaUrl } from '@/lib/api'
-import type { SpaceMembership, UserProfile } from '@/types/platform'
+import { apiUrl } from '@/lib/api'
+import { SESSION_COOKIE } from '@/lib/session'
+import type { MessageThreadSummary, SpaceMembership, UserProfile } from '@/types/platform'
 
 interface Props {
   children: React.ReactNode
@@ -22,14 +26,41 @@ export default async function SpaceLayout({ children, params }: Props) {
 
   if (!space) notFound()
 
-  const spaceCoverUrl = resolveMediaUrl(space.cover_image_url)
   const isMember = memberships.some((m) => m.space_slug === slug)
 
+  // Fetch unread message count for badge (silently ignore errors)
+  let unreadMessageCount = 0
+  if (isMember) {
+    try {
+      const cookieStore = await cookies()
+      const token = cookieStore.get(SESSION_COOKIE)?.value ?? ''
+      const msgRes = await fetch(apiUrl(`/api/spaces/${slug}/messages`), {
+        headers: { Cookie: `${SESSION_COOKIE}=${token}` },
+        cache: 'no-store',
+      })
+      if (msgRes.ok) {
+        const threads: MessageThreadSummary[] = await msgRes.json()
+        unreadMessageCount = threads.reduce((sum, t) => sum + t.unread_count, 0)
+      }
+    } catch { /* non-critical */ }
+  }
+
+  // Atlas v1.2 — the chosen Colour Palette drives collective-scoped CSS
+  // custom properties (--fc-collective-*, --fc-accent, --fc-accent-soft,
+  // --fc-accent-line) *and* the ``useCollectivePalette`` React context
+  // consumed by the shared colour picker. Passing the full metadata
+  // (key + name + hex slots) hydrates both layers from one prop.
+  const paletteMeta = space.colour_palette ?? null
+
   return (
+    <CollectiveThemeProvider palette={paletteMeta}>
     <div className="flex min-h-screen flex-col" style={{ background: '#FAFAF8' }}>
 
       {/* ── Top navigation bar ── */}
-      <header className="border-b border-border bg-surface py-3.5" style={{ borderTop: '2px solid #38A09E' }}>
+      <header
+        className="border-b border-border bg-surface py-3.5"
+        style={{ borderTop: '2px solid var(--fc-accent, #38A09E)' }}
+      >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 md:px-10">
           <CollectiveSwitcher
             memberships={memberships}
@@ -41,11 +72,11 @@ export default async function SpaceLayout({ children, params }: Props) {
           <div className="flex items-center gap-4">
             {user ? (
               <>
-                <Link href="/settings" className="text-sm text-slate-500 transition-colors hover:text-navy-700">
+                <Link href="/settings" className="text-sm text-black transition-colors hover:text-navy-700">
                   Settings
                 </Link>
-                <Link href="/dashboard" className="text-sm text-slate-500 transition-colors hover:text-navy-700">
-                  ← Dashboard
+                <Link href="/dashboard" className="text-sm text-black transition-colors hover:text-navy-700">
+                  ← Your World
                 </Link>
               </>
             ) : (
@@ -61,67 +92,20 @@ export default async function SpaceLayout({ children, params }: Props) {
         </div>
       </header>
 
-      {/* ── Collective identity band ── */}
-      <div
-        className="relative overflow-hidden px-6 py-10 md:px-10 md:py-14"
-        style={{
-          background:
-            'radial-gradient(rgba(66,199,198,0.07) 1px, transparent 1px), ' +
-            'radial-gradient(ellipse at 78% 20%, rgba(66,199,198,0.38), transparent 48%), ' +
-            'radial-gradient(ellipse at 10% 80%, rgba(56,160,158,0.22), transparent 42%), ' +
-            'linear-gradient(135deg, #071824 0%, #092030 40%, #073B3A 100%)',
-          backgroundSize: '22px 22px, auto, auto, auto',
-          boxShadow: '0 8px 40px rgba(7,24,36,0.28)',
-        }}
-      >
-        {/* Uploaded banner image */}
-        {spaceCoverUrl && (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={spaceCoverUrl}
-              alt=""
-              aria-hidden="true"
-              className="absolute inset-0 h-full w-full object-cover"
-            />
-            {/* Scrim — slightly deeper on left so text is always readable */}
-            <div
-              className="absolute inset-0"
-              style={{
-                background:
-                  'linear-gradient(105deg, rgba(7,24,36,0.82) 0%, rgba(7,42,50,0.60) 55%, rgba(7,59,58,0.50) 100%)',
-              }}
-            />
-          </>
-        )}
+      {/* ── Collective identity band (Atlas v1.2) ────────────────
+          Location artwork is the primary visual identity. Falls back
+          to the previous cover_image_url behaviour for legacy spaces
+          with no Location assigned. See CollectiveIdentityHeader. */}
+      <CollectiveIdentityHeader
+        collectiveName={space.name}
+        tagline={space.tagline}
+        logoUrl={space.logo_url}
+        coverImageUrl={space.cover_image_url}
+        location={space.location ?? null}
+        atmosphereLabels={space.atmosphere_labels ?? []}
+      />
 
-        {/* Text — layered above image/scrim */}
-        <div className="relative mx-auto max-w-6xl">
-          {/* Soft gold accent line */}
-          <div
-            className="mb-4 h-[2px] w-8 rounded-full"
-            style={{ background: 'linear-gradient(90deg, #E7C65A 0%, transparent 100%)' }}
-          />
-          <h1
-            className="font-serif text-3xl md:text-4xl"
-            style={spaceCoverUrl ? { color: '#FFFFFF' } : {
-              background: 'linear-gradient(120deg, #55D7D2 0%, #FFFFFF 55%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}
-          >
-            {space.name}
-          </h1>
-          {space.tagline && (
-            <p className="mt-2 text-[14px]" style={{ color: 'rgba(255,255,255,0.68)' }}>
-              {space.tagline}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <SpaceNav spaceSlug={slug} spaceName={space.name} isMember={isMember} />
+      <SpaceNav spaceSlug={slug} spaceName={space.name} isMember={isMember} unreadMessageCount={unreadMessageCount} />
 
       <main className="flex-1 py-10 pb-24 md:pb-10">
         <div className="mx-auto max-w-6xl px-6 md:px-10">
@@ -129,5 +113,6 @@ export default async function SpaceLayout({ children, params }: Props) {
         </div>
       </main>
     </div>
+    </CollectiveThemeProvider>
   )
 }

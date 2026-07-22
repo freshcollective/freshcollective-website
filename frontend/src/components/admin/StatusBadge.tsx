@@ -1,4 +1,9 @@
-import { labelStage } from '@/lib/adminSalesApi'
+// snake_case → Title Case for enum-like status values. Inlined from the
+// removed adminSalesApi module so this shared badge no longer depends on
+// the deprecated sales/CRM code path.
+function labelStage(s: string): string {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
 
 const STATUS_COLORS: Record<string, string> = {
   // Lead statuses

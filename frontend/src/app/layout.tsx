@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { FreshProviders } from "@/components/platform/FreshProviders";
 
 export const metadata: Metadata = {
   title: "Fresh Collective",
@@ -13,7 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="h-full antialiased" data-scroll-behavior="smooth">
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">
+        <FreshProviders>{children}</FreshProviders>
+      </body>
     </html>
   );
 }

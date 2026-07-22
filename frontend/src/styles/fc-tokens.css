@@ -1,0 +1,278 @@
+/*
+ * Fresh Collective Design Language — Token Layer
+ * -----------------------------------------------------------------------------
+ * Single source of truth for every visual value used by the design primitives.
+ * Do not override these locally. If a token must change, change it here.
+ *
+ * Referenced by:
+ *   - components/platform/tokens.ts   (TypeScript re-export for React consumers)
+ *   - components/platform/*.tsx        (via var(--fc-*) or Tailwind arbitrary
+ *                                    values)
+ *
+ * See docs/fresh-design-language.md for normative definitions.
+ * -----------------------------------------------------------------------------
+ */
+
+:root {
+  /* -------------------------------------------------------------------------
+   * COLOUR — Surfaces
+   * ------------------------------------------------------------------------- */
+  --fc-surface-page:         #F7FBFA;
+  --fc-surface-card:         #FFFFFF;
+  --fc-surface-canvas-warm:  #FAFAF8;
+  --fc-surface-inverse:      #071824;
+  --fc-surface-inverse-deep: #050B14;
+  --fc-surface-muted:        #FAFBFC; /* draft cards, archived cards */
+
+  /* -------------------------------------------------------------------------
+   * COLOUR — Ink (text)
+   * ------------------------------------------------------------------------- */
+  --fc-ink-primary:          #000000;
+  --fc-ink-inverse:          #FFFFFF;
+  --fc-ink-heading:          #0C1826;
+  --fc-ink-heading-inverse:  #FFFFFF;
+  --fc-ink-disabled:         #94A3B8; /* THE ONLY grey permitted */
+
+  /* -------------------------------------------------------------------------
+   * COLOUR — Accent (teal)
+   * ------------------------------------------------------------------------- */
+  --fc-accent-500:           #38A09E;
+  --fc-accent-400:           #55B8B6;
+  --fc-accent-700:           #246B6A;
+  --fc-accent-50:            #EAF7F7;
+  --fc-accent-gradient:      linear-gradient(135deg, #38A09E 0%, #55B8B6 100%);
+
+  /* -------------------------------------------------------------------------
+   * COLOUR — Semantic status
+   * ------------------------------------------------------------------------- */
+  --fc-status-success:       #38A09E;
+  --fc-status-pending:       #94A3B8;
+  --fc-status-neutral:       #64748B;
+  --fc-status-warning:       #D97706;
+  --fc-status-error:         #B91C1C;
+
+  --fc-status-success-bg:    rgba(56,160,158,0.10);
+  --fc-status-pending-bg:    rgba(148,163,184,0.14);
+  --fc-status-neutral-bg:    rgba(100,116,139,0.10);
+  --fc-status-warning-bg:    rgba(217,119,6,0.10);
+  --fc-status-error-bg:      rgba(185,28,28,0.10);
+
+  --fc-status-error-text:    #B91C1C;
+
+  /* -------------------------------------------------------------------------
+   * COLOUR — Pathway identity (dots + drawer stripe only)
+   * ------------------------------------------------------------------------- */
+  --fc-pathway-teal:         #38A09E;
+  --fc-pathway-navy:         #3D6289;
+  --fc-pathway-blue:         #4F7ABE;
+  --fc-pathway-lilac:        #7C6BB0;
+  --fc-pathway-sage:         #6B8E7F;
+  --fc-pathway-grey:         #94A3B8;
+
+  /* -------------------------------------------------------------------------
+   * COLOUR — Content-type identity (soft icon container fill)
+   * ------------------------------------------------------------------------- */
+  --fc-type-audio:           #7C6BB0;
+  --fc-type-video:           #DC6F5C;
+  --fc-type-guide:           #4F7ABE;
+  --fc-type-file:            #3D6289;
+  --fc-type-link:            #38A09E;
+  --fc-type-other:           #64748B;
+
+  --fc-type-audio-bg:        rgba(124,107,176,0.10);
+  --fc-type-video-bg:        rgba(220,111,92,0.10);
+  --fc-type-guide-bg:        rgba(79,122,190,0.10);
+  --fc-type-file-bg:         rgba(61,98,137,0.10);
+  --fc-type-link-bg:         rgba(56,160,158,0.10);
+  --fc-type-other-bg:        rgba(100,116,139,0.10);
+
+  /* -------------------------------------------------------------------------
+   * COLOUR — Border hairlines
+   * ------------------------------------------------------------------------- */
+  --fc-border-hairline:      rgba(15,30,55,0.06);
+  --fc-border-hairline-hover:rgba(15,30,55,0.10);
+  --fc-border-input:         rgba(15,30,55,0.14);
+  --fc-border-input-hover:   rgba(15,30,55,0.24);
+
+  /* -------------------------------------------------------------------------
+   * TYPOGRAPHY — Families
+   * ------------------------------------------------------------------------- */
+  --fc-font-sans:  -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                      "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue",
+                      Arial, sans-serif;
+  --fc-font-serif: Georgia, "Times New Roman", Times, serif;
+  --fc-font-mono:  "SF Mono", "Fira Code", "Roboto Mono", monospace;
+
+  /* -------------------------------------------------------------------------
+   * TYPOGRAPHY — Scale (absolute unless clamp)
+   * ------------------------------------------------------------------------- */
+  --fc-fs-display-xl:   clamp(2.375rem, 6vw, 5.5rem);   /* 38–88px */
+  --fc-fs-display-l:    clamp(2rem, 4.5vw, 4.25rem);    /* 32–68px */
+  --fc-fs-display-m:    clamp(1.75rem, 2.8vw, 2.75rem); /* 28–44px */
+  --fc-fs-page-title:   23px;
+  --fc-fs-section:      17px;
+  --fc-fs-subsection:   15px;
+  --fc-fs-body:         14px;
+  --fc-fs-meta:         12px;
+  --fc-fs-eyebrow:      11px;
+  --fc-fs-stat-figure:  24px;
+
+  /* -------------------------------------------------------------------------
+   * TYPOGRAPHY — Line height, tracking
+   * ------------------------------------------------------------------------- */
+  --fc-lh-display:      1.08;
+  --fc-lh-heading:      1.20;
+  --fc-lh-body:         1.60;
+  --fc-lh-meta:         1.50;
+  --fc-lh-tight:        1.00;
+
+  --fc-tracking-display:-0.04em;
+  --fc-tracking-heading:-0.02em;
+  --fc-tracking-body:   -0.01em;
+  --fc-tracking-eyebrow: 0.10em;
+  --fc-tracking-eyebrow-tight: 0.06em;
+
+  /* -------------------------------------------------------------------------
+   * TYPOGRAPHY — Weights
+   *   The design language permits three: regular (400), semibold (600), bold (700).
+   * ------------------------------------------------------------------------- */
+  --fc-fw-regular:      400;
+  --fc-fw-semibold:     600;
+  --fc-fw-bold:         700;
+
+  /* -------------------------------------------------------------------------
+   * SPACING — 4pt base, 8pt rhythm
+   * ------------------------------------------------------------------------- */
+  --fc-space-0:         0;
+  --fc-space-1:         4px;
+  --fc-space-2:         8px;
+  --fc-space-3:         12px;
+  --fc-space-4:         16px;
+  --fc-space-5:         20px;
+  --fc-space-6:         24px;
+  --fc-space-8:         32px;
+  --fc-space-10:        40px;
+  --fc-space-12:        48px;
+  --fc-space-16:        64px;
+
+  /* -------------------------------------------------------------------------
+   * LAYOUT — Container widths
+   * ------------------------------------------------------------------------- */
+  --fc-container-app:      1180px;
+  --fc-container-reading:  720px;
+  --fc-container-drawer:   560px;
+
+  /* -------------------------------------------------------------------------
+   * BORDER RADIUS
+   * ------------------------------------------------------------------------- */
+  --fc-radius-sm:       6px;
+  --fc-radius-md:       8px;
+  --fc-radius-lg:       12px;
+  --fc-radius-xl:       16px;
+  --fc-radius-2xl:      20px;
+  --fc-radius-full:     9999px;
+
+  /* -------------------------------------------------------------------------
+   * SHADOWS — Elevation
+   * ------------------------------------------------------------------------- */
+  --fc-elev-0:          none;
+  --fc-elev-1:          0 1px 2px rgba(15,30,55,0.04),
+                           0 0 0 1px rgba(15,30,55,0.04);
+  --fc-elev-2:          0 1px 3px rgba(15,30,55,0.05),
+                           0 0 0 1px rgba(15,30,55,0.05);
+  --fc-elev-3:          0 10px 28px rgba(15,30,55,0.08),
+                           0 0 0 1px rgba(15,30,55,0.06);
+  --fc-elev-4:          0 16px 48px rgba(0,0,0,0.09);
+  --fc-elev-5:          0 24px 64px rgba(0,0,0,0.20);
+  --fc-elev-dark:       0 48px 120px rgba(0,0,0,0.30);
+  --fc-elev-selected:   0 10px 28px rgba(15,30,55,0.10),
+                           0 0 0 1px rgba(56,160,158,0.55);
+
+  /* -------------------------------------------------------------------------
+   * FOCUS
+   * ------------------------------------------------------------------------- */
+  --fc-focus-ring:      0 0 0 2px rgba(56,160,158,0.40);
+  --fc-focus-ring-offset: 0 0 0 2px #F7FBFA, 0 0 0 4px rgba(56,160,158,0.40);
+  --fc-focus-ring-input: 0 0 0 3px rgba(56,160,158,0.25);
+
+  /* -------------------------------------------------------------------------
+   * MOTION — Durations
+   * ------------------------------------------------------------------------- */
+  --fc-motion-hover:      120ms;
+  --fc-motion-card:       220ms;
+  --fc-motion-menu:       140ms;
+  --fc-motion-drawer:     240ms;
+  --fc-motion-modal:      180ms;
+  --fc-motion-toast:      220ms;
+  --fc-motion-page:       700ms;
+
+  /* -------------------------------------------------------------------------
+   * MOTION — Easings
+   * ------------------------------------------------------------------------- */
+  --fc-ease-out:          cubic-bezier(0.16, 1, 0.3, 1);
+  --fc-ease-drawer:       cubic-bezier(0.22, 0.61, 0.36, 1);
+  --fc-ease-standard:     ease-out;
+
+  /* -------------------------------------------------------------------------
+   * Z-INDEX — Layering
+   * ------------------------------------------------------------------------- */
+  --fc-z-base:              0;
+  --fc-z-dropdown:          30;
+  --fc-z-sticky:            40;
+  --fc-z-drawer-backdrop:   50;
+  --fc-z-drawer:            51;
+  --fc-z-modal-backdrop:    60;
+  --fc-z-modal:             61;
+  --fc-z-toast:             80;
+  --fc-z-tooltip:           90;
+}
+
+/* -----------------------------------------------------------------------------
+ * MOTION — Fresh Collective keyframes
+ *   All keyframes honour prefers-reduced-motion (see bottom of this file).
+ * -----------------------------------------------------------------------------
+ */
+@keyframes fc-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fc-fade-in-up {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fc-drawer-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@keyframes fc-modal-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes fc-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fc-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* -----------------------------------------------------------------------------
+ * Reduced-motion — The design language respects the user's preference.
+ * -----------------------------------------------------------------------------
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --fc-motion-hover:    0.01ms;
+    --fc-motion-card:     0.01ms;
+    --fc-motion-menu:     0.01ms;
+    --fc-motion-drawer:   0.01ms;
+    --fc-motion-modal:    0.01ms;
+    --fc-motion-toast:    0.01ms;
+    --fc-motion-page:     0.01ms;
+  }
+}

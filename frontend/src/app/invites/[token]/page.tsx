@@ -37,7 +37,7 @@ export default async function InvitePage({ params }: Props) {
           </p>
           <h1 className="mt-2 font-serif text-xl font-semibold text-white">{invite.space_name}</h1>
           {invite.name && (
-            <p className="mt-1 text-[13px]" style={{ color: 'rgba(255,255,255,0.6)' }}>
+            <p className="mt-1 text-[13px]" style={{ color: '#FFFFFF' }}>
               Hi {invite.name},
             </p>
           )}
@@ -45,13 +45,13 @@ export default async function InvitePage({ params }: Props) {
 
         {/* Content card */}
         <div className="rounded-2xl bg-white p-6" style={{ border: '1px solid #E2E8F0' }}>
-          <p className="mb-1 text-[14px] text-slate-600">
+          <p className="mb-1 text-[14px] text-black">
             You&apos;ve been invited to join{' '}
             <span className="font-semibold text-navy-900">{invite.space_name}</span>{' '}
             as a{' '}
             <span className="font-semibold capitalize">{invite.role}</span>.
           </p>
-          <p className="mb-5 text-[12px] text-slate-400">
+          <p className="mb-5 text-[12px] text-black">
             Invited to: {invite.email}
           </p>
 
@@ -68,7 +68,7 @@ export default async function InvitePage({ params }: Props) {
           <div className="mt-5 border-t border-slate-100 pt-4 text-center">
             <Link
               href={`/spaces/${invite.space_slug}/about`}
-              className="text-[13px] text-slate-400 underline underline-offset-2 hover:text-slate-600"
+              className="text-[13px] text-black underline underline-offset-2 hover:text-slate-600"
             >
               View collective first
             </Link>

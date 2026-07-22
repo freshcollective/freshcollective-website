@@ -65,19 +65,19 @@ function renderDocNode(node: DocNode, key: string): React.ReactNode {
     case 'paragraph':
       if (!node.content?.length) return <br key={key} />
       return (
-        <p key={key} className="mb-1.5 last:mb-0 text-[12px] leading-relaxed text-slate-500">
+        <p key={key} className="mb-1.5 last:mb-0 text-[12px] leading-relaxed text-black">
           {renderInline(node.content, key)}
         </p>
       )
     case 'bulletList':
       return (
-        <ul key={key} className="mb-1.5 list-disc pl-4 text-[12px] leading-relaxed text-slate-500 space-y-0.5">
+        <ul key={key} className="mb-1.5 list-disc pl-4 text-[12px] leading-relaxed text-black space-y-0.5">
           {node.content?.map((c, i) => renderDocNode(c, `${key}-${i}`))}
         </ul>
       )
     case 'orderedList':
       return (
-        <ol key={key} className="mb-1.5 list-decimal pl-4 text-[12px] leading-relaxed text-slate-500 space-y-0.5">
+        <ol key={key} className="mb-1.5 list-decimal pl-4 text-[12px] leading-relaxed text-black space-y-0.5">
           {node.content?.map((c, i) => renderDocNode(c, `${key}-${i}`))}
         </ol>
       )
@@ -92,20 +92,26 @@ function renderDocNode(node: DocNode, key: string): React.ReactNode {
   }
 }
 
+function tryParseDoc(content: string): DocNode | null {
+  try {
+    const parsed = JSON.parse(content) as DocNode
+    return parsed?.type === 'doc' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 function PanelBody({ content }: { content: string | null | undefined }) {
   if (!content) return null
 
-  // Try TipTap JSON first
-  try {
-    const parsed = JSON.parse(content) as DocNode
-    if (parsed?.type === 'doc') {
-      return <div>{renderDocNode(parsed, 'root')}</div>
-    }
-  } catch {}
+  const doc = tryParseDoc(content)
+  if (doc) {
+    return <div>{renderDocNode(doc, 'root')}</div>
+  }
 
   // Plain text fallback — preserves line breaks
   return (
-    <p className="text-[12px] leading-relaxed text-slate-500 whitespace-pre-line">{content}</p>
+    <p className="text-[12px] leading-relaxed text-black whitespace-pre-line">{content}</p>
   )
 }
 
@@ -113,22 +119,21 @@ function PanelBody({ content }: { content: string | null | undefined }) {
 // Panel component
 // ---------------------------------------------------------------------------
 
+/**
+ * Member Hub panel sections. Labels are FIXED across all collectives —
+ * "Welcome", "This week", "Notes". The old per-space `guidance_*_title`
+ * fields remain in the DB for round-trip stability but are no longer
+ * surfaced to members or editable by creators.
+ */
 interface Props {
-  startTitle?: string | null
-  startBody?: string | null
-  focusTitle?: string | null
-  focusBody?: string | null
-  linksTitle?: string | null
-  linksBody?: string | null
-}
-
-const DEFAULTS = {
-  startTitle: 'Start here',
-  startBody:  null,
-  focusTitle: 'Upcoming focus',
-  focusBody:  null,
-  linksTitle: 'Helpful links',
-  linksBody:  null,
+  welcomeBody?: string | null
+  notesBody?: string | null
+  /**
+   * When provided, replaces the middle "This week" section's body with
+   * pre-rendered JSX. Used to inject the automatic upcoming-Gatherings
+   * schedule.
+   */
+  focusOverride?: React.ReactNode
 }
 
 // ---------------------------------------------------------------------------
@@ -141,18 +146,15 @@ interface ContentProps extends Props {
 }
 
 export function ImportantPanelContent({
-  startTitle,
-  startBody,
-  focusTitle,
-  focusBody,
-  linksTitle,
-  linksBody,
+  welcomeBody,
+  notesBody,
+  focusOverride,
   className,
 }: ContentProps) {
-  const sections = [
-    { title: startTitle || DEFAULTS.startTitle, body: startBody ?? DEFAULTS.startBody },
-    { title: focusTitle || DEFAULTS.focusTitle, body: focusBody ?? DEFAULTS.focusBody },
-    { title: linksTitle || DEFAULTS.linksTitle, body: linksBody ?? DEFAULTS.linksBody },
+  const sections: Array<{ title: string; body: string | null | undefined; override?: React.ReactNode }> = [
+    { title: 'Welcome',   body: welcomeBody },
+    { title: 'This week', body: null, override: focusOverride },
+    { title: 'Notes',     body: notesBody },
   ]
 
   return (
@@ -161,20 +163,22 @@ export function ImportantPanelContent({
         className="mb-3 h-[2px] w-5 rounded-full"
         style={{ background: 'linear-gradient(90deg, #BF9830 0%, transparent 100%)' }}
       />
-      <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+      <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.16em] text-black">
         Important
       </p>
 
       <div className="flex flex-col gap-4">
-        {sections.map(({ title, body }, i) => (
+        {sections.map(({ title, body, override }, i) => (
           <React.Fragment key={title}>
             {i > 0 && <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />}
             <div>
               <p className="mb-1.5 text-[13px] font-semibold text-navy-900">{title}</p>
-              {body ? (
+              {override !== undefined ? (
+                override
+              ) : body ? (
                 <PanelBody content={body} />
               ) : (
-                <p className="text-[12px] leading-relaxed text-slate-400 italic">
+                <p className="text-[12px] leading-relaxed text-black italic">
                   Nothing added yet.
                 </p>
               )}
@@ -192,12 +196,9 @@ export function ImportantPanelContent({
 // ---------------------------------------------------------------------------
 
 export default function ImportantPanel({
-  startTitle,
-  startBody,
-  focusTitle,
-  focusBody,
-  linksTitle,
-  linksBody,
+  welcomeBody,
+  notesBody,
+  focusOverride,
 }: Props) {
   return (
     <div
@@ -205,12 +206,9 @@ export default function ImportantPanel({
       style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
     >
       <ImportantPanelContent
-        startTitle={startTitle}
-        startBody={startBody}
-        focusTitle={focusTitle}
-        focusBody={focusBody}
-        linksTitle={linksTitle}
-        linksBody={linksBody}
+        welcomeBody={welcomeBody}
+        notesBody={notesBody}
+        focusOverride={focusOverride}
       />
     </div>
   )

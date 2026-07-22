@@ -1,7 +1,7 @@
-export type AccessType = 'free' | 'included' | 'one_time' | 'subscription' | string
+export type AccessType = 'free' | 'included' | 'one_time' | 'subscription' | 'included_with_offer' | string
 
 export function isPathwayLocked(accessType: AccessType): boolean {
-  return accessType === 'one_time' || accessType === 'subscription'
+  return accessType === 'one_time' || accessType === 'subscription' || accessType === 'included_with_offer'
 }
 
 export function formatPathwayPrice(
@@ -21,6 +21,7 @@ export function formatPathwayPrice(
 export function accessBadgeLabel(accessType: AccessType): string | null {
   if (accessType === 'free') return 'Free'
   if (accessType === 'included') return 'Included'
+  if (accessType === 'included_with_offer') return 'Included with offer'
   return null
 }
 
@@ -32,6 +33,7 @@ export function cardAccessBadge(
 ): { label: string; variant: Exclude<BadgeVariant, null> } | null {
   if (accessType === 'free') return { label: 'Free', variant: 'free' }
   if (accessType === 'included') return { label: 'Included', variant: 'included' }
+  if (accessType === 'included_with_offer') return { label: 'Included with offer', variant: 'included' }
   if (userHasAccess) return { label: 'Access granted', variant: 'granted' }
   return null
 }

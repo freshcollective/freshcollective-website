@@ -9,8 +9,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
           <Link href="/dashboard" className="font-serif text-lg text-navy-900 hover:text-teal-600">
             Fresh Collective
           </Link>
-          <Link href="/dashboard" className="text-sm text-slate-500 hover:text-navy-700">
-            ← Dashboard
+          <Link href="/dashboard" className="text-sm text-black hover:text-navy-700">
+            ← Your World
           </Link>
         </div>
       </header>

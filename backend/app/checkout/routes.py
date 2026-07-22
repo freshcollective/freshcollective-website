@@ -241,21 +241,19 @@ def create_pathway_checkout_session(
             detail="You already have access to this pathway.",
         )
 
-    # --- Resolve creator and fee rate ----------------------------------------
+    # --- Resolve creator, platform-ownership, and fee rate -------------------
+    # Platform-owned spaces (creator_id IS NULL = Fresh Collective owns the space)
+    # pay zero platform fee — the money stays directly with FC. No payout is needed.
+    is_platform_owned = space.creator_id is None
     creator_id: str | None = space.creator_id
-    if creator_id is None:
-        mem = (
-            db.query(SpaceMembership)
-            .filter(
-                SpaceMembership.space_id == space.id,
-                SpaceMembership.role == "creator",
-                SpaceMembership.status == "active",
-            )
-            .first()
-        )
-        creator_id = mem.user_id if mem else None
 
-    fee_bps, creator_plan_id, creator_sub_id = _resolve_fee_bps(creator_id, db)
+    if is_platform_owned:
+        # No external creator — skip membership lookup, apply zero fee
+        fee_bps = 0
+        creator_plan_id: str | None = None
+        creator_sub_id: str | None = None
+    else:
+        fee_bps, creator_plan_id, creator_sub_id = _resolve_fee_bps(creator_id, db)
 
     # --- Fee calculation (all calculations done before any Stripe call) ------
     gross = price_cents
@@ -350,7 +348,9 @@ def create_pathway_checkout_session(
         provider_checkout_session_id=session.id,
         payment_option_id=payment_option.id if payment_option else None,
         payment_option_schedule_id=payment_schedule.id if payment_schedule else None,
-        payout_status=PayoutStatus.pending,
+        # Platform-owned spaces keep 100% — no payout to an external creator
+        payout_status=PayoutStatus.not_applicable if is_platform_owned else PayoutStatus.pending,
+        stripe_mode=settings.stripe_mode,
         created_at=now,
         updated_at=now,
     )

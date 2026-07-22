@@ -21,7 +21,7 @@ export default function NotificationsClient() {
   return (
     <button
       onClick={handleMarkAllRead}
-      className="rounded-xl border border-navy-100 px-4 py-2 text-[13px] font-medium text-navy-600 transition-all hover:border-navy-200 hover:bg-navy-50"
+      className="rounded-xl border border-navy-100 px-4 py-2 text-[13px] font-medium text-black transition-all hover:border-navy-200 hover:bg-navy-50"
     >
       Mark all as read
     </button>

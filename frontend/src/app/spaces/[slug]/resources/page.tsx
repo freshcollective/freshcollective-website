@@ -17,14 +17,17 @@ interface Props {
 // Two-accent system: teal for shared resources, gold for pathway resources
 // ---------------------------------------------------------------------------
 
+// Palette-aware — each surface reads from the collective's colour palette
+// via CSS custom properties, with the Fresh Collective teal as a fallback
+// when no palette is assigned. See CollectiveThemeProvider.
 const TEAL_ACCENT = {
-  stripe:      'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.15) 100%)',
-  pillBg:      'rgba(56,160,158,0.10)',
-  pillText:    '#1E6E6C',
-  labelBg:     'rgba(56,160,158,0.10)',
-  labelText:   '#1E6E6C',
-  headingLine: '#38A09E',
-  btnBg:       'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+  stripe:      'linear-gradient(90deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-soft, rgba(56,160,158,0.15)) 100%)',
+  pillBg:      'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+  pillText:    'var(--fc-accent, #1E6E6C)',
+  labelBg:     'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+  labelText:   'var(--fc-accent, #1E6E6C)',
+  headingLine: 'var(--fc-accent, #38A09E)',
+  btnBg:       'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)',
 }
 
 const GOLD_ACCENT = {
@@ -135,17 +138,17 @@ function ResourceCard({
         </h3>
 
         {resource.description && (
-          <p className="mb-2 line-clamp-2 text-[13px] leading-relaxed text-slate-500">
+          <p className="mb-2 line-clamp-2 text-[13px] leading-relaxed text-black">
             {resource.description}
           </p>
         )}
 
         {stepTitle && (
-          <p className="mb-1 text-[11.5px] text-slate-400">From: {stepTitle}</p>
+          <p className="mb-1 text-[11.5px] text-black">From: {stepTitle}</p>
         )}
 
         {meta && (
-          <p className="mb-4 truncate text-[11.5px] text-slate-400">{meta}</p>
+          <p className="mb-4 truncate text-[11.5px] text-black">{meta}</p>
         )}
 
         {resolvedUrl ? (
@@ -239,7 +242,7 @@ function EmptyState() {
   return (
     <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
       <p className="mb-1 text-[16px] font-semibold text-navy-900">No resources yet</p>
-      <p className="text-[14px] leading-relaxed text-slate-500">
+      <p className="text-[14px] leading-relaxed text-black">
         Resources shared by the creator or attached to your pathways will appear here.
       </p>
     </div>
@@ -295,8 +298,8 @@ export default async function SpaceResourcesPage({ params }: Props) {
               Resources
             </span>
           </h2>
-          <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
-            Guides, links, replays, and tools to support your journey.
+          <p className="text-[14px] leading-relaxed" style={{ color: '#FFFFFF' }}>
+            Guides, downloads and tools to support your journey.
           </p>
         </div>
 
@@ -308,7 +311,7 @@ export default async function SpaceResourcesPage({ params }: Props) {
             {standalone_resources.length > 0 && (
               <section className="mb-10">
                 <SectionHeading accent={TEAL_ACCENT}>Shared resources</SectionHeading>
-                <p className="mb-5 text-[13px] text-slate-500">
+                <p className="mb-5 text-[13px] text-black">
                   Resources shared by the creator for this collective.
                 </p>
                 <div className="grid gap-4 sm:grid-cols-2">

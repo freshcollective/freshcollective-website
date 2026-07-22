@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl } from '@/lib/api'
 
 export default function ChangePasswordForm() {
@@ -46,9 +47,9 @@ export default function ChangePasswordForm() {
         <label className="mb-1.5 block text-sm font-medium text-navy-800" htmlFor="current-password">
           Current password
         </label>
-        <input
+        <PasswordInput
           id="current-password"
-          type="password"
+          autoComplete="current-password"
           value={current}
           onChange={(e) => setCurrent(e.target.value)}
           required
@@ -60,16 +61,16 @@ export default function ChangePasswordForm() {
         <label className="mb-1.5 block text-sm font-medium text-navy-800" htmlFor="new-password">
           New password
         </label>
-        <input
+        <PasswordInput
           id="new-password"
-          type="password"
+          autoComplete="new-password"
           value={next}
           onChange={(e) => setNext(e.target.value)}
           required
           minLength={8}
           className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
         />
-        <p className="mt-1 text-xs text-slate-400">At least 8 characters.</p>
+        <p className="mt-1 text-xs text-black">At least 8 characters.</p>
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}

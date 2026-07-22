@@ -120,7 +120,7 @@ export default function SpaceSettingsForm({ space }: { space: SpaceData }) {
             ].join(' ')}
           />
         </button>
-        <span className="text-sm text-slate-600">
+        <span className="text-sm text-black">
           {isPublic ? 'Publicly visible' : 'Members only'}
         </span>
       </div>

@@ -163,7 +163,7 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
           </p>
           <button
             onClick={() => setSeriesResult(null)}
-            className="ml-4 shrink-0 text-xs text-slate-400 hover:text-slate-600"
+            className="ml-4 shrink-0 text-xs text-black hover:text-slate-600"
           >
             ✕
           </button>
@@ -181,7 +181,7 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
                 'rounded-full px-5 py-1.5 text-sm font-medium transition-colors',
                 view === v
                   ? 'bg-teal-600 text-white shadow-sm'
-                  : 'text-slate-500 hover:text-navy-900',
+                  : 'text-black hover:text-navy-900',
               ].join(' ')}
             >
               {v === 'list' ? 'List' : 'Calendar'}
@@ -211,12 +211,14 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
             ))}
           </div>
         ) : (
-          <div className="rounded-2xl border border-teal-100 bg-white px-7 py-8">
-            <p className="mb-1 text-lg font-semibold text-navy-900">No upcoming gatherings yet.</p>
-            <p className="text-sm leading-relaxed text-slate-400">
+          <div className="rounded-2xl border border-teal-100 bg-white px-7 py-10 text-center">
+            <p className="mb-2 font-serif text-xl text-navy-800">
+              Nothing is scheduled right now.
+            </p>
+            <p className="mx-auto max-w-md text-[14px] leading-relaxed text-black">
               {isMember
-                ? 'Live calls, workshops, and sessions will appear here when scheduled. Check back soon.'
-                : 'Public sessions will appear here when scheduled.'}
+                ? 'The next Gathering will appear here when it\u2019s ready.'
+                : 'Public Gatherings will appear here when they\u2019re open.'}
             </p>
           </div>
         )
@@ -231,7 +233,7 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
             <button
               onClick={prevMonth}
               aria-label="Previous month"
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-50 hover:text-navy-900"
+              className="rounded-lg px-3 py-1.5 text-sm text-black transition-colors hover:bg-slate-50 hover:text-navy-900"
             >
               ←
             </button>
@@ -241,7 +243,7 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
             <button
               onClick={nextMonth}
               aria-label="Next month"
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 transition-colors hover:bg-slate-50 hover:text-navy-900"
+              className="rounded-lg px-3 py-1.5 text-sm text-black transition-colors hover:bg-slate-50 hover:text-navy-900"
             >
               →
             </button>
@@ -255,7 +257,7 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
               {WEEKDAY_LABELS.map((d) => (
                 <div
                   key={d}
-                  className="py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-slate-400"
+                  className="py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-black"
                 >
                   {d}
                 </div>
@@ -281,7 +283,7 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
                       <span
                         className={[
                           'flex h-6 w-6 items-center justify-center rounded-full text-[12px] font-medium',
-                          isToday ? 'bg-teal-500 text-white' : 'text-slate-400',
+                          isToday ? 'bg-teal-500 text-white' : 'text-black',
                         ].join(' ')}
                       >
                         {day}
@@ -310,8 +312,8 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
             </div>
 
             {eventsThisMonth.length === 0 && (
-              <div className="border-t border-border px-5 py-6 text-center text-sm text-slate-400">
-                No gatherings scheduled for this month.
+              <div className="border-t border-border px-5 py-6 text-center text-sm text-black">
+                No Gatherings scheduled for this month.
               </div>
             )}
           </div>
@@ -319,8 +321,8 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
           {/* ── Mobile: day-list for the month ── */}
           <div className="sm:hidden">
             {eventsThisMonth.length === 0 ? (
-              <div className="px-5 py-8 text-center text-sm text-slate-400">
-                No gatherings scheduled for this month.
+              <div className="px-5 py-8 text-center text-sm text-black">
+                No Gatherings scheduled for this month.
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -338,7 +340,7 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
                   .sort(([a], [b]) => a.localeCompare(b))
                   .map(([k, { iso, events: dayEvts }]) => (
                     <div key={k} className="px-5 py-4">
-                      <p className="mb-2.5 text-[12px] font-semibold uppercase tracking-wider text-slate-400">
+                      <p className="mb-2.5 text-[12px] font-semibold uppercase tracking-wider text-black">
                         {formatGatheringMobileDayLabel(iso, timezone)}
                       </p>
                       <div className="flex flex-col gap-2">
@@ -351,7 +353,7 @@ export default function GatheringsView({ events: initialEvents, spaceSlug, timez
                           >
                             <div className="min-w-0">
                               <p className="truncate text-[14px] font-medium text-navy-900">{e.title}</p>
-                              <p className="mt-0.5 text-[12px] text-slate-500">{formatGatheringTime(e.starts_at, timezone)}</p>
+                              <p className="mt-0.5 text-[12px] text-black">{formatGatheringTime(e.starts_at, timezone)}</p>
                             </div>
                             <span className="ml-3 shrink-0 text-teal-500">→</span>
                           </Link>

@@ -51,7 +51,7 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
 
   const progressBar = !isComingSoon && !locked && pathway.step_count > 0 ? (
     <div className="mb-3">
-      <div className="mb-1 flex items-baseline justify-between text-[11px] text-slate-400">
+      <div className="mb-1 flex items-baseline justify-between text-[11px] text-black">
         <span>{pathway.completed_count} of {pathway.step_count} steps</span>
         <span>{progressPct}%</span>
       </div>
@@ -62,7 +62,7 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
   ) : null
 
   const descriptionEl = pathway.description ? (
-    <p className="mb-3 line-clamp-2 text-[12px] leading-relaxed text-slate-500">{pathway.description}</p>
+    <p className="mb-3 line-clamp-2 text-[12px] leading-relaxed text-black">{pathway.description}</p>
   ) : null
 
   // ── Coming soon: non-interactive card ──
@@ -114,7 +114,7 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
                 <span className="block text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
                   Learn more →
                 </span>
-                <span className="block text-[10px] text-slate-400 mt-0.5">
+                <span className="block text-[10px] text-black mt-0.5">
                   Unlocking coming soon
                 </span>
               </div>
@@ -161,7 +161,7 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
             <div className="ml-auto flex items-center gap-2">
               <Link
                 href={aboutHref}
-                className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 transition-colors hover:border-teal-200 hover:text-teal-600"
+                className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-600"
               >
                 About
               </Link>

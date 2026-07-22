@@ -10,6 +10,7 @@ interface StepActionsProps {
   stepSlug: string
   isCompleted: boolean
   initialNotes: string | null
+  reflectionEnabled?: boolean
 }
 
 export default function StepActions({
@@ -18,6 +19,7 @@ export default function StepActions({
   stepSlug,
   isCompleted: initialCompleted,
   initialNotes,
+  reflectionEnabled = true,
 }: StepActionsProps) {
   const router = useRouter()
   const [notes, setNotes] = useState(initialNotes ?? '')
@@ -59,36 +61,38 @@ export default function StepActions({
     <div className="mt-12 pt-10">
 
       {/* Reflection space */}
-      <div className="mb-8">
-        <div className="mb-1 h-[2px] w-6 rounded-full bg-teal-400" />
-        <label className="mb-1 block text-lg font-semibold text-slate-900" htmlFor="step-notes">
-          Your reflection
-        </label>
-        <p className="mb-4 text-sm text-slate-400">
-          Private to you. Write as much or as little as feels right.
-        </p>
-        <textarea
-          id="step-notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={6}
-          placeholder="What are you noticing? What feels true right now?"
-          className="w-full resize-none rounded-xl border border-border bg-white px-5 py-4 text-[15px] leading-relaxed text-navy-900 placeholder:text-slate-300 focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100 transition-colors"
-          style={{ fontFamily: 'inherit' }}
-        />
-        <div className="mt-2.5 flex items-center justify-between">
-          <button
-            onClick={handleSaveNotes}
-            disabled={!notes.trim()}
-            className="text-xs text-slate-400 underline-offset-2 transition-colors hover:text-teal-600 hover:underline disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            Save notes
-          </button>
-          {notesSaved && (
-            <span className="text-xs text-teal-500">Saved.</span>
-          )}
+      {reflectionEnabled && (
+        <div className="mb-8">
+          <div className="mb-1 h-[2px] w-6 rounded-full bg-teal-400" />
+          <label className="mb-1 block text-lg font-semibold text-slate-900" htmlFor="step-notes">
+            Your reflection
+          </label>
+          <p className="mb-4 text-sm text-black">
+            Private to you. Write as much or as little as feels right.
+          </p>
+          <textarea
+            id="step-notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={6}
+            placeholder="What are you noticing? What feels true right now?"
+            className="w-full resize-none rounded-xl border border-border bg-white px-5 py-4 text-[15px] leading-relaxed text-navy-900 placeholder:text-slate-300 focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100 transition-colors"
+            style={{ fontFamily: 'inherit' }}
+          />
+          <div className="mt-2.5 flex items-center justify-between">
+            <button
+              onClick={handleSaveNotes}
+              disabled={!notes.trim()}
+              className="text-xs text-black underline-offset-2 transition-colors hover:text-teal-600 hover:underline disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              Save notes
+            </button>
+            {notesSaved && (
+              <span className="text-xs text-teal-500">Saved.</span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Completion */}
       <div>

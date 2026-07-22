@@ -16,16 +16,20 @@ interface SpaceNavProps {
   spaceSlug: string
   spaceName: string
   isMember: boolean
+  unreadMessageCount?: number
 }
 
-export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavProps) {
+export default function SpaceNav({ spaceSlug, spaceName, isMember, unreadMessageCount = 0 }: SpaceNavProps) {
   const pathname = usePathname()
   const base = `/spaces/${spaceSlug}`
   const [notifOpen, setNotifOpen] = useState(false)
 
   const tabs: Tab[] = [
     {
-      label: 'Community',
+      // Language shift: "Community" is being retired as a visible feature
+      // label in favour of "Conversations", which pluralises naturally when
+      // Channels arrive. Route path stays `/community` for compatibility.
+      label: 'Conversations',
       href: `${base}/community`,
       icon: '◈',
     },
@@ -55,28 +59,58 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavPro
       <div className="hidden border-b border-border bg-surface md:block">
         <div className="mx-auto max-w-6xl px-10">
           <nav className="flex gap-0">
-            {tabs.map((tab) => (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={[
-                  'inline-block shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
-                  isActive(tab)
-                    ? 'border-teal-500 font-semibold text-teal-700'
-                    : 'border-transparent text-slate-500 hover:text-navy-700',
-                ].join(' ')}
-              >
-                {tab.label}
-              </Link>
-            ))}
+            {tabs.map((tab) => {
+              const active = isActive(tab)
+              return (
+                <Link
+                  key={tab.href}
+                  href={tab.href}
+                  className={[
+                    'inline-block shrink-0 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
+                    active
+                      ? 'font-semibold'
+                      : 'border-transparent text-black hover:text-navy-700',
+                  ].join(' ')}
+                  style={active ? {
+                    borderColor: 'var(--fc-accent, #38A09E)',
+                    color: 'var(--fc-accent, #0f766e)',
+                  } : undefined}
+                >
+                  {tab.label}
+                </Link>
+              )
+            })}
 
             {isMember && (
-              <button
-                onClick={() => setNotifOpen(true)}
-                className="inline-block shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-slate-500 transition-colors hover:text-navy-700"
-              >
-                Notifications
-              </button>
+              <>
+                <Link
+                  href={`/spaces/${spaceSlug}/messages`}
+                  className={[
+                    'relative inline-flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
+                    pathname.startsWith(`/spaces/${spaceSlug}/messages`)
+                      ? 'font-semibold'
+                      : 'border-transparent text-black hover:text-navy-700',
+                  ].join(' ')}
+                  style={pathname.startsWith(`/spaces/${spaceSlug}/messages`) ? {
+                    borderColor: 'var(--fc-accent, #38A09E)',
+                    color: 'var(--fc-accent, #0f766e)',
+                  } : undefined}
+                >
+                  Messages
+                  {unreadMessageCount > 0 && (
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                      style={{ background: 'var(--fc-accent, #38A09E)' }}>
+                      {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
+                    </span>
+                  )}
+                </Link>
+                <button
+                  onClick={() => setNotifOpen(true)}
+                  className="inline-block shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-black transition-colors hover:text-navy-700"
+                >
+                  Notifications
+                </button>
+              </>
             )}
           </nav>
         </div>
@@ -91,10 +125,8 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavPro
               <Link
                 key={tab.href}
                 href={tab.href}
-                className={[
-                  'flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center transition-colors',
-                  active ? 'text-teal-600' : 'text-slate-400',
-                ].join(' ')}
+                className="flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center transition-colors"
+                style={active ? { color: 'var(--fc-accent, #0f766e)' } : { color: '#000' }}
               >
                 <span className="text-base leading-none" aria-hidden="true">
                   {tab.icon}
@@ -105,13 +137,33 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember }: SpaceNavPro
           })}
 
           {isMember && (
-            <button
-              onClick={() => setNotifOpen(true)}
-              className="flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center text-slate-400 transition-colors hover:text-teal-600"
-            >
-              <span className="text-base leading-none" aria-hidden="true">🔔</span>
-              <span className="whitespace-nowrap text-xs font-medium">Notifications</span>
-            </button>
+            <>
+              <Link
+                href={`/spaces/${spaceSlug}/messages`}
+                className="relative flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center transition-colors"
+                style={pathname.startsWith(`/spaces/${spaceSlug}/messages`)
+                  ? { color: 'var(--fc-accent, #0f766e)' }
+                  : { color: '#000' }}
+              >
+                <span className="relative text-base leading-none" aria-hidden="true">
+                  ✉
+                  {unreadMessageCount > 0 && (
+                    <span className="absolute -right-1.5 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold text-white"
+                      style={{ background: 'var(--fc-accent, #38A09E)' }}>
+                      {unreadMessageCount > 9 ? '9' : unreadMessageCount}
+                    </span>
+                  )}
+                </span>
+                <span className="whitespace-nowrap text-xs font-medium">Messages</span>
+              </Link>
+              <button
+                onClick={() => setNotifOpen(true)}
+                className="flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center text-black transition-colors hover:text-teal-600"
+              >
+                <span className="text-base leading-none" aria-hidden="true">🔔</span>
+                <span className="whitespace-nowrap text-xs font-medium">Notifications</span>
+              </button>
+            </>
           )}
         </div>
         <div style={{ height: 'env(safe-area-inset-bottom)' }} className="bg-surface" />

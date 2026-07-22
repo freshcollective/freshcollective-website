@@ -132,7 +132,7 @@ function NavRow({
         <button
           type="button"
           onClick={onBack}
-          className="text-sm text-slate-400 hover:text-navy-700 transition-colors"
+          className="text-sm text-black hover:text-navy-700 transition-colors"
         >
           ← Back
         </button>
@@ -162,7 +162,7 @@ function StepWelcome({ firstName, onNext }: { firstName: string | null; onNext: 
       <h1 className="mb-6 font-serif text-4xl leading-snug text-navy-900 md:text-5xl">
         {firstName ? `Welcome, ${firstName}.` : 'Welcome.'}
       </h1>
-      <div className="space-y-4 text-[16px] leading-[1.85] text-slate-600">
+      <div className="space-y-4 text-[16px] leading-[1.85] text-black">
         <p>
           Fresh Collective is a place for experiential learning — guided pathways,
           live experiences, and a real community supporting the work.
@@ -198,7 +198,7 @@ function StepInterests({
       <h2 className="mb-3 font-serif text-3xl text-navy-900">
         What are you here to explore?
       </h2>
-      <p className="mb-8 text-sm text-slate-500">
+      <p className="mb-8 text-sm text-black">
         Choose anything that resonates. This helps us shape your experience — you can always change it later.
       </p>
       <div className="flex flex-wrap gap-2.5">
@@ -213,7 +213,7 @@ function StepInterests({
                 'rounded-full border px-4 py-2 text-sm font-medium transition-colors',
                 active
                   ? 'border-teal-500 bg-teal-50 text-teal-700'
-                  : 'border-border bg-surface text-slate-600 hover:border-slate-300 hover:text-navy-800',
+                  : 'border-border bg-surface text-black hover:border-slate-300 hover:text-navy-800',
               ].join(' ')}
             >
               {interest.label}
@@ -221,7 +221,7 @@ function StepInterests({
           )
         })}
       </div>
-      <p className="mt-4 text-xs text-slate-400">Select as many as you like, or skip if you&apos;re unsure.</p>
+      <p className="mt-4 text-xs text-black">Select as many as you like, or skip if you&apos;re unsure.</p>
       <NavRow onBack={onBack} onNext={onNext} />
     </div>
   )
@@ -239,7 +239,7 @@ const HOW_IT_WORKS = [
       'Structured learning sequences you move through at your own pace. Each step invites reflection, not just reading.',
   },
   {
-    label: 'Community',
+    label: 'Conversations',
     accent: 'bg-gold-500',
     description:
       'Real conversations with people on similar paths. A place to share, ask, and be witnessed.',
@@ -259,7 +259,7 @@ function StepHowItWorks({ onBack, onNext }: { onBack: () => void; onNext: () => 
       <h2 className="mb-3 font-serif text-3xl text-navy-900">
         How learning works here.
       </h2>
-      <p className="mb-8 text-sm text-slate-500">
+      <p className="mb-8 text-sm text-black">
         Three layers, working together.
       </p>
       <div className="space-y-4">
@@ -271,7 +271,7 @@ function StepHowItWorks({ onBack, onNext }: { onBack: () => void; onNext: () => 
             <div className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${item.accent}`} />
             <div>
               <p className="mb-1 text-sm font-semibold text-navy-800">{item.label}</p>
-              <p className="text-sm leading-relaxed text-slate-500">{item.description}</p>
+              <p className="text-sm leading-relaxed text-black">{item.description}</p>
             </div>
           </div>
         ))}
@@ -300,7 +300,7 @@ function StepStartingPoint({
       <h2 className="mb-3 font-serif text-3xl text-navy-900">
         Where you begin.
       </h2>
-      <p className="mb-8 text-sm text-slate-500">
+      <p className="mb-8 text-sm text-black">
         Fresh Collective is made up of different collectives, pathways and live experiences.
         Start by exploring what&apos;s available, then continue from the space you joined.
       </p>
@@ -314,7 +314,7 @@ function StepStartingPoint({
           Your starting point
         </p>
         <p className="mb-2 font-serif text-xl text-navy-900">Explore Collectives</p>
-        <p className="text-sm leading-relaxed text-slate-500">
+        <p className="text-sm leading-relaxed text-black">
           Browse available collectives and continue from the one you joined. Everything is here —
           pathways, community, and live sessions.
         </p>
@@ -324,7 +324,7 @@ function StepStartingPoint({
         <button
           type="button"
           onClick={onBack}
-          className="text-sm text-slate-400 hover:text-navy-700 transition-colors"
+          className="text-sm text-black hover:text-navy-700 transition-colors"
         >
           ← Back
         </button>

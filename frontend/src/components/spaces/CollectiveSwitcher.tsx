@@ -73,7 +73,7 @@ export default function CollectiveSwitcher({
             <>
               {/* My collectives section */}
               <div className="px-3 pt-3 pb-1">
-                <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+                <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-black">
                   My collectives
                 </p>
               </div>
@@ -113,7 +113,7 @@ export default function CollectiveSwitcher({
                     >
                       {m.space_name.charAt(0).toUpperCase()}
                     </span>
-                    <span className="truncate text-[13px] text-slate-600">{m.space_name}</span>
+                    <span className="truncate text-[13px] text-black">{m.space_name}</span>
                   </Link>
                 ))}
               </div>
@@ -123,7 +123,7 @@ export default function CollectiveSwitcher({
                 <Link
                   href="/spaces"
                   onClick={() => setOpen(false)}
-                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-slate-500 transition-colors hover:bg-slate-50 hover:text-navy-700"
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-black transition-colors hover:bg-slate-50 hover:text-navy-700"
                 >
                   <svg className="h-3.5 w-3.5 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" strokeLinecap="round" />
@@ -135,7 +135,7 @@ export default function CollectiveSwitcher({
                   <Link
                     href="/creator-studio"
                     onClick={() => setOpen(false)}
-                    className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-slate-500 transition-colors hover:bg-slate-50 hover:text-navy-700"
+                    className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-black transition-colors hover:bg-slate-50 hover:text-navy-700"
                   >
                     <svg className="h-3.5 w-3.5 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
@@ -147,12 +147,12 @@ export default function CollectiveSwitcher({
                 <Link
                   href="/dashboard"
                   onClick={() => setOpen(false)}
-                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-slate-500 transition-colors hover:bg-slate-50 hover:text-navy-700"
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-black transition-colors hover:bg-slate-50 hover:text-navy-700"
                 >
                   <svg className="h-3.5 w-3.5 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                   </svg>
-                  Dashboard
+                  Your World
                 </Link>
               </div>
             </>
@@ -180,7 +180,7 @@ export default function CollectiveSwitcher({
                 <Link
                   href="/spaces"
                   onClick={() => setOpen(false)}
-                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-slate-500 transition-colors hover:bg-slate-50 hover:text-navy-700"
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-black transition-colors hover:bg-slate-50 hover:text-navy-700"
                 >
                   <svg className="h-3.5 w-3.5 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" strokeLinecap="round" />
@@ -191,7 +191,7 @@ export default function CollectiveSwitcher({
                 <Link
                   href="/login"
                   onClick={() => setOpen(false)}
-                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-slate-500 transition-colors hover:bg-slate-50 hover:text-navy-700"
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[13px] text-black transition-colors hover:bg-slate-50 hover:text-navy-700"
                 >
                   <svg className="h-3.5 w-3.5 shrink-0 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />

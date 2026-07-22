@@ -45,12 +45,12 @@ export default function MemberCard({ member, spaceSlug }: MemberCardProps) {
             )}
           </div>
           {tagline && (
-            <p className="mb-1 text-[12px] text-slate-400 italic">{tagline}</p>
+            <p className="mb-1 text-[12px] text-black italic">{tagline}</p>
           )}
           {member.bio && (
-            <p className="mb-1 text-xs leading-relaxed text-slate-500 line-clamp-2">{member.bio}</p>
+            <p className="mb-1 text-xs leading-relaxed text-black line-clamp-2">{member.bio}</p>
           )}
-          <p className="text-[11px] text-slate-400">Joined {formatJoined(member.joined_at)}</p>
+          <p className="text-[11px] text-black">Joined {formatJoined(member.joined_at)}</p>
         </div>
       </div>
     </Link>

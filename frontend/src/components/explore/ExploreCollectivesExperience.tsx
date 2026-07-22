@@ -26,7 +26,13 @@ function CollectiveCard({
   isLoggedIn: boolean
 }) {
   const cs = getCollectiveCoverStyle(space.slug)
-  const resolvedImageUrl = resolveMediaUrl(space.cover_image_url)
+  // Atlas v1.2 — prefer the collective's assigned Location artwork.
+  // Fallback order: location thumbnail → location hero → space cover_image → placeholder.
+  const resolvedImageUrl = resolveMediaUrl(
+    space.location_thumbnail_artwork_url
+      ?? space.location_hero_artwork_url
+      ?? space.cover_image_url,
+  )
   const hasImage = Boolean(resolvedImageUrl)
   const href = space.isReal
     ? (isJoined ? `/spaces/${space.slug}` : `/spaces/${space.slug}/about`)
@@ -34,10 +40,10 @@ function CollectiveCard({
 
   const titleColor = hasImage ? '#FFFFFF' : (cs.isDark ? '#FFFFFF' : '#152236')
   const taglineColor = hasImage
-    ? 'rgba(255,255,255,0.72)'
+    ? '#FFFFFF'
     : cs.isDark
-      ? 'rgba(255,255,255,0.65)'
-      : '#64748B'
+      ? '#FFFFFF'
+      : '#000000'
 
   const ctaLabel = isJoined ? 'Continue →' : 'Explore →'
   const primaryTheme = space.themes[0] ?? null
@@ -96,7 +102,7 @@ function CollectiveCard({
           {space.has_upcoming_event && (
             <span
               className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-              style={{ background: 'rgba(7,24,36,0.45)', color: 'rgba(255,255,255,0.90)' }}
+              style={{ background: 'rgba(7,24,36,0.45)', color: '#FFFFFF' }}
             >
               <span className="h-1.5 w-1.5 rounded-full bg-teal-400" />
               Live soon
@@ -124,7 +130,7 @@ function CollectiveCard({
       <div className="flex-1">
         {space.description && (
           <div className="px-4 pt-3">
-            <p className="line-clamp-2 text-[12.5px] leading-[1.65] text-slate-500">
+            <p className="line-clamp-2 text-[12.5px] leading-[1.65] text-black">
               {space.description}
             </p>
           </div>
@@ -137,7 +143,7 @@ function CollectiveCard({
         style={{ borderColor: 'rgba(0,0,0,0.06)' }}
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-slate-400">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-black">
             {primaryTheme && (
               <span
                 className="rounded px-1.5 py-0.5 text-[10px] font-medium"
@@ -148,7 +154,7 @@ function CollectiveCard({
             )}
             {space.creator_name && (
               <span className="hidden sm:inline">
-                by <span className="font-medium text-slate-600">{space.creator_name}</span>
+                by <span className="font-medium text-black">{space.creator_name}</span>
               </span>
             )}
             {space.pathway_count > 0 && (
@@ -193,7 +199,7 @@ function EmptyState() {
   return (
     <div className="rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
       <p className="mb-2 text-[16px] font-semibold text-navy-900">No collectives found.</p>
-      <p className="text-[14px] leading-relaxed text-slate-500">
+      <p className="text-[14px] leading-relaxed text-black">
         Try a different theme or search term.
       </p>
     </div>
@@ -283,7 +289,7 @@ export default function ExploreCollectivesExperience({
 
             <p
               className="max-w-[540px] text-[15px] leading-[1.78]"
-              style={{ color: 'rgba(255,255,255,0.62)' }}
+              style={{ color: '#FFFFFF' }}
             >
               Each collective is a creator-led learning environment — with pathways, gatherings,
               and community in one intentional place. Find the one that fits where you are.
@@ -309,7 +315,7 @@ export default function ExploreCollectivesExperience({
                   style={
                     activeTheme === theme
                       ? { background: '#0C1826', color: '#ffffff' }
-                      : { color: '#6B7A8D' }
+                      : { color: '#000000' }
                   }
                 >
                   {theme}
@@ -335,7 +341,7 @@ export default function ExploreCollectivesExperience({
 
           {/* Section label when user has joined collectives */}
           {isLoggedIn && !search.trim() && joinedSet.size > 0 && filtered.some((s) => joinedSet.has(s.slug)) && (
-            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-black">
               Your collectives
             </p>
           )}
@@ -357,7 +363,7 @@ export default function ExploreCollectivesExperience({
 
           {/* Note about payment */}
           {isLoggedIn && (
-            <p className="mt-10 text-center text-[12px] text-slate-400">
+            <p className="mt-10 text-center text-[12px] text-black">
               Some collectives are free and some require payment. Payment integration is coming soon.
             </p>
           )}

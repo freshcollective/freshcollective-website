@@ -33,6 +33,10 @@ class PaymentTransactionType(str, enum.Enum):
     member_collective_purchase = "member_collective_purchase"
     member_pathway_subscription = "member_pathway_subscription"
     member_collective_subscription = "member_collective_subscription"
+    # Standalone Gathering ticket: one-time purchase of a single event, without
+    # buying the Collective. Named "gathering" (not "member") because non-members
+    # can also purchase — Stage 1 audit § "Payment transaction type".
+    gathering_ticket_purchase = "gathering_ticket_purchase"
     refund = "refund"
     adjustment = "adjustment"
 
@@ -172,6 +176,11 @@ class PaymentTransaction(Base):
     provider_subscription_id: Mapped[str | None] = mapped_column(
         String(200), nullable=True
     )
+    # Stripe Checkout hosted URL — stored so a repeat checkout attempt by the
+    # same user (with an unexpired hold) can safely be redirected back to the
+    # original Session URL rather than creating a new Session and dangling
+    # capacity holds. Only populated for Stripe-hosted checkout flows.
+    provider_checkout_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Payment option selected at checkout (null for legacy single-price pathway purchases)
     payment_option_id: Mapped[str | None] = mapped_column(
@@ -190,6 +199,12 @@ class PaymentTransaction(Base):
     )
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # 'test' when created against sk_test_* Stripe keys, 'live' when against sk_live_*.
+    # Used to separate sandbox figures from real revenue in dashboards.
+    stripe_mode: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="test", server_default="test"
+    )
 
     # Payout tracking — populated by admin when transfer is processed
     # TODO: wire to Stripe Connect payouts once connected

@@ -1,34 +1,59 @@
-import { getCommunityFeed, getSpace, getSpaceMembers } from '@/lib/serverApi'
-import PostCard from '@/components/community/PostCard'
-import CreatePostForm from '@/components/community/CreatePostForm'
+import { getCommunityFeed, getMemberChannels, getSpace, getSpaceMembers, getMe, type ChannelSummaryLite } from '@/lib/serverApi'
+import CommunityFeed from '@/components/community/CommunityFeed'
+import ChannelSelector from '@/components/community/ChannelSelector'
+import ChannelHeader from '@/components/community/ChannelHeader'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
 import type { MemberProfile, PostSummary, SpaceResponse } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string }>
+  searchParams: Promise<{ channel?: string }>
 }
 
-export default async function SpaceCommunityPage({ params }: Props) {
+export default async function SpaceCommunityPage({ params, searchParams }: Props) {
   const { slug } = await params
-  const [posts, space, members]: [PostSummary[], SpaceResponse | null, MemberProfile[]] = await Promise.all([
-    getCommunityFeed(slug),
-    getSpace(slug),
-    getSpaceMembers(slug),
+  const { channel: channelFromUrl } = await searchParams
+
+  const [space, members, me, channels] = await Promise.all([
+    getSpace(slug) as Promise<SpaceResponse | null>,
+    getSpaceMembers(slug) as Promise<MemberProfile[]>,
+    getMe() as Promise<{ id: string; role: string } | null>,
+    getMemberChannels(slug),
   ])
+
+  // Pick the active Channel from the URL, falling back to the
+  // system Common Room (or the first accessible Channel if — impossibly —
+  // Common Room is missing).
+  const defaultChannel = channels.find((c) => c.is_default) ?? channels[0] ?? null
+  const activeChannel: ChannelSummaryLite | null = channelFromUrl
+    ? (channels.find((c) => c.slug === channelFromUrl) ?? defaultChannel)
+    : defaultChannel
+  const activeSlug = activeChannel?.slug ?? 'general'
+
+  const posts: PostSummary[] = await getCommunityFeed(slug, activeSlug)
 
   const memberCount = members.filter((m) => m.space_role === 'learner').length
   const leaderCount = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
 
-  const pinned = posts.filter((p) => p.is_pinned)
-  const feed = posts.filter((p) => !p.is_pinned)
+  const canModerate = !!(me && (
+    me.role === 'admin' ||
+    me.role === 'creator' ||
+    members.some((m) => m.id === me.id && (m.space_role === 'creator' || m.space_role === 'moderator'))
+  ))
+
+  const memberNamesById: Record<string, string> = {}
+  for (const m of members) memberNamesById[m.id] = m.display_name
+
+  const channelArchived = !!activeChannel?.is_archived
+  const canPost = !channelArchived && (activeChannel?.member_posting_allowed || canModerate)
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
 
-      {/* ── Left column: intro + composer + feed ── */}
+      {/* ── Left column: intro + channel selector + composer + feed ── */}
       <div className="min-w-0">
 
-        {/* Intro card — flat navy matching dashboard Explore card */}
+        {/* Intro card */}
         <div
           className="mb-5 overflow-hidden rounded-2xl px-7 py-7"
           style={{
@@ -51,62 +76,62 @@ export default async function SpaceCommunityPage({ params }: Props) {
                 backgroundClip: 'text',
               }}
             >
-              Community
+              Conversations
             </span>
           </h2>
-          <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
-            A place to reflect, ask questions, and connect with others in this space.
+          <p className="text-[14px] leading-relaxed" style={{ color: '#FFFFFF' }}>
+            Explore the places where conversations unfold across this collective.
           </p>
         </div>
 
-        {/* Composer — top of page, before the feed */}
-        <div className="mb-6">
-          <CreatePostForm spaceSlug={slug} />
-        </div>
-
-        {/* Pinned posts */}
-        {pinned.length > 0 && (
-          <section className="mb-5">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-              Pinned
-            </p>
-            <div className="flex flex-col gap-3">
-              {pinned.map((p) => (
-                <PostCard key={p.id} post={p} spaceSlug={slug} />
-              ))}
-            </div>
-          </section>
+        {channels.length > 0 && (
+          <ChannelSelector
+            channels={channels.map((c) => ({
+              id: c.id, slug: c.slug, name: c.name,
+              channel_type: c.channel_type, is_default: c.is_default,
+              is_system: c.is_system, is_archived: c.is_archived,
+              icon_emoji: c.icon_emoji, group_label: c.group_label,
+            }))}
+            activeSlug={activeSlug}
+          />
         )}
 
-        {/* Feed */}
-        {feed.length > 0 ? (
-          <section>
-            {(pinned.length > 0) && (
-              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                Recent
-              </p>
-            )}
-            <div className="flex flex-col gap-3">
-              {feed.map((p) => (
-                <PostCard key={p.id} post={p} spaceSlug={slug} />
-              ))}
-            </div>
-          </section>
-        ) : (
-          !pinned.length && (
-            <div
-              className="rounded-2xl bg-white px-7 py-10 text-center"
-              style={{ border: '1px solid rgba(0,0,0,0.07)' }}
-            >
-              <p className="mb-2 font-serif text-xl text-navy-800">
-                The conversation begins with you.
-              </p>
-              <p className="mx-auto max-w-sm text-[13px] leading-relaxed text-slate-400">
-                Share what you are noticing, ask what you are sitting with, or respond when something touches you.
-              </p>
-            </div>
-          )
+        {activeChannel && (
+          <ChannelHeader
+            icon={activeChannel.icon_emoji}
+            name={activeChannel.name}
+            description={activeChannel.description}
+            archived={channelArchived}
+          />
         )}
+
+        {channelArchived && (
+          <div
+            className="mb-4 rounded-2xl px-5 py-4 text-[13px]"
+            style={{
+              background: 'rgba(212,176,72,0.10)',
+              border: '1px solid rgba(212,176,72,0.30)',
+              color: '#8A6A15',
+            }}
+          >
+            This Channel has been archived. It remains readable but no new
+            conversations can be started here.
+          </div>
+        )}
+
+        <CommunityFeed
+          key={activeSlug}
+          spaceSlug={slug}
+          channelSlug={activeSlug}
+          posts={posts}
+          memberNamesById={memberNamesById}
+          canModerate={canModerate}
+          canPin={canModerate}
+          canEdit={canModerate}
+          viewerId={me?.id}
+          canCompose={canPost}
+          showUnansweredFilter={canModerate}
+        />
       </div>
 
       {/* ── Right column: banner + stats + Important panel (desktop only) ── */}

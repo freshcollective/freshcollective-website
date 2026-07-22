@@ -87,7 +87,7 @@ export default function StepEditor({
 
       {/* Content type selector */}
       <div>
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Content type</p>
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-black">Content type</p>
         <div className="flex flex-wrap gap-2">
           {CONTENT_TYPES.map((ct) => (
             <button
@@ -98,7 +98,7 @@ export default function StepEditor({
                 'rounded-full border px-3.5 py-1.5 text-sm transition-colors',
                 contentType === ct.value
                   ? 'border-navy-900 bg-navy-900 text-white'
-                  : 'border-border text-slate-500 hover:border-slate-400 hover:text-navy-700',
+                  : 'border-border text-black hover:border-slate-400 hover:text-navy-700',
               ].join(' ')}
             >
               {ct.label}
@@ -110,7 +110,7 @@ export default function StepEditor({
       {/* Body content */}
       {showBody && (
         <div>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">Content</p>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-black">Content</p>
           <textarea
             value={contentBody}
             onChange={(e) => setContentBody(e.target.value)}
@@ -124,7 +124,7 @@ export default function StepEditor({
       {/* URL for video/audio */}
       {showUrl && (
         <div>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-black">
             {contentType === 'video' ? 'Video URL' : 'Audio URL'}
           </p>
           <input
@@ -140,7 +140,7 @@ export default function StepEditor({
       {/* Metadata row */}
       <div className="flex flex-wrap items-center gap-6 rounded-xl border border-border bg-surface px-5 py-4">
         <div>
-          <label className="mb-1 block text-xs text-slate-400">Est. minutes</label>
+          <label className="mb-1 block text-xs text-black">Est. minutes</label>
           <input
             type="number"
             min={1}
@@ -170,7 +170,7 @@ export default function StepEditor({
               ].join(' ')}
             />
           </button>
-          <span className="text-sm text-slate-600">Required</span>
+          <span className="text-sm text-black">Required</span>
         </div>
       </div>
 

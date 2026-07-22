@@ -66,7 +66,7 @@ export default function HomeHero() {
             />
             <span
               className="text-[10.5px] font-semibold uppercase tracking-[0.20em]"
-              style={{ color: 'rgba(255,255,255,0.32)' }}
+              style={{ color: '#FFFFFF' }}
             >
               Fresh Collective
             </span>
@@ -102,7 +102,7 @@ export default function HomeHero() {
             style={{
               fontSize: 'clamp(0.9375rem, 1.4vw, 1.0625rem)',
               lineHeight: '1.80',
-              color: 'rgba(255,255,255,0.46)',
+              color: '#FFFFFF',
               maxWidth: '460px',
               letterSpacing: '-0.01em',
             }}

@@ -190,9 +190,9 @@ export default function NotificationBell({ initialCount }: Props) {
           {/* Notification list */}
           <div className="max-h-80 overflow-y-auto">
             {loadingNotifs ? (
-              <div className="px-4 py-6 text-center text-[13px] text-navy-400">Loading…</div>
+              <div className="px-4 py-6 text-center text-[13px] text-black">Loading…</div>
             ) : notifications.length === 0 ? (
-              <div className="px-4 py-6 text-center text-[13px] text-navy-400">
+              <div className="px-4 py-6 text-center text-[13px] text-black">
                 No notifications yet.
               </div>
             ) : (
@@ -219,10 +219,10 @@ export default function NotificationBell({ initialCount }: Props) {
                     <p className="text-[13px] font-medium text-navy-900 leading-snug">
                       {notif.title}
                     </p>
-                    <p className="mt-0.5 truncate text-[12px] text-navy-500 leading-snug">
+                    <p className="mt-0.5 truncate text-[12px] text-black leading-snug">
                       {notif.message}
                     </p>
-                    <p className="mt-1 text-[11px] text-navy-400">
+                    <p className="mt-1 text-[11px] text-black">
                       {relativeTime(notif.created_at)}
                     </p>
                   </div>

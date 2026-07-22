@@ -55,15 +55,15 @@ export default async function SpacePathwaysPage({ params }: Props) {
               Pathways
             </span>
           </h2>
-          <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.60)' }}>
-            Structured journeys to guide your growth and reflection.
+          <p className="text-[14px] leading-relaxed" style={{ color: '#FFFFFF' }}>
+            Choose your next step and continue your journey.
           </p>
         </div>
 
         {active.length === 0 && soon.length === 0 ? (
           <div className="rounded-2xl border border-teal-100 bg-white px-7 py-12 text-center">
             <p className="font-serif text-lg text-navy-800">No pathways yet.</p>
-            <p className="mt-1.5 text-sm text-slate-400">
+            <p className="mt-1.5 text-sm text-black">
               Pathways will appear here once they are published.
             </p>
           </div>
@@ -79,7 +79,7 @@ export default async function SpacePathwaysPage({ params }: Props) {
 
             {soon.length > 0 && (
               <div>
-                <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-black">
                   Coming Soon
                 </p>
                 <div className="grid gap-5 sm:grid-cols-2">

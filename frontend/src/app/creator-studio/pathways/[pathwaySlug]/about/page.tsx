@@ -4,8 +4,9 @@ import {
   getCreatorPathway,
   getCreatorPathwayAboutBlocks,
   getCreatorMedia,
+  getCreatorResources,
 } from '@/lib/serverApi'
-import type { PathwayAboutBlock, CreatorMediaAsset } from '@/types/platform'
+import type { PathwayAboutBlock, CreatorMediaAsset, CreatorResource } from '@/types/platform'
 import AboutPageEditor from '../AboutPageEditor'
 
 interface Props {
@@ -17,14 +18,16 @@ export default async function EditAboutPage({ params }: Props) {
   const activeSpace = await getActiveCreatorSpace()
   if (!activeSpace) notFound()
 
-  const [pathway, blocks, mediaAssets]: [
+  const [pathway, blocks, mediaAssets, resources]: [
     Awaited<ReturnType<typeof getCreatorPathway>>,
     PathwayAboutBlock[],
     CreatorMediaAsset[],
+    CreatorResource[],
   ] = await Promise.all([
     getCreatorPathway(activeSpace.slug, pathwaySlug),
     getCreatorPathwayAboutBlocks(activeSpace.slug, pathwaySlug),
     getCreatorMedia(activeSpace.slug),
+    getCreatorResources(activeSpace.slug),
   ])
 
   if (!pathway) notFound()
@@ -35,6 +38,7 @@ export default async function EditAboutPage({ params }: Props) {
       pathway={pathway}
       initialBlocks={blocks}
       mediaAssets={mediaAssets}
+      resources={resources}
     />
   )
 }

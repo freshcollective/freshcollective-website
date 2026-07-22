@@ -50,7 +50,7 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
             </div>
             <span
               className="text-[15px] font-semibold tracking-[-0.02em] transition-opacity group-hover:opacity-60"
-              style={{ color: 'rgba(255,255,255,0.85)' }}
+              style={{ color: '#FFFFFF' }}
             >
               Fresh Collective
             </span>
@@ -60,7 +60,7 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
             <Link
               href="/spaces"
               className="text-[14px] font-medium transition-opacity hover:opacity-100"
-              style={{ color: 'rgba(255,255,255,0.52)' }}
+              style={{ color: '#FFFFFF' }}
             >
               Explore Collectives
             </Link>
@@ -69,14 +69,14 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
           <div className="hidden shrink-0 items-center gap-4 md:flex">
             {user ? (
               <>
-                <Link href="/dashboard" className="text-[14px] font-medium transition-opacity hover:opacity-100" style={{ color: 'rgba(255,255,255,0.48)' }}>
-                  Dashboard
+                <Link href="/dashboard" className="text-[14px] font-medium transition-opacity hover:opacity-100" style={{ color: '#FFFFFF' }}>
+                  Your World
                 </Link>
-                <LogoutButton className="rounded-xl border border-white/20 px-4 py-2 text-[13px] font-medium text-white/65 transition-all hover:border-white/35" />
+                <LogoutButton className="rounded-xl border border-white/20 px-4 py-2 text-[13px] font-medium text-white transition-all hover:border-white/35" />
               </>
             ) : (
               <>
-                <Link href="/login" className="text-[14px] font-medium transition-opacity hover:opacity-100" style={{ color: 'rgba(255,255,255,0.48)' }}>
+                <Link href="/login" className="text-[14px] font-medium transition-opacity hover:opacity-100" style={{ color: '#FFFFFF' }}>
                   Log in
                 </Link>
                 <Link
@@ -143,7 +143,7 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
                 href="/dashboard"
                 className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
               >
-                Dashboard
+                Your World
               </Link>
               <LogoutButton
                 className="rounded-xl border border-navy-100 px-4 py-2 text-[13px] font-medium text-navy-600 transition-all hover:border-navy-200 hover:bg-navy-50"

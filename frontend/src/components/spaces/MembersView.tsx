@@ -56,13 +56,13 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <h2 className="text-[15px] font-semibold text-navy-900">Invite member</h2>
-          <button onClick={onClose} className="text-slate-400 transition-colors hover:text-navy-900" aria-label="Close">✕</button>
+          <button onClick={onClose} className="text-black transition-colors hover:text-navy-900" aria-label="Close">✕</button>
         </div>
 
         {success ? (
           <div className="px-6 py-8 text-center">
             <p className="mb-1 text-[15px] font-semibold text-navy-900">Invitation sent</p>
-            <p className="text-[13px] text-slate-500">They will receive an invitation to join this collective.</p>
+            <p className="text-[13px] text-black">They will receive an invitation to join this collective.</p>
             <button
               onClick={onClose}
               className="mt-5 inline-flex rounded-xl px-6 py-2 text-[13px] font-semibold text-white"
@@ -89,7 +89,7 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
             </div>
             <div>
               <label htmlFor="inv-name" className="mb-1.5 block text-[13px] font-semibold text-navy-900">
-                Name <span className="font-normal text-slate-400">(optional)</span>
+                Name <span className="font-normal text-black">(optional)</span>
               </label>
               <input
                 id="inv-name"
@@ -102,7 +102,7 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
             </div>
             <div>
               <label htmlFor="inv-note" className="mb-1.5 block text-[13px] font-semibold text-navy-900">
-                Personal note <span className="font-normal text-slate-400">(optional)</span>
+                Personal note <span className="font-normal text-black">(optional)</span>
               </label>
               <textarea
                 id="inv-note"
@@ -130,7 +130,7 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
               >
                 {sending ? 'Sending…' : 'Send invitation'}
               </button>
-              <button type="button" onClick={onClose} className="text-[13px] text-slate-400 transition-colors hover:text-navy-900">
+              <button type="button" onClick={onClose} className="text-[13px] text-black transition-colors hover:text-navy-900">
                 Cancel
               </button>
             </div>
@@ -189,7 +189,7 @@ export default function MembersView({ leaders, learners, spaceSlug, canInvite, s
 
       {noResults && (
         <div className="rounded-2xl border border-border bg-white px-6 py-8 text-center">
-          <p className="text-sm text-slate-400">No members match &ldquo;{query}&rdquo;.</p>
+          <p className="text-sm text-black">No members match &ldquo;{query}&rdquo;.</p>
         </div>
       )}
 
@@ -197,7 +197,7 @@ export default function MembersView({ leaders, learners, spaceSlug, canInvite, s
         <>
           {filteredLeaders.length > 0 && (
             <section className="mb-8">
-              <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
                 Creators &amp; moderators
               </h2>
               <div className="flex flex-col gap-3">
@@ -209,7 +209,7 @@ export default function MembersView({ leaders, learners, spaceSlug, canInvite, s
           )}
 
           <section>
-            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-black">
               {!q && learners.length > 0
                 ? `${learners.length} ${learners.length === 1 ? 'Member' : 'Members'}`
                 : !showMemberDirectory && learnerCount !== undefined
@@ -218,7 +218,7 @@ export default function MembersView({ leaders, learners, spaceSlug, canInvite, s
             </h2>
             {!showMemberDirectory && !canInvite ? (
               <div className="rounded-2xl border border-teal-100 bg-white px-6 py-8 text-center">
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-black">
                   {learnerCount !== undefined && learnerCount > 0
                     ? `${learnerCount} ${learnerCount === 1 ? 'person is' : 'people are'} in this collective.`
                     : 'Member details are visible to collective leaders only.'}
@@ -232,7 +232,7 @@ export default function MembersView({ leaders, learners, spaceSlug, canInvite, s
               </div>
             ) : !q ? (
               <div className="rounded-2xl border border-teal-100 bg-white px-6 py-8 text-center">
-                <p className="text-sm text-slate-400">No members yet — be the first to join.</p>
+                <p className="text-sm text-black">No members yet — be the first to join.</p>
               </div>
             ) : null}
           </section>

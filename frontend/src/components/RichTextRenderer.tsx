@@ -125,44 +125,60 @@ function renderNode(node: DocNode, key: string): React.ReactNode {
         </React.Fragment>
       )
 
-    case 'paragraph':
+    case 'paragraph': {
+      const align = node.attrs?.textAlign as string | undefined
+      const style: React.CSSProperties | undefined = align && align !== 'left' ? { textAlign: align as React.CSSProperties['textAlign'] } : undefined
       return (
-        <p key={key} className="my-3 text-[15px] leading-[1.85] text-slate-700 first:mt-0 last:mb-0">
+        <p key={key} style={style} className="my-3 text-[15px] leading-[1.85] text-black first:mt-0 last:mb-0">
           {node.content?.length
             ? renderInlineContent(node.content, key)
             : <br />}
         </p>
       )
+    }
 
     case 'heading': {
       const level = (node.attrs?.level as number) ?? 2
-      const className = level === 2
+      // H1 is intentionally larger than H2; H2/H3 keep their pre-existing sizes
+      // so previously-written Content blocks render byte-identically. Heading
+      // colour comes from inline `textStyle` marks (set via the editor's
+      // colour swatches) and overrides the Tailwind text-navy-900 default.
+      const className = level === 1
+        ? 'mt-7 mb-3 font-semibold text-[1.45rem] leading-snug text-navy-900 first:mt-0'
+        : level === 2
         ? 'mt-6 mb-2 font-semibold text-[1.15rem] leading-snug text-navy-900 first:mt-0'
         : 'mt-5 mb-2 font-semibold text-[1.0rem] leading-snug text-navy-900 first:mt-0'
+      const align = node.attrs?.textAlign as string | undefined
+      const style: React.CSSProperties | undefined = align && align !== 'left' ? { textAlign: align as React.CSSProperties['textAlign'] } : undefined
       return React.createElement(
         `h${level}`,
-        { key, className },
+        { key, className, style },
         renderInlineContent(node.content, key),
       )
     }
 
+    // Lists — scope every list-marker rule inside `rich-text-content`
+    // so nested lists get the correct marker (disc → circle → square,
+    // decimal → lower-alpha → lower-roman) without changing global
+    // Tailwind preflight. The keyed styles below live inside the
+    // component's inline <style>, applied through the outer wrapper.
     case 'bulletList':
       return (
-        <ul key={key} className="my-3 space-y-1 pl-5 text-[15px] leading-[1.8] text-slate-700">
+        <ul key={key} className="rt-ul my-3 pl-6 text-[15px] leading-[1.8] text-black">
           {node.content?.map((child, i) => renderNode(child, `${key}-${i}`))}
         </ul>
       )
 
     case 'orderedList':
       return (
-        <ol key={key} className="my-3 list-decimal space-y-1 pl-5 text-[15px] leading-[1.8] text-slate-700">
+        <ol key={key} className="rt-ol my-3 pl-6 text-[15px] leading-[1.8] text-black">
           {node.content?.map((child, i) => renderNode(child, `${key}-${i}`))}
         </ol>
       )
 
     case 'listItem':
       return (
-        <li key={key}>
+        <li key={key} className="rt-li my-1">
           {node.content?.map((child, i) => renderNode(child, `${key}-${i}`))}
         </li>
       )
@@ -171,7 +187,7 @@ function renderNode(node: DocNode, key: string): React.ReactNode {
       return (
         <blockquote
           key={key}
-          className="my-4 border-l-4 border-teal-300 pl-4 italic text-slate-600"
+          className="my-4 border-l-4 border-teal-300 pl-4 italic text-black"
         >
           {node.content?.map((child, i) => renderNode(child, `${key}-${i}`))}
         </blockquote>
@@ -186,6 +202,46 @@ function renderNode(node: DocNode, key: string): React.ReactNode {
 
     case 'horizontalRule':
       return <hr key={key} className="my-6 border-slate-200" />
+
+    case 'table':
+      return (
+        <div key={key} className="rt-table-wrap my-4 overflow-x-auto">
+          <table className="rt-table">
+            <tbody>
+              {node.content?.map((row, i) => renderNode(row, `${key}-${i}`))}
+            </tbody>
+          </table>
+        </div>
+      )
+
+    case 'tableRow':
+      return (
+        <tr key={key}>
+          {node.content?.map((cell, i) => renderNode(cell, `${key}-${i}`))}
+        </tr>
+      )
+
+    case 'tableHeader':
+      return (
+        <th
+          key={key}
+          colSpan={(node.attrs?.colspan as number | undefined) ?? undefined}
+          rowSpan={(node.attrs?.rowspan as number | undefined) ?? undefined}
+        >
+          {node.content?.map((child, i) => renderNode(child, `${key}-${i}`))}
+        </th>
+      )
+
+    case 'tableCell':
+      return (
+        <td
+          key={key}
+          colSpan={(node.attrs?.colspan as number | undefined) ?? undefined}
+          rowSpan={(node.attrs?.rowspan as number | undefined) ?? undefined}
+        >
+          {node.content?.map((child, i) => renderNode(child, `${key}-${i}`))}
+        </td>
+      )
 
     case 'text':
       return (
@@ -208,32 +264,103 @@ interface Props {
   className?: string
 }
 
+/**
+ * Scoped list styling — restores markers stripped by Tailwind preflight.
+ *
+ * We keep the styles inside a single ``.rich-text-content`` wrapper so
+ * global `<ul>` behaviour elsewhere in the app stays untouched. Every
+ * surface that displays authored rich text (Creator Studio preview,
+ * pathway step page, About page, member-facing views) renders through
+ * this component, so a single fix here reaches every consumer.
+ */
+const RICH_TEXT_STYLES = `
+.rich-text-content ul.rt-ul {
+  list-style: disc outside;
+  padding-inline-start: 1.5rem;
+}
+.rich-text-content ol.rt-ol {
+  list-style: decimal outside;
+  padding-inline-start: 1.75rem;
+}
+.rich-text-content ul.rt-ul ul.rt-ul { list-style-type: circle; }
+.rich-text-content ul.rt-ul ul.rt-ul ul.rt-ul { list-style-type: square; }
+.rich-text-content ol.rt-ol ol.rt-ol { list-style-type: lower-alpha; }
+.rich-text-content ol.rt-ol ol.rt-ol ol.rt-ol { list-style-type: lower-roman; }
+.rich-text-content li.rt-li { padding-inline-start: 0.25rem; }
+.rich-text-content li.rt-li::marker {
+  color: rgba(15, 23, 42, 0.55);
+}
+.rich-text-content li.rt-li > p:only-child { margin: 0; }
+.rich-text-content li.rt-li > p { margin-top: 0.25rem; margin-bottom: 0.25rem; }
+
+/* Tables — scoped so the rest of the app's tables (if any) stay untouched.
+   .rt-table-wrap gives us horizontal overflow on small screens without
+   breaking layout; the table itself gets clear cell borders and a
+   distinct header row. */
+.rich-text-content .rt-table-wrap {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+.rich-text-content table.rt-table {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.rich-text-content table.rt-table th,
+.rich-text-content table.rt-table td {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 8px 12px;
+  vertical-align: top;
+  text-align: left;
+}
+.rich-text-content table.rt-table th {
+  background: rgba(56, 160, 158, 0.08);
+  color: #0f172a;
+  font-weight: 600;
+}
+.rich-text-content table.rt-table tr:nth-child(even) td {
+  background: rgba(15, 23, 42, 0.02);
+}
+.rich-text-content table.rt-table p { margin: 0; }
+`
+
+
 export default function RichTextRenderer({ content, className }: Props) {
   if (!content) return null
+
+  const wrapperClass = `rich-text-content ${className ?? ''}`
 
   // Try to parse as TipTap JSON
   try {
     const parsed = JSON.parse(content) as DocNode
     if (parsed?.type === 'doc') {
       return (
-        <div className={className}>
-          {renderNode(parsed, 'root')}
-        </div>
+        <>
+          <style>{RICH_TEXT_STYLES}</style>
+          <div className={wrapperClass}>
+            {renderNode(parsed, 'root')}
+          </div>
+        </>
       )
     }
   } catch {}
 
   // Fallback: render as legacy plain text with basic paragraph splitting
   return (
-    <div className={className}>
-      {content.split('\n\n').filter(Boolean).map((para, i) => {
-        if (para === '---') return <hr key={i} className="my-6 border-slate-200" />
-        return (
-          <p key={i} className="my-3 text-[15px] leading-[1.85] text-slate-700">
-            {para}
-          </p>
-        )
-      })}
-    </div>
+    <>
+      <style>{RICH_TEXT_STYLES}</style>
+      <div className={wrapperClass}>
+        {content.split('\n\n').filter(Boolean).map((para, i) => {
+          if (para === '---') return <hr key={i} className="my-6 border-slate-200" />
+          return (
+            <p key={i} className="my-3 text-[15px] leading-[1.85] text-black">
+              {para}
+            </p>
+          )
+        })}
+      </div>
+    </>
   )
 }

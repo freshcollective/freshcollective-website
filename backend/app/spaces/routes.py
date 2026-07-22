@@ -1,11 +1,13 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.access_pass import AccessPass, AccessPassStatus
+from app.models.payment import PaymentTransaction, PaymentTransactionStatus
+from app.core.config import settings
 
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
@@ -24,6 +26,7 @@ from app.models.platform import (
     PathwaySection,
     PathwayStep,
     PathwayStepBlock,
+    PathwayUnlockRequirement,
     Space,
     SpaceAccessRequest,
     SpaceInvitation,
@@ -32,6 +35,7 @@ from app.models.platform import (
     SpaceRole,
     SpaceMembershipStatus,
     SpaceResource,
+    space_resource_pathways,
     StepComment,
     StepProgress,
     StepResource,
@@ -74,7 +78,14 @@ from app.spaces.schemas import (
     AccessPassOut,
 )
 
+from app.models.platform import PathwayStepManualRelease  # noqa: E402
 from app.services.notification_service import trigger_event_booking_creator  # noqa: E402
+from app.services.pathway_release import (  # noqa: E402
+    Availability,
+    PreviousStepState,
+    StepRule,
+    compute_availability,
+)
 
 router = APIRouter(prefix="/api/spaces", tags=["spaces"])
 me_router = APIRouter(prefix="/api/me", tags=["me"])
@@ -185,6 +196,19 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
         rows = db.query(User.id, User.name).filter(User.id.in_(creator_ids)).all()
         creator_names = {r.id: r.name for r in rows}
 
+    # Atlas artwork per collective — falls back to `cover_image_url` when
+    # the collective is legacy or unassigned.
+    from app.models.platform import Location  # local import to keep top imports flat
+    location_ids = [s.location_id for s in spaces if s.location_id]
+    location_art: dict[str, tuple[str | None, str | None]] = {}
+    if location_ids:
+        locs = (
+            db.query(Location.id, Location.hero_artwork_url, Location.thumbnail_artwork_url)
+            .filter(Location.id.in_(location_ids))
+            .all()
+        )
+        location_art = {row.id: (row.hero_artwork_url, row.thumbnail_artwork_url) for row in locs}
+
     return [
         PublicSpaceCard(
             id=s.id,
@@ -208,6 +232,8 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
             paid_content_summary=s.paid_content_summary,
             derived_has_paid_internal_content=s.id in min_pathway_prices,
             min_paid_pathway_price_cents=min_pathway_prices.get(s.id),
+            location_hero_artwork_url=location_art.get(s.location_id or "", (None, None))[0] if s.location_id else None,
+            location_thumbnail_artwork_url=location_art.get(s.location_id or "", (None, None))[1] if s.location_id else None,
         )
         for s in spaces
     ]
@@ -258,6 +284,95 @@ def _completed_step_ids(user_id: str, step_ids: list[str], db: Session) -> set[s
         .all()
     )
     return {r.step_id for r in records}
+
+
+def _hydrate_step_availability(
+    steps_in_display_order: list["PathwayStep"],
+    pathway_id: str,
+    user_id: str,
+    db: Session,
+) -> dict[str, Availability]:
+    """Batch-compute per-step availability for one user against a pathway.
+
+    `steps_in_display_order` must be the caller's authoritative view
+    order — the release engine's AFTER_PREVIOUS rule uses the immediately
+    preceding entry in this list as the prerequisite.
+
+    Callers with no `user_id` (public / unauthenticated) should skip
+    this and hand every step the default open Availability.
+    """
+    if not steps_in_display_order:
+        return {}
+
+    step_ids = [s.id for s in steps_in_display_order]
+
+    # Per-user context, fetched in three cheap queries.
+    enrollment = (
+        db.query(Enrollment)
+        .filter(Enrollment.user_id == user_id, Enrollment.pathway_id == pathway_id)
+        .first()
+    )
+    enrolled_at = enrollment.enrolled_at if enrollment else None
+
+    manual_ids: set[str] = {
+        row.step_id
+        for row in db.query(PathwayStepManualRelease.step_id)
+        .filter(
+            PathwayStepManualRelease.step_id.in_(step_ids),
+            PathwayStepManualRelease.user_id == user_id,
+        )
+        .all()
+    }
+
+    progress_by_step: dict[str, StepProgress] = {
+        p.step_id: p
+        for p in db.query(StepProgress)
+        .filter(StepProgress.user_id == user_id, StepProgress.step_id.in_(step_ids))
+        .all()
+    }
+
+    now = datetime.utcnow()
+    result: dict[str, Availability] = {}
+    for idx, step in enumerate(steps_in_display_order):
+        prev = None
+        if idx > 0:
+            prev_step = steps_in_display_order[idx - 1]
+            prev_progress = progress_by_step.get(prev_step.id)
+            prev = PreviousStepState(
+                completed_at=prev_progress.completed_at if prev_progress else None,
+                has_progress_record=prev_progress is not None,
+            )
+        rule = StepRule(
+            release_type=step.release_type or "immediate",
+            release_offset_days=step.release_offset_days,
+            release_at=step.release_at,
+            release_timezone=step.release_timezone,
+            release_previous_state=step.release_previous_state or "completed",
+        )
+        result[step.id] = compute_availability(
+            rule=rule,
+            enrolled_at=enrolled_at,
+            previous=prev,
+            manually_released=step.id in manual_ids,
+            now=now,
+        )
+    return result
+
+
+def _availability_to_schema(step: "PathwayStep", av: Availability) -> "StepAvailability":
+    """Convert engine dataclass + step's release columns into the wire schema."""
+    from app.spaces.schemas import StepAvailability as _StepAvailabilitySchema
+    return _StepAvailabilitySchema(
+        is_locked=av.is_locked,
+        reason=av.reason,
+        unlocks_at=av.unlocks_at,
+        message=av.message,
+        release_type=step.release_type or "immediate",
+        release_offset_days=step.release_offset_days,
+        release_at=step.release_at,
+        release_timezone=step.release_timezone,
+        release_previous_state=step.release_previous_state or "completed",
+    )
 
 
 def _ensure_enrollment(user_id: str, pathway_id: str, db: Session) -> None:
@@ -319,6 +434,27 @@ def _compute_pathway_access(user: "User | None", pathway: Pathway, space: Space,
             .first()
         )
         return mem is not None
+    if access_type == "included_with_offer":
+        unlock_option_ids = [
+            row.payment_option_id
+            for row in db.query(PathwayUnlockRequirement.payment_option_id)
+            .filter(PathwayUnlockRequirement.pathway_id == pathway.id)
+            .all()
+        ]
+        if not unlock_option_ids:
+            return False
+        pass_row = (
+            db.query(AccessPass.id)
+            .filter(
+                AccessPass.user_id == user.id,
+                AccessPass.space_id == space.id,
+                AccessPass.status == AccessPassStatus.active,
+                AccessPass.payment_option_id.in_(unlock_option_ids),
+            )
+            .first()
+        )
+        return pass_row is not None
+
     # one_time or subscription — requires active PathwayEntitlement that hasn't expired
     now = datetime.utcnow()
     ent = (
@@ -395,6 +531,28 @@ def _check_pathway_access(
             return
         raise HTTPException(status_code=403, detail="This pathway is included with space membership.")
 
+    if access_type == "included_with_offer":
+        unlock_option_ids = [
+            row.payment_option_id
+            for row in db.query(PathwayUnlockRequirement.payment_option_id)
+            .filter(PathwayUnlockRequirement.pathway_id == pathway.id)
+            .all()
+        ]
+        if unlock_option_ids:
+            pass_row = (
+                db.query(AccessPass.id)
+                .filter(
+                    AccessPass.user_id == user.id,
+                    AccessPass.space_id == space.id,
+                    AccessPass.status == AccessPassStatus.active,
+                    AccessPass.payment_option_id.in_(unlock_option_ids),
+                )
+                .first()
+            )
+            if pass_row:
+                return
+        raise HTTPException(status_code=403, detail="Access to this pathway is included with a paid offer.")
+
     # one_time / subscription — require an active entitlement that hasn't expired
     now = datetime.utcnow()
     entitlement = (
@@ -458,8 +616,48 @@ def get_space(
         )
         .scalar()
     ) or 0
+    # Atlas v1.2 — hydrate Location + Colour Palette for downstream theming.
+    from app.models.platform import Location, ColourStory, AtmosphereOption
+    location_dict = None
+    if space.location_id:
+        loc = db.query(Location).filter(Location.id == space.location_id).first()
+        if loc:
+            location_dict = {
+                "id": loc.id,
+                "key": loc.key,
+                "name": loc.name,
+                "description": loc.description,
+                "hero_artwork_url": loc.hero_artwork_url,
+                "thumbnail_artwork_url": loc.thumbnail_artwork_url,
+            }
+    palette_dict = None
+    if space.colour_story_key:
+        cs = db.query(ColourStory).filter(ColourStory.key == space.colour_story_key).first()
+        if cs:
+            palette_dict = {"key": cs.key, "name": cs.name, "palette": cs.palette}
+    atmo_keys = list(space.atmosphere_keys or [])
+    atmo_labels: list[str] = []
+    if atmo_keys:
+        rows = (
+            db.query(AtmosphereOption.key, AtmosphereOption.name)
+            .filter(AtmosphereOption.key.in_(atmo_keys))
+            .all()
+        )
+        name_by_key = {r.key: r.name for r in rows}
+        # Preserve the creator-authored order and drop any keys that no
+        # longer resolve (e.g. an atmosphere_option was archived).
+        atmo_labels = [name_by_key[k] for k in atmo_keys if k in name_by_key]
     resp = SpaceResponse.model_validate(space)
-    return resp.model_copy(update={"learner_count": learner_count})
+    return resp.model_copy(update={
+        "learner_count": learner_count,
+        "location": location_dict,
+        "colour_palette": palette_dict,
+        "colour_palette_key": space.colour_story_key,
+        "atmosphere_keys": atmo_keys,
+        "atmosphere_labels": atmo_labels,
+        "identity_statement": space.identity_statement,
+        "welcome_message": space.welcome_message,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +721,20 @@ def join_space(
 ) -> dict:
     """Join a public Space as a learner."""
     space = _get_space_or_404(slug, db)
+
+    # Community Care — a frozen collective cannot accept new members
+    # or renewals while the freeze is in place.
+    from app.community_care.shared import is_space_closed, is_space_frozen
+    if is_space_closed(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective has been closed.",
+        )
+    if is_space_frozen(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective is temporarily paused by Fresh Collective.",
+        )
 
     if not space.is_public:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
@@ -719,6 +931,18 @@ def list_pathways(
             .all()
         )
 
+    # Bulk-fetch unlock offer names for included_with_offer pathways
+    unlock_offer_names_by_pathway: dict[str, list[str]] = {}
+    if pathway_ids:
+        rows = (
+            db.query(PathwayUnlockRequirement.pathway_id, PaymentOption.name)
+            .join(PaymentOption, PaymentOption.id == PathwayUnlockRequirement.payment_option_id)
+            .filter(PathwayUnlockRequirement.pathway_id.in_(pathway_ids))
+            .all()
+        )
+        for pid, name in rows:
+            unlock_offer_names_by_pathway.setdefault(pid, []).append(name)
+
     result = []
     for p in pathways:
         has_access = _compute_pathway_access(current_user, p, space, db)
@@ -737,6 +961,7 @@ def list_pathways(
             billing_interval=p.billing_interval,
             user_has_access=has_access,
             step_count=step_counts.get(p.id, 0),
+            unlock_offer_names=unlock_offer_names_by_pathway.get(p.id, []),
         ))
     return result
 
@@ -801,11 +1026,26 @@ def list_pathways_progress(
 @router.get("/{slug}/events", response_model=list[EventSummary])
 def list_events(
     slug: str,
+    scope: str = "upcoming",
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ) -> list[EventSummary]:
-    """All upcoming published events for a space, with per-user booking state."""
+    """Published events for a space, with per-user booking state.
+
+    `scope` (additive query param, defaults to 'upcoming'):
+      - 'upcoming' — current + live-in-progress Gatherings. Excludes
+                     cancelled + archived. Ordered soonest first.
+      - 'archive'  — past Gatherings whose end time has passed. Includes
+                     historical cancelled rows so members can revisit
+                     the record. Ordered newest first.
+
+    A Gathering is "past" when `COALESCE(ends_at, starts_at + 1h)` is
+    in the past — the same 60-min fallback the detail page uses when
+    ends_at is absent.
+    """
     space = _get_space_or_404(slug, db)
+
+    scope = scope if scope in ("upcoming", "archive") else "upcoming"
 
     # Determine if caller is a member (affects event visibility and booking access)
     is_member = False
@@ -821,37 +1061,45 @@ def list_events(
         )
         is_member = bool(membership)
 
-    # Non-members (and anon users) only see public events; members see all published
-    # Cancelled events are excluded from all member-facing list views
-    if not space.is_public and not is_member and current_user is None:
-        # Space is private and caller is unauthenticated — still show public events
-        events_q = db.query(Event).filter(
-            Event.space_id == space.id,
-            Event.is_published.is_(True),
-            Event.is_public.is_(True),
-            Event.status == "active",
-            Event.starts_at >= datetime.utcnow(),
-        )
-    elif is_member:
-        events_q = db.query(Event).filter(
-            Event.space_id == space.id,
-            Event.is_published.is_(True),
-            Event.status == "active",
-            Event.starts_at >= datetime.utcnow(),
-        )
-    else:
-        # Logged-in non-member: only public events
-        events_q = db.query(Event).filter(
-            Event.space_id == space.id,
-            Event.is_published.is_(True),
-            Event.is_public.is_(True),
-            Event.status == "active",
-            Event.starts_at >= datetime.utcnow(),
-        )
-
-    events = events_q.order_by(Event.starts_at).all()
-
     now = datetime.utcnow()
+
+    # Non-members (and anon users) only see public events; members see all
+    # published. Paid-separately Gatherings are always visible externally
+    # so ticket sales pages can be linked to and discovered — same rule
+    # as the single-event visibility check in `get_event` above.
+    base_visibility = [
+        Event.space_id == space.id,
+        Event.is_published.is_(True),
+    ]
+    if not (is_member or (current_user is not None and space.is_public)):
+        base_visibility.append(
+            or_(Event.is_public.is_(True), Event.booking_access_type == "paid_separately")
+        )
+
+    # end_marker = COALESCE(ends_at, starts_at + 1h) — the moment a
+    # Gathering falls out of "current" and into the archive. Written
+    # as SQL so filtering + ordering stay index-friendly.
+    end_marker = func.coalesce(Event.ends_at, Event.starts_at + text("INTERVAL '1 hour'"))
+
+    if scope == "upcoming":
+        # Live-in-progress Gatherings stay on the main list: end > now
+        # is the correct fence, not starts_at > now.
+        scope_filters = [
+            Event.status == "active",
+            end_marker > now,
+        ]
+        order_by = Event.starts_at.asc()
+    else:  # archive
+        # Archive contains every Gathering that no longer belongs on
+        # the current schedule: past by end-time OR cancelled at any
+        # time. Future cancelled rows would otherwise be invisible.
+        scope_filters = [
+            or_(end_marker <= now, Event.status == "cancelled"),
+        ]
+        order_by = Event.starts_at.desc()
+
+    events_q = db.query(Event).filter(*base_visibility, *scope_filters)
+    events = events_q.order_by(order_by).all()
 
     # Bulk-fetch confirmed booking counts for all events in one query
     event_ids = [e.id for e in events]
@@ -881,12 +1129,23 @@ def list_events(
         )
         user_bookings = {r.event_id: r.status.value for r in user_rows}
 
-    # Bulk-check pathway entitlements for the current user
-    # Collect unique required pathway IDs from pathway_required events
+    # Bulk-fetch host display names. Single query keyed on creator id
+    # keeps the list endpoint from doing N per-event lookups.
+    host_ids = {e.created_by_id for e in events if e.created_by_id}
+    host_names: dict[str, str] = {}
+    if host_ids:
+        rows = db.query(User.id, User.name).filter(User.id.in_(host_ids)).all()
+        host_names = {uid: (name or '').strip() for uid, name in rows}
+
+    # Bulk-check pathway entitlements for the current user.
+    # Collect unique required pathway IDs from pathway-gated events.
+    # Post-079 vocabulary uses 'included_with_pathway'; the
+    # normaliser handles any legacy rows still carrying old strings.
+    from app.services.gathering_types import normalise_access_type as _norm_access
     required_pathway_ids = {
         e.booking_required_pathway_id
         for e in events
-        if getattr(e, 'booking_access_type', 'all_members') == 'pathway_required'
+        if _norm_access(getattr(e, 'booking_access_type', None)) == 'included_with_pathway'
         and e.booking_required_pathway_id
     }
     user_pathway_access: set[str] = set()
@@ -934,12 +1193,22 @@ def list_events(
         my_status = user_bookings.get(e.id)  # 'confirmed' | 'cancelled' | None
         booking_closed = bool(e.booking_closes_at and e.booking_closes_at <= now)
         is_full = e.capacity is not None and booked >= e.capacity
-        event_access_type = getattr(e, 'booking_access_type', 'all_members') or 'all_members'
+        event_access_type = _norm_access(getattr(e, 'booking_access_type', None))
         required_pid = getattr(e, 'booking_required_pathway_id', None)
+        # Only pathway-gated events actually depend on entitlement.
+        # Everything else answers "does the user have access to the
+        # required pathway" with True since no pathway is required.
         has_pathway_access = (
-            event_access_type == 'all_members'
+            event_access_type != 'included_with_pathway'
             or required_pid is None
             or required_pid in user_pathway_access
+        )
+        # Bookings for 'paid_separately' or 'invitation_only' aren't
+        # supported in this phase — surface as un-bookable so the UI
+        # can render the correct "coming soon" / "invite required"
+        # message instead of a booking button.
+        access_supports_booking = event_access_type in (
+            'free', 'included_with_collective', 'included_with_pathway'
         )
         # Credits remaining on the user's active AccessPass for this pathway (None = no pass or unlimited)
         pass_credits_remaining: int | None = (
@@ -952,6 +1221,7 @@ def list_events(
         can_book = (
             e.requires_booking
             and is_member
+            and access_supports_booking
             and has_pathway_access
             and not credits_exhausted
             and my_status != "confirmed"
@@ -990,6 +1260,17 @@ def list_events(
             booking_required_pathway_id=required_pid,
             user_has_pathway_access=has_pathway_access,
             pass_credits_remaining=pass_credits_remaining,
+            gathering_type=getattr(e, 'gathering_type', 'other') or 'other',
+            attendance_format=getattr(e, 'attendance_format', 'online') or 'online',
+            venue_name=getattr(e, 'venue_name', None),
+            host_name=host_names.get(e.created_by_id) or None,
+            recording_url=e.recording_url,
+            # Stage 4: standalone paid Gathering fields for the member LIST
+            # endpoint. Same trust boundary as get_event — never expose
+            # aggregate revenue, hold counts, or Stripe identifiers here.
+            ticket_price_cents=getattr(e, 'ticket_price_cents', None),
+            ticket_currency=getattr(e, 'ticket_currency', None),
+            sales_enabled=bool(settings.standalone_gathering_sales_enabled),
         ))
     return result
 
@@ -1004,6 +1285,19 @@ def book_event(
 ) -> BookingResponse:
     """Book a spot at a gathering. Members only. Enforces capacity and cutoff time."""
     space = _get_space_or_404(slug, db)
+
+    # Community Care — a frozen collective cannot accept new bookings.
+    from app.community_care.shared import is_space_closed, is_space_frozen
+    if is_space_closed(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective has been closed.",
+        )
+    if is_space_frozen(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective is temporarily paused by Fresh Collective.",
+        )
 
     # Must be an active member
     membership = (
@@ -1030,26 +1324,25 @@ def book_event(
     if getattr(event, 'status', 'active') == 'cancelled':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering has been cancelled.")
 
-    # Check pathway access restriction (existing logic — unchanged)
-    event_access_type = getattr(event, 'booking_access_type', 'all_members') or 'all_members'
+    # Central access gate — handles new (included_with_*, free,
+    # paid_separately, invitation_only) and legacy vocabulary.
+    # Returns a machine-readable reason so we surface the right
+    # HTTP status. Standalone paid checkout is intentionally
+    # blocked here until the ticket infrastructure lands.
+    from app.services.event_permissions import can_book as _can_book_gate
+    from app.services.gathering_types import normalise_access_type as _norm_access
+    gate = _can_book_gate(current_user, event, space, db)
+    if not gate.allowed:
+        status_code = (
+            status.HTTP_401_UNAUTHORIZED if gate.reason == "auth_required"
+            else status.HTTP_501_NOT_IMPLEMENTED if gate.reason == "paid_separately_pending"
+            else status.HTTP_403_FORBIDDEN
+        )
+        raise HTTPException(status_code=status_code, detail=gate.message)
+
+    event_access_type = _norm_access(getattr(event, 'booking_access_type', None))
     required_pid = getattr(event, 'booking_required_pathway_id', None)
     is_privileged = getattr(membership, 'role', None) in (SpaceRole.creator, SpaceRole.moderator)
-
-    if event_access_type == 'pathway_required' and required_pid:
-        entitlement = (
-            db.query(PathwayEntitlement)
-            .filter(
-                PathwayEntitlement.user_id == current_user.id,
-                PathwayEntitlement.pathway_id == required_pid,
-                PathwayEntitlement.status == EntitlementStatus.active,
-            )
-            .first()
-        )
-        if not entitlement and not is_privileged:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You must have access to the required pathway to book this session.",
-            )
 
     now = datetime.utcnow()
 
@@ -1060,7 +1353,7 @@ def book_event(
     # Creators and moderators bypass all credit checks.
     access_pass_to_charge: AccessPass | None = None
 
-    if not is_privileged and event_access_type == 'pathway_required' and required_pid:
+    if not is_privileged and event_access_type == 'included_with_pathway' and required_pid:
         candidate_pass = (
             db.query(AccessPass)
             .filter(
@@ -1220,6 +1513,190 @@ def cancel_booking(
     return BookingResponse(status="cancelled", booking_id=booking.id)
 
 
+# ---------------------------------------------------------------------------
+# Standalone paid Gathering — Stripe Checkout Session creation
+#
+# POST /api/spaces/{slug}/events/{event_id}/checkout
+#
+# Creates (or reuses) a capacity hold, then a Stripe-hosted Checkout
+# Session for the ticket. Actual access is granted only when the Stripe
+# webhook fires — see `app/services/gathering_tickets.fulfil_ticket_purchase`.
+# ---------------------------------------------------------------------------
+
+from pydantic import BaseModel, Field, HttpUrl  # noqa: E402
+import stripe as _stripe  # noqa: E402
+from app.services import gathering_tickets as _gt  # noqa: E402
+from app.checkout.routes import _resolve_fee_bps as _resolve_fee_bps_for_ticket  # noqa: E402
+
+
+class GatheringCheckoutRequest(BaseModel):
+    success_url: HttpUrl = Field(..., description="Where Stripe returns the buyer on success.")
+    cancel_url: HttpUrl = Field(..., description="Where Stripe returns the buyer on cancel.")
+
+
+class GatheringCheckoutResponse(BaseModel):
+    checkout_url: str
+    transaction_id: str
+    reused: bool = Field(
+        False,
+        description="True when we returned an existing in-flight Checkout URL "
+                    "rather than creating a new Session.",
+    )
+
+
+def _map_ticket_error(exc: _gt.TicketCheckoutError) -> HTTPException:
+    return HTTPException(status_code=exc.http_status,
+                         detail={"code": exc.code, "message": exc.message})
+
+
+@router.post(
+    "/{slug}/events/{event_id}/checkout",
+    response_model=GatheringCheckoutResponse,
+)
+def create_gathering_ticket_checkout(
+    slug: str,
+    event_id: str,
+    body: GatheringCheckoutRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> GatheringCheckoutResponse:
+    """
+    Stripe-hosted Checkout for a standalone paid Gathering ticket.
+
+    Trust boundary: **every** price, currency, and user identity is
+    loaded from the database. The request body only carries the
+    caller-provided success/cancel URLs. See services/gathering_tickets.py
+    for the invariants this endpoint enforces.
+    """
+    try:
+        _gt.ensure_sales_enabled_or_raise()
+    except _gt.TicketCheckoutError as exc:
+        raise _map_ticket_error(exc)
+
+    if not settings.stripe_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "stripe_not_configured",
+                    "message": "Stripe is not configured on this environment."},
+        )
+
+    # 1. Load + validate the trusted offer
+    try:
+        offer = _gt.load_and_validate_offer(db, slug, event_id)
+    except _gt.TicketCheckoutError as exc:
+        raise _map_ticket_error(exc)
+
+    # 2. Fast path: user already has a live hold — return the existing
+    #    Session URL rather than creating a new one.
+    active = _gt._existing_active_hold(db, offer.event.id, current_user.id)
+    if active is not None and active.payment_transaction_id:
+        txn = db.get(PaymentTransaction, active.payment_transaction_id)
+        if txn and txn.status == PaymentTransactionStatus.pending and txn.provider_checkout_url:
+            return GatheringCheckoutResponse(
+                checkout_url=txn.provider_checkout_url,
+                transaction_id=txn.id,
+                reused=True,
+            )
+        # Hold exists but no URL recorded (crash between txn insert and
+        # Stripe response). Fall through: create a fresh Session and
+        # UPDATE-reuse the row via `create_or_reuse_hold`.
+
+    # 3. Resolve creator fee — same helper as pathway checkout
+    fee_bps, plan_id, sub_id = _resolve_fee_bps_for_ticket(offer.space.creator_id, db)
+
+    # 4. Create (or UPDATE-reuse) the hold + pending transaction, in one lock.
+    try:
+        outcome = _gt.create_or_reuse_hold(
+            db,
+            offer=offer,
+            buyer=current_user,
+            fee_bps=fee_bps,
+            creator_plan_id=plan_id,
+            creator_subscription_id=sub_id,
+            hold_ttl_minutes=settings.gathering_checkout_expiry_minutes,
+        )
+    except _gt.TicketCheckoutError as exc:
+        raise _map_ticket_error(exc)
+
+    # 5. Create the Stripe Checkout Session. If this fails, we roll back
+    #    the hold+txn so no dangling capacity is consumed.
+    _stripe.api_key = settings.stripe_secret_key
+    session_lifetime_seconds = settings.gathering_checkout_expiry_minutes * 60
+    try:
+        session = _stripe.checkout.Session.create(
+            mode="payment",
+            payment_method_types=["card"],
+            customer_email=current_user.email,
+            # Naive datetime.utcnow().timestamp() treats the value as local
+            # time — on a non-UTC host (this dev box is Australia/Melbourne)
+            # that puts the epoch several hours off and Stripe rejects the
+            # request as `expires_at is in the past`. Mark the value as UTC
+            # explicitly before converting to an epoch integer.
+            expires_at=int(
+                (datetime.utcnow() + timedelta(seconds=session_lifetime_seconds))
+                .replace(tzinfo=timezone.utc)
+                .timestamp()
+            ),
+            line_items=[{
+                "quantity": 1,
+                "price_data": {
+                    "currency": offer.currency.lower(),
+                    "unit_amount": offer.price_cents,
+                    "product_data": {
+                        "name": offer.event.title,
+                        "description": (
+                            f"Ticket for {offer.event.title} "
+                            f"— {offer.space.name}"
+                        )[:500],
+                    },
+                },
+            }],
+            success_url=str(body.success_url),
+            cancel_url=str(body.cancel_url),
+            metadata={
+                "purchase_type":    "standalone_gathering",
+                "transaction_id":   outcome.transaction.id,
+                "event_id":         offer.event.id,
+                "space_id":         offer.space.id,
+                "payer_user_id":    current_user.id,
+                "creator_user_id":  offer.space.creator_id or "",
+                "platform_fee_bps": str(fee_bps),
+                "creator_plan_id":  plan_id or "",
+            },
+            payment_intent_data={
+                "metadata": {
+                    "purchase_type":  "standalone_gathering",
+                    "transaction_id": outcome.transaction.id,
+                    "event_id":       offer.event.id,
+                    "payer_user_id":  current_user.id,
+                },
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — Stripe errors are broad
+        db.rollback()
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "stripe_error",
+                    "message": "Could not open Stripe Checkout. Please try again."},
+        ) from exc
+
+    # 6. Persist Stripe refs onto the pending PaymentTransaction.
+    outcome.transaction.provider_checkout_session_id = session.id
+    outcome.transaction.provider_checkout_url = session.url
+
+    db.commit()
+    return GatheringCheckoutResponse(
+        checkout_url=session.url,
+        transaction_id=outcome.transaction.id,
+        reused=False,
+    )
+
+
+# NOTE for future maintainers: refunds / dispute revocation are NOT
+# implemented. A manual Stripe refund does NOT release the seat or
+# revoke the AccessPass — this is a documented MVP gap.
+
+
 @router.get("/{slug}/my-passes", response_model=list[AccessPassOut])
 def get_my_passes(
     slug: str,
@@ -1315,7 +1792,12 @@ def get_event(
             )
             .first()
         )
-    if not is_member and not event.is_public:
+    # Paid-separately Gatherings are effectively-public for the purpose of
+    # this visibility check — non-members with the URL must be able to see
+    # the price + purchase panel. Members-only events (any other access
+    # type) still require `is_public=True` to be visible externally.
+    _paid_event = getattr(event, 'booking_access_type', None) == 'paid_separately'
+    if not is_member and not event.is_public and not _paid_event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
 
     now = datetime.utcnow()
@@ -1323,12 +1805,26 @@ def get_event(
 
     booked_count = 0
     my_booking_status = None
+    is_paid_event = getattr(event, 'booking_access_type', None) == 'paid_separately'
     if event.requires_booking:
-        booked_count = (
-            db.query(func.count(EventBooking.id))
-            .filter(EventBooking.event_id == event.id, EventBooking.status == BookingStatus.confirmed)
-            .scalar()
-        ) or 0
+        # For paid Gatherings, capacity math must include non-expired
+        # `pending_payment` holds so a member can't see "1 remaining"
+        # while another buyer holds that seat inside Stripe Checkout.
+        # Free/included/pathway/invitation events never generate holds,
+        # so the confirmed-only count is unchanged for them.
+        if is_paid_event:
+            booked_count = int(db.execute(text("""
+                SELECT COUNT(*) FROM event_bookings
+                WHERE event_id = :e
+                  AND (status = 'confirmed'
+                       OR (status = 'pending_payment' AND hold_expires_at > timezone('UTC', NOW())))
+            """), {"e": event.id}).scalar_one())
+        else:
+            booked_count = (
+                db.query(func.count(EventBooking.id))
+                .filter(EventBooking.event_id == event.id, EventBooking.status == BookingStatus.confirmed)
+                .scalar()
+            ) or 0
         if current_user:
             my_row = (
                 db.query(EventBooking)
@@ -1346,10 +1842,11 @@ def get_event(
     is_cancelled = event_status == 'cancelled'
 
     # Pathway access restriction
-    event_access_type = getattr(event, 'booking_access_type', 'all_members') or 'all_members'
+    from app.services.gathering_types import normalise_access_type as _norm_access
+    event_access_type = _norm_access(getattr(event, 'booking_access_type', None))
     required_pid = getattr(event, 'booking_required_pathway_id', None)
     user_has_pathway_access = True
-    if event_access_type == 'pathway_required' and required_pid and current_user:
+    if event_access_type == 'included_with_pathway' and required_pid and current_user:
         # Creators/moderators always have access
         if is_member and (
             db.query(SpaceMembership)
@@ -1374,16 +1871,32 @@ def get_event(
             )
             user_has_pathway_access = bool(ent)
 
+    # 'paid_separately' / 'invitation_only' access types don't yet
+    # support in-app booking (ticket sales + invites are follow-ups).
+    access_supports_booking = event_access_type in (
+        'free', 'included_with_collective', 'included_with_pathway'
+    )
     booking_open = (
         event.requires_booking
         and not is_past
         and not is_cancelled
         and is_member
+        and access_supports_booking
         and user_has_pathway_access
         and (event.booking_closes_at is None or event.booking_closes_at > now)
     )
     can_book = booking_open and my_booking_status != "confirmed" and (spots_remaining is None or spots_remaining > 0)
     can_cancel_booking = bool(not is_past and not is_cancelled and my_booking_status == "confirmed")
+
+    # Sensitive detail visibility — confirmed attendees + caretakers
+    # see meeting URL, full venue address, and arrival instructions.
+    # Everyone else sees only the venue name as a rough locator.
+    is_caretaker = is_member and (
+        (membership and getattr(membership, 'role', None) in (SpaceRole.creator, SpaceRole.moderator))
+        or (current_user and current_user.role in ('admin', 'creator'))
+    )
+    has_confirmed_booking = my_booking_status == "confirmed"
+    show_sensitive = bool(is_caretaker or has_confirmed_booking)
 
     return {
         "id": event.id,
@@ -1392,8 +1905,13 @@ def get_event(
         "starts_at": event.starts_at,
         "ends_at": event.ends_at,
         "location_type": event.location_type.value if hasattr(event.location_type, "value") else str(event.location_type),
-        "location_url": event.location_url if is_member else None,
-        "recording_url": event.recording_url if is_member else None,
+        "location_url": event.location_url if show_sensitive else None,
+        # Replay: visible to caretakers, active members, AND paid-ticket
+        # holders (confirmed booking). Same shape as `show_sensitive` but
+        # additionally allows any active member of the Collective — the
+        # existing pre-Stage-4 behaviour for included-with-collective
+        # Gatherings, preserved here.
+        "recording_url": event.recording_url if (show_sensitive or is_member) else None,
         "requires_booking": event.requires_booking,
         "capacity": event.capacity,
         "booked_count": booked_count,
@@ -1413,6 +1931,25 @@ def get_event(
         "booking_access_type": event_access_type,
         "booking_required_pathway_id": required_pid,
         "user_has_pathway_access": user_has_pathway_access,
+        # Gatherings 2.0 vocabulary + safe venue exposure.
+        "gathering_type": getattr(event, 'gathering_type', 'other') or 'other',
+        "attendance_format": getattr(event, 'attendance_format', 'online') or 'online',
+        "venue_name": getattr(event, 'venue_name', None),
+        "venue_address": getattr(event, 'venue_address', None) if show_sensitive else None,
+        "access_instructions": getattr(event, 'access_instructions', None) if show_sensitive else None,
+        "host_name": (
+            (db.query(User.name).filter(User.id == event.created_by_id).scalar() or '').strip() or None
+            if event.created_by_id else None
+        ),
+        # Stage 4: standalone paid Gathering fields for members.
+        # Ticket price + currency are null for non-paid events. `sales_enabled`
+        # mirrors the feature flag so the member UI can render "Ticket sales
+        # aren't open yet" rather than a Buy button that would 503.
+        # Never exposes Stripe identifiers, aggregate revenue, hold counts,
+        # or completed-sale flags — those are creator-only.
+        "ticket_price_cents": getattr(event, 'ticket_price_cents', None),
+        "ticket_currency": getattr(event, 'ticket_currency', None),
+        "sales_enabled": bool(settings.standalone_gathering_sales_enabled),
     }
 
 
@@ -1611,17 +2148,22 @@ def list_space_resources(
     if not membership and current_user.role not in ("admin", "creator"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Members only.")
 
-    # -- General standalone resources (scope=general, published) --------------
-    standalone_orm = (
+    # -- Resources v2: drive groupings from the many-to-many join table ------
+    # "General" = published resources with NO pathway attachments.
+    # "Pathway X" = published resources with X in their pathway list.
+    # Archived resources (status = 'archived') are excluded everywhere on
+    # the member side, same rule as drafts.
+    all_published = (
         db.query(SpaceResource)
         .filter(
             SpaceResource.space_id == space.id,
             SpaceResource.status == "published",
-            SpaceResource.scope == "general",
         )
         .order_by(SpaceResource.sort_order, SpaceResource.created_at)
         .all()
     )
+    # General set = those with empty `pathways` relationship (selectin-loaded)
+    standalone_orm = [r for r in all_published if not r.pathways]
     standalone = [CollectiveResourceResponse.model_validate(r) for r in standalone_orm]
 
     # -- Pathway resource groups (accessible active pathways) -----------------
@@ -1632,23 +2174,13 @@ def list_space_resources(
         .all()
     )
 
-    # Pre-fetch pathway-scoped SpaceResources grouped by pathway_id
-    pathway_ids = [p.id for p in pathways]
-    scoped_resources_orm = (
-        db.query(SpaceResource)
-        .filter(
-            SpaceResource.space_id == space.id,
-            SpaceResource.scope == "pathway",
-            SpaceResource.status == "published",
-            SpaceResource.pathway_id.in_(pathway_ids),
-        )
-        .order_by(SpaceResource.sort_order, SpaceResource.created_at)
-        .all()
-    ) if pathway_ids else []
+    # Bucket published resources by every pathway they're attached to.
+    # A resource attached to two pathways appears in both buckets — that
+    # is the whole point of the v2 many-to-many.
     scoped_by_pathway: dict[str, list[SpaceResource]] = {}
-    for sr in scoped_resources_orm:
-        if sr.pathway_id:
-            scoped_by_pathway.setdefault(sr.pathway_id, []).append(sr)
+    for r in all_published:
+        for p in r.pathways:
+            scoped_by_pathway.setdefault(p.id, []).append(r)
 
     pathway_groups: list[PathwayResourceGroup] = []
     for pathway in pathways:
@@ -1762,9 +2294,33 @@ def get_pathway(
     pathway_slug: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Pathway:
+) -> PathwaySummary:
     space = _get_space_or_404(slug, db)
-    return _get_pathway_or_404(space.id, pathway_slug, db)
+    p = _get_pathway_or_404(space.id, pathway_slug, db)
+    unlock_offer_names = [
+        row.name
+        for row in db.query(PaymentOption.name)
+        .join(PathwayUnlockRequirement, PathwayUnlockRequirement.payment_option_id == PaymentOption.id)
+        .filter(PathwayUnlockRequirement.pathway_id == p.id)
+        .all()
+    ]
+    return PathwaySummary(
+        id=p.id,
+        slug=p.slug,
+        title=p.title,
+        description=p.description,
+        cover_image_url=p.cover_image_url,
+        status=p.status.value if hasattr(p.status, "value") else str(p.status),
+        position=p.position,
+        access_type=p.access_type.value if hasattr(p.access_type, "value") else str(p.access_type or "free"),
+        pricing_mode=getattr(p, "pricing_mode", "legacy") or "legacy",
+        price_cents=p.price_cents,
+        currency=p.currency,
+        billing_interval=p.billing_interval,
+        user_has_access=_compute_pathway_access(current_user, p, space, db),
+        step_count=db.query(func.count(PathwayStep.id)).filter(PathwayStep.pathway_id == p.id).scalar() or 0,
+        unlock_offer_names=unlock_offer_names,
+    )
 
 
 @router.get("/{slug}/pathways/{pathway_slug}/overview", response_model=PathwayWithSteps)
@@ -1788,6 +2344,12 @@ def get_pathway_overview(
     step_ids = [s.id for s in steps]
     completed = _completed_step_ids(current_user.id, step_ids, db) if current_user else set()
 
+    # Drip-release availability for this member; skipped when unauthenticated.
+    availability_by_id: dict[str, Availability] = (
+        _hydrate_step_availability(steps, pathway.id, current_user.id, db)
+        if current_user else {}
+    )
+
     step_summaries = [
         StepSummary(
             id=s.id,
@@ -1798,6 +2360,10 @@ def get_pathway_overview(
             is_required=s.is_required,
             position=s.position,
             is_completed=s.id in completed,
+            banner_image_url=s.banner_image_url,
+            availability=_availability_to_schema(
+                s, availability_by_id.get(s.id, Availability(False, None, None, None)),
+            ),
         )
         for s in steps
     ]
@@ -1823,6 +2389,7 @@ def get_pathway_overview(
             title=sec.title,
             position=sec.position,
             steps=[summary_by_id[s.id] for s in sec_steps if s.id in summary_by_id],
+            banner_image_url=sec.banner_image_url,
         ))
 
     user_has_access = _compute_pathway_access(current_user, pathway, space, db)
@@ -1938,6 +2505,8 @@ def list_steps(
     step_ids = [s.id for s in steps]
     completed = _completed_step_ids(current_user.id, step_ids, db)
 
+    availability_by_id = _hydrate_step_availability(steps, pathway.id, current_user.id, db)
+
     return [
         StepSummary(
             id=s.id,
@@ -1948,6 +2517,10 @@ def list_steps(
             is_required=s.is_required,
             position=s.position,
             is_completed=s.id in completed,
+            banner_image_url=s.banner_image_url,
+            availability=_availability_to_schema(
+                s, availability_by_id.get(s.id, Availability(False, None, None, None)),
+            ),
         )
         for s in steps
     ]
@@ -1966,6 +2539,18 @@ def get_step(
     _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
 
+    # Compute availability for this member. If the step is locked, hide
+    # the body but return the availability info as structured JSON so the
+    # frontend can render a calm "Waiting" panel rather than a 404.
+    all_steps = (
+        db.query(PathwayStep)
+        .filter(PathwayStep.pathway_id == pathway.id)
+        .order_by(PathwayStep.position)
+        .all()
+    )
+    availability_by_id = _hydrate_step_availability(all_steps, pathway.id, current_user.id, db)
+    availability = availability_by_id.get(step.id, Availability(False, None, None, None))
+
     progress = (
         db.query(StepProgress)
         .filter(
@@ -1975,18 +2560,45 @@ def get_step(
         .first()
     )
 
+    # Section banner / title — populated for EVERY step that belongs to a
+    # section, so the member step page can show a consistent week-level banner
+    # across all lessons in the section. Steps outside any section get None.
+    section_banner_image_url: str | None = None
+    section_title: str | None = None
+    if step.section_id:
+        section = db.query(PathwaySection).filter(PathwaySection.id == step.section_id).first()
+        if section:
+            section_banner_image_url = section.banner_image_url
+            section_title = section.title
+
+    availability_schema = _availability_to_schema(step, availability)
+    # Strip the reading body from locked steps so the frontend can't
+    # accidentally leak content by rendering a hidden div.
+    if availability.is_locked:
+        content_body = None
+        content_url = None
+    else:
+        content_body = step.content_body
+        content_url = step.content_url
+
     return StepDetail(
         id=step.id,
         slug=step.slug,
         title=step.title,
         content_type=step.content_type.value if hasattr(step.content_type, "value") else str(step.content_type),
-        content_body=step.content_body,
-        content_url=step.content_url,
+        content_body=content_body,
+        content_url=content_url,
         estimated_minutes=step.estimated_minutes,
         is_required=step.is_required,
         position=step.position,
         is_completed=progress is not None and progress.completed_at is not None,
         reflection_text=progress.reflection_text if progress else None,
+        reflection_enabled=step.reflection_enabled,
+        discussion_enabled=step.discussion_enabled,
+        banner_image_url=step.banner_image_url,
+        section_banner_image_url=section_banner_image_url,
+        section_title=section_title,
+        availability=availability_schema,
     )
 
 
@@ -2008,6 +2620,22 @@ def complete_step(
     step = _get_step_or_404(pathway.id, step_slug, db)
 
     _ensure_enrollment(current_user.id, pathway.id, db)
+
+    # A locked step cannot be marked complete — a caretaker (or the
+    # release schedule) has to open it first. Enforced at the API even
+    # though the frontend hides the button, so a scripted request can't
+    # sneak past the gate.
+    all_steps = (
+        db.query(PathwayStep)
+        .filter(PathwayStep.pathway_id == pathway.id)
+        .order_by(PathwayStep.position)
+        .all()
+    )
+    availability_by_id = _hydrate_step_availability(
+        all_steps, pathway.id, current_user.id, db,
+    )
+    if availability_by_id.get(step.id, Availability(False, None, None, None)).is_locked:
+        raise HTTPException(status_code=403, detail="This step is not yet available.")
 
     progress = (
         db.query(StepProgress)
@@ -2118,7 +2746,10 @@ def list_pathway_about_blocks(
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
     return (
         db.query(PathwayAboutBlock)
-        .options(selectinload(PathwayAboutBlock.media_asset))
+        .options(
+            selectinload(PathwayAboutBlock.media_asset),
+            selectinload(PathwayAboutBlock.resource),
+        )
         .filter(PathwayAboutBlock.pathway_id == pathway.id)
         .order_by(PathwayAboutBlock.position)
         .all()
@@ -2142,7 +2773,10 @@ def list_step_blocks(
     step = _get_step_or_404(pathway.id, step_slug, db)
     return (
         db.query(PathwayStepBlock)
-        .options(selectinload(PathwayStepBlock.media_asset))
+        .options(
+            selectinload(PathwayStepBlock.media_asset),
+            selectinload(PathwayStepBlock.resource),
+        )
         .filter(PathwayStepBlock.step_id == step.id)
         .order_by(PathwayStepBlock.position)
         .all()

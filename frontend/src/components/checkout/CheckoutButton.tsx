@@ -38,7 +38,7 @@ export function CheckoutButton({
         </Link>
         <Link
           href={`/login?next=${encodedNext}`}
-          className="block w-full rounded-full border border-slate-200 px-5 py-2.5 text-center text-[14px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+          className="block w-full rounded-full border border-slate-200 px-5 py-2.5 text-center text-[14px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-700"
         >
           Already have an account? Log in
         </Link>

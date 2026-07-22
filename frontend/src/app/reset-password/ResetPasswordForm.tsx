@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Button from '@/components/ui/Button'
+import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
 
 export default function ResetPasswordForm({ token }: { token: string }) {
@@ -76,10 +77,9 @@ export default function ResetPasswordForm({ token }: { token: string }) {
           <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-navy-900">
             New password
           </label>
-          <input
+          <PasswordInput
             id="password"
             name="password"
-            type="password"
             autoComplete="new-password"
             required
             minLength={8}
@@ -92,10 +92,9 @@ export default function ResetPasswordForm({ token }: { token: string }) {
           <label htmlFor="confirmPassword" className="mb-1.5 block text-sm font-medium text-navy-900">
             Confirm new password
           </label>
-          <input
+          <PasswordInput
             id="confirmPassword"
             name="confirmPassword"
-            type="password"
             autoComplete="new-password"
             required
             minLength={8}

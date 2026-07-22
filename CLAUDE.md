@@ -14,6 +14,9 @@ Always read the relevant docs before writing code:
 - `docs/design-principles.md` — visual style, tone, UX rules
 - `docs/platform-structure.md` — pages, platform areas, access model, data model
 - `docs/roadmap.md` — which phase we are in and what is in scope
+- `docs/dev-testing-safety.md` — automated browser testing must use the
+  dedicated Playwright test account, not real users. Never reset a real
+  user's password to enable headless verification.
 
 ## Standing Product Principles
 

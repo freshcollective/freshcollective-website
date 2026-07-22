@@ -23,10 +23,17 @@ export default async function CreatorLayout({ children }: { children: React.Reac
   const activeSpace = (activeSlug ? spaces.find((s) => s.slug === activeSlug) : null) ?? spaces[0] ?? null
 
   const billing = await getCreatorBilling()
-  const collectiveLimit = billing?.current_plan.collective_limit ?? 1
+  const isPlatformOwner = billing?.is_platform_owner ?? false
+  const collectiveLimit = billing?.current_plan?.collective_limit ?? 1
 
   return (
-    <CreatorStudioShell user={profile} spaces={spaces} activeSpace={activeSpace} collectiveLimit={collectiveLimit}>
+    <CreatorStudioShell
+      user={profile}
+      spaces={spaces}
+      activeSpace={activeSpace}
+      collectiveLimit={collectiveLimit}
+      isPlatformOwner={isPlatformOwner}
+    >
       {children}
     </CreatorStudioShell>
   )

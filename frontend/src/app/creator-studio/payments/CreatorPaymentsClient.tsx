@@ -83,11 +83,11 @@ function SummaryCard({
 }) {
   return (
     <div className="rounded-xl bg-white p-4" style={{ border: '1px solid #E2E8F0' }}>
-      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">{label}</p>
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-black">{label}</p>
       <p className={`text-[1.35rem] font-bold leading-none ${accent ? 'text-teal-600' : 'text-[#0F172A]'}`}>
         {value}
       </p>
-      {sub && <p className="mt-1 text-[11px] text-[#94A3B8]">{sub}</p>}
+      {sub && <p className="mt-1 text-[11px] text-black">{sub}</p>}
     </div>
   )
 }
@@ -120,11 +120,13 @@ export default function CreatorPaymentsClient({
   currency,
   stripeEnabled,
   stripeTestMode,
+  isPlatformOwner,
 }: {
   feeBasisPoints: number
   currency: string
   stripeEnabled: boolean
   stripeTestMode: boolean
+  isPlatformOwner: boolean
 }) {
   const [summary, setSummary] = useState<CreatorPaymentSummary | null>(null)
   const [rows, setRows] = useState<CreatorPaymentTransaction[]>([])
@@ -162,7 +164,7 @@ export default function CreatorPaymentsClient({
           Creator Studio
         </p>
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Payments</h1>
-        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#334155' }}>
+        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#000000' }}>
           Track member purchases, fees, and estimated payouts for your collectives.
         </p>
       </div>
@@ -226,35 +228,60 @@ export default function CreatorPaymentsClient({
         </div>
       )}
 
-      {/* Creator plan */}
+      {/* Creator plan / platform ownership */}
       <div
         className="mb-6 rounded-2xl p-5"
         style={{ background: '#F0FDFB', border: '1px solid #99E6E4' }}
       >
-        <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#38A09E' }}>
-          Your creator plan
-        </p>
-        <p className="font-serif text-[1.1rem] font-semibold text-[#0F172A]">
-          Founding Creator Access
-        </p>
-        <div className="mt-3 flex flex-wrap gap-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Trial</p>
-            {/* TODO: wire to Stripe trial_period_days: 14 when payment setup is enabled */}
-            <p className="text-[14px] font-semibold text-[#0F172A]">14 days free</p>
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Then</p>
-            <p className="text-[14px] font-semibold text-[#0F172A]">$19 / month</p>
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">Transaction fee</p>
-            <p className="text-[14px] font-semibold text-[#0F172A]">{feeDisplay} per sale</p>
-          </div>
-        </div>
-        <p className="mt-3 text-[12px]" style={{ color: '#64748B' }}>
-          No hidden fees. The transaction fee covers payment processing and platform infrastructure.
-        </p>
+        {isPlatformOwner ? (
+          <>
+            <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#38A09E' }}>
+              Account type
+            </p>
+            <p className="font-serif text-[1.1rem] font-semibold text-[#0F172A]">
+              Fresh Collective — Platform Owner
+            </p>
+            <div className="mt-3 flex flex-wrap gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Transaction fee</p>
+                <p className="text-[14px] font-semibold" style={{ color: '#0F766E' }}>$0 / 0%</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Payout</p>
+                <p className="text-[14px] font-semibold text-[#0F172A]">Not applicable</p>
+              </div>
+            </div>
+            <p className="mt-3 text-[12px]" style={{ color: '#000000' }}>
+              Platform-owned collective — no Fresh Collective transaction fee applies. Sales go directly to Fresh Collective with no deduction.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#38A09E' }}>
+              Your creator plan
+            </p>
+            <p className="font-serif text-[1.1rem] font-semibold text-[#0F172A]">
+              Founding Creator Access
+            </p>
+            <div className="mt-3 flex flex-wrap gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Trial</p>
+                <p className="text-[14px] font-semibold text-[#0F172A]">14 days free</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Then</p>
+                <p className="text-[14px] font-semibold text-[#0F172A]">$19 / month</p>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Transaction fee</p>
+                <p className="text-[14px] font-semibold text-[#0F172A]">{feeDisplay} per sale</p>
+              </div>
+            </div>
+            <p className="mt-3 text-[12px]" style={{ color: '#000000' }}>
+              No hidden fees. The transaction fee covers payment processing and platform infrastructure.
+            </p>
+          </>
+        )}
       </div>
 
       {/* Access and pricing options */}
@@ -268,7 +295,7 @@ export default function CreatorPaymentsClient({
             Coming soon
           </span>
         </div>
-        <p className="mb-4 text-[13px]" style={{ color: '#64748B' }}>
+        <p className="mb-4 text-[13px]" style={{ color: '#000000' }}>
           Choose how members access your collective. Pricing configuration will be available in a
           future update.
         </p>
@@ -280,8 +307,8 @@ export default function CreatorPaymentsClient({
               style={{ background: '#F8FAFC', border: '1px dashed #CBD5E1' }}
             >
               <p className="text-[13px] font-semibold text-[#0F172A]">{opt.title}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-[#64748B]">{opt.description}</p>
-              <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>
+              <p className="mt-1 text-[12px] leading-relaxed text-black">{opt.description}</p>
+              <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#000000' }}>
                 Coming soon
               </p>
             </div>
@@ -295,7 +322,7 @@ export default function CreatorPaymentsClient({
       {/* Transaction history heading */}
       <div className="mb-4">
         <h2 className="text-[15px] font-semibold text-[#0F172A]">Transaction history</h2>
-        <p className="mt-0.5 text-[13px]" style={{ color: '#64748B' }}>
+        <p className="mt-0.5 text-[13px]" style={{ color: '#000000' }}>
           Payments recorded when member purchases are processed through Stripe.
         </p>
       </div>
@@ -312,7 +339,7 @@ export default function CreatorPaymentsClient({
 
       {/* Loading */}
       {loading && (
-        <div className="flex items-center gap-2 text-[14px] text-[#64748B]">
+        <div className="flex items-center gap-2 text-[14px] text-black">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
           Loading payments…
         </div>
@@ -328,43 +355,72 @@ export default function CreatorPaymentsClient({
       {!loading && !error && (
         <>
           {/* Summary cards */}
-          <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <SummaryCard
-              label="Gross Sales"
-              value={summary ? fmt(summary.total_gross_amount_cents, displayCurrency) : '—'}
-              sub="succeeded only"
-            />
-            <SummaryCard
-              label="FC Fee"
-              value={summary ? fmt(summary.total_platform_fee_cents, displayCurrency) : '—'}
-              sub="platform fee retained"
-              accent
-            />
-            <SummaryCard
-              label="Est. Creator Earnings"
-              value={summary ? fmt(summary.total_creator_net_amount_cents, displayCurrency) : '—'}
-              sub={`after ${feeDisplay} fee`}
-            />
-            <SummaryCard
-              label="Pending Payout"
-              value={summary ? fmt(summary.pending_payout_cents, displayCurrency) : '—'}
-              sub="not yet disbursed"
-            />
-          </div>
+          {isPlatformOwner ? (
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <SummaryCard
+                label="Gross Sales"
+                value={summary ? fmt(summary.total_gross_amount_cents, displayCurrency) : '—'}
+                sub="succeeded only"
+              />
+              <SummaryCard
+                label="FC Fee"
+                value={fmt(0, displayCurrency)}
+                sub="0% — platform-owned"
+                accent
+              />
+              <SummaryCard
+                label="Total Revenue"
+                value={summary ? fmt(summary.total_gross_amount_cents, displayCurrency) : '—'}
+                sub="100% retained by FC"
+                accent
+              />
+            </div>
+          ) : (
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <SummaryCard
+                label="Gross Sales"
+                value={summary ? fmt(summary.total_gross_amount_cents, displayCurrency) : '—'}
+                sub="succeeded only"
+              />
+              <SummaryCard
+                label="FC Fee"
+                value={summary ? fmt(summary.total_platform_fee_cents, displayCurrency) : '—'}
+                sub="platform fee retained"
+                accent
+              />
+              <SummaryCard
+                label="Est. Creator Earnings"
+                value={summary ? fmt(summary.total_creator_net_amount_cents, displayCurrency) : '—'}
+                sub={`after ${feeDisplay} fee`}
+              />
+              <SummaryCard
+                label="Pending Payout"
+                value={summary ? fmt(summary.pending_payout_cents, displayCurrency) : '—'}
+                sub="not yet disbursed"
+              />
+            </div>
+          )}
 
           {/* Payout note */}
           <div
-            className="mb-6 flex items-start gap-2 rounded-xl px-4 py-3 text-[12px] text-[#64748B]"
+            className="mb-6 flex items-start gap-2 rounded-xl px-4 py-3 text-[12px] text-black"
             style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}
           >
-            <span className="mt-0.5 shrink-0 text-[#94A3B8]">ℹ</span>
-            <span>
-              Your creator earnings are tracked as pending payout. Automatic payouts via Stripe
-              Connect are coming in a future update — for now, payouts are handled manually by
-              Fresh Collective. Your transaction fee is{' '}
-              <span className="font-semibold text-[#0F172A]">{feeDisplay}</span>{' '}
-              per sale.
-            </span>
+            <span className="mt-0.5 shrink-0 text-black">ℹ</span>
+            {isPlatformOwner ? (
+              <span>
+                <span className="font-semibold text-[#0F172A]">Platform-owned collective — no Fresh Collective transaction fee applies.</span>{' '}
+                Sales go directly to the Fresh Collective Stripe account. No payout tracking or disbursement is required.
+              </span>
+            ) : (
+              <span>
+                Your creator earnings are tracked as pending payout. Automatic payouts via Stripe
+                Connect are coming in a future update — for now, payouts are handled manually by
+                Fresh Collective. Your transaction fee is{' '}
+                <span className="font-semibold text-[#0F172A]">{feeDisplay}</span>{' '}
+                per sale.
+              </span>
+            )}
           </div>
 
           {/* Empty state */}
@@ -374,7 +430,7 @@ export default function CreatorPaymentsClient({
               style={{ background: '#FFFFFF', border: '1px solid #E2E8F0' }}
             >
               <p className="text-[15px] font-medium text-[#0F172A]">No member payments yet.</p>
-              <p className="mt-2 text-[13px] text-[#94A3B8]">
+              <p className="mt-2 text-[13px] text-black">
                 When members purchase paid pathways, transactions will appear here.
               </p>
             </div>
@@ -386,7 +442,7 @@ export default function CreatorPaymentsClient({
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
                       {['Date', 'Member / Payer', 'Collective / Pathway', 'Gross Sale', 'FC Fee', 'Est. Creator Amount', 'Status'].map((h) => (
-                        <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-[#94A3B8]">
+                        <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">
                           {h}
                         </th>
                       ))}
@@ -399,13 +455,13 @@ export default function CreatorPaymentsClient({
                         className={row.status !== 'succeeded' ? 'opacity-50' : undefined}
                         style={{ borderBottom: i < rows.length - 1 ? '1px solid #F1F5F9' : undefined }}
                       >
-                        <td className="px-4 py-3 text-[12px] text-[#475569] whitespace-nowrap">
+                        <td className="px-4 py-3 text-[12px] text-black whitespace-nowrap">
                           {fmtDate(row.created_at)}
                         </td>
-                        <td className="px-4 py-3 text-[12px] text-[#475569] font-mono">
+                        <td className="px-4 py-3 text-[12px] text-black font-mono">
                           {row.payer_user_id ? row.payer_user_id.slice(0, 8) + '…' : '—'}
                         </td>
-                        <td className="px-4 py-3 text-[12px] text-[#475569]">
+                        <td className="px-4 py-3 text-[12px] text-black">
                           {row.space_id || row.pathway_id
                             ? [row.space_id?.slice(0, 6), row.pathway_id?.slice(0, 6)].filter(Boolean).join(' / ')
                             : '—'}
@@ -423,7 +479,7 @@ export default function CreatorPaymentsClient({
                         <td className="px-4 py-3 text-[12px] font-semibold text-[#0F172A] whitespace-nowrap">
                           {fmt(row.gross_amount_cents, row.currency)}
                         </td>
-                        <td className="px-4 py-3 text-[12px] text-[#64748B] whitespace-nowrap">
+                        <td className="px-4 py-3 text-[12px] text-black whitespace-nowrap">
                           {fmt(row.platform_fee_cents, row.currency)}
                         </td>
                         <td className="px-4 py-3 text-[12px] font-semibold whitespace-nowrap" style={{ color: '#38A09E' }}>
@@ -447,21 +503,21 @@ export default function CreatorPaymentsClient({
                     <div className="mb-2 flex items-start justify-between gap-2">
                       <div>
                         <p className="text-[13px] font-medium text-[#0F172A]">{labelType(row.transaction_type)}</p>
-                        <p className="text-[11px] text-[#94A3B8]">{fmtDate(row.created_at)}</p>
+                        <p className="text-[11px] text-black">{fmtDate(row.created_at)}</p>
                       </div>
                       <StatusBadge status={row.status} />
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-[12px]">
                       <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Gross</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-black">Gross</p>
                         <p className="font-semibold text-[#0F172A]">{fmt(row.gross_amount_cents, row.currency)}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">FC Fee</p>
-                        <p className="text-[#64748B]">{fmt(row.platform_fee_cents, row.currency)}</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-black">FC Fee</p>
+                        <p className="text-black">{fmt(row.platform_fee_cents, row.currency)}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-[#94A3B8]">Creator Net</p>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-black">Creator Net</p>
                         <p style={{ color: '#38A09E' }}>
                           {row.net_creator_amount_cents != null ? fmt(row.net_creator_amount_cents, row.currency) : '—'}
                         </p>

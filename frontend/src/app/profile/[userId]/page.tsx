@@ -32,16 +32,16 @@ export default async function PublicProfilePage({ params }: Props) {
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs text-slate-400">Member since {formatJoined(profile.joined_platform)}</p>
+          <p className="mt-1 text-xs text-black">Member since {formatJoined(profile.joined_platform)}</p>
         </div>
 
         {profile.bio && (
-          <p className="mt-5 max-w-sm text-sm leading-relaxed text-slate-600">{profile.bio}</p>
+          <p className="mt-5 max-w-sm text-sm leading-relaxed text-black">{profile.bio}</p>
         )}
 
         {profile.spaces_led.length > 0 && (
           <div className="mt-8 w-full text-left">
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-black">
               Collectives Led
             </h2>
             <div className="flex flex-col gap-2">

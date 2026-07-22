@@ -12,12 +12,15 @@ export default async function SpaceEventsPage({ params }: Props) {
   const { slug } = await params
 
   let passes: AccessPassSummary[] = []
-  const [space, events, members, access] = await Promise.all([
+  const [space, events, pastEvents, members, access] = await Promise.all([
     getSpace(slug),
-    getSpaceEvents(slug),
+    getSpaceEvents(slug, 'upcoming'),
+    getSpaceEvents(slug, 'archive'),
     getSpaceMembers(slug),
     getMySpaceAccess(slug),
-  ]) as [SpaceResponse | null, EventSummary[], MemberProfile[], SpaceAccessStatus | null]
+  ]) as [SpaceResponse | null, EventSummary[], EventSummary[], MemberProfile[], SpaceAccessStatus | null]
+
+  const hasArchive = pastEvents.length > 0
 
   // Fetch passes for members only — non-fatal if it fails
   if (access?.is_member) {
@@ -63,8 +66,8 @@ export default async function SpaceEventsPage({ params }: Props) {
               Gatherings
             </span>
           </h2>
-          <p className="text-[14px] leading-relaxed" style={{ color: 'rgba(255,255,255,0.72)' }}>
-            Live sessions, workshops and movement practice. Book the sessions that suit you, or message Lindsey and she can lock in your regular slot.
+          <p className="text-[14px] leading-relaxed" style={{ color: '#FFFFFF' }}>
+            Upcoming ways to come together in this Collective.
           </p>
         </div>
 
@@ -84,10 +87,10 @@ export default async function SpaceEventsPage({ params }: Props) {
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[13px] font-semibold text-teal-700">
+                  <p className="text-[13px] font-semibold" style={{ color: 'var(--fc-accent, #0f766e)' }}>
                     {pass.option_name ?? 'Your pass'}
                   </p>
-                  <p className="mt-0.5 text-[12px] text-slate-500">
+                  <p className="mt-0.5 text-[12px] text-black">
                     {pass.credits_per_week ? `${pass.credits_per_week} session${pass.credits_per_week !== 1 ? 's' : ''} per week` : 'Active'}
                     {validUntil && ` · valid until ${validUntil}`}
                   </p>
@@ -103,26 +106,35 @@ export default async function SpaceEventsPage({ params }: Props) {
                 <div>
                   <div className="space-y-1 mb-2">
                     <div className="flex items-center justify-between text-[12px]">
-                      <span className="text-slate-500">Sessions included</span>
+                      <span className="text-black">Sessions included</span>
                       <span className="font-semibold text-navy-900">{total}</span>
                     </div>
                     <div className="flex items-center justify-between text-[12px]">
-                      <span className="text-slate-500">Booked</span>
+                      <span className="text-black">Booked</span>
                       <span className="font-semibold text-navy-900">{pass.used_credits}</span>
                     </div>
                     <div className="flex items-center justify-between text-[12px]">
-                      <span className="text-slate-500">Available to book</span>
-                      <span className={`font-semibold ${remaining > 0 ? 'text-teal-700' : 'text-slate-400'}`}>{remaining}</span>
+                      <span className="text-black">Available to book</span>
+                      <span
+                        className="font-semibold"
+                        style={{ color: remaining > 0 ? 'var(--fc-accent, #0f766e)' : '#000' }}
+                      >{remaining}</span>
                     </div>
                   </div>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
+                  <div
+                    className="h-1.5 w-full overflow-hidden rounded-full"
+                    style={{ background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))' }}
+                  >
                     <div
-                      className="h-full rounded-full bg-teal-500"
-                      style={{ width: `${total > 0 ? Math.round((pass.used_credits / total) * 100) : 0}%` }}
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${total > 0 ? Math.round((pass.used_credits / total) * 100) : 0}%`,
+                        background: 'var(--fc-accent, #14b8a6)',
+                      }}
                     />
                   </div>
                   {exhausted ? (
-                    <p className="mt-2 text-[12px] leading-relaxed text-slate-500">
+                    <p className="mt-2 text-[12px] leading-relaxed text-black">
                       All included sessions are booked for this term. Message Lindsey if you need help changing a session.
                     </p>
                   ) : (
@@ -138,6 +150,21 @@ export default async function SpaceEventsPage({ params }: Props) {
 
         {/* List / Calendar toggle + content */}
         <GatheringsView events={events} spaceSlug={slug} timezone={timezone} isMember={isMember} />
+
+        {hasArchive && (
+          <div className="mt-8 flex justify-center">
+            <Link
+              href={`/spaces/${slug}/events/archive`}
+              className="rounded-full px-4 py-2 text-[13px] font-medium transition-colors"
+              style={{
+                background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+                color: 'var(--fc-accent, #0f766e)',
+              }}
+            >
+              View past Gatherings →
+            </Link>
+          </div>
+        )}
 
       </div>
 

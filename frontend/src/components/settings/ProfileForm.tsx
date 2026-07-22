@@ -134,7 +134,7 @@ export default function ProfileForm({ profile }: Props) {
           >
             {uploading ? 'Uploading…' : avatarUrl ? 'Change photo' : 'Upload photo'}
           </button>
-          <p className="mt-0.5 text-[12px] text-slate-400">
+          <p className="mt-0.5 text-[12px] text-black">
             {avatarUrl ? 'JPG, PNG or WebP.' : 'Upload a photo, or keep your initials — both look great.'}
           </p>
         </div>
@@ -178,7 +178,7 @@ export default function ProfileForm({ profile }: Props) {
             placeholder="e.g. Pattern spotter, quiet powerhouse, joy seeker"
             className="w-full rounded-xl border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder:text-slate-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
           />
-          <p className="mt-1 text-xs text-slate-400">A short line that gives people a feel for you.</p>
+          <p className="mt-1 text-xs text-black">A short line that gives people a feel for you.</p>
         </div>
 
         <div>
@@ -194,13 +194,13 @@ export default function ProfileForm({ profile }: Props) {
             placeholder="A few words about you (optional)"
             className="w-full resize-none rounded-xl border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder:text-slate-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
           />
-          <p className="mt-1 text-right text-xs text-slate-300">{bio.length}/500</p>
+          <p className="mt-1 text-right text-xs text-black">{bio.length}/500</p>
         </div>
 
         <div className="flex items-start gap-3 rounded-xl border border-border bg-white px-5 py-4">
           <div className="flex-1">
             <p className="text-sm font-medium text-navy-800">Public profile</p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-black">
               Let other members see your name and bio in the member directory.
             </p>
           </div>

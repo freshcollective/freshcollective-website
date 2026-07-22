@@ -12,7 +12,7 @@ export default async function CreatorSpacePage({ params }: { params: Promise<{ s
       <div className="mb-8">
         <div className="mb-2 h-px w-6 bg-gold-400" />
         <h1 className="font-serif text-2xl text-navy-900">Space Settings</h1>
-        <p className="mt-1 text-sm text-slate-400">Name, tagline, visibility, and access.</p>
+        <p className="mt-1 text-sm text-black">Name, tagline, visibility, and access.</p>
       </div>
       <SpaceSettingsForm space={space} />
     </div>

@@ -25,14 +25,14 @@ export default function PublicFooter() {
               </div>
               <span
                 className="text-[15px] font-semibold tracking-[-0.02em]"
-                style={{ color: 'rgba(255,255,255,0.90)' }}
+                style={{ color: '#FFFFFF' }}
               >
                 Fresh Collective
               </span>
             </div>
             <p
               className="max-w-[300px] text-[14px] leading-[1.78]"
-              style={{ color: 'rgba(255,255,255,0.52)' }}
+              style={{ color: '#FFFFFF' }}
             >
               Creator-led collectives for transformative growth — structured pathways,
               live gatherings, and intentional community.
@@ -49,7 +49,7 @@ export default function PublicFooter() {
                 key={href}
                 href={href}
                 className="text-[13px] transition-colors hover:text-white"
-                style={{ color: 'rgba(255,255,255,0.50)' }}
+                style={{ color: '#FFFFFF' }}
               >
                 {label}
               </Link>
@@ -62,7 +62,7 @@ export default function PublicFooter() {
           className="mt-10 flex items-center justify-between pt-6"
           style={{ borderTop: '1px solid rgba(255,255,255,0.09)' }}
         >
-          <p className="text-[12px]" style={{ color: 'rgba(255,255,255,0.28)' }}>
+          <p className="text-[12px]" style={{ color: '#FFFFFF' }}>
             © {new Date().getFullYear()} Fresh Collective. All rights reserved.
           </p>
         </div>

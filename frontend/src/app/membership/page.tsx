@@ -39,7 +39,7 @@ export default function MembershipPage() {
                   { label: "Start Here", name: "REAL Journey", color: "border-teal-200 bg-teal-50", labelColor: "text-teal-700" },
                   { label: "The Heart", name: "Live Layer", color: "border-gold-200 bg-gold-50", labelColor: "text-gold-700" },
                   { label: "The Rooms", name: "Deepening Pathways", color: "border-navy-100 bg-navy-50", labelColor: "text-navy-700" },
-                  { label: "Community", name: "Shared space", color: "border-border bg-surface", labelColor: "text-teal-600" },
+                  { label: "Conversations", name: "Shared space", color: "border-border bg-surface", labelColor: "text-teal-600" },
                 ].map((item) => (
                   <div
                     key={item.label}
@@ -127,7 +127,7 @@ export default function MembershipPage() {
 
               <Card className="flex flex-col gap-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
-                  Community
+                  Conversations
                 </p>
                 <h3 className="font-serif text-xl text-navy-900">Shared space</h3>
                 <p className="text-sm leading-relaxed text-[#4A5568]">

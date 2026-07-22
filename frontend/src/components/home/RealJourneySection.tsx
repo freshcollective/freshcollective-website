@@ -148,7 +148,7 @@ export default function RealJourneySection() {
           </p>
           <Link
             href="/real-journey"
-            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-black/10 bg-white px-5 py-2.5 text-[13px] font-semibold text-navy-700 transition-all hover:border-black/18 hover:bg-[#F8F8F8]"
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-black/10 bg-white px-5 py-2.5 text-[13px] font-semibold text-black transition-all hover:border-black/18 hover:bg-[#F8F8F8]"
             style={{ boxShadow: 'var(--fc-shadow-xs)' }}
           >
             Learn about the journey

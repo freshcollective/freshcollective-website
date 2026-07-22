@@ -36,6 +36,7 @@ from app.core.database import get_db
 from app.models.payment import (
     PaymentTransaction,
     PaymentTransactionStatus,
+    PaymentTransactionType,
     PayoutStatus,
 )
 from app.models.payment_option import PaymentOption
@@ -107,6 +108,102 @@ async def stripe_webhook(
 
 
 # ---------------------------------------------------------------------------
+# Standalone paid Gathering fulfilment (Stage 2B)
+# ---------------------------------------------------------------------------
+
+def _handle_gathering_ticket_completed(
+    session: dict, db: Session, metadata: dict,
+) -> None:
+    """
+    Convert a paid standalone-Gathering hold into a confirmed ticket.
+
+    Called from `_handle_checkout_completed` when
+    metadata.purchase_type == "standalone_gathering".
+
+    All heavy lifting lives in `services.gathering_tickets.fulfil_ticket_purchase`,
+    which is idempotent and holds the correct row locks. This wrapper only
+    parses the Stripe payload, invokes the service, and commits.
+    """
+    from app.services.gathering_tickets import fulfil_ticket_purchase  # local import — avoid cycles
+
+    session_id: str = session.get("id", "")
+    payment_status: str = session.get("payment_status", "")
+    if payment_status != "paid":
+        logger.warning(
+            "gathering ticket: payment_status=%s session=%s — skipping.",
+            payment_status, session_id,
+        )
+        return
+
+    txn_id = metadata.get("transaction_id", "")
+    event_id = metadata.get("event_id", "")
+    payer_user_id = metadata.get("payer_user_id", "")
+    if not all([txn_id, event_id, payer_user_id]):
+        logger.error(
+            "gathering ticket: missing metadata session=%s meta=%s",
+            session_id, metadata,
+        )
+        return
+
+    amount_total = int(session.get("amount_total") or 0)
+    currency = (session.get("currency") or "").upper()
+    payment_intent_id = session.get("payment_intent") or None
+
+    # Stripe Session doesn't expose the charge_id directly on the Session
+    # object — it lives on the PaymentIntent. Leaving None here; a future
+    # backfill or a PI-based webhook can populate it.
+    try:
+        outcome = fulfil_ticket_purchase(
+            db,
+            transaction_id=txn_id,
+            event_id=event_id,
+            payer_user_id=payer_user_id,
+            stripe_amount_total=amount_total,
+            stripe_currency=currency,
+            stripe_payment_intent_id=payment_intent_id,
+            stripe_charge_id=None,
+        )
+    except ValueError as exc:
+        # Amount/currency mismatch, missing hold, wrong status. Log loudly
+        # and re-raise so Stripe retries — but only ONCE this returns a
+        # non-500, which currently we do not do. For MVP, log and return
+        # to acknowledge the delivery; the mismatch is investigable via
+        # the pending PaymentTransaction row.
+        logger.error(
+            "gathering ticket fulfilment refused: session=%s txn=%s err=%s",
+            session_id, txn_id, exc,
+        )
+        db.rollback()
+        return
+
+    db.commit()
+    if outcome.already_fulfilled:
+        logger.info(
+            "gathering ticket: webhook re-delivery, no-op — txn=%s booking=%s",
+            txn_id, outcome.booking.id if outcome.booking else None,
+        )
+    else:
+        logger.info(
+            "gathering ticket: fulfilled txn=%s booking=%s access_pass=%s",
+            txn_id, outcome.booking.id, outcome.access_pass.id,
+        )
+        # Notify the creator (and any moderators) that a new attendee has
+        # booked — same in-app notification hook used by the free-booking
+        # flow. Only fires on the first fulfilment (webhook re-delivery
+        # short-circuits above via already_fulfilled=True, so duplicates
+        # are impossible). Email is a graceful no-op when RESEND_API_KEY
+        # is unset.
+        try:
+            from app.services.notification_service import trigger_event_booking_creator
+            trigger_event_booking_creator(event_id, payer_user_id)
+        except Exception as exc:  # noqa: BLE001 — never let notify failure block fulfilment
+            logger.warning(
+                "gathering ticket: notification failed for txn=%s: %s",
+                txn_id, exc,
+            )
+
+
+# ---------------------------------------------------------------------------
 # Event handlers
 # ---------------------------------------------------------------------------
 
@@ -123,8 +220,18 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     metadata: dict = session.get("metadata") or {}
 
     transaction_id: str = metadata.get("transaction_id", "")
-    pathway_id: str = metadata.get("pathway_id", "")
     payer_user_id: str = metadata.get("payer_user_id", "")
+
+    # ---------------------------------------------------------------
+    # Purchase-type discriminator (added Stage 2B for paid Gatherings).
+    # Standalone ticket purchases have their own fulfilment path that
+    # does NOT create pathway entitlements or space memberships.
+    # ---------------------------------------------------------------
+    if metadata.get("purchase_type") == "standalone_gathering":
+        _handle_gathering_ticket_completed(session, db, metadata)
+        return
+
+    pathway_id: str = metadata.get("pathway_id", "")
     space_id: str = metadata.get("space_id", "")
     payment_option_id: str = metadata.get("payment_option_id", "")
     payment_option_schedule_id: str = metadata.get("payment_option_schedule_id", "")
@@ -409,6 +516,11 @@ def _handle_checkout_expired(session: dict, db: Session) -> None:
     """
     checkout.session.expired — member did not complete checkout within the session window.
     Cancel the pending PaymentTransaction if it still exists and is still pending.
+
+    For standalone-gathering purchases the hold row on `event_bookings`
+    must ALSO be cancelled so the seat is released for someone else.
+    Delegates to `services.gathering_tickets.release_hold_for_transaction`
+    which handles both txn + booking atomically and is idempotent.
     """
     session_id: str = session.get("id", "")
     txn = (
@@ -417,12 +529,27 @@ def _handle_checkout_expired(session: dict, db: Session) -> None:
         .with_for_update()
         .first()
     )
-    if txn and txn.status == PaymentTransactionStatus.pending:
-        txn.status = PaymentTransactionStatus.cancelled
-        txn.payout_status = PayoutStatus.not_applicable
-        txn.updated_at = datetime.utcnow()
+    if txn is None or txn.status != PaymentTransactionStatus.pending:
+        return
+
+    if txn.transaction_type == PaymentTransactionType.gathering_ticket_purchase:
+        from app.services.gathering_tickets import release_hold_for_transaction  # local import — avoid cycles
+        release_hold_for_transaction(
+            db,
+            transaction_id=txn.id,
+            final_status=PaymentTransactionStatus.cancelled,
+            reason="checkout_expired",
+        )
         db.commit()
-        logger.info("checkout.session.expired: cancelled txn=%s session=%s", txn.id, session_id)
+        logger.info("checkout.session.expired: released gathering hold txn=%s session=%s",
+                    txn.id, session_id)
+        return
+
+    txn.status = PaymentTransactionStatus.cancelled
+    txn.payout_status = PayoutStatus.not_applicable
+    txn.updated_at = datetime.utcnow()
+    db.commit()
+    logger.info("checkout.session.expired: cancelled txn=%s session=%s", txn.id, session_id)
 
 
 def _handle_payment_failed(payment_intent: dict, db: Session) -> None:
@@ -464,6 +591,21 @@ def _handle_payment_failed(payment_intent: dict, db: Session) -> None:
         )
 
     if txn and txn.status == PaymentTransactionStatus.pending:
+        # Standalone gathering path: also release the hold row.
+        if txn.transaction_type == PaymentTransactionType.gathering_ticket_purchase:
+            from app.services.gathering_tickets import release_hold_for_transaction
+            txn.provider_payment_intent_id = pi_id
+            release_hold_for_transaction(
+                db,
+                transaction_id=txn.id,
+                final_status=PaymentTransactionStatus.failed,
+                reason="payment_failed",
+            )
+            db.commit()
+            logger.info("payment_intent.payment_failed: released gathering hold txn=%s pi=%s",
+                        txn.id, pi_id)
+            return
+
         txn.status = PaymentTransactionStatus.failed
         txn.payout_status = PayoutStatus.not_applicable
         txn.provider_payment_intent_id = pi_id

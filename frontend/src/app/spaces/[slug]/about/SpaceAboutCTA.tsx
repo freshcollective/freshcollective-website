@@ -78,8 +78,12 @@ export default function SpaceAboutCTA({
   }
 
   const tealBtn = 'block w-full rounded-xl px-4 py-2.5 text-center text-[14px] font-semibold text-white transition-opacity hover:opacity-90'
-  const tealStyle = { background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }
-  const ghostBtn = 'block w-full rounded-xl border border-slate-200 px-4 py-2 text-center text-[13px] font-medium text-slate-500 transition-colors hover:bg-slate-50'
+  // Palette-aware primary CTA. Falls back to Fresh Collective teal.
+  const tealStyle = {
+    background:
+      'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)',
+  }
+  const ghostBtn = 'block w-full rounded-xl border border-slate-200 px-4 py-2 text-center text-[13px] font-medium text-black transition-colors hover:bg-slate-50'
 
   // Already a member
   if (isMember) {
@@ -116,7 +120,14 @@ export default function SpaceAboutCTA({
   if (hasPendingInvite) {
     return (
       <div className="flex flex-col gap-2">
-        <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-2.5 text-center text-[13px] font-medium text-teal-700">
+        <div
+          className="rounded-xl border px-4 py-2.5 text-center text-[13px] font-medium"
+          style={{
+            borderColor: 'var(--fc-accent-line, #99f6e4)',
+            background: 'var(--fc-accent-soft, #f0fdfa)',
+            color: 'var(--fc-accent, #0f766e)',
+          }}
+        >
           You have a pending invite — check your email
         </div>
         <Link href="/login" className={ghostBtn}>
@@ -150,11 +161,11 @@ export default function SpaceAboutCTA({
       <div className="flex flex-col gap-2">
         <div
           className="block w-full rounded-xl px-4 py-2.5 text-center text-[14px] font-semibold text-white opacity-60"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          style={tealStyle}
         >
           Join — payment coming soon
         </div>
-        <p className="text-center text-[11px] text-slate-400">
+        <p className="text-center text-[11px] text-black">
           Payment processing is being set up. Check back soon.
         </p>
       </div>
@@ -165,7 +176,14 @@ export default function SpaceAboutCTA({
   if (isPublic) {
     if (state === 'joined') {
       return (
-        <div className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-2.5 text-center text-[13px] font-medium text-teal-700">
+        <div
+          className="rounded-xl border px-4 py-2.5 text-center text-[13px] font-medium"
+          style={{
+            borderColor: 'var(--fc-accent-line, #99f6e4)',
+            background: 'var(--fc-accent-soft, #f0fdfa)',
+            color: 'var(--fc-accent, #0f766e)',
+          }}
+        >
           Joined! Redirecting…
         </div>
       )

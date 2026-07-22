@@ -6,7 +6,7 @@ const MEMBER_COLORS = [
 
 const PRESENCE_ITEMS = [
   { label: 'Monthly live calls', sub: 'With the founder · structured' },
-  { label: 'Community threads', sub: 'Integration prompts · ongoing' },
+  { label: 'Ongoing conversations', sub: 'Integration prompts · ongoing' },
   { label: 'Real accountability', sub: 'Women walking the same path' },
 ]
 

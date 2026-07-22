@@ -3,8 +3,9 @@
 import { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import type { CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
-import { apiUrl, resolveMediaUrl } from '@/lib/api'
+import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
+import ImagePickerField from '@/components/creator/ImagePickerField'
+import { apiUrl } from '@/lib/api'
 import { formatDisplayDate } from '@/lib/dateTime'
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,7 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
 function AccessPricingSection({
   accessType, setAccessType, pricingMode, setPricingMode,
   priceDollars, setPriceDollars, currency, setCurrency, priceError,
+  spaceSlug, unlockOptionIds, setUnlockOptionIds,
 }: {
   accessType: string
   setAccessType: (v: string) => void
@@ -41,13 +43,27 @@ function AccessPricingSection({
   currency: string
   setCurrency: (v: string) => void
   priceError: string | null
+  spaceSlug: string
+  unlockOptionIds: string[]
+  setUnlockOptionIds: (ids: string[]) => void
 }) {
+  const [spaceOptions, setSpaceOptions] = useState<{ id: string; name: string; payment_type: string }[]>([])
+
+  useEffect(() => {
+    if (accessType !== 'included_with_offer') return
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/payment-options`), { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then(setSpaceOptions)
+      .catch(() => {})
+  }, [accessType, spaceSlug])
+
   const isPaymentOptions = pricingMode === PRICING_MODE_PAYMENT_OPTIONS_VALUE
   const showSinglePrice = (accessType === 'one_time' || accessType === 'subscription') && !isPaymentOptions
 
   const ALL_CHOICES: { value: string; label: string; description: string; isPaymentOptions?: boolean }[] = [
     { value: 'free', label: 'Free', description: 'Anyone with access to the collective can begin this pathway.' },
     { value: 'included', label: 'Included in collective access', description: 'Available to members who already have access to this collective.' },
+    { value: 'included_with_offer', label: 'Included with a paid offer', description: 'Automatically unlocked for members who hold a specific active offer or pass.' },
     { value: 'one_time', label: 'One-off payment — single price', description: 'People pay a single fixed price to access this pathway.' },
     { value: 'subscription', label: 'Monthly subscription', description: 'People pay monthly for ongoing access to this pathway.' },
     {
@@ -68,11 +84,19 @@ function AccessPricingSection({
     }
   }
 
+  function toggleUnlockOption(id: string) {
+    setUnlockOptionIds(
+      unlockOptionIds.includes(id)
+        ? unlockOptionIds.filter(x => x !== id)
+        : [...unlockOptionIds, id]
+    )
+  }
+
   const selectedChoiceValue = isPaymentOptions ? PRICING_MODE_PAYMENT_OPTIONS_VALUE : accessType
 
   return (
     <div>
-      <label className="mb-2 block text-[12px] font-semibold text-slate-600">Access and pricing</label>
+      <label className="mb-2 block text-[12px] font-semibold text-black">Access and pricing</label>
       <div className="space-y-2">
         {ALL_CHOICES.map((opt) => {
           const selected = selectedChoiceValue === opt.value
@@ -95,13 +119,37 @@ function AccessPricingSection({
                 />
                 <div>
                   <p className="text-[14px] font-semibold text-navy-900">{opt.label}</p>
-                  <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">{opt.description}</p>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-black">{opt.description}</p>
                 </div>
               </div>
             </button>
           )
         })}
       </div>
+
+      {accessType === 'included_with_offer' && (
+        <div className="mt-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3">
+          <p className="mb-2 text-[12px] font-semibold text-teal-800">Unlock this pathway when a member has access to:</p>
+          {spaceOptions.length === 0 ? (
+            <p className="text-[12px] text-black">No published payment options found for this collective. Create and publish offers in the Payment Options section of other pathways first.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {spaceOptions.map(opt => (
+                <label key={opt.id} className="flex cursor-pointer items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={unlockOptionIds.includes(opt.id)}
+                    onChange={() => toggleUnlockOption(opt.id)}
+                    className="h-4 w-4 rounded border-slate-300 accent-teal-600"
+                  />
+                  <span className="text-[13px] text-navy-900">{opt.name}</span>
+                  <span className="text-[11px] text-black">({opt.payment_type.replace('_', ' ')})</span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {isPaymentOptions && (
         <div className="mt-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3 text-[12px] text-teal-800">
@@ -112,11 +160,11 @@ function AccessPricingSection({
       {showSinglePrice && (
         <div className="mt-3 flex gap-3">
           <div className="flex-1">
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">
+            <label className="mb-1 block text-[12px] font-semibold text-black">
               {accessType === 'subscription' ? 'Monthly price' : 'Price'}
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">$</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-black">$</span>
               <input
                 type="number" min="0" step="0.01" value={priceDollars}
                 onChange={(e) => setPriceDollars(e.target.value)} placeholder="0.00"
@@ -126,7 +174,7 @@ function AccessPricingSection({
             {priceError && <p className="mt-1 text-[12px] text-red-600">{priceError}</p>}
           </div>
           <div className="w-28">
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Currency</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Currency</label>
             <select
               value={currency} onChange={(e) => setCurrency(e.target.value)}
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none focus:border-teal-400"
@@ -142,7 +190,7 @@ function AccessPricingSection({
       )}
 
       {showSinglePrice && (
-        <p className="mt-2 text-[11px] text-slate-400">
+        <p className="mt-2 text-[11px] text-black">
           Pricing is saved for configuration. Payment processing will be connected when Stripe is set up.
         </p>
       )}
@@ -251,7 +299,7 @@ function AddStepForm({
         >
           {loading ? 'Adding…' : 'Add step'}
         </button>
-        <button type="button" onClick={onCancel} className="text-[13px] text-slate-500 transition-colors hover:text-navy-900">
+        <button type="button" onClick={onCancel} className="text-[13px] text-black transition-colors hover:text-navy-900">
           Cancel
         </button>
       </div>
@@ -264,7 +312,7 @@ function AddStepForm({
 // ---------------------------------------------------------------------------
 
 function StepRow({
-  step, num, sections, pathwaySlug, onSectionChange, onMoveUp, onMoveDown, isFirst, isLast,
+  step, num, sections, pathwaySlug, onSectionChange, onMoveUp, onMoveDown, isFirst, isLast, onDelete, deleting,
 }: {
   step: CreatorStep
   num: number
@@ -275,6 +323,8 @@ function StepRow({
   onMoveDown?: () => void
   isFirst?: boolean
   isLast?: boolean
+  onDelete?: () => void
+  deleting?: boolean
 }) {
   return (
     <div className="flex flex-wrap items-center gap-3 px-4 py-3">
@@ -323,7 +373,7 @@ function StepRow({
         <select
           value={step.section_id ?? ''}
           onChange={(e) => onSectionChange(step, e.target.value || null)}
-          className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] text-slate-500 outline-none focus:border-teal-400"
+          className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] text-black outline-none focus:border-teal-400"
         >
           <option value="">No section</option>
           {sections.map((sec) => (
@@ -337,6 +387,16 @@ function StepRow({
       >
         Edit →
       </Link>
+      {onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={deleting}
+          className="shrink-0 text-[12px] text-black transition-colors hover:text-red-500 disabled:opacity-40"
+        >
+          {deleting ? '…' : 'Delete'}
+        </button>
+      )}
     </div>
   )
 }
@@ -346,7 +406,7 @@ function StepRow({
 // ---------------------------------------------------------------------------
 
 function PathwayStructure({
-  pathway, steps, sections, spaceSlug, setSteps, setSections,
+  pathway, steps, sections, spaceSlug, setSteps, setSections, mediaAssets,
 }: {
   pathway: CreatorPathway
   steps: CreatorStep[]
@@ -354,17 +414,21 @@ function PathwayStructure({
   spaceSlug: string
   setSteps: (s: CreatorStep[]) => void
   setSections: (s: CreatorSection[]) => void
+  mediaAssets: CreatorMediaAsset[]
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
+  const [bannerEditSectionId, setBannerEditSectionId] = useState<string | null>(null)
   const [addingSection, setAddingSection] = useState(false)
   const [newSectionTitle, setNewSectionTitle] = useState('')
   const [savingSection, setSavingSection] = useState(false)
   // addingToContext: null=closed, 'global'=unsectioned form, or a section id
   const [addingToContext, setAddingToContext] = useState<string | null>(null)
+  const [deletingStepId, setDeletingStepId] = useState<string | null>(null)
+  const [stepDeleteError, setStepDeleteError] = useState<string | null>(null)
 
   function stepsForSection(sectionId: string): CreatorStep[] {
     return steps
@@ -504,6 +568,21 @@ function PathwayStructure({
     setEditingSectionId(null)
   }
 
+  async function handleSectionBannerChange(id: string, next: string | null) {
+    const res = await fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/sections/${id}`),
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ banner_image_url: next }),
+      },
+    )
+    if (!res.ok) return
+    const updated: CreatorSection = await res.json()
+    setSections(sections.map((s) => (s.id === id ? updated : s)))
+  }
+
   async function handleSectionDelete(id: string) {
     const res = await fetch(
       apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/sections/${id}`),
@@ -548,6 +627,27 @@ function PathwayStructure({
       .catch(() => { /* router.refresh() covers it */ })
   }
 
+  async function handleStepDelete(step: CreatorStep) {
+    if (!confirm('Are you sure you want to delete this step? This cannot be undone.')) return
+    setDeletingStepId(step.id)
+    setStepDeleteError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/steps/${step.slug}`),
+        { method: 'DELETE', credentials: 'include' },
+      )
+      if (res.ok) {
+        setSteps(steps.filter((s) => s.id !== step.id))
+      } else {
+        setStepDeleteError('Failed to delete step. Please try again.')
+      }
+    } catch {
+      setStepDeleteError('Failed to delete step. Please try again.')
+    } finally {
+      setDeletingStepId(null)
+    }
+  }
+
   const isEmpty = steps.length === 0 && sections.length === 0 && !addingSection && !addingToContext
 
   return (
@@ -557,7 +657,7 @@ function PathwayStructure({
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-[16px] font-semibold text-navy-900">Pathway structure</h2>
-          <p className="mt-0.5 text-[13px] text-slate-500">
+          <p className="mt-0.5 text-[13px] text-black">
             {isEmpty
               ? 'Add steps to shape the journey, or create sections to organise them into modules.'
               : `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}${sections.length > 0 ? ` · ${sections.length} ${sections.length === 1 ? 'section' : 'sections'}` : ''}`
@@ -568,7 +668,7 @@ function PathwayStructure({
           <button
             type="button"
             onClick={() => setAddingSection(true)}
-            className="shrink-0 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:border-teal-300 hover:text-teal-700"
+            className="shrink-0 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[12px] font-medium text-black transition-colors hover:border-teal-300 hover:text-teal-700"
           >
             + Add section
           </button>
@@ -604,11 +704,18 @@ function PathwayStructure({
             <button
               type="button"
               onClick={() => { setAddingSection(false); setNewSectionTitle('') }}
-              className="text-[13px] text-slate-500 transition-colors hover:text-navy-900"
+              className="text-[13px] text-black transition-colors hover:text-navy-900"
             >
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── Step delete error ── */}
+      {stepDeleteError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-[13px] text-red-700">
+          {stepDeleteError}
         </div>
       )}
 
@@ -669,7 +776,7 @@ function PathwayStructure({
                     </span>
                   )}
 
-                  <span className="shrink-0 text-[11px] text-slate-400">
+                  <span className="shrink-0 text-[11px] text-black">
                     {sectionSteps.length} {sectionSteps.length === 1 ? 'step' : 'steps'}
                   </span>
 
@@ -683,7 +790,7 @@ function PathwayStructure({
                       <button
                         type="button"
                         onClick={() => setEditingSectionId(null)}
-                        className="shrink-0 text-[12px] text-slate-400 hover:text-navy-900"
+                        className="shrink-0 text-[12px] text-black hover:text-navy-900"
                       >Cancel</button>
                     </>
                   ) : (
@@ -691,16 +798,50 @@ function PathwayStructure({
                       <button
                         type="button"
                         onClick={() => { setEditingSectionId(section.id); setEditTitle(section.title) }}
-                        className="shrink-0 text-[12px] text-slate-400 transition-colors hover:text-teal-700"
+                        className="shrink-0 text-[12px] text-black transition-colors hover:text-teal-700"
                       >Rename</button>
                       <button
                         type="button"
+                        onClick={() => setBannerEditSectionId(bannerEditSectionId === section.id ? null : section.id)}
+                        className={`shrink-0 text-[12px] transition-colors hover:text-teal-700 ${
+                          section.banner_image_url ? 'text-teal-700' : 'text-slate-400'
+                        }`}
+                      >
+                        {section.banner_image_url ? 'Banner ✓' : 'Banner'}
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleSectionDelete(section.id)}
-                        className="shrink-0 text-[12px] text-slate-400 transition-colors hover:text-red-500"
+                        className="shrink-0 text-[12px] text-black transition-colors hover:text-red-500"
                       >Delete</button>
                     </>
                   )}
                 </div>
+
+                {/* Inline banner editor */}
+                {bannerEditSectionId === section.id && (
+                  <div className="border-b border-slate-100 bg-white p-4">
+                    <p className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-black">
+                      Section banner image
+                    </p>
+                    <ImagePickerField
+                      value={section.banner_image_url ?? null}
+                      onChange={(next) => handleSectionBannerChange(section.id, next)}
+                      spaceSlug={spaceSlug}
+                      initialAssets={mediaAssets}
+                      helperText="Shown above the section title on the pathway page. Optional — leave empty for the current text-only look."
+                    />
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setBannerEditSectionId(null)}
+                        className="rounded-lg border border-slate-200 px-4 py-2 text-[13px] font-medium text-black hover:bg-slate-50"
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Steps in this section */}
                 {sectionSteps.length > 0 && (
@@ -717,13 +858,15 @@ function PathwayStructure({
                         onMoveDown={() => handleSectionStepMove(step, 1, section.id)}
                         isFirst={stepIdx === 0}
                         isLast={stepIdx === sectionSteps.length - 1}
+                        onDelete={() => handleStepDelete(step)}
+                        deleting={deletingStepId === step.id}
                       />
                     ))}
                   </div>
                 )}
 
                 {sectionSteps.length === 0 && !isAddingHere && (
-                  <p className="px-4 py-3 text-[13px] italic text-slate-400">No steps in this section yet.</p>
+                  <p className="px-4 py-3 text-[13px] italic text-black">No steps in this section yet.</p>
                 )}
 
                 {/* Per-section add step */}
@@ -742,7 +885,7 @@ function PathwayStructure({
                       <button
                         type="button"
                         onClick={() => setAddingToContext(section.id)}
-                        className="text-[12px] font-medium text-slate-400 transition-colors hover:text-teal-700"
+                        className="text-[12px] font-medium text-black transition-colors hover:text-teal-700"
                       >
                         + Add step here
                       </button>
@@ -757,7 +900,7 @@ function PathwayStructure({
           {unsectionedSteps.length > 0 && (
             <div className="overflow-hidden rounded-xl border border-dashed border-slate-200">
               <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
-                <span className="text-[12px] font-medium text-slate-500">
+                <span className="text-[12px] font-medium text-black">
                   Unsectioned · {unsectionedSteps.length} {unsectionedSteps.length === 1 ? 'step' : 'steps'}
                 </span>
               </div>
@@ -774,6 +917,8 @@ function PathwayStructure({
                     onMoveDown={() => handleUnsectionedStepMove(step, 1)}
                     isFirst={stepIdx === 0}
                     isLast={stepIdx === unsectionedSteps.length - 1}
+                    onDelete={() => handleStepDelete(step)}
+                    deleting={deletingStepId === step.id}
                   />
                 ))}
               </div>
@@ -796,6 +941,8 @@ function PathwayStructure({
                 onSectionChange={handleStepSectionChange}
                 onMoveUp={() => handleFlatStepMove(step, -1)}
                 onMoveDown={() => handleFlatStepMove(step, 1)}
+                onDelete={() => handleStepDelete(step)}
+                deleting={deletingStepId === step.id}
                 isFirst={i === 0}
                 isLast={i === sortedFlatSteps.length - 1}
               />
@@ -820,7 +967,7 @@ function PathwayStructure({
             <button
               type="button"
               onClick={() => setAddingToContext('global')}
-              className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-[13px] font-medium text-slate-500 transition-colors hover:border-teal-300 hover:text-teal-700"
+              className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-[13px] font-medium text-black transition-colors hover:border-teal-300 hover:text-teal-700"
             >
               {sections.length > 0 ? '+ Add step without section' : '+ Add step'}
             </button>
@@ -840,6 +987,7 @@ interface Props {
   steps: CreatorStep[]
   sections: CreatorSection[]
   spaceSlug: string
+  mediaAssets: CreatorMediaAsset[]
 }
 
 function centsToDisplay(cents: number | null): string {
@@ -1062,16 +1210,16 @@ function PaymentSchedulesSection({
     return (
       <div className="rounded-lg border border-teal-200 bg-teal-50/30 p-3 space-y-3 mt-2">
         <p className="text-[12px] font-semibold text-navy-900">{schedId ? 'Edit schedule' : 'New schedule'}</p>
-        {schedId && <p className="text-[11px] text-slate-400">Changes affect future checkouts only.</p>}
+        {schedId && <p className="text-[11px] text-black">Changes affect future checkouts only.</p>}
 
         <div className="grid gap-2 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Name *</label>
+            <label className="mb-1 block text-[11px] font-semibold text-black">Name *</label>
             <input type="text" value={sName} onChange={e => setSName(e.target.value)} placeholder="e.g. Pay in full"
               className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Schedule type</label>
+            <label className="mb-1 block text-[11px] font-semibold text-black">Schedule type</label>
             <select value={sType} onChange={e => setSType(e.target.value)}
               className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-teal-400">
               <option value="pay_in_full">Pay in full</option>
@@ -1080,7 +1228,7 @@ function PaymentSchedulesSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Currency</label>
+            <label className="mb-1 block text-[11px] font-semibold text-black">Currency</label>
             <select value={sCurrency} onChange={e => setSCurrency(e.target.value)}
               className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-teal-400">
               <option value="AUD">AUD</option>
@@ -1089,7 +1237,7 @@ function PaymentSchedulesSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Total amount ($)</label>
+            <label className="mb-1 block text-[11px] font-semibold text-black">Total amount ($)</label>
             <input type="number" min="0" step="0.01" value={sTotalAmount} onChange={e => setSTotalAmount(e.target.value)}
               placeholder="e.g. 200"
               className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
@@ -1097,19 +1245,19 @@ function PaymentSchedulesSection({
           {sType === 'recurring_installments' && (
             <>
               <div>
-                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Instalment amount ($)</label>
+                <label className="mb-1 block text-[11px] font-semibold text-black">Instalment amount ($)</label>
                 <input type="number" min="0" step="0.01" value={sInstAmount} onChange={e => setSInstAmount(e.target.value)}
                   placeholder="e.g. 20"
                   className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Number of instalments</label>
+                <label className="mb-1 block text-[11px] font-semibold text-black">Number of instalments</label>
                 <input type="number" min="1" value={sInstCount} onChange={e => setSInstCount(e.target.value)}
                   placeholder="e.g. 10"
                   className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] font-semibold text-slate-600">Interval</label>
+                <label className="mb-1 block text-[11px] font-semibold text-black">Interval</label>
                 <select value={sInterval} onChange={e => setSInterval(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[13px] outline-none focus:border-teal-400">
                   <option value="week">Weekly</option>
@@ -1120,13 +1268,13 @@ function PaymentSchedulesSection({
             </>
           )}
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Member-facing note</label>
+            <label className="mb-1 block text-[11px] font-semibold text-black">Member-facing note</label>
             <input type="text" value={sBuyerNote} onChange={e => setSBuyerNote(e.target.value)}
               placeholder="Short note shown at checkout"
               className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
           </div>
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-[11px] font-semibold text-slate-600">Internal note</label>
+            <label className="mb-1 block text-[11px] font-semibold text-black">Internal note</label>
             <input type="text" value={sInternalNote} onChange={e => setSInternalNote(e.target.value)}
               placeholder="Not shown to members"
               className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-[13px] outline-none focus:border-teal-400" />
@@ -1142,7 +1290,7 @@ function PaymentSchedulesSection({
             {saving ? 'Saving…' : schedId ? 'Save changes' : 'Save as draft'}
           </button>
           <button type="button" onClick={closeForm}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition-colors hover:bg-slate-50">
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-black transition-colors hover:bg-slate-50">
             Cancel
           </button>
         </div>
@@ -1182,9 +1330,9 @@ function PaymentSchedulesSection({
                           : s.status === 'archived' ? 'bg-slate-200 text-slate-500'
                           : 'bg-amber-100 text-amber-700'
                         }`}>{s.status}</span>
-                        <span className="text-slate-400">({scheduleTypeLabel(s.schedule_type)})</span>
+                        <span className="text-black">({scheduleTypeLabel(s.schedule_type)})</span>
                       </div>
-                      <div className="mt-0.5 flex flex-wrap gap-2 text-slate-500">
+                      <div className="mt-0.5 flex flex-wrap gap-2 text-black">
                         {s.total_amount_cents != null && <span>Total: {fmtOptionPrice(s.total_amount_cents, s.currency)}</span>}
                         {s.installment_count != null && s.installment_amount_cents != null && (
                           <span>{s.installment_count} × {fmtOptionPrice(s.installment_amount_cents, s.currency)} {s.interval}</span>
@@ -1195,7 +1343,7 @@ function PaymentSchedulesSection({
                       <div className="flex shrink-0 flex-col gap-1 items-end">
                         {s.status !== 'archived' && (
                           <button type="button" onClick={() => openEdit(s)}
-                            className="text-[10px] font-semibold text-slate-500 hover:text-navy-900">Edit</button>
+                            className="text-[10px] font-semibold text-black hover:text-navy-900">Edit</button>
                         )}
                         {s.status === 'draft' && (
                           <button type="button" onClick={() => handleStatusChange(s.id, 'published')}
@@ -1203,11 +1351,11 @@ function PaymentSchedulesSection({
                         )}
                         {s.status === 'published' && (
                           <button type="button" onClick={() => handleStatusChange(s.id, 'draft')}
-                            className="text-[10px] text-slate-500 hover:text-slate-700">Unpublish</button>
+                            className="text-[10px] text-black hover:text-slate-700">Unpublish</button>
                         )}
                         {s.status !== 'archived' && (
                           <button type="button" onClick={() => handleArchive(s.id)}
-                            className="text-[10px] text-slate-400 hover:text-red-500">Archive</button>
+                            className="text-[10px] text-black hover:text-red-500">Archive</button>
                         )}
                       </div>
                     )}
@@ -1218,7 +1366,7 @@ function PaymentSchedulesSection({
           ))}
 
           {schedules.length === 0 && formMode === null && !loadError && (
-            <p className="text-[12px] text-slate-400">No schedules yet.</p>
+            <p className="text-[12px] text-black">No schedules yet.</p>
           )}
 
           {formMode === null && (
@@ -1228,7 +1376,7 @@ function PaymentSchedulesSection({
                 + Add schedule
               </button>
               <button type="button" onClick={handleGenerate} disabled={generating}
-                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50">
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-black transition-colors hover:bg-slate-50 disabled:opacity-50">
                 {generating ? 'Generating…' : '⚡ Generate standard'}
               </button>
             </div>
@@ -1412,13 +1560,13 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
             {optId ? 'Edit payment option' : 'New payment option'}
           </p>
           {optId && (
-            <p className="text-[11px] text-slate-400">Changes affect future checkouts only. Existing purchases are not changed.</p>
+            <p className="text-[11px] text-black">Changes affect future checkouts only. Existing purchases are not changed.</p>
           )}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Name *</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Name *</label>
             <input
               type="text" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Awaken — 1 session per week"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400"
@@ -1426,7 +1574,7 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
           </div>
 
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Description</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Description</label>
             <input
               type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional short description"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400"
@@ -1434,7 +1582,7 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
           </div>
 
           <div>
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Payment type</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Payment type</label>
             <select value={paymentType} onChange={e => setPaymentType(e.target.value)}
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] outline-none focus:border-teal-400">
               <option value="one_time">One-time</option>
@@ -1444,7 +1592,7 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
           </div>
 
           <div>
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Currency</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Currency</label>
             <select value={currency} onChange={e => setCurrency(e.target.value)}
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] outline-none focus:border-teal-400">
               <option value="AUD">AUD</option>
@@ -1454,28 +1602,28 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
           </div>
 
           <div>
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Sessions/week</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Sessions/week</label>
             <input type="number" min="1" value={sessionsPerWeek} onChange={e => setSessionsPerWeek(e.target.value)}
               placeholder="e.g. 1"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
           </div>
 
           <div>
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Total sessions</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Total sessions</label>
             <input type="number" min="1" value={totalSessions} onChange={e => setTotalSessions(e.target.value)}
               placeholder="e.g. 10"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
           </div>
 
           <div>
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Price per session ($)</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Price per session ($)</label>
             <input type="number" min="0" step="0.01" value={pricePerSession} onChange={e => setPricePerSession(e.target.value)}
               placeholder="e.g. 20"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
           </div>
 
           <div>
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Override total ($)</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Override total ($)</label>
             <input type="number" min="0" step="0.01" value={overrideTotal} onChange={e => setOverrideTotal(e.target.value)}
               placeholder="Leave blank to use calculated"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
@@ -1484,12 +1632,12 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
           {paymentType === 'term_pass' && (
             <>
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">Term start</label>
+                <label className="mb-1 block text-[12px] font-semibold text-black">Term start</label>
                 <input type="date" value={termStart} onChange={e => setTermStart(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
               </div>
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-slate-600">Term end</label>
+                <label className="mb-1 block text-[12px] font-semibold text-black">Term end</label>
                 <input type="date" value={termEnd} onChange={e => setTermEnd(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
               </div>
@@ -1497,14 +1645,14 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
           )}
 
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Member-facing note</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Member-facing note</label>
             <input type="text" value={buyerNote} onChange={e => setBuyerNote(e.target.value)}
               placeholder="Short note shown to members at checkout"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
           </div>
 
           <div className="sm:col-span-2">
-            <label className="mb-1 block text-[12px] font-semibold text-slate-600">Internal note</label>
+            <label className="mb-1 block text-[12px] font-semibold text-black">Internal note</label>
             <input type="text" value={internalNote} onChange={e => setInternalNote(e.target.value)}
               placeholder="Not shown to members"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] outline-none focus:border-teal-400" />
@@ -1524,7 +1672,7 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
             {saving ? 'Saving…' : optId ? 'Save changes' : 'Save as draft'}
           </button>
           <button type="button" onClick={closeForm}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:bg-slate-50">
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-black transition-colors hover:bg-slate-50">
             Cancel
           </button>
         </div>
@@ -1537,7 +1685,7 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-[15px] font-semibold text-navy-900">Payment options</h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+          <p className="mt-1 text-[13px] leading-relaxed text-black">
             Create tiered or term-based pricing options for this pathway.
             Published options appear on the checkout page for members to choose from.
           </p>
@@ -1584,8 +1732,8 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
                           {opt.status}
                         </span>
                       </div>
-                      {opt.description && <p className="mt-0.5 text-[12px] text-slate-500">{opt.description}</p>}
-                      <div className="mt-2 flex flex-wrap gap-3 text-[12px] text-slate-500">
+                      {opt.description && <p className="mt-0.5 text-[12px] text-black">{opt.description}</p>}
+                      <div className="mt-2 flex flex-wrap gap-3 text-[12px] text-black">
                         <span>Type: {opt.payment_type}</span>
                         {opt.sessions_per_week != null && <span>{opt.sessions_per_week}×/week</span>}
                         {opt.total_sessions != null && <span>{opt.total_sessions} sessions</span>}
@@ -1597,13 +1745,13 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
                       <div className="mt-1 text-[13px] font-semibold text-navy-900">
                         Effective price: {fmtOptionPrice(opt.effective_price_cents, opt.currency)}
                         {opt.calculated_total_cents != null && opt.override_total_cents != null && (
-                          <span className="ml-1 text-[11px] font-normal text-slate-400">
+                          <span className="ml-1 text-[11px] font-normal text-black">
                             (override; calculated {fmtOptionPrice(opt.calculated_total_cents, opt.currency)})
                           </span>
                         )}
                       </div>
                       {opt.internal_note && (
-                        <p className="mt-1 text-[11px] italic text-slate-400">Note: {opt.internal_note}</p>
+                        <p className="mt-1 text-[11px] italic text-black">Note: {opt.internal_note}</p>
                       )}
                     </div>
                     <div className="flex shrink-0 flex-col gap-1.5 items-end">
@@ -1611,7 +1759,7 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
                         <button
                           type="button"
                           onClick={() => openEdit(opt)}
-                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-black transition-colors hover:bg-slate-50"
                         >
                           Edit
                         </button>
@@ -1629,7 +1777,7 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
                         <button
                           type="button"
                           onClick={() => handleStatusChange(opt.id, 'draft')}
-                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-50"
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-black transition-colors hover:bg-slate-50"
                         >
                           Unpublish
                         </button>
@@ -1638,7 +1786,7 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
                         <button
                           type="button"
                           onClick={() => handleArchive(opt.id)}
-                          className="rounded-lg px-2 py-1 text-[11px] text-slate-400 transition-colors hover:text-red-500"
+                          className="rounded-lg px-2 py-1 text-[11px] text-black transition-colors hover:text-red-500"
                         >
                           Archive
                         </button>
@@ -1663,13 +1811,13 @@ function PaymentOptionsSection({ spaceSlug, pathwaySlug }: { spaceSlug: string; 
       )}
 
       {options.length === 0 && formMode === null && (
-        <p className="text-[13px] text-slate-400">No payment options yet. Add one above.</p>
+        <p className="text-[13px] text-black">No payment options yet. Add one above.</p>
       )}
     </div>
   )
 }
 
-export default function EditPathwayClient({ pathway, steps: initialSteps, sections: initialSections, spaceSlug }: Props) {
+export default function EditPathwayClient({ pathway, steps: initialSteps, sections: initialSections, spaceSlug, mediaAssets }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
 
@@ -1688,12 +1836,54 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
   const [steps, setSteps]               = useState<CreatorStep[]>(initialSteps)
   const [sections, setSections]         = useState<CreatorSection[]>(initialSections)
 
+  const [unlockOptionIds, setUnlockOptionIds] = useState<string[]>([])
+
   const [coverUrl, setCoverUrl]             = useState<string | null>(pathway.cover_image_url ?? null)
-  const [coverPreview, setCoverPreview]     = useState<string | null>(null)
-  const [coverFile, setCoverFile]           = useState<File | null>(null)
-  const [coverUploading, setCoverUploading] = useState(false)
   const [coverError, setCoverError]         = useState<string | null>(null)
   const [coverSaved, setCoverSaved]         = useState(false)
+
+  async function handleCoverChange(next: string | null) {
+    setCoverError(null)
+    setCoverSaved(false)
+    // Optimistic update so the preview reflects the choice immediately
+    setCoverUrl(next)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}`),
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ cover_image_url: next }),
+        },
+      )
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setCoverError(typeof body.detail === 'string' ? body.detail : 'Could not save cover image.')
+        // Revert optimistic update on failure
+        setCoverUrl(pathway.cover_image_url ?? null)
+        return
+      }
+      const data = await res.json()
+      setCoverUrl(data.cover_image_url ?? null)
+      setCoverSaved(true)
+      startTransition(() => router.refresh())
+      setTimeout(() => setCoverSaved(false), 3000)
+    } catch {
+      setCoverError('Could not save cover image.')
+      setCoverUrl(pathway.cover_image_url ?? null)
+    }
+  }
+
+  // Load existing unlock requirements on mount
+  useEffect(() => {
+    if (pathway.access_type !== 'included_with_offer') return
+    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/unlock-requirements`), { credentials: 'include' })
+      .then(r => r.ok ? r.json() : [])
+      .then((opts: { id: string }[]) => setUnlockOptionIds(opts.map(o => o.id)))
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const isPaid = accessType === 'one_time' || accessType === 'subscription'
   const needsSinglePrice = isPaid && pricingMode === 'legacy'
@@ -1741,6 +1931,20 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
         setError(detail ?? 'Could not save changes. Please try again.')
         return
       }
+
+      // Save unlock requirements when using included_with_offer
+      if (accessType === 'included_with_offer') {
+        await fetch(
+          apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/unlock-requirements`),
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ payment_option_ids: unlockOptionIds }),
+          },
+        )
+      }
+
       setSaved(true)
       startTransition(() => { router.refresh() })
       setTimeout(() => setSaved(false), 3000)
@@ -1762,8 +1966,8 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
           <div className="space-y-5">
 
             <div>
-              <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                Pathway title <span className="font-normal text-slate-400">(required)</span>
+              <label className="mb-1 block text-[12px] font-semibold text-black">
+                Pathway title <span className="font-normal text-black">(required)</span>
               </label>
               <input
                 type="text" value={title}
@@ -1774,8 +1978,8 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
             </div>
 
             <div>
-              <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                Short description <span className="font-normal text-slate-400">(optional)</span>
+              <label className="mb-1 block text-[12px] font-semibold text-black">
+                Short description <span className="font-normal text-black">(optional)</span>
               </label>
               <input
                 type="text" value={description}
@@ -1786,8 +1990,8 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
             </div>
 
             <div>
-              <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                What will people practice? <span className="font-normal text-slate-400">(optional)</span>
+              <label className="mb-1 block text-[12px] font-semibold text-black">
+                What will people practice? <span className="font-normal text-black">(optional)</span>
               </label>
               <textarea
                 value={practiceBody}
@@ -1825,7 +2029,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
 
           {/* Status */}
           <div className="rounded-2xl border border-border bg-white p-5">
-            <label className="mb-2 block text-[12px] font-semibold text-slate-600">Status</label>
+            <label className="mb-2 block text-[12px] font-semibold text-black">Status</label>
             <select
               value={status} onChange={(e) => setStatus(e.target.value)}
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
@@ -1849,80 +2053,24 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
               currency={currency}
               setCurrency={setCurrency}
               priceError={priceError}
+              spaceSlug={spaceSlug}
+              unlockOptionIds={unlockOptionIds}
+              setUnlockOptionIds={setUnlockOptionIds}
             />
           </div>
 
           {/* Cover image */}
           <div className="rounded-2xl border border-border bg-white p-5">
             <h2 className="mb-0.5 text-[14px] font-semibold text-navy-900">Pathway cover</h2>
-            <p className="mb-3 text-[12px] text-slate-500">
-              Wide image recommended (16:9). JPG or PNG.
+            <p className="mb-3 text-[12px] text-black">
+              Wide image recommended (16:9). Upload, reuse from Assets, or paste an external URL.
             </p>
-
-            {(coverPreview ?? resolveMediaUrl(coverUrl)) && (
-              <div className="mb-3 overflow-hidden rounded-xl">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={coverPreview ?? resolveMediaUrl(coverUrl)!}
-                  alt="Pathway cover preview"
-                  className="w-full object-cover"
-                  style={{ aspectRatio: '16/9' }}
-                />
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-navy-900 transition-colors hover:border-teal-300 hover:text-teal-700">
-                {coverUrl || coverPreview ? 'Replace' : 'Choose image'}
-                <input
-                  type="file" accept="image/jpeg,image/png" className="sr-only"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] ?? null
-                    setCoverFile(f); setCoverError(null); setCoverSaved(false)
-                    if (f) {
-                      const reader = new FileReader()
-                      reader.onload = (ev) => setCoverPreview(ev.target?.result as string)
-                      reader.readAsDataURL(f)
-                    } else { setCoverPreview(null) }
-                  }}
-                />
-              </label>
-
-              {coverFile && (
-                <button
-                  type="button" disabled={coverUploading}
-                  onClick={async () => {
-                    if (!coverFile) return
-                    setCoverUploading(true); setCoverError(null); setCoverSaved(false)
-                    const form = new FormData()
-                    form.append('file', coverFile)
-                    try {
-                      const res = await fetch(
-                        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/cover`),
-                        { method: 'POST', credentials: 'include', body: form },
-                      )
-                      if (!res.ok) {
-                        const b = await res.json().catch(() => ({}))
-                        setCoverError(typeof b.detail === 'string' ? b.detail : 'Upload failed.')
-                        return
-                      }
-                      const data = await res.json()
-                      setCoverUrl(data.cover_image_url ?? null)
-                      setCoverPreview(null); setCoverFile(null); setCoverSaved(true)
-                      startTransition(() => { router.refresh() })
-                      setTimeout(() => setCoverSaved(false), 3000)
-                    } catch {
-                      setCoverError('Upload failed. Please try again.')
-                    } finally { setCoverUploading(false) }
-                  }}
-                  className="rounded-lg px-3 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-                >
-                  {coverUploading ? 'Uploading…' : 'Upload'}
-                </button>
-              )}
-            </div>
-
+            <ImagePickerField
+              value={coverUrl}
+              onChange={handleCoverChange}
+              spaceSlug={spaceSlug}
+              initialAssets={mediaAssets}
+            />
             {coverError && <p className="mt-2 text-[12px] text-red-600">{coverError}</p>}
             {coverSaved && <p className="mt-2 text-[12px] font-medium" style={{ color: '#38A09E' }}>Cover saved.</p>}
           </div>
@@ -1935,7 +2083,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-[15px] font-semibold text-navy-900">Pathway about page</h2>
-            <p className="mt-1 text-[13px] leading-relaxed text-slate-500">
+            <p className="mt-1 text-[13px] leading-relaxed text-black">
               Build the page people see before they start or unlock this pathway.
               Add rich content, images, video, and a clear call to action.
             </p>
@@ -1960,6 +2108,7 @@ export default function EditPathwayClient({ pathway, steps: initialSteps, sectio
         spaceSlug={spaceSlug}
         setSteps={setSteps}
         setSections={setSections}
+        mediaAssets={mediaAssets}
       />
 
     </div>

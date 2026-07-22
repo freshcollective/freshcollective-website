@@ -87,7 +87,7 @@ export default function StepList({
   return (
     <div className="flex flex-col gap-3">
       {steps.length === 0 && !addingOpen && (
-        <p className="text-sm text-slate-400">No steps yet. Add the first one.</p>
+        <p className="text-sm text-black">No steps yet. Add the first one.</p>
       )}
 
       {steps.map((step, i) => (
@@ -110,10 +110,10 @@ export default function StepList({
               ↓
             </button>
           </div>
-          <span className="w-5 shrink-0 text-center text-sm text-slate-300">{i + 1}</span>
+          <span className="w-5 shrink-0 text-center text-sm text-black">{i + 1}</span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-navy-900">{step.title}</p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-black">
               {TYPE_LABELS[step.content_type] ?? step.content_type}
               {step.estimated_minutes ? ` · ${step.estimated_minutes} min` : ''}
               {!step.is_required ? ' · optional' : ''}
@@ -154,7 +154,7 @@ export default function StepList({
           <button
             type="button"
             onClick={() => { setAddingOpen(false); setAddingTitle('') }}
-            className="text-sm text-slate-400 hover:text-slate-600"
+            className="text-sm text-black hover:text-slate-600"
           >
             Cancel
           </button>

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../styles/tokens.css";
+@import "../styles/fc-tokens.css";
 
 @theme {
   --color-background: #F7FBFA;
@@ -116,6 +117,87 @@ p { letter-spacing: -0.01em; }
   100% { transform: scale(1.6);  opacity: 0; }
 }
 
+/* Build Your Collective — opening transition (soft ripples during the reveal). */
+@keyframes byp-ripple {
+  0%   { transform: scale(0.4); opacity: 0.55; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+@keyframes byp-drift {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+
+/* Build Your Collective — portal into Creator Studio (ocean light streaks). */
+@keyframes byp-streak {
+  0%   { transform: translateX(0);    opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateX(-40vw); opacity: 0; }
+}
+
+/* Member dashboard — slow drift on the arrival hero so the artwork breathes. */
+@keyframes fc-hero-drift {
+  0%, 100% { transform: scale(1.00) translate3d(0, 0, 0); }
+  50%      { transform: scale(1.045) translate3d(-0.5%, -0.3%, 0); }
+}
+.fc-hero-drift {
+  animation: fc-hero-drift 24s ease-in-out infinite;
+  transform-origin: center;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-hero-drift { animation: none; }
+}
+
+/* Build Your Collective — first arrival overlay (fade in on mount, fade out on dismiss). */
+@keyframes byp-arrival-in {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes byp-arrival-out {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes byp-backdrop-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* /world — slow, calm motion for the sky + personal island */
+@keyframes world-twinkle {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+@keyframes world-shimmer {
+  0%, 100% { transform: scale(1);    opacity: 0.16; }
+  50%      { transform: scale(1.35); opacity: 0.34; }
+}
+@keyframes world-drift {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50%      { transform: translateY(-4px) rotate(0.4deg); }
+}
+@keyframes world-flow {
+  0%   { transform: translateX(-4px); opacity: 0.55; }
+  50%  { transform: translateX(4px);  opacity: 0.85; }
+  100% { transform: translateX(-4px); opacity: 0.55; }
+}
+@keyframes world-ember {
+  0%, 100% { opacity: 0.55; transform: translateY(0) scale(1); }
+  50%      { opacity: 1;    transform: translateY(-3px) scale(1.06); }
+}
+
+.world-twinkle { animation: world-twinkle 5.5s ease-in-out infinite; }
+.world-shimmer { animation: world-shimmer 7s   ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.world-drift   { animation: world-drift   9s   ease-in-out infinite; transform-box: fill-box; }
+.world-flow    { animation: world-flow    6.5s ease-in-out infinite; transform-box: fill-box; }
+.world-ember   { animation: world-ember   4s   ease-in-out infinite; transform-box: fill-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  .world-twinkle, .world-shimmer, .world-drift, .world-flow, .world-ember {
+    animation: none;
+  }
+}
+
 /* Scroll-reveal: applied via .reveal class */
 .reveal {
   opacity: 0;
@@ -133,29 +215,66 @@ p { letter-spacing: -0.01em; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 
-/* Creator form helpers */
+/* ---------------------------------------------------------------------------
+ * Creator Studio form helpers — shared across pathway editor, block editor,
+ * settings, billing, and any creator-facing form. Sizes here cascade to every
+ * surface that uses these classes; tweaks are intentionally conservative so
+ * the editor feels roomier without becoming oversized.
+ * ------------------------------------------------------------------------- */
 .field-label {
   display: block;
-  margin-bottom: 0.25rem;
-  font-size: 11px;
+  margin-bottom: 0.375rem;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: #64748b;
+  color: #475569;            /* darker than 64748b for stronger contrast */
 }
 .field-input {
   width: 100%;
+  min-height: 44px;          /* WCAG touch-target floor */
   border-radius: 0.5rem;
-  border: 1px solid #e2e8f0;
-  padding: 0.5rem 0.75rem;
-  font-size: 13px;
+  border: 1px solid #cbd5e1; /* slightly darker resting border for visibility */
+  padding: 0.625rem 0.875rem;
+  font-size: 15px;
+  line-height: 1.5;
   color: #0f172a;
   background: #fff;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
+.field-input:hover { border-color: #94a3b8; }
 .field-input:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(56,160,158,0.3);
+  border-color: #38A09E;
+  box-shadow: 0 0 0 3px rgba(56,160,158,0.18);
 }
+.field-input::placeholder { color: #94a3b8; }
+/* Textareas: roomier line-height + a sensible minimum height. */
+textarea.field-input {
+  min-height: 120px;
+  line-height: 1.6;
+  resize: vertical;
+}
+/* Native selects: match input height/typography. */
+select.field-input {
+  padding-right: 2rem;        /* room for native caret on some browsers */
+  background-image: none;
+}
+/* Optional smaller variant for inline filters/toolbars. */
+.field-input.field-input-sm {
+  min-height: 36px;
+  padding: 0.375rem 0.625rem;
+  font-size: 13px;
+}
+/* Help text shown below fields. */
+.field-help {
+  margin-top: 0.375rem;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+/* Vertical rhythm between form groups. */
+.field-group + .field-group { margin-top: 1.25rem; }
 
 /* TipTap prose styles */
 .ProseMirror p.is-editor-empty:first-child::before {
@@ -169,9 +288,11 @@ p { letter-spacing: -0.01em; }
 
 /* TipTap editor content styles */
 .rich-editor .ProseMirror {
-  font-size: 14px;
-  line-height: 1.75;
+  font-size: 15px;
+  line-height: 1.7;
   color: #0f172a;
+  min-height: 120px;
+  padding: 0.5rem 0.25rem;
 }
 .rich-editor .ProseMirror p { margin: 0.4rem 0; }
 .rich-editor .ProseMirror h2 { font-size: 1.2rem; font-weight: 700; margin: 0.8rem 0 0.3rem; color: #0a1628; }
@@ -185,3 +306,44 @@ p { letter-spacing: -0.01em; }
 .rich-editor .ProseMirror em { font-style: italic; }
 .rich-editor .ProseMirror u { text-decoration: underline; }
 .rich-editor .ProseMirror code { background: #f1f5f9; border-radius: 3px; padding: 0.1em 0.35em; font-size: 0.875em; font-family: ui-monospace, monospace; }
+.rich-editor .ProseMirror hr { border: none; border-top: 1px solid rgba(15,23,42,0.15); margin: 1rem 0; }
+
+/* Editor-side table styling — matches the published .rt-table treatment
+   so writers see what will publish. Cells use padding + a subtle grid; the
+   currently-selected cell gets a soft teal highlight so the writer can see
+   the caret target. */
+.rich-editor .ProseMirror table {
+  border-collapse: collapse;
+  margin: 0.6rem 0;
+  overflow: hidden;
+  table-layout: fixed;
+  width: 100%;
+}
+.rich-editor .ProseMirror table td,
+.rich-editor .ProseMirror table th {
+  border: 1px solid rgba(15,23,42,0.15);
+  padding: 6px 10px;
+  vertical-align: top;
+  position: relative;
+  min-width: 4rem;
+}
+.rich-editor .ProseMirror table th {
+  background: rgba(56, 160, 158, 0.10);
+  font-weight: 600;
+}
+.rich-editor .ProseMirror .selectedCell {
+  background: rgba(56, 160, 158, 0.12);
+}
+.rich-editor .ProseMirror table p { margin: 0; }
+
+/* Columns block — CSS variable holds the desired wide-viewport grid
+   template. Below the ``sm`` breakpoint (640px) cells stack to a single
+   column so each cell keeps a readable measure on phones. */
+.fc-columns-grid {
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .fc-columns-grid {
+    grid-template-columns: var(--fc-cols, 1fr 1fr);
+  }
+}

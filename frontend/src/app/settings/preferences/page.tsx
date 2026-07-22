@@ -3,7 +3,7 @@ export default function SettingsPreferencesPage() {
     <div>
       <div className="mb-8">
         <h2 className="mb-1 font-serif text-xl text-navy-900">Preferences</h2>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-black">
           Personalise how the platform works for you.
         </p>
       </div>
@@ -11,7 +11,7 @@ export default function SettingsPreferencesPage() {
       <div className="space-y-4">
         <PreferenceRow
           label="Email notifications"
-          description="Receive updates about new events, community posts, and pathway reminders."
+          description="Receive updates about new events, conversations, and pathway reminders."
           comingSoon
         />
         <PreferenceRow
@@ -42,10 +42,10 @@ function PreferenceRow({
     <div className="flex items-start justify-between gap-4 rounded-xl border border-border bg-surface px-5 py-4">
       <div className="flex-1">
         <p className="text-sm font-medium text-navy-800">{label}</p>
-        <p className="mt-0.5 text-xs text-slate-400">{description}</p>
+        <p className="mt-0.5 text-xs text-black">{description}</p>
       </div>
       {comingSoon && (
-        <span className="mt-0.5 shrink-0 text-[10px] font-medium text-slate-300">
+        <span className="mt-0.5 shrink-0 text-[10px] font-medium text-black">
           Coming soon
         </span>
       )}

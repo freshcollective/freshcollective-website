@@ -19,7 +19,7 @@ export function GoldLabel({
   variant = 'slate',
   className = '',
 }: GoldLabelProps) {
-  const textColor = variant === 'teal' ? 'text-teal-600' : 'text-slate-400'
+  const textColor = variant === 'teal' ? 'text-teal-600' : 'text-black'
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
       <div

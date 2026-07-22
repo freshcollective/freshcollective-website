@@ -49,7 +49,7 @@ export default function MobileNav({ isLoggedIn, dark }: Props) {
         aria-label={open ? 'Close menu' : 'Open menu'}
         aria-expanded={open}
         className="flex h-10 w-10 items-center justify-center rounded-lg transition-colors"
-        style={{ color: dark ? 'rgba(255,255,255,0.75)' : '#0C1826' }}
+        style={{ color: dark ? '#FFFFFF' : '#0C1826' }}
       >
         <svg width="20" height="14" viewBox="0 0 20 14" fill="none" aria-hidden="true">
           {open ? (
@@ -88,7 +88,7 @@ export default function MobileNav({ isLoggedIn, dark }: Props) {
                   key={href}
                   href={href}
                   className="flex items-center rounded-xl px-4 py-3.5 text-[16px] font-medium transition-colors"
-                  style={{ color: 'rgba(255,255,255,0.75)' }}
+                  style={{ color: '#FFFFFF' }}
                 >
                   {label}
                 </Link>
@@ -97,9 +97,9 @@ export default function MobileNav({ isLoggedIn, dark }: Props) {
                 <Link
                   href="/dashboard"
                   className="flex items-center rounded-xl px-4 py-3.5 text-[16px] font-medium transition-colors"
-                  style={{ color: 'rgba(255,255,255,0.75)' }}
+                  style={{ color: '#FFFFFF' }}
                 >
-                  Dashboard
+                  Your World
                 </Link>
               )}
             </nav>
@@ -109,7 +109,7 @@ export default function MobileNav({ isLoggedIn, dark }: Props) {
                 <button
                   onClick={handleLogout}
                   className="w-full rounded-xl py-3.5 text-[15px] font-medium transition-colors"
-                  style={{ border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.72)' }}
+                  style={{ border: '1px solid rgba(255,255,255,0.12)', color: '#FFFFFF' }}
                 >
                   Log out
                 </button>
@@ -118,7 +118,7 @@ export default function MobileNav({ isLoggedIn, dark }: Props) {
                   <Link
                     href="/login"
                     className="w-full rounded-xl py-3.5 text-center text-[15px] font-medium transition-colors"
-                    style={{ border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.72)' }}
+                    style={{ border: '1px solid rgba(255,255,255,0.12)', color: '#FFFFFF' }}
                   >
                     Log in
                   </Link>

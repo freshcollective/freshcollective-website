@@ -69,6 +69,15 @@ export default function CollectiveSettingsForm({ space }: Props) {
   const [bannerUploading, setBannerUploading] = useState(false)
   const [bannerSaved, setBannerSaved] = useState(false)
 
+  // Optional Collective Logo — the "hosted by" mark. Kept subtle and
+  // deliberately smaller than the banner controls so no one mistakes it
+  // for the primary visual identity.
+  const logoInputRef = useRef<HTMLInputElement>(null)
+  const [existingLogo, setExistingLogo] = useState<string | null>(space.logo_url ?? null)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [logoError, setLogoError] = useState<string | null>(null)
+  const [logoSaved, setLogoSaved] = useState(false)
+
   // Form state
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -120,6 +129,62 @@ export default function CollectiveSettingsForm({ space }: Props) {
       setBannerError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
     } finally {
       setBannerUploading(false)
+    }
+  }
+
+  async function uploadLogo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLogoError(null)
+    setLogoSaved(false)
+    const okType = /^image\/(jpeg|png|webp)$/i.test(file.type)
+      || /\.(jpe?g|png|webp)$/i.test(file.name)
+    if (!okType) {
+      setLogoError('Please select a JPG, PNG, or WebP image.')
+      return
+    }
+    setLogoUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await fetch(apiUrl(`/api/creator/spaces/${space.slug}/logo`), {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      })
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({}))
+        throw new Error(typeof b.detail === 'string' ? b.detail : `Upload failed (${res.status})`)
+      }
+      const data = await res.json()
+      setExistingLogo(data.logo_url ?? null)
+      setLogoSaved(true)
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
+    } finally {
+      setLogoUploading(false)
+      if (logoInputRef.current) logoInputRef.current.value = ''
+    }
+  }
+
+  async function removeLogo() {
+    if (!existingLogo) return
+    setLogoError(null)
+    setLogoSaved(false)
+    setLogoUploading(true)
+    try {
+      const res = await fetch(apiUrl(`/api/creator/spaces/${space.slug}/logo`), {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error(`Remove failed (${res.status})`)
+      const data = await res.json()
+      setExistingLogo(data.logo_url ?? null)
+      setLogoSaved(true)
+    } catch (err) {
+      setLogoError(err instanceof Error ? err.message : 'Remove failed. Please try again.')
+    } finally {
+      setLogoUploading(false)
     }
   }
 
@@ -192,6 +257,9 @@ export default function CollectiveSettingsForm({ space }: Props) {
         // Slug changed — update the active-collective cookie then reload settings
         document.cookie = `fc_creator_space=${saved.slug}; path=/; max-age=86400`
         router.push('/creator-studio/settings')
+        // Refresh to invalidate the router cache so the layout picks
+        // up the new active-collective cookie server-side.
+        router.refresh()
       } else {
         setSaved(true)
         router.refresh()
@@ -209,7 +277,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
       {/* ── Collective identity ── */}
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Collective identity</h2>
-        <p className="mb-5 text-[14px] text-slate-500">
+        <p className="mb-5 text-[14px] text-black">
           The name, tagline, and description that define your collective.
         </p>
 
@@ -235,7 +303,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
             </label>
             <div className="flex overflow-hidden rounded-xl border border-slate-200 bg-slate-50/70 transition-colors focus-within:border-teal-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-teal-400/20">
               <span
-                className="flex shrink-0 items-center border-r border-slate-200 bg-slate-100 px-3 py-2.5 text-[13px] text-slate-400 select-none"
+                className="flex shrink-0 items-center border-r border-slate-200 bg-slate-100 px-3 py-2.5 text-[13px] text-black select-none"
                 aria-hidden="true"
               >
                 {slugOrigin || 'https://…'}/spaces/
@@ -253,7 +321,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
                 placeholder="your-collective-name"
               />
             </div>
-            <p className="mt-1.5 text-[12px] text-slate-400">
+            <p className="mt-1.5 text-[12px] text-black">
               This is your collective&apos;s public link. Use lowercase letters, numbers, and hyphens. Changing this will break any existing links.
             </p>
           </div>
@@ -286,7 +354,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
               placeholder="A short summary shown on cards, explore pages, and previews."
               className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
             />
-            <p className="mt-1.5 text-[12px] text-slate-400">
+            <p className="mt-1.5 text-[12px] text-black">
               Shown on cards and explore pages — keep it to 1–2 sentences.
             </p>
           </div>
@@ -305,7 +373,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
-            <p className="mt-1.5 text-[12px] text-slate-400">
+            <p className="mt-1.5 text-[12px] text-black">
               Used to display gathering dates and times for members.
             </p>
           </div>
@@ -313,7 +381,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
           {/* ── Collective themes ── */}
           <div>
             <p className="mb-1.5 text-[14px] font-semibold text-navy-900">Collective themes</p>
-            <p className="mb-3 text-[13px] text-slate-500">
+            <p className="mb-3 text-[13px] text-black">
               Choose the themes that best describe this collective.
             </p>
             <div className="flex flex-wrap gap-2">
@@ -360,7 +428,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
       {/* ── About page ── */}
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">About page</h2>
-        <p className="mb-5 text-[14px] text-slate-500">
+        <p className="mb-5 text-[14px] text-black">
           Full rich content shown on your public About page. Use headings, bold text, bullets, and links.
         </p>
         <AboutRichTextEditor
@@ -373,7 +441,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
       {/* ── Banner image ── */}
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Banner image</h2>
-        <p className="mb-5 text-[14px] text-slate-500">
+        <p className="mb-5 text-[14px] text-black">
           Add a banner to give your collective a stronger visual identity.
         </p>
 
@@ -387,9 +455,9 @@ export default function CollectiveSettingsForm({ space }: Props) {
               className="h-3 w-3 rounded-full"
               style={{ background: '#38A09E' }}
             />
-            <p className="text-[13px] text-slate-600">
+            <p className="text-[13px] text-black">
               Banner uploaded.{' '}
-              <span className="text-slate-400">Upload a new image to replace it.</span>
+              <span className="text-black">Upload a new image to replace it.</span>
             </p>
           </div>
         )}
@@ -411,13 +479,13 @@ export default function CollectiveSettingsForm({ space }: Props) {
           className="flex flex-col gap-3 rounded-xl border-2 border-dashed px-5 py-5 transition-colors"
           style={{ borderColor: 'rgba(56,160,158,0.25)' }}
         >
-          <p className="text-[13px] text-slate-500">
+          <p className="text-[13px] text-black">
             {bannerFile ? bannerFile.name : 'No file selected'}
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <label
               htmlFor="banner-upload"
-              className="cursor-pointer rounded-xl border border-border bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-200 hover:text-teal-700"
+              className="cursor-pointer rounded-xl border border-border bg-white px-4 py-2 text-[13px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-700"
             >
               Choose image
             </label>
@@ -441,7 +509,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
               </button>
             )}
           </div>
-          <p className="text-[12px] text-slate-400">
+          <p className="text-[12px] text-black">
             Recommended: wide image, JPG or PNG. Max 10 MB.
           </p>
         </div>
@@ -456,10 +524,81 @@ export default function CollectiveSettingsForm({ space }: Props) {
         )}
       </div>
 
+      {/* ── Collective logo (optional) ─────────────────────────────────
+          A subtle "hosted by" mark shown beside the collective name in
+          the header. The Location artwork is the primary visual identity
+          — this is intentionally small and easy to leave blank. */}
+      <div className="rounded-2xl border border-border bg-white p-6">
+        <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Collective logo</h2>
+        <p className="mb-5 text-[14px] text-black">
+          Optional. A small mark shown beside your collective name — think &ldquo;hosted by&rdquo;. The Location artwork remains your collective&apos;s primary visual identity.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <div
+            className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl"
+            style={{ background: 'rgba(12,24,38,0.04)', border: '1px solid rgba(12,24,38,0.08)' }}
+          >
+            {existingLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={existingLogo}
+                alt="Collective logo"
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <span className="text-[11px] italic" style={{ color: 'rgba(12,24,38,0.45)' }}>
+                None
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label
+              htmlFor="logo-upload"
+              className="cursor-pointer rounded-xl border border-border bg-white px-4 py-2 text-[13px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-700"
+            >
+              {logoUploading ? 'Uploading…' : existingLogo ? 'Replace logo' : 'Upload logo'}
+            </label>
+            <input
+              id="logo-upload"
+              ref={logoInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={uploadLogo}
+              disabled={logoUploading}
+              className="sr-only"
+            />
+            {existingLogo && (
+              <button
+                type="button"
+                onClick={removeLogo}
+                disabled={logoUploading}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-black transition-colors hover:border-slate-300 disabled:opacity-60"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+
+        <p className="mt-3 text-[12px] text-black">
+          Recommended: a small square image on a transparent background. JPG, PNG, or WebP.
+        </p>
+        {logoError && (
+          <p className="mt-2 text-[13px]" style={{ color: '#dc2626' }}>{logoError}</p>
+        )}
+        {logoSaved && !logoError && (
+          <p className="mt-2 text-[13px]" style={{ color: '#38A09E' }}>
+            Logo saved.
+          </p>
+        )}
+      </div>
+
       {/* ── Visibility and access ── */}
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Visibility and access</h2>
-        <p className="mb-5 text-[14px] text-slate-500">
+        <p className="mb-5 text-[14px] text-black">
           Control who can find and join this collective.
         </p>
 
@@ -490,7 +629,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
                   />
                   <div>
                     <p className="text-[14px] font-medium text-navy-900">{opt.label}</p>
-                    <p className="mt-0.5 text-[13px] text-slate-500">{opt.desc}</p>
+                    <p className="mt-0.5 text-[13px] text-black">{opt.desc}</p>
                   </div>
                 </label>
               ))}
@@ -522,7 +661,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
                   />
                   <div>
                     <p className="text-[14px] font-medium text-navy-900">{opt.label}</p>
-                    <p className="mt-0.5 text-[13px] text-slate-500">{opt.desc}</p>
+                    <p className="mt-0.5 text-[13px] text-black">{opt.desc}</p>
                   </div>
                 </label>
               ))}
@@ -534,7 +673,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
       {/* ── Public pricing ── */}
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Public pricing</h2>
-        <p className="mb-5 text-[14px] text-slate-500">
+        <p className="mb-5 text-[14px] text-black">
           Shown publicly so people understand the cost before joining. Payment processing will be connected separately.
         </p>
 
@@ -566,7 +705,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
                 Amount (AUD)
               </label>
               <div className="flex items-center gap-2">
-                <span className="text-[15px] text-slate-400">$</span>
+                <span className="text-[15px] text-black">$</span>
                 <input
                   id="pricing-amount"
                   type="number"
@@ -577,7 +716,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
                   onChange={(e) => setPricingAmountDisplay(e.target.value)}
                   className="w-36 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 shadow-sm outline-none transition-colors focus:border-teal-400"
                 />
-                <span className="text-[14px] text-slate-400">
+                <span className="text-[14px] text-black">
                   AUD{pricingType === 'paid_monthly' ? ' / month' : pricingType === 'paid_annual' ? ' / year' : ''}
                 </span>
               </div>
@@ -587,7 +726,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
           {/* Optional note */}
           <div>
             <label htmlFor="pricing-note" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
-              Pricing note <span className="font-normal text-slate-400">(optional)</span>
+              Pricing note <span className="font-normal text-black">(optional)</span>
             </label>
             <input
               id="pricing-note"
@@ -622,7 +761,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
                 <label htmlFor="has-paid-internal" className="cursor-pointer text-[14px] font-medium text-navy-900">
                   Contains paid content inside this collective
                 </label>
-                <p className="mt-0.5 text-[13px] text-slate-500">
+                <p className="mt-0.5 text-[13px] text-black">
                   Turn this on if some pathways, gatherings, or resources require separate payment after someone joins.
                   This is also detected automatically when you publish a paid pathway.
                 </p>
@@ -654,7 +793,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
                   value={includedAccessSummary}
                   onChange={(e) => setIncludedAccessSummary(e.target.value)}
                   maxLength={300}
-                  placeholder="Community, gatherings, and member updates"
+                  placeholder="Conversations, gatherings, and member updates"
                   className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 shadow-sm outline-none transition-colors focus:border-teal-400"
                 />
               </div>
@@ -672,7 +811,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
                   placeholder="Paid pathways available separately"
                   className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 placeholder-slate-400 shadow-sm outline-none transition-colors focus:border-teal-400"
                 />
-                <p className="mt-1.5 text-[12px] text-slate-400">
+                <p className="mt-1.5 text-[12px] text-black">
                   Explain what people access for free and what may require separate payment.
                 </p>
               </div>
@@ -686,7 +825,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Creator profile</h2>
-            <p className="text-[14px] text-slate-500">
+            <p className="text-[14px] text-black">
               Your public profile is visible to members. Keep it current.
             </p>
           </div>

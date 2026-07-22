@@ -28,6 +28,16 @@ class Notification(Base):
     is_read: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Severity — added with Community Care Stage 2A. CHECK constraint on
+    # the DB side allows: 'routine' | 'action' | 'urgent'.
+    #   routine: guidance, reminders, support ack, ordinary CC updates.
+    #   action:  warnings, content hidden, restrictions, freezes, outcomes.
+    #   urgent:  suspension pending review, account/creator cancellation.
+    # Default 'routine' preserves the behaviour of every existing caller
+    # that did not set a severity value.
+    severity: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="routine", server_default="routine",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )

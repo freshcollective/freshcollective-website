@@ -13,14 +13,32 @@ import re
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import func
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.dependencies import get_creator_user
+from app.community_care.shared import (
+    has_active_creator_restriction,
+    is_space_closed,
+    is_space_frozen,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.storage import delete_file, save_file, save_media_file
+from app.creator.plan_config import (
+    ALL_PLANS,
+    ORGANISATION,
+    PlanCapability,
+    get_plan_capability,
+)
+from app.creator.plan_guards import (
+    guard_active_collective_limit,
+    guard_location_allowed,
+    guard_paid_offers_enabled,
+    is_platform_owner as _is_platform_owner,
+)
 from app.creator.schemas import (
     AboutBlockCreateRequest,
     AccessRequestOut,
@@ -72,8 +90,13 @@ from app.creator.schemas import (
     PaymentOptionScheduleUpdateRequest,
     PaymentOptionUpdateRequest,
     ResourceCreateRequest,
+    ResourcePathwayInfo,
     ResourceResponse,
     ResourceUpdateRequest,
+    ResourceUsageReference,
+    ResourceUsageResponse,
+    MediaUsageReference,
+    MediaUsageResponse,
     PostCreateRequest,
     PostManageResponse,
     PostUpdateRequest,
@@ -112,22 +135,43 @@ from app.models.platform import (
     Enrollment,
     Event,
     EventBooking,
+    ManualMember,
+    ManualMemberStatus,
+    ManualMemberPathwayAccess,
     Pathway,
     PathwayAboutBlock,
     PathwaySection,
     PathwayStep,
     PathwayStepBlock,
+    PathwayStepManualRelease,
+    PathwayUnlockRequirement,
     Space,
     SpaceAccessRequest,
     SpaceInvitation,
     SpaceMembership,
     SpaceMembershipStatus,
     SpaceResource,
+    space_resource_pathways,
     SpaceRole,
+    StepBlockType,
     StepProgress,
     StepResource,
 )
 from app.models.user import User
+from app.services.banner_image_validator import (
+    BannerImageValidationError,
+    validate_banner_image_url,
+)
+from app.services.button_validator import (
+    ButtonValidationError,
+    normalise_button_style,
+    normalise_new_tab,
+    validate_button_text,
+    validate_button_url,
+)
+from app.services.embed_validator import EmbedValidationError, extract_and_validate_embed_url
+from app.services.gathering_types import normalise_access_type
+from app.services.notification_service import trigger_new_step
 from app.spaces.schemas import SpaceSummary
 
 router = APIRouter(prefix="/api/creator", tags=["creator"])
@@ -138,9 +182,34 @@ router = APIRouter(prefix="/api/creator", tags=["creator"])
 # ---------------------------------------------------------------------------
 
 def _space_detail_response(space: Space, db: Session) -> dict:
-    """Build a SpaceDetail-compatible dict with derived_has_paid_internal_content injected."""
+    """Build a SpaceDetail-compatible dict with derived_has_paid_internal_content
+    injected. Also hydrates the Atlas v1.2 identity fields (Location + Colour
+    Palette + atmosphere/identity/welcome) so the frontend can drive the
+    Collective Home panel and the palette-based theme without a second call."""
+    from app.models.platform import Location, ColourStory
     data = SpaceDetail.model_validate(space).model_dump()
     data['derived_has_paid_internal_content'] = _derived_has_paid_content(space.id, db)
+    data['location_id'] = space.location_id
+    data['atmosphere_keys'] = list(space.atmosphere_keys or [])
+    data['identity_statement'] = space.identity_statement
+    data['welcome_message'] = space.welcome_message
+    data['colour_palette_key'] = space.colour_story_key
+    # Hydrate Location
+    if space.location_id:
+        loc = db.query(Location).filter(Location.id == space.location_id).first()
+        if loc:
+            data['location'] = {
+                "id": loc.id,
+                "key": loc.key,
+                "name": loc.name,
+                "description": loc.description,
+                "hero_artwork_url": loc.hero_artwork_url,
+            }
+    # Hydrate Colour Palette
+    if space.colour_story_key:
+        cs = db.query(ColourStory).filter(ColourStory.key == space.colour_story_key).first()
+        if cs:
+            data['colour_palette'] = {"key": cs.key, "name": cs.name, "palette": cs.palette}
     return data
 
 
@@ -154,6 +223,34 @@ def _derived_has_paid_content(space_id: str, db: Session) -> bool:
         Pathway.price_cents.isnot(None),
         Pathway.price_cents > 0,
     ).first() is not None
+
+
+def _ensure_creator_write_allowed(user: User, space: Space, db: Session) -> None:
+    """Refuse a creator-side write when Community Care has restricted
+    the creator, frozen the collective, or closed it.
+
+    Admins bypass restriction/freeze so caretaker triage and reversal
+    can proceed; closure is terminal and blocks even admin writes on
+    the collective's ordinary content (closure is not "reversed" —
+    that would need a new case with its own resolution).
+    """
+    if is_space_closed(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective has been closed.",
+        )
+    if user.role == "admin":
+        return
+    if is_space_frozen(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective is temporarily paused by Fresh Collective.",
+        )
+    if has_active_creator_restriction(db, user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your creator functions are temporarily restricted by Fresh Collective.",
+        )
 
 
 def _get_managed_space(slug: str, user: User, db: Session) -> Space:
@@ -243,65 +340,152 @@ def _get_resource(step: PathwayStep, resource_id: str, db: Session) -> StepResou
     return resource
 
 
+def _normalise_banner_image(raw: str | None) -> str | None:
+    """Validate a banner_image_url field; raise HTTPException(400) on rejection."""
+    try:
+        return validate_banner_image_url(raw)
+    except BannerImageValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _normalise_button_fields(patch: dict) -> dict:
+    """
+    Validate and normalise the fields used by `button` blocks.
+
+    Required fields (`embed_url`, `label`) are only validated when the
+    creator has actually entered values — empty/null is accepted so that
+    a stub button block can be created from the Add-block menu and
+    configured later in the edit form. Style and new-tab markers are
+    always normalised because they have safe defaults.
+    """
+    try:
+        if patch.get("embed_url"):
+            patch["embed_url"] = validate_button_url(patch["embed_url"])
+        if patch.get("label"):
+            patch["label"] = validate_button_text(patch["label"])
+        if "caption" in patch:
+            patch["caption"] = normalise_button_style(patch["caption"])
+        if "content" in patch:
+            patch["content"] = normalise_new_tab(patch["content"])
+    except ButtonValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return patch
+
+
 # ---------------------------------------------------------------------------
 # Billing
 # ---------------------------------------------------------------------------
+
+def _creator_plan_out(plan: CreatorPlan | None, capability: PlanCapability | None) -> CreatorPlanOut:
+    """Merge a DB `CreatorPlan` row and the capability record from
+    `plan_config` into the API shape. Either side may be missing:
+
+      - `plan=None, capability=Organisation` — Organisation is not stored in
+        the DB; the response synthesises the card from capability alone.
+      - `plan=<row>, capability=None` — the DB has a plan slug this codebase
+        doesn't know about. Legacy row — fall back to DB values and empty
+        capability defaults.
+
+    Never invent numeric values. Missing → None; `to be defined` is the
+    frontend's responsibility to display."""
+    if plan is not None:
+        plan_id = plan.id
+        name = plan.name
+        slug = plan.slug
+        description = plan.description
+        monthly_price_cents = plan.monthly_price_cents
+        currency = plan.currency
+        transaction_fee_basis_points = plan.transaction_fee_basis_points
+        collective_limit = plan.collective_limit
+        pathway_limit = plan.pathway_limit
+        media_storage_limit_mb = plan.media_storage_limit_mb
+        creator_admin_seat_limit = plan.creator_admin_seat_limit
+    elif capability is not None:
+        plan_id = f"synthetic-{capability.slug}"
+        name = capability.display_name
+        slug = capability.slug
+        description = capability.positioning
+        monthly_price_cents = capability.monthly_price_cents
+        currency = capability.currency
+        transaction_fee_basis_points = capability.transaction_fee_basis_points
+        collective_limit = capability.active_collective_limit
+        pathway_limit = None
+        media_storage_limit_mb = capability.storage_allowance_mb
+        creator_admin_seat_limit = capability.caretaker_limit_per_collective
+    else:
+        raise ValueError("Both plan and capability were None.")
+
+    cap = capability
+    return CreatorPlanOut(
+        id=plan_id,
+        name=name,
+        slug=slug,
+        description=description,
+        monthly_price_cents=monthly_price_cents,
+        currency=currency,
+        transaction_fee_basis_points=transaction_fee_basis_points,
+        collective_limit=collective_limit,
+        pathway_limit=pathway_limit,
+        media_storage_limit_mb=media_storage_limit_mb,
+        creator_admin_seat_limit=creator_admin_seat_limit,
+        tagline=cap.tagline if cap else "",
+        positioning=cap.positioning if cap else "",
+        active_collective_limit=cap.active_collective_limit if cap else collective_limit,
+        member_allowance_per_collective=cap.member_allowance_per_collective if cap else None,
+        pooled_member_allowance=cap.pooled_member_allowance if cap else None,
+        caretaker_limit_per_collective=cap.caretaker_limit_per_collective if cap else None,
+        storage_allowance_mb=cap.storage_allowance_mb if cap else media_storage_limit_mb,
+        location_scope=cap.location_scope if cap else "atlas_full",
+        analytics_level=cap.analytics_level if cap else "basic",
+        paid_offers_enabled=cap.paid_offers_enabled if cap else False,
+        pathways_enabled=cap.pathways_enabled if cap else False,
+        gatherings_enabled=cap.gatherings_enabled if cap else False,
+        resources_enabled=cap.resources_enabled if cap else False,
+        automations_enabled=cap.automations_enabled if cap else False,
+        commercial_use=cap.commercial_use if cap else False,
+        approval_required=cap.approval_required if cap else False,
+        is_self_service=cap.is_self_service if cap else True,
+        is_purchasable=cap.is_purchasable if cap else True,
+        card_headline=cap.card_headline if cap else "",
+        card_features=list(cap.card_features) if cap else [],
+    )
+
+
+# Canonical display order: Community → Creator → Pro → Organisation.
+_PLAN_ORDER = {p.slug: i for i, p in enumerate(ALL_PLANS)}
+
 
 @router.get("/billing", response_model=CreatorBillingResponse)
 def get_creator_billing(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> CreatorBillingResponse:
-    """Return the creator's current plan, usage, and billing setup status."""
+    """
+    Return billing state for the authenticated user.
 
-    # Active subscription for this creator
-    subscription = (
-        db.query(CreatorSubscription)
-        .filter(
-            CreatorSubscription.user_id == current_user.id,
-            CreatorSubscription.status.in_(["active", "trialing"]),
-        )
-        .first()
-    )
+    Two account types are supported:
 
-    # All active plans ordered cheapest-first (for plan comparison)
-    available_plans = (
-        db.query(CreatorPlan)
-        .filter(CreatorPlan.is_active.is_(True))
-        .order_by(CreatorPlan.monthly_price_cents)
-        .all()
-    )
+    - Platform Owner (`role='admin'`): NOT on any creator subscription plan.
+      `current_plan`, `subscription`, and `available_plans` are omitted
+      (None / empty). Usage counts are returned but there is no limit to
+      compare them against. Transaction fees do not apply. This is the
+      canonical architecture — Platform Owner is a distinct account type
+      that sits alongside the Creator plans (Free / Plus / Pro), not on top
+      of them.
 
-    # Fall back to the cheapest plan if the creator has no subscription yet
-    current_plan = subscription.plan if subscription else (available_plans[0] if available_plans else None)
-    if not current_plan:
-        raise HTTPException(status_code=500, detail="No creator plans are configured.")
+    - Creator (`role='creator'`): on a creator subscription plan (Free by
+      default). `current_plan`, `subscription`, `available_plans` populated.
+    """
 
-    if not subscription:
-        # Create a synthetic placeholder so the response shape is consistent
-        from datetime import datetime as dt
-        fake_sub = CreatorSubscriptionOut(
-            id="",
-            status="active",
-            starts_at=dt.utcnow(),
-            ends_at=None,
-            stripe_connected=False,
-        )
-        sub_out = fake_sub
-    else:
-        sub_out = CreatorSubscriptionOut(
-            id=subscription.id,
-            status=subscription.status.value if hasattr(subscription.status, "value") else str(subscription.status),
-            starts_at=subscription.starts_at,
-            ends_at=subscription.ends_at,
-            stripe_connected=False,  # TODO: Stripe billing — set True when stripe_subscription_id is populated
-        )
+    is_platform_owner = current_user.role == "admin"
 
-    # Usage: count all non-archived spaces this creator manages
-    # (owns directly OR holds creator/moderator membership in).
-    # This matches what the Creator Studio sidebar lists so both show the same number.
-    # Archived spaces do not count toward the plan limit.
-    # Draft collectives count toward creator plan limits because they still occupy creator capacity.
+    # Usage: count all non-archived spaces this user manages (owns directly
+    # OR holds creator/moderator membership in). This matches what the
+    # Creator Studio sidebar lists so both show the same number. Archived
+    # spaces do not count toward any creator plan limit. Draft collectives
+    # do count toward creator plan limits because they still occupy
+    # creator capacity. For platform owners, this number is displayed but
+    # never compared against a limit.
     _owned_ids: set[str] = {
         row[0]
         for row in db.query(Space.id)
@@ -326,7 +510,6 @@ def get_creator_billing(
     managed_space_ids = _owned_ids | _member_ids
     collectives_used = len(managed_space_ids)
 
-    # Usage: count pathways across all creator-managed spaces
     creator_space_ids = list(managed_space_ids)
     pathways_used = (
         db.query(func.count(Pathway.id))
@@ -334,24 +517,98 @@ def get_creator_billing(
         .scalar()
     ) if creator_space_ids else 0
 
+    payment_setup = CreatorPaymentSetup(
+        # Platform Owner never subscribes to a creator plan, so creator
+        # billing is meaningfully "not applicable" — surfaced separately
+        # by the frontend, not implied by this boolean.
+        creator_billing_connected=False,
+        member_payments_connected=settings.stripe_enabled,
+        stripe_connect_connected=False,
+        stripe_test_mode=bool(
+            settings.stripe_secret_key
+            and settings.stripe_secret_key.startswith("sk_test_")
+        ),
+    )
+
+    usage = CreatorUsage(
+        collectives_used=collectives_used,
+        pathways_used=pathways_used,
+        media_storage_used_mb=None,  # TODO: sum media asset file sizes when tracked
+    )
+
+    # Platform Owner: return the account without any plan attached.
+    if is_platform_owner:
+        return CreatorBillingResponse(
+            current_plan=None,
+            subscription=None,
+            usage=usage,
+            available_plans=[],
+            payment_setup=payment_setup,
+            is_platform_owner=True,
+        )
+
+    # Creator: attach the current plan and full plan lineup.
+    subscription = (
+        db.query(CreatorSubscription)
+        .filter(
+            CreatorSubscription.user_id == current_user.id,
+            CreatorSubscription.status.in_(["active", "trialing"]),
+        )
+        .first()
+    )
+    db_plans = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.is_active.is_(True))
+        .all()
+    )
+    current_plan_row = (
+        subscription.plan if subscription
+        else (min(db_plans, key=lambda p: p.monthly_price_cents) if db_plans else None)
+    )
+    if not current_plan_row:
+        raise HTTPException(status_code=500, detail="No creator plans are configured.")
+
+    if not subscription:
+        from datetime import datetime as dt
+        sub_out = CreatorSubscriptionOut(
+            id="",
+            status="active",
+            starts_at=dt.utcnow(),
+            ends_at=None,
+            stripe_connected=False,
+        )
+    else:
+        sub_out = CreatorSubscriptionOut(
+            id=subscription.id,
+            status=subscription.status.value if hasattr(subscription.status, "value") else str(subscription.status),
+            starts_at=subscription.starts_at,
+            ends_at=subscription.ends_at,
+            stripe_connected=False,
+        )
+
+    # Merge DB rows with capability records. Community/Creator/Pro come
+    # from DB (real plans users can subscribe to). Organisation is added as
+    # a synthetic entry so the pricing UI can render its "Talk to us" card
+    # without inserting a fake subscribable plan into the database.
+    db_out = [
+        _creator_plan_out(row, get_plan_capability(row.slug))
+        for row in db_plans
+    ]
+    org_out = _creator_plan_out(None, ORGANISATION)
+    available_out = sorted(
+        [*db_out, org_out],
+        key=lambda p: _PLAN_ORDER.get(p.slug, 999),
+    )
+
     return CreatorBillingResponse(
-        current_plan=CreatorPlanOut.model_validate(current_plan),
+        current_plan=_creator_plan_out(
+            current_plan_row, get_plan_capability(current_plan_row.slug)
+        ),
         subscription=sub_out,
-        usage=CreatorUsage(
-            collectives_used=collectives_used,
-            pathways_used=pathways_used,
-            media_storage_used_mb=None,  # TODO: sum media asset file sizes when tracked
-        ),
-        available_plans=[CreatorPlanOut.model_validate(p) for p in available_plans],
-        payment_setup=CreatorPaymentSetup(
-            creator_billing_connected=False,   # Phase 3: True when creator subscription is Stripe-managed
-            member_payments_connected=settings.stripe_enabled,  # Phase 1: True when FC platform Stripe is configured
-            stripe_connect_connected=False,    # Phase 2+: True when creator's own Stripe Connect account is active
-            stripe_test_mode=bool(
-                settings.stripe_secret_key
-                and settings.stripe_secret_key.startswith("sk_test_")
-            ),
-        ),
+        usage=usage,
+        available_plans=available_out,
+        payment_setup=payment_setup,
+        is_platform_owner=False,
     )
 
 
@@ -387,6 +644,10 @@ def create_space(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> Space:
+    # Enforce the plan's active_collective_limit before creating a new
+    # collective. Platform Owner is bypassed inside the guard.
+    guard_active_collective_limit(current_user, db)
+
     existing_slugs = [slug for (slug,) in db.query(Space.slug).all()]
     slug = _unique_slug(slugify(body.name), existing_slugs)
     space = Space(
@@ -413,6 +674,11 @@ def create_space(
         status=SpaceMembershipStatus.active,
     ))
 
+    # Provision the two permanent system Channels so every new
+    # collective is born with 🌱 Start Here and 🏡 Common Room.
+    from app.community.channels import ensure_system_channels
+    ensure_system_channels(space.id, db, created_by=current_user.id)
+
     db.commit()
     db.refresh(space)
     return space
@@ -436,6 +702,7 @@ def update_space(
     current_user: User = Depends(get_creator_user),
 ) -> Space:
     space = _get_managed_space(slug, current_user, db)
+    _ensure_creator_write_allowed(current_user, space, db)
     if body.name is not None:
         space.name = body.name.strip()
     if body.slug is not None and body.slug != space.slug:
@@ -517,6 +784,50 @@ async def upload_cover_image(
     space.cover_image_url = f"/api/uploads/{rel_path}"
     db.commit()
     db.refresh(space)
+    return _space_detail_response(space, db)
+
+
+@router.post("/spaces/{slug}/logo", response_model=SpaceDetail)
+async def upload_logo(
+    slug: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> Space:
+    """Upload an optional Collective Logo — the "hosted by" mark shown
+    subtly beside the collective name. Location artwork remains the
+    primary visual identity."""
+    space = _get_managed_space(slug, current_user, db)
+    filename = file.filename or "logo.png"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext not in ("jpg", "jpeg", "png", "webp"):
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, and WebP images are allowed.")
+    data = await file.read()
+    if space.logo_url:
+        old_rel = space.logo_url.removeprefix("/api/uploads/")
+        delete_file(old_rel)
+    rel_path, _, _ = save_file(data, filename, file.content_type or "image/png", f"logos/{space.slug}")
+    space.logo_url = f"/api/uploads/{rel_path}"
+    db.commit()
+    db.refresh(space)
+    return _space_detail_response(space, db)
+
+
+@router.delete("/spaces/{slug}/logo", response_model=SpaceDetail)
+def clear_logo(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> Space:
+    space = _get_managed_space(slug, current_user, db)
+    if space.logo_url:
+        try:
+            delete_file(space.logo_url.removeprefix("/api/uploads/"))
+        except Exception:  # noqa: BLE001
+            pass
+        space.logo_url = None
+        db.commit()
+        db.refresh(space)
     return _space_detail_response(space, db)
 
 
@@ -926,6 +1237,15 @@ def revoke_pathway_access(
 # Invitations
 # ---------------------------------------------------------------------------
 
+def _invitation_response(inv: "SpaceInvitation", db: Session) -> InvitationResponse:
+    from app.models.platform import PaymentOption
+    data = InvitationResponse.model_validate(inv)
+    if inv.payment_option_id:
+        opt = db.query(PaymentOption).filter_by(id=inv.payment_option_id).first()
+        data.payment_option_name = opt.name if opt else None
+    return data
+
+
 @router.get("/spaces/{slug}/invitations", response_model=list[InvitationResponse])
 def list_invitations(
     slug: str,
@@ -939,7 +1259,7 @@ def list_invitations(
         .order_by(SpaceInvitation.created_at.desc())
         .all()
     )
-    return [InvitationResponse.model_validate(inv) for inv in invitations]
+    return [_invitation_response(inv, db) for inv in invitations]
 
 
 @router.post("/spaces/{slug}/invitations", response_model=InvitationResponse, status_code=201)
@@ -983,7 +1303,6 @@ def create_invitation(
             detail="This person has already been invited to this collective.",
         )
 
-    # TODO: Send invitation email when email service is connected.
     invitation = SpaceInvitation(
         id=str(uuid4()),
         space_id=space.id,
@@ -993,11 +1312,14 @@ def create_invitation(
         note=body.note,
         invited_by_id=current_user.id,
         token=str(uuid4()),
+        payment_option_id=body.payment_option_id,
+        payment_status=body.payment_status,
+        # sent_at=None → draft; caller must POST /send to actually email
     )
     db.add(invitation)
     db.commit()
     db.refresh(invitation)
-    return InvitationResponse.model_validate(invitation)
+    return _invitation_response(invitation, db)
 
 
 @router.delete("/spaces/{slug}/invitations/{invitation_id}", status_code=204)
@@ -1020,6 +1342,33 @@ def delete_invitation(
         raise HTTPException(status_code=404, detail="Invitation not found.")
     db.delete(invitation)
     db.commit()
+
+
+@router.post("/spaces/{slug}/invitations/{invitation_id}/send", response_model=InvitationResponse)
+def send_invitation(
+    slug: str,
+    invitation_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> InvitationResponse:
+    """Mark a draft invitation as sent (sets sent_at to now). Email delivery is handled separately."""
+    space = _get_managed_space(slug, current_user, db)
+    invitation = (
+        db.query(SpaceInvitation)
+        .filter(
+            SpaceInvitation.space_id == space.id,
+            SpaceInvitation.id == invitation_id,
+        )
+        .first()
+    )
+    if not invitation:
+        raise HTTPException(status_code=404, detail="Invitation not found.")
+    if invitation.sent_at is not None:
+        raise HTTPException(status_code=409, detail="Invitation has already been sent.")
+    invitation.sent_at = datetime.utcnow()
+    db.commit()
+    db.refresh(invitation)
+    return _invitation_response(invitation, db)
 
 
 # ---------------------------------------------------------------------------
@@ -1220,6 +1569,7 @@ def create_pathway(
     current_user: User = Depends(get_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
+    _ensure_creator_write_allowed(current_user, space, db)
 
     pslug = body.slug or _pathway_slug(space, body.title, None, db)
     existing = db.query(Pathway).filter(Pathway.space_id == space.id, Pathway.slug == pslug).first()
@@ -1245,6 +1595,18 @@ def create_pathway(
         billing_interval=body.billing_interval,
     )
     db.add(pathway)
+    db.flush()
+
+    if body.create_channel:
+        from app.community.channels import ensure_pathway_channel
+        ensure_pathway_channel(
+            space_id=space.id,
+            pathway_id=pathway.id,
+            pathway_title=pathway.title,
+            db=db,
+            created_by=current_user.id,
+        )
+
     db.commit()
     db.refresh(pathway)
     return {
@@ -1266,6 +1628,7 @@ def update_pathway(
     current_user: User = Depends(get_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
+    _ensure_creator_write_allowed(current_user, space, db)
     pathway = _get_pathway(space, pathway_slug, db)
 
     updates = body.model_dump(exclude_unset=True)
@@ -1286,6 +1649,8 @@ def update_pathway(
             setattr(pathway, field, val)
         elif field == "currency" and val is not None:
             pathway.currency = val
+        elif field == "cover_image_url":
+            pathway.cover_image_url = _normalise_banner_image(val)
 
     db.commit()
     db.refresh(pathway)
@@ -1298,6 +1663,19 @@ def update_pathway(
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
         "step_count": step_count,
     }
+
+
+@router.delete("/spaces/{slug}/pathways/{pathway_slug}", status_code=204)
+def delete_pathway(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    db.delete(pathway)
+    db.commit()
 
 
 @router.post("/spaces/{slug}/pathways/{pathway_slug}/cover", response_model=PathwayResponse)
@@ -1389,6 +1767,7 @@ def create_section(
         pathway_id=pathway.id,
         title=body.title,
         position=position,
+        banner_image_url=_normalise_banner_image(body.banner_image_url),
     )
     db.add(section)
     db.commit()
@@ -1414,6 +1793,10 @@ def update_section(
         raise HTTPException(status_code=404, detail="Section not found.")
     if body.title is not None:
         section.title = body.title
+    # banner_image_url: distinguish "not provided" from "explicitly cleared (null)"
+    update = body.model_dump(exclude_unset=True)
+    if "banner_image_url" in update:
+        section.banner_image_url = _normalise_banner_image(update["banner_image_url"])
     db.commit()
     db.refresh(section)
     return section
@@ -1502,6 +1885,7 @@ def create_step(
     slug: str,
     pathway_slug: str,
     body: StepCreateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> PathwayStep:
@@ -1535,10 +1919,14 @@ def create_step(
         position=position,
         section_id=body.section_id,
         section_position=section_position,
+        reflection_enabled=body.reflection_enabled,
+        discussion_enabled=body.discussion_enabled,
+        banner_image_url=_normalise_banner_image(body.banner_image_url),
     )
     db.add(step)
     db.commit()
     db.refresh(step)
+    background_tasks.add_task(trigger_new_step, step.id, current_user.id)
     return step
 
 
@@ -1573,6 +1961,12 @@ def update_step(
         step.estimated_minutes = update["estimated_minutes"]
     if "is_required" in update and update["is_required"] is not None:
         step.is_required = update["is_required"]
+    if "reflection_enabled" in update and update["reflection_enabled"] is not None:
+        step.reflection_enabled = update["reflection_enabled"]
+    if "discussion_enabled" in update and update["discussion_enabled"] is not None:
+        step.discussion_enabled = update["discussion_enabled"]
+    if "banner_image_url" in update:
+        step.banner_image_url = _normalise_banner_image(update["banner_image_url"])
     if "section_id" in update:
         new_section_id = update["section_id"]
         if new_section_id != step.section_id:
@@ -1592,6 +1986,23 @@ def update_step(
                 step.section_position = (max_sec_pos[0] + 1) if max_sec_pos else 0
             else:
                 step.section_position = None
+
+    # Drip scheduling — accept the discriminator and only the columns
+    # relevant to it. This keeps the schema tolerant of clients that
+    # send stale fields when they switch release types.
+    if "release_type" in update and update["release_type"] is not None:
+        step.release_type = update["release_type"]
+    if "release_offset_days" in update:
+        step.release_offset_days = update["release_offset_days"]
+    if "release_at" in update:
+        v = update["release_at"]
+        if v is not None and getattr(v, "tzinfo", None) is not None:
+            v = v.astimezone(tz=None).replace(tzinfo=None)
+        step.release_at = v
+    if "release_timezone" in update:
+        step.release_timezone = update["release_timezone"] or None
+    if "release_previous_state" in update and update["release_previous_state"] is not None:
+        step.release_previous_state = update["release_previous_state"]
 
     db.commit()
     db.refresh(step)
@@ -1615,6 +2026,142 @@ def delete_step(
         raise HTTPException(status_code=404, detail="Step not found.")
     db.delete(step)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Manual step releases — the "waiting members" caretaker workflow
+# ---------------------------------------------------------------------------
+
+
+class WaitingMember(BaseModel):
+    user_id: str
+    display_name: str
+    email: str | None = None
+
+
+class ManualStepEntry(BaseModel):
+    step_id: str
+    step_slug: str
+    step_title: str
+    pathway_slug: str
+    pathway_title: str
+    waiting: list[WaitingMember]
+
+
+@router.get(
+    "/spaces/{slug}/pathways/{pathway_slug}/manual-releases",
+    response_model=list[ManualStepEntry],
+)
+def list_manual_release_state(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[ManualStepEntry]:
+    """List manual-release steps in this pathway and, for each, the
+    enrolled members who have not yet been released. The list stays
+    small on purpose — no enrolment metrics, no time-since-enrolled
+    scoreboard, just the caretaker's queue of decisions."""
+    from app.models.user import User as UserModel
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    steps = (
+        db.query(PathwayStep)
+        .filter(
+            PathwayStep.pathway_id == pathway.id,
+            PathwayStep.release_type == "manual",
+        )
+        .order_by(PathwayStep.position)
+        .all()
+    )
+    if not steps:
+        return []
+
+    enrolled_user_ids = {
+        row.user_id
+        for row in db.query(Enrollment.user_id)
+        .filter(Enrollment.pathway_id == pathway.id, Enrollment.status == "active")
+        .all()
+    }
+    if not enrolled_user_ids:
+        return [
+            ManualStepEntry(
+                step_id=s.id, step_slug=s.slug, step_title=s.title,
+                pathway_slug=pathway.slug, pathway_title=pathway.title,
+                waiting=[],
+            )
+            for s in steps
+        ]
+
+    users_by_id = {
+        u.id: u
+        for u in db.query(UserModel).filter(UserModel.id.in_(enrolled_user_ids)).all()
+    }
+
+    released_by_step: dict[str, set[str]] = {s.id: set() for s in steps}
+    for row in db.query(
+        PathwayStepManualRelease.step_id, PathwayStepManualRelease.user_id,
+    ).filter(PathwayStepManualRelease.step_id.in_({s.id for s in steps})).all():
+        released_by_step.setdefault(row.step_id, set()).add(row.user_id)
+
+    entries: list[ManualStepEntry] = []
+    for s in steps:
+        waiting_ids = enrolled_user_ids - released_by_step[s.id]
+        waiting = sorted(
+            (
+                WaitingMember(
+                    user_id=uid,
+                    display_name=users_by_id[uid].name or users_by_id[uid].email.split("@")[0],
+                    email=users_by_id[uid].email,
+                )
+                for uid in waiting_ids if uid in users_by_id
+            ),
+            key=lambda m: (m.display_name or "").lower(),
+        )
+        entries.append(ManualStepEntry(
+            step_id=s.id, step_slug=s.slug, step_title=s.title,
+            pathway_slug=pathway.slug, pathway_title=pathway.title,
+            waiting=waiting,
+        ))
+    return entries
+
+
+@router.post(
+    "/spaces/{slug}/pathways/{pathway_slug}/steps/{step_slug}/release-for/{user_id}",
+    status_code=204,
+)
+def release_step_for_member(
+    slug: str,
+    pathway_slug: str,
+    step_slug: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    """Idempotent — releasing a step for the same member twice is a
+    no-op (the unique constraint absorbs the duplicate)."""
+    import uuid as _uuid
+    from sqlalchemy.exc import IntegrityError as _IntegrityError
+
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    step = db.query(PathwayStep).filter(
+        PathwayStep.pathway_id == pathway.id, PathwayStep.slug == step_slug
+    ).first()
+    if not step:
+        raise HTTPException(status_code=404, detail="Step not found.")
+
+    row = PathwayStepManualRelease(
+        id=str(_uuid.uuid4()),
+        step_id=step.id,
+        user_id=user_id,
+        released_by=current_user.id,
+    )
+    db.add(row)
+    try:
+        db.commit()
+    except _IntegrityError:
+        db.rollback()  # already released → treat as success
 
 
 @router.post("/spaces/{slug}/pathways/{pathway_slug}/steps/reorder", status_code=204)
@@ -1871,16 +2418,41 @@ def delete_step_resource(
 @router.get("/spaces/{slug}/events", response_model=list[EventResponse])
 def list_events(
     slug: str,
+    scope: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> list[dict]:
+    """List Gatherings for a Collective (caretaker view).
+
+    Optional `scope` query param mirrors the member endpoint:
+      - 'upcoming' — current + live-in-progress, active only
+      - 'archive'  — past (end < now), any status
+    Omitting `scope` preserves the historical behaviour of returning
+    every Gathering newest-first — used by pages that still show a
+    combined list.
+    """
+    from datetime import datetime as _dt
     space = _get_managed_space(slug, current_user, db)
-    events = (
-        db.query(Event)
-        .filter(Event.space_id == space.id)
-        .order_by(Event.starts_at.desc())
-        .all()
-    )
+
+    query = db.query(Event).filter(Event.space_id == space.id)
+
+    if scope in ("upcoming", "archive"):
+        from sqlalchemy import or_
+        end_marker = func.coalesce(
+            Event.ends_at,
+            Event.starts_at + text("INTERVAL '1 hour'"),
+        )
+        now = _dt.utcnow()
+        if scope == "upcoming":
+            query = query.filter(Event.status == "active", end_marker > now)
+            query = query.order_by(Event.starts_at.asc())
+        else:  # archive — past by end-time OR cancelled at any time
+            query = query.filter(or_(end_marker <= now, Event.status == "cancelled"))
+            query = query.order_by(Event.starts_at.desc())
+    else:
+        query = query.order_by(Event.starts_at.desc())
+
+    events = query.all()
     event_ids = [e.id for e in events]
     booked_counts: dict[str, int] = {}
     attended_counts: dict[str, int] = {}
@@ -1904,7 +2476,20 @@ def list_events(
             .group_by(EventBooking.event_id)
             .all()
         )
-    return [_event_to_dict(e, booked_counts.get(e.id, 0), attended_counts.get(e.id, 0), no_show_counts.get(e.id, 0)) for e in events]
+    # Stage 3: bulk ticket-sales aggregates for paid Gatherings (no-op
+    # cost when no paid events are in the list).
+    from app.services.ticket_summary import bulk_ticket_summaries
+    summaries = bulk_ticket_summaries(db, [e for e in events if e.booking_access_type == "paid_separately"])
+    return [
+        _event_to_dict(
+            e,
+            booked_counts.get(e.id, 0),
+            attended_counts.get(e.id, 0),
+            no_show_counts.get(e.id, 0),
+            ticket_sales=(summaries[e.id].as_dict() if e.id in summaries else None),
+        )
+        for e in events
+    ]
 
 
 @router.get("/spaces/{slug}/events/{event_id}", response_model=EventResponse)
@@ -1923,10 +2508,22 @@ def get_event(
         .filter(EventBooking.event_id == event.id, EventBooking.status == "confirmed")
         .scalar()
     ) or 0
-    return _event_to_dict(event, booked_count)
+    ticket_sales_dict = None
+    if event.booking_access_type == "paid_separately":
+        from app.services.ticket_summary import ticket_summary_for
+        ticket_sales_dict = ticket_summary_for(db, event).as_dict()
+    return _event_to_dict(event, booked_count, ticket_sales=ticket_sales_dict)
 
 
-def _event_to_dict(event: Event, booked_count: int = 0, attended_count: int = 0, no_show_count: int = 0) -> dict:
+def _event_to_dict(
+    event: Event,
+    booked_count: int = 0,
+    attended_count: int = 0,
+    no_show_count: int = 0,
+    *,
+    ticket_sales: dict | None = None,
+) -> dict:
+    access_type = normalise_access_type(getattr(event, 'booking_access_type', None))
     return {
         "id": event.id,
         "title": event.title,
@@ -1952,9 +2549,73 @@ def _event_to_dict(event: Event, booked_count: int = 0, attended_count: int = 0,
         "recurrence_index": event.recurrence_index,
         "recurrence_total": event.recurrence_total,
         "created_at": event.created_at,
-        "booking_access_type": getattr(event, 'booking_access_type', 'all_members') or 'all_members',
+        # Gatherings 2.0 vocabulary (see services/gathering_types.py).
+        # `booking_access_type` is normalised on the way out so legacy
+        # rows still speak the current vocabulary.
+        "gathering_type": getattr(event, 'gathering_type', 'other') or 'other',
+        "attendance_format": getattr(event, 'attendance_format', 'online') or 'online',
+        "venue_name": getattr(event, 'venue_name', None),
+        "venue_address": getattr(event, 'venue_address', None),
+        "access_instructions": getattr(event, 'access_instructions', None),
+        "booking_access_type": access_type,
         "booking_required_pathway_id": getattr(event, 'booking_required_pathway_id', None),
+        # Stage 3: standalone paid Gathering fields. Both are nullable on
+        # non-paid events; the CHECK constraint guarantees published-paid
+        # rows are never null.
+        "ticket_price_cents": getattr(event, 'ticket_price_cents', None),
+        "ticket_currency": getattr(event, 'ticket_currency', None),
+        # Aggregate ticket-sales snapshot; only populated for paid events.
+        "ticket_sales": ticket_sales if access_type == "paid_separately" else None,
     }
+
+
+def _validate_ticket_config_or_400(
+    access_type: str,
+    is_published: bool,
+    price_cents: int | None,
+    currency: str | None,
+) -> tuple[int | None, str | None]:
+    """
+    Validate ticket_price/currency according to Stage 3 rules:
+      - Non-paid access types: force both fields to NULL (defensive —
+        prevents stale ticket data leaking onto a free event).
+      - Paid draft: allow NULL price/currency (creator saves WIP).
+      - Paid + published: require price > 0 and supported currency.
+
+    Raises HTTPException(400) with per-field detail on failure. Returns
+    the (possibly cleaned) values to store.
+    """
+    if access_type != "paid_separately":
+        return None, None
+    if not is_published:
+        # Draft-safe: normalise but don't require values yet.
+        if currency is not None:
+            try:
+                from app.services.ticket_pricing import normalise_currency
+                currency = normalise_currency(currency)
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(status_code=400, detail={
+                    "code": "invalid_ticket_currency",
+                    "field": "ticket_currency",
+                    "message": str(exc),
+                })
+        return price_cents, currency
+    # Publish path: both required and must validate.
+    from app.services.ticket_pricing import (
+        TicketPricingError,
+        validate_paid_gathering_price,
+    )
+    try:
+        price, cur = validate_paid_gathering_price(price_cents, currency)
+    except TicketPricingError as exc:
+        # Attach a field name for the frontend to surface inline
+        field = "ticket_price_cents" if price_cents in (None, 0) else "ticket_currency"
+        raise HTTPException(status_code=400, detail={
+            "code": "invalid_ticket_config",
+            "field": field,
+            "message": str(exc),
+        })
+    return price, cur
 
 
 @router.post("/spaces/{slug}/events", response_model=EventResponse, status_code=201)
@@ -1965,6 +2626,11 @@ def create_event(
     current_user: User = Depends(get_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
+    _ensure_creator_write_allowed(current_user, space, db)
+    ticket_price, ticket_currency = _validate_ticket_config_or_400(
+        body.booking_access_type, body.is_published,
+        body.ticket_price_cents, body.ticket_currency,
+    )
     event = Event(
         id=str(uuid4()),
         space_id=space.id,
@@ -1983,10 +2649,29 @@ def create_event(
         booking_closes_at=body.booking_closes_at,
         booking_note=body.booking_note,
         thumbnail_url=body.thumbnail_url,
+        gathering_type=body.gathering_type,
+        attendance_format=body.attendance_format,
+        venue_name=body.venue_name,
+        venue_address=body.venue_address,
+        access_instructions=body.access_instructions,
         booking_access_type=body.booking_access_type,
         booking_required_pathway_id=body.booking_required_pathway_id,
+        ticket_price_cents=ticket_price,
+        ticket_currency=ticket_currency,
     )
     db.add(event)
+    db.flush()
+
+    if body.create_channel:
+        from app.community.channels import ensure_gathering_channel
+        ensure_gathering_channel(
+            space_id=space.id,
+            gathering_id=event.id,
+            gathering_title=event.title,
+            db=db,
+            created_by=current_user.id,
+        )
+
     db.commit()
     db.refresh(event)
     return _event_to_dict(event, 0)
@@ -2060,6 +2745,11 @@ def bulk_create_events(
             booking_closes_at=body.booking_closes_at,
             booking_note=body.booking_note,
             thumbnail_url=body.thumbnail_url,
+            gathering_type=body.gathering_type,
+            attendance_format=body.attendance_format,
+            venue_name=body.venue_name,
+            venue_address=body.venue_address,
+            access_instructions=body.access_instructions,
             booking_access_type=body.booking_access_type,
             booking_required_pathway_id=body.booking_required_pathway_id,
             recurrence_series_id=series_id,
@@ -2082,17 +2772,71 @@ def update_event(
     current_user: User = Depends(get_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
+    _ensure_creator_write_allowed(current_user, space, db)
     event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found.")
 
+    # -----------------------------------------------------------------
+    # Stage 3: access-type edit lock.
+    #
+    # If a paid Gathering has any completed ticket sale, `booking_access_type`
+    # cannot be changed away from 'paid_separately' — existing ticket
+    # holders must keep their access. Similarly, an active payment hold
+    # blocks the change temporarily so we don't invalidate an in-flight
+    # Stripe Checkout Session.
+    # -----------------------------------------------------------------
+    new_access = body.booking_access_type
+    if (
+        new_access is not None
+        and new_access != event.booking_access_type
+        and event.booking_access_type == "paid_separately"
+    ):
+        from app.services.ticket_summary import ticket_summary_for
+        summary = ticket_summary_for(db, event)
+        if summary.has_completed_ticket_sales:
+            raise HTTPException(status_code=409, detail={
+                "code": "access_type_locked_by_sales",
+                "field": "booking_access_type",
+                "message": (
+                    "The access type can’t be changed because tickets have "
+                    "already been sold. Existing ticket holders must keep "
+                    "their access."
+                ),
+            })
+        if summary.has_active_payment_holds:
+            raise HTTPException(status_code=409, detail={
+                "code": "access_type_locked_by_holds",
+                "field": "booking_access_type",
+                "message": (
+                    "The access type can’t be changed while a purchase is "
+                    "in progress. Try again after any pending checkouts "
+                    "have expired or been cancelled."
+                ),
+            })
+
     for field in ("title", "description", "starts_at", "ends_at", "location_type", "location_url",
                   "recording_url", "is_published", "is_public", "requires_booking", "capacity",
                   "booking_closes_at", "booking_note", "thumbnail_url",
-                  "booking_access_type", "booking_required_pathway_id"):
+                  "gathering_type", "attendance_format",
+                  "venue_name", "venue_address", "access_instructions",
+                  "booking_access_type", "booking_required_pathway_id",
+                  "ticket_price_cents", "ticket_currency"):
         val = getattr(body, field)
         if val is not None:
             setattr(event, field, val)
+
+    # After applying updates, validate the ticket configuration against
+    # the RESULTING state (post-update). This is what the CHECK constraint
+    # will do anyway; catching it here gives a clean field-scoped error.
+    ticket_price, ticket_currency = _validate_ticket_config_or_400(
+        event.booking_access_type,
+        event.is_published,
+        event.ticket_price_cents,
+        event.ticket_currency,
+    )
+    event.ticket_price_cents = ticket_price
+    event.ticket_currency = ticket_currency
 
     db.commit()
     db.refresh(event)
@@ -2101,7 +2845,11 @@ def update_event(
         .filter(EventBooking.event_id == event.id, EventBooking.status == "confirmed")
         .scalar()
     ) or 0
-    return _event_to_dict(event, booked_count)
+    ticket_sales_dict = None
+    if event.booking_access_type == "paid_separately":
+        from app.services.ticket_summary import ticket_summary_for
+        ticket_sales_dict = ticket_summary_for(db, event).as_dict()
+    return _event_to_dict(event, booked_count, ticket_sales=ticket_sales_dict)
 
 
 @router.delete("/spaces/{slug}/events/{event_id}", status_code=204)
@@ -2143,6 +2891,10 @@ def list_event_bookings(
             u.id: u
             for u in db.query(User).filter(User.id.in_(user_ids)).all()
         }
+    # Stage 3: bulk resolve payment/label metadata so we get one grouped
+    # PaymentTransaction lookup regardless of attendee count.
+    from app.services.ticket_summary import bulk_attendee_payment_info
+    payment_info = bulk_attendee_payment_info(db, list(bookings))
     return [
         {
             "booking_id": b.id,
@@ -2155,6 +2907,12 @@ def list_event_bookings(
             "note": b.note,
             "attendance_status": b.attendance_status,
             "attendance_marked_at": b.attendance_marked_at,
+            **payment_info.get(b.id, {
+                "access_source": "Complimentary",
+                "amount_paid_cents": None,
+                "currency": None,
+                "purchased_at": None,
+            }),
         }
         for b in bookings
     ]
@@ -2216,13 +2974,16 @@ def remove_event_thumbnail(
 def cancel_event(
     slug: str,
     event_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> dict:
     """Cancel a single event occurrence. Does not affect other events in the series.
+    Notifies every confirmed attendee via the notification service.
     TODO: Add cancel entire series endpoint later.
     """
     from app.models.access_pass import AccessPass as _AccessPass
+    from app.services.notification_service import trigger_gathering_cancelled
     space = _get_managed_space(slug, current_user, db)
     event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
     if not event:
@@ -2236,6 +2997,7 @@ def cancel_event(
         .filter(EventBooking.event_id == event.id, EventBooking.status == BookingStatus.confirmed)
         .all()
     )
+    had_confirmed_bookings = len(confirmed_bookings) > 0
     now_ts = datetime.utcnow()
     for bk in confirmed_bookings:
         bk.status = BookingStatus.cancelled
@@ -2248,8 +3010,61 @@ def cancel_event(
     event.status = "cancelled"
     db.commit()
     db.refresh(event)
+
+    # Fire attendee-cancellation notifications AFTER the commit so
+    # background workers see the flipped statuses. The notifier reads
+    # `EventBooking.status='confirmed'` but we intentionally pass the
+    # captured recipient list via a nested trigger that re-queries by
+    # event_id — those rows are now 'cancelled', so we build the
+    # recipient list here from the memoised confirmed bookings.
+    if had_confirmed_bookings:
+        recipient_ids = [bk.user_id for bk in confirmed_bookings]
+        background_tasks.add_task(
+            _notify_gathering_cancelled_recipients,
+            event_id=event.id,
+            recipient_ids=recipient_ids,
+            cancelled_by_id=current_user.id,
+        )
+
     booked_count = 0  # all bookings are now cancelled
     return _event_to_dict(event, booked_count)
+
+
+def _notify_gathering_cancelled_recipients(
+    event_id: str, recipient_ids: list[str], cancelled_by_id: str,
+) -> None:
+    """Background helper — creates one notification per recipient.
+    Kept small so the create_notification interaction stays predictable
+    and per-recipient failures don't stall the batch.
+    """
+    from app.core.database import SessionLocal
+    from app.services.notification_service import create_notification
+    db = SessionLocal()
+    try:
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            return
+        title = "Gathering cancelled"
+        message = f"\"{event.title}\" has been cancelled by the caretaker."
+        for uid in recipient_ids:
+            if uid == cancelled_by_id:
+                continue
+            try:
+                create_notification(
+                    db=db,
+                    recipient_id=uid,
+                    notification_type="gathering_cancelled",
+                    title=title,
+                    message=message,
+                    url=None,
+                )
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    "gathering_cancelled notification failed for user %s", uid
+                )
+    finally:
+        db.close()
 
 
 @router.post("/spaces/{slug}/events/{event_id}/bookings/manual", response_model=BookedMemberItem)
@@ -2526,6 +3341,100 @@ def list_creator_members(
     return result
 
 
+@router.delete("/spaces/{slug}/members/{user_id}", status_code=200)
+def remove_member(
+    slug: str,
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Remove a member from a collective.
+
+    Sets their SpaceMembership to 'removed', revokes manual pathway entitlements,
+    and cancels any active access passes in this space.
+    Does NOT touch the user account, posts, comments, or memberships in other spaces.
+    """
+    space = _get_managed_space(slug, current_user, db)
+
+    # Cannot remove yourself
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot remove yourself from a collective.")
+
+    # Cannot remove the space owner
+    if hasattr(space, "creator_id") and space.creator_id and user_id == space.creator_id:
+        raise HTTPException(status_code=400, detail="Cannot remove the collective owner.")
+
+    membership = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.user_id == user_id,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(status_code=404, detail="Member not found in this collective.")
+
+    if membership.status == SpaceMembershipStatus.removed:
+        raise HTTPException(status_code=400, detail="Member has already been removed.")
+
+    now = datetime.utcnow()
+
+    # Soft-delete the membership
+    membership.status = SpaceMembershipStatus.removed
+
+    # Revoke all active pathway entitlements in this space
+    active_entitlements = (
+        db.query(PathwayEntitlement)
+        .filter(
+            PathwayEntitlement.user_id == user_id,
+            PathwayEntitlement.space_id == space.id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+        )
+        .all()
+    )
+    for ent in active_entitlements:
+        ent.status = EntitlementStatus.revoked
+        ent.revoked_by_user_id = current_user.id
+        ent.revoked_at = now
+        ent.notes = (ent.notes or "") + f" [Revoked on member removal by {current_user.email}]"
+
+    # Cancel active/pending access passes in this space
+    active_passes = (
+        db.query(AccessPass)
+        .filter(
+            AccessPass.user_id == user_id,
+            AccessPass.space_id == space.id,
+            AccessPass.status.in_([AccessPassStatus.active, AccessPassStatus.pending]),
+        )
+        .all()
+    )
+    for ap in active_passes:
+        ap.status = AccessPassStatus.cancelled
+        ap.revoked_by_user_id = current_user.id
+        ap.revoked_at = now
+
+    # Cancel future confirmed event bookings in this space.
+    # Past bookings are kept as historical record.
+    future_bookings = (
+        db.query(EventBooking)
+        .join(Event, Event.id == EventBooking.event_id)
+        .filter(
+            EventBooking.user_id == user_id,
+            EventBooking.status == BookingStatus.confirmed,
+            Event.space_id == space.id,
+            Event.starts_at > now,
+        )
+        .all()
+    )
+    for booking in future_bookings:
+        booking.status = BookingStatus.cancelled
+        booking.cancelled_at = now
+
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/spaces/{slug}/members/add", response_model=AddMemberResponse, status_code=200)
 def add_or_invite_member(
     slug: str,
@@ -2533,18 +3442,26 @@ def add_or_invite_member(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> AddMemberResponse:
-    """Add an existing user directly as a member, or create an invitation if not found.
+    """Add an existing user directly as a member, or create a draft invitation if not found.
 
     Result codes:
     - added_as_member: user existed, now an active member
     - already_member: user existed and was already a member
-    - invite_created: user not found, invitation record created
-    - invite_already_pending: invitation already exists for this email
+    - pending_invite_created: user not found, draft invitation created (no email sent)
+    - invite_already_pending: draft/sent invitation already exists for this email
     """
     from sqlalchemy import func as _func
 
     space = _get_managed_space(slug, current_user, db)
     email = body.email.strip().lower()
+
+    # Build display name from first/last (fall back to name field or email)
+    first = (body.first_name or "").strip()
+    last = (body.last_name or "").strip()
+    if first or last:
+        display_name = f"{first} {last}".strip()
+    else:
+        display_name = body.name or email
 
     # Parse role — default to learner for unknown values
     role_map = {"learner": SpaceRole.learner, "moderator": SpaceRole.moderator, "creator": SpaceRole.creator}
@@ -2569,7 +3486,7 @@ def add_or_invite_member(
                 result="already_member",
                 message="This person is already a member of this collective.",
             )
-        # Add as active member
+        # Add as active member — existing users are added directly, no email needed
         membership = SpaceMembership(
             id=str(uuid4()),
             space_id=space.id,
@@ -2585,7 +3502,7 @@ def add_or_invite_member(
             message=f"{display} has been added to this collective.",
         )
     else:
-        # No account — create or detect pending invitation
+        # No account — create draft invitation (sent_at=None, no email sent)
         existing_invite = (
             db.query(SpaceInvitation)
             .filter(SpaceInvitation.space_id == space.id, SpaceInvitation.email == email)
@@ -2600,17 +3517,20 @@ def add_or_invite_member(
             id=str(uuid4()),
             space_id=space.id,
             email=email,
-            name=body.name,
+            name=display_name,
             role=role_enum,
             note=body.note,
             invited_by_id=current_user.id,
             token=str(uuid4()),
+            payment_option_id=body.payment_option_id,
+            payment_status=body.payment_status,
+            # sent_at=None → draft invitation, no email sent yet
         )
         db.add(invitation)
         db.commit()
         return AddMemberResponse(
-            result="invite_created",
-            message=f"No account found for {email}. An invitation has been created — share the invite link with them.",
+            result="pending_invite_created",
+            message=f"Draft invitation created for {display_name}. Use 'Send invite' to email them.",
         )
 
 
@@ -2673,6 +3593,7 @@ def list_posts(
             "post_type": post.post_type.value if hasattr(post.post_type, "value") else str(post.post_type),
             "title": post.title,
             "body": post.body,
+            "image_url": post.image_url,
             "is_pinned": post.is_pinned,
             "is_visible": post.is_visible,
             "created_at": post.created_at,
@@ -2697,6 +3618,7 @@ def create_post(
         post_type=body.post_type,
         title=body.title,
         body=body.body,
+        image_url=body.image_url or None,
         is_pinned=body.is_pinned,
         is_visible=True,
     )
@@ -2708,6 +3630,7 @@ def create_post(
         "post_type": post.post_type.value if hasattr(post.post_type, "value") else str(post.post_type),
         "title": post.title,
         "body": post.body,
+        "image_url": post.image_url,
         "is_pinned": post.is_pinned,
         "is_visible": post.is_visible,
         "created_at": post.created_at,
@@ -2724,6 +3647,7 @@ def update_post(
     current_user: User = Depends(get_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
+    _ensure_creator_write_allowed(current_user, space, db)
     post = db.query(CommunityPost).filter(
         CommunityPost.id == post_id, CommunityPost.space_id == space.id
     ).first()
@@ -2737,20 +3661,136 @@ def update_post(
         post.body = body.body
     if body.is_pinned is not None:
         post.is_pinned = body.is_pinned
+    if "image_url" in body.model_fields_set:
+        post.image_url = body.image_url or None
+    # Reschedule support — only meaningful while the post is still in
+    # `scheduled` status. Once published, changing scheduled_for is a
+    # no-op (we don't move history around).
+    if "scheduled_for" in body.model_fields_set:
+        if post.publication_status != "scheduled":
+            raise HTTPException(400, detail="Only scheduled posts can be rescheduled.")
+        new_time = body.scheduled_for
+        if new_time is None:
+            raise HTTPException(400, detail="scheduled_for cannot be cleared. Use publish-now instead.")
+        if new_time.tzinfo is not None:
+            new_time = new_time.astimezone(tz=None).replace(tzinfo=None)
+        from datetime import datetime as _dt
+        if new_time <= _dt.utcnow():
+            raise HTTPException(400, detail="Scheduled time must be in the future.")
+        post.scheduled_for = new_time
+        if body.scheduling_timezone is not None:
+            post.scheduling_timezone = body.scheduling_timezone or None
     db.commit()
     db.refresh(post)
+    return _serialize_post_manage(post, db)
+
+
+def _serialize_post_manage(post: CommunityPost, db: Session) -> dict:
     from app.models.user import User as UserModel
+    from app.models.platform import ConversationChannel as _CC
     author = db.get(UserModel, post.author_id)
+    channel_name: str | None = None
+    channel_slug: str | None = None
+    channel_archived = False
+    if post.channel_id:
+        c = db.get(_CC, post.channel_id)
+        if c:
+            channel_name = c.name
+            channel_slug = c.slug
+            channel_archived = c.is_archived
     return {
         "id": post.id,
         "post_type": post.post_type.value if hasattr(post.post_type, "value") else str(post.post_type),
         "title": post.title,
         "body": post.body,
+        "image_url": post.image_url,
         "is_pinned": post.is_pinned,
         "is_visible": post.is_visible,
         "created_at": post.created_at,
         "author_name": author.name or author.email.split("@")[0] if author else "",
+        "publication_status": post.publication_status,
+        "scheduled_for": post.scheduled_for,
+        "scheduling_timezone": post.scheduling_timezone,
+        "published_at": post.published_at,
+        "channel_id": post.channel_id,
+        "channel_slug": channel_slug,
+        "channel_name": channel_name,
+        "channel_archived": channel_archived,
     }
+
+
+@router.get("/spaces/{slug}/community/scheduled", response_model=list[PostManageResponse])
+def list_scheduled_posts(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[dict]:
+    """Return the current caretaker's scheduled posts for this collective,
+    oldest scheduled first so the next-to-publish sits at the top."""
+    space = _get_managed_space(slug, current_user, db)
+    posts = (
+        db.query(CommunityPost)
+        .filter(
+            CommunityPost.space_id == space.id,
+            CommunityPost.publication_status == "scheduled",
+            CommunityPost.is_visible.is_(True),
+        )
+        .order_by(CommunityPost.scheduled_for.asc().nulls_last())
+        .all()
+    )
+    return [_serialize_post_manage(p, db) for p in posts]
+
+
+@router.post("/spaces/{slug}/community/{post_id}/publish-now", response_model=PostManageResponse)
+def publish_scheduled_post_now(
+    slug: str,
+    post_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> dict:
+    """Skip the schedule and publish immediately.
+
+    Uses the same atomic UPDATE pattern as the background publisher so
+    a concurrent scheduler tick can never publish + notify twice.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    post = db.query(CommunityPost).filter(
+        CommunityPost.id == post_id, CommunityPost.space_id == space.id
+    ).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found.")
+    if post.publication_status == "published":
+        # Already live — return current state without re-firing anything.
+        return _serialize_post_manage(post, db)
+    if post.publication_status != "scheduled":
+        raise HTTPException(status_code=400, detail="Post is not in a schedulable state.")
+
+    from datetime import datetime as _dt
+    from sqlalchemy import text as _text
+    now = _dt.utcnow()
+    result = db.execute(
+        _text(
+            "UPDATE community_posts "
+            "SET publication_status = 'published', "
+            "    published_at = :now, "
+            "    notifications_processed_at = :now "
+            "WHERE id = :id "
+            "  AND publication_status = 'scheduled' "
+            "  AND notifications_processed_at IS NULL"
+        ),
+        {"id": post.id, "now": now},
+    )
+    db.commit()
+
+    if result.rowcount == 1:
+        # We won the race — fire notifications now. Using the shared
+        # publisher helper keeps notification dispatch consistent between
+        # the manual publish-now path and the background loop.
+        from app.services.scheduled_publisher import _dispatch_notifications
+        _dispatch_notifications(post.id, post.space_id, post.author_id)
+
+    db.refresh(post)
+    return _serialize_post_manage(post, db)
 
 
 @router.patch("/spaces/{slug}/community/{post_id}/pin", status_code=204)
@@ -2761,6 +3801,7 @@ def toggle_pin(
     current_user: User = Depends(get_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
+    _ensure_creator_write_allowed(current_user, space, db)
     post = db.query(CommunityPost).filter(
         CommunityPost.id == post_id, CommunityPost.space_id == space.id
     ).first()
@@ -2828,15 +3869,63 @@ def delete_post(
 # Media Library
 # ---------------------------------------------------------------------------
 
+def _media_usage_counts(db: Session, asset_ids: list[str]) -> dict[str, int]:
+    """Single grouped query: count media-asset references across step + about blocks."""
+    if not asset_ids:
+        return {}
+    step_rows = (
+        db.query(PathwayStepBlock.media_asset_id, func.count(PathwayStepBlock.id))
+        .filter(PathwayStepBlock.media_asset_id.in_(asset_ids))
+        .group_by(PathwayStepBlock.media_asset_id)
+        .all()
+    )
+    about_rows = (
+        db.query(PathwayAboutBlock.media_asset_id, func.count(PathwayAboutBlock.id))
+        .filter(PathwayAboutBlock.media_asset_id.in_(asset_ids))
+        .group_by(PathwayAboutBlock.media_asset_id)
+        .all()
+    )
+    counts: dict[str, int] = {}
+    for aid, n in step_rows:
+        counts[aid] = counts.get(aid, 0) + int(n)
+    for aid, n in about_rows:
+        counts[aid] = counts.get(aid, 0) + int(n)
+    return counts
+
+
+def _serialise_media(a: CreatorMediaAsset, usage_count: int) -> dict:
+    return {
+        "id": a.id,
+        "space_id": a.space_id,
+        "uploaded_by_user_id": a.uploaded_by_user_id,
+        "title": a.title,
+        "description": a.description,
+        "alt_text": a.alt_text,
+        "tags": a.tags,
+        "original_filename": a.original_filename,
+        "stored_filename": a.stored_filename,
+        "storage_path": a.storage_path,
+        "file_url": a.file_url,
+        "mime_type": a.mime_type,
+        "media_type": a.media_type.value if hasattr(a.media_type, "value") else str(a.media_type),
+        "file_size_bytes": a.file_size_bytes,
+        "extension": a.extension,
+        "status": a.status.value if hasattr(a.status, "value") else str(a.status),
+        "usage_count": usage_count,
+        "created_at": a.created_at,
+        "updated_at": a.updated_at,
+    }
+
+
 @router.get("/spaces/{slug}/media", response_model=list[MediaAssetResponse])
 def list_media(
     slug: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
-) -> list[CreatorMediaAsset]:
+):
     """Return active media assets for the given space, newest first."""
     space = _get_managed_space(slug, current_user, db)
-    return (
+    assets = (
         db.query(CreatorMediaAsset)
         .filter(
             CreatorMediaAsset.space_id == space.id,
@@ -2845,6 +3934,8 @@ def list_media(
         .order_by(CreatorMediaAsset.created_at.desc())
         .all()
     )
+    counts = _media_usage_counts(db, [a.id for a in assets])
+    return [_serialise_media(a, counts.get(a.id, 0)) for a in assets]
 
 
 @router.post("/spaces/{slug}/media", response_model=MediaAssetResponse, status_code=201)
@@ -2897,7 +3988,7 @@ async def upload_media(
     db.add(asset)
     db.commit()
     db.refresh(asset)
-    return asset
+    return _serialise_media(asset, 0)
 
 
 @router.patch("/spaces/{slug}/media/{media_id}", response_model=MediaAssetResponse)
@@ -2907,8 +3998,14 @@ def update_media(
     body: MediaAssetUpdateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
-) -> CreatorMediaAsset:
-    """Update title or description of a media asset."""
+):
+    """Update title, description, alt text, or tags of a media asset.
+
+    NEVER modifies the underlying file. NEVER creates a duplicate. Every
+    reference to this asset elsewhere (step blocks, about blocks, covers,
+    banners) continues to point at the same row and immediately reflects
+    the updated metadata.
+    """
     space = _get_managed_space(slug, current_user, db)
     asset = db.query(CreatorMediaAsset).filter(
         CreatorMediaAsset.id == media_id,
@@ -2920,9 +4017,20 @@ def update_media(
         asset.title = body.title
     if body.description is not None:
         asset.description = body.description or None
+    if body.alt_text is not None:
+        asset.alt_text = body.alt_text.strip() or None
+    if body.tags is not None:
+        # Normalise: strip whitespace around each tag, drop empties, dedupe
+        cleaned = [t.strip() for t in body.tags.split(",")]
+        deduped: list[str] = []
+        for t in cleaned:
+            if t and t.lower() not in [d.lower() for d in deduped]:
+                deduped.append(t)
+        asset.tags = ", ".join(deduped) if deduped else None
     db.commit()
     db.refresh(asset)
-    return asset
+    counts = _media_usage_counts(db, [asset.id])
+    return _serialise_media(asset, counts.get(asset.id, 0))
 
 
 @router.patch("/spaces/{slug}/media/{media_id}/archive", response_model=MediaAssetResponse)
@@ -2931,7 +4039,7 @@ def archive_media(
     media_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
-) -> CreatorMediaAsset:
+):
     """Soft-archive a media asset. Hides from the active library."""
     space = _get_managed_space(slug, current_user, db)
     asset = db.query(CreatorMediaAsset).filter(
@@ -2943,7 +4051,75 @@ def archive_media(
     asset.status = "archived"
     db.commit()
     db.refresh(asset)
-    return asset
+    return _serialise_media(asset, 0)
+
+
+@router.get("/spaces/{slug}/media/{media_id}/usage", response_model=MediaUsageResponse)
+def get_media_usage(
+    slug: str,
+    media_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    """Read-only: every place this media asset is referenced.
+
+    Currently covers step blocks (image / audio / file_download) and about
+    blocks. Pathway covers and step banners are referenced by URL (not
+    media_asset_id) so they're not included here.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    asset = db.query(CreatorMediaAsset).filter(
+        CreatorMediaAsset.id == media_id,
+        CreatorMediaAsset.space_id == space.id,
+    ).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Media asset not found.")
+
+    refs: list[MediaUsageReference] = []
+
+    step_rows = (
+        db.query(PathwayStepBlock, PathwayStep, Pathway)
+        .join(PathwayStep, PathwayStep.id == PathwayStepBlock.step_id)
+        .join(Pathway, Pathway.id == PathwayStep.pathway_id)
+        .filter(
+            PathwayStepBlock.media_asset_id == media_id,
+            Pathway.space_id == space.id,
+        )
+        .all()
+    )
+    for block, step, pathway in step_rows:
+        bt = block.block_type.value if hasattr(block.block_type, "value") else str(block.block_type)
+        refs.append(MediaUsageReference(
+            kind=f"step_block_{bt}",
+            pathway_id=pathway.id,
+            pathway_title=pathway.title,
+            pathway_slug=pathway.slug,
+            step_id=step.id,
+            step_title=step.title,
+            step_slug=step.slug,
+            label=f"{pathway.title} — {step.title} ({bt})",
+        ))
+
+    about_rows = (
+        db.query(PathwayAboutBlock, Pathway)
+        .join(Pathway, Pathway.id == PathwayAboutBlock.pathway_id)
+        .filter(
+            PathwayAboutBlock.media_asset_id == media_id,
+            Pathway.space_id == space.id,
+        )
+        .all()
+    )
+    for block, pathway in about_rows:
+        bt = block.block_type.value if hasattr(block.block_type, "value") else str(block.block_type)
+        refs.append(MediaUsageReference(
+            kind=f"about_block_{bt}",
+            pathway_id=pathway.id,
+            pathway_title=pathway.title,
+            pathway_slug=pathway.slug,
+            label=f"{pathway.title} (about page · {bt})",
+        ))
+
+    return MediaUsageResponse(media_id=media_id, references=refs)
 
 
 # ---------------------------------------------------------------------------
@@ -2966,7 +4142,10 @@ def list_step_blocks(
     step = _get_step(pathway, step_slug, db)
     return (
         db.query(PathwayStepBlock)
-        .options(selectinload(PathwayStepBlock.media_asset))
+        .options(
+            selectinload(PathwayStepBlock.media_asset),
+            selectinload(PathwayStepBlock.resource),
+        )
         .filter(PathwayStepBlock.step_id == step.id)
         .order_by(PathwayStepBlock.position)
         .all()
@@ -3086,9 +4265,56 @@ def create_step_block(
         if not asset:
             raise HTTPException(status_code=404, detail="Media asset not found in this space.")
 
-    # Determine position
+    # Validate resource_id belongs to this space (so creators can't link to
+    # another collective's resources).
+    if body.resource_id:
+        linked = db.query(SpaceResource).filter(
+            SpaceResource.id == body.resource_id,
+            SpaceResource.space_id == space.id,
+        ).first()
+        if not linked:
+            raise HTTPException(status_code=404, detail="Resource not found in this space.")
+
+    # Embed blocks: extract iframe src if needed, validate against allowlist.
+    # Empty URL is allowed on creation so creators can drop in a stub block
+    # and configure it in the edit form.
+    embed_url = body.embed_url
+    content = body.content
+    label = body.label
+    caption = body.caption
+    if body.block_type == "embed" and embed_url:
+        try:
+            embed_url = extract_and_validate_embed_url(embed_url)
+        except EmbedValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    elif body.block_type == "button":
+        # Button validators are URL- and text-required, but only when those
+        # fields are actually provided. An empty button block is a valid stub.
+        normalised = _normalise_button_fields({
+            "embed_url": embed_url,
+            "label": label,
+            "caption": caption,
+            "content": content,
+        })
+        embed_url = normalised["embed_url"]
+        label = normalised["label"]
+        caption = normalised["caption"]
+        content = normalised["content"]
+
+    # Determine position. When a caller passes an explicit position we
+    # shift every existing block at or after that position up by one so
+    # the new row lands cleanly in the middle of the sequence. This
+    # supports the pathway editor's "insert between" affordance without
+    # a follow-up reorder round-trip.
     if body.position is not None:
         position = body.position
+        db.query(PathwayStepBlock).filter(
+            PathwayStepBlock.step_id == step.id,
+            PathwayStepBlock.position >= position,
+        ).update(
+            {PathwayStepBlock.position: PathwayStepBlock.position + 1},
+            synchronize_session=False,
+        )
     else:
         max_pos = (
             db.query(func.max(PathwayStepBlock.position))
@@ -3102,16 +4328,18 @@ def create_step_block(
         step_id=step.id,
         block_type=body.block_type,
         position=position,
-        content=body.content,
-        label=body.label,
-        caption=body.caption,
-        embed_url=body.embed_url,
+        content=content,
+        label=label,
+        caption=caption,
+        embed_url=embed_url,
         media_asset_id=body.media_asset_id,
+        resource_id=body.resource_id,
+        container_style=body.container_style,
     )
     db.add(block)
     db.commit()
     db.refresh(block)
-    db.refresh(block, ["media_asset"])
+    db.refresh(block, ["media_asset", "resource"])
     return block
 
 
@@ -3145,7 +4373,10 @@ def reorder_step_blocks(
 
     return (
         db.query(PathwayStepBlock)
-        .options(selectinload(PathwayStepBlock.media_asset))
+        .options(
+            selectinload(PathwayStepBlock.media_asset),
+            selectinload(PathwayStepBlock.resource),
+        )
         .filter(PathwayStepBlock.step_id == step.id)
         .order_by(PathwayStepBlock.position)
         .all()
@@ -3184,12 +4415,36 @@ def update_step_block(
         if not asset:
             raise HTTPException(status_code=404, detail="Media asset not found in this space.")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    if body.resource_id is not None:
+        linked = db.query(SpaceResource).filter(
+            SpaceResource.id == body.resource_id,
+            SpaceResource.space_id == space.id,
+        ).first()
+        if not linked:
+            raise HTTPException(status_code=404, detail="Resource not found in this space.")
+
+    patch = body.model_dump(exclude_unset=True)
+
+    # Embed blocks: only validate when the creator has actually entered a URL.
+    # Clearing the URL (saving with empty/null) is allowed — the block just
+    # won't render until they paste a real one.
+    if block.block_type == StepBlockType.embed and patch.get("embed_url"):
+        try:
+            patch["embed_url"] = extract_and_validate_embed_url(patch["embed_url"])
+        except EmbedValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Button blocks: _normalise_button_fields skips empty URL/text so a stub
+    # button can still be saved while editing in progress.
+    if block.block_type == StepBlockType.button:
+        _normalise_button_fields(patch)
+
+    for field, value in patch.items():
         setattr(block, field, value)
 
     db.commit()
     db.refresh(block)
-    db.refresh(block, ["media_asset"])
+    db.refresh(block, ["media_asset", "resource"])
     return block
 
 
@@ -3238,7 +4493,10 @@ def list_about_blocks(
     pathway = _get_pathway(space, pathway_slug, db)
     return (
         db.query(PathwayAboutBlock)
-        .options(selectinload(PathwayAboutBlock.media_asset))
+        .options(
+            selectinload(PathwayAboutBlock.media_asset),
+            selectinload(PathwayAboutBlock.resource),
+        )
         .filter(PathwayAboutBlock.pathway_id == pathway.id)
         .order_by(PathwayAboutBlock.position)
         .all()
@@ -3268,6 +4526,36 @@ def create_about_block(
         if not asset:
             raise HTTPException(status_code=404, detail="Media asset not found in this space.")
 
+    if body.resource_id:
+        linked = db.query(SpaceResource).filter(
+            SpaceResource.id == body.resource_id,
+            SpaceResource.space_id == space.id,
+        ).first()
+        if not linked:
+            raise HTTPException(status_code=404, detail="Resource not found in this space.")
+
+    # Embed/Button blocks: only validate provided fields. Empty stubs allowed.
+    embed_url = body.embed_url
+    content = body.content
+    label = body.label
+    caption = body.caption
+    if body.block_type == "embed" and embed_url:
+        try:
+            embed_url = extract_and_validate_embed_url(embed_url)
+        except EmbedValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    elif body.block_type == "button":
+        normalised = _normalise_button_fields({
+            "embed_url": embed_url,
+            "label": label,
+            "caption": caption,
+            "content": content,
+        })
+        embed_url = normalised["embed_url"]
+        label = normalised["label"]
+        caption = normalised["caption"]
+        content = normalised["content"]
+
     if body.position is not None:
         position = body.position
     else:
@@ -3283,16 +4571,18 @@ def create_about_block(
         pathway_id=pathway.id,
         block_type=body.block_type,
         position=position,
-        content=body.content,
-        label=body.label,
-        caption=body.caption,
-        embed_url=body.embed_url,
+        content=content,
+        label=label,
+        caption=caption,
+        embed_url=embed_url,
         media_asset_id=body.media_asset_id,
+        resource_id=body.resource_id,
+        container_style=body.container_style,
     )
     db.add(block)
     db.commit()
     db.refresh(block)
-    db.refresh(block, ["media_asset"])
+    db.refresh(block, ["media_asset", "resource"])
     return block
 
 
@@ -3324,7 +4614,10 @@ def reorder_about_blocks(
 
     return (
         db.query(PathwayAboutBlock)
-        .options(selectinload(PathwayAboutBlock.media_asset))
+        .options(
+            selectinload(PathwayAboutBlock.media_asset),
+            selectinload(PathwayAboutBlock.resource),
+        )
         .filter(PathwayAboutBlock.pathway_id == pathway.id)
         .order_by(PathwayAboutBlock.position)
         .all()
@@ -3361,12 +4654,32 @@ def update_about_block(
         if not asset:
             raise HTTPException(status_code=404, detail="Media asset not found in this space.")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    if body.resource_id is not None:
+        linked = db.query(SpaceResource).filter(
+            SpaceResource.id == body.resource_id,
+            SpaceResource.space_id == space.id,
+        ).first()
+        if not linked:
+            raise HTTPException(status_code=404, detail="Resource not found in this space.")
+
+    patch = body.model_dump(exclude_unset=True)
+
+    # Embed/Button: only validate when the creator has actually entered values.
+    if block.block_type == StepBlockType.embed and patch.get("embed_url"):
+        try:
+            patch["embed_url"] = extract_and_validate_embed_url(patch["embed_url"])
+        except EmbedValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    if block.block_type == StepBlockType.button:
+        _normalise_button_fields(patch)
+
+    for field, value in patch.items():
         setattr(block, field, value)
 
     db.commit()
     db.refresh(block)
-    db.refresh(block, ["media_asset"])
+    db.refresh(block, ["media_asset", "resource"])
     return block
 
 
@@ -3396,8 +4709,110 @@ def delete_about_block(
 
 
 # ---------------------------------------------------------------------------
-# Space Resources (collective-level)
+# Space Resources (collective-level) — Resources v2 (many-to-many pathways)
 # ---------------------------------------------------------------------------
+
+def _validate_pathway_ids(space: Space, pathway_ids: list[str], db: Session) -> list[Pathway]:
+    """Return Pathway rows for `pathway_ids`, validating they belong to `space`.
+
+    Raises 400 if any id doesn't belong to the space (prevents creator from
+    attaching a resource to a pathway in a different collective).
+    """
+    if not pathway_ids:
+        return []
+    # Strip duplicates & empties
+    cleaned = [pid for pid in {pid for pid in pathway_ids if pid}]
+    if not cleaned:
+        return []
+    rows = (
+        db.query(Pathway)
+        .filter(Pathway.space_id == space.id, Pathway.id.in_(cleaned))
+        .all()
+    )
+    if len(rows) != len(cleaned):
+        raise HTTPException(
+            status_code=400,
+            detail="One or more pathway_ids do not belong to this collective.",
+        )
+    return rows
+
+
+def _legacy_scope_for(pathways: list[Pathway]) -> tuple[str, str | None]:
+    """Compute legacy (scope, pathway_id) tuple from the v2 pathway list.
+
+    Kept for back-compat: those columns still get written on every save.
+    See SpaceResource docstring.
+    """
+    if not pathways:
+        return ("general", None)
+    return ("pathway", pathways[0].id)
+
+
+def _resolve_pathway_ids(body_pathway_ids: list[str] | None, legacy_scope: str | None, legacy_pathway_id: str | None) -> list[str] | None:
+    """Translate a v1-style {scope, pathway_id} or v2-style pathway_ids into a list.
+
+    Returns None if the caller didn't supply anything (no change desired).
+    Empty list means "set to General" (clear all pathway attachments).
+    """
+    if body_pathway_ids is not None:
+        return body_pathway_ids
+    if legacy_scope is None and legacy_pathway_id is None:
+        return None
+    if legacy_scope == "general":
+        return []
+    if legacy_scope == "pathway" and legacy_pathway_id:
+        return [legacy_pathway_id]
+    return None
+
+
+def _usage_counts_by_resource_id(db: Session, resource_ids: list[str]) -> dict[str, int]:
+    """Single grouped query: count step + about block references per resource."""
+    if not resource_ids:
+        return {}
+    step_rows = (
+        db.query(PathwayStepBlock.resource_id, func.count(PathwayStepBlock.id))
+        .filter(PathwayStepBlock.resource_id.in_(resource_ids))
+        .group_by(PathwayStepBlock.resource_id)
+        .all()
+    )
+    about_rows = (
+        db.query(PathwayAboutBlock.resource_id, func.count(PathwayAboutBlock.id))
+        .filter(PathwayAboutBlock.resource_id.in_(resource_ids))
+        .group_by(PathwayAboutBlock.resource_id)
+        .all()
+    )
+    counts: dict[str, int] = {}
+    for rid, n in step_rows:
+        counts[rid] = counts.get(rid, 0) + int(n)
+    for rid, n in about_rows:
+        counts[rid] = counts.get(rid, 0) + int(n)
+    return counts
+
+
+def _serialise_resource(r: SpaceResource, usage_count: int) -> dict:
+    """Build a ResourceResponse dict (so we don't need to attach usage_count
+    to the ORM object before from_attributes validation).
+    """
+    return {
+        "id": r.id,
+        "title": r.title,
+        "description": r.description,
+        "resource_type": r.resource_type,
+        "url": r.url,
+        "file_name": r.file_name,
+        "file_size": r.file_size,
+        "status": r.status,
+        "sort_order": r.sort_order,
+        "pathways": [
+            {"id": p.id, "slug": p.slug, "title": p.title} for p in r.pathways
+        ],
+        "usage_count": usage_count,
+        "scope": r.scope,
+        "pathway_id": r.pathway_id,
+        "created_at": r.created_at,
+        "updated_at": r.updated_at,
+    }
+
 
 @router.get("/spaces/{slug}/resources", response_model=list[ResourceResponse])
 def list_space_resources(
@@ -3406,12 +4821,14 @@ def list_space_resources(
     current_user: User = Depends(get_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
-    return (
+    resources = (
         db.query(SpaceResource)
         .filter(SpaceResource.space_id == space.id)
         .order_by(SpaceResource.sort_order, SpaceResource.created_at)
         .all()
     )
+    counts = _usage_counts_by_resource_id(db, [r.id for r in resources])
+    return [_serialise_resource(r, counts.get(r.id, 0)) for r in resources]
 
 
 @router.post("/spaces/{slug}/resources", response_model=ResourceResponse, status_code=201)
@@ -3422,8 +4839,9 @@ def create_space_resource(
     current_user: User = Depends(get_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
-    scope = body.scope if body.scope in ("general", "pathway") else "general"
-    pathway_id = body.pathway_id if scope == "pathway" else None
+    resolved_ids = _resolve_pathway_ids(body.pathway_ids, body.scope, body.pathway_id) or []
+    attached = _validate_pathway_ids(space, resolved_ids, db)
+    legacy_scope, legacy_pid = _legacy_scope_for(attached)
     resource = SpaceResource(
         id=uuid4().hex,
         space_id=space.id,
@@ -3434,13 +4852,14 @@ def create_space_resource(
         url=body.url.strip() if body.url else None,
         status=body.status,
         sort_order=body.sort_order,
-        scope=scope,
-        pathway_id=pathway_id,
+        scope=legacy_scope,
+        pathway_id=legacy_pid,
+        pathways=attached,
     )
     db.add(resource)
     db.commit()
     db.refresh(resource)
-    return resource
+    return _serialise_resource(resource, 0)
 
 
 @router.post("/spaces/{slug}/resources/upload", response_model=ResourceResponse, status_code=201)
@@ -3452,6 +4871,7 @@ async def upload_space_resource_file(
     status: str = Form("draft"),
     scope: str = Form("general"),
     pathway_id: str | None = Form(None),
+    pathway_ids: str | None = Form(None),  # JSON-encoded list[str] or comma-separated
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
@@ -3466,7 +4886,20 @@ async def upload_space_resource_file(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    _scope = scope if scope in ("general", "pathway") else "general"
+    # Parse pathway_ids form field (JSON list preferred, comma-fallback)
+    parsed_ids: list[str] | None = None
+    if pathway_ids:
+        try:
+            parsed = json.loads(pathway_ids)
+            if isinstance(parsed, list):
+                parsed_ids = [str(x) for x in parsed if x]
+        except (ValueError, TypeError):
+            parsed_ids = [p.strip() for p in pathway_ids.split(",") if p.strip()]
+
+    resolved_ids = _resolve_pathway_ids(parsed_ids, scope, pathway_id) or []
+    attached = _validate_pathway_ids(space, resolved_ids, db)
+    legacy_scope, legacy_pid = _legacy_scope_for(attached)
+
     resource = SpaceResource(
         id=uuid4().hex,
         space_id=space.id,
@@ -3477,15 +4910,16 @@ async def upload_space_resource_file(
         url=file_url,
         file_name=filename,
         file_size=file_size,
-        status=status if status in ("draft", "published") else "draft",
+        status=status if status in ("draft", "published", "archived") else "draft",
         sort_order=0,
-        scope=_scope,
-        pathway_id=pathway_id if _scope == "pathway" else None,
+        scope=legacy_scope,
+        pathway_id=legacy_pid,
+        pathways=attached,
     )
     db.add(resource)
     db.commit()
     db.refresh(resource)
-    return resource
+    return _serialise_resource(resource, 0)
 
 
 @router.patch("/spaces/{slug}/resources/{resource_id}", response_model=ResourceResponse)
@@ -3515,17 +4949,21 @@ def update_space_resource(
         resource.status = body.status
     if body.sort_order is not None:
         resource.sort_order = body.sort_order
-    if body.scope is not None and body.scope in ("general", "pathway"):
-        resource.scope = body.scope
-    # Update pathway_id — always sync based on current scope after update
-    new_scope = body.scope if body.scope in ("general", "pathway") else resource.scope
-    if new_scope == "general":
-        resource.pathway_id = None
-    elif body.pathway_id is not None:
-        resource.pathway_id = body.pathway_id
+
+    # Pathway assignment: accept v2 list OR legacy scope/pathway_id, then
+    # rewrite the join rows + sync legacy columns.
+    resolved_ids = _resolve_pathway_ids(body.pathway_ids, body.scope, body.pathway_id)
+    if resolved_ids is not None:
+        attached = _validate_pathway_ids(space, resolved_ids, db)
+        resource.pathways = attached
+        legacy_scope, legacy_pid = _legacy_scope_for(attached)
+        resource.scope = legacy_scope
+        resource.pathway_id = legacy_pid
+
     db.commit()
     db.refresh(resource)
-    return resource
+    counts = _usage_counts_by_resource_id(db, [resource.id])
+    return _serialise_resource(resource, counts.get(resource.id, 0))
 
 
 @router.delete("/spaces/{slug}/resources/{resource_id}", status_code=204)
@@ -3547,6 +4985,75 @@ def delete_space_resource(
         delete_file(resource.url.removeprefix("/api/uploads/"))
     db.delete(resource)
     db.commit()
+
+
+@router.get(
+    "/spaces/{slug}/resources/{resource_id}/usage",
+    response_model=ResourceUsageResponse,
+)
+def get_resource_usage(
+    slug: str,
+    resource_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    """Read-only: every place this resource is referenced from a pathway block.
+
+    Used by the Creator Studio "Used in N places ▼" expander.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    resource = db.query(SpaceResource).filter(
+        SpaceResource.id == resource_id,
+        SpaceResource.space_id == space.id,
+    ).first()
+    if not resource:
+        raise HTTPException(status_code=404, detail="Resource not found.")
+
+    refs: list[ResourceUsageReference] = []
+
+    # Step blocks → step → pathway
+    step_block_rows = (
+        db.query(PathwayStepBlock, PathwayStep, Pathway)
+        .join(PathwayStep, PathwayStep.id == PathwayStepBlock.step_id)
+        .join(Pathway, Pathway.id == PathwayStep.pathway_id)
+        .filter(
+            PathwayStepBlock.resource_id == resource_id,
+            Pathway.space_id == space.id,
+        )
+        .all()
+    )
+    for _block, step, pathway in step_block_rows:
+        refs.append(ResourceUsageReference(
+            kind="step_block",
+            pathway_id=pathway.id,
+            pathway_title=pathway.title,
+            pathway_slug=pathway.slug,
+            step_id=step.id,
+            step_title=step.title,
+            step_slug=step.slug,
+            href=f"/creator-studio/pathways/{pathway.slug}/steps/{step.slug}",
+        ))
+
+    # About blocks → pathway
+    about_block_rows = (
+        db.query(PathwayAboutBlock, Pathway)
+        .join(Pathway, Pathway.id == PathwayAboutBlock.pathway_id)
+        .filter(
+            PathwayAboutBlock.resource_id == resource_id,
+            Pathway.space_id == space.id,
+        )
+        .all()
+    )
+    for _block, pathway in about_block_rows:
+        refs.append(ResourceUsageReference(
+            kind="about_block",
+            pathway_id=pathway.id,
+            pathway_title=pathway.title,
+            pathway_slug=pathway.slug,
+            href=f"/creator-studio/pathways/{pathway.slug}/about",
+        ))
+
+    return ResourceUsageResponse(resource_id=resource_id, references=refs)
 
 
 # ---------------------------------------------------------------------------
@@ -4726,3 +6233,439 @@ def book_recurring_sessions(
         skipped=[RecurringBookingItem(**item) for item in skipped_list],
         pass_summary=PassSummary(**pass_summary) if pass_summary else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Manual / Offline Members
+# ---------------------------------------------------------------------------
+
+VALID_PAYMENT_STATUSES = {"unpaid", "pending", "paid", "complimentary"}
+
+
+class ManualMemberCreateRequest(BaseModel):
+    first_name: str
+    last_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    notes: str | None = None
+    pass_label: str | None = None
+
+
+class ManualMemberUpdateRequest(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    notes: str | None = None
+    pass_label: str | None = None
+    payment_option_id: str | None = None
+    payment_status: str | None = None
+
+
+class ManualMemberPathwayItem(BaseModel):
+    pathway_id: str
+    pathway_title: str
+    pathway_slug: str
+    grant_id: str
+    granted_at: str
+    notes: str | None
+
+
+class ManualMemberResponse(BaseModel):
+    id: str
+    first_name: str
+    last_name: str | None
+    display_name: str
+    email: str | None
+    phone: str | None
+    notes: str | None
+    pass_label: str | None
+    payment_option_id: str | None
+    payment_option_name: str | None
+    payment_status: str
+    status: str
+    created_at: str
+    updated_at: str
+
+
+def _manual_member_response(m: ManualMember, db: Session | None = None) -> ManualMemberResponse:
+    display = f"{m.first_name} {m.last_name}".strip() if m.last_name else m.first_name
+    payment_option_name: str | None = None
+    if m.payment_option_id and db is not None:
+        from app.models.platform import PaymentOption
+        opt = db.query(PaymentOption.name).filter_by(id=m.payment_option_id).scalar()
+        payment_option_name = opt
+    return ManualMemberResponse(
+        id=m.id,
+        first_name=m.first_name,
+        last_name=m.last_name,
+        display_name=display,
+        email=m.email,
+        phone=m.phone,
+        notes=m.notes,
+        pass_label=m.pass_label,
+        payment_option_id=m.payment_option_id,
+        payment_option_name=payment_option_name,
+        payment_status=m.payment_status or "unpaid",
+        status=m.status.value if hasattr(m.status, "value") else str(m.status),
+        created_at=m.created_at.isoformat(),
+        updated_at=m.updated_at.isoformat(),
+    )
+
+
+@router.get("/spaces/{slug}/manual-members", response_model=list[ManualMemberResponse])
+def list_manual_members(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[ManualMemberResponse]:
+    space = _get_managed_space(slug, current_user, db)
+    members = (
+        db.query(ManualMember)
+        .filter(ManualMember.space_id == space.id, ManualMember.status != ManualMemberStatus.converted)
+        .order_by(ManualMember.created_at.desc())
+        .all()
+    )
+    return [_manual_member_response(m, db) for m in members]
+
+
+@router.post("/spaces/{slug}/manual-members", response_model=ManualMemberResponse, status_code=201)
+def create_manual_member(
+    slug: str,
+    body: ManualMemberCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> ManualMemberResponse:
+    space = _get_managed_space(slug, current_user, db)
+    if not body.first_name.strip():
+        raise HTTPException(status_code=422, detail="First name is required.")
+    member = ManualMember(
+        id=str(uuid4()),
+        space_id=space.id,
+        first_name=body.first_name.strip(),
+        last_name=body.last_name.strip() if body.last_name else None,
+        email=body.email.strip().lower() if body.email else None,
+        phone=body.phone.strip() if body.phone else None,
+        notes=body.notes.strip() if body.notes else None,
+        pass_label=body.pass_label.strip() if body.pass_label else None,
+        payment_status="unpaid",
+        status=ManualMemberStatus.offline,
+    )
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+    return _manual_member_response(member, db)
+
+
+@router.patch("/spaces/{slug}/manual-members/{member_id}", response_model=ManualMemberResponse)
+def update_manual_member(
+    slug: str,
+    member_id: str,
+    body: ManualMemberUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> ManualMemberResponse:
+    space = _get_managed_space(slug, current_user, db)
+    member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Manual member not found.")
+    if body.first_name is not None:
+        member.first_name = body.first_name.strip() or member.first_name
+    if body.last_name is not None:
+        member.last_name = body.last_name.strip() or None
+    if body.email is not None:
+        member.email = body.email.strip().lower() or None
+    if body.phone is not None:
+        member.phone = body.phone.strip() or None
+    if body.notes is not None:
+        member.notes = body.notes.strip() or None
+    if body.pass_label is not None:
+        member.pass_label = body.pass_label.strip() or None
+    if body.payment_option_id is not None:
+        # empty string = clear the assignment
+        member.payment_option_id = body.payment_option_id.strip() or None
+    if body.payment_status is not None:
+        if body.payment_status not in VALID_PAYMENT_STATUSES:
+            raise HTTPException(status_code=422, detail=f"payment_status must be one of: {', '.join(VALID_PAYMENT_STATUSES)}")
+        member.payment_status = body.payment_status
+    db.commit()
+    db.refresh(member)
+    return _manual_member_response(member, db)
+
+
+@router.delete("/spaces/{slug}/manual-members/{member_id}", status_code=204)
+def delete_manual_member(
+    slug: str,
+    member_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    space = _get_managed_space(slug, current_user, db)
+    member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Manual member not found.")
+    db.delete(member)
+    db.commit()
+
+
+@router.post("/spaces/{slug}/manual-members/{member_id}/promote", response_model=ManualMemberResponse)
+def promote_manual_member(
+    slug: str,
+    member_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> ManualMemberResponse:
+    """Promote an offline record to 'managed' so pass/pathway/payment can be assigned."""
+    space = _get_managed_space(slug, current_user, db)
+    member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Manual member not found.")
+    if member.status == ManualMemberStatus.offline:
+        member.status = ManualMemberStatus.managed
+        db.commit()
+        db.refresh(member)
+    return _manual_member_response(member, db)
+
+
+@router.get("/spaces/{slug}/manual-members/{member_id}/pathway-access", response_model=list[ManualMemberPathwayItem])
+def list_manual_member_pathways(
+    slug: str,
+    member_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[ManualMemberPathwayItem]:
+    space = _get_managed_space(slug, current_user, db)
+    member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Manual member not found.")
+    rows = (
+        db.query(ManualMemberPathwayAccess)
+        .filter(ManualMemberPathwayAccess.manual_member_id == member_id)
+        .order_by(ManualMemberPathwayAccess.created_at)
+        .all()
+    )
+    result = []
+    for row in rows:
+        pathway = db.query(Pathway).filter_by(id=row.pathway_id).first()
+        if not pathway:
+            continue
+        result.append(ManualMemberPathwayItem(
+            pathway_id=row.pathway_id,
+            pathway_title=pathway.title,
+            pathway_slug=pathway.slug,
+            grant_id=row.id,
+            granted_at=row.created_at.isoformat(),
+            notes=row.notes,
+        ))
+    return result
+
+
+class GrantManualMemberPathwayRequest(BaseModel):
+    pathway_slug: str
+    notes: str | None = None
+
+
+@router.post("/spaces/{slug}/manual-members/{member_id}/pathway-access", response_model=ManualMemberPathwayItem, status_code=201)
+def grant_manual_member_pathway(
+    slug: str,
+    member_id: str,
+    body: GrantManualMemberPathwayRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> ManualMemberPathwayItem:
+    space = _get_managed_space(slug, current_user, db)
+    member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Manual member not found.")
+    pathway = db.query(Pathway).filter_by(slug=body.pathway_slug, space_id=space.id).first()
+    if not pathway:
+        raise HTTPException(status_code=404, detail="Pathway not found.")
+    existing = db.query(ManualMemberPathwayAccess).filter_by(
+        manual_member_id=member_id, pathway_id=pathway.id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Pathway access already granted.")
+    grant = ManualMemberPathwayAccess(
+        id=str(uuid4()),
+        manual_member_id=member_id,
+        pathway_id=pathway.id,
+        granted_by_user_id=current_user.id,
+        notes=body.notes.strip() if body.notes else None,
+    )
+    db.add(grant)
+    # Auto-promote to managed if still offline
+    if member.status == ManualMemberStatus.offline:
+        member.status = ManualMemberStatus.managed
+    db.commit()
+    db.refresh(grant)
+    return ManualMemberPathwayItem(
+        pathway_id=pathway.id,
+        pathway_title=pathway.title,
+        pathway_slug=pathway.slug,
+        grant_id=grant.id,
+        granted_at=grant.created_at.isoformat(),
+        notes=grant.notes,
+    )
+
+
+@router.delete("/spaces/{slug}/manual-members/{member_id}/pathway-access/{pathway_id}", status_code=204)
+def revoke_manual_member_pathway(
+    slug: str,
+    member_id: str,
+    pathway_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    space = _get_managed_space(slug, current_user, db)
+    member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Manual member not found.")
+    grant = db.query(ManualMemberPathwayAccess).filter_by(
+        manual_member_id=member_id, pathway_id=pathway_id
+    ).first()
+    if not grant:
+        raise HTTPException(status_code=404, detail="Pathway access record not found.")
+    db.delete(grant)
+    db.commit()
+
+
+class InviteManagedMemberRequest(BaseModel):
+    email: str
+
+
+@router.post("/spaces/{slug}/manual-members/{member_id}/invite", response_model=ManualMemberResponse)
+def invite_managed_member(
+    slug: str,
+    member_id: str,
+    body: InviteManagedMemberRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> ManualMemberResponse:
+    """Add email to a managed member and create a SpaceInvitation for them."""
+    space = _get_managed_space(slug, current_user, db)
+    member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Manual member not found.")
+    email = body.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=422, detail="A valid email address is required.")
+    # Check if there's already an active member with this email
+    from app.models.user import User as UserModel
+    existing_user = db.query(UserModel).filter_by(email=email).first()
+    if existing_user:
+        existing_membership = db.query(SpaceMembership).filter_by(
+            user_id=existing_user.id, space_id=space.id
+        ).filter(SpaceMembership.status == SpaceMembershipStatus.active).first()
+        if existing_membership:
+            raise HTTPException(status_code=409, detail="A member with this email already exists in this collective.")
+    # Check for duplicate pending invite
+    existing_invite = db.query(SpaceInvitation).filter_by(
+        email=email, space_id=space.id
+    ).first()
+    if existing_invite:
+        raise HTTPException(status_code=409, detail="An invitation to this email address is already pending.")
+    # Update member email + status
+    member.email = email
+    member.status = ManualMemberStatus.invited
+    # Create invitation
+    display = f"{member.first_name} {member.last_name}".strip() if member.last_name else member.first_name
+    invite = SpaceInvitation(
+        id=str(uuid4()),
+        space_id=space.id,
+        email=email,
+        name=display,
+        role="learner",
+        token=str(uuid4()),
+        invited_by_id=current_user.id,
+    )
+    db.add(invite)
+    db.commit()
+    db.refresh(member)
+    # TODO: Send invitation email when email service is connected.
+    return _manual_member_response(member, db)
+
+
+# ---------------------------------------------------------------------------
+# Pathway Unlock Requirements (included_with_offer)
+# ---------------------------------------------------------------------------
+
+class PathwayUnlockOptionResponse(BaseModel):
+    id: str
+    name: str
+    payment_type: str
+
+
+class SetPathwayUnlockRequirementsRequest(BaseModel):
+    payment_option_ids: list[str]
+
+
+@router.get("/spaces/{slug}/pathways/{pathway_slug}/unlock-requirements", response_model=list[PathwayUnlockOptionResponse])
+def get_pathway_unlock_requirements(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[PathwayUnlockOptionResponse]:
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+    rows = (
+        db.query(PaymentOption)
+        .join(PathwayUnlockRequirement, PathwayUnlockRequirement.payment_option_id == PaymentOption.id)
+        .filter(PathwayUnlockRequirement.pathway_id == pathway.id)
+        .all()
+    )
+    return [PathwayUnlockOptionResponse(id=r.id, name=r.name, payment_type=r.payment_type.value) for r in rows]
+
+
+@router.put("/spaces/{slug}/pathways/{pathway_slug}/unlock-requirements", response_model=list[PathwayUnlockOptionResponse])
+def set_pathway_unlock_requirements(
+    slug: str,
+    pathway_slug: str,
+    body: SetPathwayUnlockRequirementsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[PathwayUnlockOptionResponse]:
+    """Replace the full set of payment options that unlock this pathway."""
+    space = _get_managed_space(slug, current_user, db)
+    pathway = _get_pathway(space, pathway_slug, db)
+
+    # Validate all provided option IDs belong to this space
+    valid_options: list[PaymentOption] = []
+    for opt_id in body.payment_option_ids:
+        opt = db.query(PaymentOption).filter(PaymentOption.id == opt_id, PaymentOption.space_id == space.id).first()
+        if not opt:
+            raise HTTPException(status_code=404, detail=f"Payment option '{opt_id}' not found in this space.")
+        valid_options.append(opt)
+
+    # Delete existing requirements and replace
+    db.query(PathwayUnlockRequirement).filter(PathwayUnlockRequirement.pathway_id == pathway.id).delete()
+    for opt in valid_options:
+        req = PathwayUnlockRequirement(
+            id=str(uuid4()),
+            pathway_id=pathway.id,
+            payment_option_id=opt.id,
+        )
+        db.add(req)
+    db.commit()
+
+    return [PathwayUnlockOptionResponse(id=opt.id, name=opt.name, payment_type=opt.payment_type.value) for opt in valid_options]
+
+
+@router.get("/spaces/{slug}/payment-options", response_model=list[PathwayUnlockOptionResponse])
+def list_space_payment_options(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[PathwayUnlockOptionResponse]:
+    """All published payment options for this space (used to populate unlock-offer selector)."""
+    space = _get_managed_space(slug, current_user, db)
+    opts = (
+        db.query(PaymentOption)
+        .filter(
+            PaymentOption.space_id == space.id,
+            PaymentOption.status == "published",
+        )
+        .order_by(PaymentOption.position, PaymentOption.created_at)
+        .all()
+    )
+    return [PathwayUnlockOptionResponse(id=o.id, name=o.name, payment_type=o.payment_type.value) for o in opts]

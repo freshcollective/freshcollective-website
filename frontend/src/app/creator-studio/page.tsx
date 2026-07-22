@@ -164,8 +164,8 @@ export default async function CreatorStudioHome() {
       accent: 'rgba(197,160,80,0.55)',
     },
     {
-      label: 'Community',
-      desc: 'Manage posts and discussions',
+      label: 'Conversations',
+      desc: 'Start and moderate conversations with members',
       href: '/creator-studio/community',
       accent: 'rgba(56,160,158,0.40)',
     },
@@ -214,7 +214,7 @@ export default async function CreatorStudioHome() {
         </h1>
         <p
           className="max-w-[540px] text-[15px] leading-relaxed"
-          style={{ color: 'rgba(255,255,255,0.60)' }}
+          style={{ color: '#FFFFFF' }}
         >
           Choose a collective to manage, check what needs attention, or keep building your space.
         </p>
@@ -275,7 +275,7 @@ export default async function CreatorStudioHome() {
                     </span>
                   </div>
                   {spaceDetail.tagline && (
-                    <p className="mt-1 text-[14px] text-slate-500">{spaceDetail.tagline}</p>
+                    <p className="mt-1 text-[14px] text-black">{spaceDetail.tagline}</p>
                   )}
                 </div>
                 <Link
@@ -290,7 +290,7 @@ export default async function CreatorStudioHome() {
 
               {/* Description */}
               {spaceDetail.description && (
-                <p className="mb-4 max-w-[600px] text-[14px] leading-relaxed text-slate-500">
+                <p className="mb-4 max-w-[600px] text-[14px] leading-relaxed text-black">
                   {spaceDetail.description}
                 </p>
               )}
@@ -311,7 +311,7 @@ export default async function CreatorStudioHome() {
                     </span>
                   ))}
                   {spaceDetail.timezone && (
-                    <span className="text-[12px] text-slate-400">{spaceDetail.timezone}</span>
+                    <span className="text-[12px] text-black">{spaceDetail.timezone}</span>
                   )}
                 </div>
               )}
@@ -328,8 +328,8 @@ export default async function CreatorStudioHome() {
                     <div className="h-[3px] w-full" style={{ background: accent }} />
                     <div className="bg-white p-4">
                       <p className="font-serif text-2xl" style={{ color: '#0C1826' }}>{value}</p>
-                      <p className="mt-0.5 text-[13px] text-slate-500">{label}</p>
-                      {sub && <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>}
+                      <p className="mt-0.5 text-[13px] text-black">{label}</p>
+                      {sub && <p className="mt-0.5 text-[11px] text-black">{sub}</p>}
                     </div>
                   </div>
                 ))}
@@ -341,7 +341,7 @@ export default async function CreatorStudioHome() {
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
           <p className="mb-2 text-[16px] font-medium" style={{ color: '#0C1826' }}>No collective selected</p>
-          <p className="mb-5 text-[14px] text-slate-500">
+          <p className="mb-5 text-[14px] text-black">
             Create your first collective to get started.
           </p>
           <Link
@@ -372,7 +372,7 @@ export default async function CreatorStudioHome() {
               }}
             >
               <p className="text-[14px] font-semibold" style={{ color: '#0C1826' }}>Everything looks tidy.</p>
-              <p className="mt-0.5 text-[13px] text-slate-500">
+              <p className="mt-0.5 text-[13px] text-black">
                 Your collective has the basics in place.
               </p>
             </div>
@@ -385,7 +385,7 @@ export default async function CreatorStudioHome() {
                 >
                   <div className="min-w-0">
                     <p className="text-[14px] font-medium" style={{ color: '#0C1826' }}>{item.title}</p>
-                    <p className="mt-0.5 text-[13px] text-slate-500">{item.desc}</p>
+                    <p className="mt-0.5 text-[13px] text-black">{item.desc}</p>
                   </div>
                   <Link
                     href={item.href}
@@ -424,7 +424,7 @@ export default async function CreatorStudioHome() {
                 >
                   {label}
                 </p>
-                <p className="mt-1 text-[13px] text-slate-500">{desc}</p>
+                <p className="mt-1 text-[13px] text-black">{desc}</p>
               </div>
             </Link>
           ))}
@@ -441,7 +441,7 @@ export default async function CreatorStudioHome() {
         </p>
         {/* TODO: Replace with real creator activity feed once event tracking exists. */}
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-7 py-10 text-center">
-          <p className="text-[14px] leading-relaxed text-slate-500">
+          <p className="text-[14px] leading-relaxed text-black">
             Recent activity will appear here as members join, complete steps, comment,
             book gatherings, or make payments.
           </p>
@@ -459,13 +459,13 @@ export default async function CreatorStudioHome() {
         >
           <div>
             <p className="text-[14px] font-semibold" style={{ color: '#0C1826' }}>Payments</p>
-            <p className="mt-0.5 text-[13px] text-slate-500">
+            <p className="mt-0.5 text-[13px] text-black">
               Payment tracking is available from your Payments page.
             </p>
           </div>
           <Link
             href="/creator-studio/payments"
-            className="shrink-0 rounded-xl border border-slate-200 px-4 py-2 text-[13px] font-medium text-slate-600 transition-all hover:border-teal-200 hover:text-teal-700"
+            className="shrink-0 rounded-xl border border-slate-200 px-4 py-2 text-[13px] font-medium text-black transition-all hover:border-teal-200 hover:text-teal-700"
           >
             Open payments →
           </Link>

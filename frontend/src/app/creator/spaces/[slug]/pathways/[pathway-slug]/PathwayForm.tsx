@@ -116,7 +116,7 @@ export default function PathwayForm({
               ].join(' ')}
             />
           </button>
-          <span className="text-sm text-slate-600">Sequential</span>
+          <span className="text-sm text-black">Sequential</span>
         </div>
       </div>
 

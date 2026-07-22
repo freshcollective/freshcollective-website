@@ -30,6 +30,42 @@ class User(Base):
         DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
+    # ---- Community Care — suspension (protective, temporary) --------------
+    # Set by Fresh Collective admins as a Protective Measure while a case
+    # is under review. Enforcement lives at the auth layer (see the
+    # feature-flag rollout in Stage 2D). Reversible.
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    suspended_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Community Care Stage 2C — points to the CC action that issued the
+    # current suspension, so reversal can clear this row cleanly.
+    suspended_by_action_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("community_care_actions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    creator_suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    creator_suspended_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    creator_suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ---- Community Care — cancellation (resolution outcome, terminal) -----
+    # Explicitly distinct from suspension. A cancellation is never
+    # "reversed" by editing the case — if a re-review is warranted a
+    # new case documents that decision.
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Stage 2D — link back to the resolution action that cancelled the
+    # account so the audit trail names the specific case + admin.
+    cancelled_by_action_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("community_care_actions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    creator_cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    creator_cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    creator_cancelled_by_action_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("community_care_actions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     __table_args__ = (
         CheckConstraint("role IN ('user', 'creator', 'admin')", name="users_role_check"),
     )

@@ -61,7 +61,7 @@ export default function GatheringBookingClient({
       })
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
-        throw new Error(typeof b.detail === 'string' ? b.detail : 'Could not book spot.')
+        throw new Error(typeof b.detail === 'string' ? b.detail : 'Could not reserve your place.')
       }
       setMyBookingStatus('confirmed')
       setCanBook(false)
@@ -85,7 +85,7 @@ export default function GatheringBookingClient({
       )
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
-        throw new Error(typeof b.detail === 'string' ? b.detail : 'Could not cancel booking.')
+        throw new Error(typeof b.detail === 'string' ? b.detail : 'Could not release your place.')
       }
       setMyBookingStatus('cancelled')
       setCanBook(true)
@@ -110,7 +110,7 @@ export default function GatheringBookingClient({
       )
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
-        throw new Error(typeof b.detail === 'string' ? b.detail : 'Could not book series.')
+        throw new Error(typeof b.detail === 'string' ? b.detail : 'Could not reserve the series.')
       }
       const result: SeriesBookingResult = await res.json()
       setSeriesResult(result)
@@ -126,30 +126,30 @@ export default function GatheringBookingClient({
 
   if (!requiresBooking) return null
 
-  const isBooked = myBookingStatus === 'confirmed'
-  const isFull = spotsRemaining !== null && spotsRemaining === 0 && !isBooked
+  const isReserved = myBookingStatus === 'confirmed'
+  const isFull = spotsRemaining !== null && spotsRemaining === 0 && !isReserved
   const needsPathwayAccess = accessType === 'pathway_required' && !userHasPathwayAccess
 
   return (
     <div>
-      <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-        Booking
+      <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-black">
+        Your place
       </p>
 
       {isPast ? (
-        <p className="mb-4 text-[15px] font-semibold text-navy-900">Session ended</p>
-      ) : isBooked ? (
-        <p className="mb-4 text-[15px] font-semibold text-teal-700">You&rsquo;re booked ✓</p>
+        <p className="mb-4 text-[15px] font-semibold text-navy-900">This Gathering has ended</p>
+      ) : isReserved ? (
+        <p className="mb-4 text-[15px] font-semibold text-teal-700">You&rsquo;ve reserved your place ✓</p>
       ) : isFull ? (
-        <p className="mb-4 text-[15px] font-semibold text-slate-500">Session full</p>
+        <p className="mb-4 text-[15px] font-semibold text-black">All places taken</p>
       ) : (
-        <p className="mb-4 text-[15px] font-semibold text-navy-900">Reserve your spot</p>
+        <p className="mb-4 text-[15px] font-semibold text-navy-900">Reserve your place</p>
       )}
 
-      <div className="mb-4 space-y-2 text-[13px] text-slate-500">
+      <div className="mb-4 space-y-2 text-[13px] text-black">
         {capacity !== null && (
           <div className="flex items-center justify-between">
-            <span>Spots</span>
+            <span>Places</span>
             <span className="font-medium text-navy-800">
               {spotsRemaining !== null
                 ? `${spotsRemaining} of ${capacity} remaining`
@@ -159,7 +159,7 @@ export default function GatheringBookingClient({
         )}
         {bookedCount > 0 && (
           <div className="flex items-center justify-between">
-            <span>Booked</span>
+            <span>Reserved</span>
             <span className="font-medium text-navy-800">{bookedCount}</span>
           </div>
         )}
@@ -170,10 +170,10 @@ export default function GatheringBookingClient({
           className="mb-3 rounded-xl px-4 py-3 text-[12px] text-teal-800"
           style={{ background: 'rgba(56,160,158,0.08)', border: '1px solid rgba(56,160,158,0.2)' }}
         >
-          Booked {seriesResult.booked} session{seriesResult.booked !== 1 ? 's' : ''}.
+          Reserved a place in {seriesResult.booked} Gathering{seriesResult.booked !== 1 ? 's' : ''}.
           {seriesResult.skipped_full > 0 && ` ${seriesResult.skipped_full} full.`}
-          {seriesResult.skipped_closed > 0 && ` ${seriesResult.skipped_closed} booking closed.`}
-          {seriesResult.already_booked > 0 && ` ${seriesResult.already_booked} already booked.`}
+          {seriesResult.skipped_closed > 0 && ` ${seriesResult.skipped_closed} closed to new places.`}
+          {seriesResult.already_booked > 0 && ` ${seriesResult.already_booked} already reserved.`}
         </div>
       )}
 
@@ -183,7 +183,7 @@ export default function GatheringBookingClient({
           className="block w-full rounded-xl py-2.5 text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
           style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
         >
-          Log in to book
+          Sign in to reserve
         </Link>
       )}
 
@@ -192,27 +192,31 @@ export default function GatheringBookingClient({
           disabled
           className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400"
         >
-          Join the pathway to book
+          Join the Pathway to reserve
         </button>
       )}
 
       {!isPast && isAuthenticated && !needsPathwayAccess && (
         <>
-          {isBooked ? (
+          {isReserved ? (
             <div className="space-y-2">
               <div
-                className="flex items-center gap-2 rounded-xl px-4 py-2.5"
-                style={{ background: 'rgba(56,160,158,0.08)' }}
+                className="rounded-xl px-4 py-3"
+                style={{ background: 'rgba(56,160,158,0.08)', border: '1px solid rgba(56,160,158,0.15)' }}
               >
-                <span className="text-sm font-semibold text-teal-700">Booking confirmed</span>
+                <p className="text-sm font-semibold text-teal-700">You&rsquo;re in.</p>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-teal-800">
+                  We&rsquo;ve saved your place and you&rsquo;ll find this Gathering
+                  in your upcoming schedule.
+                </p>
               </div>
               {canCancelBooking && (
                 <button
                   onClick={handleCancelBooking}
                   disabled={loading}
-                  className="w-full rounded-xl border border-slate-200 py-2 text-sm text-slate-400 transition-colors hover:border-red-200 hover:text-red-500 disabled:opacity-50"
+                  className="w-full rounded-xl border border-slate-200 py-2 text-sm text-black transition-colors hover:border-red-200 hover:text-red-500 disabled:opacity-50"
                 >
-                  {loading ? 'Cancelling…' : 'Cancel booking'}
+                  {loading ? 'Releasing…' : 'Release your place'}
                 </button>
               )}
             </div>
@@ -224,7 +228,7 @@ export default function GatheringBookingClient({
                 className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
               >
-                {loading ? 'Booking…' : 'Book your spot'}
+                {loading ? 'Reserving…' : 'Reserve your place'}
               </button>
               {recurrenceSeriesId && !seriesResult && (
                 <button
@@ -232,7 +236,7 @@ export default function GatheringBookingClient({
                   disabled={loading}
                   className="w-full rounded-xl border border-teal-200 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50"
                 >
-                  {loading ? 'Booking…' : 'Book remaining sessions'}
+                  {loading ? 'Reserving…' : 'Reserve every Gathering in this series'}
                 </button>
               )}
             </div>
@@ -241,14 +245,14 @@ export default function GatheringBookingClient({
               disabled
               className="w-full cursor-not-allowed rounded-xl bg-slate-100 py-2.5 text-sm font-semibold text-slate-400"
             >
-              Session full
+              All places taken
             </button>
           ) : null}
         </>
       )}
 
       {bookingNote && (
-        <p className="mt-3 text-[12px] leading-relaxed text-slate-400">{bookingNote}</p>
+        <p className="mt-3 text-[12px] leading-relaxed text-black">{bookingNote}</p>
       )}
 
       {error && <p className="mt-2 text-[12px] text-red-500">{error}</p>}

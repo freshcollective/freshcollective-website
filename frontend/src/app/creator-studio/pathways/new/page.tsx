@@ -15,7 +15,7 @@ export default async function NewPathwayPage() {
       <div className="mb-8">
         <Link
           href="/creator-studio/pathways"
-          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-slate-500 transition-colors hover:text-teal-700"
+          className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-black transition-colors hover:text-teal-700"
         >
           ← Back to Pathways
         </Link>

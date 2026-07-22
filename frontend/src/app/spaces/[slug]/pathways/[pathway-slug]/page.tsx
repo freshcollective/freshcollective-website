@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getPathwayOverview, getMyPasses } from '@/lib/serverApi'
+import PathwayAutoRevalidate from '@/components/spaces/PathwayAutoRevalidate'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import type { PathwayWithSteps, StepSummary, AccessPassSummary } from '@/types/platform'
@@ -30,6 +31,63 @@ function StepRow({
   index: number
 }) {
   const href = `/spaces/${spaceSlug}/pathways/${pathwaySlug}/${step.slug}`
+  const locked = step.availability?.is_locked === true
+  const lockMessage = step.availability?.message ?? null
+
+  const inner = (
+    <>
+      <div
+        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+        style={step.is_completed
+          ? { background: 'var(--fc-accent, #14b8a6)', color: '#FFFFFF' }
+          : locked
+            ? { background: 'rgba(12,24,38,0.06)', color: 'rgba(12,24,38,0.55)' }
+            : { background: 'var(--fc-accent-soft, #f0fdfa)', color: 'var(--fc-accent, #0d9488)' }}
+      >
+        {step.is_completed ? '✓' : locked ? '🔒' : index + 1}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p
+          className="font-medium leading-snug"
+          style={step.is_completed
+            ? { color: 'var(--fc-accent, #0f766e)' }
+            : locked
+              ? { color: 'rgba(12,24,38,0.55)' }
+              : { color: '#0C1826' }}
+        >
+          {step.title}
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-black">
+          <span>{CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}</span>
+          {step.estimated_minutes && <span>{step.estimated_minutes} min</span>}
+          {locked && lockMessage && (
+            <span style={{ color: 'rgba(12,24,38,0.62)' }}>{lockMessage}</span>
+          )}
+        </div>
+      </div>
+
+      {!locked && (
+        <span className="shrink-0 self-center text-black transition-colors group-hover:text-teal-500">
+          →
+        </span>
+      )}
+    </>
+  )
+
+  if (locked) {
+    // Locked steps stay visible in the list — the release system is a
+    // gate, not a hide — but the row is not interactive.
+    return (
+      <div
+        className="flex items-start gap-4 rounded-2xl border px-5 py-4"
+        style={{ borderColor: 'rgba(12,24,38,0.08)', background: 'rgba(12,24,38,0.02)' }}
+        aria-disabled="true"
+      >
+        {inner}
+      </div>
+    )
+  }
 
   return (
     <Link
@@ -41,35 +99,7 @@ function StepRow({
           : 'border-border bg-white hover:border-teal-200',
       ].join(' ')}
     >
-      <div
-        className={[
-          'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
-          step.is_completed
-            ? 'bg-teal-500 text-white'
-            : 'bg-teal-50 text-teal-600',
-        ].join(' ')}
-      >
-        {step.is_completed ? '✓' : index + 1}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p
-          className={[
-            'font-medium leading-snug',
-            step.is_completed ? 'text-teal-700' : 'text-navy-900',
-          ].join(' ')}
-        >
-          {step.title}
-        </p>
-        <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-          <span>{CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type}</span>
-          {step.estimated_minutes && <span>{step.estimated_minutes} min</span>}
-        </div>
-      </div>
-
-      <span className="shrink-0 self-center text-slate-300 transition-colors group-hover:text-teal-500">
-        →
-      </span>
+      {inner}
     </Link>
   )
 }
@@ -92,7 +122,7 @@ function PassWidget({ pass, spaceSlug }: { pass: AccessPassSummary; spaceSlug: s
           <p className="text-[13px] font-semibold text-teal-700">
             Your EMBODY pass — {pass.option_name ?? 'Term Pass'}
           </p>
-          <p className="mt-0.5 text-[12px] text-slate-500">
+          <p className="mt-0.5 text-[12px] text-black">
             {pass.credits_per_week ? `${pass.credits_per_week} session${pass.credits_per_week !== 1 ? 's' : ''} per week` : 'Active'}
             {validUntil && ` · valid until ${validUntil}`}
           </p>
@@ -109,26 +139,29 @@ function PassWidget({ pass, spaceSlug }: { pass: AccessPassSummary; spaceSlug: s
         <div className="mb-3">
           <div className="space-y-1 mb-2">
             <div className="flex items-center justify-between text-[12px]">
-              <span className="text-slate-500">Sessions included</span>
+              <span className="text-black">Sessions included</span>
               <span className="font-semibold text-navy-900">{total}</span>
             </div>
             <div className="flex items-center justify-between text-[12px]">
-              <span className="text-slate-500">Booked</span>
+              <span className="text-black">Booked</span>
               <span className="font-semibold text-navy-900">{pass.used_credits}</span>
             </div>
             <div className="flex items-center justify-between text-[12px]">
-              <span className="text-slate-500">Available to book</span>
-              <span className={`font-semibold ${remaining > 0 ? 'text-teal-700' : 'text-slate-400'}`}>{remaining}</span>
+              <span className="text-black">Available to book</span>
+              <span className={`font-semibold ${remaining > 0 ? 'text-teal-700' : 'text-black'}`}>{remaining}</span>
             </div>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
+          <div
+            className="h-1.5 w-full overflow-hidden rounded-full"
+            style={{ background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))' }}
+          >
             <div
-              className="h-full rounded-full bg-teal-500 transition-all"
+              className="h-full rounded-full transition-all"
               style={{ width: `${total > 0 ? Math.round((pass.used_credits / total) * 100) : 0}%` }}
             />
           </div>
           {exhausted ? (
-            <p className="mt-2 text-[12px] leading-relaxed text-slate-500">
+            <p className="mt-2 text-[12px] leading-relaxed text-black">
               All included sessions are booked for this term. Message Lindsey if you need help changing a session.
             </p>
           ) : (
@@ -143,7 +176,7 @@ function PassWidget({ pass, spaceSlug }: { pass: AccessPassSummary; spaceSlug: s
         <Link
           href={`/spaces/${spaceSlug}/events`}
           className="inline-block rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
         >
           Book sessions →
         </Link>
@@ -169,12 +202,12 @@ function SuccessBanner({ pass, spaceSlug, pathwaySlug }: { pass: AccessPassSumma
           ✓
         </div>
         <div>
-          <p className="text-[15px] font-semibold text-teal-700">Your EMBODY pass is active.</p>
-          <p className="text-[12px] text-slate-500">{optionName}{remaining !== null ? ` · ${remaining} sessions included` : ''}</p>
+          <p className="text-[15px] font-semibold" style={{ color: 'var(--fc-accent, #0f766e)' }}>Your EMBODY pass is active.</p>
+          <p className="text-[12px] text-black">{optionName}{remaining !== null ? ` · ${remaining} sessions included` : ''}</p>
         </div>
       </div>
 
-      <p className="mb-4 text-[13px] leading-relaxed text-slate-700">
+      <p className="mb-4 text-[13px] leading-relaxed text-black">
         <strong>Next step: book your regular sessions.</strong>
         {' '}You can book yourself from the Gatherings page, or message Lindsey with your preferred regular session day/s and she will book your regular sessions for the term.
       </p>
@@ -183,7 +216,7 @@ function SuccessBanner({ pass, spaceSlug, pathwaySlug }: { pass: AccessPassSumma
         <Link
           href={`/spaces/${spaceSlug}/events`}
           className="inline-block rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
         >
           Book sessions →
         </Link>
@@ -195,7 +228,7 @@ function SuccessBanner({ pass, spaceSlug, pathwaySlug }: { pass: AccessPassSumma
         </Link>
         <Link
           href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/what-to-bring`}
-          className="inline-block rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-600 transition-colors hover:border-slate-300"
+          className="inline-block rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-black transition-colors hover:border-slate-300"
         >
           What to bring
         </Link>
@@ -251,12 +284,21 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
       ? Math.round((pathway.completed_count / pathway.step_count) * 100)
       : 0
 
+  // Collect every known future unlock timestamp so the auto-revalidate
+  // component can arm one timer for the nearest one. Only time-based
+  // lock types (days_after_enrolment, fixed_date) supply this; the
+  // others don't have a known unlock instant.
+  const upcomingUnlocks = pathway.steps
+    .map((s) => s.availability?.unlocks_at)
+    .filter((v): v is string => !!v)
+
   return (
     <div className="max-w-2xl">
+      <PathwayAutoRevalidate upcomingUnlocks={upcomingUnlocks} />
       <div className="mb-6">
         <Link
           href={`/spaces/${slug}/pathways`}
-          className="text-sm text-slate-400 transition-colors hover:text-teal-600"
+          className="text-sm text-black transition-colors hover:text-teal-600"
         >
           ← All Pathways
         </Link>
@@ -291,10 +333,13 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
         )}
 
         <div className="relative px-7 py-10 md:px-9 md:py-12">
-          <div className="mb-3 h-[2px] w-8 rounded-full bg-teal-400" />
+          <div
+            className="mb-3 h-[2px] w-8 rounded-full"
+            style={{ background: 'var(--fc-accent, #2dd4bf)' }}
+          />
           <p
             className="mb-1 text-[9px] font-bold uppercase tracking-[0.20em]"
-            style={{ color: coverImageUrl ? 'rgba(255,255,255,0.65)' : cs.labelColor }}
+            style={{ color: coverImageUrl ? '#FFFFFF' : cs.labelColor }}
           >
             {isComingSoon ? 'Coming soon' : locked ? 'Pathway' : 'Pathway'}
           </p>
@@ -307,7 +352,7 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
           {pathway.description && (
             <p
               className="mt-2.5 max-w-md text-[14px] leading-relaxed"
-              style={{ color: (coverImageUrl || cs.isDark) ? 'rgba(255,255,255,0.72)' : '#64748B' }}
+              style={{ color: (coverImageUrl || cs.isDark) ? '#FFFFFF' : '#000000' }}
             >
               {pathway.description}
             </p>
@@ -324,7 +369,7 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
       {/* ── Coming soon or accessible pathway view ── */}
       {isComingSoon ? (
         /* ── Coming soon view ── */
-        <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-slate-500">
+        <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-black">
           This pathway is coming soon.
         </div>
       ) : (
@@ -332,21 +377,24 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
         <>
           {pathway.step_count > 0 && (
             <div className="mb-8">
-              <div className="mb-1.5 flex items-baseline justify-between text-xs text-slate-400">
+              <div className="mb-1.5 flex items-baseline justify-between text-xs text-black">
                 <span>{pathway.completed_count} of {pathway.step_count} steps complete</span>
                 <span>{progressPct}%</span>
               </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
+              <div
+                className="h-1.5 w-full overflow-hidden rounded-full"
+                style={{ background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))' }}
+              >
                 <div
-                  className="h-full rounded-full bg-teal-500 transition-all"
-                  style={{ width: `${progressPct}%` }}
+                  className="h-full rounded-full transition-all"
+                  style={{ width: `${progressPct}%`, background: 'var(--fc-accent, #14b8a6)' }}
                 />
               </div>
             </div>
           )}
 
 {pathway.steps.length === 0 ? (
-            <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-slate-500">
+            <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-black">
               Steps for this pathway are coming soon.
             </div>
           ) : pathway.sections.length > 0 ? (
@@ -358,11 +406,13 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
                 let globalIndex = 0
                 const groups: React.ReactNode[] = []
 
-                // Sections first (in position order as returned by backend)
+                // Sections first (in position order as returned by backend).
+                // Section banners are NOT rendered here — they appear above
+                // the first step of each section on the member step page.
                 pathway.sections.forEach((section) => {
                   groups.push(
                     <div key={section.id}>
-                      <p className="mb-3 text-[13px] font-semibold text-slate-600">
+                      <p className="mb-3 text-[13px] font-semibold text-black">
                         {section.title}
                       </p>
                       <div className="flex flex-col gap-3">
@@ -412,7 +462,7 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
               <Link
                 href={`/spaces/${slug}/pathways/${pathwaySlug}/${pathway.steps[0].slug}`}
                 className="inline-block rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
               >
                 Start reading →
               </Link>
