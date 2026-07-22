@@ -130,7 +130,14 @@ function withContainerBase(
 ): React.ReactNode {
   if (node == null) return null
   const palette = resolveContainerPalette(block.container_style, collectivePalette)
-  if (!palette) return node
+  if (!palette) {
+    // Callers invoke this from inside a ``blocks.map()``, so React
+    // needs a stable ``key`` on whatever element we return — even
+    // when no soft-tint wrapper is applied. Cloning here attaches
+    // ``key`` at the single site every non-wrapped block flows
+    // through, instead of asking every caller to pre-key its JSX.
+    return React.isValidElement(node) ? React.cloneElement(node, { key }) : node
+  }
   return (
     <div
       key={key}
