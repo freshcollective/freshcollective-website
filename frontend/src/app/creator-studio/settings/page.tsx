@@ -2,120 +2,33 @@ import Link from 'next/link'
 import {
   getActiveCreatorSpace,
   getCreatorSpace,
-  getCreatorPathways,
-  getCreatorEvents,
 } from '@/lib/serverApi'
-import type {
-  CreatorSpaceDetail,
-  CreatorPathway,
-  CreatorEvent,
-} from '@/types/platform'
+import type { CreatorSpaceDetail } from '@/types/platform'
 import CollectiveSettingsForm from './CollectiveSettingsForm'
 import GuidancePanelForm from './GuidancePanelForm'
 
-type StepStatus = 'not_started' | 'in_progress' | 'complete'
-
-const STATUS_CONFIG: Record<StepStatus, { label: string; bg: string; color: string }> = {
-  complete:    { label: 'Complete',    bg: 'rgba(56,160,158,0.10)', color: '#38A09E' },
-  in_progress: { label: 'In progress', bg: 'rgba(212,176,72,0.12)', color: '#b08d2a' },
-  not_started: { label: 'Not started', bg: 'rgba(0,0,0,0.05)',      color: '#94a3b8' },
-}
-
-async function _safe<T>(p: Promise<T>, slug: string, label: string, fallback: T): Promise<T> {
-  try {
-    return await p
-  } catch (err) {
-    // Log a useful development error but do NOT blank the page.
-    console.error(`[creator-studio/settings] ${label} failed for ${slug}:`, err)
-    return fallback
-  }
-}
 
 export default async function SettingsPage() {
   const primarySpace = await getActiveCreatorSpace()
 
-  const [spaceDetail, pathways, events]: [
-    CreatorSpaceDetail | null,
-    CreatorPathway[],
-    CreatorEvent[],
-  ] = primarySpace
-    ? await Promise.all([
-        _safe(
-          getCreatorSpace(primarySpace.slug) as Promise<CreatorSpaceDetail | null>,
-          primarySpace.slug, 'getCreatorSpace', null,
-        ),
-        _safe(getCreatorPathways(primarySpace.slug), primarySpace.slug, 'getCreatorPathways', []),
-        _safe(getCreatorEvents(primarySpace.slug),   primarySpace.slug, 'getCreatorEvents',  []),
-      ])
-    : [null, [], []]
+  let spaceDetail: CreatorSpaceDetail | null = null
+  if (primarySpace) {
+    try {
+      spaceDetail = (await getCreatorSpace(primarySpace.slug)) as CreatorSpaceDetail | null
+    } catch (err) {
+      // Log a useful development error but do NOT blank the page.
+      console.error(`[creator-studio/settings] getCreatorSpace failed for ${primarySpace.slug}:`, err)
+    }
+  }
 
   if (primarySpace && !spaceDetail) {
     // Backend returned null (usually a 500). Log a clear error but continue
-    // rendering the rest of the page — the launch checklist and top chrome
-    // are still useful even when the collective detail failed.
+    // rendering the page chrome so the writer isn't stuck on a blank screen.
     console.error(
       `[creator-studio/settings] Space detail could not be loaded for slug=${primarySpace.slug}. ` +
       `Check the backend logs; the panels that depend on it will show local error states.`,
     )
   }
-
-  const hasStepContent = pathways.some((p) => p.step_count > 0)
-
-  // Launch checklist — migrated verbatim from the retired Setup page.
-  const checklist: {
-    label: string
-    desc: string
-    status: StepStatus
-    href: string
-  }[] = [
-    {
-      label: 'Create your collective',
-      desc: 'Set the name, tagline, description, and who it is for.',
-      status: primarySpace ? 'complete' : 'not_started',
-      href: '/creator-studio/create',
-    },
-    {
-      label: 'Shape your first pathway',
-      desc: 'Turn your ideas into a sequence people can move through.',
-      status: pathways.length > 0 ? 'complete' : primarySpace ? 'in_progress' : 'not_started',
-      href: primarySpace ? `/creator/spaces/${primarySpace.slug}/pathways` : '/creator',
-    },
-    {
-      label: 'Add your first step',
-      desc: 'Add text, video, reflection, or practice to begin the experience.',
-      status: hasStepContent
-        ? 'complete'
-        : pathways.length > 0
-        ? 'in_progress'
-        : 'not_started',
-      href:
-        primarySpace && pathways[0]
-          ? `/creator/spaces/${primarySpace.slug}/pathways/${pathways[0].slug}`
-          : primarySpace
-          ? `/creator/spaces/${primarySpace.slug}/pathways`
-          : '/creator',
-    },
-    {
-      label: 'Schedule your first gathering',
-      desc: 'Create a live touchpoint, session, circle, workshop, or conversation.',
-      status: events.length > 0 ? 'complete' : primarySpace ? 'in_progress' : 'not_started',
-      href: primarySpace ? `/creator/spaces/${primarySpace.slug}/events/new` : '/creator',
-    },
-    {
-      label: 'Publish your collective',
-      desc: 'Open the doors when it is ready enough to hold people.',
-      status:
-        primarySpace?.status === 'active'
-          ? 'complete'
-          : primarySpace
-          ? 'in_progress'
-          : 'not_started',
-      href: primarySpace ? `/creator/spaces/${primarySpace.slug}` : '/creator',
-    },
-  ]
-
-  const doneCount = checklist.filter((c) => c.status === 'complete').length
-  const allComplete = doneCount === checklist.length
 
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
@@ -129,7 +42,7 @@ export default async function SettingsPage() {
         </p>
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Settings</h1>
         <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#000000' }}>
-          Manage your collective details, member experience, visibility, and setup progress.
+          Manage your collective details, member experience, and visibility.
         </p>
       </div>
 
@@ -155,7 +68,7 @@ export default async function SettingsPage() {
             We couldn&apos;t load the details for this collective.
           </p>
           <p className="mt-2 text-[13px] leading-relaxed text-black">
-            The launch checklist below is still available. Please refresh the page in a moment, or check the backend logs for the actual exception.
+            Please refresh the page in a moment, or check the backend logs for the actual exception.
           </p>
         </div>
       )}
@@ -188,124 +101,6 @@ export default async function SettingsPage() {
               </div>
               <GuidancePanelForm space={spaceDetail} />
             </div>
-          </section>
-
-          {/* Migrated from Setup — Launch checklist */}
-          <section className="rounded-2xl border border-border bg-white p-6">
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Launch checklist</h2>
-                <p className="text-[13px] text-black">
-                  {doneCount} of {checklist.length} complete
-                </p>
-              </div>
-              {allComplete && (
-                <span
-                  className="rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-wide"
-                  style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E', border: '1px solid rgba(56,160,158,0.22)' }}
-                >
-                  Setup complete
-                </span>
-              )}
-            </div>
-
-            {allComplete ? (
-              /* Compact summary when everything is done */
-              <div
-                className="rounded-2xl px-6 py-5"
-                style={{ background: 'rgba(56,160,158,0.05)', border: '1px solid rgba(56,160,158,0.16)' }}
-              >
-                <p className="text-[14px] font-semibold" style={{ color: '#0C1826' }}>
-                  Your collective is ready.
-                </p>
-                <p className="mt-0.5 text-[13px] text-black">
-                  All five launch steps are complete. Keep growing at your own pace.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {checklist.map(({ label }) => (
-                    <span
-                      key={label}
-                      className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] font-medium"
-                      style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}
-                    >
-                      <svg width="8" height="6" viewBox="0 0 8 6" fill="none" aria-hidden="true">
-                        <path d="M1 3l2 2 4-4" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                      {label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              /* Full checklist while items remain */
-              <div className="space-y-3">
-                {checklist.map(({ label, desc, status, href }, i) => {
-                  const cfg = STATUS_CONFIG[status]
-                  return (
-                    <div
-                      key={label}
-                      className="flex items-start gap-4 rounded-2xl border bg-white p-5"
-                      style={{
-                        borderColor:
-                          status === 'complete'
-                            ? 'rgba(56,160,158,0.22)'
-                            : status === 'in_progress'
-                            ? 'rgba(212,176,72,0.20)'
-                            : '#e2e8f0',
-                      }}
-                    >
-                      <div
-                        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-                        style={{
-                          background:
-                            status === 'complete' ? 'rgba(56,160,158,0.12)' : 'rgba(0,0,0,0.05)',
-                          color: status === 'complete' ? '#38A09E' : '#94a3b8',
-                          border:
-                            status === 'complete'
-                              ? '1.5px solid rgba(56,160,158,0.40)'
-                              : '1.5px solid rgba(0,0,0,0.12)',
-                        }}
-                      >
-                        {status === 'complete' ? (
-                          <svg width="8" height="6" viewBox="0 0 8 6" fill="none" aria-hidden="true">
-                            <path
-                              d="M1 3l2 2 4-4"
-                              stroke="#38A09E"
-                              strokeWidth="1.5"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        ) : (
-                          String(i + 1)
-                        )}
-                      </div>
-
-                      <div className="flex-1">
-                        <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
-                          <p className="text-[15px] font-medium text-navy-900">{label}</p>
-                          <span
-                            className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                            style={{ background: cfg.bg, color: cfg.color }}
-                          >
-                            {cfg.label}
-                          </span>
-                        </div>
-                        <p className="text-[13.5px] leading-relaxed text-black">{desc}</p>
-                        {status !== 'complete' && (
-                          <Link
-                            href={href}
-                            className="mt-3 inline-block text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
-                          >
-                            {status === 'in_progress' ? 'Continue →' : 'Start this step →'}
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
           </section>
         </div>
       )}
