@@ -198,8 +198,10 @@ export default async function SpaceAboutPage({ params }: Props) {
             </div>
           </div>
 
-          {/* Upcoming public sessions — shown to non-members when events are publicly visible */}
-          {!isSpaceMember && events.length > 0 && (
+          {/* Upcoming public sessions — shown to non-members when events are publicly visible.
+              Suppressed for auto-managed collectives (World Builders) so the About page reads
+              as an information card, not an invitation. */}
+          {!isSpaceMember && !space.auto_grant_role && events.length > 0 && (
             <div
               className="overflow-hidden rounded-2xl bg-white"
               style={{ border: '1px solid rgba(0,0,0,0.07)', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
@@ -381,6 +383,7 @@ export default async function SpaceAboutPage({ params }: Props) {
                 hasPendingInvite={myAccess?.has_pending_invite ?? false}
                 canManage={canManage}
                 pricingType={space.pricing_type}
+                autoGrantRole={space.auto_grant_role ?? null}
               />
             </div>
           </div>

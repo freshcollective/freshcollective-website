@@ -436,6 +436,7 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
             user_id=payer_user_id,
             role="learner",
             status="active",
+            source="purchase",
             joined_at=now,
         )
         db.add(membership)

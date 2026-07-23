@@ -101,7 +101,11 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
     """Return all public active spaces with aggregated counts — no auth required."""
     spaces = (
         db.query(Space)
-        .filter(Space.status == "active", Space.is_public.is_(True))
+        .filter(
+            Space.status == "active",
+            Space.is_public.is_(True),
+            Space.auto_grant_role.is_(None),
+        )
         .order_by(Space.created_at)
         .all()
     )
@@ -736,6 +740,12 @@ def join_space(
             detail="This collective is temporarily paused by Fresh Collective.",
         )
 
+    if space.auto_grant_role is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access to this collective is managed automatically by Fresh Collective and cannot be joined manually.",
+        )
+
     if not space.is_public:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="This collective is private. Request access instead.")
@@ -754,6 +764,7 @@ def join_space(
         space_id=space.id,
         role=SpaceRole.learner,
         status=SpaceMembershipStatus.active,
+        source="joined",
     ))
     db.commit()
     return {"joined": True, "already_member": False}
@@ -880,6 +891,7 @@ def accept_invite(
             space_id=space.id,
             role=role_value,
             status=SpaceMembershipStatus.active,
+            source="invited",
         ))
 
     # Delete the invite — consumed

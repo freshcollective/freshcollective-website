@@ -50,6 +50,12 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
             detail="This account has been cancelled.",
         )
 
+    # Safety-net reconciliation of auto-role memberships (e.g. the
+    # World Builders auto-grant for active Creators). Idempotent and
+    # short-circuits fast when nothing needs doing. Never raises.
+    from app.services.creator_eligibility import reconcile_at_session_time
+    reconcile_at_session_time(user, db)
+
     return user
 
 

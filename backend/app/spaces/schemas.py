@@ -83,6 +83,12 @@ class SpaceResponse(BaseModel):
     atmosphere_labels: list[str] = []
     identity_statement: str | None = None
     welcome_message: str | None = None
+    # When set, this space auto-grants membership to every user whose
+    # ``users.role`` matches this value. Read-only signal for member
+    # surfaces so About-page CTAs can render the "For Fresh Collective
+    # Creators" soft-restricted state instead of the standard Join
+    # button. See Space.auto_grant_role in models/platform.py.
+    auto_grant_role: str | None = None
 
     @field_validator("atmosphere_keys", mode="before")
     @classmethod

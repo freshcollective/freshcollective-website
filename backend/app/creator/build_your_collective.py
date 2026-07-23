@@ -360,6 +360,7 @@ def open_collective(
         space_id=space.id,
         role=SpaceRole.creator,
         status=SpaceMembershipStatus.active,
+        source="creator_owner",
     ))
 
     draft = _get_draft(current_user.id, db)

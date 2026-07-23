@@ -34,6 +34,12 @@ export default function CollectiveSettingsForm({ space }: Props) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Auto-managed collectives (World Builders) have their access and
+  // pricing controlled by Fresh Collective. The corresponding sections
+  // are hidden from the form entirely and stripped from the PATCH body —
+  // the API still refuses any change to protected fields as a safety net.
+  const isAutoManaged = !!space.auto_grant_role
+
   // Text fields
   const [name, setName] = useState(space.name)
   const [slug, setSlug] = useState(space.slug)
@@ -230,19 +236,27 @@ export default function CollectiveSettingsForm({ space }: Props) {
           tagline: tagline.trim() || null,
           description: description.trim() || null,
           about_content: aboutContent.trim() || null,
-          is_public: isPublic,
-          status,
           timezone,
           themes,
-          pricing_type: pricingType,
-          pricing_amount_cents: isPaidType(pricingType) && pricingAmountDisplay
-            ? Math.round(parseFloat(pricingAmountDisplay) * 100) || null
-            : null,
-          pricing_currency: 'AUD',
-          pricing_note: pricingNote.trim() || null,
-          has_paid_internal_content: hasPaidInternalContent,
-          included_access_summary: includedAccessSummary.trim() || null,
-          paid_content_summary: paidContentSummary.trim() || null,
+          // Access + pricing fields are only sent for creator-managed
+          // collectives. For auto-managed collectives (World Builders),
+          // Fresh Collective owns these values and the backend refuses
+          // to change them.
+          ...(isAutoManaged
+            ? {}
+            : {
+                is_public: isPublic,
+                status,
+                pricing_type: pricingType,
+                pricing_amount_cents: isPaidType(pricingType) && pricingAmountDisplay
+                  ? Math.round(parseFloat(pricingAmountDisplay) * 100) || null
+                  : null,
+                pricing_currency: 'AUD',
+                pricing_note: pricingNote.trim() || null,
+                has_paid_internal_content: hasPaidInternalContent,
+                included_access_summary: includedAccessSummary.trim() || null,
+                paid_content_summary: paidContentSummary.trim() || null,
+              }),
         }),
       })
 
@@ -595,7 +609,8 @@ export default function CollectiveSettingsForm({ space }: Props) {
         )}
       </div>
 
-      {/* ── Visibility and access ── */}
+      {/* ── Visibility and access ── (hidden for auto-managed collectives) */}
+      {!isAutoManaged && (
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Visibility and access</h2>
         <p className="mb-5 text-[14px] text-black">
@@ -670,7 +685,10 @@ export default function CollectiveSettingsForm({ space }: Props) {
         </div>
       </div>
 
-      {/* ── Public pricing ── */}
+      )}
+
+      {/* ── Public pricing ── (hidden for auto-managed collectives) */}
+      {!isAutoManaged && (
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Public pricing</h2>
         <p className="mb-5 text-[14px] text-black">
@@ -819,6 +837,7 @@ export default function CollectiveSettingsForm({ space }: Props) {
           )}
         </div>
       </div>
+      )}
 
       {/* ── Creator profile ── */}
       <div className="rounded-2xl border border-border bg-white p-6">

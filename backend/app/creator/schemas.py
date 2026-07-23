@@ -170,6 +170,12 @@ class SpaceDetail(BaseModel):
     atmosphere_keys: list[str] = []
     identity_statement: str | None = None
     welcome_message: str | None = None
+    # When set, this space auto-grants membership to every user whose
+    # ``users.role`` matches this value (see Space.auto_grant_role in
+    # models/platform.py). Read-only in the API — never editable via
+    # Creator Studio. Frontend uses this to render the locked
+    # "access managed automatically" Settings panel.
+    auto_grant_role: str | None = None
 
     @field_validator("atmosphere_keys", mode="before")
     @classmethod

@@ -18,6 +18,9 @@ interface Props {
   hasPendingInvite: boolean
   canManage: boolean
   pricingType: PricingType
+  /** When set, membership is auto-managed by Fresh Collective. Non-members
+   *  see a soft restricted state — no join button, no self-service CTA. */
+  autoGrantRole?: string | null
 }
 
 export default function SpaceAboutCTA({
@@ -29,6 +32,7 @@ export default function SpaceAboutCTA({
   hasPendingInvite,
   canManage,
   pricingType,
+  autoGrantRole,
 }: Props) {
   const router = useRouter()
   const [state, setState] = useState<CTAState>('idle')
@@ -84,6 +88,18 @@ export default function SpaceAboutCTA({
       'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)',
   }
   const ghostBtn = 'block w-full rounded-xl border border-slate-200 px-4 py-2 text-center text-[13px] font-medium text-black transition-colors hover:bg-slate-50'
+
+  // Auto-managed collectives (e.g. World Builders) — non-members see
+  // a soft restricted state. No self-service join, no request-access,
+  // no speculative "become a Creator" CTA. Members fall through to the
+  // normal "Enter collective" flow below.
+  if (autoGrantRole && !isMember) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-[13px] text-slate-600">
+        Access to this collective is managed automatically by Fresh Collective.
+      </div>
+    )
+  }
 
   // Already a member
   if (isMember) {

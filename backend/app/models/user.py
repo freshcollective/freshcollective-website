@@ -1,9 +1,24 @@
 from datetime import datetime
+from enum import Enum
 
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+
+class UserRole(str, Enum):
+    """The three role tiers a user can hold.
+
+    Mutually exclusive — the CHECK constraint on ``users.role`` enforces
+    that exactly one is stored per row. New code should reference these
+    constants rather than raw strings so the vocabulary stays
+    grep-able and single-sourced. Existing string-literal callsites
+    are left alone; they resolve to the same values.
+    """
+    user = "user"
+    creator = "creator"
+    admin = "admin"
 
 
 class User(Base):

@@ -1045,6 +1045,10 @@ def _apply_resolution_outcome(
         user.creator_cancelled_at = datetime.utcnow()
         user.creator_cancellation_reason = action.internal_note or action.reason
         user.creator_cancelled_by_action_id = action.id
+        # Revoke any auto-role memberships (e.g. World Builders) that
+        # depended on active-Creator eligibility.
+        from app.services.creator_eligibility import apply_creator_eligibility_change
+        apply_creator_eligibility_change(user, db)
         recipient_id = user.id
 
     elif kind == "collective_closure_removal":

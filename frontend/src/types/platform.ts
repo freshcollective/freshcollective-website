@@ -24,6 +24,10 @@ export interface SpaceResponse {
   description: string | null
   about_content: string | null
   is_public: boolean
+  /** When non-null, membership is auto-managed by Fresh Collective —
+   *  join / request-access are hidden and settings are locked. Currently
+   *  only used by the World Builders collective ('creator'). */
+  auto_grant_role?: string | null
   status: string
   timezone: string
   cover_image_url: string | null
@@ -587,6 +591,8 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   description: string | null
   about_content: string | null
   is_public: boolean
+  /** See `SpaceResponse.auto_grant_role`. Locks Settings + hides join. */
+  auto_grant_role?: string | null
   status: string
   timezone: string
   cover_image_url: string | null

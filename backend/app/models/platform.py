@@ -288,6 +288,20 @@ class Space(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # ---- Platform-managed auto-grant --------------------------------------
+    # When set, users whose ``users.role`` matches this value receive an
+    # automatic ``SpaceMembership`` (source='auto_role') for this space
+    # for as long as they remain eligible (see
+    # ``services.creator_eligibility.is_eligible_creator``). Currently
+    # only used by the World Builders collective with the value
+    # ``'creator'``. Not exposed in Creator Studio; set via migration or
+    # by a platform admin. Any space with this flag is:
+    #   * hidden from the public collective explore list
+    #   * un-joinable via the public join endpoint (403)
+    #   * shown with a locked "access managed automatically" panel in
+    #     Settings instead of the standard visibility/pricing controls
+    auto_grant_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # ---- Community Care — collective suspension (Stage 2A reservation) ----
     # These columns landed with Stage 2A for future use; Stage 2C uses
     # the dedicated ``frozen_*`` columns below to represent an active
@@ -389,6 +403,17 @@ class SpaceMembership(Base):
     joined_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )
+    # How this membership came into existence. Nullable for legacy rows;
+    # migration 089 backfills existing rows to 'joined'. Values:
+    #   'joined'         — user pressed the public Join button
+    #   'invited'        — someone was invited and accepted
+    #   'purchase'       — auto-created by the post-payment webhook
+    #   'creator_owner'  — the collective's owner at creation time
+    #   'auto_role'      — auto-granted via Space.auto_grant_role
+    # Only ``auto_role`` rows are ever touched by
+    # ``services.creator_eligibility.apply_creator_eligibility_change``;
+    # everything else is preserved untouched.
+    source: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id])  # type: ignore[name-defined]
     space: Mapped[Space] = relationship("Space", back_populates="memberships")

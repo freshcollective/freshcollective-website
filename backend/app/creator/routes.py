@@ -672,6 +672,7 @@ def create_space(
         space_id=space.id,
         role=SpaceRole.creator,
         status=SpaceMembershipStatus.active,
+        source="creator_owner",
     ))
 
     # Provision the two permanent system Channels so every new
@@ -703,6 +704,35 @@ def update_space(
 ) -> Space:
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
+    # Auto-managed collectives (World Builders): editable fields like
+    # identity, about content, timezone and themes are allowed; access
+    # and pricing fields are frozen because Fresh Collective owns them.
+    # The frontend hides these fields entirely; this guard is the
+    # safety net for a hand-crafted request.
+    if space.auto_grant_role is not None:
+        _AUTO_MANAGED_LOCKED_FIELDS = (
+            "is_public",
+            "status",
+            "pricing_type",
+            "pricing_amount_cents",
+            "pricing_currency",
+            "pricing_note",
+            "has_paid_internal_content",
+            "included_access_summary",
+            "paid_content_summary",
+        )
+        for _field in _AUTO_MANAGED_LOCKED_FIELDS:
+            _incoming = getattr(body, _field, None)
+            if _incoming is None:
+                continue
+            if getattr(space, _field, None) != _incoming:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "This collective is managed automatically by Fresh Collective. "
+                        f"'{_field}' cannot be changed here."
+                    ),
+                )
     if body.name is not None:
         space.name = body.name.strip()
     if body.slug is not None and body.slug != space.slug:
@@ -1453,6 +1483,7 @@ def approve_access_request(
             space_id=space.id,
             role=SpaceRole.learner,
             status=SpaceMembershipStatus.active,
+            source="joined",
         ))
 
     req.status = "approved"
@@ -3493,6 +3524,7 @@ def add_or_invite_member(
             user_id=user.id,
             role=role_enum,
             status=SpaceMembershipStatus.active,
+            source="invited",
         )
         db.add(membership)
         db.commit()

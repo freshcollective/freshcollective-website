@@ -73,9 +73,29 @@ export default async function SettingsPage() {
         </div>
       )}
 
+      {spaceDetail && spaceDetail.auto_grant_role && (
+        <div
+          className="mb-5 rounded-2xl bg-white p-6"
+          style={{ border: '1px solid rgba(56,160,158,0.24)', borderTop: '3px solid rgba(56,160,158,0.55)' }}
+        >
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
+            Fresh Collective managed
+          </p>
+          <p className="text-[15px] font-semibold text-navy-900">
+            {spaceDetail.name} is available to active Fresh Collective Creators.
+          </p>
+          <p className="mt-2 text-[14px] leading-relaxed text-black">
+            Access is managed automatically by Fresh Collective and cannot be changed here.
+          </p>
+        </div>
+      )}
+
       {spaceDetail && (
         <div className="space-y-5">
-          {/* Existing settings form — identity, about, banner, visibility, pricing, creator profile */}
+          {/* Existing settings form — identity, about, banner, visibility, pricing, creator profile.
+              For auto-managed collectives (World Builders) the form itself hides the visibility
+              and pricing sections; all other fields (identity, about, timezone, themes, Member Hub)
+              stay editable. The backend refuses any change to protected fields as a safety net. */}
           <CollectiveSettingsForm space={spaceDetail} />
 
           {/* Migrated from Setup — Member experience "Important panel" */}
