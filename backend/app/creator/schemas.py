@@ -336,7 +336,10 @@ class PathwayCreateRequest(BaseModel):
     is_sequential: bool = True
     access_type: str = "free"
     price_cents: int | None = None
-    currency: str = "AUD"
+    # Free / included pathways don't carry a currency; the frontend
+    # explicitly sends null for these, and the `pathways.currency`
+    # column is nullable in the DB.
+    currency: str | None = "AUD"
     billing_interval: str | None = None
     # When True (default), a 🛤 pathway-typed Conversation Channel is
     # created alongside the Pathway. Members are auto-joined by their
