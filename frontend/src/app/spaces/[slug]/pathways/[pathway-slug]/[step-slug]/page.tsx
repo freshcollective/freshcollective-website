@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { getStep, getPathwayOverview, getStepResources, getStepBlocks, getStepComments, getSpace } from '@/lib/serverApi'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import PathwayAutoRevalidate from '@/components/spaces/PathwayAutoRevalidate'
-import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import {
   resolveCalloutPalette,
@@ -43,20 +42,20 @@ function renderContent(body: string): React.ReactNode {
 
       if (trimmed.startsWith('**') && trimmed.endsWith('**') && !trimmed.slice(2, -2).includes('\n')) {
         return (
-          <h3 key={i} className="mt-8 mb-3 font-semibold text-[1.1rem] text-navy-900">
+          <h3 key={i} className="mb-3 mt-9 font-semibold text-[1.1rem] text-navy-900 first:mt-0">
             {trimmed.slice(2, -2)}
           </h3>
         )
       }
 
       if (trimmed === '---') {
-        return <hr key={i} className="my-8 border-border" />
+        return <hr key={i} className="my-10 border-border" />
       }
 
       if (trimmed.split('\n').every((l) => l.trimStart().startsWith('- '))) {
         const items = trimmed.split('\n').map((l) => l.replace(/^- /, '').trim())
         return (
-          <ul key={i} className="my-4 space-y-2 pl-5">
+          <ul key={i} className="my-5 space-y-2.5 pl-5">
             {items.map((item, j) => (
               <li
                 key={j}
@@ -71,7 +70,7 @@ function renderContent(body: string): React.ReactNode {
 
       const parts = trimmed.split(/(\*\*[^*]+\*\*)/)
       return (
-        <p key={i} className="my-4 text-[15px] leading-[1.85] text-black">
+        <p key={i} className="my-5 text-[15px] leading-[1.85] text-black first:mt-0 last:mb-0">
           {parts.map((part, j) =>
             part.startsWith('**') && part.endsWith('**') ? (
               <strong key={j} className="font-semibold text-navy-800">
@@ -187,10 +186,10 @@ function renderBlocks(blocks: StepBlock[], collectivePalette: CollectivePaletteM
     if (t === 'heading') {
       const level = block.label === 'h1' ? 'h1' : block.label === 'h3' ? 'h3' : 'h2'
       const cls = level === 'h1'
-        ? 'mt-8 mb-3 font-semibold text-[1.5rem] leading-tight text-navy-900'
+        ? 'mb-3 mt-9 font-semibold text-[1.5rem] leading-tight text-navy-900 first:mt-0'
         : level === 'h3'
-        ? 'mt-7 mb-2 font-semibold text-[1.05rem] text-navy-900'
-        : 'mt-8 mb-3 font-semibold text-[1.2rem] text-navy-900'
+        ? 'mb-2 mt-7 font-semibold text-[1.05rem] text-navy-900 first:mt-0'
+        : 'mb-3 mt-9 font-semibold text-[1.2rem] text-navy-900 first:mt-0'
       return React.createElement(level, { key: id, className: cls }, block.content)
     }
 
@@ -647,8 +646,6 @@ export default async function StepPage({ params }: Props) {
 
   const pathwayHref = `/spaces/${slug}/pathways`
   const pathwayTitle = overview?.title ?? 'Pathway'
-  const cs = getPathwayCoverStyle(pathwaySlug)
-  const coverImageUrl = overview?.cover_image_url ? resolveMediaUrl(overview.cover_image_url) : null
   const completedCount = allSteps.filter((s) => s.is_completed).length
   const totalCount = allSteps.length
   const sections = overview?.sections ?? []
@@ -656,47 +653,24 @@ export default async function StepPage({ params }: Props) {
   return (
     <div>
 
-      {/* ── Compact pathway header card ── */}
+      {/* ── Quiet pathway breadcrumb ──
+          The large tinted banner was noise now that the Collective hero,
+          left step navigator, and article title all communicate context.
+          A compact two-line label preserves orientation without pushing
+          the reading experience down the page. */}
       {overview && (
-        <div
-          className="relative mb-6 overflow-hidden rounded-2xl"
-          style={{
-            background: cs.background,
-            backgroundSize: cs.backgroundSize ?? 'auto',
-            minHeight: '96px',
-          }}
-        >
-          {coverImageUrl && (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={coverImageUrl}
-                alt=""
-                aria-hidden="true"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-              <div
-                className="absolute inset-0"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(7,24,36,0.80) 0%, rgba(7,56,58,0.62) 100%)',
-                }}
-              />
-            </>
-          )}
-          <div className="relative px-6 py-5 md:px-8">
-            <p
-              className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.20em]"
-              style={{ color: coverImageUrl ? '#FFFFFF' : cs.labelColor }}
-            >
-              Pathway
+        <div className="mb-6">
+          <Link
+            href={pathwayHref}
+            className="font-serif text-[15px] text-navy-900 transition-colors hover:text-teal-700"
+          >
+            {overview.title}
+          </Link>
+          {totalCount > 0 && currentIndex >= 0 && (
+            <p className="mt-0.5 text-[12px] text-black">
+              Step {currentIndex + 1} of {totalCount}
             </p>
-            <h2
-              className="font-serif text-xl leading-snug md:text-2xl"
-              style={{ color: coverImageUrl ? '#FFFFFF' : cs.titleColor }}
-            >
-              {overview.title}
-            </h2>
-          </div>
+          )}
         </div>
       )}
 
@@ -793,14 +767,14 @@ export default async function StepPage({ params }: Props) {
         {/* Content — blocks take precedence over legacy content_body */}
         {blocks.length > 0 ? (
           <article
-            className="mb-8 overflow-hidden rounded-2xl border px-7 py-6"
+            className="overflow-hidden rounded-2xl border px-7 py-7 md:px-8 md:py-8"
             style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
           >
             {renderBlocks(blocks, collectivePalette)}
           </article>
         ) : step.content_body ? (
           <article
-            className="mb-8 overflow-hidden rounded-2xl border px-7 py-6"
+            className="overflow-hidden rounded-2xl border px-7 py-7 md:px-8 md:py-8"
             style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
           >
             {renderContent(step.content_body)}

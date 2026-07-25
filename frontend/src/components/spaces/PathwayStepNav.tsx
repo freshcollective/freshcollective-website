@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import type { PathwaySection, StepSummary } from '@/types/platform'
 
@@ -40,28 +40,54 @@ function StepNavItem({
   href: string
 }) {
   const typeLabel = CONTENT_TYPE_LABEL[step.content_type] ?? step.content_type
+  const ref = useRef<HTMLLIElement | null>(null)
+
+  // Bring the active step into view when the nav mounts. Only scrolls the
+  // enclosing nav container, not the whole page, and only if the item
+  // isn't already visible. Uses smooth behaviour where supported.
+  useEffect(() => {
+    if (!isActive || !ref.current) return
+    ref.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [isActive])
+
+  const showCompletedTick = step.is_completed && !isActive
 
   return (
-    <li>
+    <li ref={ref}>
       <Link
         href={href}
         aria-current={isActive ? 'page' : undefined}
         className={`group flex items-start gap-2.5 rounded-xl px-3 py-2.5 transition-colors ${
-          isActive ? 'bg-teal-50' : 'hover:bg-slate-50'
+          isActive ? '' : 'hover:bg-slate-50'
         }`}
+        style={
+          isActive
+            ? {
+                background: 'rgba(56,160,158,0.09)',
+                borderLeft: '2px solid #38A09E',
+                paddingLeft: '10px',
+              }
+            : undefined
+        }
       >
-        {/* Step indicator */}
+        {/* Step indicator — a subtle green tick for completed steps,
+            the ordinal for active + future. */}
         <span
           aria-hidden="true"
-          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+          style={
             isActive
-              ? 'bg-teal-500 text-white'
-              : step.is_completed
-                ? 'bg-teal-100 text-teal-600'
-                : 'bg-slate-100 text-slate-500'
-          }`}
+              ? { background: '#38A09E', color: '#ffffff' }
+              : showCompletedTick
+                ? {
+                    background: 'rgba(56,160,158,0.14)',
+                    color: '#0f766e',
+                    border: '1px solid rgba(56,160,158,0.28)',
+                  }
+                : { background: 'rgba(12,24,38,0.05)', color: '#64748b' }
+          }
         >
-          {step.is_completed && !isActive ? '✓' : index + 1}
+          {showCompletedTick ? '✓' : index + 1}
         </span>
 
         {/* Text */}

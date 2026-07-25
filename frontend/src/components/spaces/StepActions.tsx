@@ -58,62 +58,105 @@ export default function StepActions({
   }
 
   return (
-    <div className="mt-12 pt-10">
+    <div className="mt-14 pt-8">
 
-      {/* Reflection space */}
+      {/* ── Pause & Reflect — a gentle pause, not a form ── */}
       {reflectionEnabled && (
-        <div className="mb-8">
-          <div className="mb-1 h-[2px] w-6 rounded-full bg-teal-400" />
-          <label className="mb-1 block text-lg font-semibold text-slate-900" htmlFor="step-notes">
-            Your reflection
-          </label>
-          <p className="mb-4 text-sm text-black">
-            Private to you. Write as much or as little as feels right.
+        <section
+          className="mb-10 rounded-2xl px-6 py-7 md:px-8 md:py-8"
+          style={{
+            background: 'rgba(56,160,158,0.045)',
+            border: '1px solid rgba(56,160,158,0.14)',
+          }}
+        >
+          <div className="mb-4">
+            <label
+              htmlFor="step-notes"
+              className="font-serif text-[20px] leading-snug text-navy-900"
+            >
+              <span aria-hidden="true">🌿</span>{' '}
+              <span>Pause &amp; Reflect</span>
+            </label>
+            <p
+              className="mt-1 text-[12px] font-medium uppercase tracking-[0.14em]"
+              style={{ color: '#0f766e' }}
+            >
+              Private to you
+            </p>
+          </div>
+
+          <p className="mb-5 text-[15px] leading-relaxed text-navy-900/80">
+            Take a moment before moving on.
           </p>
+
+          <ul className="mb-5 space-y-1.5 text-[14.5px] leading-relaxed text-black">
+            <li>What stood out?</li>
+            <li>What challenged you?</li>
+            <li>What feels important enough to remember?</li>
+          </ul>
+
           <textarea
             id="step-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={6}
-            placeholder="What are you noticing? What feels true right now?"
-            className="w-full resize-none rounded-xl border border-border bg-white px-5 py-4 text-[15px] leading-relaxed text-navy-900 placeholder:text-slate-300 focus:border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-100 transition-colors"
-            style={{ fontFamily: 'inherit' }}
+            placeholder="Write as much or as little as feels right."
+            className="w-full resize-none rounded-xl border bg-white px-5 py-4 text-[15px] leading-relaxed text-navy-900 placeholder:text-slate-300 transition-colors focus:outline-none focus:ring-2"
+            style={{
+              borderColor: 'rgba(56,160,158,0.20)',
+              fontFamily: 'inherit',
+              // focus ring via inline style — Tailwind ring uses default teal
+            }}
           />
-          <div className="mt-2.5 flex items-center justify-between">
+          <div className="mt-3 flex items-center justify-between">
             <button
               onClick={handleSaveNotes}
               disabled={!notes.trim()}
-              className="text-xs text-black underline-offset-2 transition-colors hover:text-teal-600 hover:underline disabled:cursor-not-allowed disabled:opacity-30"
+              className="rounded-full px-4 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{
+                background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+              }}
             >
-              Save notes
+              Save reflection
             </button>
             {notesSaved && (
-              <span className="text-xs text-teal-500">Saved.</span>
+              <span className="text-[12px]" style={{ color: '#0f766e' }}>
+                Saved.
+              </span>
             )}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Completion */}
+      {/* ── Completion moment — quiet encouragement ── */}
       <div>
         {completed ? (
           <div
             className={[
-              'rounded-xl border px-6 py-5 transition-all duration-500',
+              'rounded-2xl border px-6 py-5 transition-all duration-500',
               justCompleted
-                ? 'border-teal-200 bg-teal-50/60'
+                ? 'border-teal-200 bg-teal-50/50'
                 : 'border-border bg-surface',
             ].join(' ')}
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-100">
-                <span className="text-sm text-teal-600">✓</span>
+            <div className="flex items-start gap-3.5">
+              <div
+                className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                style={{ background: 'rgba(56,160,158,0.16)' }}
+              >
+                <span className="text-[14px]" style={{ color: '#0f766e' }} aria-hidden="true">✓</span>
               </div>
               <div>
-                <p className="text-sm font-medium text-teal-700">Step complete</p>
-                {justCompleted && (
-                  <p className="text-xs text-teal-500 mt-0.5">
-                    Well done. Keep going when you&apos;re ready.
+                <p className="font-serif text-[17px] leading-snug text-navy-900">
+                  Step complete
+                </p>
+                {justCompleted ? (
+                  <p className="mt-1 text-[13.5px] leading-relaxed text-black">
+                    Beautiful. Take a moment before continuing.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[13px] text-black">
+                    You&apos;re ready whenever you are for the next step.
                   </p>
                 )}
               </div>

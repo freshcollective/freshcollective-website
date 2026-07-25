@@ -87,11 +87,13 @@ export default function StepDiscussion({
   }
 
   return (
-    <div className="mt-10 pt-8 border-t border-border">
-      <div className="mb-1 h-[2px] w-6 rounded-full bg-teal-400" />
-      <h2 className="mb-1 text-lg font-semibold text-slate-900">Questions &amp; discussion</h2>
-      <p className="mb-6 text-sm text-black">
-        Visible to others in this pathway. Ask a question, share what landed, or add something others may find helpful.
+    <div className="mt-14 border-t border-border pt-10">
+      <h2 className="font-serif text-[22px] leading-snug text-navy-900">
+        Continue the conversation
+      </h2>
+      <p className="mb-7 mt-2 text-[14.5px] leading-relaxed text-black">
+        Share what landed for you, ask a question, or continue the conversation
+        with others walking this pathway.
       </p>
 
       {/* Composer */}
@@ -131,9 +133,16 @@ export default function StepDiscussion({
 
       {/* Comment list */}
       {comments.length === 0 ? (
-        <p className="text-sm text-black">
-          No discussion yet. Be the first to ask a question or share a thought.
-        </p>
+        <div className="rounded-2xl border border-dashed border-slate-200 px-6 py-6 text-[14.5px] leading-relaxed text-black">
+          <p>The conversation begins with someone.</p>
+          <p className="mt-2">
+            If something resonated, ask a question, share a reflection, or simply
+            let others know what landed for you.
+          </p>
+          <p className="mt-2 font-medium" style={{ color: '#0f766e' }}>
+            Be the first to begin.
+          </p>
+        </div>
       ) : (
         <div className="flex flex-col gap-4">
           {comments.map((comment) => (
