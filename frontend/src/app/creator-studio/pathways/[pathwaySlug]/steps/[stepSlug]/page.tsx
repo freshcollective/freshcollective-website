@@ -4,10 +4,11 @@ import {
   getCreatorPathway,
   getCreatorStep,
   getCreatorStepBlocks,
+  getCreatorSteps,
   getCreatorMedia,
   getCreatorResources,
 } from '@/lib/serverApi'
-import type { StepBlock, CreatorMediaAsset, CreatorResource } from '@/types/platform'
+import type { CreatorStep, StepBlock, CreatorMediaAsset, CreatorResource } from '@/types/platform'
 import StepBlockEditor from './StepBlockEditor'
 
 interface Props {
@@ -19,15 +20,22 @@ export default async function StepBlockEditorPage({ params }: Props) {
   const space = await getActiveCreatorSpace()
   if (!space) notFound()
 
-  const [pathway, step, blocks, mediaAssets, resources] = await Promise.all([
+  const [pathway, step, blocks, steps, mediaAssets, resources] = await Promise.all([
     getCreatorPathway(space.slug, pathwaySlug),
     getCreatorStep(space.slug, pathwaySlug, stepSlug),
     getCreatorStepBlocks(space.slug, pathwaySlug, stepSlug),
+    getCreatorSteps(space.slug, pathwaySlug),
     getCreatorMedia(space.slug),
     getCreatorResources(space.slug),
   ])
 
   if (!pathway || !step) notFound()
+
+  // Compute the step's ordinal position and pathway length from data
+  // already available; no extra API surface introduced.
+  const orderedSteps = steps as CreatorStep[]
+  const stepIndex = orderedSteps.findIndex((s) => s.slug === stepSlug)
+  const totalSteps = orderedSteps.length
 
   return (
     <StepBlockEditor
@@ -37,6 +45,8 @@ export default async function StepBlockEditorPage({ params }: Props) {
       initialBlocks={blocks as StepBlock[]}
       mediaAssets={mediaAssets as CreatorMediaAsset[]}
       resources={resources as CreatorResource[]}
+      stepIndex={stepIndex >= 0 ? stepIndex : null}
+      totalSteps={totalSteps}
     />
   )
 }

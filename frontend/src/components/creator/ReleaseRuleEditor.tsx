@@ -77,7 +77,7 @@ const OPTIONS: { value: ReleaseType; label: string; hint: string }[] = [
   { value: 'days_after_enrollment', label: 'A set number of days after enrolment',  hint: 'The timer starts when the member enrols in the pathway.' },
   { value: 'fixed_date',            label: 'On a specific date',                    hint: 'Useful for cohort programs.' },
   { value: 'after_previous',        label: 'After the previous step is completed',  hint: 'Requires completion of the step immediately before.' },
-  { value: 'manual',                label: 'Released by a caretaker',               hint: 'Useful for coaching programs.' },
+  { value: 'manual',                label: 'Released manually by the creator',      hint: 'Useful for coaching programs.' },
 ]
 
 export default function ReleaseRuleEditor({ value, onChange }: Props) {
@@ -90,14 +90,7 @@ export default function ReleaseRuleEditor({ value, onChange }: Props) {
   const { date, time } = parseIso(value.release_at)
 
   return (
-    <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black">Release rhythm</p>
-        <p className="mt-0.5 text-[12px] text-black">
-          Choose how this step becomes available to members.
-        </p>
-      </div>
-
+    <div className="space-y-3">
       <div className="space-y-2">
         {OPTIONS.map((opt) => {
           const active = value.release_type === opt.value
@@ -198,7 +191,7 @@ export default function ReleaseRuleEditor({ value, onChange }: Props) {
       {value.release_type === 'manual' && (
         <div className="rounded-lg bg-white p-3" style={{ border: '1px solid rgba(12,24,38,0.08)' }}>
           <p className="text-[12.5px] text-navy-900">
-            This step remains locked until a caretaker releases it for the member.
+            This step remains locked until the creator releases it for the member.
           </p>
         </div>
       )}

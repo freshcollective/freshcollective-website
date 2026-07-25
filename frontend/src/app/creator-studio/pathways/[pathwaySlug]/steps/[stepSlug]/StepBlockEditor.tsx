@@ -41,13 +41,35 @@ interface Props {
   resources?: CreatorResource[]
   backHref?: string
   backLabel?: string
+  /** Zero-based ordinal of this step within the pathway. Used only for
+   *  the "Step N of N" breadcrumb line; ``null`` hides the line. */
+  stepIndex?: number | null
+  totalSteps?: number
+}
+
+// ---------------------------------------------------------------------------
+// Small local: section label used consistently in this editor
+// ---------------------------------------------------------------------------
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="text-[11px] font-semibold uppercase tracking-[0.16em]"
+      style={{ color: '#0f766e' }}
+    >
+      {children}
+    </p>
+  )
 }
 
 // ---------------------------------------------------------------------------
 // Main Editor
 // ---------------------------------------------------------------------------
 
-export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlocks, mediaAssets, resources = [], backHref, backLabel }: Props) {
+export default function StepBlockEditor({
+  spaceSlug, pathway, step, initialBlocks, mediaAssets, resources = [],
+  backHref, backLabel, stepIndex = null, totalSteps = 0,
+}: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [blocks, setBlocks] = useState<StepBlock[]>(initialBlocks)
@@ -236,58 +258,99 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
   return (
     <div className="w-full px-8 py-8 md:px-10 md:py-10">
 
-      {/* Breadcrumb / back */}
-      <div className="mb-5">
-        <Link href={resolvedBackHref} className="text-[12px] font-medium text-black transition-colors hover:text-slate-600">
+      {/* ── Page context ── */}
+      <div className="mb-8">
+        <Link
+          href={resolvedBackHref}
+          className="text-[12px] font-medium text-black transition-colors hover:text-slate-600"
+        >
           {resolvedBackLabel}
         </Link>
-        <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
+        <p
+          className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]"
+          style={{ color: '#38A09E' }}
+        >
           {pathway.title}
         </p>
-        <h1 className="mt-0.5 text-2xl text-navy-900 md:text-3xl">{stepTitle || step.title}</h1>
+        {stepIndex !== null && totalSteps > 0 && (
+          <p
+            className="mt-0.5 text-[12px] italic"
+            style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}
+          >
+            Step {stepIndex + 1} of {totalSteps}
+          </p>
+        )}
+        <h1 className="mt-1.5 font-serif text-2xl text-navy-900 md:text-3xl">
+          {stepTitle || step.title}
+        </h1>
       </div>
 
-      {/* Step settings card */}
-      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-6">
-        <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-black">Step settings</p>
-        <form onSubmit={saveStepSettings} className="flex flex-col gap-5">
-          <div>
-            <label className="field-label">Step title</label>
-            <input
-              value={stepTitle}
-              onChange={e => setStepTitle(e.target.value)}
-              required
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:outline-none focus:ring-1 focus:ring-teal-300"
-            />
+      {/* ────────────────────────────────────────────────────────────
+          Settings — Step / Member experience / Release
+          These three sections carry the same visual language and a
+          single Save changes action. Content, below, is the primary
+          focus of the page and lives in its own document canvas.
+          ──────────────────────────────────────────────────────────── */}
+      <form onSubmit={saveStepSettings} className="space-y-6">
+
+        {/* ── SECTION 1 — Step ── */}
+        <section className="rounded-2xl border border-slate-100 bg-white p-6 md:p-7">
+          <div className="mb-5">
+            <SectionLabel>Step</SectionLabel>
           </div>
-          <div className="flex flex-wrap items-end gap-6">
+          <div className="space-y-5">
             <div>
-              <label className="field-label">Estimated minutes</label>
+              <label className="mb-1 block text-[12px] font-semibold text-black" htmlFor="step-title">
+                Step title
+              </label>
               <input
-                type="number" min={1} max={999}
-                value={stepMinutes}
-                onChange={e => setStepMinutes(e.target.value)}
-                placeholder="—"
-                className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                id="step-title"
+                value={stepTitle}
+                onChange={e => setStepTitle(e.target.value)}
+                required
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
               />
             </div>
-            <div className="flex items-center gap-3 pb-0.5">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={stepRequired}
-                onClick={() => setStepRequired(r => !r)}
-                className={`relative h-5 w-9 rounded-full transition-colors ${stepRequired ? 'bg-teal-500' : 'bg-slate-200'}`}
-              >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${stepRequired ? 'translate-x-4' : 'translate-x-0.5'}`} />
-              </button>
-              <span className="text-[13px] text-black">Required</span>
+            <div className="flex flex-wrap items-end gap-6">
+              <div>
+                <label className="mb-1 block text-[12px] font-semibold text-black" htmlFor="step-minutes">
+                  Estimated reading time
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="step-minutes"
+                    type="number" min={1} max={999}
+                    value={stepMinutes}
+                    onChange={e => setStepMinutes(e.target.value)}
+                    placeholder="—"
+                    className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                  />
+                  <span className="text-[13px] text-black">minutes</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 pb-0.5">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={stepRequired}
+                  onClick={() => setStepRequired(r => !r)}
+                  className={`relative h-5 w-9 rounded-full transition-colors ${stepRequired ? 'bg-teal-500' : 'bg-slate-200'}`}
+                >
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${stepRequired ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </button>
+                <span className="text-[13px] text-navy-900">Required step</span>
+              </div>
             </div>
           </div>
+        </section>
 
-          {/* Member feature toggles */}
-          <div className="space-y-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black">Member features</p>
+        {/* ── SECTION 2 — Members ── */}
+        <section className="rounded-2xl border border-slate-100 bg-white p-6 md:p-7">
+          <div className="mb-5">
+            <SectionLabel>Members</SectionLabel>
+          </div>
+
+          <div className="space-y-5">
             <div className="flex items-start gap-3">
               <button
                 type="button"
@@ -299,10 +362,13 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${reflectionEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
               </button>
               <div>
-                <p className="text-[13px] font-medium text-navy-900">Enable member reflection</p>
-                <p className="text-[12px] text-black">Allow members to write private reflections on this step.</p>
+                <p className="text-[14px] font-semibold text-navy-900">Private reflection</p>
+                <p className="mt-0.5 text-[13px] leading-relaxed text-black">
+                  Members can keep private notes as they work through this step.
+                </p>
               </div>
             </div>
+
             <div className="flex items-start gap-3">
               <button
                 type="button"
@@ -314,35 +380,74 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
                 <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${discussionEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
               </button>
               <div>
-                <p className="text-[13px] font-medium text-navy-900">Enable discussion</p>
-                <p className="text-[12px] text-black">Allow members to ask questions and discuss this step.</p>
+                <p className="text-[14px] font-semibold text-navy-900">Continue the conversation</p>
+                <p className="mt-0.5 text-[13px] leading-relaxed text-black">
+                  Members can ask questions and discuss this step with others.
+                </p>
               </div>
             </div>
           </div>
+        </section>
 
-          {/* Release rule — when this step becomes available to members. */}
-          <ReleaseRuleEditor value={releaseRule} onChange={setReleaseRule} />
-
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={settingsSaving}
-              className="rounded-lg px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              style={{ background: '#073B3A' }}
+        {/* ── SECTION 3 — Release ── */}
+        <section className="rounded-2xl border border-slate-100 bg-white p-6 md:p-7">
+          <div className="mb-5">
+            <SectionLabel>Release</SectionLabel>
+            <p
+              className="mt-1.5 text-[13px] italic"
+              style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}
             >
-              {settingsSaving ? 'Saving…' : 'Save settings'}
-            </button>
-            {settingsSaved && <span className="text-[12px] text-teal-600">Saved ✓</span>}
+              Choose when this step becomes available to members.
+            </p>
           </div>
-        </form>
-      </div>
+          <ReleaseRuleEditor value={releaseRule} onChange={setReleaseRule} />
+        </section>
 
-      {/* Content — one continuous white document canvas. No admin
-          card wrapper; the blocks flow inside it as document content. */}
-      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 md:px-10 md:py-8">
-        <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Content</p>
+        {/* Save changes — single action for the three settings sections. */}
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={settingsSaving}
+            className="rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            {settingsSaving ? 'Saving…' : 'Save changes'}
+          </button>
+          {settingsSaved && <span className="text-[12px] text-teal-600">Saved ✓</span>}
+        </div>
+      </form>
 
-        <div>
+      {/* ────────────────────────────────────────────────────────────
+          SECTION 4 — Content — the visual focus of the page.
+          Setting sections above are the supporting configuration;
+          this is where the writer actually builds the step.
+          ──────────────────────────────────────────────────────────── */}
+      <section className="mt-12">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <SectionLabel>Content</SectionLabel>
+            <h2 className="mt-1.5 font-serif text-[22px] leading-snug text-navy-900">
+              Content
+            </h2>
+            <p
+              className="mt-1 text-[13.5px] italic"
+              style={{ color: 'rgba(12,24,38,0.65)', fontFamily: 'Georgia, serif' }}
+            >
+              Build this step using text, images, videos, callouts and interactive blocks.
+            </p>
+          </div>
+          {blocks.length > 0 && (
+            <div className="shrink-0">
+              {adding ? (
+                <p className="text-[13px] text-black">Adding block…</p>
+              ) : (
+                <AddBlockPicker onSelect={addBlock} />
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 md:px-10 md:py-8">
           {blocks.length === 0 && step.content_body && (
             <div
               className="rounded-xl border p-5"
@@ -369,9 +474,21 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
           {blocks.length === 0 && !step.content_body && (
             <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
               <p className="mb-1 text-[15px] font-semibold text-navy-900">No content blocks yet</p>
-              <p className="text-[13px] text-black">
-                Start building this step by adding your first content block below.
+              <p className="mb-5 text-[13px] leading-relaxed text-black">
+                Start building this step by adding your first block.
               </p>
+              <div className="flex justify-center">
+                {adding ? (
+                  <p className="text-[13px] text-black">Adding block…</p>
+                ) : (
+                  <AddBlockPicker onSelect={addBlock} />
+                )}
+              </div>
+              {addError && (
+                <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
+                  {addError}
+                </p>
+              )}
             </div>
           )}
 
@@ -390,42 +507,38 @@ export default function StepBlockEditor({ spaceSlug, pathway, step, initialBlock
               onAssetUploaded={(asset) => setAssets((prev) => [asset, ...prev])}
             />
           )}
+
+          {blocks.length > 0 && addError && (
+            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
+              {addError}
+            </p>
+          )}
         </div>
+      </section>
 
-        {blocks.length === 0 && (
-          <div className="mt-4">
-            {adding ? (
-              <p className="text-[13px] text-black">Adding block…</p>
-            ) : (
-              <AddBlockPicker onSelect={addBlock} />
-            )}
-            {addError && (
-              <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
-                {addError}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Danger zone */}
-      <div className="mt-6 rounded-2xl border border-red-100 bg-white p-5">
-        <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-red-400">Danger zone</p>
-        <p className="mb-4 text-[13px] text-black">
-          Permanently delete this step and all its content blocks. This cannot be undone.
-        </p>
-        {deleteStepError && (
-          <p className="mb-3 text-[13px] text-red-600">{deleteStepError}</p>
-        )}
-        <button
-          type="button"
-          onClick={deleteStep}
-          disabled={deletingStep}
-          className="rounded-lg border border-red-200 px-4 py-2 text-[13px] font-medium text-red-500 transition-colors hover:border-red-400 hover:bg-red-50 disabled:opacity-40"
-        >
-          {deletingStep ? 'Deleting…' : 'Delete this step'}
-        </button>
-      </div>
+      {/* ── SECTION 5 — Danger zone ── extra top space separates it
+          intentionally from the editor above. */}
+      <section className="mt-16">
+        <div className="rounded-2xl border border-red-100 bg-white p-5">
+          <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-red-400">
+            Danger zone
+          </p>
+          <p className="mb-4 text-[13px] text-black">
+            Permanently delete this step and all its content blocks. This cannot be undone.
+          </p>
+          {deleteStepError && (
+            <p className="mb-3 text-[13px] text-red-600">{deleteStepError}</p>
+          )}
+          <button
+            type="button"
+            onClick={deleteStep}
+            disabled={deletingStep}
+            className="rounded-lg border border-red-200 px-4 py-2 text-[13px] font-medium text-red-500 transition-colors hover:border-red-400 hover:bg-red-50 disabled:opacity-40"
+          >
+            {deletingStep ? 'Deleting…' : 'Delete this step'}
+          </button>
+        </div>
+      </section>
 
     </div>
   )
