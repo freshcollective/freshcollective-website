@@ -31,10 +31,15 @@ interface Props {
   /** Platform Owner accounts are unlimited — the sidebar suppresses any
    *  "N of M collectives used" text when this is true. */
   isPlatformOwner: boolean
+  /** The active collective's Location thumbnail (Atlas v1.2). Rendered
+   *  by the sidebar's switcher so the identity of the active collective
+   *  is legible at a glance. */
+  activeLocationThumbnail?: string | null
 }
 
 export default function CreatorStudioShell({
   children, user, spaces, activeSpace, collectiveLimit, isPlatformOwner,
+  activeLocationThumbnail = null,
 }: Props) {
   return (
     <AppShell
@@ -46,6 +51,7 @@ export default function CreatorStudioShell({
           activeSpace={activeSpace}
           collectiveLimit={collectiveLimit}
           isPlatformOwner={isPlatformOwner}
+          activeLocationThumbnail={activeLocationThumbnail}
         />
       }
       mobileBrand={

@@ -48,10 +48,19 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
   // collective yet) — the picker falls back to the "More colours…"
   // hex flow only.
   let palette: CollectivePaletteMeta | null = null
+  let activeLocationThumbnail: string | null = null
   if (activeSpace) {
     try {
       const detail = await getCreatorSpace(activeSpace.slug) as CreatorSpaceDetail | null
       palette = detail?.colour_palette ?? null
+      // Atlas v1.2 — the sidebar's switcher renders the Location
+      // thumbnail so the identity of the active collective is legible
+      // at a glance. Prefer the thumbnail; fall back to the hero if
+      // no thumbnail has been curated for this Location.
+      activeLocationThumbnail =
+        detail?.location?.thumbnail_artwork_url
+          ?? detail?.location?.hero_artwork_url
+          ?? null
     } catch (err) {
       console.error(`[creator-studio/layout] palette fetch failed for ${activeSpace.slug}:`, err)
     }
@@ -65,6 +74,7 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
         activeSpace={activeSpace}
         collectiveLimit={collectiveLimit}
         isPlatformOwner={isPlatformOwner}
+        activeLocationThumbnail={activeLocationThumbnail}
       >
         {children}
       </CreatorStudioShell>

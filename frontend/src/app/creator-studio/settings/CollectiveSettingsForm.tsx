@@ -26,11 +26,15 @@ const TIMEZONE_OPTIONS = [
 // TODO: Connect banner upload to storage once file upload API is available in production.
 // Currently uses the local file storage backend (backend/uploads/covers/).
 
+export type CollectiveSettingsTab = 'details' | 'visibility' | 'pricing' | 'about'
+
 interface Props {
   space: CreatorSpaceDetail
+  /** Which grouping of fields to render. */
+  tab?: CollectiveSettingsTab
 }
 
-export default function CollectiveSettingsForm({ space }: Props) {
+export default function CollectiveSettingsForm({ space, tab = 'details' }: Props) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -285,10 +289,24 @@ export default function CollectiveSettingsForm({ space }: Props) {
     }
   }
 
+  // Tab visibility — Details/Visibility/Pricing/About share this single
+  // form so in-flight field state survives tab switches. Each section
+  // below is wrapped in a `showXxx` conditional. The Save button saves
+  // everything regardless of tab, matching the existing single-submit
+  // behaviour. Banner + Logo live on Details (direct identity assets);
+  // the Creator profile section has been removed and now lives under
+  // the creator-level /creator-studio/account page.
+  const showIdentity   = tab === 'details' // (name/URL/tagline/description/timezone/themes)
+  const showAbout      = tab === 'about'
+  const showArtwork    = tab === 'details' // Banner + Logo now sit on Details
+  const showVisibility = tab === 'visibility'
+  const showPricing    = tab === 'pricing'
+
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
 
       {/* ── Collective identity ── */}
+      {showIdentity && (
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Collective identity</h2>
         <p className="mb-5 text-[14px] text-black">
@@ -438,8 +456,10 @@ export default function CollectiveSettingsForm({ space }: Props) {
           </div>
         </div>
       </div>
+      )}
 
-      {/* ── About page ── */}
+      {/* ── About page ── (About tab) */}
+      {showAbout && (
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">About page</h2>
         <p className="mb-5 text-[14px] text-black">
@@ -451,12 +471,18 @@ export default function CollectiveSettingsForm({ space }: Props) {
           onChange={setAboutContent}
         />
       </div>
+      )}
 
-      {/* ── Banner image ── */}
+      {/* ── Banner image + Collective logo ── (Artwork tab) */}
+      {showArtwork && (
+      <>
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Banner image</h2>
-        <p className="mb-5 text-[14px] text-black">
+        <p className="mb-2 text-[14px] text-black">
           Add a banner to give your collective a stronger visual identity.
+        </p>
+        <p className="mb-5 text-[13px] italic" style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}>
+          If no separate banner is uploaded, this collective will use its Location artwork by default.
         </p>
 
         {/* Current banner indicator */}
@@ -608,9 +634,11 @@ export default function CollectiveSettingsForm({ space }: Props) {
           </p>
         )}
       </div>
+      </>
+      )}
 
-      {/* ── Visibility and access ── (hidden for auto-managed collectives) */}
-      {!isAutoManaged && (
+      {/* ── Visibility and access ── (Visibility tab; hidden for auto-managed collectives) */}
+      {showVisibility && !isAutoManaged && (
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Visibility and access</h2>
         <p className="mb-5 text-[14px] text-black">
@@ -687,8 +715,8 @@ export default function CollectiveSettingsForm({ space }: Props) {
 
       )}
 
-      {/* ── Public pricing ── (hidden for auto-managed collectives) */}
-      {!isAutoManaged && (
+      {/* ── Public pricing ── (Pricing tab; hidden for auto-managed collectives) */}
+      {showPricing && !isAutoManaged && (
       <div className="rounded-2xl border border-border bg-white p-6">
         <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Public pricing</h2>
         <p className="mb-5 text-[14px] text-black">
@@ -839,23 +867,9 @@ export default function CollectiveSettingsForm({ space }: Props) {
       </div>
       )}
 
-      {/* ── Creator profile ── */}
-      <div className="rounded-2xl border border-border bg-white p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Creator profile</h2>
-            <p className="text-[14px] text-black">
-              Your public profile is visible to members. Keep it current.
-            </p>
-          </div>
-          <a
-            href="/settings/profile"
-            className="shrink-0 text-[13px] font-medium text-teal-600 transition-colors hover:text-teal-700"
-          >
-            Edit profile →
-          </a>
-        </div>
-      </div>
+      {/* Creator profile has moved to the creator-level Account area
+          (/creator-studio/account) — it belongs to the creator across
+          all their collectives, not to any single collective. */}
 
       {/* Error */}
       {error && (

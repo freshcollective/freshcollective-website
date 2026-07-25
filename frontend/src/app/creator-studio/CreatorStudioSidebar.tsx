@@ -1,20 +1,27 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import LogoutButton from '@/components/layout/LogoutButton'
+import { resolveMediaUrl } from '@/lib/api'
 import type { SpaceSummary } from '@/types/platform'
 
 /**
- * Creator Studio Sidebar
+ * Creator Studio Sidebar — the light, editorial navigation column.
  *
- * The internals of the left navigation column for `/creator-studio/*` and
- * `/creator/*` routes. Rendered by <AppShell variant="sidebar"> — this
- * component only owns the SIDEBAR CONTENT (brand, collective switcher,
- * nav sections, user footer). The shell owns the drawer/desktop behaviour.
+ * Information architecture:
+ *   - The active collective card sits at the top so the sidebar always
+ *     answers "which collective am I in".
+ *   - THE COLLECTIVE / OFFERINGS / COMMUNITY / COMMERCE group everything
+ *     that belongs to the currently-active collective. Switching
+ *     collectives changes what these destinations show.
+ *   - ACCOUNT sits separately at the bottom because it belongs to the
+ *     signed-in creator across ALL of their collectives.
  *
- * @see docs/fresh-design-language.md §22.2 (Working density)
+ * Consumed by:
+ *   - app/creator-studio/layout.tsx
+ *   - app/creator/layout.tsx
  */
 
 interface User {
@@ -29,46 +36,52 @@ interface NavItem {
   label: string
   exact?: boolean
   activeOnPath?: RegExp
-  /**
-   * When true, the item dims until an active collective exists. Preserves
-   * the per-item dimming that used to be section-based under "CURRENT
-   * COLLECTIVE".
-   */
+  /** Dims until an active collective exists. */
   requiresCollective?: boolean
 }
 
-const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
+// Collective-scoped nav — everything under these labels is about the
+// currently-active collective. Switching collectives changes what
+// each destination reveals.
+const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
   {
-    label: 'COLLECTIVE',
+    label: '🌿 THE COLLECTIVE',
     items: [
-      { href: '/creator-studio',          label: 'Dashboard',     exact: true },
-      { href: '/creator-studio/settings', label: 'Settings',      activeOnPath: /^\/creator\/spaces\/[^/]+$/, requiresCollective: true },
-      { href: '/creator-studio/assets',   label: 'Assets',        requiresCollective: true },
+      { href: '/creator-studio',          label: 'Your World',        exact: true },
+      { href: '/creator-studio/home',     label: 'Home',              requiresCollective: true },
+      { href: '/creator-studio/settings', label: 'Collective Settings', activeOnPath: /^\/creator\/spaces\/[^/]+$/, requiresCollective: true },
+      { href: '/creator-studio/assets',   label: 'Media Library',     requiresCollective: true },
     ],
   },
   {
-    label: 'LEARNING',
+    label: '📖 OFFERINGS',
     items: [
-      { href: '/creator-studio/pathways',  label: 'Pathways',  activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/, requiresCollective: true },
-      { href: '/creator-studio/resources', label: 'Resources', requiresCollective: true },
+      { href: '/creator-studio/pathways',  label: 'Pathways',   activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/, requiresCollective: true },
+      { href: '/creator-studio/resources', label: 'Resources',  requiresCollective: true },
     ],
   },
   {
-    label: 'CONVERSATIONS',
+    label: '🤝 COMMUNITY',
     items: [
       { href: '/creator-studio/community',  label: 'Conversations', activeOnPath: /^\/creator\/spaces\/[^/]+\/community/, requiresCollective: true },
-      { href: '/creator-studio/gatherings', label: 'Gatherings',  activeOnPath: /^\/creator\/spaces\/[^/]+\/events/,    requiresCollective: true },
-      { href: '/creator-studio/people',     label: 'People',      requiresCollective: true },
-      { href: '/creator-studio/passes',     label: 'Memberships', requiresCollective: true },
+      { href: '/creator-studio/gatherings', label: 'Gatherings',    activeOnPath: /^\/creator\/spaces\/[^/]+\/events/,    requiresCollective: true },
+      { href: '/creator-studio/people',     label: 'People',        requiresCollective: true },
+      { href: '/creator-studio/passes',     label: 'Memberships',   requiresCollective: true },
     ],
   },
   {
-    label: 'MONEY',
+    label: '💰 COMMERCE',
     items: [
       { href: '/creator-studio/payments', label: 'Payments' },
       { href: '/creator-studio/billing',  label: 'Billing' },
     ],
   },
+]
+
+// Account-scoped nav — belongs to the signed-in creator, not to any
+// particular collective. Sits visually separated at the bottom.
+const ACCOUNT_NAV: NavItem[] = [
+  { href: '/creator-studio/account', label: 'Account' },
 ]
 
 interface Props {
@@ -78,10 +91,12 @@ interface Props {
   collectiveLimit: number
   /** Platform Owner: unlimited collectives, no plan copy in the switcher. */
   isPlatformOwner: boolean
+  /** The active collective's Location thumbnail. */
+  activeLocationThumbnail?: string | null
 }
 
 export default function CreatorStudioSidebar({
-  user, spaces, activeSpace, collectiveLimit, isPlatformOwner,
+  user, spaces, activeSpace, collectiveLimit, isPlatformOwner, activeLocationThumbnail = null,
 }: Props) {
   const pathname = usePathname()
 
@@ -95,46 +110,44 @@ export default function CreatorStudioSidebar({
   const hasCollective = !!activeSpace
 
   return (
-    <div
-      className="relative flex h-full flex-col overflow-hidden"
-      style={{
-        background: 'linear-gradient(180deg, #073B3A 0%, #062F35 45%, #051C27 100%)',
-      }}
-    >
-      <div
-        className="pointer-events-none absolute inset-0 z-0"
-        aria-hidden="true"
-        style={{
-          background: 'radial-gradient(circle at 20% 0%, rgba(66,199,198,0.20), transparent 32%)',
-        }}
-      />
+    <div className="flex h-full flex-col bg-white" style={{ borderRight: '1px solid #E2E8F0' }}>
 
-      {/* Brand + collective switcher */}
+      {/* ── Brand ── */}
       <div
-        className="relative z-10 px-5 py-5"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.09)' }}
+        className="flex items-center gap-2.5 px-5 py-4"
+        style={{ borderBottom: '1px solid #E2E8F0' }}
       >
-        <Link href="/creator-studio" className="flex flex-col gap-1">
-          <span className="font-serif text-[18px] leading-tight text-white">
-            Creator Studio
-          </span>
-          <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-white">
+        <span
+          aria-hidden="true"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          <span className="h-3 w-3 rounded-sm bg-white/95" />
+        </span>
+        <div>
+          <div className="text-[13px] font-semibold leading-none" style={{ color: '#0F172A' }}>
             Fresh Collective
-          </span>
-        </Link>
-        <CollectiveSwitcher
-          spaces={spaces}
-          activeSpace={activeSpace}
-          collectiveLimit={collectiveLimit}
-          isPlatformOwner={isPlatformOwner}
-        />
+          </div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Creator Studio
+          </div>
+        </div>
       </div>
 
-      {/* Nav */}
-      <nav aria-label="Creator Studio" className="relative z-10 flex-1 overflow-y-auto px-3 py-4">
-        {NAV_SECTIONS.map(({ label, items }, sectionIdx) => (
-          <div key={label} className={sectionIdx === 0 ? 'mb-8' : 'mb-8 mt-2'}>
-            <p className="mb-3 px-4 text-[13px] font-bold uppercase tracking-[0.20em] text-white/90">
+      {/* ── Active collective switcher ── */}
+      <CollectiveSwitcher
+        spaces={spaces}
+        activeSpace={activeSpace}
+        activeLocationThumbnail={activeLocationThumbnail}
+        collectiveLimit={collectiveLimit}
+        isPlatformOwner={isPlatformOwner}
+      />
+
+      {/* ── Collective-scoped nav ── */}
+      <nav aria-label="Creator Studio" className="flex-1 overflow-y-auto px-3 py-4">
+        {COLLECTIVE_NAV.map(({ label, items }) => (
+          <div key={label} className="mb-5">
+            <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               {label}
             </p>
             <ul className="space-y-0.5">
@@ -145,13 +158,16 @@ export default function CreatorStudioSidebar({
                   <li key={href}>
                     <Link
                       href={dimmed ? '/creator-studio/create' : href}
-                      className={`flex items-center rounded-xl px-4 py-2.5 text-[15px] font-medium transition-all ${
+                      className={`flex items-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
                         active
-                          ? 'bg-white/[12%] text-white'
+                          ? 'bg-teal-50 text-teal-700'
                           : dimmed
-                            ? 'cursor-default text-white/[35%]'
-                            : 'text-white hover:bg-white/[8%] hover:text-white'
+                            ? 'cursor-default text-slate-300'
+                            : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                       }`}
+                      style={active
+                        ? { border: '1px solid rgba(56,160,158,0.20)' }
+                        : { border: '1px solid transparent' }}
                       tabIndex={dimmed ? -1 : undefined}
                       aria-current={active ? 'page' : undefined}
                       aria-disabled={dimmed}
@@ -164,177 +180,265 @@ export default function CreatorStudioSidebar({
             </ul>
           </div>
         ))}
+
+        {/* ── Account-scoped nav ── visually separated from the
+             collective-scoped groups above. Belongs to the creator, not
+             to whichever collective they happen to be tending. */}
+        <div
+          className="mt-6 pt-4"
+          style={{ borderTop: '1px solid #E2E8F0' }}
+        >
+          <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            ACCOUNT
+          </p>
+          <ul className="space-y-0.5">
+            {ACCOUNT_NAV.map(({ href, label: itemLabel }) => {
+              const active = pathname.startsWith(href)
+              return (
+                <li key={href}>
+                  <Link
+                    href={href}
+                    className={`flex items-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
+                      active
+                        ? 'bg-teal-50 text-teal-700'
+                        : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                    }`}
+                    style={active
+                      ? { border: '1px solid rgba(56,160,158,0.20)' }
+                      : { border: '1px solid transparent' }}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    {itemLabel}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       </nav>
 
-      {/* User + back to platform */}
+      {/* ── Footer ── */}
       <div
-        className="relative z-10 px-5 py-5"
-        style={{ borderTop: '1px solid rgba(255,255,255,0.09)' }}
+        className="space-y-2 px-5 py-4"
+        style={{ borderTop: '1px solid #E2E8F0' }}
       >
+        <p className="truncate text-[11px] text-slate-500">
+          {user.name ?? user.email}
+        </p>
         <Link
           href="/dashboard"
-          className="mb-4 block text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+          className="block text-[12px] text-slate-600 transition-colors hover:text-slate-800"
         >
           ← Back to Your World
         </Link>
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-[13px] text-white">
-            {user.name ?? user.email}
-          </span>
-          <LogoutButton className="shrink-0 text-[12px] text-white transition-colors hover:text-white/90" />
-        </div>
+        <LogoutButton className="block text-[12px] text-slate-600 transition-colors hover:text-red-500" />
       </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Collective switcher — extracted from the legacy shell, unchanged in
-// behaviour. Selects the active collective, sets the cookie, and pushes
-// the router to /creator-studio.
+// Collective switcher — compact identifier + click-to-switch dropdown.
+// "Which collective am I in?" is answered by the artwork thumbnail + name
+// + current status. The click affordance is left implicit (the whole card
+// is a button with a chevron); we no longer advertise "Switch" as text.
 // ---------------------------------------------------------------------------
 
+const STATUS_LABEL: Record<string, string> = {
+  active: 'Live',
+  draft: 'Draft',
+  archived: 'Archived',
+}
+
 function CollectiveSwitcher({
-  spaces, activeSpace, collectiveLimit, isPlatformOwner,
+  spaces, activeSpace, activeLocationThumbnail, collectiveLimit, isPlatformOwner,
 }: {
   spaces: SpaceSummary[]
   activeSpace: SpaceSummary | null
+  activeLocationThumbnail: string | null
   collectiveLimit: number
   isPlatformOwner: boolean
 }) {
   const router = useRouter()
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(activeSpace?.slug ?? null)
-  const [isPending, startTransition] = useTransition()
+  const [open, setOpen] = useState(false)
+  const [pendingSlug, setPendingSlug] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+  const rootRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: MouseEvent) {
+      if (!rootRef.current) return
+      if (!rootRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
 
   const activeSpaceCount = spaces.filter((s) => s.status !== 'archived').length
-  // Platform Owner is unlimited — never treat them as at-limit, and never
-  // render "N of M collectives used" copy.
   const atLimit = !isPlatformOwner && activeSpaceCount >= collectiveLimit
 
   function switchTo(slug: string) {
-    if (slug === selectedSlug) return
-    setSelectedSlug(slug)
+    if (slug === activeSpace?.slug) { setOpen(false); return }
+    setPendingSlug(slug)
     startTransition(() => {
       document.cookie = `fc_creator_space=${slug}; path=/; max-age=86400`
-      router.push('/creator-studio')
-      // ``router.refresh()`` is required alongside ``push`` here.
-      // Setting ``document.cookie`` on the client updates the next
-      // fetch's header, but Next.js's Client Router Cache keeps the
-      // previously-rendered ``/creator-studio`` layout tree in memory
-      // — including the ``CollectivePaletteContextProvider`` fed by
-      // the old cookie. Without ``refresh()`` the palette (and every
-      // other server-derived value that reads the active-space
-      // cookie) leaks across collective switches. Refresh invalidates
-      // the router cache and forces the layout to re-run on the
-      // server against the new cookie.
+      // Full-refresh the layout tree so the sidebar's activeSpace prop
+      // reflects the new cookie. Without refresh() the client router
+      // cache serves the previous layout render.
       router.refresh()
+      router.push('/creator-studio/home')
+      setOpen(false)
+      setPendingSlug(null)
     })
   }
 
+  const artworkResolved = resolveMediaUrl(activeLocationThumbnail ?? undefined)
+
   return (
-    <div className="mt-4">
-      {spaces.length > 0 && (
-        <div
-          className="rounded-2xl p-3"
-          style={{
-            background: 'rgba(255,255,255,0.96)',
-            border: '1px solid rgba(56,160,158,0.28)',
-          }}
+    <div
+      ref={rootRef}
+      className="relative px-3 py-4"
+      style={{ borderBottom: '1px solid #E2E8F0' }}
+    >
+      {activeSpace ? (
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          aria-expanded={open}
+          aria-label={`${activeSpace.name} — click to switch collective`}
+          className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
         >
-          <p
-            className="mb-2.5 px-1 text-[11px] font-bold uppercase tracking-[0.18em]"
-            style={{ color: '#38A09E' }}
+          <span
+            aria-hidden="true"
+            className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg"
+            style={{
+              background: artworkResolved
+                ? '#F4F7F6'
+                : 'linear-gradient(135deg, rgba(56,160,158,0.22) 0%, rgba(85,184,182,0.14) 100%)',
+              border: '1px solid rgba(12,24,38,0.06)',
+            }}
           >
-            Collectives
-          </p>
-          <div className="space-y-1.5">
-            {spaces.map((s) => {
-              const isCurrent = s.slug === selectedSlug
-              const isPendingThis = isPending && s.slug === selectedSlug
-              return (
-                <button
-                  key={s.slug}
-                  type="button"
-                  onClick={() => switchTo(s.slug)}
-                  disabled={isPending}
-                  className="flex w-full flex-col rounded-xl px-3 py-2.5 text-left outline-none transition-colors"
-                  style={{
-                    background: isCurrent ? 'rgba(56,160,158,0.10)' : 'transparent',
-                    border: isCurrent
-                      ? '1px solid rgba(56,160,158,0.28)'
-                      : '1px solid transparent',
-                    opacity: isPendingThis ? 0.75 : 1,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isCurrent && !isPending)
-                      (e.currentTarget as HTMLButtonElement).style.background = 'rgba(56,160,158,0.06)'
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isCurrent)
-                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-                  }}
-                >
-                  <span
-                    className="w-full truncate text-[13px] font-semibold leading-snug"
-                    style={{ color: isCurrent ? '#0C1826' : '#000000' }}
-                  >
-                    {s.name}
-                  </span>
-                  <div className="mt-1.5 flex items-center gap-1.5">
-                    <span
-                      className="rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
-                      style={{
-                        background: s.status === 'active' ? 'rgba(56,160,158,0.14)' : 'rgba(0,0,0,0.07)',
-                        color: s.status === 'active' ? '#38A09E' : '#94a3b8',
-                      }}
-                    >
-                      {s.status === 'active' ? 'Active' : 'Draft'}
-                    </span>
-                    {isCurrent && (
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide"
-                        style={{
-                          background: 'rgba(56,160,158,0.12)',
-                          border: '1px solid rgba(56,160,158,0.35)',
-                          color: '#38A09E',
-                        }}
-                      >
-                        {isPendingThis ? 'Switching…' : 'Current'}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              )
-            })}
+            {artworkResolved ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={artworkResolved} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="font-serif text-[13px] text-teal-700">
+                {activeSpace.name.charAt(0)}
+              </span>
+            )}
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-serif text-[14px] leading-tight" style={{ color: '#0C1826' }}>
+              {activeSpace.name}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              {STATUS_LABEL[activeSpace.status] ?? activeSpace.status}
+            </p>
           </div>
+
+          <span
+            aria-hidden="true"
+            className={`shrink-0 text-[10px] text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          >
+            ▾
+          </span>
+        </button>
+      ) : (
+        <div className="rounded-xl bg-slate-50 px-3 py-3 text-center">
+          <p className="text-[12px] text-slate-500">No collective yet.</p>
+          <Link
+            href="/build-your-collective"
+            className="mt-1 inline-block text-[12px] font-medium text-teal-700 hover:underline"
+          >
+            Build your first →
+          </Link>
         </div>
       )}
 
-      <div className="mt-2.5 px-1">
-        {!atLimit ? (
-          <Link
-            href="/build-your-collective"
-            className="flex items-center gap-1.5 text-[12px] font-medium transition-opacity hover:opacity-80"
-            style={{ color: '#8DE8E6' }}
-          >
-            <span aria-hidden="true" className="text-[14px] leading-none">+</span>
-            {spaces.length === 0 ? 'Build your first collective.' : 'Build another collective.'}
-          </Link>
-        ) : (
-          <div>
-            <p className="text-[11px] text-white">
-              {activeSpaceCount} of {collectiveLimit} collectives used
-            </p>
-            <Link
-              href="/creator-studio/billing"
-              className="mt-0.5 block text-[11px] transition-opacity hover:opacity-80"
-              style={{ color: 'rgba(141,232,230,0.70)' }}
-            >
-              View plan →
-            </Link>
+      {open && spaces.length > 0 && (
+        <div
+          className="absolute left-3 right-3 top-full z-20 mt-1 overflow-hidden rounded-xl bg-white"
+          style={{
+            border: '1px solid #E2E8F0',
+            boxShadow: '0 10px 30px rgba(12, 24, 38, 0.10), 0 2px 6px rgba(12, 24, 38, 0.04)',
+          }}
+        >
+          <p className="border-b border-slate-100 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Your collectives
+          </p>
+          <ul className="max-h-64 overflow-y-auto py-1">
+            {spaces.map((s) => {
+              const isCurrent = s.slug === activeSpace?.slug
+              const isPendingThis = pendingSlug === s.slug
+              return (
+                <li key={s.slug}>
+                  <button
+                    type="button"
+                    onClick={() => switchTo(s.slug)}
+                    className="flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-slate-50"
+                    style={{ background: isCurrent ? 'rgba(56,160,158,0.06)' : undefined }}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className="block truncate font-serif text-[13.5px] leading-tight"
+                        style={{ color: isCurrent ? '#0C1826' : '#334155' }}
+                      >
+                        {s.name}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-slate-500">
+                        {STATUS_LABEL[s.status] ?? s.status}
+                        {isPendingThis && ' · Switching…'}
+                      </span>
+                    </span>
+                    {isCurrent && (
+                      <span
+                        className="shrink-0 rounded-full px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.12em]"
+                        style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
+                      >
+                        Current
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          <div className="border-t border-slate-100 px-4 py-2.5">
+            {!atLimit ? (
+              <Link
+                href="/build-your-collective"
+                className="flex items-center gap-1.5 text-[12px] font-medium text-teal-700 transition-opacity hover:opacity-80"
+                onClick={() => setOpen(false)}
+              >
+                <span aria-hidden="true" className="text-[14px] leading-none">+</span>
+                Build another collective
+              </Link>
+            ) : (
+              <div>
+                <p className="text-[11px] text-slate-500">
+                  {activeSpaceCount} of {collectiveLimit} collectives used
+                </p>
+                <Link
+                  href="/creator-studio/billing"
+                  onClick={() => setOpen(false)}
+                  className="mt-0.5 block text-[11px] text-teal-700 transition-opacity hover:opacity-80"
+                >
+                  View plan →
+                </Link>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
