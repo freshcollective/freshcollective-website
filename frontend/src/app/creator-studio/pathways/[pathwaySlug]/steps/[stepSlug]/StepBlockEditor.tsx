@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
@@ -48,18 +48,87 @@ interface Props {
 }
 
 // ---------------------------------------------------------------------------
-// Small local: section label used consistently in this editor
+// Popover — a small anchor for the two properties that need real editors
+// (reading time, release rule). Closes on outside-click and Escape.
 // ---------------------------------------------------------------------------
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function Popover({
+  trigger, ariaLabel, children, width = 'w-72',
+}: {
+  trigger: (open: boolean) => React.ReactNode
+  ariaLabel: string
+  children: (close: () => void) => React.ReactNode
+  width?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: MouseEvent) {
+      if (!ref.current) return
+      if (!ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
   return (
-    <p
-      className="text-[11px] font-semibold uppercase tracking-[0.16em]"
-      style={{ color: '#0f766e' }}
-    >
-      {children}
-    </p>
+    <div className="relative inline-block" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        aria-label={ariaLabel}
+        aria-expanded={open}
+      >
+        {trigger(open)}
+      </button>
+      {open && (
+        <div
+          className={`absolute left-0 top-full z-30 mt-2 ${width} rounded-xl border border-slate-200 bg-white p-4 shadow-lg`}
+        >
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Short human summary of the current release rule — used as the pill label
+// so the writer can read the setting without opening the popover.
+// ---------------------------------------------------------------------------
+
+function releaseSummary(value: ReleaseRuleValue): string {
+  switch (value.release_type) {
+    case 'immediate':
+      return 'Releases immediately'
+    case 'days_after_enrollment': {
+      const days = value.release_offset_days ?? 0
+      if (days === 0) return 'Releases immediately'
+      return `Releases after ${days} day${days === 1 ? '' : 's'}`
+    }
+    case 'fixed_date': {
+      if (!value.release_at) return 'Releases on a set date'
+      try {
+        const d = new Date(value.release_at)
+        return `Releases on ${d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`
+      } catch { return 'Releases on a set date' }
+    }
+    case 'after_previous':
+      return 'Releases after previous step'
+    case 'manual':
+      return 'Released manually by the creator'
+    default:
+      return 'Set release rule'
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +171,28 @@ export default function StepBlockEditor({
 
   const resolvedBackHref = backHref ?? `/creator-studio/pathways/${pathway.slug}`
   const resolvedBackLabel = backLabel ?? '← Back to pathway'
+
+  // Dirty tracking — compares current local state to what came in from
+  // the server. Resets naturally when router.refresh() re-runs the
+  // server component after a successful save. Drives the Save button
+  // between its "quiet Saved" state and its "primary Save changes"
+  // state so the writer can see at a glance whether they have unsaved
+  // work.
+  const initialSettings = useMemo(() => ({
+    title: step.title,
+    minutes: step.estimated_minutes?.toString() ?? '',
+    required: step.is_required,
+    reflection: step.reflection_enabled,
+    discussion: step.discussion_enabled,
+    releaseKey: JSON.stringify(releaseRuleFromStep(step)),
+  }), [step])
+  const isDirty =
+    stepTitle !== initialSettings.title ||
+    stepMinutes !== initialSettings.minutes ||
+    stepRequired !== initialSettings.required ||
+    reflectionEnabled !== initialSettings.reflection ||
+    discussionEnabled !== initialSettings.discussion ||
+    JSON.stringify(releaseRule) !== initialSettings.releaseKey
 
   async function saveStepSettings(e: React.FormEvent) {
     e.preventDefault()
@@ -256,290 +347,341 @@ export default function StepBlockEditor({
   }
 
   return (
-    <div className="w-full px-8 py-8 md:px-10 md:py-10">
-
-      {/* ── Page context ── */}
-      <div className="mb-8">
-        <Link
-          href={resolvedBackHref}
-          className="text-[12px] font-medium text-black transition-colors hover:text-slate-600"
-        >
-          {resolvedBackLabel}
-        </Link>
-        <p
-          className="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: '#38A09E' }}
-        >
-          {pathway.title}
-        </p>
-        {stepIndex !== null && totalSteps > 0 && (
-          <p
-            className="mt-0.5 text-[12px] italic"
-            style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}
-          >
-            Step {stepIndex + 1} of {totalSteps}
-          </p>
-        )}
-        <h1 className="mt-1.5 font-serif text-2xl text-navy-900 md:text-3xl">
-          {stepTitle || step.title}
-        </h1>
-      </div>
+    <form
+      onSubmit={saveStepSettings}
+      className="min-h-full w-full bg-white px-8 py-8 md:px-10 md:py-10"
+    >
 
       {/* ────────────────────────────────────────────────────────────
-          Settings — Step / Member experience / Release
-          These three sections carry the same visual language and a
-          single Save changes action. Content, below, is the primary
-          focus of the page and lives in its own document canvas.
+          Compact header. Breadcrumb sits at the top; the step title
+          becomes the document's editable H1; the metadata strip
+          replaces the three former settings sections; the Save
+          changes affordance sits inline so the writer sees whether
+          there is unsaved work without a persistent commit button
+          dominating the page.
           ──────────────────────────────────────────────────────────── */}
-      <form onSubmit={saveStepSettings} className="space-y-6">
+      <header className="mx-auto max-w-3xl">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Link
+            href={resolvedBackHref}
+            className="text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700"
+          >
+            {resolvedBackLabel}
+          </Link>
+          <span className="text-slate-300" aria-hidden="true">·</span>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            {pathway.title}
+          </span>
+          {stepIndex !== null && totalSteps > 0 && (
+            <>
+              <span className="text-slate-300" aria-hidden="true">·</span>
+              <span
+                className="text-[12.5px] italic"
+                style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}
+              >
+                Step {stepIndex + 1} of {totalSteps}
+              </span>
+            </>
+          )}
 
-        {/* ── SECTION 1 — Step ── */}
-        <section className="rounded-2xl border border-slate-100 bg-white p-6 md:p-7">
-          <div className="mb-5">
-            <SectionLabel>Step</SectionLabel>
+          {/* Save affordance — quiet when clean, primary when dirty.
+              Anchored top-right so the writer always knows where to
+              commit without a persistent button dominating the page. */}
+          <div className="ml-auto flex items-center gap-3">
+            {settingsSaved && !isDirty && (
+              <span
+                className="text-[12px] italic"
+                style={{ color: '#0f766e', fontFamily: 'Georgia, serif' }}
+              >
+                Saved
+              </span>
+            )}
+            {isDirty ? (
+              <button
+                type="submit"
+                disabled={settingsSaving}
+                className="rounded-full px-4 py-1.5 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              >
+                {settingsSaving ? 'Saving…' : 'Save changes'}
+              </button>
+            ) : (
+              !settingsSaved && (
+                <span className="text-[12px] italic text-slate-400" style={{ fontFamily: 'Georgia, serif' }}>
+                  All changes saved
+                </span>
+              )
+            )}
           </div>
-          <div className="space-y-5">
-            <div>
-              <label className="mb-1 block text-[12px] font-semibold text-black" htmlFor="step-title">
-                Step title
-              </label>
-              <input
-                id="step-title"
-                value={stepTitle}
-                onChange={e => setStepTitle(e.target.value)}
-                required
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
-              />
-            </div>
-            <div className="flex flex-wrap items-end gap-6">
+        </div>
+
+        {/* Editable inline step title — the document's H1. Borderless
+            at rest, a whisper of a slate underline on focus. Enter or
+            blur commits to local state; the Save affordance above
+            commits to the backend. */}
+        <input
+          type="text"
+          value={stepTitle}
+          onChange={e => setStepTitle(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur() }
+          }}
+          placeholder="Untitled step"
+          aria-label="Step title"
+          className="mt-4 w-full border-b border-transparent bg-transparent py-1 font-serif text-[28px] leading-tight text-navy-900 outline-none transition-colors placeholder:text-slate-300 focus:border-slate-300 md:text-[34px]"
+        />
+
+        {/* Metadata strip — the six former settings condensed to one
+            row of inline pills. Booleans toggle in place; the two
+            fields that need a real editor (reading time, release
+            rule) open a small popover anchored under the pill. */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-1 gap-y-2 text-[13px]">
+
+          {/* Reading time */}
+          <Popover
+            ariaLabel="Set reading time"
+            trigger={(open) => (
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-1 transition-colors ${
+                  open ? 'bg-teal-50 text-teal-800' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {stepMinutes
+                  ? `${stepMinutes} min`
+                  : <span className="italic text-slate-400">Add reading time</span>}
+              </span>
+            )}
+          >
+            {(close) => (
               <div>
-                <label className="mb-1 block text-[12px] font-semibold text-black" htmlFor="step-minutes">
+                <label className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500" htmlFor="rt-input">
                   Estimated reading time
                 </label>
-                <div className="flex items-center gap-2">
+                <div className="mt-2 flex items-center gap-2">
                   <input
-                    id="step-minutes"
+                    id="rt-input"
                     type="number" min={1} max={999}
                     value={stepMinutes}
                     onChange={e => setStepMinutes(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); close() } }}
                     placeholder="—"
-                    className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                    className="w-24 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[14px] text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                    autoFocus
                   />
-                  <span className="text-[13px] text-black">minutes</span>
+                  <span className="text-[13px] text-slate-600">minutes</span>
+                </div>
+                {stepMinutes && (
+                  <button
+                    type="button"
+                    onClick={() => { setStepMinutes(''); close() }}
+                    className="mt-3 text-[12px] text-slate-500 hover:text-slate-700"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+          </Popover>
+
+          <span className="text-slate-300" aria-hidden="true">·</span>
+
+          {/* Required */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={stepRequired}
+            onClick={() => setStepRequired(r => !r)}
+            className={`rounded-full px-2.5 py-1 transition-colors ${
+              stepRequired ? 'bg-teal-50 text-teal-800' : 'text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {stepRequired ? 'Required' : <span className="italic">Optional</span>}
+          </button>
+
+          <span className="text-slate-300" aria-hidden="true">·</span>
+
+          {/* Private reflection */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={reflectionEnabled}
+            onClick={() => setReflectionEnabled(v => !v)}
+            title={reflectionEnabled
+              ? 'Members can keep private notes as they work through this step.'
+              : 'Private reflection is off for this step.'}
+            className={`rounded-full px-2.5 py-1 transition-colors ${
+              reflectionEnabled ? 'bg-teal-50 text-teal-800' : 'text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {reflectionEnabled ? 'Reflection' : <span className="italic">Reflection off</span>}
+          </button>
+
+          <span className="text-slate-300" aria-hidden="true">·</span>
+
+          {/* Discussion */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={discussionEnabled}
+            onClick={() => setDiscussionEnabled(v => !v)}
+            title={discussionEnabled
+              ? 'Members can ask questions and discuss this step with others.'
+              : 'Discussion is off for this step.'}
+            className={`rounded-full px-2.5 py-1 transition-colors ${
+              discussionEnabled ? 'bg-teal-50 text-teal-800' : 'text-slate-500 hover:bg-slate-100'
+            }`}
+          >
+            {discussionEnabled ? 'Discussion' : <span className="italic">Discussion off</span>}
+          </button>
+
+          <span className="text-slate-300" aria-hidden="true">·</span>
+
+          {/* Release rule */}
+          <Popover
+            ariaLabel="Set release rule"
+            width="w-96"
+            trigger={(open) => (
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-1 transition-colors ${
+                  open ? 'bg-teal-50 text-teal-800' : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {releaseSummary(releaseRule)}
+              </span>
+            )}
+          >
+            {(close) => (
+              <div>
+                <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Release
+                </p>
+                <ReleaseRuleEditor value={releaseRule} onChange={setReleaseRule} />
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={close}
+                    className="rounded-full px-3 py-1 text-[12.5px] font-medium text-slate-600 hover:bg-slate-100"
+                  >
+                    Done
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-3 pb-0.5">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={stepRequired}
-                  onClick={() => setStepRequired(r => !r)}
-                  className={`relative h-5 w-9 rounded-full transition-colors ${stepRequired ? 'bg-teal-500' : 'bg-slate-200'}`}
-                >
-                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${stepRequired ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                </button>
-                <span className="text-[13px] text-navy-900">Required step</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ── SECTION 2 — Members ── */}
-        <section className="rounded-2xl border border-slate-100 bg-white p-6 md:p-7">
-          <div className="mb-5">
-            <SectionLabel>Members</SectionLabel>
-          </div>
-
-          <div className="space-y-5">
-            <div className="flex items-start gap-3">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={reflectionEnabled}
-                onClick={() => setReflectionEnabled(v => !v)}
-                className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors ${reflectionEnabled ? 'bg-teal-500' : 'bg-slate-200'}`}
-              >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${reflectionEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-              </button>
-              <div>
-                <p className="text-[14px] font-semibold text-navy-900">Private reflection</p>
-                <p className="mt-0.5 text-[13px] leading-relaxed text-black">
-                  Members can keep private notes as they work through this step.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={discussionEnabled}
-                onClick={() => setDiscussionEnabled(v => !v)}
-                className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors ${discussionEnabled ? 'bg-teal-500' : 'bg-slate-200'}`}
-              >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${discussionEnabled ? 'translate-x-4' : 'translate-x-0.5'}`} />
-              </button>
-              <div>
-                <p className="text-[14px] font-semibold text-navy-900">Continue the conversation</p>
-                <p className="mt-0.5 text-[13px] leading-relaxed text-black">
-                  Members can ask questions and discuss this step with others.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ── SECTION 3 — Release ── */}
-        <section className="rounded-2xl border border-slate-100 bg-white p-6 md:p-7">
-          <div className="mb-5">
-            <SectionLabel>Release</SectionLabel>
-            <p
-              className="mt-1.5 text-[13px] italic"
-              style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}
-            >
-              Choose when this step becomes available to members.
-            </p>
-          </div>
-          <ReleaseRuleEditor value={releaseRule} onChange={setReleaseRule} />
-        </section>
-
-        {/* Save changes — single action for the three settings sections. */}
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={settingsSaving}
-            className="rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-          >
-            {settingsSaving ? 'Saving…' : 'Save changes'}
-          </button>
-          {settingsSaved && <span className="text-[12px] text-teal-600">Saved ✓</span>}
+            )}
+          </Popover>
         </div>
-      </form>
+      </header>
 
       {/* ────────────────────────────────────────────────────────────
-          SECTION 4 — Content — the visual focus of the page.
-          Setting sections above are the supporting configuration;
-          this is where the writer actually builds the step.
+          Document. No card, no shadow, no "Content" heading, no
+          subtitle. The writing sits directly on the page at
+          editorial column width. Insertion affordances (the between-
+          block +'s and the trailing "+ Add content") are the only
+          editing chrome that lives inside the column.
           ──────────────────────────────────────────────────────────── */}
-      <section className="mt-12">
-        <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <SectionLabel>Content</SectionLabel>
-            <h2 className="mt-1.5 font-serif text-[22px] leading-snug text-navy-900">
-              Content
-            </h2>
-            <p
-              className="mt-1 text-[13.5px] italic"
-              style={{ color: 'rgba(12,24,38,0.65)', fontFamily: 'Georgia, serif' }}
-            >
-              Build this step using text, images, videos, callouts and interactive blocks.
+      <div className="mx-auto mt-16 max-w-3xl">
+
+        {blocks.length === 0 && step.content_body && (
+          <div
+            className="rounded-xl border p-5"
+            style={{ borderColor: 'rgba(234,179,8,0.35)', background: 'rgba(254,252,232,0.6)' }}
+          >
+            <p className="mb-1 text-[14px] font-semibold text-amber-800">Legacy content found</p>
+            <p className="mb-3 text-[13px] text-amber-700">
+              This step has existing content that was created before the block editor. Convert it into an
+              editable block so it appears here and members continue to see the same content.
             </p>
+            {convertError && <p className="mb-2 text-[12px] text-red-600">{convertError}</p>}
+            <button
+              type="button"
+              disabled={converting}
+              onClick={convertLegacy}
+              className="rounded-lg px-4 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            >
+              {converting ? 'Converting…' : 'Convert to blocks'}
+            </button>
           </div>
-          {blocks.length > 0 && (
-            <div className="shrink-0">
+        )}
+
+        {blocks.length === 0 && !step.content_body && (
+          <div
+            className="rounded-2xl px-8 py-16 text-center"
+            style={{ background: '#FBFAF6' }}
+          >
+            <p className="mb-2 font-serif text-[19px] leading-snug text-navy-900">
+              A blank page awaits.
+            </p>
+            <p className="mx-auto mb-6 max-w-sm text-[13.5px] leading-relaxed text-slate-600">
+              Start building this step by adding your first block.
+            </p>
+            <div className="flex justify-center">
               {adding ? (
-                <p className="text-[13px] text-black">Adding block…</p>
+                <p className="text-[13px] text-slate-600">Adding block…</p>
               ) : (
                 <AddBlockPicker onSelect={addBlock} />
               )}
             </div>
-          )}
-        </div>
+            {addError && (
+              <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
+                {addError}
+              </p>
+            )}
+          </div>
+        )}
 
-        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-6 md:px-10 md:py-8">
-          {blocks.length === 0 && step.content_body && (
-            <div
-              className="rounded-xl border p-5"
-              style={{ borderColor: 'rgba(234,179,8,0.35)', background: 'rgba(254,252,232,0.6)' }}
+        {blocks.length > 0 && (
+          <DraggableBlockList
+            blocks={blocks}
+            assets={assets}
+            resources={resources}
+            activeBlockId={activeBlockId}
+            onActivateBlock={setActiveBlockId}
+            onUpdate={updateBlock}
+            onDelete={deleteBlock}
+            onReorder={reorderBlocks}
+            onInsertAt={insertBlockAt}
+            spaceSlug={spaceSlug}
+            onAssetUploaded={(asset) => setAssets((prev) => [asset, ...prev])}
+          />
+        )}
+
+        {blocks.length > 0 && addError && (
+          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
+            {addError}
+          </p>
+        )}
+      </div>
+
+      {/* ────────────────────────────────────────────────────────────
+          Delete this step — the former Danger zone as a small text
+          link tucked at the foot of the page. Same confirmation
+          dialog, same destructive behaviour, zero page section.
+          ──────────────────────────────────────────────────────────── */}
+      <div className="mx-auto mt-28 flex max-w-3xl justify-center">
+        {deleteStepError ? (
+          <div className="flex flex-col items-center gap-2">
+            <p className="text-[12.5px] text-red-600">{deleteStepError}</p>
+            <button
+              type="button"
+              onClick={deleteStep}
+              disabled={deletingStep}
+              className="text-[12.5px] text-slate-400 transition-colors hover:text-red-500 disabled:opacity-40"
             >
-              <p className="mb-1 text-[14px] font-semibold text-amber-800">Legacy content found</p>
-              <p className="mb-3 text-[13px] text-amber-700">
-                This step has existing content that was created before the block editor. Convert it into an
-                editable block so it appears here and members continue to see the same content.
-              </p>
-              {convertError && <p className="mb-2 text-[12px] text-red-600">{convertError}</p>}
-              <button
-                type="button"
-                disabled={converting}
-                onClick={convertLegacy}
-                className="rounded-lg px-4 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-              >
-                {converting ? 'Converting…' : 'Convert to blocks'}
-              </button>
-            </div>
-          )}
-
-          {blocks.length === 0 && !step.content_body && (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-              <p className="mb-1 text-[15px] font-semibold text-navy-900">No content blocks yet</p>
-              <p className="mb-5 text-[13px] leading-relaxed text-black">
-                Start building this step by adding your first block.
-              </p>
-              <div className="flex justify-center">
-                {adding ? (
-                  <p className="text-[13px] text-black">Adding block…</p>
-                ) : (
-                  <AddBlockPicker onSelect={addBlock} />
-                )}
-              </div>
-              {addError && (
-                <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
-                  {addError}
-                </p>
-              )}
-            </div>
-          )}
-
-          {blocks.length > 0 && (
-            <DraggableBlockList
-              blocks={blocks}
-              assets={assets}
-              resources={resources}
-              activeBlockId={activeBlockId}
-              onActivateBlock={setActiveBlockId}
-              onUpdate={updateBlock}
-              onDelete={deleteBlock}
-              onReorder={reorderBlocks}
-              onInsertAt={insertBlockAt}
-              spaceSlug={spaceSlug}
-              onAssetUploaded={(asset) => setAssets((prev) => [asset, ...prev])}
-            />
-          )}
-
-          {blocks.length > 0 && addError && (
-            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">
-              {addError}
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* ── SECTION 5 — Danger zone ── extra top space separates it
-          intentionally from the editor above. */}
-      <section className="mt-16">
-        <div className="rounded-2xl border border-red-100 bg-white p-5">
-          <p className="mb-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-red-400">
-            Danger zone
-          </p>
-          <p className="mb-4 text-[13px] text-black">
-            Permanently delete this step and all its content blocks. This cannot be undone.
-          </p>
-          {deleteStepError && (
-            <p className="mb-3 text-[13px] text-red-600">{deleteStepError}</p>
-          )}
+              {deletingStep ? 'Deleting…' : 'Delete this step'}
+            </button>
+          </div>
+        ) : (
           <button
             type="button"
             onClick={deleteStep}
             disabled={deletingStep}
-            className="rounded-lg border border-red-200 px-4 py-2 text-[13px] font-medium text-red-500 transition-colors hover:border-red-400 hover:bg-red-50 disabled:opacity-40"
+            className="text-[12.5px] text-slate-400 transition-colors hover:text-red-500 disabled:opacity-40"
           >
             {deletingStep ? 'Deleting…' : 'Delete this step'}
           </button>
-        </div>
-      </section>
+        )}
+      </div>
 
-    </div>
+    </form>
   )
 }

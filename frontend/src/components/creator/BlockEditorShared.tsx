@@ -419,60 +419,89 @@ function renderBlockPreviewInner({
     : block.media_asset
   const t = block.block_type
 
-  if (t === 'divider') return <hr className="my-1 border-slate-200" />
+  // ── Divider ──────────────────────────────────────────────────
+  // A decorative three-dot ornament in place of a bare hairline;
+  // reads as a chapter break rather than a form separator.
+  if (t === 'divider') return (
+    <div
+      className="my-6 flex justify-center text-[14px] tracking-[0.5em] text-slate-300 select-none"
+      aria-hidden="true"
+    >
+      ···
+    </div>
+  )
 
   if (t === 'columns') return <ColumnsPreview content={block.content ?? null} />
 
+  // ── Heading ──────────────────────────────────────────────────
+  // Serif face with editorial weight, generous top margin so the
+  // heading reads as a chapter or section break rather than a
+  // form label. ``first:mt-0`` prevents an unwanted top gap when a
+  // step opens with a heading.
   if (t === 'heading') {
-    // Render at the level the block was authored at so the creator sees
-    // exactly what members will see, not a flat bold paragraph.
     const level = block.label === 'h1' ? 'h1' : block.label === 'h3' ? 'h3' : 'h2'
     const text = block.content || null
     const empty = <span className="italic text-slate-400">Untitled heading</span>
     if (level === 'h1') {
-      return <h1 className="mt-3 text-[28px] font-bold leading-tight text-navy-900">{text ?? empty}</h1>
+      return (
+        <h1 className="mb-4 mt-10 max-w-[36ch] font-serif text-[32px] font-normal leading-tight text-navy-900 first:mt-0">
+          {text ?? empty}
+        </h1>
+      )
     }
     if (level === 'h3') {
-      return <h3 className="mt-3 text-[18px] font-semibold leading-tight text-navy-900">{text ?? empty}</h3>
+      return (
+        <h3 className="mb-2 mt-7 max-w-[44ch] font-serif text-[19px] font-medium leading-snug text-navy-900 first:mt-0">
+          {text ?? empty}
+        </h3>
+      )
     }
-    return <h2 className="mt-3 text-[22px] font-bold leading-tight text-navy-900">{text ?? empty}</h2>
+    return (
+      <h2 className="mb-3 mt-9 max-w-[40ch] font-serif text-[24px] font-normal leading-tight text-navy-900 first:mt-0">
+        {text ?? empty}
+      </h2>
+    )
   }
 
+  // ── Paragraph ─────────────────────────────────────────────────
+  // 16px on 1.8 leading is the editorial sweet spot for long-form
+  // reading. Line length capped at ~70ch so the eye doesn't have to
+  // travel too far between rows. Warm ink colour on white for a
+  // page-in-hand feeling rather than screen text.
   if (t === 'text') return (
-    <div className="text-[15px] leading-relaxed text-black">
+    <div className="max-w-[70ch] text-[16px] font-normal leading-[1.8] tracking-[0.005em] text-navy-900/[0.88]">
       {block.content
         ? <RichTextRenderer content={block.content} />
         : <span className="italic text-slate-400">Empty paragraph — click to write.</span>}
     </div>
   )
 
+  // ── Image ─────────────────────────────────────────────────────
+  // Figures breathe — generous vertical margin, softer corner
+  // radius (a plate rather than a card), muted italic caption with
+  // constrained width so it reads centred beneath the image.
   if (t === 'image') {
     const imgSrc = asset ? resolveAssetUrl(asset.file_url) : block.embed_url
     if (!imgSrc) {
       return (
-        <div className="flex items-center gap-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-slate-500">
+        <div className="my-6 flex items-center gap-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-slate-500">
           <span className="text-[22px]">🖼</span>
           <span className="text-[13.5px] italic">Click to add an image.</span>
         </div>
       )
     }
-    // Alt-text resolution: explicit alt via ``label`` (including the
-    // deliberate empty string for decorative images) wins; a null
-    // label falls back to the asset title, then to an empty string.
-    // ``??`` is intentional — never use ``||`` here or an explicitly
-    // decorative image ('') would silently pick up the asset title.
     const altText = block.label ?? asset?.title ?? ''
     return (
-      <figure className="my-1">
+      <figure className="my-7">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imgSrc}
           alt={altText}
-          className="block w-full rounded-lg object-cover"
+          className="block w-full rounded-xl object-cover"
           style={{ maxHeight: 520 }}
         />
         {block.caption && (
-          <figcaption className="mt-2 text-center text-[12.5px] italic text-slate-500">
+          <figcaption className="mx-auto mt-3 max-w-md text-center text-[13px] italic leading-relaxed text-slate-500">
             {block.caption}
           </figcaption>
         )}
@@ -484,8 +513,8 @@ function renderBlockPreviewInner({
     const embed = block.embed_url ? getEmbedUrl(block.embed_url) : null
     if (embed) {
       return (
-        <figure className="my-1">
-          <div className="overflow-hidden rounded-lg bg-black" style={{ aspectRatio: '16/9' }}>
+        <figure className="my-7">
+          <div className="overflow-hidden rounded-xl bg-black" style={{ aspectRatio: '16/9' }}>
             <iframe
               src={embed}
               className="h-full w-full"
@@ -494,7 +523,7 @@ function renderBlockPreviewInner({
             />
           </div>
           {block.caption && (
-            <figcaption className="mt-2 text-center text-[12.5px] italic text-slate-500">
+            <figcaption className="mx-auto mt-3 max-w-md text-center text-[13px] italic leading-relaxed text-slate-500">
               {block.caption}
             </figcaption>
           )}
@@ -502,7 +531,7 @@ function renderBlockPreviewInner({
       )
     }
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-[13.5px] text-slate-500">
+      <div className="my-4 flex items-center gap-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-[13.5px] text-slate-500">
         <span>▶</span>
         {block.embed_url
           ? <span className="italic">{block.embed_url}</span>
@@ -514,10 +543,10 @@ function renderBlockPreviewInner({
   if (t === 'audio') {
     if (asset) {
       return (
-        <figure className="my-1">
+        <figure className="my-6">
           <audio controls className="w-full" src={resolveAssetUrl(asset.file_url)} />
           {block.caption && (
-            <figcaption className="mt-2 text-center text-[12.5px] italic text-slate-500">
+            <figcaption className="mx-auto mt-3 max-w-md text-center text-[13px] italic leading-relaxed text-slate-500">
               {block.caption}
             </figcaption>
           )}
@@ -525,7 +554,7 @@ function renderBlockPreviewInner({
       )
     }
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-[13.5px] text-slate-500">
+      <div className="my-4 flex items-center gap-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-[13.5px] text-slate-500">
         <span>🔊</span>
         <span className="italic">Click to attach audio.</span>
       </div>
@@ -560,23 +589,21 @@ function renderBlockPreviewInner({
     </div>
   )
 
+  // ── Reflection prompt — journal-style pull quote ─────────────
   if (t === 'reflection_prompt') return (
     <div
-      className="relative rounded-lg border px-6 py-5"
-      style={{ background: 'rgba(56,160,158,0.05)', borderColor: 'rgba(56,160,158,0.28)' }}
+      className="relative my-6 rounded-xl border px-7 py-6"
+      style={{ background: 'rgba(56,160,158,0.05)', borderColor: 'rgba(56,160,158,0.24)' }}
     >
-      {/* Journal-style quote treatment: eyebrow label + soft italic quote
-          glyph in the top-left, prompt rendered as a large reflective
-          question, optional supporting text below in muted tone. */}
       <p
-        className="mb-2 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.16em]"
+        className="mb-3 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.16em]"
         style={{ color: '#0f4645' }}
       >
         <span aria-hidden="true" className="text-[15px] leading-none">❝</span>
         Reflection prompt
       </p>
       <div
-        className="font-serif text-[18px] leading-snug text-navy-900"
+        className="font-serif text-[19px] leading-[1.5] text-navy-900"
         style={{ fontStyle: 'italic' }}
       >
         {block.content
@@ -584,55 +611,51 @@ function renderBlockPreviewInner({
           : <span className="not-italic text-slate-400">Ask the reader a question…</span>}
       </div>
       {block.caption && (
-        <p className="mt-2 text-[13px] leading-relaxed text-black">{block.caption}</p>
+        <p className="mt-3 text-[14px] leading-[1.7] text-navy-900/[0.75]">{block.caption}</p>
       )}
     </div>
   )
 
+  // ── Exercise — a warm plate with a serif title ──────────────
   if (t === 'exercise') {
-    // Specialised Content block: soft card wrapper + Exercise label +
-    // optional title, with the body rendered by the shared
-    // RichTextRenderer. Legacy step-envelope rows are migrated on the
-    // fly so writers see the same output regardless of storage shape.
     const body = exerciseContentToRichText(block.content)
     return (
-      <div className="rounded-lg border border-slate-200 bg-slate-50 px-5 py-4">
-        <div className="mb-1 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-700">
+      <div className="my-6 rounded-xl border border-slate-200 bg-slate-50/70 px-6 py-5">
+        <div className="mb-2 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-700">
           <span aria-hidden="true" className="text-[13px]">✏</span>
           Exercise
         </div>
         {block.label && (
-          <p className="mt-0.5 mb-3 font-serif text-[19px] leading-tight text-navy-900">
+          <p className="mt-1 mb-4 font-serif text-[21px] leading-snug text-navy-900">
             {block.label}
           </p>
         )}
-        {body
-          ? <RichTextRenderer content={body} />
-          : <span className="italic text-slate-400">Walk the reader through the exercise…</span>}
+        <div className="text-[15px] leading-[1.75] text-navy-900/[0.85]">
+          {body
+            ? <RichTextRenderer content={body} />
+            : <span className="italic text-slate-400">Walk the reader through the exercise…</span>}
+        </div>
       </div>
     )
   }
 
+  // ── Callout ──────────────────────────────────────────────────
   if (t === 'callout') {
-    // Full member-facing styling: tinted background + subtle border,
-    // no truncation — the creator reads the entire callout in-place.
-    // Purpose (if set) is shown as a small icon + label header so the
-    // reader can tell a Note from a Caution at a glance.
     const palette = resolveCalloutPalette(block.caption, block.label, undefined, collectivePalette)
     const icon = resolveCalloutPurposeIcon(block.label)
     const purposeLabel = resolveCalloutPurposeLabel(block.label)
     return (
       <div
-        className="rounded-lg border px-5 py-4"
+        className="my-5 rounded-xl border px-6 py-5"
         style={{ background: palette.bg, borderColor: palette.border }}
       >
         {(icon || purposeLabel) && (
-          <div className="mb-1.5 flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-[0.14em] text-navy-900">
+          <div className="mb-2 flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-[0.14em] text-navy-900">
             {icon && <span aria-hidden="true" className="text-[14px]">{icon}</span>}
             {purposeLabel && <span>{purposeLabel}</span>}
           </div>
         )}
-        <div className="text-[15px] leading-relaxed text-black">
+        <div className="text-[15.5px] leading-[1.75] text-navy-900/[0.88]">
           {block.content
             ? <RichTextRenderer content={block.content} />
             : <span className="italic text-slate-400">Callout body…</span>}
@@ -2273,19 +2296,21 @@ export function BlockRow({
       )}
 
       {/* The block body itself. In preview mode it flows as document
-          content. In edit mode a single light left-border marks the
-          active surface — no nested card padding, so the editor and
-          toolbar can stretch across the canvas. */}
+          content — no borders, no padding, no chrome. In edit mode a
+          single light teal left-border marks the active surface for
+          both prose and structured blocks, unifying the editorial
+          language across every block type. */}
       <div
-        className={`min-w-0 flex-1 ${editing ? (isProseBlock ? 'border-l-2 border-teal-400 pl-4' : 'rounded-md bg-white p-3 ring-1 ring-teal-200') : ''}`}
+        className={`min-w-0 flex-1 ${editing ? 'border-l-2 border-teal-400 pl-4' : ''}`}
       >
         {!editing && (
           <>
             {/* Type badge sits ABOVE the preview and is dimmed until hover
-                — the reader's eye lands on content, not on chrome. */}
+                — the reader's eye lands on content, not on chrome. Neutral
+                slate so it reads as a quiet orientation label rather than
+                a branded chip. */}
             <div
-              className="mb-1 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] transition-opacity opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100"
-              style={{ color: '#246B6A' }}
+              className="mb-1 flex items-center gap-2 text-[10.5px] font-medium uppercase tracking-[0.14em] text-slate-400 transition-opacity opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100"
               aria-hidden="true"
             >
               <span>{blockIcon(block.block_type)}</span>
@@ -2311,18 +2336,20 @@ export function BlockRow({
 
         {editing && (
           <>
-            <div className="mb-2 flex items-center gap-2">
-              <span
-                className="flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold tracking-tight"
-                style={{ background: 'rgba(56,160,158,0.10)', color: '#246B6A' }}
-              >
+            {/* Edit-mode header — a quiet uppercase micro-label in neutral
+                slate. The teal left-accent border already tells the writer
+                which block is active; the label doesn't need to repeat the
+                signal in colour. Autosave "Saved" keeps a subtle teal
+                because it IS a live state, not chrome. */}
+            <div className="mb-3 flex items-center gap-3">
+              <span className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-500">
                 <span>{blockIcon(block.block_type)}</span>
-                {blockBadgeLabel(block)}
+                <span>{blockBadgeLabel(block)}</span>
               </span>
               {autosaveStatus !== 'idle' && (
                 <span
                   className="text-[11.5px] italic"
-                  style={{ color: autosaveStatus === 'saving' ? 'rgba(0,0,0,0.45)' : '#246B6A' }}
+                  style={{ color: autosaveStatus === 'saving' ? 'rgba(0,0,0,0.40)' : '#0f766e' }}
                 >
                   {autosaveStatus === 'saving' ? 'Saving…' : 'Saved'}
                 </span>
@@ -2345,38 +2372,26 @@ export function BlockRow({
       </div>
 
       {/* Right gutter — Edit + Delete controls, PREVIEW STATE ONLY.
-          While the block is being edited we drop this gutter entirely
-          so the writing surface uses the full canvas; a Delete button
-          then lives in the editor footer alongside Done / Save so the
-          destructive action stays discoverable but the width isn't
-          permanently reserved for it. */}
+          Ghost-style icon buttons: no border, no background at rest,
+          soft-tinted hover. The chrome disappears completely into the
+          document until the writer approaches the row. In edit mode
+          this gutter is dropped so the writing surface has the full
+          canvas; Delete lives inside the editor footer instead. */}
       {!editing && (
-      <div className="flex w-24 shrink-0 items-center justify-end gap-1.5 pt-1 transition-opacity opacity-100 focus-within:opacity-100 sm:opacity-40 sm:group-hover/row:opacity-100 sm:pt-2">
-        {!editing && !isProseBlock && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="rounded-md border border-slate-400 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-navy-900 shadow-sm transition-colors hover:border-navy-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            title="Edit block"
-          >
-            Edit
-          </button>
-        )}
-        {!editing && isProseBlock && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-400 bg-white text-navy-900 shadow-sm transition-colors hover:border-navy-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            title="Edit block"
-            aria-label="Edit block"
-          >
-            <PencilIcon />
-          </button>
-        )}
+      <div className="flex w-16 shrink-0 items-center justify-end gap-0.5 pt-1 transition-opacity opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100 sm:pt-2">
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-navy-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+          title="Edit block"
+          aria-label="Edit block"
+        >
+          <PencilIcon />
+        </button>
         <button
           type="button"
           onClick={() => setConfirmingDelete(true)}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-400 bg-white text-red-600 shadow-sm transition-colors hover:border-red-600 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
           title="Delete block"
           aria-label="Delete block"
         >
@@ -2532,7 +2547,7 @@ function PromptEditor({
 
   return (
     <div className="w-full">
-      <div className="mb-2 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-[#0f4645]">
+      <div className="mb-2 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500">
         <span aria-hidden="true" className="text-[15px] leading-none">❝</span>
         Reflection prompt
       </div>

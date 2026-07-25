@@ -136,7 +136,7 @@ export default function DraggableBlockList({
                   draggable
                   onDragStart={(e) => handleDragStart(i, e)}
                   onDragEnd={handleDragEnd}
-                  className="flex h-8 w-6 cursor-grab select-none items-center justify-center rounded-md text-[16px] leading-none text-navy-900 transition-all hover:bg-slate-200 active:cursor-grabbing opacity-100 focus-within:opacity-100 sm:opacity-40 sm:group-hover/block:opacity-100 sm:group-hover/row:opacity-100"
+                  className="flex h-7 w-5 cursor-grab select-none items-center justify-center rounded-md text-[14px] leading-none text-slate-300 transition-all hover:bg-slate-100 hover:text-slate-600 active:cursor-grabbing opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover/block:opacity-100 sm:group-hover/row:opacity-100"
                   title="Drag to reorder"
                   aria-label="Drag to reorder this block"
                   role="button"
@@ -163,10 +163,15 @@ export default function DraggableBlockList({
 
 
 /**
- * A single insertion affordance. Between blocks it renders a subtle
- * hairline with a `+ Add content` pill; after the final block it
- * renders a larger `+ Add content` button. Clicking either directly opens the
- * block-type menu anchored at this position.
+ * A single insertion affordance.
+ *
+ * Between blocks: the row is invisible chrome by default — no
+ * hairline, no visible pill — until the writer hovers the gap. A
+ * quiet ``+`` fades in centred on the row. Once opened it stays
+ * lit while the type menu is visible.
+ *
+ * Trailing (after the last block): a text-link-style ``+ Add
+ * content`` affordance in teal. No dashed border, no admin chrome.
  */
 function InsertAffordance({
   position, open, onOpen, onClose, onPick, trailing,
@@ -199,38 +204,37 @@ function InsertAffordance({
   }, [open, onClose])
 
   return (
-    <div ref={ref} className={`relative ${trailing ? 'mt-4' : 'my-1'}`}>
+    <div ref={ref} className={`relative ${trailing ? 'mt-6' : ''}`}>
       {trailing ? (
         <div className="flex justify-start">
           <button
             type="button"
             onClick={onOpen}
-            className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-slate-300 px-4 py-1.5 text-[13px] font-medium text-slate-600 transition-colors hover:border-teal-400 hover:bg-teal-50 hover:text-teal-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+            className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-[13.5px] font-medium transition-colors hover:bg-teal-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
+            style={{ color: '#0f766e' }}
             title="Add content at the end"
             aria-label="Add content at the end"
           >
-            + Add content
+            <span aria-hidden="true" className="text-[16px] leading-none">+</span>
+            Add content
           </button>
         </div>
       ) : (
-        <div className="group/insert relative flex h-6 items-center">
-          <span
-            className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-300 transition-colors group-hover/insert:bg-teal-400"
-            aria-hidden="true"
-          />
+        <div className="group/insert relative flex h-5 items-center justify-center">
           <button
             type="button"
             onClick={onOpen}
-            className={`relative mx-auto flex h-6 items-center rounded-full px-2.5 text-[11px] font-semibold uppercase tracking-wide transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${open ? 'opacity-100' : 'opacity-80 group-hover/insert:opacity-100'}`}
+            className={`flex h-5 w-5 items-center justify-center rounded-full text-[14px] leading-none transition-opacity duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${
+              open ? 'opacity-100' : 'opacity-0 group-hover/insert:opacity-100'
+            }`}
             style={{
-              color: '#0f4645',
-              background: 'rgba(56,160,158,0.14)',
-              border: '1px solid rgba(56,160,158,0.42)',
+              color: open ? '#0f766e' : '#94a3b8',
+              background: open ? 'rgba(56,160,158,0.10)' : 'transparent',
             }}
             title={`Add content at position ${position + 1}`}
             aria-label="Add content here"
           >
-            + Add content
+            <span aria-hidden="true">+</span>
           </button>
         </div>
       )}
