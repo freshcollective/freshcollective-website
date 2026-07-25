@@ -254,6 +254,45 @@ def _get_space_or_404(slug: str, db: Session) -> Space:
     return space
 
 
+def _user_manages_space(user: "User | None", space: Space, db: Session) -> bool:
+    """True when the caller is entitled to see a non-active collective —
+    admins, the collective's owner, or an active creator/moderator
+    SpaceMembership. Used only by read paths that surface a preview to
+    the manager (Preview button flow). Public/anonymous callers can
+    never satisfy this predicate."""
+    if user is None:
+        return False
+    if user.role == "admin":
+        return True
+    if space.creator_id == user.id:
+        return True
+    mem = (
+        db.query(SpaceMembership.id)
+        .filter(
+            SpaceMembership.user_id == user.id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.role.in_(["creator", "moderator"]),
+            SpaceMembership.status == "active",
+        )
+        .first()
+    )
+    return mem is not None
+
+
+def _get_space_visible_to(slug: str, db: Session, current_user: "User | None") -> Space:
+    """Same as ``_get_space_or_404`` for public callers, but additionally
+    permits any status when the caller manages the collective. Used by
+    the pathway read endpoints reached from the Creator Studio Preview
+    button so a draft collective's owner can preview it end-to-end
+    without weakening public 404 behaviour."""
+    space = db.query(Space).filter(Space.slug == slug).first()
+    if not space:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+    if space.status != "active" and not _user_manages_space(current_user, space, db):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+    return space
+
+
 def _get_pathway_or_404(space_id: str, pathway_slug: str, db: Session) -> Pathway:
     pathway = (
         db.query(Pathway)
@@ -910,7 +949,7 @@ def list_pathways(
     db: Session = Depends(get_db),
     current_user: "User | None" = Depends(get_optional_user),
 ) -> list[PathwaySummary]:
-    space = _get_space_or_404(slug, db)
+    space = _get_space_visible_to(slug, db, current_user)
     is_creator_or_admin = current_user is not None and current_user.role in ("creator", "admin")
     is_space_manager = False
     if current_user is not None:
@@ -2343,7 +2382,7 @@ def get_pathway_overview(
     current_user: "User | None" = Depends(get_optional_user),
 ) -> PathwayWithSteps:
     """Pathway detail with ordered steps and this user's completion state."""
-    space = _get_space_or_404(slug, db)
+    space = _get_space_visible_to(slug, db, current_user)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
 
     steps = (
@@ -2546,7 +2585,7 @@ def get_step(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> StepDetail:
-    space = _get_space_or_404(slug, db)
+    space = _get_space_visible_to(slug, db, current_user)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
     _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
@@ -2728,7 +2767,7 @@ def list_step_resources(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[StepResource]:
-    space = _get_space_or_404(slug, db)
+    space = _get_space_visible_to(slug, db, current_user)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
     _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
@@ -2754,7 +2793,7 @@ def list_pathway_about_blocks(
 
     Public — locked and anonymous visitors can view the About page as a preview/sales page.
     """
-    space = _get_space_or_404(slug, db)
+    space = _get_space_visible_to(slug, db, current_user)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
     return (
         db.query(PathwayAboutBlock)
@@ -2779,7 +2818,7 @@ def list_step_blocks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[PathwayStepBlock]:
-    space = _get_space_or_404(slug, db)
+    space = _get_space_visible_to(slug, db, current_user)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
     _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)

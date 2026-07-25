@@ -49,7 +49,6 @@ export default async function PathwaySettingsPage({ params }: Props) {
     <CreatorPageContainer>
       <PathwayHeader
         active="settings"
-        spaceSlug={activeSpace.slug}
         spaceName={activeSpace.name}
         pathway={pathway}
         showManualReleases={hasManualStep}

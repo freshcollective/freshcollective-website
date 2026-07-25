@@ -43,7 +43,6 @@ export default async function EditAboutPage({ params }: Props) {
     <CreatorPageContainer>
       <PathwayHeader
         active="about"
-        spaceSlug={activeSpace.slug}
         spaceName={activeSpace.name}
         pathway={pathway}
         showManualReleases={hasManualStep}

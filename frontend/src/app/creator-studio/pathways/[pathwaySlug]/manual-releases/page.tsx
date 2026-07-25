@@ -61,7 +61,6 @@ export default async function ManualReleasesPage({ params }: Props) {
     <CreatorPageContainer>
       <PathwayHeader
         active="manual-releases"
-        spaceSlug={space.slug}
         spaceName={space.name}
         pathway={pathway}
         showManualReleases={hasManualStep}

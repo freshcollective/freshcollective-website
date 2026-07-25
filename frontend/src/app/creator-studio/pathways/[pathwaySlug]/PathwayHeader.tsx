@@ -12,7 +12,6 @@ const STATUS_LABEL: Record<string, string> = {
 
 interface Props {
   active: Tab
-  spaceSlug: string
   spaceName: string
   pathway: CreatorPathway
   /** When true, the "Manual releases" tab is surfaced. Otherwise it's
@@ -27,7 +26,7 @@ interface Props {
  * Preview action) so Creators always know where they are.
  */
 export default function PathwayHeader({
-  active, spaceSlug, spaceName, pathway, showManualReleases,
+  active, spaceName, pathway, showManualReleases,
 }: Props) {
   const tabs: { key: Tab; label: string; href: string }[] = [
     { key: 'content',  label: 'Content',  href: `/creator-studio/pathways/${pathway.slug}` },
@@ -42,7 +41,12 @@ export default function PathwayHeader({
     })
   }
 
-  const previewHref = `/spaces/${spaceSlug}/pathways/${pathway.slug}`
+  // The Preview button always targets the creator-authorised preview
+  // route. That route verifies the caller manages the collective, then
+  // redirects into the public pathway URL. The public URL 404s for
+  // unauthorised callers, so nothing about published/draft access
+  // changes for public visitors.
+  const previewHref = `/creator-studio/pathways/${pathway.slug}/preview`
 
   return (
     <div className="mb-6">
