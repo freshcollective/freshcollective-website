@@ -93,21 +93,13 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
   }
 
   return (
-    <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
+    <div>
 
-      {/* Breadcrumb */}
+      {/* Section heading — the shared PathwayHeader above already carries
+          the back link, pathway title, and tab bar. */}
       <div className="mb-6">
-        <Link
-          href={`/creator-studio/pathways/${pathway.slug}`}
-          className="text-[12px] font-medium text-black transition-colors hover:text-slate-600"
-        >
-          ← Back to pathway
-        </Link>
-        <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
-          {pathway.title}
-        </p>
-        <h1 className="mt-0.5 text-2xl text-navy-900 md:text-3xl">Edit about page</h1>
-        <p className="mt-1.5 text-[14px] text-black">
+        <h2 className="text-[18px] font-semibold text-navy-900">Edit about page</h2>
+        <p className="mt-1 text-[14px] text-black">
           Build the page people see before they start or unlock this pathway.
         </p>
       </div>

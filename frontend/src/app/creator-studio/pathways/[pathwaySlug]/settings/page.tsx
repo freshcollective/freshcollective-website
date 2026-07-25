@@ -1,16 +1,16 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getActiveCreatorSpace, getCreatorMedia, getCreatorPathway, getCreatorSections, getCreatorSteps } from '@/lib/serverApi'
-import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorMedia, getCreatorPathway, getCreatorSteps } from '@/lib/serverApi'
+import type { CreatorMediaAsset, CreatorPathway, CreatorStep } from '@/types/platform'
 import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
-import PathwayContentClient from './PathwayContentClient'
-import PathwayHeader from './PathwayHeader'
+import PathwayHeader from '../PathwayHeader'
+import PathwaySettingsClient from '../PathwaySettingsClient'
 
 interface Props {
   params: Promise<{ pathwaySlug: string }>
 }
 
-export default async function EditPathwayPage({ params }: Props) {
+export default async function PathwaySettingsPage({ params }: Props) {
   const { pathwaySlug } = await params
   const activeSpace = await getActiveCreatorSpace()
 
@@ -31,12 +31,13 @@ export default async function EditPathwayPage({ params }: Props) {
     )
   }
 
-  const [pathway, steps, sections, mediaAssets]: [
-    CreatorPathway | null, CreatorStep[], CreatorSection[], CreatorMediaAsset[],
+  // Settings does not use the steps list itself, but we still need to know
+  // whether the Manual releases tab should be surfaced in the shared header.
+  const [pathway, steps, mediaAssets]: [
+    CreatorPathway | null, CreatorStep[], CreatorMediaAsset[],
   ] = await Promise.all([
     getCreatorPathway(activeSpace.slug, pathwaySlug),
     getCreatorSteps(activeSpace.slug, pathwaySlug),
-    getCreatorSections(activeSpace.slug, pathwaySlug),
     getCreatorMedia(activeSpace.slug),
   ])
 
@@ -47,16 +48,14 @@ export default async function EditPathwayPage({ params }: Props) {
   return (
     <CreatorPageContainer>
       <PathwayHeader
-        active="content"
+        active="settings"
         spaceSlug={activeSpace.slug}
         spaceName={activeSpace.name}
         pathway={pathway}
         showManualReleases={hasManualStep}
       />
-      <PathwayContentClient
+      <PathwaySettingsClient
         pathway={pathway}
-        steps={steps}
-        sections={sections}
         spaceSlug={activeSpace.slug}
         mediaAssets={mediaAssets}
       />

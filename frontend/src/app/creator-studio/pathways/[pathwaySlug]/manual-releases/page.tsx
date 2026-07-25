@@ -1,7 +1,14 @@
-import Link from 'next/link'
-import { getActiveCreatorSpace, serverFetch } from '@/lib/serverApi'
+import { notFound } from 'next/navigation'
+import {
+  getActiveCreatorSpace,
+  getCreatorPathway,
+  getCreatorSteps,
+  serverFetch,
+} from '@/lib/serverApi'
+import type { CreatorPathway, CreatorStep, SpaceSummary } from '@/types/platform'
+import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
 import ManualReleasesClient from './ManualReleasesClient'
-import type { SpaceSummary } from '@/types/platform'
+import PathwayHeader from '../PathwayHeader'
 
 /**
  * Manual releases page — one small caretaker workflow tool.
@@ -29,36 +36,40 @@ export default async function ManualReleasesPage({ params }: Props) {
   const space: SpaceSummary | null = await getActiveCreatorSpace()
   if (!space) {
     return (
-      <div className="w-full max-w-[860px] px-8 py-8 md:px-10 md:py-10">
+      <CreatorPageContainer>
         <p className="text-[14px] text-black">
           Select a collective to view manual releases.
         </p>
-      </div>
+      </CreatorPageContainer>
     )
   }
 
-  const res = await serverFetch(
-    `/api/creator/spaces/${space.slug}/pathways/${pathwaySlug}/manual-releases`,
-  )
-  const entries: ManualStepEntry[] = res.ok ? await res.json() : []
+  const [pathway, steps, releasesRes]: [
+    CreatorPathway | null, CreatorStep[], Response,
+  ] = await Promise.all([
+    getCreatorPathway(space.slug, pathwaySlug),
+    getCreatorSteps(space.slug, pathwaySlug),
+    serverFetch(`/api/creator/spaces/${space.slug}/pathways/${pathwaySlug}/manual-releases`),
+  ])
+
+  if (!pathway) notFound()
+
+  const entries: ManualStepEntry[] = releasesRes.ok ? await releasesRes.json() : []
+  const hasManualStep = steps.some((s) => s.release_type === 'manual')
 
   return (
-    <div className="w-full max-w-[860px] px-8 py-8 md:px-10 md:py-10">
+    <CreatorPageContainer>
+      <PathwayHeader
+        active="manual-releases"
+        spaceSlug={space.slug}
+        spaceName={space.name}
+        pathway={pathway}
+        showManualReleases={hasManualStep}
+      />
+
       <div className="mb-6">
-        <Link
-          href={`/creator-studio/pathways/${pathwaySlug}`}
-          className="text-[12px] font-medium text-black hover:text-slate-600"
-        >
-          ← Back to pathway
-        </Link>
-        <p
-          className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: '#38A09E' }}
-        >
-          Care
-        </p>
-        <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Manual releases</h1>
-        <p className="mt-2 text-[14px] leading-relaxed text-black">
+        <h2 className="text-[18px] font-semibold text-navy-900">Manual releases</h2>
+        <p className="mt-1 text-[14px] leading-relaxed text-black">
           Members waiting to be released into the next step. Only steps with a manual
           release rule appear here.
         </p>
@@ -79,6 +90,6 @@ export default async function ManualReleasesPage({ params }: Props) {
       ) : (
         <ManualReleasesClient spaceSlug={space.slug} initialEntries={entries} />
       )}
-    </div>
+    </CreatorPageContainer>
   )
 }
