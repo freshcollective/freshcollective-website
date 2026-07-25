@@ -1,5 +1,6 @@
 import Link from 'next/link'
-import type { CreatorPathway } from '@/types/platform'
+import type { CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 
 type Tab = 'content' | 'settings' | 'manual-releases' | 'about'
 
@@ -10,23 +11,40 @@ const STATUS_LABEL: Record<string, string> = {
   archived: 'Archived',
 }
 
+interface Location {
+  name: string
+  hero_artwork_url?: string | null
+  thumbnail_artwork_url?: string | null
+}
+
 interface Props {
   active: Tab
   spaceName: string
   pathway: CreatorPathway
-  /** When true, the "Manual releases" tab is surfaced. Otherwise it's
-   *  hidden because there are no manual-release steps on the pathway. */
+  /** When true, the "Manual releases" tab is surfaced. */
   showManualReleases: boolean
+  /** Optional collective identity feed — used by the artwork header
+   *  so every pathway sub-page opens with the collective's own place
+   *  around it. Missing fields degrade to sensible fallbacks. */
+  location?: Location | null
+  coverImageUrl?: string | null
+  /** Optional counts feeding the header's meta line
+   *  ("22 steps · 6 sections · Draft"). */
+  steps?: CreatorStep[]
+  sections?: CreatorSection[]
 }
 
 /**
  * Shared header for every pathway sub-page in Creator Studio.
- * Renders the back link, collective label, pathway title, status pill,
- * and a compact tab bar (Content / Settings / [Manual releases] +
- * Preview action) so Creators always know where they are.
+ * Renders the artwork header (collective identity + pathway title +
+ * meta) and a compact tab bar below (Content / Settings / About /
+ * [Manual releases] + Preview action). Every sub-page opens with the
+ * same anchor so the creator always knows "which collective am I in,
+ * which pathway am I editing, and where in it am I now."
  */
 export default function PathwayHeader({
   active, spaceName, pathway, showManualReleases,
+  location = null, coverImageUrl = null, steps, sections,
 }: Props) {
   const tabs: { key: Tab; label: string; href: string }[] = [
     { key: 'content',  label: 'Content',  href: `/creator-studio/pathways/${pathway.slug}` },
@@ -41,45 +59,37 @@ export default function PathwayHeader({
     })
   }
 
-  // The Preview button always targets the creator-authorised preview
-  // route. That route verifies the caller manages the collective, then
-  // redirects into the public pathway URL. The public URL 404s for
-  // unauthorised callers, so nothing about published/draft access
-  // changes for public visitors.
   const previewHref = `/creator-studio/pathways/${pathway.slug}/preview`
+
+  const statusLabel = STATUS_LABEL[pathway.status] ?? pathway.status
+  const metaParts: string[] = []
+  if (steps && steps.length > 0) {
+    metaParts.push(`${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`)
+  }
+  if (sections && sections.length > 0) {
+    metaParts.push(`${sections.length} ${sections.length === 1 ? 'section' : 'sections'}`)
+  }
+  metaParts.push(statusLabel)
 
   return (
     <div className="mb-6">
       <Link
         href="/creator-studio/pathways"
-        className="mb-4 inline-flex items-center gap-1.5 text-[13px] text-black transition-colors hover:text-teal-700"
+        className="mb-4 inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700"
       >
         ← Back to Pathways
       </Link>
-      <p
-        className="mt-4 text-[11px] font-semibold uppercase tracking-[0.16em]"
-        style={{ color: '#38A09E' }}
-      >
-        {spaceName}
-      </p>
-      <div className="mt-1.5 flex flex-wrap items-center gap-3">
-        <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">
-          {pathway.title}
-        </h1>
-        <span
-          className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-          style={{
-            background: 'rgba(56,160,158,0.10)',
-            color: '#0f766e',
-            border: '1px solid rgba(56,160,158,0.20)',
-          }}
-        >
-          {STATUS_LABEL[pathway.status] ?? pathway.status}
-        </span>
-      </div>
+
+      <CollectiveArtworkHeader
+        collectiveName={spaceName}
+        sectionTitle={pathway.title}
+        meta={metaParts.join(' · ')}
+        location={location}
+        coverImageUrl={coverImageUrl}
+      />
 
       {/* Tab bar + Preview action */}
-      <div className="mt-5 flex flex-wrap items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-1.5">
           {tabs.map((tab) => {
             const isActive = tab.key === active

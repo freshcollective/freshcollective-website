@@ -5,9 +5,11 @@ import {
   getCreatorPathwayAboutBlocks,
   getCreatorMedia,
   getCreatorResources,
+  getCreatorSections,
+  getCreatorSpace,
   getCreatorSteps,
 } from '@/lib/serverApi'
-import type { PathwayAboutBlock, CreatorMediaAsset, CreatorResource, CreatorStep } from '@/types/platform'
+import type { PathwayAboutBlock, CreatorMediaAsset, CreatorResource, CreatorSection, CreatorSpaceDetail, CreatorStep } from '@/types/platform'
 import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
 import AboutPageEditor from '../AboutPageEditor'
 import PathwayHeader from '../PathwayHeader'
@@ -21,18 +23,22 @@ export default async function EditAboutPage({ params }: Props) {
   const activeSpace = await getActiveCreatorSpace()
   if (!activeSpace) notFound()
 
-  const [pathway, blocks, mediaAssets, resources, steps]: [
+  const [pathway, blocks, mediaAssets, resources, steps, sections, spaceDetail]: [
     Awaited<ReturnType<typeof getCreatorPathway>>,
     PathwayAboutBlock[],
     CreatorMediaAsset[],
     CreatorResource[],
     CreatorStep[],
+    CreatorSection[],
+    CreatorSpaceDetail | null,
   ] = await Promise.all([
     getCreatorPathway(activeSpace.slug, pathwaySlug),
     getCreatorPathwayAboutBlocks(activeSpace.slug, pathwaySlug),
     getCreatorMedia(activeSpace.slug),
     getCreatorResources(activeSpace.slug),
     getCreatorSteps(activeSpace.slug, pathwaySlug),
+    getCreatorSections(activeSpace.slug, pathwaySlug),
+    getCreatorSpace(activeSpace.slug) as Promise<CreatorSpaceDetail | null>,
   ])
 
   if (!pathway) notFound()
@@ -46,6 +52,10 @@ export default async function EditAboutPage({ params }: Props) {
         spaceName={activeSpace.name}
         pathway={pathway}
         showManualReleases={hasManualStep}
+        location={spaceDetail?.location ?? null}
+        coverImageUrl={spaceDetail?.cover_image_url ?? null}
+        steps={steps}
+        sections={sections}
       />
       <AboutPageEditor
         spaceSlug={activeSpace.slug}

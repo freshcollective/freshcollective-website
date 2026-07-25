@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getActiveCreatorSpace, getCreatorMedia, getCreatorPathway, getCreatorSteps } from '@/lib/serverApi'
-import type { CreatorMediaAsset, CreatorPathway, CreatorStep } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorMedia, getCreatorPathway, getCreatorSections, getCreatorSpace, getCreatorSteps } from '@/lib/serverApi'
+import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorSpaceDetail, CreatorStep } from '@/types/platform'
 import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
 import PathwayHeader from '../PathwayHeader'
 import PathwaySettingsClient from '../PathwaySettingsClient'
@@ -33,12 +33,14 @@ export default async function PathwaySettingsPage({ params }: Props) {
 
   // Settings does not use the steps list itself, but we still need to know
   // whether the Manual releases tab should be surfaced in the shared header.
-  const [pathway, steps, mediaAssets]: [
-    CreatorPathway | null, CreatorStep[], CreatorMediaAsset[],
+  const [pathway, steps, sections, mediaAssets, spaceDetail]: [
+    CreatorPathway | null, CreatorStep[], CreatorSection[], CreatorMediaAsset[], CreatorSpaceDetail | null,
   ] = await Promise.all([
     getCreatorPathway(activeSpace.slug, pathwaySlug),
     getCreatorSteps(activeSpace.slug, pathwaySlug),
+    getCreatorSections(activeSpace.slug, pathwaySlug),
     getCreatorMedia(activeSpace.slug),
+    getCreatorSpace(activeSpace.slug) as Promise<CreatorSpaceDetail | null>,
   ])
 
   if (!pathway) notFound()
@@ -52,6 +54,10 @@ export default async function PathwaySettingsPage({ params }: Props) {
         spaceName={activeSpace.name}
         pathway={pathway}
         showManualReleases={hasManualStep}
+        location={spaceDetail?.location ?? null}
+        coverImageUrl={spaceDetail?.cover_image_url ?? null}
+        steps={steps}
+        sections={sections}
       />
       <PathwaySettingsClient
         pathway={pathway}

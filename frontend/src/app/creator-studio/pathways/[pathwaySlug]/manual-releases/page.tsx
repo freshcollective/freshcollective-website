@@ -2,10 +2,12 @@ import { notFound } from 'next/navigation'
 import {
   getActiveCreatorSpace,
   getCreatorPathway,
+  getCreatorSections,
+  getCreatorSpace,
   getCreatorSteps,
   serverFetch,
 } from '@/lib/serverApi'
-import type { CreatorPathway, CreatorStep, SpaceSummary } from '@/types/platform'
+import type { CreatorPathway, CreatorSection, CreatorSpaceDetail, CreatorStep, SpaceSummary } from '@/types/platform'
 import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
 import ManualReleasesClient from './ManualReleasesClient'
 import PathwayHeader from '../PathwayHeader'
@@ -44,11 +46,13 @@ export default async function ManualReleasesPage({ params }: Props) {
     )
   }
 
-  const [pathway, steps, releasesRes]: [
-    CreatorPathway | null, CreatorStep[], Response,
+  const [pathway, steps, sections, spaceDetail, releasesRes]: [
+    CreatorPathway | null, CreatorStep[], CreatorSection[], CreatorSpaceDetail | null, Response,
   ] = await Promise.all([
     getCreatorPathway(space.slug, pathwaySlug),
     getCreatorSteps(space.slug, pathwaySlug),
+    getCreatorSections(space.slug, pathwaySlug),
+    getCreatorSpace(space.slug) as Promise<CreatorSpaceDetail | null>,
     serverFetch(`/api/creator/spaces/${space.slug}/pathways/${pathwaySlug}/manual-releases`),
   ])
 
@@ -64,6 +68,10 @@ export default async function ManualReleasesPage({ params }: Props) {
         spaceName={space.name}
         pathway={pathway}
         showManualReleases={hasManualStep}
+        location={spaceDetail?.location ?? null}
+        coverImageUrl={spaceDetail?.cover_image_url ?? null}
+        steps={steps}
+        sections={sections}
       />
 
       <div className="mb-6">

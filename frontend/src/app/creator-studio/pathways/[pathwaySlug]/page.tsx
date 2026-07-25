@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getActiveCreatorSpace, getCreatorMedia, getCreatorPathway, getCreatorSections, getCreatorSteps } from '@/lib/serverApi'
-import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorMedia, getCreatorPathway, getCreatorSections, getCreatorSpace, getCreatorSteps } from '@/lib/serverApi'
+import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorSpaceDetail, CreatorStep } from '@/types/platform'
 import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
 import PathwayContentClient from './PathwayContentClient'
 import PathwayHeader from './PathwayHeader'
@@ -31,13 +31,14 @@ export default async function EditPathwayPage({ params }: Props) {
     )
   }
 
-  const [pathway, steps, sections, mediaAssets]: [
-    CreatorPathway | null, CreatorStep[], CreatorSection[], CreatorMediaAsset[],
+  const [pathway, steps, sections, mediaAssets, spaceDetail]: [
+    CreatorPathway | null, CreatorStep[], CreatorSection[], CreatorMediaAsset[], CreatorSpaceDetail | null,
   ] = await Promise.all([
     getCreatorPathway(activeSpace.slug, pathwaySlug),
     getCreatorSteps(activeSpace.slug, pathwaySlug),
     getCreatorSections(activeSpace.slug, pathwaySlug),
     getCreatorMedia(activeSpace.slug),
+    getCreatorSpace(activeSpace.slug) as Promise<CreatorSpaceDetail | null>,
   ])
 
   if (!pathway) notFound()
@@ -51,6 +52,10 @@ export default async function EditPathwayPage({ params }: Props) {
         spaceName={activeSpace.name}
         pathway={pathway}
         showManualReleases={hasManualStep}
+        location={spaceDetail?.location ?? null}
+        coverImageUrl={spaceDetail?.cover_image_url ?? null}
+        steps={steps}
+        sections={sections}
       />
       <PathwayContentClient
         pathway={pathway}
