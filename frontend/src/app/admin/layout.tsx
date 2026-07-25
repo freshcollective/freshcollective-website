@@ -37,10 +37,17 @@ export default async function AdminLayout({
   const headerStore = await headers()
   const pathname = headerStore.get('x-invoke-path') ?? '/admin'
 
+  // The admin login page must render WITHOUT the AdminShell chrome and
+  // WITHOUT the auth guard — it's the door in. Everything else under
+  // /admin/* stays gated.
+  if (pathname.startsWith('/admin/login')) {
+    return children
+  }
+
   const user = await getAdminUser()
 
   if (!user) {
-    redirect(`/login?next=${encodeURIComponent(pathname)}`)
+    redirect(`/admin/login?next=${encodeURIComponent(pathname)}`)
   }
 
   if (user.role !== 'admin') {

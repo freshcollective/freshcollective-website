@@ -49,6 +49,13 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   },
 ]
 
+// Admin-personal nav — belongs to the signed-in administrator, not to
+// the platform. Rendered as its own visually-separated block below the
+// world-management sections.
+const ADMIN_ACCOUNT_ITEMS: NavItem[] = [
+  { href: '/admin/account', label: 'Your account' },
+]
+
 function SidebarContent({
   pathname,
   userEmail,
@@ -110,6 +117,35 @@ function SidebarContent({
             </div>
           </div>
         ))}
+
+        {/* Admin-personal section — visually separated from the
+             world-management sections above. Belongs to the signed-in
+             admin, not to the platform. */}
+        <div className="mt-4 border-t border-[#E2E8F0] pt-4">
+          <p className="mb-1 px-3 text-[10px] font-bold uppercase tracking-[0.16em] text-[#000000]">
+            ADMIN
+          </p>
+          <div className="space-y-0.5">
+            {ADMIN_ACCOUNT_ITEMS.map(({ href, label: itemLabel }) => {
+              const active = pathname === href || pathname.startsWith(href + '/')
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={onNav}
+                  className={`flex items-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
+                    active
+                      ? 'bg-teal-50 text-teal-700'
+                      : 'text-[#000000] hover:bg-[#F1F5F9] hover:text-[#0F172A]'
+                  }`}
+                  style={active ? { border: '1px solid rgba(56,160,158,0.2)' } : { border: '1px solid transparent' }}
+                >
+                  {itemLabel}
+                </Link>
+              )
+            })}
+          </div>
+        </div>
       </nav>
 
       {/* Footer */}
