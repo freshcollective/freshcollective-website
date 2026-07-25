@@ -172,7 +172,7 @@ function StepRow({
 
       <span
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-        style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
+        style={{ background: 'rgba(12,24,38,0.05)', color: '#475569' }}
       >
         {num}
       </span>
@@ -472,7 +472,7 @@ function PathwayStructure({
       {/* ── Header ── */}
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[16px] font-semibold text-navy-900">Pathway structure</h2>
+          <h2 className="text-[17px] font-semibold tracking-tight text-navy-900">Pathway structure</h2>
           <p className="mt-0.5 text-[13px] text-black">
             {isEmpty
               ? 'Add steps to shape the journey, or create sections to organise them into modules.'
@@ -544,10 +544,24 @@ function PathwayStructure({
             const isAddingHere = addingToContext === section.id
 
             return (
-              <div key={section.id} className="overflow-hidden rounded-xl border border-slate-200">
+              <div
+                key={section.id}
+                className="overflow-hidden rounded-xl"
+                style={{
+                  border: '1px solid rgba(12,24,38,0.08)',
+                  borderLeft: '3px solid #38A09E',
+                }}
+              >
 
-                {/* Section header */}
-                <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2.5">
+                {/* Section header — teal-tinted anchor row */}
+                <div
+                  className="flex items-center gap-2.5 px-4 py-2.5"
+                  style={{
+                    background:
+                      'linear-gradient(90deg, rgba(56,160,158,0.08) 0%, rgba(56,160,158,0.02) 60%, rgba(255,255,255,0) 100%)',
+                    borderBottom: '1px solid rgba(56,160,158,0.16)',
+                  }}
+                >
                   {/* Reorder buttons */}
                   <div className="flex shrink-0 flex-col gap-px">
                     <button
@@ -574,6 +588,18 @@ function PathwayStructure({
                     </button>
                   </div>
 
+                  {/* Section ordinal chip — the primary teal anchor */}
+                  <span
+                    className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.10em]"
+                    style={{
+                      background: 'rgba(56,160,158,0.14)',
+                      color: '#0f766e',
+                      border: '1px solid rgba(56,160,158,0.22)',
+                    }}
+                  >
+                    Section {sectionIdx + 1}
+                  </span>
+
                   {/* Title / edit input */}
                   {isEditing ? (
                     <input
@@ -584,10 +610,10 @@ function PathwayStructure({
                         if (e.key === 'Enter') handleSectionRename(section.id)
                         if (e.key === 'Escape') setEditingSectionId(null)
                       }}
-                      className="flex-1 rounded-lg border border-teal-300 bg-white px-2.5 py-1 text-[13px] text-navy-900 outline-none"
+                      className="flex-1 rounded-lg border border-teal-300 bg-white px-2.5 py-1 text-[15px] font-semibold tracking-tight text-navy-900 outline-none"
                     />
                   ) : (
-                    <span className="flex-1 text-[13px] font-semibold text-navy-900">
+                    <span className="flex-1 text-[15px] font-semibold tracking-tight text-navy-900">
                       {section.title}
                     </span>
                   )}
@@ -661,7 +687,7 @@ function PathwayStructure({
 
                 {/* Steps in this section */}
                 {sectionSteps.length > 0 && (
-                  <div className="divide-y divide-slate-50">
+                  <div className="divide-y divide-slate-100">
                     {sectionSteps.map((step, stepIdx) => (
                       <StepRow
                         key={step.id}
@@ -712,15 +738,26 @@ function PathwayStructure({
             )
           })}
 
-          {/* Unsectioned group — shown after sections */}
+          {/* Unsectioned group — shown after sections. Kept visually
+              quieter than sectioned rows so genuine sections read as the
+              primary anchors. */}
           {unsectionedSteps.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-dashed border-slate-200">
-              <div className="border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
-                <span className="text-[12px] font-medium text-black">
+            <div
+              className="overflow-hidden rounded-xl"
+              style={{ border: '1px dashed rgba(12,24,38,0.18)' }}
+            >
+              <div
+                className="px-4 py-2.5"
+                style={{
+                  background: 'rgba(12,24,38,0.02)',
+                  borderBottom: '1px solid rgba(12,24,38,0.06)',
+                }}
+              >
+                <span className="text-[12px] font-medium uppercase tracking-[0.08em] text-slate-500">
                   Unsectioned · {unsectionedSteps.length} {unsectionedSteps.length === 1 ? 'step' : 'steps'}
                 </span>
               </div>
-              <div className="divide-y divide-slate-50">
+              <div className="divide-y divide-slate-100">
                 {unsectionedSteps.map((step, stepIdx) => (
                   <StepRow
                     key={step.id}
@@ -746,7 +783,7 @@ function PathwayStructure({
       {/* ── Flat view (no sections) ── */}
       {sections.length === 0 && sortedFlatSteps.length > 0 && (
         <div className="mb-4 overflow-hidden rounded-xl border border-slate-200">
-          <div className="divide-y divide-slate-50">
+          <div className="divide-y divide-slate-100">
             {sortedFlatSteps.map((step, i) => (
               <StepRow
                 key={step.id}
