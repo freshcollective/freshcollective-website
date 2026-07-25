@@ -640,13 +640,19 @@ def get_space(
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ) -> SpaceResponse:
+    # Managers of a collective can see it via the space overview even when
+    # it's draft/archived, so the Creator Studio Preview flow works
+    # end-to-end (the SpaceLayout hits this endpoint before any pathway
+    # page renders). Public / non-manager callers still get 404.
     space = (
         db.query(Space)
         .options(selectinload(Space.pathways))
-        .filter(Space.slug == slug, Space.status == "active")
+        .filter(Space.slug == slug)
         .first()
     )
-    if not space:
+    if not space or (
+        space.status != "active" and not _user_manages_space(current_user, space, db)
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
     if not space.is_public and current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
@@ -714,7 +720,7 @@ def get_my_access(
     current_user: User = Depends(get_current_user),
 ) -> SpaceAccessStatus:
     """Return the current user's access state for this Space."""
-    space = _get_space_or_404(slug, db)
+    space = _get_space_visible_to(slug, db, current_user)
 
     membership = (
         db.query(SpaceMembership)
@@ -1755,7 +1761,7 @@ def get_my_passes(
     current_user: User = Depends(get_current_user),
 ) -> list:
     """Return the current user's active AccessPasses for this space."""
-    space = _get_space_or_404(slug, db)
+    space = _get_space_visible_to(slug, db, current_user)
     membership = (
         db.query(SpaceMembership)
         .filter(
@@ -2894,7 +2900,7 @@ def list_step_comments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[StepCommentItem]:
-    space = _get_space_or_404(slug, db)
+    space = _get_space_visible_to(slug, db, current_user)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
     _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
