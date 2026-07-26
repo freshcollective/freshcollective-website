@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { apiUrl } from '@/lib/api'
 import { SESSION_COOKIE } from '@/lib/session'
@@ -70,13 +69,6 @@ export default async function AdminAccountPage() {
           Password
         </p>
         <ChangePasswordForm />
-        <p className="mt-4 text-[12px] italic" style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}>
-          Forgotten your password?{' '}
-          <Link href="/forgot-password" className="text-teal-700 not-italic underline underline-offset-2 hover:text-teal-800">
-            Reset it here
-          </Link>
-          .
-        </p>
       </section>
 
       {/* Sign out */}

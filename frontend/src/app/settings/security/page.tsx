@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import { getMe } from '@/lib/serverApi'
 import ChangePasswordForm from '@/components/settings/ChangePasswordForm'
 import LogoutButton from '@/components/layout/LogoutButton'
@@ -37,13 +36,6 @@ export default async function SettingsSecurityPage() {
         <div className="rounded-xl border border-border bg-surface px-6 py-5">
           <ChangePasswordForm />
         </div>
-        <p className="mt-2 text-xs text-black">
-          Forgotten your password?{' '}
-          <Link href="/forgot-password" className="text-teal-600 hover:underline">
-            Reset it here
-          </Link>
-          .
-        </p>
       </section>
 
       {/* Sign out */}
