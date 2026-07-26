@@ -35,12 +35,17 @@ export default async function AdminLayout({
   children: React.ReactNode
 }) {
   const headerStore = await headers()
-  const pathname = headerStore.get('x-invoke-path') ?? '/admin'
+  // ``x-pathname`` is set by the proxy middleware (src/proxy.ts) so
+  // this server layout can tell which /admin/* URL was requested. App
+  // Router does not otherwise surface the current pathname to a layout.
+  // Falls back to /admin so the guard fails safe when the header is
+  // missing (e.g. during a direct programmatic render).
+  const pathname = headerStore.get('x-pathname') ?? '/admin'
 
   // The admin login page must render WITHOUT the AdminShell chrome and
   // WITHOUT the auth guard — it's the door in. Everything else under
   // /admin/* stays gated.
-  if (pathname.startsWith('/admin/login')) {
+  if (pathname === '/admin/login' || pathname.startsWith('/admin/login/')) {
     return children
   }
 

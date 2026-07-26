@@ -1,52 +1,27 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
-
-// Public space routes:
-//   /spaces                                         — browse
-//   /spaces/[slug]                                  — redirects to /pathways
-//   /spaces/[slug]/about                            — space about page
-//   /spaces/[slug]/pathways                         — pathway list (public)
-//   /spaces/[slug]/pathways/[pathway-slug]/about    — pathway about/checkout page
-// Everything else requires authentication.
-function isSpacesRouteProtected(pathname: string): boolean {
-  const segments = pathname.split('/').filter(Boolean)
-  if (segments.length <= 1) return false  // /spaces
-  if (segments.length === 2) return false  // /spaces/[slug]
-  if (segments[2] === 'about') return false  // /spaces/[slug]/about
-  if (segments[2] === 'pathways' && segments.length === 3) return false  // /spaces/[slug]/pathways
-  if (segments[2] === 'pathways' && segments.length >= 5 && segments[4] === 'about') return false  // pathway about
-  if (segments[2] === 'pathways' && segments.length >= 5 && segments[4] === 'checkout') return false  // checkout (option selection public; Stripe creation gated in UI)
-  return true
-}
-
-const PROTECTED_PREFIXES = ['/dashboard', '/admin', '/creator', '/profile', '/settings', '/onboarding']
-const AUTH_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password']
+import { decide } from '@/proxyRouting'
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
-
-  const isSpacesPath = pathname === '/spaces' || pathname.startsWith('/spaces/')
-  const isProtected = isSpacesPath
-    ? isSpacesRouteProtected(pathname)
-    : PROTECTED_PREFIXES.some((p) => pathname.startsWith(p))
-  const isAuthRoute = AUTH_ROUTES.some((r) => pathname.startsWith(r))
-
-  if (!isProtected && !isAuthRoute) return NextResponse.next()
-
   const token = request.cookies.get(SESSION_COOKIE)?.value
   const authenticated = token ? await verifySessionToken(token) : false
 
-  if (isProtected && !authenticated) {
-    const url = new URL('/login', request.url)
-    url.searchParams.set('next', pathname)
-    return NextResponse.redirect(url)
+  const decision = decide(pathname, authenticated)
+  if (decision.action === 'next') {
+    // Expose the request pathname to server components via a request
+    // header. App Router does not give layouts/pages the current
+    // pathname directly; the admin layout needs it to skip its auth
+    // guard for /admin/login (otherwise the layout would redirect the
+    // login page back to itself in a loop).
+    const forwardHeaders = new Headers(request.headers)
+    forwardHeaders.set('x-pathname', pathname)
+    return NextResponse.next({ request: { headers: forwardHeaders } })
   }
 
-  if (isAuthRoute && authenticated) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
-  return NextResponse.next()
+  const url = new URL(decision.to, request.url)
+  if (decision.next) url.searchParams.set('next', decision.next)
+  return NextResponse.redirect(url)
 }
 
 export const config = {
