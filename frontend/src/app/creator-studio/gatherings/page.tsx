@@ -1,7 +1,8 @@
 import Link from 'next/link'
-import { getActiveCreatorSpace, getCreatorEvents } from '@/lib/serverApi'
-import type { CreatorEvent } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorEvents, getCreatorSpace } from '@/lib/serverApi'
+import type { CreatorEvent, CreatorSpaceDetail } from '@/types/platform'
 import CreatorEventRow from '@/app/creator/spaces/[slug]/events/CreatorEventRow'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 
 /**
  * Creator Studio → Gatherings.
@@ -16,12 +17,13 @@ export default async function GatheringsPage() {
 
   // Two scoped fetches: `upcoming` drives the list, `archive` is
   // only used to decide whether to expose the archive link.
-  const [upcoming, past]: [CreatorEvent[], CreatorEvent[]] = primarySpace
+  const [upcoming, past, spaceDetail]: [CreatorEvent[], CreatorEvent[], CreatorSpaceDetail | null] = primarySpace
     ? await Promise.all([
         getCreatorEvents(primarySpace.slug, 'upcoming'),
         getCreatorEvents(primarySpace.slug, 'archive'),
+        getCreatorSpace(primarySpace.slug) as Promise<CreatorSpaceDetail | null>,
       ])
-    : [[], []]
+    : [[], [], null]
 
   const hasArchive = past.length > 0
   const now = Date.now()
@@ -37,39 +39,38 @@ export default async function GatheringsPage() {
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
 
-      <div className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <p
-            className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
-            style={{ color: '#38A09E' }}
-          >
-            Creator Studio
-          </p>
-          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Gatherings</h1>
-          <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#000000' }}>
-            Schedule live sessions, circles, workshops, or community touchpoints.
-          </p>
-        </div>
-        {primarySpace && (
-          <div className="mt-1 flex shrink-0 items-center gap-4">
-            {hasArchive && (
+      {primarySpace ? (
+        <CollectiveArtworkHeader
+          collectiveName={primarySpace.name}
+          sectionTitle="Gatherings"
+          meta="Live sessions, circles, workshops and community touchpoints."
+          location={spaceDetail?.location ?? null}
+          coverImageUrl={spaceDetail?.cover_image_url ?? null}
+          action={
+            <div className="flex items-center gap-4">
+              {hasArchive && (
+                <Link
+                  href="/creator-studio/gatherings/archive"
+                  className="text-[13px] font-medium text-white/85 underline-offset-4 transition-colors hover:text-white hover:underline"
+                >
+                  {archiveLinkLabel}
+                </Link>
+              )}
               <Link
-                href="/creator-studio/gatherings/archive"
-                className="text-[13px] font-medium text-navy-700 underline-offset-4 transition-colors hover:text-teal-600 hover:underline"
+                href={`/creator/spaces/${primarySpace.slug}/events/new`}
+                className="rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
               >
-                {archiveLinkLabel}
+                + Create Gathering
               </Link>
-            )}
-            <Link
-              href={`/creator/spaces/${primarySpace.slug}/events/new`}
-              className="rounded-xl px-4 py-2 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-            >
-              + Create Gathering
-            </Link>
-          </div>
-        )}
-      </div>
+            </div>
+          }
+        />
+      ) : (
+        <div className="mb-8">
+          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Gatherings</h1>
+        </div>
+      )}
 
       {/* No collective yet */}
       {!primarySpace && (

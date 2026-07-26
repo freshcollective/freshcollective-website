@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { AccessRequest, AccessPassAdminSummary, AddMemberResponse, CreatorMemberDetail, CreatorPathway, DirectMessageItem, ManualMember, ManualMemberPathwayAccess, MemberBookingItem, MemberPathwayAccessItem, MessageThreadDetail, SpaceInvitation } from '@/types/platform'
 import { apiUrl } from '@/lib/api'
 import { formatPathwayPrice } from '@/lib/pathwayAccess'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 
 // ---------------------------------------------------------------------------
 // Display helpers
@@ -2648,9 +2649,11 @@ interface Props {
   spaceName:      string
   spaceSlug:      string
   spaceIsPublic:  boolean
+  headerLocation: { name?: string; hero_artwork_url?: string | null; thumbnail_artwork_url?: string | null } | null
+  headerCoverImageUrl: string | null
 }
 
-export default function PeopleClient({ members: initialMembers, invitations, accessRequests: initialAccessRequests, manualMembers: initialManualMembers, spaceName, spaceSlug, spaceIsPublic }: Props) {
+export default function PeopleClient({ members: initialMembers, invitations, accessRequests: initialAccessRequests, manualMembers: initialManualMembers, spaceName, spaceSlug, spaceIsPublic, headerLocation, headerCoverImageUrl }: Props) {
   const router = useRouter()
   const [membersList, setMembersList]                   = useState<CreatorMemberDetail[]>(initialMembers)
   const [manualMembersList, setManualMembersList]       = useState<ManualMember[]>(initialManualMembers)
@@ -2708,21 +2711,16 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
   return (
     <div className="w-full max-w-[1100px] space-y-8 px-8 py-8 md:px-10 md:py-10">
 
-      {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
-            {spaceName}
-          </p>
-          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">People</h1>
-          <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#000000' }}>
-            Manage members, invitations, and access for this collective.
-          </p>
-        </div>
-        <div className="mt-1 flex shrink-0 flex-col gap-2 sm:flex-row">
+      <CollectiveArtworkHeader
+        collectiveName={spaceName}
+        sectionTitle="People"
+        meta="Members, invitations and access for this collective."
+        location={headerLocation}
+        coverImageUrl={headerCoverImageUrl}
+        action={
           <button
             onClick={() => setAddPersonOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+            className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -2730,8 +2728,8 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
             </svg>
             Add member
           </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* ── Stats ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">

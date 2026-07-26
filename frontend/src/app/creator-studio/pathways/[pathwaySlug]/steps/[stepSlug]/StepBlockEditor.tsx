@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import { AddBlockPicker } from '@/components/creator/BlockEditorShared'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import DraggableBlockList from '@/components/creator/DraggableBlockList'
 import ReleaseRuleEditor, {
   type ReleaseRuleValue,
@@ -45,6 +46,13 @@ interface Props {
    *  the "Step N of N" breadcrumb line; ``null`` hides the line. */
   stepIndex?: number | null
   totalSteps?: number
+  /** Collective context feeding the slim page header at the top of
+   *  the editor. Resolved from the same authoritative source as the
+   *  page (active-collective cookie synced to the URL slug), so the
+   *  banner and the document can never disagree. */
+  collectiveName: string
+  collectiveLocation: { name?: string; hero_artwork_url?: string | null; thumbnail_artwork_url?: string | null } | null
+  collectiveCoverImageUrl: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +146,7 @@ function releaseSummary(value: ReleaseRuleValue): string {
 export default function StepBlockEditor({
   spaceSlug, pathway, step, initialBlocks, mediaAssets, resources = [],
   backHref, backLabel, stepIndex = null, totalSteps = 0,
+  collectiveName, collectiveLocation, collectiveCoverImageUrl,
 }: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -352,38 +361,40 @@ export default function StepBlockEditor({
       className="min-h-full w-full bg-white px-8 py-8 md:px-10 md:py-10"
     >
 
+      {/* Slim shared page header — carries the collective identity for
+          this focused writing view. Kept intentionally short so the
+          document sits close to the fold. Below it, the compact
+          breadcrumb + editable title strip continues to own the
+          step-specific writing experience. */}
+      <div className="mx-auto max-w-3xl">
+        <CollectiveArtworkHeader
+          collectiveName={collectiveName}
+          sectionTitle={stepTitle || step.title}
+          variant="slim"
+          meta={
+            <>
+              <span>{pathway.title}</span>
+              {stepIndex !== null && totalSteps > 0 && (
+                <>
+                  <span className="mx-2 text-white/50" aria-hidden="true">·</span>
+                  <span>Step {stepIndex + 1} of {totalSteps}</span>
+                </>
+              )}
+            </>
+          }
+          backLink={{ href: resolvedBackHref, label: resolvedBackLabel.replace(/^← /, '') }}
+          location={collectiveLocation}
+          coverImageUrl={collectiveCoverImageUrl}
+        />
+      </div>
+
       {/* ────────────────────────────────────────────────────────────
-          Compact header. Breadcrumb sits at the top; the step title
-          becomes the document's editable H1; the metadata strip
-          replaces the three former settings sections; the Save
-          changes affordance sits inline so the writer sees whether
-          there is unsaved work without a persistent commit button
-          dominating the page.
+          Compact editor header. The editable H1 remains the writer's
+          primary title control; the slim collective header above
+          provides context without stealing focus.
           ──────────────────────────────────────────────────────────── */}
       <header className="mx-auto max-w-3xl">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Link
-            href={resolvedBackHref}
-            className="text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700"
-          >
-            {resolvedBackLabel}
-          </Link>
-          <span className="text-slate-300" aria-hidden="true">·</span>
-          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            {pathway.title}
-          </span>
-          {stepIndex !== null && totalSteps > 0 && (
-            <>
-              <span className="text-slate-300" aria-hidden="true">·</span>
-              <span
-                className="text-[12.5px] italic"
-                style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}
-              >
-                Step {stepIndex + 1} of {totalSteps}
-              </span>
-            </>
-          )}
-
           {/* Save affordance — quiet when clean, primary when dirty.
               Anchored top-right so the writer always knows where to
               commit without a persistent button dominating the page. */}

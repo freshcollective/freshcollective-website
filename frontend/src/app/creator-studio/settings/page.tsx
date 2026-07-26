@@ -6,6 +6,7 @@ import {
 } from '@/lib/serverApi'
 import type { CreatorSpaceDetail } from '@/types/platform'
 import type { BuildYourCollectiveOptions } from '@/lib/build-your-collective/types'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import SettingsTabbedShell from './SettingsTabbedShell'
 
 async function _safe<T>(p: Promise<T>, slug: string, label: string, fallback: T): Promise<T> {
@@ -53,23 +54,21 @@ export default async function SettingsPage() {
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
 
-      {/* Page header */}
-      <div className="mb-8">
-        {primarySpace && (
-          <p
-            className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500"
-          >
-            {primarySpace.name}
-          </p>
-        )}
-        <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Collective Settings</h1>
-        <p
-          className="mt-2 max-w-xl text-[14.5px] leading-relaxed italic"
-          style={{ color: 'rgba(12, 24, 38, 0.65)', fontFamily: 'Georgia, serif' }}
-        >
-          Manage how this collective is described, discovered and experienced.
-        </p>
-      </div>
+      {primarySpace && (
+        <CollectiveArtworkHeader
+          collectiveName={primarySpace.name}
+          sectionTitle="Collective Settings"
+          meta="Shape where this collective lives, how it feels and how people experience it."
+          location={spaceDetail?.location ?? null}
+          coverImageUrl={spaceDetail?.cover_image_url ?? null}
+        />
+      )}
+
+      {!primarySpace && (
+        <div className="mb-8">
+          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Collective Settings</h1>
+        </div>
+      )}
 
       {!primarySpace && (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">

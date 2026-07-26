@@ -99,6 +99,25 @@ export function safeNextFor(loginPath: string, pathname: string): string {
 }
 
 /**
+ * If ``pathname`` is a legacy Creator Studio URL of the form
+ * ``/creator/spaces/[slug]/…``, return the slug so the proxy can sync
+ * the active-collective cookie to match. Otherwise ``null``.
+ *
+ * The URL is authoritative on these routes — the page renders content
+ * for the slug in ``params``, so the sidebar (which reads the cookie)
+ * MUST agree. Without this sync, opening a bookmarked link, following
+ * a link from Your World that targets a non-active collective, or
+ * arriving from Build Your Collective all leave the sidebar showing
+ * a different collective from the page.
+ */
+const CREATOR_SPACE_URL = /^\/creator\/spaces\/([^/?#]+)(?:\/|$)/
+
+export function extractCreatorSpaceSlug(pathname: string): string | null {
+  const match = pathname.match(CREATOR_SPACE_URL)
+  return match ? match[1] : null
+}
+
+/**
  * Pure routing decision for a given (pathname, authenticated) pair.
  * Exported for unit testing.
  */

@@ -73,19 +73,13 @@ export default function PathwayHeader({
 
   return (
     <div className="mb-6">
-      <Link
-        href="/creator-studio/pathways"
-        className="mb-4 inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-700"
-      >
-        ← Back to Pathways
-      </Link>
-
       <CollectiveArtworkHeader
         collectiveName={spaceName}
         sectionTitle={pathway.title}
         meta={metaParts.join(' · ')}
         location={location}
         coverImageUrl={coverImageUrl}
+        backLink={{ href: '/creator-studio/pathways', label: 'Back to Pathways' }}
       />
 
       {/* Tab bar + Preview action */}

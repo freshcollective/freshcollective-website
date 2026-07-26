@@ -1,28 +1,34 @@
-import { getActiveCreatorSpace, getCreatorResources, getCreatorPathways } from '@/lib/serverApi'
-import type { CreatorPathway, CreatorResource } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorResources, getCreatorPathways, getCreatorSpace } from '@/lib/serverApi'
+import type { CreatorPathway, CreatorResource, CreatorSpaceDetail } from '@/types/platform'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import ResourcesManager from './ResourcesManager'
 
 export default async function ResourcesPage() {
   const space = await getActiveCreatorSpace()
-  const [resources, pathways]: [CreatorResource[], CreatorPathway[]] = space
-    ? await Promise.all([getCreatorResources(space.slug), getCreatorPathways(space.slug)])
-    : [[], []]
+  const [resources, pathways, spaceDetail]: [CreatorResource[], CreatorPathway[], CreatorSpaceDetail | null] = space
+    ? await Promise.all([
+        getCreatorResources(space.slug),
+        getCreatorPathways(space.slug),
+        getCreatorSpace(space.slug) as Promise<CreatorSpaceDetail | null>,
+      ])
+    : [[], [], null]
 
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
 
-      <div className="mb-8">
-        <p
-          className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: '#38A09E' }}
-        >
-          Creator Studio
-        </p>
-        <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Resources</h1>
-        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#000000' }}>
-          Add standalone links, files, guides, and tools for your members.
-        </p>
-      </div>
+      {space ? (
+        <CollectiveArtworkHeader
+          collectiveName={space.name}
+          sectionTitle="Resources"
+          meta="Standalone links, files, guides and tools for your members."
+          location={spaceDetail?.location ?? null}
+          coverImageUrl={spaceDetail?.cover_image_url ?? null}
+        />
+      ) : (
+        <div className="mb-8">
+          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Resources</h1>
+        </div>
+      )}
 
       {/* Pathway resources info — gold accent, matches member-facing pathway colour */}
       <div

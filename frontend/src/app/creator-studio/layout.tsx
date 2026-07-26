@@ -5,7 +5,6 @@ import {
   getMe,
   getCreatorSpaces,
   getCreatorSpace,
-  getCreatorBilling,
   ACTIVE_SPACE_COOKIE,
 } from '@/lib/serverApi'
 import CreatorStudioShell from './CreatorStudioShell'
@@ -30,37 +29,17 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
   const activeSlug = cookieStore.get(ACTIVE_SPACE_COOKIE)?.value
   const activeSpace = (activeSlug ? spaces.find(s => s.slug === activeSlug) : null) ?? spaces[0] ?? null
 
-  const billing = await getCreatorBilling()
-  const isPlatformOwner = billing?.is_platform_owner ?? false
-  // Platform Owner has no plan, so no numeric limit — the sidebar reads
-  // this alongside `isPlatformOwner` and treats the limit as absent when
-  // the flag is true. For Creators the value comes from their current plan.
-  const collectiveLimit = billing?.current_plan?.collective_limit ?? 1
-
   // Hydrate the active space's palette so the shared colour picker
   // (callouts, container tint, buttons, text/highlight shortcuts)
   // resolves against the correct collective everywhere under
-  // /creator-studio/*. Switching collectives changes the active-space
-  // cookie; the next navigation re-fetches with the new slug so
-  // palette leakage between collectives is not possible.
-  //
-  // Deliberately null when there's no active space (new creator, no
-  // collective yet) — the picker falls back to the "More colours…"
-  // hex flow only.
+  // /creator-studio/*. Switching collectives (via Your World) changes
+  // the active-space cookie; the next navigation re-fetches with the
+  // new slug so palette leakage between collectives is not possible.
   let palette: CollectivePaletteMeta | null = null
-  let activeLocationThumbnail: string | null = null
   if (activeSpace) {
     try {
       const detail = await getCreatorSpace(activeSpace.slug) as CreatorSpaceDetail | null
       palette = detail?.colour_palette ?? null
-      // Atlas v1.2 — the sidebar's switcher renders the Location
-      // thumbnail so the identity of the active collective is legible
-      // at a glance. Prefer the thumbnail; fall back to the hero if
-      // no thumbnail has been curated for this Location.
-      activeLocationThumbnail =
-        detail?.location?.thumbnail_artwork_url
-          ?? detail?.location?.hero_artwork_url
-          ?? null
     } catch (err) {
       console.error(`[creator-studio/layout] palette fetch failed for ${activeSpace.slug}:`, err)
     }
@@ -68,14 +47,7 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
 
   return (
     <CollectivePaletteContextProvider palette={palette}>
-      <CreatorStudioShell
-        user={profile}
-        spaces={spaces}
-        activeSpace={activeSpace}
-        collectiveLimit={collectiveLimit}
-        isPlatformOwner={isPlatformOwner}
-        activeLocationThumbnail={activeLocationThumbnail}
-      >
+      <CreatorStudioShell user={profile} hasCollective={!!activeSpace}>
         {children}
       </CreatorStudioShell>
     </CollectivePaletteContextProvider>

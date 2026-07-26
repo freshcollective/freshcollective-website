@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { getActiveCreatorSpace, getCreatorPasses } from '@/lib/serverApi'
-import type { AccessPassAdminSummary } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorPasses, getCreatorSpace } from '@/lib/serverApi'
+import type { AccessPassAdminSummary, CreatorSpaceDetail } from '@/types/platform'
 import PassesClient from './PassesClient'
 
 export default async function CreatorPassesPage() {
@@ -12,27 +12,32 @@ export default async function CreatorPassesPage() {
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
           <p className="mb-2 text-[16px] font-semibold text-navy-900">Select a collective first.</p>
           <p className="mb-6 text-[14px] leading-relaxed text-black">
-            Choose a collective from the sidebar to see member passes.
+            Choose a collective from Your World to see member passes.
           </p>
           <Link
             href="/creator-studio"
             className="inline-flex items-center rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
             style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
-            Back to Dashboard
+            Your World
           </Link>
         </div>
       </div>
     )
   }
 
-  const passes: AccessPassAdminSummary[] = await getCreatorPasses(activeSpace.slug)
+  const [passes, spaceDetail]: [AccessPassAdminSummary[], CreatorSpaceDetail | null] = await Promise.all([
+    getCreatorPasses(activeSpace.slug),
+    getCreatorSpace(activeSpace.slug) as Promise<CreatorSpaceDetail | null>,
+  ])
 
   return (
     <PassesClient
       passes={passes}
       spaceName={activeSpace.name}
       spaceSlug={activeSpace.slug}
+      headerLocation={spaceDetail?.location ?? null}
+      headerCoverImageUrl={spaceDetail?.cover_image_url ?? null}
     />
   )
 }

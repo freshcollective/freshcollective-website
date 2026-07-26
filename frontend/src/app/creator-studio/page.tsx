@@ -108,6 +108,11 @@ export default async function CreatorStudioHome() {
               ? 'The collective you are tending, ready for whatever comes next.'
               : `The ${spaces.length} collectives you are tending.`}
         </p>
+        {spaces.length > 0 && (
+          <p className="mt-4 text-[13px] text-slate-500">
+            Choose a collective to continue building.
+          </p>
+        )}
       </header>
 
       {/* ── Empty state — no collectives yet ─── */}

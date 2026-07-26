@@ -140,7 +140,10 @@ function Hero({ imageUrl }: { imageUrl: string | null }) {
         <div className="max-w-[640px]">
           <h1
             className="font-serif text-[30px] leading-tight text-white md:text-[42px]"
-            style={{ textShadow: '0 2px 18px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.6)' }}
+            style={{
+              color: '#FFFFFF',
+              textShadow: '0 2px 18px rgba(0, 0, 0, 0.55), 0 1px 3px rgba(0, 0, 0, 0.6)',
+            }}
           >
             {HERO_TITLE}
           </h1>

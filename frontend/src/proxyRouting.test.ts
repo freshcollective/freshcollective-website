@@ -14,7 +14,7 @@
 import { strict as assert } from 'node:assert'
 import { describe, test } from 'node:test'
 // @ts-expect-error - Node-native import path
-import { decide, isAuthRoute, isProtectedRoute, loginPathFor, safeNextFor } from './proxyRouting.ts'
+import { decide, extractCreatorSpaceSlug, isAuthRoute, isProtectedRoute, loginPathFor, safeNextFor } from './proxyRouting.ts'
 
 
 describe('isAuthRoute', () => {
@@ -223,4 +223,27 @@ describe('no redirect loops', () => {
     const second = decide(first.to, false)
     assert.deepEqual(second, { action: 'next' })
   })
+})
+
+
+describe('extractCreatorSpaceSlug — URL is authoritative under /creator/spaces/[slug]', () => {
+  test('extracts the slug from every valid shape', () => {
+    assert.equal(extractCreatorSpaceSlug('/creator/spaces/world-builders'), 'world-builders')
+    assert.equal(extractCreatorSpaceSlug('/creator/spaces/world-builders/'), 'world-builders')
+    assert.equal(extractCreatorSpaceSlug('/creator/spaces/world-builders/pathways'), 'world-builders')
+    assert.equal(extractCreatorSpaceSlug('/creator/spaces/the-grove/pathways/some-pathway/steps/1'), 'the-grove')
+    assert.equal(extractCreatorSpaceSlug('/creator/spaces/embody/events/abc-123'), 'embody')
+  })
+
+  test('does not match unrelated paths', () => {
+    assert.equal(extractCreatorSpaceSlug('/'), null)
+    assert.equal(extractCreatorSpaceSlug('/creator'), null)
+    assert.equal(extractCreatorSpaceSlug('/creator/spaces'), null)
+    assert.equal(extractCreatorSpaceSlug('/creator/support'), null)
+    assert.equal(extractCreatorSpaceSlug('/creator-studio'), null)
+    assert.equal(extractCreatorSpaceSlug('/creator-studio/pathways'), null)
+    assert.equal(extractCreatorSpaceSlug('/spaces/foo'), null)
+    assert.equal(extractCreatorSpaceSlug('/admin'), null)
+  })
+
 })

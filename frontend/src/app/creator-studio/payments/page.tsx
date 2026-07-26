@@ -1,10 +1,18 @@
-import { getCreatorBilling } from '@/lib/serverApi'
+import { getActiveCreatorSpace, getCreatorBilling, getCreatorSpace } from '@/lib/serverApi'
+import type { CreatorSpaceDetail } from '@/types/platform'
 import CreatorPaymentsClient from './CreatorPaymentsClient'
 
 export const metadata = { title: 'Payments — Creator Studio' }
 
 export default async function CreatorPaymentsPage() {
-  const billing = await getCreatorBilling()
+  const [billing, activeSpace] = await Promise.all([
+    getCreatorBilling(),
+    getActiveCreatorSpace(),
+  ])
+  const spaceDetail: CreatorSpaceDetail | null = activeSpace
+    ? ((await getCreatorSpace(activeSpace.slug)) as CreatorSpaceDetail | null)
+    : null
+
   // Platform Owners have no creator plan, so no fee / currency to inherit.
   // The Payments client already handles the platform-owner branch and does
   // not render fee-related UI in that state.
@@ -21,6 +29,9 @@ export default async function CreatorPaymentsPage() {
       stripeEnabled={stripeEnabled}
       stripeTestMode={stripeTestMode}
       isPlatformOwner={isPlatformOwner}
+      headerCollectiveName={activeSpace?.name ?? null}
+      headerLocation={spaceDetail?.location ?? null}
+      headerCoverImageUrl={spaceDetail?.cover_image_url ?? null}
     />
   )
 }

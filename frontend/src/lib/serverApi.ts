@@ -4,7 +4,11 @@ import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
 import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
-export const ACTIVE_SPACE_COOKIE = 'fc_creator_space'
+// Re-export so existing callers keep working. The canonical definition
+// lives in ``@/lib/activeSpaceCookie`` because the proxy middleware also
+// needs it and cannot import from a module that pulls in ``next/headers``.
+import { ACTIVE_SPACE_COOKIE } from './activeSpaceCookie'
+export { ACTIVE_SPACE_COOKIE }
 
 async function fetchWithSession(path: string): Promise<Response> {
   const cookieStore = await cookies()
@@ -408,6 +412,33 @@ export const getCreatorSpace = cache(async (slug: string) => {
   const res = await fetchWithSession(`/api/creator/spaces/${slug}`)
   if (!res.ok) return null
   return res.json()
+})
+
+/**
+ * Header context for the shared collective page header.
+ *
+ * Resolves the active collective from the same authoritative source
+ * used everywhere else (the middleware-synced ``fc_creator_space``
+ * cookie) and returns the identity data the header needs — plus the
+ * summary so pages can re-use the slug + status without a second
+ * fetch. Returns null when the creator has no collectives yet.
+ *
+ * The header MUST render from this same object as the page itself,
+ * otherwise the banner and the page data can drift out of sync.
+ */
+export const getActiveCollectiveHeader = cache(async () => {
+  const space = await getActiveCreatorSpace()
+  if (!space) return null
+  const detail = await getCreatorSpace(space.slug) as import('@/types/platform').CreatorSpaceDetail | null
+  return {
+    space,
+    detail,
+    // Convenience shortcuts for the header component's props.
+    name: space.name,
+    status: space.status,
+    location: detail?.location ?? null,
+    coverImageUrl: detail?.cover_image_url ?? null,
+  }
 })
 
 export const getCreatorPathways = cache(async (slug: string) => {

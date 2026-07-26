@@ -3,11 +3,14 @@
 import { useState, useEffect } from 'react'
 import type { AccessPassAdminSummary, CreatorPathway, CreatorMemberDetail } from '@/types/platform'
 import { apiUrl } from '@/lib/api'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 
 interface Props {
   passes: AccessPassAdminSummary[]
   spaceName: string
   spaceSlug: string
+  headerLocation: { name?: string; hero_artwork_url?: string | null; thumbnail_artwork_url?: string | null } | null
+  headerCoverImageUrl: string | null
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -323,7 +326,7 @@ function GrantPassModal({ spaceSlug, onClose, onGranted }: {
   )
 }
 
-export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
+export default function PassesClient({ passes, spaceName, spaceSlug, headerLocation, headerCoverImageUrl }: Props) {
   const [statusFilter, setStatusFilter] = useState<string>('active')
   const [showGrantModal, setShowGrantModal] = useState(false)
   const [grantKey, setGrantKey] = useState(0)
@@ -334,20 +337,22 @@ export default function PassesClient({ passes, spaceName, spaceSlug }: Props) {
 
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
-      {/* Header */}
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-serif text-2xl text-navy-900">Memberships</h1>
-          <p className="text-[14px] text-black">{spaceName} · Member term passes and session balances</p>
-        </div>
-        <button
-          onClick={() => setShowGrantModal(true)}
-          className="mt-1 shrink-0 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-        >
-          Grant pass
-        </button>
-      </div>
+      <CollectiveArtworkHeader
+        collectiveName={spaceName}
+        sectionTitle="Memberships"
+        meta="Member term passes and session balances."
+        location={headerLocation}
+        coverImageUrl={headerCoverImageUrl}
+        action={
+          <button
+            onClick={() => setShowGrantModal(true)}
+            className="rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          >
+            Grant pass
+          </button>
+        }
+      />
 
       {/* Filters */}
       <div className="mb-5 flex flex-wrap gap-2">

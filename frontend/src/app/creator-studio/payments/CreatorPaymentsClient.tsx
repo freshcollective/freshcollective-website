@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { apiUrl } from '@/lib/api'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 
 interface CreatorPaymentSummary {
   total_gross_amount_cents: number
@@ -121,12 +122,18 @@ export default function CreatorPaymentsClient({
   stripeEnabled,
   stripeTestMode,
   isPlatformOwner,
+  headerCollectiveName,
+  headerLocation,
+  headerCoverImageUrl,
 }: {
   feeBasisPoints: number
   currency: string
   stripeEnabled: boolean
   stripeTestMode: boolean
   isPlatformOwner: boolean
+  headerCollectiveName: string | null
+  headerLocation: { name?: string; hero_artwork_url?: string | null; thumbnail_artwork_url?: string | null } | null
+  headerCoverImageUrl: string | null
 }) {
   const [summary, setSummary] = useState<CreatorPaymentSummary | null>(null)
   const [rows, setRows] = useState<CreatorPaymentTransaction[]>([])
@@ -155,19 +162,19 @@ export default function CreatorPaymentsClient({
   return (
     <div className="w-full max-w-[1100px] px-6 py-8 md:px-10 md:py-10">
 
-      {/* Header */}
-      <div className="mb-6">
-        <p
-          className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: '#38A09E' }}
-        >
-          Creator Studio
-        </p>
-        <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Payments</h1>
-        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#000000' }}>
-          Track member purchases, fees, and estimated payouts for your collectives.
-        </p>
-      </div>
+      {headerCollectiveName ? (
+        <CollectiveArtworkHeader
+          collectiveName={headerCollectiveName}
+          sectionTitle="Payments"
+          meta="Member purchases, fees and estimated payouts across your collectives."
+          location={headerLocation}
+          coverImageUrl={headerCoverImageUrl}
+        />
+      ) : (
+        <div className="mb-6">
+          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Payments</h1>
+        </div>
+      )}
 
       {/* Platform payment status */}
       {stripeEnabled ? (

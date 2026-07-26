@@ -7,8 +7,9 @@ import {
   getCreatorSteps,
   getCreatorMedia,
   getCreatorResources,
+  getCreatorSpace,
 } from '@/lib/serverApi'
-import type { CreatorStep, StepBlock, CreatorMediaAsset, CreatorResource } from '@/types/platform'
+import type { CreatorSpaceDetail, CreatorStep, StepBlock, CreatorMediaAsset, CreatorResource } from '@/types/platform'
 import StepBlockEditor from './StepBlockEditor'
 
 interface Props {
@@ -20,13 +21,14 @@ export default async function StepBlockEditorPage({ params }: Props) {
   const space = await getActiveCreatorSpace()
   if (!space) notFound()
 
-  const [pathway, step, blocks, steps, mediaAssets, resources] = await Promise.all([
+  const [pathway, step, blocks, steps, mediaAssets, resources, spaceDetail] = await Promise.all([
     getCreatorPathway(space.slug, pathwaySlug),
     getCreatorStep(space.slug, pathwaySlug, stepSlug),
     getCreatorStepBlocks(space.slug, pathwaySlug, stepSlug),
     getCreatorSteps(space.slug, pathwaySlug),
     getCreatorMedia(space.slug),
     getCreatorResources(space.slug),
+    getCreatorSpace(space.slug) as Promise<CreatorSpaceDetail | null>,
   ])
 
   if (!pathway || !step) notFound()
@@ -47,6 +49,9 @@ export default async function StepBlockEditorPage({ params }: Props) {
       resources={resources as CreatorResource[]}
       stepIndex={stepIndex >= 0 ? stepIndex : null}
       totalSteps={totalSteps}
+      collectiveName={space.name}
+      collectiveLocation={spaceDetail?.location ?? null}
+      collectiveCoverImageUrl={spaceDetail?.cover_image_url ?? null}
     />
   )
 }

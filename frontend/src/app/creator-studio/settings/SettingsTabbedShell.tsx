@@ -8,20 +8,29 @@ import CollectiveHomePanelSafe from '../assets/CollectiveHomePanelSafe'
 import CollectiveSettingsForm from './CollectiveSettingsForm'
 import GuidancePanelForm from './GuidancePanelForm'
 
-export type SettingsTab = 'details' | 'visibility' | 'pricing' | 'about' | 'members' | 'artwork'
+export type SettingsTab = 'place' | 'details' | 'visibility' | 'pricing' | 'about' | 'members'
+
+const DEFAULT_TAB: SettingsTab = 'place'
 
 const TAB_ORDER: { key: SettingsTab; label: string; helper?: string }[] = [
-  { key: 'details',    label: 'Details',    helper: 'The name, tagline, description and identity assets that define this collective.' },
-  { key: 'visibility', label: 'Visibility', helper: 'Who can find and join this collective.' },
-  { key: 'pricing',    label: 'Pricing',    helper: 'What people will understand about the cost before joining.' },
-  { key: 'about',      label: 'About Page', helper: 'This is the public page people see before joining your collective. Use it to explain what the collective is, who it is for and what people can expect.' },
-  { key: 'members',    label: 'Member Hub', helper: 'Choose what members see when they enter this collective.' },
-  { key: 'artwork',    label: 'Artwork',    helper: 'Where this collective lives, and what that place feels like.' },
+  { key: 'place',      label: 'Place & Feel', helper: 'Where this collective lives, and what that place feels like — Location, atmosphere and palette.' },
+  { key: 'details',    label: 'Details',      helper: 'The name, tagline, description and identity assets that define this collective.' },
+  { key: 'visibility', label: 'Visibility',   helper: 'Who can find and join this collective.' },
+  { key: 'pricing',    label: 'Pricing',      helper: 'What people will understand about the cost before joining.' },
+  { key: 'about',      label: 'About Page',   helper: 'This is the public page people see before joining your collective. Use it to explain what the collective is, who it is for and what people can expect.' },
+  { key: 'members',    label: 'Member Hub',   helper: 'Choose what members see when they enter this collective.' },
 ]
 
 function isValidTab(v: string | null): v is SettingsTab {
-  return v === 'details' || v === 'visibility' || v === 'pricing'
-    || v === 'about' || v === 'members' || v === 'artwork'
+  return v === 'place' || v === 'details' || v === 'visibility' || v === 'pricing'
+    || v === 'about' || v === 'members'
+}
+
+/** Accept older bookmarks / focus links that used the previous key.
+ *  ``?tab=artwork`` was the old name for what is now ``?tab=place``. */
+function normalizeTabParam(v: string | null): SettingsTab {
+  if (v === 'artwork') return 'place'
+  return isValidTab(v) ? v : DEFAULT_TAB
 }
 
 interface Props {
@@ -46,16 +55,13 @@ export default function SettingsTabbedShell({
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const initialTab = isValidTab(searchParams.get('tab')) ? (searchParams.get('tab') as SettingsTab) : 'details'
-  const [tab, setTab] = useState<SettingsTab>(initialTab)
+  const [tab, setTab] = useState<SettingsTab>(() => normalizeTabParam(searchParams.get('tab')))
 
   // Sync tab state to the URL when it changes elsewhere (e.g. Home
   // page focus links point to specific tabs). Keeps browser back /
   // forward + shareable bookmarks working.
   useEffect(() => {
-    const fromUrl = isValidTab(searchParams.get('tab'))
-      ? (searchParams.get('tab') as SettingsTab)
-      : 'details'
+    const fromUrl = normalizeTabParam(searchParams.get('tab'))
     if (fromUrl !== tab) setTab(fromUrl)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
@@ -63,7 +69,7 @@ export default function SettingsTabbedShell({
   function selectTab(next: SettingsTab) {
     setTab(next)
     const params = new URLSearchParams(searchParams.toString())
-    if (next === 'details') params.delete('tab')
+    if (next === DEFAULT_TAB) params.delete('tab')
     else params.set('tab', next)
     const qs = params.toString()
     router.replace(qs ? `?${qs}` : '?', { scroll: false })
@@ -116,11 +122,11 @@ export default function SettingsTabbedShell({
         </p>
       )}
 
-      {/* Artwork tab — Collective Home lives here (Location, atmosphere,
+      {/* Place & Feel — Collective Home lives here (Location, atmosphere,
           palette, relocate). Presentational: edits happen in the
-          build-your-collective flow. No banner/logo here — those live
-          on the Details tab as direct identity assets. */}
-      {tab === 'artwork' && (
+          build-your-collective flow. Banner and Logo remain on the
+          Details tab as direct identity assets. */}
+      {tab === 'place' && (
         <div className="mb-5">
           <CollectiveHomePanelSafe
             slug={spaceDetail.slug}
@@ -138,10 +144,10 @@ export default function SettingsTabbedShell({
 
       {/* Main settings form — kept mounted so in-flight field state
           survives tab switches. Internally conditional on `tab` prop. */}
-      <div className={tab === 'members' || tab === 'artwork' ? 'hidden' : ''}>
+      <div className={tab === 'members' || tab === 'place' ? 'hidden' : ''}>
         <CollectiveSettingsForm
           space={spaceDetail}
-          tab={tab === 'members' || tab === 'artwork' ? 'details' : tab}
+          tab={tab === 'members' || tab === 'place' ? 'details' : tab}
         />
       </div>
     </>

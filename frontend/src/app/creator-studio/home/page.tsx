@@ -15,8 +15,8 @@ import type {
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 
 /**
- * Collective Home — the default landing after entering or switching
- * to a collective.
+ * Collective Overview — the default landing after entering or switching
+ * to a collective. Formerly "Home"; route path unchanged.
  *
  * Answers, in order:
  *   1. Which collective am I in?   → the artwork hero at the top
@@ -35,7 +35,7 @@ export default async function CreatorStudioCollectiveHome() {
     return (
       <div className="mx-auto max-w-[1180px] px-8 py-10 md:px-10 md:py-14">
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
-          Home
+          Collective Overview
         </p>
         <h1 className="font-serif text-[28px] leading-tight text-navy-900 md:text-[36px]">
           You don&apos;t have a collective yet.
@@ -44,7 +44,7 @@ export default async function CreatorStudioCollectiveHome() {
           className="mt-3 max-w-md text-[15px] leading-relaxed italic"
           style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
         >
-          Head back to Your World to build your first collective, or pick one from the switcher.
+          Head back to Your World to build your first collective.
         </p>
         <div className="mt-6 flex gap-3">
           <Link
@@ -125,8 +125,8 @@ export default async function CreatorStudioCollectiveHome() {
       focus.push({
         title: 'No banner or Location artwork',
         desc: 'A banner or Location gives this collective a stronger visual identity.',
-        href: '/creator-studio/settings?tab=artwork',
-        action: 'Set artwork',
+        href: '/creator-studio/settings?tab=place',
+        action: 'Set Place & Feel',
       })
     }
     if (!isDraft && learnerCount === 0) {
@@ -188,10 +188,9 @@ export default async function CreatorStudioCollectiveHome() {
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
 
-      {/* Hero — the collective's own artwork sets the atmosphere */}
       <CollectiveArtworkHeader
         collectiveName={activeSummary.name}
-        sectionTitle={activeSummary.name}
+        sectionTitle="Collective Overview"
         meta={
           <>
             {spaceDetail?.tagline

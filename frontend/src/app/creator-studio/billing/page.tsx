@@ -1,5 +1,6 @@
-import { getCreatorBilling } from '@/lib/serverApi'
-import type { CreatorBillingResponse, CreatorPlanOut } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorBilling, getCreatorSpace } from '@/lib/serverApi'
+import type { CreatorBillingResponse, CreatorPlanOut, CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import BillingFeeCalculator from './BillingFeeCalculator'
 
 export const metadata = { title: 'Billing — Creator Studio' }
@@ -72,7 +73,21 @@ function StatusBadge({
 // ---------------------------------------------------------------------------
 
 export default async function BillingPage() {
-  const billing: CreatorBillingResponse | null = await getCreatorBilling()
+  const [billing, activeSpace]: [CreatorBillingResponse | null, SpaceSummary | null] = await Promise.all([
+    getCreatorBilling(),
+    getActiveCreatorSpace(),
+  ])
+  const spaceDetail: CreatorSpaceDetail | null = activeSpace
+    ? ((await getCreatorSpace(activeSpace.slug)) as CreatorSpaceDetail | null)
+    : null
+
+  const headerProps = activeSpace
+    ? {
+        collectiveName: activeSpace.name,
+        location: spaceDetail?.location ?? null,
+        coverImageUrl: spaceDetail?.cover_image_url ?? null,
+      }
+    : null
 
   if (!billing) {
     return (
@@ -83,33 +98,42 @@ export default async function BillingPage() {
   }
 
   if (billing.is_platform_owner) {
-    return <PlatformOwnerBilling billing={billing} />
+    return <PlatformOwnerBilling billing={billing} header={headerProps} />
   }
 
-  return <CreatorBilling billing={billing} />
+  return <CreatorBilling billing={billing} header={headerProps} />
 }
+
+type HeaderProps = {
+  collectiveName: string
+  location: { name?: string; hero_artwork_url?: string | null; thumbnail_artwork_url?: string | null } | null
+  coverImageUrl: string | null
+} | null
 
 // ---------------------------------------------------------------------------
 // Platform Owner branch
 // ---------------------------------------------------------------------------
 
-function PlatformOwnerBilling({ billing }: { billing: CreatorBillingResponse }) {
+function PlatformOwnerBilling({ billing, header }: { billing: CreatorBillingResponse; header: HeaderProps }) {
   const memberPaymentsConnected = billing.payment_setup.member_payments_connected
   const stripeTestMode = billing.payment_setup.stripe_test_mode
 
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
 
-      {/* Header */}
-      <div className="mb-8">
-        <p
-          className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: '#38A09E' }}
-        >
-          Creator Studio
-        </p>
-        <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Billing</h1>
-      </div>
+      {header ? (
+        <CollectiveArtworkHeader
+          collectiveName={header.collectiveName}
+          sectionTitle="Billing"
+          meta="Your account, usage and payment processing."
+          location={header.location}
+          coverImageUrl={header.coverImageUrl}
+        />
+      ) : (
+        <div className="mb-8">
+          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Billing</h1>
+        </div>
+      )}
 
       {/* Identity panel */}
       <div
@@ -217,7 +241,7 @@ function UsageRow({ label, value }: { label: string; value: string }) {
 // Creator branch (unchanged behaviour — plan card, fee calc, upgrade UI)
 // ---------------------------------------------------------------------------
 
-function CreatorBilling({ billing }: { billing: CreatorBillingResponse }) {
+function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; header: HeaderProps }) {
   // Non-platform-owner rows always have a current plan; the backend enforces
   // that. The null-guard here is just to keep TypeScript happy after we
   // widened the type to `CreatorPlanOut | null`.
@@ -242,19 +266,19 @@ function CreatorBilling({ billing }: { billing: CreatorBillingResponse }) {
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
 
-      {/* Header */}
-      <div className="mb-8">
-        <p
-          className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: '#38A09E' }}
-        >
-          Creator Studio
-        </p>
-        <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Billing</h1>
-        <p className="mt-2 text-[15px] leading-relaxed" style={{ color: '#000000' }}>
-          Your current plan, usage, and payment setup.
-        </p>
-      </div>
+      {header ? (
+        <CollectiveArtworkHeader
+          collectiveName={header.collectiveName}
+          sectionTitle="Billing"
+          meta="Your current plan, usage and payment setup."
+          location={header.location}
+          coverImageUrl={header.coverImageUrl}
+        />
+      ) : (
+        <div className="mb-8">
+          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Billing</h1>
+        </div>
+      )}
 
       {/* Plan + subscription status */}
       <div

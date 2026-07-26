@@ -48,7 +48,11 @@ export default async function PathwaysPage() {
         </div>
       )}
 
-      <PathwaysClient initialPathways={pathways} activeSpace={activeSpace} />
+      <PathwaysClient
+        initialPathways={pathways}
+        activeSpace={activeSpace}
+        collectiveDetail={spaceDetail}
+      />
 
     </div>
   )

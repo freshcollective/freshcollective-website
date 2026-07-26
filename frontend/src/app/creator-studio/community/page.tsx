@@ -2,15 +2,17 @@ import Link from 'next/link'
 import {
   getActiveCreatorSpace,
   getCommunityFeed,
+  getCreatorSpace,
   getMe,
   getMemberChannels,
   getSpaceMembers,
   type ChannelSummaryLite,
 } from '@/lib/serverApi'
-import type { MemberProfile, PostSummary, SpaceSummary } from '@/types/platform'
+import type { CreatorSpaceDetail, MemberProfile, PostSummary, SpaceSummary } from '@/types/platform'
 import CommunityFeed from '@/components/community/CommunityFeed'
 import ChannelSelector from '@/components/community/ChannelSelector'
 import ChannelHeader from '@/components/community/ChannelHeader'
+import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 
 /**
  * Creator Studio → Community
@@ -31,17 +33,19 @@ export default async function CreatorStudioCommunityPage({ searchParams }: Props
   const { channel: channelFromUrl } = await searchParams
   const primarySpace: SpaceSummary | null = await getActiveCreatorSpace()
 
-  const [channels, members, me]: [
+  const [channels, members, me, spaceDetail]: [
     ChannelSummaryLite[],
     MemberProfile[],
     { id: string; role: string } | null,
+    CreatorSpaceDetail | null,
   ] = primarySpace
     ? await Promise.all([
         getMemberChannels(primarySpace.slug),
         getSpaceMembers(primarySpace.slug) as Promise<MemberProfile[]>,
         getMe() as Promise<{ id: string; role: string } | null>,
+        getCreatorSpace(primarySpace.slug) as Promise<CreatorSpaceDetail | null>,
       ])
-    : [[], [], null]
+    : [[], [], null, null]
 
   const defaultChannel = channels.find((c) => c.is_default) ?? channels[0] ?? null
   const activeChannel: ChannelSummaryLite | null = channelFromUrl
@@ -62,53 +66,55 @@ export default async function CreatorStudioCommunityPage({ searchParams }: Props
   return (
     <div className="w-full max-w-[860px] px-8 py-8 md:px-10 md:py-10">
 
-      <div className="mb-8">
-        <p
-          className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: '#38A09E' }}
-        >
-          Creator Studio
-        </p>
-        <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Conversations</h1>
-        <p className="mt-2 text-[14px] leading-relaxed text-black">
-          Start conversations, respond to members and care for the people who gather here.
-        </p>
-        {primarySpace && (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            {isDraft ? (
-              <span
-                className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-medium"
-                style={{
-                  background: 'rgba(212,176,72,0.14)',
-                  color: '#8A6A15',
-                  border: '1px solid rgba(212,176,72,0.35)',
-                }}
-                title="Draft collectives are not yet open to members. Publish this collective from Settings to enable the member-facing view."
-              >
-                Draft — no member view yet
-              </span>
-            ) : (
-              <Link
-                href={`/spaces/${primarySpace.slug}/community${activeSlug && activeSlug !== 'general' ? `?channel=${activeSlug}` : ''}`}
-                className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
-              >
-                View as member →
-              </Link>
-            )}
-            <Link
-              href="/creator-studio/community/channels"
-              className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-medium transition-colors"
+      {primarySpace ? (
+        <CollectiveArtworkHeader
+          collectiveName={primarySpace.name}
+          sectionTitle="Conversations"
+          meta="Start conversations, respond to members and care for the people who gather here."
+          location={spaceDetail?.location ?? null}
+          coverImageUrl={spaceDetail?.cover_image_url ?? null}
+        />
+      ) : (
+        <div className="mb-8">
+          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Conversations</h1>
+        </div>
+      )}
+
+      {primarySpace && (
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          {isDraft ? (
+            <span
+              className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-medium"
               style={{
-                background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
-                color: 'var(--fc-accent, #0f766e)',
+                background: 'rgba(212,176,72,0.14)',
+                color: '#8A6A15',
+                border: '1px solid rgba(212,176,72,0.35)',
               }}
+              title="Draft collectives are not yet open to members. Publish this collective from Settings to enable the member-facing view."
             >
-              Manage Channels
+              Draft — no member view yet
+            </span>
+          ) : (
+            <Link
+              href={`/spaces/${primarySpace.slug}/community${activeSlug && activeSlug !== 'general' ? `?channel=${activeSlug}` : ''}`}
+              className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
+            >
+              View as member →
             </Link>
-          </div>
-        )}
-      </div>
+          )}
+          <Link
+            href="/creator-studio/community/channels"
+            className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-medium transition-colors"
+            style={{
+              background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+              color: 'var(--fc-accent, #0f766e)',
+            }}
+          >
+            Manage Channels
+          </Link>
+        </div>
+      )}
 
       {!primarySpace ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center">
