@@ -293,7 +293,26 @@ def send_event_reminders(
 ) -> dict:
     """
     Cron endpoint: query events starting in ~24h or ~1h and send reminders.
-    Protected by X-Internal-Token matching the JWT secret (or any configured value).
+    Protected by X-Internal-Token matching the JWT secret.
+
+    Production cron configuration
+    -----------------------------
+    Frequency:  every 10 minutes.
+                The reminder windows are 24h ±15min and 1h ±10min, so
+                every event lands in at least one window if the caller
+                fires at or below a 10-minute cadence.
+    Endpoint:   POST {BACKEND_ORIGIN}/api/internal/send-event-reminders
+    Headers:    X-Internal-Token: <value of JWT_SECRET on the same env>
+                Content-Type:     application/json   (body may be empty)
+    Env vars:   JWT_SECRET        must be set — the token compares equal
+                RESEND_API_KEY    required for real email delivery
+                EMAIL_FROM        required (no fallback domain)
+
+    Recommended scheduler: whatever the host platform provides
+    (Render Cron, Fly Machines cron, Cloudflare Cron Triggers, AWS
+    EventBridge). No in-process scheduler is registered by the app
+    itself so the reminder cadence is a deployment concern, not a
+    code concern.
     """
     if not x_internal_token or x_internal_token != settings.jwt_secret:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal token.")

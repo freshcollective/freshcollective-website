@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.auth import service
 from app.auth.dependencies import SESSION_COOKIE, get_current_user
+from app.services.email_service import email_service
+from app.services.email_templates import password_reset_email
 from app.auth.schemas import (
     ChangePasswordRequest,
     CompleteOnboardingRequest,
@@ -299,17 +301,25 @@ async def forgot_password(
 
     if raw_token:
         reset_url = f"{settings.frontend_origin}/reset-password?token={raw_token}"
+        # Development convenience — mirror the link into the log so
+        # operators without email delivery can still complete the flow.
+        # The email path below is the primary delivery mechanism in
+        # production; the log fallback is best-effort and never
+        # prevents email from being sent.
         if not settings.is_production:
             logger.warning("\n========================================")
-            logger.warning("PASSWORD RESET LINK (development only):")
+            logger.warning("PASSWORD RESET LINK (development):")
             logger.warning(reset_url)
             logger.warning("========================================\n")
-        # TODO: In production, send reset_url via a transactional email service
+        subject, html = password_reset_email(reset_url=reset_url)
+        email_service.send(to=payload.email, subject=subject, html_body=html)
 
+    # Response copy stays deliberately vague so this endpoint doesn't
+    # leak whether an address is registered.
     return {
         "message": (
-            "If that email is registered, a reset link will appear in the server console. "
-            "(In production, an email would be sent.)"
+            "If that email is registered, we've sent a link to reset your password. "
+            "Check your inbox for a message from Fresh Collective."
         )
     }
 

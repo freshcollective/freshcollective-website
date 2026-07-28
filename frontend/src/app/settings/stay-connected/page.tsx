@@ -47,8 +47,10 @@ export default async function StayConnectedPage() {
     <div>
       <div className="mb-8">
         <h2 className="mb-1 font-serif text-xl text-navy-900">Stay Connected</h2>
-        <p className="text-sm text-black">
-          Choose how you&rsquo;d like to stay connected with each collective you belong to.
+        <p className="max-w-2xl text-sm leading-relaxed text-black">
+          Choose how you&rsquo;d like Fresh Collective to keep you informed.
+          Some updates appear inside Recent Moments, while others can also
+          be sent to your email depending on your preferences.
         </p>
       </div>
 

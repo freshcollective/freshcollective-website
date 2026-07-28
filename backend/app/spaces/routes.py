@@ -79,7 +79,7 @@ from app.spaces.schemas import (
 )
 
 from app.models.platform import PathwayStepManualRelease  # noqa: E402
-from app.services.notification_service import trigger_event_booking_creator  # noqa: E402
+from app.services.notification_service import trigger_booking_confirmed, trigger_event_booking_creator  # noqa: E402
 from app.services.pathway_release import (  # noqa: E402
     Availability,
     PreviousStepState,
@@ -1520,6 +1520,7 @@ def book_event(
         db.commit()
         db.refresh(existing)
         background_tasks.add_task(trigger_event_booking_creator, event.id, current_user.id)
+        background_tasks.add_task(trigger_booking_confirmed, event.id, current_user.id)
         return BookingResponse(status="confirmed", booking_id=existing.id)
 
     booking = EventBooking(
@@ -1537,6 +1538,7 @@ def book_event(
     db.commit()
     db.refresh(booking)
     background_tasks.add_task(trigger_event_booking_creator, event.id, current_user.id)
+    background_tasks.add_task(trigger_booking_confirmed, event.id, current_user.id)
     return BookingResponse(status="confirmed", booking_id=booking.id)
 
 

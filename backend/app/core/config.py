@@ -29,9 +29,19 @@ class Settings(BaseSettings):
     # also fit within Stripe's supported range.
     gathering_checkout_expiry_minutes: int = 30
 
-    # Email (Resend) — optional; if unset, email sending is skipped gracefully.
+    # Email (Resend).
+    #
+    #   RESEND_API_KEY  — when unset, all email sends log a WARN and skip;
+    #                     use this for local development.
+    #   EMAIL_FROM      — RFC 5322 sender used on every message. When
+    #                     unset, sends fail loudly with an ERROR (no
+    #                     silent fallback to another domain). Format:
+    #                     "Display Name <address@domain>".
+    #   EMAIL_REPLY_TO  — optional distinct Reply-To. When unset,
+    #                     replies go to EMAIL_FROM (the usual case).
     resend_api_key: str | None = None
-    email_from: str = "Fresh Collective <notifications@mail.freshcollective.com>"
+    email_from: str | None = None
+    email_reply_to: str | None = None
 
     # Platform owner — the founder / operator of Fresh Collective. Surfaces
     # as the "Owner" role badge in World Management. Only one person ever

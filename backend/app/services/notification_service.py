@@ -575,3 +575,89 @@ def trigger_caretaker_reply_to_question(
         logger.exception("trigger_caretaker_reply_to_question failed for post %s", post_id)
     finally:
         db.close()
+
+
+def trigger_booking_confirmed(event_id: str, user_id: str) -> None:
+    """Confirmation email to the member who booked a gathering.
+
+    Companion to :func:`trigger_event_booking_creator` — that one tells
+    the Creator; this one thanks the booker. In-app + email if the
+    caller opted in via ``gathering_reminder_email`` (same pref used by
+    the reminder job — bookers who mute reminders also opt out of the
+    confirmation).
+    """
+    from app.services.email_service import email_service
+    from app.services.email_templates import booking_confirmation_email
+    from app.core.config import settings
+
+    db = SessionLocal()
+    try:
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            return
+        booker = db.query(User).filter(User.id == user_id).first()
+        if not booker:
+            return
+        space = db.query(Space).filter(Space.id == event.space_id).first() if event.space_id else None
+
+        booker_name = booker.name or booker.email.split("@", 1)[0]
+        # Pre-format the "when" using the space's timezone if we have one,
+        # else UTC as a safe fallback. The template doesn't need to know
+        # anything about tz handling — it just prints what we hand it.
+        try:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(space.timezone) if space and space.timezone else None
+        except Exception:
+            tz = None
+        starts_local = event.starts_at.astimezone(tz) if tz else event.starts_at
+        starts_when = starts_local.strftime("%A %-d %B %Y at %-I:%M %p")
+
+        location_line = _format_event_location(event)
+
+        view_url = None
+        if space:
+            view_url = f"{settings.frontend_origin.rstrip('/')}/spaces/{space.slug}/events/{event.id}"
+
+        title = f"Booking confirmed: {event.title}"
+        message = f'Your place is held at "{event.title}" on {starts_when}.'
+
+        notif = create_notification(
+            db=db,
+            recipient_id=user_id,
+            notification_type="booking_confirmed",
+            title=title,
+            message=message,
+            url=view_url,
+        )
+
+        should_email = _get_notification_pref(
+            db, user_id, event.space_id, "gathering_reminder_email",
+        )
+        if should_email and view_url:
+            subject, html = booking_confirmation_email(
+                member_name=booker_name,
+                gathering_title=event.title,
+                starts_when=starts_when,
+                location_line=location_line,
+                view_url=view_url,
+                add_to_calendar_url=None,   # feature TODO — no ICS endpoint yet
+            )
+            email_service.send(to=booker.email, subject=subject, html_body=html)
+            notif.email_sent_at = datetime.utcnow()
+            db.commit()
+    except Exception:
+        logger.exception("trigger_booking_confirmed failed for event %s user %s", event_id, user_id)
+    finally:
+        db.close()
+
+
+def _format_event_location(event: Event) -> str:
+    """Short human-readable location string for booking emails."""
+    loc = getattr(event, "location_type", None)
+    if loc == "zoom":
+        return "Zoom link — shared before the gathering"
+    if loc == "in_person":
+        return "In person"
+    if loc == "async_recorded":
+        return "Recorded — available in the gathering page"
+    return "Details in the gathering page"

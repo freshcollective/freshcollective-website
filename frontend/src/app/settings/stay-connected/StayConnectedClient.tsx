@@ -27,15 +27,20 @@ import type { NotificationPrefs, SpaceMembership } from '@/types/platform'
 // Types + section catalogue
 // ---------------------------------------------------------------------------
 
-/** The six boolean fields we surface. ``weekly_digest_email`` and
- *  ``daily_digest_email`` are intentionally omitted from the UI (see
- *  the docstring) but remain on the underlying record. */
+/** The five boolean fields we surface today.
+ *
+ *  Fields stored on the underlying record but intentionally NOT shown:
+ *   - ``weekly_digest_email`` / ``daily_digest_email`` — no delivery
+ *     job exists yet; showing a toggle that does nothing is confusing.
+ *   - ``pathway_comment_email`` — no trigger reads this preference on
+ *     the backend today. Hidden until the trigger is added; the DB
+ *     column is preserved so no migration is required.
+ */
 type SurfacedPrefKey =
   | 'admin_broadcast_email'
   | 'gathering_reminder_email'
   | 'new_post_email'
   | 'comment_reply_email'
-  | 'pathway_comment_email'
   | 'new_pathway_email'
 
 interface PrefControl {
@@ -88,11 +93,6 @@ const SECTIONS: Section[] = [
   {
     label: 'Pathways',
     controls: [
-      {
-        key: 'pathway_comment_email',
-        label: 'Comments on pathway steps',
-        description: 'Hear when someone comments on a pathway step.',
-      },
       {
         key: 'new_pathway_email',
         label: 'New pathways',

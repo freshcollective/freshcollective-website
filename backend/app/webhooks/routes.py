@@ -194,8 +194,12 @@ def _handle_gathering_ticket_completed(
         # are impossible). Email is a graceful no-op when RESEND_API_KEY
         # is unset.
         try:
-            from app.services.notification_service import trigger_event_booking_creator
+            from app.services.notification_service import (
+                trigger_booking_confirmed,
+                trigger_event_booking_creator,
+            )
             trigger_event_booking_creator(event_id, payer_user_id)
+            trigger_booking_confirmed(event_id, payer_user_id)
         except Exception as exc:  # noqa: BLE001 — never let notify failure block fulfilment
             logger.warning(
                 "gathering ticket: notification failed for txn=%s: %s",

@@ -1381,7 +1381,18 @@ def send_invitation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> InvitationResponse:
-    """Mark a draft invitation as sent (sets sent_at to now). Email delivery is handled separately."""
+    """Mark a draft invitation as sent and dispatch the invitation email.
+
+    Delivery is best-effort: ``sent_at`` records the operator's intent
+    and is set even if the transactional email step logs an error, so
+    an operator can always re-send from the same UI once delivery is
+    fixed. See ``email_service.py`` for the missing-key / missing-from
+    behaviour.
+    """
+    from app.services.email_service import email_service
+    from app.services.email_templates import invitation_email
+    from app.core.config import settings as _settings
+
     space = _get_managed_space(slug, current_user, db)
     invitation = (
         db.query(SpaceInvitation)
@@ -1395,6 +1406,16 @@ def send_invitation(
         raise HTTPException(status_code=404, detail="Invitation not found.")
     if invitation.sent_at is not None:
         raise HTTPException(status_code=409, detail="Invitation has already been sent.")
+
+    accept_url = f"{_settings.frontend_origin.rstrip('/')}/invites/{invitation.token}"
+    inviter_name = current_user.name or current_user.email
+    subject, html = invitation_email(
+        inviter_name=inviter_name,
+        collective_name=space.name,
+        accept_url=accept_url,
+    )
+    email_service.send(to=invitation.email, subject=subject, html_body=html)
+
     invitation.sent_at = datetime.utcnow()
     db.commit()
     db.refresh(invitation)
@@ -3014,7 +3035,6 @@ def cancel_event(
     TODO: Add cancel entire series endpoint later.
     """
     from app.models.access_pass import AccessPass as _AccessPass
-    from app.services.notification_service import trigger_gathering_cancelled
     space = _get_managed_space(slug, current_user, db)
     event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
     if not event:
