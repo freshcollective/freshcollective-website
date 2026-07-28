@@ -81,6 +81,17 @@ class User(Base):
         nullable=True,
     )
 
+    # ---- Discovery, Connection & Belonging — real-world home Place ---------
+    # Opt-in and never auto-populated. Schema-only in Phase 0; profile UI
+    # arrives in a later phase. SET NULL rather than CASCADE — a person is
+    # not deleted when an editorial Place is retired.
+    home_place_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("places.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     __table_args__ = (
         CheckConstraint("role IN ('user', 'creator', 'admin')", name="users_role_check"),
     )

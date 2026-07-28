@@ -27,6 +27,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     Enum as SAEnum,
@@ -302,6 +303,15 @@ class Space(Base):
     #     Settings instead of the standard visibility/pricing controls
     auto_grant_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # ---- Discovery, Connection & Belonging — Collective Kind -------------
+    # Distinguishes creator-led collectives (the default) from peer-led
+    # Local Circles. Schema-only in Phase 0 — no behavioural branching
+    # yet; a later phase adds Local-Circle-specific defaults, discovery
+    # placement, and creation flow. Existing rows backfill to 'standard'.
+    kind: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="standard", server_default="standard"
+    )
+
     # ---- Community Care — collective suspension (Stage 2A reservation) ----
     # These columns landed with Stage 2A for future use; Stage 2C uses
     # the dedicated ``frozen_*`` columns below to represent an active
@@ -342,6 +352,13 @@ class Space(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('standard', 'local_circle')",
+            name="spaces_kind_check",
+        ),
     )
 
     @property

@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     # and the caretakers on rota are ready to work cases.
     community_care_enabled: bool = False
 
+    # Discovery, Connection & Belonging — the peer pillar (Your World,
+    # Explore Collectives, Discover Places, Ways to Connect). Phase 0
+    # ships the data foundation only; nothing user-visible is gated by
+    # this flag yet. Later phases add API endpoints and navigation
+    # entries that will refuse to render when this is False.
+    # See docs/foundations/discovery-connection-belonging-v1.1.md.
+    discovery_pillar_enabled: bool = False
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

@@ -19,6 +19,7 @@ import app.models.payment_option_schedule  # noqa: F401 — registers payment op
 import app.models.access_pass      # noqa: F401 — registers access pass / booking credit model
 import app.models.notification     # noqa: F401 — registers notification model
 import app.models.activity         # noqa: F401 — registers activity engine model
+import app.models.place            # noqa: F401 — registers Place + SpacePlace models
 
 config = context.config
 
