@@ -1,9 +1,7 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import CollectiveSettingsModal from '@/components/spaces/CollectiveSettingsModal'
 
 interface Tab {
   label: string
@@ -19,10 +17,18 @@ interface SpaceNavProps {
   unreadMessageCount?: number
 }
 
-export default function SpaceNav({ spaceSlug, spaceName, isMember, unreadMessageCount = 0 }: SpaceNavProps) {
+/**
+ * The collective's tab bar (desktop) + bottom nav (mobile).
+ *
+ * The old "Stay Connected" button that lived here opened an in-page
+ * modal editing per-collective notification preferences. Those
+ * preferences now live at ``/settings/stay-connected`` — a global
+ * page listing every collective the member belongs to — so this
+ * component no longer needs any modal state or launcher.
+ */
+export default function SpaceNav({ spaceSlug, spaceName: _spaceName, isMember, unreadMessageCount = 0 }: SpaceNavProps) {
   const pathname = usePathname()
   const base = `/spaces/${spaceSlug}`
-  const [notifOpen, setNotifOpen] = useState(false)
 
   const tabs: Tab[] = [
     {
@@ -47,14 +53,6 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember, unreadMessage
 
   return (
     <>
-      {notifOpen && (
-        <CollectiveSettingsModal
-          spaceSlug={spaceSlug}
-          spaceName={spaceName}
-          onClose={() => setNotifOpen(false)}
-        />
-      )}
-
       {/* ── Desktop: horizontal tab bar ── */}
       <div className="hidden border-b border-border bg-surface md:block">
         <div className="mx-auto max-w-6xl px-10">
@@ -82,35 +80,27 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember, unreadMessage
             })}
 
             {isMember && (
-              <>
-                <Link
-                  href={`/spaces/${spaceSlug}/messages`}
-                  className={[
-                    'relative inline-flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
-                    pathname.startsWith(`/spaces/${spaceSlug}/messages`)
-                      ? 'font-semibold'
-                      : 'border-transparent text-black hover:text-navy-700',
-                  ].join(' ')}
-                  style={pathname.startsWith(`/spaces/${spaceSlug}/messages`) ? {
-                    borderColor: 'var(--fc-accent, #38A09E)',
-                    color: 'var(--fc-accent, #0f766e)',
-                  } : undefined}
-                >
-                  Messages
-                  {unreadMessageCount > 0 && (
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                      style={{ background: 'var(--fc-accent, #38A09E)' }}>
-                      {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
-                    </span>
-                  )}
-                </Link>
-                <button
-                  onClick={() => setNotifOpen(true)}
-                  className="inline-block shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-black transition-colors hover:text-navy-700"
-                >
-                  Stay Connected
-                </button>
-              </>
+              <Link
+                href={`/spaces/${spaceSlug}/messages`}
+                className={[
+                  'relative inline-flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition-colors',
+                  pathname.startsWith(`/spaces/${spaceSlug}/messages`)
+                    ? 'font-semibold'
+                    : 'border-transparent text-black hover:text-navy-700',
+                ].join(' ')}
+                style={pathname.startsWith(`/spaces/${spaceSlug}/messages`) ? {
+                  borderColor: 'var(--fc-accent, #38A09E)',
+                  color: 'var(--fc-accent, #0f766e)',
+                } : undefined}
+              >
+                Messages
+                {unreadMessageCount > 0 && (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                    style={{ background: 'var(--fc-accent, #38A09E)' }}>
+                    {unreadMessageCount > 9 ? '9+' : unreadMessageCount}
+                  </span>
+                )}
+              </Link>
             )}
           </nav>
         </div>
@@ -137,33 +127,24 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember, unreadMessage
           })}
 
           {isMember && (
-            <>
-              <Link
-                href={`/spaces/${spaceSlug}/messages`}
-                className="relative flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center transition-colors"
-                style={pathname.startsWith(`/spaces/${spaceSlug}/messages`)
-                  ? { color: 'var(--fc-accent, #0f766e)' }
-                  : { color: '#000' }}
-              >
-                <span className="relative text-base leading-none" aria-hidden="true">
-                  ✉
-                  {unreadMessageCount > 0 && (
-                    <span className="absolute -right-1.5 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold text-white"
-                      style={{ background: 'var(--fc-accent, #38A09E)' }}>
-                      {unreadMessageCount > 9 ? '9' : unreadMessageCount}
-                    </span>
-                  )}
-                </span>
-                <span className="whitespace-nowrap text-xs font-medium">Messages</span>
-              </Link>
-              <button
-                onClick={() => setNotifOpen(true)}
-                className="flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center text-black transition-colors hover:text-teal-600"
-              >
-                <span className="text-base leading-none" aria-hidden="true">🔔</span>
-                <span className="whitespace-nowrap text-xs font-medium">Stay Connected</span>
-              </button>
-            </>
+            <Link
+              href={`/spaces/${spaceSlug}/messages`}
+              className="relative flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center transition-colors"
+              style={pathname.startsWith(`/spaces/${spaceSlug}/messages`)
+                ? { color: 'var(--fc-accent, #0f766e)' }
+                : { color: '#000' }}
+            >
+              <span className="relative text-base leading-none" aria-hidden="true">
+                ✉
+                {unreadMessageCount > 0 && (
+                  <span className="absolute -right-1.5 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold text-white"
+                    style={{ background: 'var(--fc-accent, #38A09E)' }}>
+                    {unreadMessageCount > 9 ? '9' : unreadMessageCount}
+                  </span>
+                )}
+              </span>
+              <span className="whitespace-nowrap text-xs font-medium">Messages</span>
+            </Link>
           )}
         </div>
         <div style={{ height: 'env(safe-area-inset-bottom)' }} className="bg-surface" />

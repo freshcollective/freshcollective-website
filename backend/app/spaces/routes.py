@@ -254,6 +254,21 @@ def _get_space_or_404(slug: str, db: Session) -> Space:
     return space
 
 
+def _get_space_by_slug_or_404(slug: str, db: Session) -> Space:
+    """Slug lookup that does NOT filter by public status. Use only from
+    endpoints that gate access with a per-user membership check, so a
+    member of a draft, coming-soon, or archived collective can still
+    manage their own state (notification prefs, membership record, etc.).
+
+    ``_get_space_or_404`` remains the correct choice for public read
+    paths — do not converge them.
+    """
+    space = db.query(Space).filter(Space.slug == slug).first()
+    if not space:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+    return space
+
+
 def _user_manages_space(user: "User | None", space: Space, db: Session) -> bool:
     """True when the caller is entitled to see a non-active collective —
     admins, the collective's owner, or an active creator/moderator
@@ -3038,7 +3053,10 @@ def get_notification_settings(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> NotificationPrefsResponse:
-    space = _get_space_or_404(slug, db)
+    # Use the slug-only lookup so members of draft / coming-soon /
+    # archived collectives can still manage their own preferences.
+    # Access is fully gated by _require_membership below.
+    space = _get_space_by_slug_or_404(slug, db)
     _require_membership(space.id, current_user.id, db)
     prefs = db.query(SpaceMemberNotificationPrefs).filter(
         SpaceMemberNotificationPrefs.user_id == current_user.id,
@@ -3054,7 +3072,9 @@ def update_notification_settings(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> NotificationPrefsResponse:
-    space = _get_space_or_404(slug, db)
+    # See get_notification_settings above — same slug-only lookup so
+    # members of non-active collectives can still save preferences.
+    space = _get_space_by_slug_or_404(slug, db)
     _require_membership(space.id, current_user.id, db)
 
     prefs = db.query(SpaceMemberNotificationPrefs).filter(

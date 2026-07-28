@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 // Re-export so existing callers keep working. The canonical definition
 // lives in ``@/lib/activeSpaceCookie`` because the proxy middleware also
@@ -659,6 +659,27 @@ export const getCreatorBilling = cache(async (): Promise<CreatorBillingResponse 
 // ``app.models.activity``). Attention-required and history-only events
 // are excluded so this helper is safe to call from any RM surface.
 // ---------------------------------------------------------------------------
+
+/**
+ * Fetch the caller's stored notification preferences for a single
+ * collective. Returns null when the fetch fails; callers render a
+ * per-collective error state rather than blocking the whole page.
+ *
+ * Used by ``/settings/stay-connected`` — pages call this with
+ * ``Promise.all`` across the caller's memberships so all requests
+ * fly in parallel.
+ */
+export const getSpaceNotificationPrefs = cache(async (
+  spaceSlug: string,
+): Promise<NotificationPrefs | null> => {
+  try {
+    const res = await fetchWithSession(`/api/spaces/${spaceSlug}/notification-settings`)
+    if (!res.ok) return null
+    return (await res.json()) as NotificationPrefs
+  } catch {
+    return null
+  }
+})
 
 export const getRecentActivities = cache(async (
   limit: number,

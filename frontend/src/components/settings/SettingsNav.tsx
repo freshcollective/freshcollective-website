@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 const NAV_ITEMS = [
   { label: 'Profile', href: '/settings/profile' },
   { label: 'Membership', href: '/settings/membership' },
-  { label: 'Preferences', href: '/settings/preferences' },
+  { label: 'Stay Connected', href: '/settings/stay-connected' },
   { label: 'Security', href: '/settings/security' },
 ]
 
