@@ -38,6 +38,7 @@ from app.uploads.routes import uploads_router
 from app.checkout.routes import router as checkout_router
 from app.webhooks.routes import router as webhooks_router
 from app.messages.routes import creator_router as messages_creator_router, member_router as messages_member_router
+from app.places.routes import router as places_router
 from app.core.config import settings
 
 logging.basicConfig(
@@ -117,6 +118,7 @@ app.include_router(notifications_router)
 app.include_router(activities_router)
 app.include_router(messages_creator_router)
 app.include_router(messages_member_router)
+app.include_router(places_router)
 
 
 # ---------------------------------------------------------------------------

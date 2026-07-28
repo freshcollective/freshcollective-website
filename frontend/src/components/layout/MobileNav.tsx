@@ -7,14 +7,28 @@ import { apiUrl } from '@/lib/api'
 
 interface Props {
   isLoggedIn: boolean
+  // Mirrors the backend's discovery_pillar_enabled flag; passed in from
+  // PublicHeader so this client component doesn't have to read
+  // process.env directly (keeps the flag surface in one place).
+  discoveryOn: boolean
   dark?: boolean
 }
 
-const NAV = [
-  { href: '/spaces', label: 'Explore Collectives' },
-]
+// Peer destinations for the mobile drawer. Order matches the pillar
+// order in docs/foundations/discovery-connection-belonging-v1.1.md.
+// "Your World" only appears for signed-in visitors.
+function peerNavItems(isLoggedIn: boolean, discoveryOn: boolean): Array<{ href: string; label: string }> {
+  const items: Array<{ href: string; label: string }> = []
+  if (isLoggedIn && discoveryOn) items.push({ href: '/dashboard', label: 'Your World' })
+  items.push({ href: '/spaces', label: 'Explore Collectives' })
+  if (discoveryOn) {
+    items.push({ href: '/discover-places', label: 'Discover Places' })
+    items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
+  }
+  return items
+}
 
-export default function MobileNav({ isLoggedIn, dark }: Props) {
+export default function MobileNav({ isLoggedIn, discoveryOn, dark }: Props) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
@@ -83,7 +97,7 @@ export default function MobileNav({ isLoggedIn, dark }: Props) {
             style={{ background: '#0C1826', borderBottom: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 16px 48px rgba(0,0,0,0.50)' }}>
 
             <nav className="mb-5 space-y-0.5">
-              {NAV.map(({ href, label }) => (
+              {peerNavItems(isLoggedIn, discoveryOn).map(({ href, label }) => (
                 <Link
                   key={href}
                   href={href}
@@ -93,7 +107,12 @@ export default function MobileNav({ isLoggedIn, dark }: Props) {
                   {label}
                 </Link>
               ))}
-              {isLoggedIn && (
+              {/* Keep Your World reachable in mobile drawer while
+                  Discovery is off — this mirrors the desktop
+                  right-side shortcut so signed-in visitors don't lose
+                  the direct link. Once discoveryOn=true, Your World
+                  is the first peer nav item above. */}
+              {isLoggedIn && !discoveryOn && (
                 <Link
                   href="/dashboard"
                   className="flex items-center rounded-xl px-4 py-3.5 text-[16px] font-medium transition-colors"

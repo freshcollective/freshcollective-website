@@ -6,6 +6,7 @@ import MobileNav from './MobileNav'
 import NotificationBell from './NotificationBell'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
+import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
 
 interface MeResponse {
   id: string
@@ -30,8 +31,30 @@ async function getCurrentUser(): Promise<MeResponse | null> {
   }
 }
 
+// Peer destinations that live in the centre nav. Order is
+// significant: it matches the pillar order defined in
+// docs/foundations/discovery-connection-belonging-v1.1.md.
+// "Your World" only appears for signed-in visitors; the other three
+// are visible to everyone once the flag is on.
+function peerNavItems(user: MeResponse | null, discoveryOn: boolean): Array<{ href: string; label: string }> {
+  const items: Array<{ href: string; label: string }> = []
+  if (user && discoveryOn) items.push({ href: '/dashboard', label: 'Your World' })
+  items.push({ href: '/spaces', label: 'Explore Collectives' })
+  if (discoveryOn) {
+    items.push({ href: '/discover-places', label: 'Discover Places' })
+    items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
+  }
+  return items
+}
+
 export default async function PublicHeader({ overlay = false }: { overlay?: boolean }) {
   const user = await getCurrentUser()
+  const discoveryOn = isDiscoveryPillarEnabled()
+  const centreNav   = peerNavItems(user, discoveryOn)
+  // "Your World" only remains as a right-side auth-cluster shortcut
+  // while Discovery is off; once the pillar is on it lives in the
+  // centre nav as a peer destination.
+  const showYourWorldOnRight = !discoveryOn && !!user
 
   if (overlay) {
     return (
@@ -57,21 +80,26 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
           </Link>
 
           <nav aria-label="Main" className="hidden flex-1 items-center justify-center gap-8 md:flex">
-            <Link
-              href="/spaces"
-              className="text-[14px] font-medium transition-opacity hover:opacity-100"
-              style={{ color: '#FFFFFF' }}
-            >
-              Explore Collectives
-            </Link>
+            {centreNav.map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                className="text-[14px] font-medium transition-opacity hover:opacity-100"
+                style={{ color: '#FFFFFF' }}
+              >
+                {label}
+              </Link>
+            ))}
           </nav>
 
           <div className="hidden shrink-0 items-center gap-4 md:flex">
             {user ? (
               <>
-                <Link href="/dashboard" className="text-[14px] font-medium transition-opacity hover:opacity-100" style={{ color: '#FFFFFF' }}>
-                  Your World
-                </Link>
+                {showYourWorldOnRight && (
+                  <Link href="/dashboard" className="text-[14px] font-medium transition-opacity hover:opacity-100" style={{ color: '#FFFFFF' }}>
+                    Your World
+                  </Link>
+                )}
                 <LogoutButton className="rounded-xl border border-white/20 px-4 py-2 text-[13px] font-medium text-white transition-all hover:border-white/35" />
               </>
             ) : (
@@ -94,7 +122,7 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
             )}
           </div>
 
-          <MobileNav isLoggedIn={!!user} dark />
+          <MobileNav isLoggedIn={!!user} discoveryOn={discoveryOn} dark />
 
         </Container>
       </header>
@@ -126,12 +154,15 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
 
         {/* Nav — desktop */}
         <nav aria-label="Main" className="hidden flex-1 items-center justify-center gap-8 md:flex">
-          <Link
-            href="/spaces"
-            className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
-          >
-            Explore Collectives
-          </Link>
+          {centreNav.map(({ href, label }) => (
+            <Link
+              key={href}
+              href={href}
+              className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
+            >
+              {label}
+            </Link>
+          ))}
         </nav>
 
         {/* Auth — desktop */}
@@ -139,12 +170,14 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
           {user ? (
             <>
               <NotificationBell initialCount={0} />
-              <Link
-                href="/dashboard"
-                className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
-              >
-                Your World
-              </Link>
+              {showYourWorldOnRight && (
+                <Link
+                  href="/dashboard"
+                  className="text-[14px] font-medium text-navy-500 transition-colors hover:text-navy-950"
+                >
+                  Your World
+                </Link>
+              )}
               <LogoutButton
                 className="rounded-xl border border-navy-100 px-4 py-2 text-[13px] font-medium text-navy-600 transition-all hover:border-navy-200 hover:bg-navy-50"
               />
@@ -172,7 +205,7 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
         </div>
 
         {/* Mobile nav — hamburger defaults to dark (navy) for light header */}
-        <MobileNav isLoggedIn={!!user} />
+        <MobileNav isLoggedIn={!!user} discoveryOn={discoveryOn} />
 
       </Container>
     </header>
