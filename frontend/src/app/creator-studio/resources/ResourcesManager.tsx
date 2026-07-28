@@ -91,6 +91,165 @@ const TYPE_LABEL: Record<ResourceType, string> = {
 }
 
 // ---------------------------------------------------------------------------
+// Preview categorisation.
+//
+// Sniffs the resource's `file_name` / `url` to differentiate PDF, Image,
+// and generic File from the coarse resource_type. Nothing about the
+// resource data model or backend surface changes — this is purely a
+// visual recognition layer built from data already in the response.
+// ---------------------------------------------------------------------------
+
+type PreviewCategory = 'image' | 'pdf' | 'guide' | 'audio' | 'video' | 'link' | 'file' | 'generic'
+
+const IMAGE_EXT = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'bmp'])
+
+function extensionOf(name: string | null | undefined): string {
+  if (!name) return ''
+  const dot = name.lastIndexOf('.')
+  if (dot < 0) return ''
+  return name.slice(dot + 1).toLowerCase()
+}
+
+function categorizeResource(r: CreatorResource): PreviewCategory {
+  const t = r.resource_type
+  const nameExt = extensionOf(r.file_name)
+  const urlExt = extensionOf(r.url)
+  const anyExt = nameExt || urlExt
+
+  if (t === 'audio')  return 'audio'
+  if (t === 'video')  return 'video'
+  if (t === 'replay') return 'video'
+  if (t === 'guide')  return 'guide'
+  // Templates read as guides visually.
+  if (t === 'template') return 'guide'
+  // File / link paths can still be an image or PDF — sniff the extension.
+  if (anyExt === 'pdf') return 'pdf'
+  if (IMAGE_EXT.has(anyExt)) return 'image'
+  if (t === 'link') return 'link'
+  if (t === 'file') return 'file'
+  return 'generic'
+}
+
+// Category → background + icon colour. Non-image previews carry a very
+// subtle diagonal gradient in the type family — enough to feel like a
+// lightly designed cover, never a decorated illustration.
+const RESOURCE_TINT: Record<PreviewCategory, { bg: string; fg: string }> = {
+  image:   { bg: 'linear-gradient(135deg, rgba(56,160,158,0.12)  0%, rgba(56,160,158,0.04)  100%)', fg: '#0f766e' }, // pale teal
+  pdf:     { bg: 'linear-gradient(135deg, rgba(214,96,87,0.12)   0%, rgba(214,96,87,0.03)   100%)', fg: '#a63c30' }, // blush → warm white
+  guide:   { bg: 'linear-gradient(135deg, rgba(56,116,180,0.10)  0%, rgba(148,163,184,0.10) 100%)', fg: '#1e40af' }, // blue → slate
+  audio:   { bg: 'linear-gradient(135deg, rgba(139,92,246,0.12)  0%, rgba(139,92,246,0.04)  100%)', fg: '#6d28d9' }, // pale lavender
+  video:   { bg: 'linear-gradient(135deg, rgba(56,116,180,0.12)  0%, rgba(56,116,180,0.04)  100%)', fg: '#1e40af' }, // pale blue
+  link:    { bg: 'linear-gradient(135deg, rgba(56,160,158,0.12)  0%, rgba(56,160,158,0.04)  100%)', fg: '#0f766e' }, // pale teal
+  file:    { bg: 'linear-gradient(135deg, rgba(30,41,59,0.07)    0%, rgba(30,41,59,0.02)    100%)', fg: '#334155' }, // pale slate
+  generic: { bg: 'linear-gradient(135deg, rgba(100,116,139,0.12) 0%, rgba(100,116,139,0.04) 100%)', fg: '#475569' }, // pale grey
+}
+
+/**
+ * Preview icon for a resource category. Uses inline SVGs matching the
+ * house style; no new icon dependency.
+ */
+function ResourceCategoryIcon({ category, size = 28 }: { category: PreviewCategory; size?: number }) {
+  const s = size
+  const props = {
+    width: s, height: s, viewBox: '0 0 24 24', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 1.6,
+    strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
+  }
+  if (category === 'image') {
+    return (
+      <svg {...props} aria-hidden="true">
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <path d="M21 15l-5-5L5 21" />
+      </svg>
+    )
+  }
+  if (category === 'pdf') {
+    return (
+      <svg {...props} aria-hidden="true">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <text x="12" y="18" textAnchor="middle" fontSize="6" fontFamily="sans-serif" fontWeight="700" fill="currentColor" stroke="none">PDF</text>
+      </svg>
+    )
+  }
+  if (category === 'guide') {
+    return (
+      <svg {...props} aria-hidden="true">
+        <path d="M4 5a2 2 0 012-2h11v18H6a2 2 0 01-2-2V5z" />
+        <line x1="8" y1="7" x2="15" y2="7" />
+        <line x1="8" y1="11" x2="15" y2="11" />
+        <line x1="8" y1="15" x2="12" y2="15" />
+      </svg>
+    )
+  }
+  if (category === 'audio') {
+    return (
+      <svg {...props} aria-hidden="true">
+        <path d="M9 18V5l12-2v13" />
+        <circle cx="6" cy="18" r="3" />
+        <circle cx="18" cy="16" r="3" />
+      </svg>
+    )
+  }
+  if (category === 'video') {
+    return (
+      <svg {...props} aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M10 9l6 3-6 3V9z" fill="currentColor" stroke="none" />
+      </svg>
+    )
+  }
+  if (category === 'link') {
+    return (
+      <svg {...props} aria-hidden="true">
+        <path d="M10 14a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1" />
+        <path d="M14 10a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1" />
+      </svg>
+    )
+  }
+  // file / generic
+  return (
+    <svg {...props} aria-hidden="true">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8"  y1="13" x2="16" y2="13" />
+      <line x1="8"  y1="17" x2="12" y2="17" />
+    </svg>
+  )
+}
+
+/**
+ * Shallow type-strip at the top of a Resource card.
+ *
+ * Resources are a management surface — an "organised library" of
+ * catalogue entries, not a gallery of artwork. The type strip is a
+ * quiet identifier: a small icon on the left, the type label beside
+ * it, on a subtle gradient in the type family. Deliberately no image
+ * thumbnails here — that lives in Media Library where artwork IS the
+ * content.
+ */
+function ResourceTypeStrip({
+  category, typeLabel,
+}: {
+  category: PreviewCategory
+  typeLabel: string
+}) {
+  const tint = RESOURCE_TINT[category]
+  return (
+    <div
+      className="relative flex h-14 w-full items-center gap-2 rounded-t-[var(--fc-radius-lg)] px-3.5"
+      style={{ background: tint.bg, color: tint.fg }}
+    >
+      <ResourceCategoryIcon category={category} size={20} />
+      <span className="text-[11px] font-[var(--fc-fw-semibold)] uppercase tracking-[var(--fc-tracking-eyebrow)]">
+        {typeLabel}
+      </span>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Pathway palette — dot colour on cards + 3px stripe on the drawer.
 // ---------------------------------------------------------------------------
 
@@ -1046,11 +1205,15 @@ function ResourceCard({
     : r.status === 'archived' ? 'archived'
     : 'draft'
 
+  const category = categorizeResource(r)
+  const typeLabelText = TYPE_LABEL[r.resource_type]
+  const updated = r.updated_at ?? r.created_at
+
   return (
     <Card
       as="article"
       variant={variant}
-      padding="lg"
+      padding="none"
       interactive={!selected}
       role="button"
       tabIndex={0}
@@ -1058,22 +1221,13 @@ function ResourceCard({
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
       }}
-      className="flex min-w-0 flex-col text-left"
+      className="flex min-w-0 flex-col overflow-hidden text-left"
     >
-      {/* Row: icon circle + overflow */}
-      <div className="flex items-start justify-between">
-        <span
-          className="inline-flex h-11 w-11 items-center justify-center rounded-full"
-          style={{
-            background: `var(--fc-type-${TYPE_TO_BADGE[r.resource_type]}-bg)`,
-            color: `var(--fc-type-${TYPE_TO_BADGE[r.resource_type]})`,
-          }}
-          aria-hidden="true"
-        >
-          <ResourceTypeIcon type={r.resource_type} size={19} />
-        </span>
+      {/* Shallow type strip — a quiet identifier, not a cover. */}
+      <div className="relative">
+        <ResourceTypeStrip category={category} typeLabel={typeLabelText} />
         <div
-          className="-mr-2 -mt-2"
+          className="absolute right-2 top-1/2 -translate-y-1/2"
           onClick={(e) => e.stopPropagation()}
           onKeyDown={(e) => e.stopPropagation()}
         >
@@ -1084,103 +1238,48 @@ function ResourceCard({
         </div>
       </div>
 
-      {/* Title — dominant */}
-      <h4
-        className="mt-6 line-clamp-2 min-h-[2.75em] text-[17px] font-[var(--fc-fw-semibold)] leading-snug tracking-[-0.005em] text-[color:var(--fc-ink-heading)]"
-        title={r.title}
-      >
-        {r.title}
-      </h4>
+      {/* Body — information-dense, catalogue-card feel. */}
+      <div className="flex min-w-0 flex-1 flex-col px-3.5 pt-3 pb-3">
+        <h4
+          className="line-clamp-2 text-[14.5px] font-[var(--fc-fw-semibold)] leading-snug text-[color:var(--fc-ink-heading)]"
+          title={r.title}
+        >
+          {r.title}
+        </h4>
 
-      {/* Type + status */}
-      <div className="mt-3 flex items-center gap-1.5">
-        <Badge tone={TYPE_TO_BADGE[r.resource_type]}>
-          {TYPE_LABEL[r.resource_type]}
-        </Badge>
-        <StatusBadge status={statusKind} />
+        {/* Type + status chips */}
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <Badge tone={TYPE_TO_BADGE[r.resource_type]}>
+            {TYPE_LABEL[r.resource_type]}
+          </Badge>
+          <StatusBadge status={statusKind} />
+        </div>
+
+        {/* Attached to — pathway or General */}
+        <div className="mt-2.5 flex items-center gap-2">
+          <span
+            className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+            style={{ background: pathwayPalette.dot }}
+            aria-hidden="true"
+          />
+          <span className="truncate text-[12.5px] font-[var(--fc-fw-semibold)] text-[color:var(--fc-ink-primary)]">
+            {pathwayLabel}
+          </span>
+        </div>
+
+        {/* Link status + updated date on a single tight row */}
+        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <span className="text-[11.5px] text-[color:var(--fc-ink-primary)]">
+            {usageLabel(r.usage_count)}
+          </span>
+          {updated && (
+            <span className="text-[11px] text-[color:var(--fc-ink-secondary,rgba(12,24,38,0.55))]">
+              Updated {formatDate(updated)}
+            </span>
+          )}
+        </div>
       </div>
-
-      {/* Spacer keeps pathway/usage flush at the bottom */}
-      <div className="flex-1" />
-
-      {/* Pathway */}
-      <div className="mt-7 flex items-center gap-2">
-        <span
-          className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-          style={{ background: pathwayPalette.dot }}
-          aria-hidden="true"
-        />
-        <span className="truncate text-[13px] font-[var(--fc-fw-semibold)] text-[color:var(--fc-ink-primary)]">
-          {pathwayLabel}
-        </span>
-      </div>
-
-      {/* Usage */}
-      <p className="mt-2 text-[12px] text-[color:var(--fc-ink-primary)]">
-        {usageLabel(r.usage_count)}
-      </p>
     </Card>
   )
 }
 
-// ---------------------------------------------------------------------------
-// Resource-type SVG icons — unchanged.
-// ---------------------------------------------------------------------------
-
-function ResourceTypeIcon({ type, size = 16 }: { type: ResourceType; size?: number }) {
-  const s = size
-  const props = { width: s, height: s, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  switch (type) {
-    case 'audio':
-      return (
-        <svg {...props} aria-hidden="true">
-          <path d="M9 18V5l12-2v13" />
-          <circle cx="6" cy="18" r="3" />
-          <circle cx="18" cy="16" r="3" />
-        </svg>
-      )
-    case 'video':
-    case 'replay':
-      return (
-        <svg {...props} aria-hidden="true">
-          <rect x="2" y="6" width="15" height="12" rx="2" />
-          <path d="M17 9l5-3v12l-5-3V9z" />
-        </svg>
-      )
-    case 'file':
-    case 'template':
-      return (
-        <svg {...props} aria-hidden="true">
-          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="8"  y1="13" x2="16" y2="13" />
-          <line x1="8"  y1="17" x2="12" y2="17" />
-        </svg>
-      )
-    case 'guide':
-      return (
-        <svg {...props} aria-hidden="true">
-          <path d="M4 5a2 2 0 012-2h11v18H6a2 2 0 01-2-2V5z" />
-          <line x1="8" y1="7" x2="15" y2="7" />
-          <line x1="8" y1="11" x2="15" y2="11" />
-          <line x1="8" y1="15" x2="12" y2="15" />
-        </svg>
-      )
-    case 'link':
-      return (
-        <svg {...props} aria-hidden="true">
-          <path d="M10 14a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1" />
-          <path d="M14 10a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1" />
-        </svg>
-      )
-    case 'other':
-    default:
-      return (
-        <svg {...props} aria-hidden="true">
-          <circle cx="12" cy="12" r="9" />
-          <line x1="12" y1="8" x2="12" y2="12" />
-          <line x1="12" y1="16" x2="12" y2="16" />
-        </svg>
-      )
-  }
-}

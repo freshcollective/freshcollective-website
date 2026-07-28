@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { apiUrl } from '@/lib/api'
+import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import OverflowMenu from '@/components/ui/OverflowMenu'
 import {
   Badge, type BadgeTone,
@@ -77,7 +77,79 @@ const TYPE_TO_BADGE: Record<MediaAssetType, BadgeTone> = {
   other:    'other',  // slate
 }
 
-function FileIcon({ type, size = 20 }: { type: MediaAssetType; size?: number }) {
+// ---------------------------------------------------------------------------
+// File-type categorisation for the preview area.
+//
+// The stored `media_type` is a coarse bucket ('image' | 'video' | 'audio' |
+// 'document' | 'other'). For a richer preview we sniff `mime_type` and
+// `extension` to differentiate PDF, spreadsheet, archive, and generic
+// document. Nothing about storage or upload behaviour changes.
+// ---------------------------------------------------------------------------
+
+type FileCategory = 'image' | 'video' | 'audio' | 'pdf' | 'spreadsheet' | 'archive' | 'document' | 'generic'
+
+const SPREADSHEET_MIME = new Set([
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.oasis.opendocument.spreadsheet',
+  'text/csv',
+])
+const ARCHIVE_MIME = new Set([
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/x-tar',
+  'application/gzip',
+  'application/x-rar-compressed',
+  'application/x-7z-compressed',
+])
+const SPREADSHEET_EXT = new Set(['xls', 'xlsx', 'csv', 'ods', 'numbers'])
+const ARCHIVE_EXT     = new Set(['zip', 'tar', 'gz', 'tgz', 'rar', '7z'])
+
+function categorize(asset: CreatorMediaAsset): FileCategory {
+  const mt = asset.media_type
+  const mime = asset.mime_type?.toLowerCase() ?? ''
+  const ext  = (asset.extension ?? '').replace(/^\./, '').toLowerCase()
+
+  if (mt === 'image') return 'image'
+  if (mt === 'video') return 'video'
+  if (mt === 'audio') return 'audio'
+  if (mime === 'application/pdf' || ext === 'pdf') return 'pdf'
+  if (SPREADSHEET_MIME.has(mime) || SPREADSHEET_EXT.has(ext)) return 'spreadsheet'
+  if (ARCHIVE_MIME.has(mime) || ARCHIVE_EXT.has(ext)) return 'archive'
+  if (mt === 'document') return 'document'
+  return 'generic'
+}
+
+// Category → preview background + icon colour. Non-image cards use a
+// very subtle diagonal gradient in the type family, giving each panel a
+// touch of depth without shouting. Kept low-saturation so the icon —
+// not the colour — remains the visual identity of the file.
+const CATEGORY_TINT: Record<FileCategory, { bg: string; fg: string }> = {
+  image:       { bg: 'linear-gradient(135deg, rgba(56,160,158,0.12)  0%, rgba(56,160,158,0.04)  100%)', fg: '#0f766e' }, // pale teal
+  pdf:         { bg: 'linear-gradient(135deg, rgba(214,96,87,0.12)   0%, rgba(214,96,87,0.03)   100%)', fg: '#a63c30' }, // blush → warm white
+  video:       { bg: 'linear-gradient(135deg, rgba(56,116,180,0.12)  0%, rgba(56,116,180,0.04)  100%)', fg: '#1e40af' }, // pale blue
+  audio:       { bg: 'linear-gradient(135deg, rgba(139,92,246,0.12)  0%, rgba(139,92,246,0.04)  100%)', fg: '#6d28d9' }, // pale lavender
+  document:    { bg: 'linear-gradient(135deg, rgba(30,41,59,0.07)    0%, rgba(30,41,59,0.02)    100%)', fg: '#334155' }, // pale slate
+  spreadsheet: { bg: 'linear-gradient(135deg, rgba(34,197,94,0.12)   0%, rgba(34,197,94,0.04)   100%)', fg: '#15803d' }, // pale green
+  archive:     { bg: 'linear-gradient(135deg, rgba(212,176,72,0.16)  0%, rgba(212,176,72,0.05)  100%)', fg: '#7A5A00' }, // pale gold
+  generic:     { bg: 'linear-gradient(135deg, rgba(100,116,139,0.12) 0%, rgba(100,116,139,0.04) 100%)', fg: '#475569' }, // pale grey
+}
+
+function categoryLabel(c: FileCategory): string {
+  return {
+    image: 'Image', video: 'Video', audio: 'Audio',
+    pdf: 'PDF', spreadsheet: 'Spreadsheet', archive: 'Archive',
+    document: 'Document', generic: 'File',
+  }[c]
+}
+
+/**
+ * File-type icon. `type` is either the coarse `MediaAssetType` (kept for
+ * back-compat) or the richer `FileCategory` computed by ``categorize``.
+ * Icons are heroicons-outline-style inline SVGs so we don't add a
+ * dependency for a handful of glyphs.
+ */
+function FileIcon({ type, size = 20 }: { type: MediaAssetType | FileCategory; size?: number }) {
   const s = size
   const props = {
     width: s, height: s, viewBox: '0 0 24 24', fill: 'none',
@@ -94,10 +166,12 @@ function FileIcon({ type, size = 20 }: { type: MediaAssetType; size?: number }) 
     )
   }
   if (type === 'video') {
+    // Play triangle inside a rounded rectangle — reads as "video" clearly
+    // whether the tile is small or large.
     return (
       <svg {...props} aria-hidden="true">
-        <rect x="2" y="6" width="15" height="12" rx="2" />
-        <path d="M17 9l5-3v12l-5-3V9z" />
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M10 9l6 3-6 3V9z" fill="currentColor" stroke="none" />
       </svg>
     )
   }
@@ -110,7 +184,37 @@ function FileIcon({ type, size = 20 }: { type: MediaAssetType; size?: number }) 
       </svg>
     )
   }
-  // document / other
+  if (type === 'pdf') {
+    return (
+      <svg {...props} aria-hidden="true">
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <text x="12" y="18" textAnchor="middle" fontSize="6" fontFamily="sans-serif" fontWeight="700" fill="currentColor" stroke="none">PDF</text>
+      </svg>
+    )
+  }
+  if (type === 'spreadsheet') {
+    return (
+      <svg {...props} aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+        <line x1="3" y1="16" x2="21" y2="16" />
+        <line x1="9" y1="4" x2="9" y2="20" />
+        <line x1="15" y1="4" x2="15" y2="20" />
+      </svg>
+    )
+  }
+  if (type === 'archive') {
+    return (
+      <svg {...props} aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <line x1="12" y1="4" x2="12" y2="8" />
+        <line x1="12" y1="10" x2="12" y2="12" />
+        <line x1="12" y1="14" x2="12" y2="16" />
+      </svg>
+    )
+  }
+  // document / generic (default)
   return (
     <svg {...props} aria-hidden="true">
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
@@ -118,6 +222,59 @@ function FileIcon({ type, size = 20 }: { type: MediaAssetType; size?: number }) 
       <line x1="8" y1="13" x2="16" y2="13" />
       <line x1="8" y1="17" x2="12" y2="17" />
     </svg>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Preview — the top of every asset card. 16:9 area with rounded top
+// corners. Renders a real image for image assets (with a graceful fallback
+// when it fails to load) and a large centred file-type glyph for everything
+// else. Tinted by category so files are recognisable at a glance without
+// shouting for attention.
+// ---------------------------------------------------------------------------
+
+function AssetPreview({
+  asset, category, viewUrl,
+}: {
+  asset: CreatorMediaAsset
+  category: FileCategory
+  viewUrl: string
+}) {
+  const [imageFailed, setImageFailed] = useState(false)
+  const tint = CATEGORY_TINT[category]
+  const isImage = category === 'image' && !imageFailed
+
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-t-[var(--fc-radius-lg)]"
+      // Aspect ratio 16:6 keeps the preview compact. At typical card
+      // widths this lands around 125–140px on desktop, 115–130px on
+      // tablet, and 160–180px on mobile — visible enough to recognise
+      // the file without turning the library into a gallery.
+      style={{ aspectRatio: '16 / 6', background: tint.bg }}
+    >
+      {isImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={viewUrl}
+          alt={asset.alt_text?.trim() || `Preview of ${asset.title}`}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+        />
+      ) : (
+        <div
+          className="flex h-full w-full items-center justify-center"
+          style={{ color: tint.fg }}
+        >
+          {/* Large centred glyph so the file type reads as the panel's
+              identity rather than a small symbol in empty space. Same
+              size for a failed-image fallback so the panel doesn't
+              collapse in on itself. */}
+          <FileIcon type={category} size={64} />
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -511,51 +668,33 @@ function AssetCard({ asset, spaceSlug, onArchive, onEdit }: AssetCardProps) {
     return Array.from(buckets.values())
   }, [usage])
 
-  const apiBase = typeof window !== 'undefined'
-    ? (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000')
-    : 'http://localhost:8000'
-  const viewUrl = asset.file_url.startsWith('/')
-    ? `${apiBase}${asset.file_url}`
-    : asset.file_url
+  // Resolve the file URL for image previews + Open action. Uses the
+  // shared resolveMediaUrl helper so a relative "/media/..." path is
+  // rewritten to the backend origin.
+  const viewUrl = resolveMediaUrl(asset.file_url) ?? asset.file_url
 
   const tagList = (asset.tags ?? '').split(',').map(t => t.trim()).filter(Boolean)
 
+  const category = categorize(asset)
   const badgeTone = TYPE_TO_BADGE[asset.media_type]
-  const iconWellBg = `var(--fc-type-${badgeTone}-bg)`
-  const iconWellFg = `var(--fc-type-${badgeTone})`
 
   return (
     <Card
       as="article"
-      padding="md"
-      className={cn('flex min-w-0 flex-col', archiving && 'opacity-60')}
+      padding="none"
+      className={cn('flex min-w-0 flex-col overflow-hidden', archiving && 'opacity-60')}
     >
-      {/* Top: icon + title + type badge + overflow */}
-      <div className="flex items-start gap-3">
-        <span
-          className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--fc-radius-md)]"
-          style={{ background: iconWellBg, color: iconWellFg }}
-          aria-hidden="true"
+      {/* ── Preview area (top third) — image or file-type icon ── */}
+      <div className="relative">
+        <AssetPreview asset={asset} category={category} viewUrl={viewUrl} />
+
+        {/* Overflow menu floats over the preview's top-right corner so
+            the body copy stays uncluttered. Uses a white pill so
+            actions are legible over any preview background. */}
+        <div
+          className="absolute right-2 top-2 rounded-full"
+          style={{ background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(6px)' }}
         >
-          <FileIcon type={asset.media_type} size={20} />
-        </span>
-
-        <div className="min-w-0 flex-1">
-          <h4
-            className="truncate text-[14.5px] font-[var(--fc-fw-semibold)] text-[color:var(--fc-ink-heading)]"
-            title={asset.title}
-          >
-            {asset.title}
-          </h4>
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            <Badge tone={badgeTone}>{typeLabel(asset.media_type)}</Badge>
-            <Text as="span" variant="meta">
-              {formatBytes(asset.file_size_bytes)}
-            </Text>
-          </div>
-        </div>
-
-        <div className="-mr-1.5 -mt-1.5">
           <OverflowMenu
             ariaLabel={`Actions for ${asset.title}`}
             items={[
@@ -576,89 +715,106 @@ function AssetCard({ asset, spaceSlug, onArchive, onEdit }: AssetCardProps) {
         </div>
       </div>
 
-      {asset.description && (
-        <p className="mt-2.5 line-clamp-2 text-[13px] leading-relaxed text-[color:var(--fc-ink-primary)]">
-          {asset.description}
-        </p>
-      )}
+      {/* ── Body ── tight spacing so the card stays compact even with
+           optional description / alt / tags present. */}
+      <div className="flex min-w-0 flex-1 flex-col px-3.5 pt-2.5 pb-3">
+        <h4
+          className="truncate text-[14.5px] font-[var(--fc-fw-semibold)] leading-tight text-[color:var(--fc-ink-heading)]"
+          title={asset.title}
+        >
+          {asset.title}
+        </h4>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <Badge tone={badgeTone}>{categoryLabel(category)}</Badge>
+          <Text as="span" variant="meta">
+            {formatBytes(asset.file_size_bytes)}
+          </Text>
+        </div>
 
-      {asset.alt_text && (
+        {asset.description && (
+          <p className="mt-2 line-clamp-2 text-[12.5px] leading-snug text-[color:var(--fc-ink-primary)]">
+            {asset.description}
+          </p>
+        )}
+
+        {asset.alt_text && (
+          <p
+            className="mt-1.5 line-clamp-1 text-[11.5px] italic text-[color:var(--fc-ink-primary)]"
+            title={asset.alt_text}
+          >
+            Alt: {asset.alt_text}
+          </p>
+        )}
+
+        {tagList.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {tagList.map(t => (
+              <Badge key={t} tone="neutral">{t}</Badge>
+            ))}
+          </div>
+        )}
+
         <p
-          className="mt-2 line-clamp-1 text-[12px] italic text-[color:var(--fc-ink-primary)]"
-          title={asset.alt_text}
+          className="mt-1.5 truncate text-[11px] text-[color:var(--fc-ink-secondary,rgba(12,24,38,0.55))]"
+          title={asset.original_filename}
         >
-          Alt: {asset.alt_text}
+          {asset.original_filename}
         </p>
-      )}
 
-      {tagList.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {tagList.map(t => (
-            <Badge key={t} tone="neutral">{t}</Badge>
-          ))}
-        </div>
-      )}
+        <div className="flex-1" />
 
-      <p
-        className="mt-2 truncate text-[11.5px] text-[color:var(--fc-ink-primary)]"
-        title={asset.original_filename}
-      >
-        {asset.original_filename}
-      </p>
-
-      <div className="flex-1" />
-
-      <div
-        className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-2.5"
-        style={{ borderColor: 'var(--fc-border-hairline)' }}
-      >
-        <Text as="span" variant="meta">{formatDate(asset.created_at)}</Text>
-        <button
-          type="button"
-          onClick={loadUsage}
-          disabled={usageLoading}
-          className="text-[11.5px] font-[var(--fc-fw-semibold)] text-[color:var(--fc-ink-primary)] underline-offset-2 transition-colors hover:text-[color:var(--fc-accent-700)] hover:underline"
-        >
-          {usageLoading
-            ? 'Loading…'
-            : asset.usage_count === 0
-            ? 'Used in 0 places'
-            : usageOpen
-            ? `Used in ${asset.usage_count} place${asset.usage_count === 1 ? '' : 's'} ▴`
-            : `Used in ${asset.usage_count} place${asset.usage_count === 1 ? '' : 's'} ▾`}
-        </button>
-      </div>
-
-      {usageOpen && usage !== null && (
         <div
-          className="mt-2 rounded-[var(--fc-radius-md)] border px-3 py-2 text-[12px]"
-          style={{
-            borderColor: 'var(--fc-border-hairline)',
-            background: 'rgba(15,30,55,0.02)',
-          }}
+          className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t pt-2"
+          style={{ borderColor: 'var(--fc-border-hairline)' }}
         >
-          {usage.length === 0 ? (
-            <Text as="p" variant="meta">Not referenced from any pathway yet.</Text>
-          ) : (
-            <ul className="space-y-1.5">
-              {grouped!.map((g) => (
-                <li key={g.pathwayTitle}>
-                  <Text as="p" variant="body-strong" className="text-[12px]">
-                    {g.pathwayTitle}
-                  </Text>
-                  <ul className="ml-3 mt-0.5 space-y-0.5">
-                    {g.refs.map((ref, i) => (
-                      <li key={i} className="text-[12px] text-[color:var(--fc-ink-primary)]">
-                        • {ref.label ?? ref.kind}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          )}
+          <Text as="span" variant="meta">{formatDate(asset.created_at)}</Text>
+          <button
+            type="button"
+            onClick={loadUsage}
+            disabled={usageLoading}
+            className="text-[11.5px] font-[var(--fc-fw-semibold)] text-[color:var(--fc-ink-primary)] underline-offset-2 transition-colors hover:text-[color:var(--fc-accent-700)] hover:underline"
+          >
+            {usageLoading
+              ? 'Loading…'
+              : asset.usage_count === 0
+              ? 'Used in 0 places'
+              : usageOpen
+              ? `Used in ${asset.usage_count} place${asset.usage_count === 1 ? '' : 's'} ▴`
+              : `Used in ${asset.usage_count} place${asset.usage_count === 1 ? '' : 's'} ▾`}
+          </button>
         </div>
-      )}
+
+        {usageOpen && usage !== null && (
+          <div
+            className="mt-2 rounded-[var(--fc-radius-md)] border px-3 py-2 text-[12px]"
+            style={{
+              borderColor: 'var(--fc-border-hairline)',
+              background: 'rgba(15,30,55,0.02)',
+            }}
+          >
+            {usage.length === 0 ? (
+              <Text as="p" variant="meta">Not referenced from any pathway yet.</Text>
+            ) : (
+              <ul className="space-y-1.5">
+                {grouped!.map((g) => (
+                  <li key={g.pathwayTitle}>
+                    <Text as="p" variant="body-strong" className="text-[12px]">
+                      {g.pathwayTitle}
+                    </Text>
+                    <ul className="ml-3 mt-0.5 space-y-0.5">
+                      {g.refs.map((ref, i) => (
+                        <li key={i} className="text-[12px] text-[color:var(--fc-ink-primary)]">
+                          • {ref.label ?? ref.kind}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
     </Card>
   )
 }
