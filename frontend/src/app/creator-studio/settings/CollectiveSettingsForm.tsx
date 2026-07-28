@@ -410,37 +410,35 @@ export default function CollectiveSettingsForm({ space, tab = 'details' }: Props
             </p>
           </div>
 
-          {/* ── Collective themes ── */}
+          {/* ── Themes ── */}
           <div>
-            <p className="mb-1.5 text-[14px] font-semibold text-navy-900">Collective themes</p>
+            <p id="themes-label" className="mb-1.5 text-[14px] font-semibold text-navy-900">Themes</p>
             <p className="mb-3 text-[13px] text-black">
-              Choose the themes that best describe this collective.
+              Choose the themes your collective explores. These help members discover your community and contribute to the living identity of the places where it grows.
             </p>
-            <div className="flex flex-wrap gap-2">
+            <div
+              role="group"
+              aria-labelledby="themes-label"
+              className="flex flex-wrap gap-2"
+            >
               {COLLECTIVE_THEMES.map((theme) => {
                 const selected = themes.includes(theme)
                 return (
                   <button
                     key={theme}
                     type="button"
+                    aria-pressed={selected}
                     onClick={() =>
                       setThemes((prev) =>
                         selected ? prev.filter((t) => t !== theme) : [...prev, theme],
                       )
                     }
-                    className="rounded-lg border px-3.5 py-1.5 text-[13px] font-medium transition-all"
-                    style={
-                      selected
-                        ? {
-                            borderColor: 'rgba(56,160,158,0.50)',
-                            background: 'rgba(56,160,158,0.10)',
-                            color: '#1E6E6C',
-                          }
-                        : {
-                            borderColor: '#e2e8f0',
-                            background: 'transparent',
-                            color: '#6B7A8D',
-                          }
+                    className={
+                      'rounded-lg border px-3.5 py-1.5 text-[13px] transition-colors ' +
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#38A09E]/40 focus-visible:ring-offset-2 ' +
+                      (selected
+                        ? 'border-[#38A09E]/60 bg-[#38A09E]/10 text-[#1E6E6C] font-semibold hover:bg-[#38A09E]/15'
+                        : 'border-slate-200 text-slate-500 font-medium hover:border-slate-300 hover:bg-slate-50 hover:text-navy-900')
                     }
                   >
                     {theme}
