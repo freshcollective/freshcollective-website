@@ -12,6 +12,7 @@ from app.services.scheduled_publisher import start_publisher, stop_publisher
 
 from app.auth.routes import router as auth_router
 from app.notifications.routes import router as notifications_router
+from app.activities.routes import router as activities_router
 from app.client.routes import router as client_router
 from app.admin.routes import router as admin_router
 from app.admin.atlas import router as admin_atlas_router
@@ -113,6 +114,7 @@ app.include_router(invites_router)
 app.include_router(checkout_router)
 app.include_router(webhooks_router)
 app.include_router(notifications_router)
+app.include_router(activities_router)
 app.include_router(messages_creator_router)
 app.include_router(messages_member_router)
 

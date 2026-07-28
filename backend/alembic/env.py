@@ -18,6 +18,7 @@ import app.models.payment_option   # noqa: F401 — registers payment options mo
 import app.models.payment_option_schedule  # noqa: F401 — registers payment option schedules
 import app.models.access_pass      # noqa: F401 — registers access pass / booking credit model
 import app.models.notification     # noqa: F401 — registers notification model
+import app.models.activity         # noqa: F401 — registers activity engine model
 
 config = context.config
 

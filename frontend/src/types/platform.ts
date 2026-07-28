@@ -1169,3 +1169,42 @@ export interface AccessPassAdminSummary extends AccessPassSummary {
   total_bookings: number
   recent_bookings: number
 }
+
+
+// ---------------------------------------------------------------------------
+// Activity Engine — mirrors backend `ActivityOut` / `ActivityListResponse`.
+// ---------------------------------------------------------------------------
+
+export type ActivityCategory =
+  | 'personal'
+  | 'conversations'
+  | 'gatherings'
+  | 'pathways'
+  | 'collective'
+  | 'account'
+
+export interface ActivityOut {
+  id: string
+  event_type: string
+  category: ActivityCategory | string
+  priority: string
+  actor_user_id: string | null
+  recipient_user_id: string
+  collective_id: string | null
+  pathway_id: string | null
+  gathering_id: string | null
+  conversation_id: string | null
+  resource_id: string | null
+  /** Writer-supplied. Callers read ``payload.title`` for the visible
+   *  title and ``payload.url`` for the target URL. Missing fields
+   *  degrade to a per-event-type fallback in the UI. */
+  payload: { title?: string; url?: string; [k: string]: unknown }
+  read_at: string | null
+  archived_at: string | null
+  created_at: string
+}
+
+export interface ActivityListResponse {
+  activities: ActivityOut[]
+  next_before: string | null
+}

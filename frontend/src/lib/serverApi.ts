@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 // Re-export so existing callers keep working. The canonical definition
 // lives in ``@/lib/activeSpaceCookie`` because the proxy middleware also
@@ -642,5 +642,38 @@ export const getCreatorBilling = cache(async (): Promise<CreatorBillingResponse 
     return res.json()
   } catch {
     return null
+  }
+})
+
+
+// ---------------------------------------------------------------------------
+// Activity Engine — "Recent Moments" panels
+//
+// Recipient scope is always the current caller. ``collectiveId`` narrows
+// the result to a single collective, so the same endpoint powers both
+// the Your-World feed ("across your world") and each collective's
+// sidebar panel ("in this place").
+//
+// ``recent_moments=true`` restricts the result to the curated Recent
+// Moments whitelist on the backend (see ``RECENT_MOMENTS`` in
+// ``app.models.activity``). Attention-required and history-only events
+// are excluded so this helper is safe to call from any RM surface.
+// ---------------------------------------------------------------------------
+
+export const getRecentActivities = cache(async (
+  limit: number,
+  collectiveId?: string,
+): Promise<ActivityListResponse> => {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    recent_moments: 'true',
+  })
+  if (collectiveId) params.set('collective_id', collectiveId)
+  try {
+    const res = await fetchWithSession(`/api/activities?${params.toString()}`)
+    if (!res.ok) return { activities: [], next_before: null }
+    return (await res.json()) as ActivityListResponse
+  } catch {
+    return { activities: [], next_before: null }
   }
 })

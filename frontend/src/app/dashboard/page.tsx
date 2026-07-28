@@ -19,6 +19,7 @@ import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary } from '@/types/platform'
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from './AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
+import RecentMomentsSection from './RecentMomentsSection'
 
 export const metadata: Metadata = {
   title: 'Your World · Fresh Collective',
@@ -235,6 +236,12 @@ export default async function DashboardPage() {
             and what&rsquo;s happening next.
           </p>
         </div>
+
+        {/* Recent Moments — the "across your world" perspective. Sits
+            between the page title and the collectives grid so the
+            first answer on Your World is "what's happened since I was
+            last here?". */}
+        <RecentMomentsSection />
 
         {/* Two-column grid on lg+. Explicit lg:col-start / lg:row-start on
             every child guarantees main-column items land in column 1 and

@@ -108,7 +108,7 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember, unreadMessage
                   onClick={() => setNotifOpen(true)}
                   className="inline-block shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-black transition-colors hover:text-navy-700"
                 >
-                  Notifications
+                  Stay Connected
                 </button>
               </>
             )}
@@ -161,7 +161,7 @@ export default function SpaceNav({ spaceSlug, spaceName, isMember, unreadMessage
                 className="flex min-w-[76px] shrink-0 flex-col items-center gap-0.5 py-2.5 text-center text-black transition-colors hover:text-teal-600"
               >
                 <span className="text-base leading-none" aria-hidden="true">🔔</span>
-                <span className="whitespace-nowrap text-xs font-medium">Notifications</span>
+                <span className="whitespace-nowrap text-xs font-medium">Stay Connected</span>
               </button>
             </>
           )}

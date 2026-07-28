@@ -1,6 +1,7 @@
 import { resolveMediaUrl } from '@/lib/api'
 import { getSpaceEvents } from '@/lib/serverApi'
 import { ImportantPanelContent } from '@/components/spaces/ImportantPanel'
+import CollectiveRecentMomentsPanel from '@/components/spaces/CollectiveRecentMomentsPanel'
 import UpcomingGatheringsList from '@/components/spaces/UpcomingGatheringsList'
 import type { EventSummary, SpaceResponse } from '@/types/platform'
 
@@ -130,6 +131,19 @@ export default async function CollectiveSidebarPanel({ space, memberCount, leade
         {/* Divider */}
         <div className="mt-4 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
       </div>
+
+      {/* Recent Moments — "in this place". Sits above Important so the
+          answer to "what's been happening here" reads before the
+          Creator's authored Welcome / This week / Notes content. */}
+      {space && (
+        <>
+          <CollectiveRecentMomentsPanel
+            spaceId={space.id}
+            className="px-5 pt-4 pb-2"
+          />
+          <div className="mx-5 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
+        </>
+      )}
 
       {/* Important panel content */}
       <ImportantPanelContent
