@@ -1,5 +1,5 @@
 /**
- * PROTOTYPE MOCK DATA — Discover Places (iteration 2)
+ * PROTOTYPE MOCK DATA — Discover Places (iteration 3)
  * ============================================================
  *
  * TEMPORARY FIXTURE. Not production data. Not connected to the
@@ -12,15 +12,16 @@
  * Records are deterministic — the same three sets render every
  * refresh so we can compare treatments across a review session.
  *
- * Iteration 2 changes:
- *   * Not-yet-active Places have been removed. Discover Places
- *     celebrates where community is already alive; it should not
- *     name absence.
- *   * `activeCollectives` and `upcomingGatherings` remain on each
- *     record so the component can derive an activity tier
- *     (flourishing / growing / emerging) and a warm character
- *     line — but the raw numbers are no longer surfaced on the
- *     card.
+ * Iteration 3 changes (see also DiscoverPlacesPrototype.tsx):
+ *   * Records now carry a `country` field. Every card renders
+ *     "Region, Country" consistently — no special-case suppression
+ *     for a hand-picked list of Australian capitals — so the page
+ *     works for an international audience.
+ *   * The Established set gains a handful of international
+ *     examples (Auckland, Bali, Edinburgh, Portland, Vancouver)
+ *     to stress-test the design outside Australia.
+ *   * Fixture order is no longer meaningful — the component sorts
+ *     every visible group alphabetically at render time.
  */
 
 export type PlaceActivity = 'active' | 'emerging'
@@ -28,11 +29,12 @@ export type PlaceActivity = 'active' | 'emerging'
 export interface PlaceMock {
   slug: string
   name: string
-  /** The state / territory the Place sits in (e.g. "Victoria"). */
+  /** The state, region or province the Place sits in
+   *  (e.g. "Victoria", "British Columbia", "Scotland"). */
   region: string
-  /** ISO-ish state code, kept for possible future grouping. */
-  stateCode:
-    | 'VIC' | 'NSW' | 'QLD' | 'TAS' | 'SA' | 'WA' | 'NT' | 'ACT'
+  /** The country the Place sits in
+   *  (e.g. "Australia", "Canada", "United Kingdom"). */
+  country: string
   /** Poetic descriptor — what the Place FEELS like. */
   livingIdentity: string
   /** Top 3 themes for active; 1–2 for emerging. */
@@ -53,7 +55,7 @@ export const EARLY_WORLD: PlaceMock[] = [
     slug: 'byron-bay',
     name: 'Byron Bay',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity:
       'A coastal community grounded in wellbeing, movement and reflection.',
     themes: ['Wellbeing', 'Movement', 'Reflection'],
@@ -65,7 +67,7 @@ export const EARLY_WORLD: PlaceMock[] = [
     slug: 'melbourne',
     name: 'Melbourne',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity:
       'A place where creativity, wellbeing and leadership are flourishing.',
     themes: ['Wellbeing', 'Creativity', 'Leadership'],
@@ -77,7 +79,7 @@ export const EARLY_WORLD: PlaceMock[] = [
     slug: 'sunshine-coast',
     name: 'Sunshine Coast',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity:
       'Movement, wellbeing and spirituality by the sea.',
     themes: ['Movement', 'Wellbeing', 'Spirituality'],
@@ -89,7 +91,7 @@ export const EARLY_WORLD: PlaceMock[] = [
     slug: 'blue-mountains',
     name: 'Blue Mountains',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity:
       'A quiet mountain refuge for reflection and inner work.',
     themes: ['Reflection', 'Inner Work'],
@@ -109,7 +111,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'melbourne',
     name: 'Melbourne',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity:
       'A place where creativity, wellbeing and leadership are flourishing.',
     themes: ['Wellbeing', 'Creativity', 'Leadership'],
@@ -121,7 +123,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'sydney',
     name: 'Sydney',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity:
       'Where business and inner work meet on the harbour.',
     themes: ['Business', 'Inner Work', 'Leadership'],
@@ -133,7 +135,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'brisbane',
     name: 'Brisbane',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity:
       'A warm subtropical community exploring creativity and relationships.',
     themes: ['Creativity', 'Relationships', 'Wellbeing'],
@@ -145,7 +147,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'byron-bay',
     name: 'Byron Bay',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity:
       'A coastal community grounded in wellbeing, movement and reflection.',
     themes: ['Wellbeing', 'Movement', 'Reflection'],
@@ -157,7 +159,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'sunshine-coast',
     name: 'Sunshine Coast',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity:
       'Movement, wellbeing and spirituality by the sea.',
     themes: ['Movement', 'Wellbeing', 'Spirituality'],
@@ -169,7 +171,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'blue-mountains',
     name: 'Blue Mountains',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity:
       'A quiet mountain refuge for reflection and inner work.',
     themes: ['Reflection', 'Inner Work', 'Creativity'],
@@ -181,7 +183,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'perth',
     name: 'Perth',
     region: 'Western Australia',
-    stateCode: 'WA',
+    country: 'Australia',
     livingIdentity:
       'Leadership and wellbeing on the western edge.',
     themes: ['Leadership', 'Wellbeing', 'Business'],
@@ -193,7 +195,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'northern-rivers',
     name: 'Northern Rivers',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity:
       'Spirituality, wellbeing and movement across the hinterland.',
     themes: ['Spirituality', 'Wellbeing', 'Movement'],
@@ -205,7 +207,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'yarra-valley',
     name: 'Yarra Valley',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity:
       'Wellbeing and creativity among the vineyards.',
     themes: ['Wellbeing', 'Creativity', 'Relationships'],
@@ -217,7 +219,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'hobart',
     name: 'Hobart',
     region: 'Tasmania',
-    stateCode: 'TAS',
+    country: 'Australia',
     livingIdentity:
       'Inner work and creativity at the edge of the world.',
     themes: ['Inner Work', 'Creativity'],
@@ -229,7 +231,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'adelaide',
     name: 'Adelaide',
     region: 'South Australia',
-    stateCode: 'SA',
+    country: 'Australia',
     livingIdentity:
       'A calm city exploring wellbeing, reflection and creativity.',
     themes: ['Wellbeing', 'Reflection'],
@@ -241,7 +243,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'fremantle',
     name: 'Fremantle',
     region: 'Western Australia',
-    stateCode: 'WA',
+    country: 'Australia',
     livingIdentity:
       'Creativity and relationships by the port.',
     themes: ['Creativity', 'Relationships'],
@@ -253,7 +255,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'newcastle',
     name: 'Newcastle',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity:
       'Movement and wellbeing on the coast.',
     themes: ['Movement', 'Wellbeing'],
@@ -265,7 +267,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'mornington-peninsula',
     name: 'Mornington Peninsula',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity:
       'Coastal reflection and quiet wellbeing.',
     themes: ['Reflection', 'Wellbeing'],
@@ -277,7 +279,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     slug: 'illawarra',
     name: 'Illawarra',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity:
       'Movement, wellbeing and creativity along the coast.',
     themes: ['Movement', 'Wellbeing', 'Creativity'],
@@ -298,7 +300,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'melbourne',
     name: 'Melbourne',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'A place where creativity, wellbeing and leadership are flourishing.',
     themes: ['Wellbeing', 'Creativity', 'Leadership'],
     activeCollectives: 12,
@@ -309,7 +311,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'geelong',
     name: 'Geelong',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'A community exploring creativity and inner work.',
     themes: ['Creativity', 'Inner Work', 'Wellbeing'],
     activeCollectives: 4,
@@ -320,7 +322,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'mornington-peninsula',
     name: 'Mornington Peninsula',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'Coastal reflection, movement and quiet leadership.',
     themes: ['Reflection', 'Movement', 'Leadership'],
     activeCollectives: 5,
@@ -331,7 +333,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'ballarat',
     name: 'Ballarat',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'Inner work and reflection in the goldfields.',
     themes: ['Inner Work', 'Reflection', 'Creativity'],
     activeCollectives: 3,
@@ -342,7 +344,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'bendigo',
     name: 'Bendigo',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'A small community, gathering into rhythm.',
     themes: ['Reflection', 'Wellbeing'],
     activeCollectives: 2,
@@ -353,7 +355,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'yarra-valley',
     name: 'Yarra Valley',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'Wellbeing and creativity among the vineyards.',
     themes: ['Wellbeing', 'Creativity', 'Relationships'],
     activeCollectives: 3,
@@ -364,7 +366,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'daylesford',
     name: 'Daylesford',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'Springs country — wellbeing, spirituality and reflection.',
     themes: ['Wellbeing', 'Spirituality', 'Reflection'],
     activeCollectives: 4,
@@ -375,7 +377,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'bellarine-peninsula',
     name: 'Bellarine Peninsula',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'A small community exploring wellbeing and reflection.',
     themes: ['Wellbeing', 'Reflection'],
     activeCollectives: 1,
@@ -386,7 +388,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'great-ocean-road',
     name: 'Great Ocean Road',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'Movement and reflection along the coast.',
     themes: ['Movement', 'Reflection'],
     activeCollectives: 1,
@@ -397,7 +399,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'warrnambool',
     name: 'Warrnambool',
     region: 'Victoria',
-    stateCode: 'VIC',
+    country: 'Australia',
     livingIdentity: 'A small coastal community grounded in wellbeing.',
     themes: ['Wellbeing', 'Reflection'],
     activeCollectives: 1,
@@ -410,7 +412,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'sydney',
     name: 'Sydney',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'Where business and inner work meet on the harbour.',
     themes: ['Business', 'Inner Work', 'Leadership'],
     activeCollectives: 11,
@@ -421,7 +423,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'byron-bay',
     name: 'Byron Bay',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'A coastal community grounded in wellbeing, movement and reflection.',
     themes: ['Wellbeing', 'Movement', 'Reflection'],
     activeCollectives: 9,
@@ -432,7 +434,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'blue-mountains',
     name: 'Blue Mountains',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'A quiet mountain refuge for reflection and inner work.',
     themes: ['Reflection', 'Inner Work', 'Creativity'],
     activeCollectives: 5,
@@ -443,7 +445,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'newcastle',
     name: 'Newcastle',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'Movement, wellbeing and creativity by the coast.',
     themes: ['Movement', 'Wellbeing', 'Creativity'],
     activeCollectives: 4,
@@ -454,7 +456,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'wollongong',
     name: 'Wollongong',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'A small community exploring wellbeing and movement.',
     themes: ['Wellbeing', 'Movement'],
     activeCollectives: 2,
@@ -465,7 +467,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'central-coast',
     name: 'Central Coast',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'Coastal wellbeing and parenting communities finding each other.',
     themes: ['Wellbeing', 'Parenting', 'Relationships'],
     activeCollectives: 3,
@@ -476,7 +478,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'southern-highlands',
     name: 'Southern Highlands',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'Reflection and inner work in the highlands.',
     themes: ['Reflection', 'Inner Work'],
     activeCollectives: 2,
@@ -487,7 +489,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'northern-rivers',
     name: 'Northern Rivers',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'Spirituality, wellbeing and movement across the hinterland.',
     themes: ['Spirituality', 'Wellbeing', 'Movement'],
     activeCollectives: 4,
@@ -498,7 +500,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'hunter-valley',
     name: 'Hunter Valley',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'A small community exploring reflection and relationships.',
     themes: ['Reflection', 'Relationships'],
     activeCollectives: 1,
@@ -509,7 +511,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'coffs-harbour',
     name: 'Coffs Harbour',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'A small community exploring wellbeing and movement.',
     themes: ['Wellbeing', 'Movement'],
     activeCollectives: 1,
@@ -520,7 +522,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'illawarra',
     name: 'Illawarra',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'Movement, wellbeing and creativity along the coast.',
     themes: ['Movement', 'Wellbeing', 'Creativity'],
     activeCollectives: 3,
@@ -531,7 +533,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'ballina',
     name: 'Ballina',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'A small community exploring wellbeing and movement.',
     themes: ['Wellbeing', 'Movement'],
     activeCollectives: 2,
@@ -542,7 +544,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'lismore',
     name: 'Lismore',
     region: 'New South Wales',
-    stateCode: 'NSW',
+    country: 'Australia',
     livingIdentity: 'A small community exploring spirituality and reflection.',
     themes: ['Spirituality', 'Reflection'],
     activeCollectives: 1,
@@ -555,7 +557,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'brisbane',
     name: 'Brisbane',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity: 'A warm subtropical community exploring creativity and relationships.',
     themes: ['Creativity', 'Relationships', 'Wellbeing'],
     activeCollectives: 8,
@@ -566,7 +568,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'sunshine-coast',
     name: 'Sunshine Coast',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity: 'Movement, wellbeing and spirituality by the sea.',
     themes: ['Movement', 'Wellbeing', 'Spirituality'],
     activeCollectives: 7,
@@ -577,7 +579,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'gold-coast',
     name: 'Gold Coast',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity: 'Business, leadership and movement in the sun.',
     themes: ['Business', 'Leadership', 'Movement'],
     activeCollectives: 5,
@@ -588,7 +590,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'noosa',
     name: 'Noosa',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity: 'Reflection and wellbeing on the northern beaches.',
     themes: ['Reflection', 'Wellbeing', 'Spirituality'],
     activeCollectives: 3,
@@ -599,7 +601,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'cairns',
     name: 'Cairns',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity: 'A small community exploring movement and spirituality.',
     themes: ['Movement', 'Spirituality'],
     activeCollectives: 2,
@@ -610,7 +612,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'toowoomba',
     name: 'Toowoomba',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity: 'A small community exploring reflection and parenting.',
     themes: ['Reflection', 'Parenting'],
     activeCollectives: 1,
@@ -621,7 +623,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'sunshine-hinterland',
     name: 'Sunshine Hinterland',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity: 'A small community exploring spirituality and reflection.',
     themes: ['Spirituality', 'Reflection'],
     activeCollectives: 2,
@@ -632,7 +634,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'scenic-rim',
     name: 'Scenic Rim',
     region: 'Queensland',
-    stateCode: 'QLD',
+    country: 'Australia',
     livingIdentity: 'A small community exploring reflection and wellbeing.',
     themes: ['Reflection', 'Wellbeing'],
     activeCollectives: 1,
@@ -645,7 +647,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'hobart',
     name: 'Hobart',
     region: 'Tasmania',
-    stateCode: 'TAS',
+    country: 'Australia',
     livingIdentity: 'Inner work and creativity at the edge of the world.',
     themes: ['Inner Work', 'Creativity', 'Reflection'],
     activeCollectives: 4,
@@ -656,7 +658,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'launceston',
     name: 'Launceston',
     region: 'Tasmania',
-    stateCode: 'TAS',
+    country: 'Australia',
     livingIdentity: 'A small community exploring reflection and inner work.',
     themes: ['Reflection', 'Inner Work'],
     activeCollectives: 1,
@@ -669,7 +671,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'adelaide',
     name: 'Adelaide',
     region: 'South Australia',
-    stateCode: 'SA',
+    country: 'Australia',
     livingIdentity: 'A calm city exploring wellbeing, reflection and creativity.',
     themes: ['Wellbeing', 'Reflection', 'Creativity'],
     activeCollectives: 5,
@@ -680,7 +682,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'adelaide-hills',
     name: 'Adelaide Hills',
     region: 'South Australia',
-    stateCode: 'SA',
+    country: 'Australia',
     livingIdentity: 'Reflection and spirituality in the hills.',
     themes: ['Reflection', 'Spirituality', 'Wellbeing'],
     activeCollectives: 3,
@@ -691,7 +693,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'barossa-valley',
     name: 'Barossa Valley',
     region: 'South Australia',
-    stateCode: 'SA',
+    country: 'Australia',
     livingIdentity: 'A small community exploring relationships and reflection.',
     themes: ['Relationships', 'Reflection'],
     activeCollectives: 1,
@@ -702,7 +704,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'fleurieu-peninsula',
     name: 'Fleurieu Peninsula',
     region: 'South Australia',
-    stateCode: 'SA',
+    country: 'Australia',
     livingIdentity: 'A small community exploring movement and wellbeing.',
     themes: ['Movement', 'Wellbeing'],
     activeCollectives: 1,
@@ -715,7 +717,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'perth',
     name: 'Perth',
     region: 'Western Australia',
-    stateCode: 'WA',
+    country: 'Australia',
     livingIdentity: 'Leadership and wellbeing on the western edge.',
     themes: ['Leadership', 'Wellbeing', 'Business'],
     activeCollectives: 6,
@@ -726,7 +728,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'fremantle',
     name: 'Fremantle',
     region: 'Western Australia',
-    stateCode: 'WA',
+    country: 'Australia',
     livingIdentity: 'Creativity, relationships and community by the port.',
     themes: ['Creativity', 'Relationships', 'Wellbeing'],
     activeCollectives: 4,
@@ -737,7 +739,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'margaret-river',
     name: 'Margaret River',
     region: 'Western Australia',
-    stateCode: 'WA',
+    country: 'Australia',
     livingIdentity: 'Reflection, spirituality and movement in the south-west.',
     themes: ['Reflection', 'Spirituality', 'Movement'],
     activeCollectives: 3,
@@ -748,7 +750,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'albany',
     name: 'Albany',
     region: 'Western Australia',
-    stateCode: 'WA',
+    country: 'Australia',
     livingIdentity: 'A small community exploring reflection and wellbeing.',
     themes: ['Reflection', 'Wellbeing'],
     activeCollectives: 1,
@@ -761,7 +763,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'darwin',
     name: 'Darwin',
     region: 'Northern Territory',
-    stateCode: 'NT',
+    country: 'Australia',
     livingIdentity: 'A small community exploring spirituality and relationships.',
     themes: ['Spirituality', 'Relationships'],
     activeCollectives: 2,
@@ -772,7 +774,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'alice-springs',
     name: 'Alice Springs',
     region: 'Northern Territory',
-    stateCode: 'NT',
+    country: 'Australia',
     livingIdentity: 'A small community exploring reflection and spirituality.',
     themes: ['Reflection', 'Spirituality'],
     activeCollectives: 1,
@@ -785,11 +787,70 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     slug: 'canberra',
     name: 'Canberra',
     region: 'Australian Capital Territory',
-    stateCode: 'ACT',
+    country: 'Australia',
     livingIdentity: 'Leadership, inner work and reflection in the capital.',
     themes: ['Leadership', 'Inner Work', 'Reflection'],
     activeCollectives: 4,
     upcomingGatherings: 9,
+    activity: 'active',
+  },
+
+  // ── International — a small stress-test set for global readiness ─
+  // Not exhaustive by design. Enough international examples for the
+  // layout, labels and grouping to be evaluated outside Australia.
+  {
+    slug: 'auckland',
+    name: 'Auckland',
+    region: 'Auckland',
+    country: 'New Zealand',
+    livingIdentity: 'A harbour city exploring wellbeing, creativity and leadership.',
+    themes: ['Wellbeing', 'Creativity', 'Leadership'],
+    activeCollectives: 6,
+    upcomingGatherings: 15,
+    activity: 'active',
+  },
+  {
+    slug: 'bali',
+    name: 'Bali',
+    region: 'Bali',
+    country: 'Indonesia',
+    livingIdentity: 'Spirituality, wellbeing and movement across the island.',
+    themes: ['Spirituality', 'Wellbeing', 'Movement'],
+    activeCollectives: 7,
+    upcomingGatherings: 18,
+    activity: 'active',
+  },
+  {
+    slug: 'edinburgh',
+    name: 'Edinburgh',
+    region: 'Scotland',
+    country: 'United Kingdom',
+    livingIdentity: 'Inner work, reflection and creativity in the old town.',
+    themes: ['Inner Work', 'Reflection', 'Creativity'],
+    activeCollectives: 4,
+    upcomingGatherings: 10,
+    activity: 'active',
+  },
+  {
+    slug: 'portland',
+    name: 'Portland',
+    region: 'Oregon',
+    country: 'United States',
+    livingIdentity: 'Creativity, movement and reflection in the Pacific Northwest.',
+    themes: ['Creativity', 'Movement', 'Reflection'],
+    activeCollectives: 5,
+    upcomingGatherings: 12,
+    activity: 'active',
+  },
+  {
+    slug: 'vancouver',
+    name: 'Vancouver',
+    region: 'British Columbia',
+    country: 'Canada',
+    livingIdentity: 'A coastal city grounded in movement, wellbeing and leadership.',
+    themes: ['Movement', 'Wellbeing', 'Leadership'],
+    activeCollectives: 6,
+    upcomingGatherings: 14,
     activity: 'active',
   },
 ]

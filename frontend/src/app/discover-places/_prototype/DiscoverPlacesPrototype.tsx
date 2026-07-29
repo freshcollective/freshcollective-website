@@ -1,49 +1,43 @@
 'use client'
 
 /**
- * PROTOTYPE — Discover Places (iteration 2)
+ * PROTOTYPE — Discover Places (iteration 3)
  * ============================================================
  *
  * TEMPORARY. Delete this whole `_prototype` folder when the real
  * Discover Places page ships. See ../page.tsx for the mount point
  * and ./mockData.ts for the fixture.
  *
- * The prompt for this iteration: "Does Discover Places feel like
- * exploring a living world rather than browsing a directory?"
+ * The prompt for this iteration: "Does the page now feel scalable
+ * without becoming a directory?"
  *
- * What changed from iteration 1:
+ * What changed from iteration 2:
  *
- *   * Community becomes the hero, geography the setting.
- *     Heading, intro copy and card treatment lead with what
- *     community life is happening here, not with names of towns.
+ *   * Every visible group of Places is sorted alphabetically by
+ *     name — every scale, every tier, every filter, every search.
+ *     Fixture order is not preserved. Alphabetical is calm and
+ *     predictable.
  *
- *   * Numeric metrics ("8 Collectives · 23 Gatherings") are gone.
- *     In their place, each card carries a warm character line
- *     derived from the Place's tier and top themes — e.g.
- *     "Weekly gatherings across Wellbeing, Creativity and
- *     Leadership." Numbers still live on the fixture so the tier
- *     can be derived, but they are never surfaced.
+ *   * The Established view is now a collapsible tier accordion,
+ *     not one long scroll. All three tier headers (Flourishing,
+ *     Growing, Emerging) are visible near the top so the shape of
+ *     the world is legible at a glance. Flourishing opens by
+ *     default; Growing and Emerging start closed. Multiple can
+ *     be open at once.
  *
- *   * Not-yet-active Places are removed entirely (from the
- *     fixture, from the prototype). Discover Places celebrates
- *     where community already lives; it does not name absence.
+ *   * When the reader searches or filters, the accordion
+ *     collapses into a single flat alphabetical grid, and each
+ *     card carries a subtle tier eyebrow so the activity
+ *     character is not lost while filtered.
  *
- *   * State labels are hidden for well-known major cities
- *     (Melbourne, Sydney, Brisbane, Perth, Adelaide, Hobart,
- *     Canberra, Darwin) — "Melbourne" is enough on its own.
- *     Smaller Places still show their state.
+ *   * State labels are no longer suppressed for major cities.
+ *     Every card renders "Region, Country" consistently so
+ *     international Places sit alongside Australian ones without
+ *     visual jitter.
  *
- *   * At Established scale, the flat card grid becomes a
- *     narrative — three sections telling the story of the world:
- *     Flourishing communities → Growing communities →
- *     Emerging communities. When the reader searches or filters,
- *     the sections collapse back into a single grid because the
- *     narrative is theirs, not the page's.
- *
- *   * The atmosphere header is a touch taller and gains a soft
- *     morning-light highlight so each Place has slightly more
- *     presence, without introducing icons, illustrations or
- *     imagery.
+ *   * A handful of international Places have been added to the
+ *     Established fixture (Auckland, Bali, Edinburgh, Portland,
+ *     Vancouver) to stress-test the design outside Australia.
  */
 
 import { useMemo, useState } from 'react'
@@ -70,27 +64,37 @@ const SCALE_SET: Record<Scale, PlaceMock[]> = {
   established: ESTABLISHED_WORLD,
 }
 
-// Well-known major cities where the state name adds noise more than
-// context. For every other Place the region still appears — "Byron
-// Bay, New South Wales" reads naturally; "Melbourne, Victoria" adds
-// nothing a member doesn't already know.
-const MAJOR_CITIES = new Set<string>([
-  'Melbourne', 'Sydney', 'Brisbane', 'Perth',
-  'Adelaide', 'Hobart',   'Canberra', 'Darwin',
-])
-
-const TIER_META: Record<Tier, { label: string; subheading: string }> = {
+// Tier metadata — subtle colour cue is the only visual identity
+// carried between the section header and the filtered eyebrow. All
+// three colours sit within Fresh Collective's calm palette; none is
+// loud enough to dominate a card.
+const TIER_META: Record<Tier, {
+  label:      string
+  subheading: string
+  dot:        string
+  pillBg:     string
+  pillText:   string
+}> = {
   flourishing: {
     label:      'Flourishing communities',
     subheading: 'Where community life is in full bloom.',
+    dot:        '#38A09E',
+    pillBg:     'rgba(56, 160, 158, 0.12)',
+    pillText:   '#1E6E6C',
   },
   growing: {
     label:      'Growing communities',
     subheading: 'Where the community is finding its rhythm.',
+    dot:        '#7EA87A',
+    pillBg:     'rgba(126, 168, 122, 0.14)',
+    pillText:   '#3D6B3B',
   },
   emerging: {
     label:      'Emerging communities',
     subheading: 'Where something new is beginning to take root.',
+    dot:        '#C5A876',
+    pillBg:     'rgba(197, 168, 118, 0.16)',
+    pillText:   '#7A5E2E',
   },
 }
 
@@ -112,8 +116,6 @@ function atmosphereFor(place: PlaceMock): Gradient {
   for (let i = 0; i < place.slug.length; i++) hash += place.slug.charCodeAt(i)
   const pick = ATMOSPHERES[hash % ATMOSPHERES.length]
   if (place.activity === 'emerging') {
-    // Emerging Places wash a little towards the light — softer,
-    // less asserted — so tier reads visually as well as textually.
     return { from: mixWithWhite(pick.from, 0.25), to: mixWithWhite(pick.to, 0.25) }
   }
   return pick
@@ -128,9 +130,6 @@ function mixWithWhite(hex: string, ratio: number): string {
   return `#${((1 << 24) + (mix(r) << 16) + (mix(g) << 8) + mix(b)).toString(16).slice(1)}`
 }
 
-// Tier derivation. Emerging is authored on the fixture; the two
-// active tiers split on activeCollectives so the character line can
-// speak with the right register.
 function tierFor(place: PlaceMock): Tier {
   if (place.activity === 'emerging')   return 'emerging'
   if (place.activeCollectives >= 6)    return 'flourishing'
@@ -145,9 +144,6 @@ function joinThemes(themes: readonly string[], max: number): string {
   return `${picked.slice(0, -1).join(', ')} and ${picked[picked.length - 1]}`
 }
 
-// The single line each card leads with in place of raw counts.
-// Tone matches the tier — busy and confident at flourishing, quiet
-// and observant at emerging.
 function characterLineFor(place: PlaceMock): string {
   const tier = tierFor(place)
   if (tier === 'flourishing') {
@@ -156,11 +152,16 @@ function characterLineFor(place: PlaceMock): string {
   if (tier === 'growing') {
     return `Regular gatherings — ${joinThemes(place.themes, 2)}.`
   }
-  // Emerging
   if (place.themes.length > 0) {
     return `A small community exploring ${joinThemes(place.themes, 2)}.`
   }
   return 'A small community, just beginning.'
+}
+
+// Locale-aware, case-insensitive sort so "Adelaide" comes before
+// "Adelaide Hills" and international names sort naturally.
+function byName(a: PlaceMock, b: PlaceMock): number {
+  return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
 }
 
 
@@ -175,8 +176,6 @@ export default function DiscoverPlacesPrototype() {
 
   const allPlaces = SCALE_SET[scale]
 
-  // Controls follow scale. Four cards should never look like they
-  // need a directory interface; sixty should always support one.
   const showSearch  = scale !== 'early'
   const showFilters = scale !== 'early'
 
@@ -186,27 +185,33 @@ export default function DiscoverPlacesPrototype() {
     setActiveThemes([])
   }
 
+  // Filter, then always sort alphabetically. `byName` is stable and
+  // locale-aware, so this list is the single source of truth for
+  // everything below.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return allPlaces.filter((p) => {
-      if (q && !p.name.toLowerCase().includes(q)) return false
-      if (activeThemes.length > 0 && !p.themes.some((t) => activeThemes.includes(t))) return false
-      return true
-    })
+    return allPlaces
+      .filter((p) => {
+        if (q && !p.name.toLowerCase().includes(q)) return false
+        if (activeThemes.length > 0 && !p.themes.some((t) => activeThemes.includes(t))) return false
+        return true
+      })
+      .slice()
+      .sort(byName)
   }, [allPlaces, search, activeThemes])
 
   const isFiltering = search.trim().length > 0 || activeThemes.length > 0
 
-  // Only offer theme filters that at least one visible Place carries.
   const availableThemes = useMemo(() => {
     const set = new Set<string>()
     for (const p of allPlaces) for (const t of p.themes) set.add(t)
     return COLLECTIVE_THEMES.filter((t) => set.has(t))
   }, [allPlaces])
 
-  // Tier grouping is a narrative device — it should not compete
-  // with an active filter, which is the reader's own narrative.
-  const groupByTier = scale === 'established' && !isFiltering
+  // Accordion applies only to Established, and only when the reader
+  // is not filtering — a filtered/search state is the reader's own
+  // narrative and does not need a tier gate in front of it.
+  const useAccordion = scale === 'established' && !isFiltering
 
   return (
     <div className="pb-24">
@@ -273,10 +278,10 @@ export default function DiscoverPlacesPrototype() {
           </section>
         )}
 
-        {/* ── Card grid or narrative sections ── */}
-        {groupByTier
-          ? <TieredPlaces places={filtered} />
-          : <PlaceGrid   places={filtered} />}
+        {/* ── Card grid or tier accordion ── */}
+        {useAccordion
+          ? <TierAccordion places={filtered} />
+          : <PlaceGrid    places={filtered} showTier={isFiltering} />}
       </div>
     </div>
   )
@@ -388,10 +393,10 @@ function ThemeFilters({
 }
 
 // ---------------------------------------------------------------------------
-// Grid + tiered layout
+// Flat grid — used at Early, Growing, and Established-while-filtering.
 // ---------------------------------------------------------------------------
 
-function PlaceGrid({ places }: { places: PlaceMock[] }) {
+function PlaceGrid({ places, showTier }: { places: PlaceMock[]; showTier?: boolean }) {
   if (places.length === 0) {
     return (
       <p className="mt-8 max-w-md font-serif italic text-navy-500">
@@ -402,50 +407,116 @@ function PlaceGrid({ places }: { places: PlaceMock[] }) {
   return (
     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {places.map((p) => (
-        <PlaceCard key={p.slug} place={p} />
+        <PlaceCard key={p.slug} place={p} showTier={showTier} />
       ))}
     </div>
   )
 }
 
-function TieredPlaces({ places }: { places: PlaceMock[] }) {
-  const order: Tier[] = ['flourishing', 'growing', 'emerging']
-  const groups = order
-    .map((tier) => ({
-      tier,
-      items: places.filter((p) => tierFor(p) === tier),
-    }))
-    .filter((g) => g.items.length > 0)
+// ---------------------------------------------------------------------------
+// Tier accordion — the Established view's calm, editorial gateway to the
+// three tiers of community life. All three headers stay together at the top
+// so the shape of the world is legible without scrolling.
+// ---------------------------------------------------------------------------
 
-  if (groups.length === 0) {
-    return (
-      <p className="mt-8 max-w-md font-serif italic text-navy-500">
-        Nothing matches — try a different search or theme.
-      </p>
-    )
+function TierAccordion({ places }: { places: PlaceMock[] }) {
+  // Default: Flourishing is open, Growing and Emerging are closed.
+  // Multiple can be open at once — never single-open.
+  const [openTiers, setOpenTiers] = useState<Set<Tier>>(
+    () => new Set<Tier>(['flourishing']),
+  )
+
+  function toggle(tier: Tier) {
+    setOpenTiers((prev) => {
+      const next = new Set(prev)
+      if (next.has(tier)) next.delete(tier)
+      else next.add(tier)
+      return next
+    })
   }
 
+  const order: Tier[] = ['flourishing', 'growing', 'emerging']
+  const groups = order.map((tier) => ({
+    tier,
+    // `places` is already alphabetical, so filtering preserves order.
+    items: places.filter((p) => tierFor(p) === tier),
+  }))
+
   return (
-    <div className="space-y-12 md:space-y-16">
+    <div className="space-y-4 md:space-y-6">
       {groups.map((g) => {
-        const meta = TIER_META[g.tier]
+        const meta      = TIER_META[g.tier]
+        const isOpen    = openTiers.has(g.tier)
+        const contentId = `tier-content-${g.tier}`
+        const hasItems  = g.items.length > 0
         return (
-          <section key={g.tier} aria-labelledby={`tier-${g.tier}`}>
-            <header className="mb-5 md:mb-6 max-w-2xl">
-              <h2
-                id={`tier-${g.tier}`}
-                className="font-serif text-[22px] text-navy-900 md:text-[24px]"
-              >
-                {meta.label}
-              </h2>
-              <p className="mt-1 font-serif italic text-[15px] leading-relaxed text-navy-500">
-                {meta.subheading}
-              </p>
-            </header>
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {g.items.map((p) => (
-                <PlaceCard key={p.slug} place={p} />
-              ))}
+          <section key={g.tier} aria-labelledby={`tier-header-${g.tier}`}>
+            <button
+              type="button"
+              id={`tier-header-${g.tier}`}
+              aria-expanded={isOpen}
+              aria-controls={contentId}
+              aria-disabled={!hasItems || undefined}
+              onClick={() => hasItems && toggle(g.tier)}
+              className={
+                'group flex w-full items-start justify-between gap-4 rounded-xl px-3 py-4 text-left transition-colors ' +
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 ' +
+                (hasItems ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-70 cursor-default')
+              }
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span
+                    aria-hidden="true"
+                    className="inline-block h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: meta.dot }}
+                  />
+                  <h2 className="font-serif text-[22px] leading-tight text-navy-900 md:text-[24px]">
+                    {meta.label}
+                  </h2>
+                  <span
+                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium"
+                    style={{ background: meta.pillBg, color: meta.pillText }}
+                  >
+                    {g.items.length}
+                    {' '}
+                    {g.items.length === 1 ? 'Place' : 'Places'}
+                  </span>
+                </div>
+                <p className="mt-1 pl-5 font-serif italic text-[15px] leading-relaxed text-navy-500">
+                  {meta.subheading}
+                </p>
+              </div>
+
+              {hasItems && (
+                <span className="shrink-0 pt-1.5 text-navy-500" aria-hidden="true">
+                  <svg
+                    width="14" height="14" viewBox="0 0 14 14"
+                    className={
+                      'motion-safe:transition-transform motion-safe:duration-200 ' +
+                      (isOpen ? 'rotate-180' : '')
+                    }
+                  >
+                    <path d="M2 5l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                </span>
+              )}
+            </button>
+
+            <div
+              id={contentId}
+              role="region"
+              aria-labelledby={`tier-header-${g.tier}`}
+              hidden={!isOpen || !hasItems}
+              className="pt-2 pb-2"
+            >
+              {hasItems && (
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {g.items.map((p) => (
+                    <PlaceCard key={p.slug} place={p} />
+                  ))}
+                </div>
+              )}
             </div>
           </section>
         )
@@ -458,18 +529,16 @@ function TieredPlaces({ places }: { places: PlaceMock[] }) {
 // Card
 // ---------------------------------------------------------------------------
 
-function PlaceCard({ place }: { place: PlaceMock }) {
+function PlaceCard({ place, showTier }: { place: PlaceMock; showTier?: boolean }) {
   const atmosphere = atmosphereFor(place)
-  const showRegion = !MAJOR_CITIES.has(place.name)
+  const tier       = tierFor(place)
+  const meta       = TIER_META[tier]
 
   return (
     <article
       aria-labelledby={`place-${place.slug}-name`}
       className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-shadow hover:shadow-[0_8px_24px_rgba(12,24,38,0.06)]"
     >
-      {/* Atmosphere header — deterministic gradient with a soft
-          morning-light highlight in the top-left. Slightly taller
-          than iteration 1 to give each Place more presence. */}
       <div
         aria-hidden="true"
         className="relative h-24"
@@ -486,22 +555,33 @@ function PlaceCard({ place }: { place: PlaceMock }) {
         />
       </div>
 
-      {/* Body */}
       <div className="flex flex-1 flex-col p-5">
+        {showTier && (
+          <div className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-[0.08em] text-navy-500">
+            <span
+              aria-hidden="true"
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ background: meta.dot }}
+            />
+            <span>
+              {tier === 'flourishing' ? 'Flourishing'
+                : tier === 'growing'  ? 'Growing'
+                :                       'Emerging'}
+            </span>
+          </div>
+        )}
+
         <h3
           id={`place-${place.slug}-name`}
           className="font-serif text-[20px] leading-tight text-navy-900"
         >
           {place.name}
         </h3>
-        {showRegion && (
-          <p className="mt-0.5 text-[13px] text-navy-500">{place.region}</p>
-        )}
+        <p className="mt-0.5 text-[13px] text-navy-500">
+          {place.region}, {place.country}
+        </p>
 
-        <p className={
-          'font-serif italic text-[14px] leading-relaxed text-navy-600 ' +
-          (showRegion ? 'mt-4' : 'mt-3')
-        }>
+        <p className="mt-4 font-serif italic text-[14px] leading-relaxed text-navy-600">
           {place.livingIdentity}
         </p>
 
@@ -518,9 +598,6 @@ function PlaceCard({ place }: { place: PlaceMock }) {
           </div>
         )}
 
-        {/* Character line — replaces the two-metric row. Sits at the
-            bottom of the card so it reads as the closing note about
-            what community life looks like here. */}
         <p className="mt-5 text-[13px] leading-relaxed text-navy-500">
           {characterLineFor(place)}
         </p>
