@@ -24,6 +24,24 @@ def slugify(text: str) -> str:
 # Space
 # ---------------------------------------------------------------------------
 
+class PlaceRef(BaseModel):
+    """A compact view of a Geographic Location on the response side.
+
+    Included in SpaceDetail so the Creator UI can render the current
+    Primary Location without a second round trip. Not editable
+    directly — Creators change the link via connection_style +
+    primary_place_id on the update request.
+    """
+
+    model_config = {"from_attributes": True}
+
+    id: str
+    slug: str
+    name: str
+    region: str | None = None
+    country_code: str
+
+
 class SpaceCreateRequest(BaseModel):
     name: str
     tagline: str | None = None
@@ -80,6 +98,23 @@ class SpaceUpdateRequest(BaseModel):
     guidance_focus_body: str | None = None
     guidance_links_title: str | None = None
     guidance_links_body: str | None = None
+    # Place & Feel — Discovery pillar. See
+    # docs/foundations/discovery-connection-belonging-location-model.md.
+    # connection_style is one of 'online' | 'in_person' | 'both';
+    # primary_place_id is the Place row a Geographic Location resolves
+    # to (created via /api/places/resolve). Passing primary_place_id=""
+    # clears the current Place link. When connection_style is 'online',
+    # the backend clears the link regardless of what primary_place_id
+    # was sent.
+    connection_style: str | None = None
+    primary_place_id: str | None = None
+
+    @field_validator("connection_style")
+    @classmethod
+    def validate_connection_style(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("online", "in_person", "both"):
+            raise ValueError("connection_style must be one of: online, in_person, both.")
+        return v
 
     @field_validator("name")
     @classmethod
@@ -176,6 +211,11 @@ class SpaceDetail(BaseModel):
     # Creator Studio. Frontend uses this to render the locked
     # "access managed automatically" Settings panel.
     auto_grant_role: str | None = None
+    # Place & Feel — Discovery pillar. connection_style is set by the
+    # Creator through Place & Feel; primary_place is the resolved
+    # Geographic Location (null when connection_style is 'online').
+    connection_style: str = 'online'
+    primary_place: "PlaceRef | None" = None
 
     @field_validator("atmosphere_keys", mode="before")
     @classmethod

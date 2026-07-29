@@ -627,6 +627,17 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   atmosphere_labels?: string[]
   identity_statement?: string | null
   welcome_message?: string | null
+  // Place & Feel — Discovery pillar. connection_style is set by
+  // the Creator through Place & Feel; primary_place is the resolved
+  // Geographic Location (null when connection_style is 'online').
+  connection_style?: 'online' | 'in_person' | 'both'
+  primary_place?: {
+    id: string
+    slug: string
+    name: string
+    region: string | null
+    country_code: string
+  } | null
 }
 
 export interface CreatorPathway {

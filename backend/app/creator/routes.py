@@ -185,8 +185,14 @@ def _space_detail_response(space: Space, db: Session) -> dict:
     """Build a SpaceDetail-compatible dict with derived_has_paid_internal_content
     injected. Also hydrates the Atlas v1.2 identity fields (Location + Colour
     Palette + atmosphere/identity/welcome) so the frontend can drive the
-    Collective Home panel and the palette-based theme without a second call."""
+    Collective Home panel and the palette-based theme without a second call.
+
+    Discovery pillar: also hydrates ``primary_place`` from the linked
+    SpacePlace row so the Place & Feel tab can render the current
+    Geographic Location.
+    """
     from app.models.platform import Location, ColourStory
+    from app.models.place import Place, SpacePlace
     data = SpaceDetail.model_validate(space).model_dump()
     data['derived_has_paid_internal_content'] = _derived_has_paid_content(space.id, db)
     data['location_id'] = space.location_id
@@ -210,6 +216,20 @@ def _space_detail_response(space: Space, db: Session) -> dict:
         cs = db.query(ColourStory).filter(ColourStory.key == space.colour_story_key).first()
         if cs:
             data['colour_palette'] = {"key": cs.key, "name": cs.name, "palette": cs.palette}
+    # Hydrate Place & Feel — Geographic Location (nullable; only set
+    # once a Creator has picked one).
+    data['connection_style'] = space.connection_style
+    link = db.query(SpacePlace).filter(SpacePlace.space_id == space.id).first()
+    if link is not None:
+        place = db.query(Place).filter(Place.id == link.place_id).first()
+        if place is not None:
+            data['primary_place'] = {
+                "id": place.id,
+                "slug": place.slug,
+                "name": place.name,
+                "region": place.region,
+                "country_code": place.country_code,
+            }
     return data
 
 
@@ -789,9 +809,68 @@ def update_space(
         space.guidance_links_title = body.guidance_links_title.strip() or None
     if body.guidance_links_body is not None:
         space.guidance_links_body = body.guidance_links_body.strip() or None
+
+    # ---- Place & Feel — Discovery pillar ------------------------------
+    # Resolve and link the Geographic Location on save (drafts
+    # included). Publishing controls discoverability, not whether the
+    # relationship exists.
+    _apply_place_and_feel(space, body, db)
+
     db.commit()
     db.refresh(space)
     return _space_detail_response(space, db)
+
+
+def _apply_place_and_feel(space: Space, body: SpaceUpdateRequest, db: Session) -> None:
+    """Update connection_style + Geographic Location link consistently.
+
+    Rules (per docs/foundations/discovery-connection-belonging-location-model.md):
+
+      * If connection_style is 'online' → clear any SpacePlace link.
+      * If 'in_person' or 'both' and primary_place_id is provided →
+        replace the current link (a Collective has at most one
+        Primary Location today).
+      * If 'in_person' or 'both' is set for the first time and no
+        primary_place_id is provided → leave the link as-is (Creator
+        may be flipping the toggle before picking; the UI enforces
+        the required-choice, this is a graceful backend behaviour).
+      * primary_place_id="" explicitly clears the link even when
+        connection_style is 'in_person' or 'both' (Creator has
+        cleared the picker).
+    """
+    from app.models.place import Place, SpacePlace
+
+    style_changed = body.connection_style is not None
+    place_id_provided = body.primary_place_id is not None
+
+    if style_changed:
+        space.connection_style = body.connection_style  # type: ignore[assignment]
+
+    # Online → clear any existing link and stop.
+    if space.connection_style == "online":
+        db.query(SpacePlace).filter(SpacePlace.space_id == space.id).delete()
+        return
+
+    # in_person / both → apply the requested primary_place_id if the
+    # client sent one.
+    if place_id_provided:
+        raw_id = (body.primary_place_id or "").strip()
+        if raw_id == "":
+            # Explicit clear.
+            db.query(SpacePlace).filter(SpacePlace.space_id == space.id).delete()
+            return
+        target = db.query(Place).filter(Place.id == raw_id).first()
+        if target is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "That Geographic Location isn't recognised. "
+                    "Please pick it again from the search."
+                ),
+            )
+        # Replace any existing link with the new primary.
+        db.query(SpacePlace).filter(SpacePlace.space_id == space.id).delete()
+        db.add(SpacePlace(space_id=space.id, place_id=target.id))
 
 
 @router.post("/spaces/{slug}/cover", response_model=SpaceDetail)

@@ -71,6 +71,17 @@ class Settings(BaseSettings):
     # See docs/foundations/discovery-connection-belonging-v1.1.md.
     discovery_pillar_enabled: bool = False
 
+    # Location autocomplete provider for the Place & Feel picker.
+    # Currently only 'nominatim' (OpenStreetMap) is supported. The
+    # provider abstraction (app/services/location_providers) lets a
+    # future adapter (Mapbox, Google Places, OpenCage) slot in
+    # without touching routes, models or the Creator UI.
+    location_provider: str = "nominatim"
+    # Contact address advertised in the picker's outbound requests
+    # (Nominatim requires a truthful UA identifying the operator).
+    # Falls back to platform_owner_email if unset.
+    location_provider_contact: str | None = None
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

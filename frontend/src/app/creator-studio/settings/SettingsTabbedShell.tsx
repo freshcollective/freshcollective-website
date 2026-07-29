@@ -7,6 +7,7 @@ import type { CreatorSpaceDetail } from '@/types/platform'
 import CollectiveHomePanelSafe from '../assets/CollectiveHomePanelSafe'
 import CollectiveSettingsForm from './CollectiveSettingsForm'
 import GuidancePanelForm from './GuidancePanelForm'
+import PlaceAndFeelForm from './PlaceAndFeelForm'
 
 export type SettingsTab = 'place' | 'details' | 'visibility' | 'pricing' | 'about' | 'members'
 
@@ -122,12 +123,16 @@ export default function SettingsTabbedShell({
         </p>
       )}
 
-      {/* Place & Feel — Collective Home lives here (Location, atmosphere,
-          palette, relocate). Presentational: edits happen in the
-          build-your-collective flow. Banner and Logo remain on the
-          Details tab as direct identity assets. */}
+      {/* Place & Feel — two sections, saved independently:
+          1. Geographic Location (Discovery pillar) — where in the
+             real world the Collective operates. See
+             docs/foundations/discovery-connection-belonging-location-model.md.
+          2. Collective Home (Atlas system) — atmosphere, palette,
+             and the landscape identity. Presentational; edits
+             happen in the build-your-collective flow. */}
       {tab === 'place' && (
-        <div className="mb-5">
+        <div className="mb-5 space-y-5">
+          <PlaceAndFeelForm space={spaceDetail} />
           <CollectiveHomePanelSafe
             slug={spaceDetail.slug}
             location={spaceDetail.location ?? null}

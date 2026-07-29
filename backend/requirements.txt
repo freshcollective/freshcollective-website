@@ -13,6 +13,10 @@ python-dotenv>=1.0.0
 stripe>=10.0.0
 resend>=2.0.0
 Pillow>=10.3.0
+# Server-side HTTP client for the location autocomplete proxy
+# (backend/app/services/location_providers/nominatim.py). Async so
+# it composes with FastAPI without blocking the event loop.
+httpx>=0.27.0
 
 # --- Dev / test only (scoped to backend/tests/) ---------------------------
 # Bootstrapped 2026-07-16 for the standalone paid Gathering test scaffold.
