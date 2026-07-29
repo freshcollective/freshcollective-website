@@ -62,20 +62,21 @@ Places give meaning to Collectives.
 
 A Collective is a community. A Place provides its context.
 
-Fresh Collective holds two complementary location concepts:
+Every Collective in Fresh Collective belongs somewhere in the
+world in two complementary ways:
 
-- A **geographic Place** — the real-world city, region or Online
-  context in which a Collective lives (Melbourne, Byron Bay,
+- Its **Geographic Location** — the real-world city, region or
+  Online context in which it operates (Melbourne, Byron Bay,
   Vancouver, Online).
-- An **Atlas Location** — the metaphorical world-building identity
-  a Collective carries (Sanctuary Springs, Canopy Reach, The
-  Grove, Aegea).
+- Its **Collective Home** — the atmosphere, personality and
+  visual identity it carries (Sanctuary Springs, Atlas Isles,
+  Canopy Reach, The Grove).
 
 Discover Places is a lens on the wider world through the first,
-enriched by the second. A member wandering the geographic map
-encounters not only *where* communities exist, but the character
-they carry — the atmosphere of a Place emerging in part from the
-Atlas Locations of the Collectives that call it home.
+enriched by the second. A member wandering the map encounters not
+only *where* communities exist, but the character they carry —
+the atmosphere of a Place emerging in part from the Collective
+Homes of the communities gathered there.
 
 People often connect with places before they connect with people
 — a quiet cabin, a bustling harbour, a peaceful garden, a
@@ -105,7 +106,7 @@ Gatherings are what happens within it.
 ### Geography is emotional
 
 Places are not simply coordinates. Their character emerges from
-the communities they hold and the Atlas Locations those
+the communities they hold and the Collective Homes those
 communities carry — the same city can feel like one thing through
 a *Sanctuary Springs* Collective and another through a *Canopy
 Reach* Collective. Discover Places should honour that texture
@@ -151,8 +152,8 @@ at a Place — not statistics, but felt qualities.
 
 ### Atmosphere
 
-How a Place feels — shaped in part by the Atlas Locations of the
-Collectives that call it home.
+How a Place feels — shaped in part by the Collective Homes of the
+communities gathered there.
 
 ### Purpose
 
@@ -188,24 +189,32 @@ is not part of Discover Places.
 
 ---
 
-## Relationship to Atlas Locations
+## Relationship to Collective Home
 
-Atlas Locations are Fresh Collective's metaphorical world-building
-system — a curated set of landscapes and identities (Sanctuary
-Springs, Canopy Reach, The Grove, Aegea and others) that
-Collectives adopt as their aesthetic and cultural character.
+Every Collective belongs somewhere in the Fresh Collective world.
 
-Discover Places is the geographic surface of the world. Atlas
-Locations are the metaphorical layer beneath it. Both are real to
-the member — a Collective *lives* in Byron Bay and *feels like*
-Sanctuary Springs — and Discover Places should let those two
-layers reinforce one another. A Place surfaces the geographic
-truth; the Collectives within it carry the mythic identity that
-gives each Place its distinct character.
+Its **Collective Home** provides atmosphere, personality and
+visual identity.
 
-Discover Places is not a replacement for the Atlas system, and
-the Atlas system is not a replacement for Discover Places. Each
-answers a different question.
+Its **Geographic Location** tells members where it operates.
+
+Neither replaces the other. Together they help members understand
+both *where* a Collective exists and *what it feels like*.
+
+Discover Places is the surface that brings the geographic layer
+into view. Collective Homes travel with the Collectives
+themselves — they are what makes one Collective in Melbourne feel
+like a mountain refuge and another like a coastal studio, even
+when they share the same city on the map. A member exploring a
+Place therefore encounters a shared geographic context; the
+distinct Collective Homes within that Place give each community
+its own felt character.
+
+> *A short architectural note for internal readers.* The Collective
+> Home system is implemented as the platform's internal
+> world-building framework (referred to in the codebase and admin
+> tooling as *the Atlas*). Members and Creators encounter only the
+> product term *Collective Home*.
 
 ---
 
@@ -293,15 +302,16 @@ destinations. Considerations for how it may grow:
   urgency.
 - **Evolving world-building.** As curation deepens, individual
   Places acquire richer identity through artwork, language,
-  editorial description and cultural texture. As the Atlas
-  Locations of the Collectives within a Place shift over time,
-  the felt character of the Place shifts with them.
-- **Deeper interplay with the Atlas.** Discover Places may
-  increasingly reveal the mythic layer alongside the geographic
-  one — a member exploring a Place noticing which Atlas
-  Locations are strongest there, or a member drawn to an Atlas
-  Location seeing which Places it currently lives in — without
-  the two systems collapsing into one.
+  editorial description and cultural texture. As the Collective
+  Homes of the Collectives within a Place shift over time, the
+  felt character of the Place shifts with them.
+- **Deeper interplay between Place and Collective Home.**
+  Discover Places may increasingly reveal the atmospheric layer
+  alongside the geographic one — a member exploring a Place
+  noticing which Collective Homes are strongest there, or a
+  member drawn to a particular Collective Home seeing which
+  Places it currently lives in — without the two ideas
+  collapsing into one.
 
 The invariant across all of this: the world should always feel
 coherent, never fragmented. A member should never arrive at a
