@@ -80,22 +80,16 @@ export default function CollectiveIdentityHeader({
       )}
 
       <div className="relative mx-auto max-w-6xl">
-        {/* Location eyebrow — only present when the collective has one */}
+        {/* Island name — floats without a label. Members
+            experience the artwork and the named island directly;
+            no exposed system terminology. */}
         {location?.name && (
-          <>
-            <p
-              className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.28em]"
-              style={{ color: 'rgba(255,255,255,0.72)' }}
-            >
-              Location
-            </p>
-            <p
-              className="mb-6 font-serif text-[15px] italic md:text-[16px]"
-              style={{ color: 'rgba(255,255,255,0.90)' }}
-            >
-              {location.name}
-            </p>
-          </>
+          <p
+            className="mb-6 font-serif text-[15px] italic md:text-[16px]"
+            style={{ color: 'rgba(255,255,255,0.90)' }}
+          >
+            {location.name}
+          </p>
         )}
 
         {/* Soft gold accent line kept for continuity with the previous header */}

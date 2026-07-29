@@ -4,10 +4,14 @@ import Link from 'next/link'
 import { resolveMediaUrl } from '@/lib/api'
 
 /**
- * Collective Home — the Atlas v1.2 replacement for the retired
- * IslandArtworkPanel. Shows where the collective lives, what its current
- * atmosphere and colour palette are, and offers two doors back into the
- * ritual: change Location, or edit collective identity.
+ * Island panel — Creator Studio's Place & Feel view of the
+ * Collective's emotional / visual identity. Shows the selected
+ * island (internally an Atlas Location), the current atmosphere
+ * and the colour palette. Offers two doors back into the ritual:
+ * change the island, or edit collective identity.
+ *
+ * Creator-facing language uses "Island" throughout, per the
+ * product-language decision. The internal Atlas model is unchanged.
  */
 
 interface Props {
@@ -35,9 +39,10 @@ export default function CollectiveHomePanel({
       style={{ border: '1px solid rgba(56,160,158,0.18)', borderTop: '3px solid rgba(191,152,48,0.55)' }}
     >
       <div className="px-6 pt-6">
-        <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Collective Home</h2>
+        <h2 className="mb-1 text-[17px] font-semibold text-navy-900">Island</h2>
         <p className="text-[14px] italic" style={{ color: 'rgba(12,24,38,0.65)', fontFamily: 'Georgia, serif' }}>
-          Every collective belongs somewhere in the Fresh Collective world.
+          Choose the island that best captures the feeling and
+          atmosphere of your Collective.
         </p>
       </div>
 
@@ -66,9 +71,8 @@ export default function CollectiveHomePanel({
             </div>
 
             <div className="mb-5">
-              <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.20em]" style={{ color: '#38A09E' }}>
-                Location
-              </p>
+              {/* The island name floats without a label — the
+                  section heading above already names what this is. */}
               <h3 className="font-serif text-[22px]" style={{ color: '#0C1826' }}>
                 {location.name}
               </h3>
@@ -147,7 +151,7 @@ export default function CollectiveHomePanel({
                 className="rounded-full px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)', letterSpacing: '0.06em' }}
               >
-                Relocate Collective
+                Change Island
               </Link>
               <Link
                 href={`/build-your-collective?mode=edit-identity&slug=${slug}`}
@@ -171,20 +175,22 @@ export default function CollectiveHomePanel({
             }}
           >
             <p className="mb-2 font-serif text-[18px]" style={{ color: '#0C1826' }}>
-              This collective has not chosen a Location yet.
+              This Collective hasn&rsquo;t chosen an island yet.
             </p>
             <p
               className="mx-auto mb-6 max-w-md text-[14px] italic leading-relaxed"
               style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}
             >
-              Choose a Location from the Fresh Collective world — the Atlas artwork becomes the visual home for your collective.
+              Each island represents a different feeling and
+              atmosphere. Choose the one that best reflects the
+              experience you want to create for your members.
             </p>
             <Link
               href={`/build-your-collective?mode=change-location&slug=${slug}`}
               className="inline-flex items-center rounded-full px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
               style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)', letterSpacing: '0.06em' }}
             >
-              Choose a Location
+              Choose an Island
             </Link>
           </div>
         )}

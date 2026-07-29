@@ -1,21 +1,24 @@
 'use client'
 
 /**
- * PlaceAndFeelForm — the Geographic Location half of the Place & Feel
- * tab in Creator Studio.
+ * OperatingDetailsForm — "Where does this Collective operate?"
  *
- * Sits above the existing Collective Home panel (which stays exactly
- * as it was — atmosphere, palette, and the Home landscape). This
- * form captures:
+ * Rendered on the Details tab in Creator Studio. Groups the
+ * practical, operational settings that describe how the Collective
+ * meets its members in the real world:
  *
  *   * How does your Collective connect?  →  Online / In person / Both
- *   * Primary location                    →  LocationPicker (when
- *                                            not Online)
+ *   * Geographic location                 →  LocationPicker (when
+ *                                             not Online)
+ *   * Timezone                            →  used to display
+ *                                             gathering dates + times
  *
- * Saves via the existing PATCH /api/creator/spaces/{slug} endpoint
- * — no bespoke endpoint for this shape. Publishing controls
- * discoverability; save controls whether the Place link exists.
- * Drafts save the link too.
+ * These are deliberately kept apart from the *Place & Feel* tab.
+ * Place & Feel is the emotional / visual identity of the Collective
+ * (Island + atmosphere + palette). This form is about where and
+ * when the Collective operates. Same underlying PATCH endpoint;
+ * separate save button so the two areas remain independently
+ * editable.
  *
  * See docs/foundations/discovery-connection-belonging-location-model.md.
  */
@@ -28,37 +31,47 @@ import type { CreatorSpaceDetail } from '@/types/platform'
 
 type ConnectionStyle = 'online' | 'in_person' | 'both'
 
-interface Props {
-  space: CreatorSpaceDetail
-}
-
 const STYLE_OPTIONS: { value: ConnectionStyle; label: string; helper: string }[] = [
   { value: 'online',    label: 'Online',     helper: 'Members gather from anywhere.' },
   { value: 'in_person', label: 'In person',  helper: 'Members gather in a specific place.' },
   { value: 'both',      label: 'Both',       helper: 'A mix of online and in-person gatherings.' },
 ]
 
-export default function PlaceAndFeelForm({ space }: Props) {
+const TIMEZONE_OPTIONS = [
+  { value: 'Australia/Melbourne', label: 'Melbourne (AEST / AEDT)' },
+  { value: 'Australia/Sydney',    label: 'Sydney (AEST / AEDT)' },
+  { value: 'Australia/Brisbane',  label: 'Brisbane (AEST)' },
+  { value: 'Australia/Adelaide',  label: 'Adelaide (ACST / ACDT)' },
+  { value: 'Australia/Perth',     label: 'Perth (AWST)' },
+  { value: 'Pacific/Auckland',    label: 'Auckland (NZST / NZDT)' },
+  { value: 'Europe/London',       label: 'London (GMT / BST)' },
+  { value: 'America/New_York',    label: 'New York (EST / EDT)' },
+  { value: 'America/Los_Angeles', label: 'Los Angeles (PST / PDT)' },
+  { value: 'UTC',                 label: 'UTC' },
+]
+
+interface Props {
+  space: CreatorSpaceDetail
+}
+
+export default function OperatingDetailsForm({ space }: Props) {
   const router = useRouter()
   const [style, setStyle] = useState<ConnectionStyle>(space.connection_style ?? 'online')
   const [place, setPlace] = useState<PickedPlace | null>(space.primary_place ?? null)
+  const [timezone, setTimezone] = useState<string>(space.timezone ?? 'Australia/Melbourne')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
   const [error, setError]   = useState<string | null>(null)
 
-  // Track whether the current form differs from what's saved. A
-  // Creator who just opened the tab shouldn't see a Save prompt for
-  // a change they haven't made.
   const dirty =
     style !== (space.connection_style ?? 'online') ||
-    (place?.id ?? null) !== (space.primary_place?.id ?? null)
+    (place?.id ?? null) !== (space.primary_place?.id ?? null) ||
+    timezone !== (space.timezone ?? 'Australia/Melbourne')
 
   const needsLocation = style === 'in_person' || style === 'both'
   const canSave =
     dirty &&
     !saving &&
-    // If the Creator chose in_person/both they must pick a location
-    // to save (matches the "require active choice" preference).
     (!needsLocation || place !== null)
 
   async function handleSave() {
@@ -72,10 +85,8 @@ export default function PlaceAndFeelForm({ space }: Props) {
         credentials: 'include',
         body: JSON.stringify({
           connection_style: style,
-          // Explicit empty string clears; omitting the field leaves
-          // whatever is already stored. We always send an explicit
-          // value so intent is unambiguous.
           primary_place_id: needsLocation && place ? place.id : '',
+          timezone,
         }),
       })
       if (!res.ok) {
@@ -98,20 +109,24 @@ export default function PlaceAndFeelForm({ space }: Props) {
   return (
     <section
       className="rounded-2xl border border-border bg-white p-6"
-      aria-labelledby="place-and-feel-heading"
+      aria-labelledby="operating-details-heading"
     >
       <h2
-        id="place-and-feel-heading"
+        id="operating-details-heading"
         className="mb-1 text-[17px] font-semibold text-navy-900"
       >
-        Geographic Location
+        Where does this Collective operate?
       </h2>
-      <p className="mb-6 text-[14px] italic leading-relaxed" style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}>
-        Where in the real world your collective operates. Online-only
-        collectives don&rsquo;t need a location.
+      <p
+        className="mb-6 text-[14px] italic leading-relaxed"
+        style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}
+      >
+        Practical operating details. Kept separate from the
+        Collective&rsquo;s island, atmosphere and colour palette on
+        the Place &amp; Feel tab.
       </p>
 
-      {/* Connection style — the active choice. */}
+      {/* Connection style — required active choice */}
       <div className="mb-6">
         <p id="conn-style-label" className="mb-2 text-[14px] font-semibold text-navy-900">
           How does your Collective connect?
@@ -144,19 +159,39 @@ export default function PlaceAndFeelForm({ space }: Props) {
         </div>
       </div>
 
-      {/* Primary location — only when connection style needs it. */}
+      {/* Geographic location — only when connection style needs it */}
       {needsLocation && (
         <div className="mb-6">
           <p className="mb-2 text-[14px] font-semibold text-navy-900">
-            Primary location
+            Geographic location
           </p>
           <LocationPicker
             value={place}
             onChange={setPlace}
-            helperText="Pick the city or region this collective is based in. A single searchable field is enough — Fresh Collective handles the rest behind the scenes."
+            helperText="Pick the city or region this Collective is based in. A single searchable field is enough — Fresh Collective handles the rest behind the scenes."
           />
         </div>
       )}
+
+      {/* Timezone — always visible; controls how gathering times display */}
+      <div className="mb-6">
+        <label htmlFor="operating-timezone" className="mb-2 block text-[14px] font-semibold text-navy-900">
+          Timezone
+        </label>
+        <select
+          id="operating-timezone"
+          value={timezone}
+          onChange={(e) => setTimezone(e.target.value)}
+          className="w-full max-w-md rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+        >
+          {TIMEZONE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <p className="mt-1.5 text-[12px] text-black">
+          Used to display gathering dates and times for members.
+        </p>
+      </div>
 
       {/* Save row */}
       <div className="mt-4 flex items-center gap-4">
@@ -189,7 +224,7 @@ export default function PlaceAndFeelForm({ space }: Props) {
         )}
         {needsLocation && !place && dirty && (
           <span className="text-[13px] italic text-navy-500" style={{ fontFamily: 'Georgia, serif' }}>
-            Pick a primary location to save.
+            Pick a geographic location to save.
           </span>
         )}
       </div>

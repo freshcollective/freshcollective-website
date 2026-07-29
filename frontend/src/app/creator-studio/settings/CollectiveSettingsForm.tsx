@@ -10,19 +10,6 @@ import AboutRichTextEditor from '@/components/ui/AboutRichTextEditor'
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png']
 const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png']
 
-const TIMEZONE_OPTIONS = [
-  { value: 'Australia/Melbourne', label: 'Melbourne (AEST / AEDT)' },
-  { value: 'Australia/Sydney',    label: 'Sydney (AEST / AEDT)' },
-  { value: 'Australia/Brisbane',  label: 'Brisbane (AEST)' },
-  { value: 'Australia/Adelaide',  label: 'Adelaide (ACST / ACDT)' },
-  { value: 'Australia/Perth',     label: 'Perth (AWST)' },
-  { value: 'Pacific/Auckland',    label: 'Auckland (NZST / NZDT)' },
-  { value: 'Europe/London',       label: 'London (GMT / BST)' },
-  { value: 'America/New_York',    label: 'New York (EST / EDT)' },
-  { value: 'America/Los_Angeles', label: 'Los Angeles (PST / PDT)' },
-  { value: 'UTC',                 label: 'UTC' },
-]
-
 // TODO: Connect banner upload to storage once file upload API is available in production.
 // Currently uses the local file storage backend (backend/uploads/covers/).
 
@@ -51,7 +38,6 @@ export default function CollectiveSettingsForm({ space, tab = 'details' }: Props
   const [tagline, setTagline] = useState(space.tagline ?? '')
   const [description, setDescription] = useState(space.description ?? '')
   const [aboutContent, setAboutContent] = useState(space.about_content ?? '')
-  const [timezone, setTimezone] = useState(space.timezone ?? 'Australia/Melbourne')
   const [isPublic, setIsPublic] = useState(space.is_public)
   const [status, setStatus] = useState(space.status)
   const [themes, setThemes] = useState<string[]>(space.themes ?? [])
@@ -240,7 +226,6 @@ export default function CollectiveSettingsForm({ space, tab = 'details' }: Props
           tagline: tagline.trim() || null,
           description: description.trim() || null,
           about_content: aboutContent.trim() || null,
-          timezone,
           themes,
           // Access + pricing fields are only sent for creator-managed
           // collectives. For auto-managed collectives (World Builders),
@@ -391,24 +376,9 @@ export default function CollectiveSettingsForm({ space, tab = 'details' }: Props
             </p>
           </div>
 
-          <div>
-            <label htmlFor="s-timezone" className="mb-1.5 block text-[14px] font-semibold text-navy-900">
-              Timezone
-            </label>
-            <select
-              id="s-timezone"
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
-            >
-              {TIMEZONE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-            <p className="mt-1.5 text-[12px] text-black">
-              Used to display gathering dates and times for members.
-            </p>
-          </div>
+          {/* Timezone lives on OperatingDetailsForm ("Where does this
+              Collective operate?") — a coherent grouping of the
+              practical operational settings. */}
 
           {/* ── Themes ── */}
           <div>

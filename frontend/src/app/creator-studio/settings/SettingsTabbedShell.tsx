@@ -7,15 +7,15 @@ import type { CreatorSpaceDetail } from '@/types/platform'
 import CollectiveHomePanelSafe from '../assets/CollectiveHomePanelSafe'
 import CollectiveSettingsForm from './CollectiveSettingsForm'
 import GuidancePanelForm from './GuidancePanelForm'
-import PlaceAndFeelForm from './PlaceAndFeelForm'
+import OperatingDetailsForm from './OperatingDetailsForm'
 
 export type SettingsTab = 'place' | 'details' | 'visibility' | 'pricing' | 'about' | 'members'
 
 const DEFAULT_TAB: SettingsTab = 'place'
 
 const TAB_ORDER: { key: SettingsTab; label: string; helper?: string }[] = [
-  { key: 'place',      label: 'Place & Feel', helper: 'Where this collective lives, and what that place feels like — Location, atmosphere and palette.' },
-  { key: 'details',    label: 'Details',      helper: 'The name, tagline, description and identity assets that define this collective.' },
+  { key: 'place',      label: 'Place & Feel', helper: 'How do you want your place to feel? Island, atmosphere and colour palette.' },
+  { key: 'details',    label: 'Details',      helper: 'The name, tagline, description and operating details that define this collective.' },
   { key: 'visibility', label: 'Visibility',   helper: 'Who can find and join this collective.' },
   { key: 'pricing',    label: 'Pricing',      helper: 'What people will understand about the cost before joining.' },
   { key: 'about',      label: 'About Page',   helper: 'This is the public page people see before joining your collective. Use it to explain what the collective is, who it is for and what people can expect.' },
@@ -123,22 +123,29 @@ export default function SettingsTabbedShell({
         </p>
       )}
 
-      {/* Place & Feel — two sections, saved independently:
-          1. Geographic Location (Discovery pillar) — where in the
-             real world the Collective operates. See
-             docs/foundations/discovery-connection-belonging-location-model.md.
-          2. Collective Home (Atlas system) — atmosphere, palette,
-             and the landscape identity. Presentational; edits
-             happen in the build-your-collective flow. */}
+      {/* Place & Feel — the emotional / visual identity of the
+          Collective. Island (internally the Atlas Location) +
+          atmosphere + colour palette. Presentational: edits happen
+          in the build-your-collective flow. */}
       {tab === 'place' && (
-        <div className="mb-5 space-y-5">
-          <PlaceAndFeelForm space={spaceDetail} />
+        <div className="mb-5">
           <CollectiveHomePanelSafe
             slug={spaceDetail.slug}
             location={spaceDetail.location ?? null}
             atmosphereNames={atmosphereNames}
             colourPalette={spaceDetail.colour_palette ?? null}
           />
+        </div>
+      )}
+
+      {/* Details tab — main identity/settings form PLUS the
+          "Where does this Collective operate?" section
+          (OperatingDetailsForm). The operating details are the
+          real-world / practical settings and are deliberately kept
+          apart from the island / atmosphere / palette on Place & Feel. */}
+      {tab === 'details' && (
+        <div className="mb-5">
+          <OperatingDetailsForm space={spaceDetail} />
         </div>
       )}
 

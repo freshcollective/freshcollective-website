@@ -55,7 +55,7 @@ class Boundary extends React.Component<React.PropsWithChildren<{ slug: string }>
           style={{ border: '1px solid rgba(166, 69, 38, 0.24)' }}
         >
           <p className="text-[14.5px] font-semibold" style={{ color: '#A64526' }}>
-            Collective Home couldn&apos;t be shown.
+            Island couldn&apos;t be shown.
           </p>
           <p className="mt-2 text-[13px] leading-relaxed text-black">
             Your Asset Library below is still available. Please refresh in a moment, or check the browser console for the actual exception.
