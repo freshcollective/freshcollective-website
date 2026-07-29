@@ -22,6 +22,7 @@ from datetime import datetime
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     String,
     Text,
@@ -54,6 +55,28 @@ class Place(Base):
     # Editorial description — a few paragraphs about what Fresh
     # Collective looks like here. Nullable while the copy is drafted.
     blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Coordinates — filled from the location autocomplete picker at
+    # Place creation time. Nullable because early Places (Phase 0
+    # seed style) may have been created without a provider payload.
+    # Not surfaced on Discover Places directly; kept for future
+    # "near you" surfaces and for deterministic map rendering if
+    # that ever ships.
+    latitude:  Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # IANA timezone identifier (e.g. "Australia/Melbourne"). Derived
+    # from the picker at Place creation. Collectives inherit this as
+    # a default when their own timezone is unset.
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Deduplication key. The location provider's canonical id for
+    # this place (e.g. an OpenStreetMap ``osm_type:osm_id`` pair, a
+    # Google Place ID, a Mapbox feature id). Two Creators picking
+    # the same city hit the same id and link to the same Place.
+    # Nullable to accommodate Places seeded manually before a
+    # picker payload existed. See
+    # ``docs/foundations/discovery-connection-belonging-location-model.md``.
+    provider_place_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, unique=True, index=True
+    )
     # Only two statuses: 'active' (visible) and 'hidden' (not surfaced
     # anywhere but preserved for links/history). No 'deleted' — Places
     # are curated and rare; removing one is an editorial decision, not

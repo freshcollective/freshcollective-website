@@ -223,6 +223,10 @@ class TestSchemaShape:
             "country_code",
             "region",
             "blurb",
+            "latitude",
+            "longitude",
+            "timezone",
+            "provider_place_id",
             "status",
             "created_at",
             "updated_at",
@@ -232,3 +236,70 @@ class TestSchemaShape:
         # Only three columns: two FKs and a created_at. No is_primary.
         cols = {c.name for c in inspect(SpacePlace).columns}
         assert cols == {"space_id", "place_id", "created_at"}
+
+
+# ---------------------------------------------------------------------------
+# Place — coordinates, timezone and dedup key (migration 092)
+# ---------------------------------------------------------------------------
+
+class TestPlacePickerFields:
+    def test_defaults_are_null(self, db):
+        p = _place(slug="hobart", name="Hobart")
+        db.add(p)
+        db.flush()
+        assert p.latitude is None
+        assert p.longitude is None
+        assert p.timezone is None
+        assert p.provider_place_id is None
+
+    def test_can_set_picker_payload(self, db):
+        p = _place(
+            slug="darwin",
+            name="Darwin",
+            latitude=-12.4634,
+            longitude=130.8456,
+            timezone="Australia/Darwin",
+            provider_place_id="osm:node:12345",
+        )
+        db.add(p)
+        db.flush()
+        assert p.latitude == -12.4634
+        assert p.longitude == 130.8456
+        assert p.timezone == "Australia/Darwin"
+        assert p.provider_place_id == "osm:node:12345"
+
+    def test_provider_place_id_is_unique(self, db):
+        db.add(_place(slug="a", provider_place_id="osm:node:99"))
+        db.flush()
+        db.add(_place(slug="b", provider_place_id="osm:node:99"))
+        with pytest.raises(IntegrityError):
+            db.flush()
+
+    def test_provider_place_id_null_is_not_unique(self, db):
+        # Two Places may exist with no provider payload — e.g. legacy
+        # rows or Phase 0 seeded Places.
+        db.add(_place(slug="a", provider_place_id=None))
+        db.add(_place(slug="b", provider_place_id=None))
+        db.flush()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Space.connection_style (migration 092)
+# ---------------------------------------------------------------------------
+
+class TestSpaceConnectionStyle:
+    def test_default_is_online(self, db, make_space):
+        s = make_space()
+        assert s.connection_style == "online"
+
+    def test_in_person_is_allowed(self, db, make_space):
+        s = make_space(connection_style="in_person")
+        assert s.connection_style == "in_person"
+
+    def test_both_is_allowed(self, db, make_space):
+        s = make_space(connection_style="both")
+        assert s.connection_style == "both"
+
+    def test_check_rejects_unknown_values(self, db, make_space):
+        with pytest.raises(IntegrityError):
+            make_space(connection_style="hybrid")

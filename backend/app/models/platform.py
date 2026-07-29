@@ -312,6 +312,17 @@ class Space(Base):
         String(24), nullable=False, default="standard", server_default="standard"
     )
 
+    # ---- Discovery, Connection & Belonging — Connection style ------------
+    # How this Collective connects: 'online' (default — safe for every
+    # existing row, since none have a Geographic Location yet), 'in_person'
+    # or 'both'. Drives whether a primary Geographic Location is
+    # required at publish time and whether this Collective appears on
+    # Discover Places. See
+    # ``docs/foundations/discovery-connection-belonging-location-model.md``.
+    connection_style: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="online", server_default="online"
+    )
+
     # ---- Community Care — collective suspension (Stage 2A reservation) ----
     # These columns landed with Stage 2A for future use; Stage 2C uses
     # the dedicated ``frozen_*`` columns below to represent an active
@@ -358,6 +369,10 @@ class Space(Base):
         CheckConstraint(
             "kind IN ('standard', 'local_circle')",
             name="spaces_kind_check",
+        ),
+        CheckConstraint(
+            "connection_style IN ('online', 'in_person', 'both')",
+            name="spaces_connection_style_check",
         ),
     )
 
