@@ -53,9 +53,9 @@ type Scale = 'early' | 'growing' | 'established'
 type Tier  = 'flourishing' | 'growing' | 'emerging'
 
 const SCALE_LABEL: Record<Scale, string> = {
-  early:       'Early world',
-  growing:     'Growing world',
-  established: 'Established world',
+  early:       'Early communities',
+  growing:     'Growing communities',
+  established: 'Established communities',
 }
 
 const SCALE_SET: Record<Scale, PlaceMock[]> = {
@@ -308,7 +308,7 @@ function ScaleReviewControl({
     >
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-6 py-3 md:flex-row md:items-center md:gap-4 md:px-10">
         <span className="text-[11px] uppercase tracking-[0.08em] text-slate-500">
-          Prototype control · not a member-facing feature
+          Prototype scale · testing different community sizes
         </span>
         <div role="group" aria-label="Choose prototype scale" className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
           {scales.map((s) => {
