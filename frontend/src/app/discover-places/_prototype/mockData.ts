@@ -1,5 +1,5 @@
 /**
- * PROTOTYPE MOCK DATA — Discover Places
+ * PROTOTYPE MOCK DATA — Discover Places (iteration 2)
  * ============================================================
  *
  * TEMPORARY FIXTURE. Not production data. Not connected to the
@@ -11,30 +11,42 @@
  *
  * Records are deterministic — the same three sets render every
  * refresh so we can compare treatments across a review session.
+ *
+ * Iteration 2 changes:
+ *   * Not-yet-active Places have been removed. Discover Places
+ *     celebrates where community is already alive; it should not
+ *     name absence.
+ *   * `activeCollectives` and `upcomingGatherings` remain on each
+ *     record so the component can derive an activity tier
+ *     (flourishing / growing / emerging) and a warm character
+ *     line — but the raw numbers are no longer surfaced on the
+ *     card.
  */
 
-export type PlaceActivity = 'active' | 'emerging' | 'not_yet_active'
+export type PlaceActivity = 'active' | 'emerging'
 
 export interface PlaceMock {
   slug: string
   name: string
   /** The state / territory the Place sits in (e.g. "Victoria"). */
   region: string
-  /** ISO-ish state code, used for grouping in the Established view. */
+  /** ISO-ish state code, kept for possible future grouping. */
   stateCode:
     | 'VIC' | 'NSW' | 'QLD' | 'TAS' | 'SA' | 'WA' | 'NT' | 'ACT'
-  /** Short line — spoken about the Place, not about the platform. */
+  /** Poetic descriptor — what the Place FEELS like. */
   livingIdentity: string
-  /** Top 3 themes for active; 1–2 for emerging; 0 for not-yet-active. */
+  /** Top 3 themes for active; 1–2 for emerging. */
   themes: string[]
+  /** Retained for tier + character-line derivation. Not shown as a
+   *  raw metric on the card. */
   activeCollectives: number
   upcomingGatherings: number
   activity: PlaceActivity
 }
 
 // ---------------------------------------------------------------------------
-// Early world — a handful of Places. One of each state so we can see all
-// three treatments side by side in the smallest surface.
+// Early world — a handful of Places. Enough to show what community-first
+// framing feels like at the smallest scale.
 // ---------------------------------------------------------------------------
 export const EARLY_WORLD: PlaceMock[] = [
   {
@@ -62,6 +74,18 @@ export const EARLY_WORLD: PlaceMock[] = [
     activity: 'active',
   },
   {
+    slug: 'sunshine-coast',
+    name: 'Sunshine Coast',
+    region: 'Queensland',
+    stateCode: 'QLD',
+    livingIdentity:
+      'Movement, wellbeing and spirituality by the sea.',
+    themes: ['Movement', 'Wellbeing', 'Spirituality'],
+    activeCollectives: 4,
+    upcomingGatherings: 10,
+    activity: 'active',
+  },
+  {
     slug: 'blue-mountains',
     name: 'Blue Mountains',
     region: 'New South Wales',
@@ -73,23 +97,12 @@ export const EARLY_WORLD: PlaceMock[] = [
     upcomingGatherings: 3,
     activity: 'emerging',
   },
-  {
-    slug: 'hobart',
-    name: 'Hobart',
-    region: 'Tasmania',
-    stateCode: 'TAS',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
 ]
 
 // ---------------------------------------------------------------------------
-// Growing world — enough to justify a search bar and theme filters, but
-// still browsable at a glance. ~15 Places, weighted towards active with a
-// handful of emerging and one not-yet-active for texture.
+// Growing world — enough to justify search + theme filters. All Places
+// have active community life; the mix leans towards flourishing / growing
+// tiers, with a handful of emerging ones for texture.
 // ---------------------------------------------------------------------------
 export const GROWING_WORLD: PlaceMock[] = [
   {
@@ -124,8 +137,8 @@ export const GROWING_WORLD: PlaceMock[] = [
     livingIdentity:
       'A warm subtropical community exploring creativity and relationships.',
     themes: ['Creativity', 'Relationships', 'Wellbeing'],
-    activeCollectives: 5,
-    upcomingGatherings: 12,
+    activeCollectives: 6,
+    upcomingGatherings: 15,
     activity: 'active',
   },
   {
@@ -177,12 +190,36 @@ export const GROWING_WORLD: PlaceMock[] = [
     activity: 'active',
   },
   {
+    slug: 'northern-rivers',
+    name: 'Northern Rivers',
+    region: 'New South Wales',
+    stateCode: 'NSW',
+    livingIdentity:
+      'Spirituality, wellbeing and movement across the hinterland.',
+    themes: ['Spirituality', 'Wellbeing', 'Movement'],
+    activeCollectives: 4,
+    upcomingGatherings: 9,
+    activity: 'active',
+  },
+  {
+    slug: 'yarra-valley',
+    name: 'Yarra Valley',
+    region: 'Victoria',
+    stateCode: 'VIC',
+    livingIdentity:
+      'Wellbeing and creativity among the vineyards.',
+    themes: ['Wellbeing', 'Creativity', 'Relationships'],
+    activeCollectives: 3,
+    upcomingGatherings: 8,
+    activity: 'active',
+  },
+  {
     slug: 'hobart',
     name: 'Hobart',
     region: 'Tasmania',
     stateCode: 'TAS',
     livingIdentity:
-      'A small community is beginning to take root here.',
+      'Inner work and creativity at the edge of the world.',
     themes: ['Inner Work', 'Creativity'],
     activeCollectives: 2,
     upcomingGatherings: 4,
@@ -194,7 +231,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     region: 'South Australia',
     stateCode: 'SA',
     livingIdentity:
-      'A small community is beginning to take root here.',
+      'A calm city exploring wellbeing, reflection and creativity.',
     themes: ['Wellbeing', 'Reflection'],
     activeCollectives: 2,
     upcomingGatherings: 3,
@@ -206,7 +243,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     region: 'Western Australia',
     stateCode: 'WA',
     livingIdentity:
-      'A small community is beginning to take root here.',
+      'Creativity and relationships by the port.',
     themes: ['Creativity', 'Relationships'],
     activeCollectives: 1,
     upcomingGatherings: 2,
@@ -218,7 +255,7 @@ export const GROWING_WORLD: PlaceMock[] = [
     region: 'New South Wales',
     stateCode: 'NSW',
     livingIdentity:
-      'A small community is beginning to take root here.',
+      'Movement and wellbeing on the coast.',
     themes: ['Movement', 'Wellbeing'],
     activeCollectives: 1,
     upcomingGatherings: 2,
@@ -230,53 +267,30 @@ export const GROWING_WORLD: PlaceMock[] = [
     region: 'Victoria',
     stateCode: 'VIC',
     livingIdentity:
-      'A small community is beginning to take root here.',
+      'Coastal reflection and quiet wellbeing.',
     themes: ['Reflection', 'Wellbeing'],
     activeCollectives: 1,
     upcomingGatherings: 1,
     activity: 'emerging',
   },
   {
-    slug: 'gold-coast',
-    name: 'Gold Coast',
-    region: 'Queensland',
-    stateCode: 'QLD',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'canberra',
-    name: 'Canberra',
-    region: 'Australian Capital Territory',
-    stateCode: 'ACT',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'geelong',
-    name: 'Geelong',
-    region: 'Victoria',
-    stateCode: 'VIC',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
+    slug: 'illawarra',
+    name: 'Illawarra',
+    region: 'New South Wales',
+    stateCode: 'NSW',
+    livingIdentity:
+      'Movement, wellbeing and creativity along the coast.',
+    themes: ['Movement', 'Wellbeing', 'Creativity'],
+    activeCollectives: 3,
+    upcomingGatherings: 6,
+    activity: 'active',
   },
 ]
 
 // ---------------------------------------------------------------------------
-// Established world — roughly 60 Places across every state and territory.
-// This is the stress-test for search, filters, grouping and the card grid.
-//
-// Ordering here mirrors typical browse order (loose geographic clustering,
-// alphabetical within a state); the UI sorts / groups on top of this.
+// Established world — the stress-test for search, filters and grouping.
+// Only Places with real community life. Tier grouping (Flourishing /
+// Growing / Emerging) is derived at render time from activeCollectives.
 // ---------------------------------------------------------------------------
 export const ESTABLISHED_WORLD: PlaceMock[] = [
   // ── Victoria ──────────────────────────────────────────────────────
@@ -329,7 +343,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Bendigo',
     region: 'Victoria',
     stateCode: 'VIC',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community, gathering into rhythm.',
     themes: ['Reflection', 'Wellbeing'],
     activeCollectives: 2,
     upcomingGatherings: 4,
@@ -362,7 +376,29 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Bellarine Peninsula',
     region: 'Victoria',
     stateCode: 'VIC',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring wellbeing and reflection.',
+    themes: ['Wellbeing', 'Reflection'],
+    activeCollectives: 1,
+    upcomingGatherings: 2,
+    activity: 'emerging',
+  },
+  {
+    slug: 'great-ocean-road',
+    name: 'Great Ocean Road',
+    region: 'Victoria',
+    stateCode: 'VIC',
+    livingIdentity: 'Movement and reflection along the coast.',
+    themes: ['Movement', 'Reflection'],
+    activeCollectives: 1,
+    upcomingGatherings: 2,
+    activity: 'emerging',
+  },
+  {
+    slug: 'warrnambool',
+    name: 'Warrnambool',
+    region: 'Victoria',
+    stateCode: 'VIC',
+    livingIdentity: 'A small coastal community grounded in wellbeing.',
     themes: ['Wellbeing', 'Reflection'],
     activeCollectives: 1,
     upcomingGatherings: 2,
@@ -419,7 +455,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Wollongong',
     region: 'New South Wales',
     stateCode: 'NSW',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring wellbeing and movement.',
     themes: ['Wellbeing', 'Movement'],
     activeCollectives: 2,
     upcomingGatherings: 3,
@@ -445,7 +481,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     themes: ['Reflection', 'Inner Work'],
     activeCollectives: 2,
     upcomingGatherings: 5,
-    activity: 'active',
+    activity: 'emerging',
   },
   {
     slug: 'northern-rivers',
@@ -463,7 +499,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Hunter Valley',
     region: 'New South Wales',
     stateCode: 'NSW',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring reflection and relationships.',
     themes: ['Reflection', 'Relationships'],
     activeCollectives: 1,
     upcomingGatherings: 2,
@@ -474,33 +510,44 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Coffs Harbour',
     region: 'New South Wales',
     stateCode: 'NSW',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring wellbeing and movement.',
     themes: ['Wellbeing', 'Movement'],
     activeCollectives: 1,
     upcomingGatherings: 1,
     activity: 'emerging',
   },
   {
-    slug: 'port-macquarie',
-    name: 'Port Macquarie',
+    slug: 'illawarra',
+    name: 'Illawarra',
     region: 'New South Wales',
     stateCode: 'NSW',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
+    livingIdentity: 'Movement, wellbeing and creativity along the coast.',
+    themes: ['Movement', 'Wellbeing', 'Creativity'],
+    activeCollectives: 3,
+    upcomingGatherings: 6,
+    activity: 'active',
   },
   {
-    slug: 'armidale',
-    name: 'Armidale',
+    slug: 'ballina',
+    name: 'Ballina',
     region: 'New South Wales',
     stateCode: 'NSW',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
+    livingIdentity: 'A small community exploring wellbeing and movement.',
+    themes: ['Wellbeing', 'Movement'],
+    activeCollectives: 2,
+    upcomingGatherings: 3,
+    activity: 'emerging',
+  },
+  {
+    slug: 'lismore',
+    name: 'Lismore',
+    region: 'New South Wales',
+    stateCode: 'NSW',
+    livingIdentity: 'A small community exploring spirituality and reflection.',
+    themes: ['Spirituality', 'Reflection'],
+    activeCollectives: 1,
+    upcomingGatherings: 2,
+    activity: 'emerging',
   },
 
   // ── Queensland ────────────────────────────────────────────────────
@@ -553,7 +600,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Cairns',
     region: 'Queensland',
     stateCode: 'QLD',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring movement and spirituality.',
     themes: ['Movement', 'Spirituality'],
     activeCollectives: 2,
     upcomingGatherings: 3,
@@ -564,33 +611,33 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Toowoomba',
     region: 'Queensland',
     stateCode: 'QLD',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring reflection and parenting.',
     themes: ['Reflection', 'Parenting'],
     activeCollectives: 1,
     upcomingGatherings: 2,
     activity: 'emerging',
   },
   {
-    slug: 'whitsundays',
-    name: 'Whitsundays',
+    slug: 'sunshine-hinterland',
+    name: 'Sunshine Hinterland',
     region: 'Queensland',
     stateCode: 'QLD',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
+    livingIdentity: 'A small community exploring spirituality and reflection.',
+    themes: ['Spirituality', 'Reflection'],
+    activeCollectives: 2,
+    upcomingGatherings: 3,
+    activity: 'emerging',
   },
   {
-    slug: 'townsville',
-    name: 'Townsville',
+    slug: 'scenic-rim',
+    name: 'Scenic Rim',
     region: 'Queensland',
     stateCode: 'QLD',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
+    livingIdentity: 'A small community exploring reflection and wellbeing.',
+    themes: ['Reflection', 'Wellbeing'],
+    activeCollectives: 1,
+    upcomingGatherings: 2,
+    activity: 'emerging',
   },
 
   // ── Tasmania ──────────────────────────────────────────────────────
@@ -610,22 +657,11 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Launceston',
     region: 'Tasmania',
     stateCode: 'TAS',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring reflection and inner work.',
     themes: ['Reflection', 'Inner Work'],
     activeCollectives: 1,
     upcomingGatherings: 2,
     activity: 'emerging',
-  },
-  {
-    slug: 'cradle-mountain',
-    name: 'Cradle Mountain',
-    region: 'Tasmania',
-    stateCode: 'TAS',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
   },
 
   // ── South Australia ───────────────────────────────────────────────
@@ -656,7 +692,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Barossa Valley',
     region: 'South Australia',
     stateCode: 'SA',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring relationships and reflection.',
     themes: ['Relationships', 'Reflection'],
     activeCollectives: 1,
     upcomingGatherings: 2,
@@ -667,22 +703,11 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Fleurieu Peninsula',
     region: 'South Australia',
     stateCode: 'SA',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring movement and wellbeing.',
     themes: ['Movement', 'Wellbeing'],
     activeCollectives: 1,
     upcomingGatherings: 1,
     activity: 'emerging',
-  },
-  {
-    slug: 'kangaroo-island',
-    name: 'Kangaroo Island',
-    region: 'South Australia',
-    stateCode: 'SA',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
   },
 
   // ── Western Australia ─────────────────────────────────────────────
@@ -724,33 +749,11 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Albany',
     region: 'Western Australia',
     stateCode: 'WA',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring reflection and wellbeing.',
     themes: ['Reflection', 'Wellbeing'],
     activeCollectives: 1,
     upcomingGatherings: 2,
     activity: 'emerging',
-  },
-  {
-    slug: 'broome',
-    name: 'Broome',
-    region: 'Western Australia',
-    stateCode: 'WA',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'bunbury',
-    name: 'Bunbury',
-    region: 'Western Australia',
-    stateCode: 'WA',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
   },
 
   // ── Northern Territory ────────────────────────────────────────────
@@ -759,7 +762,7 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Darwin',
     region: 'Northern Territory',
     stateCode: 'NT',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring spirituality and relationships.',
     themes: ['Spirituality', 'Relationships'],
     activeCollectives: 2,
     upcomingGatherings: 4,
@@ -770,22 +773,11 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     name: 'Alice Springs',
     region: 'Northern Territory',
     stateCode: 'NT',
-    livingIdentity: 'A small community is beginning to take root here.',
+    livingIdentity: 'A small community exploring reflection and spirituality.',
     themes: ['Reflection', 'Spirituality'],
     activeCollectives: 1,
     upcomingGatherings: 2,
     activity: 'emerging',
-  },
-  {
-    slug: 'kakadu',
-    name: 'Kakadu',
-    region: 'Northern Territory',
-    stateCode: 'NT',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
   },
 
   // ── Australian Capital Territory ──────────────────────────────────
@@ -799,176 +791,5 @@ export const ESTABLISHED_WORLD: PlaceMock[] = [
     activeCollectives: 4,
     upcomingGatherings: 9,
     activity: 'active',
-  },
-
-  // ── Additional Victoria clusters ─────────────────────────────────
-  {
-    slug: 'great-ocean-road',
-    name: 'Great Ocean Road',
-    region: 'Victoria',
-    stateCode: 'VIC',
-    livingIdentity: 'A small community is beginning to take root here.',
-    themes: ['Movement', 'Reflection'],
-    activeCollectives: 1,
-    upcomingGatherings: 2,
-    activity: 'emerging',
-  },
-  {
-    slug: 'grampians',
-    name: 'Grampians',
-    region: 'Victoria',
-    stateCode: 'VIC',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'mildura',
-    name: 'Mildura',
-    region: 'Victoria',
-    stateCode: 'VIC',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'wangaratta',
-    name: 'Wangaratta',
-    region: 'Victoria',
-    stateCode: 'VIC',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'warrnambool',
-    name: 'Warrnambool',
-    region: 'Victoria',
-    stateCode: 'VIC',
-    livingIdentity: 'A small community is beginning to take root here.',
-    themes: ['Wellbeing', 'Reflection'],
-    activeCollectives: 1,
-    upcomingGatherings: 2,
-    activity: 'emerging',
-  },
-
-  // ── Additional NSW clusters ──────────────────────────────────────
-  {
-    slug: 'illawarra',
-    name: 'Illawarra',
-    region: 'New South Wales',
-    stateCode: 'NSW',
-    livingIdentity: 'Movement, wellbeing and creativity along the coast.',
-    themes: ['Movement', 'Wellbeing', 'Creativity'],
-    activeCollectives: 3,
-    upcomingGatherings: 6,
-    activity: 'active',
-  },
-  {
-    slug: 'ballina',
-    name: 'Ballina',
-    region: 'New South Wales',
-    stateCode: 'NSW',
-    livingIdentity: 'A small community is beginning to take root here.',
-    themes: ['Wellbeing', 'Movement'],
-    activeCollectives: 2,
-    upcomingGatherings: 3,
-    activity: 'emerging',
-  },
-  {
-    slug: 'lismore',
-    name: 'Lismore',
-    region: 'New South Wales',
-    stateCode: 'NSW',
-    livingIdentity: 'A small community is beginning to take root here.',
-    themes: ['Spirituality', 'Reflection'],
-    activeCollectives: 1,
-    upcomingGatherings: 2,
-    activity: 'emerging',
-  },
-  {
-    slug: 'bathurst',
-    name: 'Bathurst',
-    region: 'New South Wales',
-    stateCode: 'NSW',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'wagga-wagga',
-    name: 'Wagga Wagga',
-    region: 'New South Wales',
-    stateCode: 'NSW',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-
-  // ── Additional QLD ───────────────────────────────────────────────
-  {
-    slug: 'bundaberg',
-    name: 'Bundaberg',
-    region: 'Queensland',
-    stateCode: 'QLD',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'rockhampton',
-    name: 'Rockhampton',
-    region: 'Queensland',
-    stateCode: 'QLD',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'mackay',
-    name: 'Mackay',
-    region: 'Queensland',
-    stateCode: 'QLD',
-    livingIdentity: '',
-    themes: [],
-    activeCollectives: 0,
-    upcomingGatherings: 0,
-    activity: 'not_yet_active',
-  },
-  {
-    slug: 'sunshine-hinterland',
-    name: 'Sunshine Hinterland',
-    region: 'Queensland',
-    stateCode: 'QLD',
-    livingIdentity: 'A small community is beginning to take root here.',
-    themes: ['Spirituality', 'Reflection'],
-    activeCollectives: 2,
-    upcomingGatherings: 3,
-    activity: 'emerging',
-  },
-  {
-    slug: 'scenic-rim',
-    name: 'Scenic Rim',
-    region: 'Queensland',
-    stateCode: 'QLD',
-    livingIdentity: 'A small community is beginning to take root here.',
-    themes: ['Reflection', 'Wellbeing'],
-    activeCollectives: 1,
-    upcomingGatherings: 2,
-    activity: 'emerging',
   },
 ]
