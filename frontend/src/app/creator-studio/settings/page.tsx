@@ -58,7 +58,7 @@ export default async function SettingsPage() {
         <CollectiveArtworkHeader
           collectiveName={primarySpace.name}
           sectionTitle="Collective Settings"
-          meta="Shape where this collective lives, how it feels and how people experience it."
+          meta="Shape how this Collective feels and how people experience it."
           location={spaceDetail?.location ?? null}
           coverImageUrl={spaceDetail?.cover_image_url ?? null}
         />

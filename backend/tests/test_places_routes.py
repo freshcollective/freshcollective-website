@@ -110,6 +110,40 @@ def _run(coro):
 
 
 # ---------------------------------------------------------------------------
+# Flag defaults — regression guard
+# ---------------------------------------------------------------------------
+
+class TestFlagDefaults:
+    """A previous incident: the operator had NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED
+    set to true on the frontend, but DISCOVERY_PILLAR_ENABLED was unset on
+    the backend, defaulting to False. The picker UI rendered but every
+    lookup hit 503, surfacing as 'Location search is unavailable right
+    now.'
+
+    This test locks in the intended default so we cannot accidentally
+    flip it to True and leak the pillar on by mistake. Flipping the
+    default should be a deliberate, reviewed change to config.py."""
+
+    def test_discovery_pillar_default_is_false(self, monkeypatch):
+        # Ignore .env and any DISCOVERY_PILLAR_ENABLED currently in the
+        # environment so we see the class default, not the operator's
+        # local override.
+        monkeypatch.delenv("DISCOVERY_PILLAR_ENABLED", raising=False)
+        from app.core.config import Settings
+        s = Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            database_url="postgresql://x/y",
+            jwt_secret="test",
+        )
+        assert s.discovery_pillar_enabled is False, (
+            "The Discovery pillar must default to disabled. A code change "
+            "that flips this default would silently expose /api/places/* "
+            "and the Discover Places / Ways to Connect routes on every "
+            "deployment that had not explicitly opted out."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Flag gating
 # ---------------------------------------------------------------------------
 

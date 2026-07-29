@@ -2,7 +2,7 @@
 
 /**
  * LocationPicker — a searchable Geographic Location field for the
- * Place & Feel tab in Creator Studio.
+ * OperatingDetails form in Creator Studio.
  *
  * The Creator types a city name; the picker proxies /api/places/lookup
  * (server-side, currently Nominatim), shows a small list of
@@ -10,6 +10,17 @@
  * returns a persisted Place row. The parent form receives just the
  * Place id + a compact display object so it can render the current
  * value without a second round trip.
+ *
+ * Preservation contract:
+ *   * When a value is set, "Change" opens the search input alongside
+ *     the current value chip — it does NOT clear the parent form's
+ *     state. If the lookup fails, or the Creator abandons the change,
+ *     the saved value is untouched.
+ *   * The value is only replaced by a successful new selection
+ *     (resolve returns 200). Explicit removal is a separate
+ *     "Remove" button.
+ *   * This keeps a temporary provider outage from making a Creator
+ *     feel that their saved location has been lost.
  *
  * Kept deliberately simple: no map, no marker, no coordinates
  * exposed to the Creator. See
@@ -71,10 +82,14 @@ export default function LocationPicker({
   const [resolving, setResolving] = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [focused, setFocused]     = useState<number>(-1)
+  // When true, the picker reveals the search input alongside the
+  // current value chip. The value itself is not cleared — that only
+  // happens on a successful new selection, or on explicit Remove.
+  const [changing, setChanging]   = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Close on click outside.
+  // Close the suggestion list on click outside.
   useEffect(() => {
     function onClick(e: MouseEvent) {
       if (!containerRef.current) return
@@ -146,6 +161,7 @@ export default function LocationPicker({
       setQuery('')
       setResults([])
       setOpen(false)
+      setChanging(false)
     } catch {
       setError('That place could not be saved. Please try picking again.')
     } finally {
@@ -169,16 +185,34 @@ export default function LocationPicker({
     }
   }
 
+  function cancelChange() {
+    setChanging(false)
+    setQuery('')
+    setResults([])
+    setOpen(false)
+    setError(null)
+  }
+
+  const showSearch = value === null || changing
+
   return (
     <div ref={containerRef} className="max-w-md">
       {helperText && (
         <p className="mb-1.5 text-[13px] text-black">{helperText}</p>
       )}
 
-      {/* Current value chip */}
+      {/* Current value chip — stays visible while a Creator is
+          changing so the saved location is never visually lost. */}
       {value && (
         <div className="mb-2 flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
           <div>
+            {changing && (
+              <p
+                className="mb-0.5 text-[11px] uppercase tracking-[0.08em] text-navy-500"
+              >
+                Currently
+              </p>
+            )}
             <p className="font-serif text-[16px] text-navy-900">{value.name}</p>
             {value.region && (
               <p className="text-[13px] text-navy-500">
@@ -186,23 +220,45 @@ export default function LocationPicker({
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            disabled={disabled}
-            className="text-[13px] text-navy-500 underline underline-offset-2 hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 rounded"
-          >
-            Change
-          </button>
+          <div className="flex shrink-0 items-center gap-3">
+            {!changing && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setChanging(true)}
+                  disabled={disabled}
+                  className="text-[13px] text-navy-500 underline underline-offset-2 hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 rounded"
+                >
+                  Change
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChange(null)}
+                  disabled={disabled}
+                  className="text-[13px] text-slate-400 underline underline-offset-2 hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 rounded"
+                >
+                  Remove
+                </button>
+              </>
+            )}
+            {changing && (
+              <button
+                type="button"
+                onClick={cancelChange}
+                disabled={disabled || resolving}
+                className="text-[13px] text-navy-500 underline underline-offset-2 hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 rounded"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Search input — hidden when a value is set unless the Creator
-          clicked Change (which clears value, so the picker reappears). */}
-      {!value && (
+      {showSearch && (
         <div className="relative">
           <label htmlFor="place-picker" className="sr-only">
-            Search for a city or region
+            {value ? 'Search for a different city or region' : 'Search for a city or region'}
           </label>
           <input
             id="place-picker"
@@ -212,7 +268,7 @@ export default function LocationPicker({
             onFocus={() => query.length >= MIN_QUERY && setOpen(true)}
             onKeyDown={onKeyDown}
             disabled={disabled || resolving}
-            placeholder="Start typing a city…"
+            placeholder={value ? 'Search for a different city…' : 'Start typing a city…'}
             autoComplete="off"
             aria-autocomplete="list"
             aria-controls="place-picker-list"
@@ -265,6 +321,14 @@ export default function LocationPicker({
       {error && (
         <p role="alert" className="mt-2 text-[13px] text-[#A64526]">
           {error}
+          {value && changing && (
+            <>
+              {' '}
+              <span className="italic text-navy-500">
+                Your current location is still saved.
+              </span>
+            </>
+          )}
         </p>
       )}
 
