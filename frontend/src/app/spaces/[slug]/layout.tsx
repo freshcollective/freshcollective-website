@@ -1,10 +1,10 @@
 import { notFound } from 'next/navigation'
-import Link from 'next/link'
 import { cookies } from 'next/headers'
 import SpaceNav from '@/components/spaces/SpaceNav'
 import CollectiveSwitcher from '@/components/spaces/CollectiveSwitcher'
 import CollectiveThemeProvider from '@/components/collective/CollectiveThemeProvider'
 import CollectiveIdentityHeader from '@/components/spaces/CollectiveIdentityHeader'
+import SiteShell from '@/components/layout/SiteShell'
 import { getSpace, getMe, getMyMemberships } from '@/lib/serverApi'
 import { apiUrl } from '@/lib/api'
 import { SESSION_COOKIE } from '@/lib/session'
@@ -54,11 +54,20 @@ export default async function SpaceLayout({ children, params }: Props) {
 
   return (
     <CollectiveThemeProvider palette={paletteMeta}>
+    <SiteShell noFooter>
     <div className="flex min-h-screen flex-col" style={{ background: '#FAFAF8' }}>
 
-      {/* ── Top navigation bar ── */}
-      <header
-        className="border-b border-border bg-surface py-3.5"
+      {/* ── Collective context band ────────────────────────────────
+          The persistent member navigation (wordmark, Your World,
+          Explore Collectives, Discover Places, Ways to Connect,
+          notifications, profile, log out) is provided by SiteShell
+          above — auth-aware, so authenticated members see WorldHeader
+          and signed-out visitors browsing the About page see the
+          public header. What remains here is the *inside-Collective*
+          context: the switcher between collectives the member
+          belongs to. */}
+      <div
+        className="border-b border-border bg-surface py-3"
         style={{ borderTop: '2px solid var(--fc-accent, #38A09E)' }}
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 md:px-10">
@@ -69,28 +78,8 @@ export default async function SpaceLayout({ children, params }: Props) {
             userRole={user?.role ?? 'learner'}
             isAuthenticated={!!user}
           />
-          <div className="flex items-center gap-4">
-            {user ? (
-              <>
-                <Link href="/settings" className="text-sm text-black transition-colors hover:text-navy-700">
-                  Settings
-                </Link>
-                <Link href="/dashboard" className="text-sm text-black transition-colors hover:text-navy-700">
-                  ← Your World
-                </Link>
-              </>
-            ) : (
-              <Link
-                href="/login"
-                className="rounded-full px-4 py-1.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-              >
-                Log in
-              </Link>
-            )}
-          </div>
         </div>
-      </header>
+      </div>
 
       {/* ── Collective identity band (Atlas v1.2) ────────────────
           Location artwork is the primary visual identity. Falls back
@@ -107,12 +96,13 @@ export default async function SpaceLayout({ children, params }: Props) {
 
       <SpaceNav spaceSlug={slug} spaceName={space.name} isMember={isMember} unreadMessageCount={unreadMessageCount} />
 
-      <main className="flex-1 py-10 pb-24 md:pb-10">
+      <div className="flex-1 py-10 pb-24 md:pb-10">
         <div className="mx-auto max-w-6xl px-6 md:px-10">
           {children}
         </div>
-      </main>
+      </div>
     </div>
+    </SiteShell>
     </CollectiveThemeProvider>
   )
 }

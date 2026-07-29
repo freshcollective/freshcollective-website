@@ -1,9 +1,6 @@
 import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import Link from 'next/link'
-import Container from '@/components/layout/Container'
-import LogoutButton from '@/components/layout/LogoutButton'
-import Avatar from '@/components/ui/Avatar'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import {
@@ -152,7 +149,6 @@ export default async function DashboardPage() {
   const creatorStudioArt = artworkByKey.get('creator_studio') ?? null
 
   const firstName = user?.name?.split(' ')[0] ?? 'friend'
-  const displayName = user?.name ?? firstName
   const isCreatorOrAdmin = user?.role === 'creator' || user?.role === 'admin'
   const activeMemberships = memberships.filter((m) => m.status === 'active')
 
@@ -188,25 +184,9 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen" style={{ background: '#FAFAF8' }}>
-      {/* Top navigation — kept as-is */}
-      <header className="border-b border-slate-100 bg-white py-3.5" style={{ borderTop: '2px solid #38A09E' }}>
-        <Container className="flex items-center justify-between">
-          <span className="font-serif text-xl text-navy-900">Fresh Collective</span>
-          <div className="flex items-center gap-3">
-            <Link href="/settings" className="text-sm text-black transition-colors hover:text-navy-700">
-              Settings
-            </Link>
-            <Link
-              href="/settings/profile"
-              className="flex items-center rounded-lg px-1.5 py-1 transition-colors hover:bg-slate-50"
-              aria-label="Your profile"
-            >
-              <Avatar name={displayName} size="sm" />
-            </Link>
-            <LogoutButton className="text-sm text-black transition-colors hover:text-slate-600" />
-          </div>
-        </Container>
-      </header>
+      {/* The persistent member header (wordmark, peer nav, notifications,
+          profile shortcut, logout) is provided by WorldShell mounted in
+          dashboard/layout.tsx. Nothing to render here. */}
 
       {/* Welcome banner — full-bleed dark section. */}
       <WelcomeBanner firstName={firstName} />

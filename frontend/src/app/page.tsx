@@ -1142,7 +1142,7 @@ function FinalCTA() {
 
 export default function Home() {
   return (
-    <SiteShell heroHeader>
+    <SiteShell heroHeader publicOnly>
       <HomeHero />
       <DualIntent />
       <EcosystemStatement />

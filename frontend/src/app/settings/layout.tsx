@@ -1,22 +1,11 @@
-import Link from 'next/link'
 import SettingsNav from '@/components/settings/SettingsNav'
+import WorldShell from '@/components/layout/WorldShell'
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col bg-white">
-      <header className="border-b border-border bg-white">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4 md:px-10">
-          <Link href="/dashboard" className="font-serif text-lg text-navy-900 hover:text-teal-600">
-            Fresh Collective
-          </Link>
-          <Link href="/dashboard" className="text-sm text-black hover:text-navy-700">
-            ← Your World
-          </Link>
-        </div>
-      </header>
-
-      <main className="flex-1 py-10">
-        <div className="mx-auto max-w-4xl px-6 md:px-10">
+    <WorldShell>
+      <div className="min-h-screen bg-white">
+        <div className="mx-auto max-w-4xl px-6 py-10 md:px-10">
 
           {/* Heading */}
           <div className="mb-10">
@@ -46,7 +35,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
             <div className="min-w-0 pt-8 md:pt-0">{children}</div>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </WorldShell>
   )
 }
