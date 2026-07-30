@@ -173,6 +173,32 @@ export default function PhysicalLocationClient({ initialLocation }: Props) {
     uploadArtwork(file)
   }, [uploadArtwork])
 
+  const deleteLocation = useCallback(async () => {
+    if (loc.collectives.length > 0) {
+      setError(
+        `${loc.collectives.length} Collective(s) are still linked to this Physical Location. Move or remove those links first.`,
+      )
+      return
+    }
+    if (!confirm(`Delete the Physical Location "${loc.name}"? This cannot be undone.`)) return
+    setBusy('delete')
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/physical-locations/${loc.slug}`),
+        { method: 'DELETE', credentials: 'include' },
+      )
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(typeof data.detail === 'string' ? data.detail : 'Could not delete.')
+      }
+      router.push('/admin/physical-locations')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not delete.')
+      setBusy(null)
+    }
+  }, [loc.collectives.length, loc.name, loc.slug, router])
+
   const clearArtwork = useCallback(async () => {
     if (!confirm('Remove the artwork for this Physical Location? The deterministic atmosphere fallback will render on Discover Places until new artwork is uploaded.')) return
     setBusy('clear-artwork')
@@ -524,6 +550,59 @@ export default function PhysicalLocationClient({ initialLocation }: Props) {
           <MetaRow label="Updated" value={new Date(loc.updated_at).toLocaleString()} />
         </dl>
       </Section>
+
+      {/* ─── Delete ──────────────────────────────────────────────── */}
+      <section
+        className="mb-6 rounded-2xl px-6 py-6 md:px-10 md:py-8"
+        style={{
+          background: '#FFFFFF',
+          border: '1px solid rgba(166,69,38,0.20)',
+        }}
+      >
+        <div className="mb-4 flex items-baseline gap-3">
+          <p
+            className="text-[11px] font-semibold uppercase tracking-[0.28em]"
+            style={{ color: '#A64526' }}
+          >
+            Delete
+          </p>
+          <h2
+            className="font-serif text-[20px]"
+            style={{ color: '#0C1826' }}
+          >
+            Remove this Physical Location
+          </h2>
+        </div>
+        <p
+          className="mb-5 text-[13.5px] italic leading-relaxed"
+          style={{ color: 'rgba(12,24,38,0.65)', fontFamily: 'Georgia, serif' }}
+        >
+          Physical Locations are curated discovery records — an unused
+          one should simply not exist. Deletion is permanent and
+          available only when no Collectives are still linked here.
+          {loc.collectives.length > 0
+            ? ' Move or remove those links first.'
+            : ' Any member with this as their home place will have that personal preference cleanly cleared.'}
+        </p>
+        <button
+          type="button"
+          onClick={deleteLocation}
+          disabled={busy !== null || loc.collectives.length > 0}
+          className="rounded-full px-5 py-2.5 text-[13px] font-semibold transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{
+            background: loc.collectives.length > 0 ? '#FFFFFF' : '#A64526',
+            border: '1px solid rgba(166,69,38,0.55)',
+            color: loc.collectives.length > 0 ? '#A64526' : '#FFFFFF',
+            letterSpacing: '0.06em',
+          }}
+        >
+          {busy === 'delete'
+            ? 'Deleting…'
+            : loc.collectives.length > 0
+            ? `Blocked — ${loc.collectives.length} Collective${loc.collectives.length === 1 ? '' : 's'} linked`
+            : 'Delete this Physical Location'}
+        </button>
+      </section>
     </div>
   )
 }

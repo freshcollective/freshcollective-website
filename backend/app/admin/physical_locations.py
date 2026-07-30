@@ -36,6 +36,9 @@ Endpoints under `/api/admin/physical-locations/*`:
   PATCH  /{slug}                    — update fields
   POST   /{slug}/artwork            — upload hero artwork
   DELETE /{slug}/artwork            — clear artwork
+  DELETE /{slug}                    — delete the Location (blocked
+                                       if any Collectives are still
+                                       linked)
 
 The migration is 093; the model is
 ``app.models.place.Place``.
@@ -480,3 +483,47 @@ def clear_artwork(
     db.commit()
     db.refresh(place)
     return _detail_from(place, db)
+
+
+# ---------------------------------------------------------------------------
+# Delete
+# ---------------------------------------------------------------------------
+
+@router.delete("/{slug}", status_code=204)
+def delete_location(
+    slug: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> None:
+    """Delete a Physical Location.
+
+    Physical Locations are curated discovery records, not historical
+    entities — an unused Location should simply not exist. If the
+    Location has any linked Collectives (of any status), deletion is
+    blocked with a 409 so the admin can move or remove those links
+    first. This is defence-in-depth on top of the SpacePlace CASCADE:
+    the CASCADE would silently drop a Collective's Physical Location
+    if we ever bypassed this guard, so we don't.
+
+    User.home_place_id is intentionally NOT a block: it is a personal
+    preference and the FK is defined ``ON DELETE SET NULL`` — members
+    keep their account and simply lose the personal association.
+    """
+    place = _get_by_slug(slug, db)
+    linked_count = db.execute(
+        select(func.count()).select_from(SpacePlace).where(
+            SpacePlace.place_id == place.id
+        )
+    ).scalar_one()
+    if linked_count:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{linked_count} Collective(s) are still linked to this "
+                "Physical Location. Move or remove those links, then delete."
+            ),
+        )
+    _delete_existing_artwork(place.hero_artwork_url)
+    db.delete(place)
+    db.commit()
+    return None

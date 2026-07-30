@@ -28,12 +28,14 @@ from app.admin.physical_locations import (
     PhysicalLocationUpdateRequest,
     clear_artwork,
     create_location,
+    delete_location,
     get_location,
     list_locations,
     update_location,
     upload_artwork,
 )
 from app.models.place import Place, SpacePlace
+from app.models.user import User
 
 
 # ---------------------------------------------------------------------------
@@ -468,3 +470,95 @@ class TestArtwork:
         with pytest.raises(HTTPException) as ex:
             clear_artwork(slug="ghost", db=db, _=admin)
         assert ex.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Delete
+# ---------------------------------------------------------------------------
+
+class TestDelete:
+    def test_deletes_unlinked_location(self, db, make_user):
+        admin = make_user(role="admin")
+        p = _place(slug="disposable", name="Disposable")
+        db.add(p)
+        db.flush()
+
+        result = delete_location(slug="disposable", db=db, _=admin)
+        assert result is None
+        assert db.get(Place, p.id) is None
+
+    def test_blocked_when_collectives_linked(self, db, make_user, make_space):
+        admin = make_user(role="admin")
+        p = _place(slug="popular", name="Popular")
+        db.add(p)
+        db.flush()
+        s = make_space()
+        db.add(SpacePlace(space_id=s.id, place_id=p.id))
+        db.flush()
+
+        with pytest.raises(HTTPException) as ex:
+            delete_location(slug="popular", db=db, _=admin)
+        assert ex.value.status_code == 409
+        assert "linked" in ex.value.detail.lower()
+        # Row must survive the failed attempt.
+        assert db.get(Place, p.id) is not None
+
+    def test_blocked_by_any_collective_not_just_active(
+        self, db, make_user, make_space,
+    ):
+        # A draft or archived Collective still counts as a link — the
+        # admin has to move / remove the association first regardless
+        # of the Collective's own status.
+        admin = make_user(role="admin")
+        p = _place(slug="quiet", name="Quiet")
+        db.add(p)
+        db.flush()
+        s = make_space(status="draft")
+        db.add(SpacePlace(space_id=s.id, place_id=p.id))
+        db.flush()
+
+        with pytest.raises(HTTPException) as ex:
+            delete_location(slug="quiet", db=db, _=admin)
+        assert ex.value.status_code == 409
+
+    def test_delete_after_link_removed_succeeds(self, db, make_user, make_space):
+        admin = make_user(role="admin")
+        p = _place(slug="freed", name="Freed")
+        db.add(p)
+        db.flush()
+        s = make_space()
+        link = SpacePlace(space_id=s.id, place_id=p.id)
+        db.add(link)
+        db.flush()
+
+        # Simulate the admin moving the Collective's Physical Location
+        # elsewhere (delete the link row).
+        db.delete(link)
+        db.flush()
+
+        delete_location(slug="freed", db=db, _=admin)
+        assert db.get(Place, p.id) is None
+
+    def test_missing_slug_is_404(self, db, make_user):
+        admin = make_user(role="admin")
+        with pytest.raises(HTTPException) as ex:
+            delete_location(slug="ghost", db=db, _=admin)
+        assert ex.value.status_code == 404
+
+    def test_home_place_reference_does_not_block_delete(self, db, make_user):
+        # ``users.home_place_id`` is a personal preference with an
+        # ``ON DELETE SET NULL`` FK — it must not block deletion.
+        admin = make_user(role="admin")
+        p = _place(slug="settable", name="Settable")
+        db.add(p)
+        db.flush()
+
+        member = make_user(role="user", home_place_id=p.id)
+        assert member.home_place_id == p.id
+
+        delete_location(slug="settable", db=db, _=admin)
+        assert db.get(Place, p.id) is None
+        # Member survives; their home place cleanly nulls.
+        db.refresh(member)
+        assert db.get(User, member.id) is not None
+        assert member.home_place_id is None
