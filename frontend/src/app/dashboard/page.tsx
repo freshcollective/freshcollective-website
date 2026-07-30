@@ -19,6 +19,27 @@ import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from './AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
 import RecentMomentsSection from './RecentMomentsSection'
 
+/**
+ * Shared card-grid class for every full-width band on /dashboard —
+ * Elsewhere in the world, Your Collectives (when the Coming up
+ * sidebar is not present), Collectives you created, Create &
+ * Manage. Guarantees a single consistent breakpoint pattern:
+ *
+ *     mobile          — 1 card per row
+ *     sm (640px+)     — 2 cards per row
+ *     lg (1024px+)    — 3 cards per row
+ *
+ * Chosen with the wide-desktop math in mind: at lg the full-width
+ * inner is ~944px, comfortably hosting three ~293px cards. Below
+ * lg the grid falls back to 2-across naturally.
+ *
+ * The narrower "Your Collectives" grid that renders inside the
+ * two-column sidebar region does NOT use this constant — that
+ * variant lives at ~640px of main column and stays at 2-across
+ * even on large screens.
+ */
+const FULL_WIDTH_CARD_GRID = 'grid gap-8 sm:grid-cols-2 lg:grid-cols-3'
+
 export const metadata: Metadata = {
   title: 'Your World · Fresh Collective',
   description:
@@ -331,7 +352,7 @@ export default async function DashboardPage() {
               noSpacing
             >
               {cards.length > 0 ? (
-                <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-3">
+                <div className={FULL_WIDTH_CARD_GRID}>
                   {cards.map((c) => (
                     <CollectiveCard
                       key={c.membership.space_id}
@@ -366,16 +387,15 @@ export default async function DashboardPage() {
           className="mt-14"
           noSpacing
         >
-          {/* Three invitations on one row from lg upward. At lg (1024px)
-              the full-width band gives ~944px inner, comfortably
-              hosting three ~293px cards with 32px gaps. Below lg the
-              layout falls back to 2-across, then a single column on
-              mobile. Chosen over xl:grid-cols-3 because most desktop
-              windows sit between 1200–1440 and xl (1280+) was leaving
-              a lonely orphan card underneath at common laptop widths. */}
+          {/* Uses the shared FULL_WIDTH_CARD_GRID (3-across from lg+)
+              when three invitations render. When the Discovery
+              pillar is off there's only Explore Collectives here,
+              which reads better at 2-across so the single card
+              sits alongside a neighbour rather than centre-heavy in
+              a 3-column layout. */}
           <div className={
             discoveryOn
-              ? 'grid gap-8 sm:grid-cols-2 lg:grid-cols-3'
+              ? FULL_WIDTH_CARD_GRID
               : 'grid gap-8 sm:grid-cols-2'
           }>
             <ExploreCollectivesCard
@@ -419,7 +439,7 @@ export default async function DashboardPage() {
                 noSpacing
                 className="mb-12"
               >
-                <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-3">
+                <div className={FULL_WIDTH_CARD_GRID}>
                   {creatorCards.map((c) => (
                     <CreatorCollectiveCard
                       key={c.summary.id}
@@ -436,7 +456,11 @@ export default async function DashboardPage() {
                 title="Create & Manage"
                 noSpacing
               >
-                <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-3">
+                {/* Ready to hold up to three management cards on
+                    one row using the shared full-width grid; the
+                    single Creator Studio card sits at 1/3 width on
+                    lg+, not stretched across the page. */}
+                <div className={FULL_WIDTH_CARD_GRID}>
                   <CreatorStudioCard
                     artUrl={creatorStudioArt?.thumbnail_url ?? creatorStudioArt?.image_url ?? null}
                   />
