@@ -205,12 +205,13 @@ export default async function DashboardPage() {
       {/* Welcome — warm greeting, unchanged from before. */}
       <WelcomeBanner firstName={firstName} />
 
-      <main className="mx-auto max-w-[1000px] px-6 pt-12 pb-24 md:px-10 md:pt-14 md:pb-28">
+      <main className="mx-auto max-w-[1200px] px-6 pt-12 pb-24 md:px-10 md:pt-14 md:pb-28">
 
         {/* Page title — kept for now (product decision to trial keeping
             vs. removing). Subtitle reframed toward the brief: what's
             happening + a quiet nod to curiosity. No "Overview" eyebrow;
-            this is a home, not a dashboard section. */}
+            this is a home, not a dashboard section. Sits above the
+            two-column layout so it spans the full width on desktop. */}
         <div className="mb-12">
           <h2
             className="font-serif text-[26px] leading-tight md:text-[30px]"
@@ -227,155 +228,190 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        {/* Recent Moments — retrospective read: "here's what your
-            communities have been doing while you were away." */}
-        <RecentMomentsSection />
+        {/* Two-column layout on desktop:
+              main col   — Recent Moments, Your Collectives, Elsewhere,
+                            Creator section
+              side col   — Coming up (only when soon.length > 0)
+            On tablet / mobile everything collapses to one column and
+            Coming up sits between Recent Moments and Your Collectives
+            (via mobile-first `order-N`). The sidebar is deliberately
+            NOT sticky and NOT full-height — it sits quietly at the
+            top of column 2 and lets the reading of the main column
+            lead. When there's nothing coming, the whole aside is
+            skipped and the main column uses the available width. */}
+        <div
+          className={
+            soon.length > 0
+              ? 'grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-[minmax(0,1fr)_280px]'
+              : 'flex flex-col gap-12'
+          }
+        >
 
-        {/* Coming up — invitational not obligation. Only rendered
-            when there's actually something coming; if the horizon is
-            quiet, the page is allowed to breathe. */}
-        {soon.length > 0 && (
+          {/* Recent Moments — retrospective read: "here's what your
+              communities have been doing while you were away." */}
+          <div className="order-1 lg:col-start-1 lg:row-start-1">
+            <RecentMomentsSection />
+          </div>
+
+          {/* Coming up — right sidebar on desktop, inline between
+              Recent Moments and Your Collectives on mobile. Hidden
+              entirely when the two-week horizon is quiet. Uses the
+              existing narrow-column SidebarGatheringRow treatment
+              because it is already compact. */}
+          {soon.length > 0 && (
+            <aside className="order-2 lg:col-start-2 lg:row-start-1">
+              <div className="mb-4">
+                <h3
+                  className="font-serif text-[18px] leading-tight"
+                  style={{ color: '#0C1826' }}
+                >
+                  Coming up
+                </h3>
+                <p
+                  className="mt-1 text-[12.5px] italic leading-relaxed"
+                  style={{ color: 'rgba(12, 24, 38, 0.55)', fontFamily: 'Georgia, serif' }}
+                >
+                  Gatherings from your communities in the next two
+                  weeks.
+                </p>
+              </div>
+              <div className="flex flex-col gap-3">
+                {soon.map((g) => (
+                  <SidebarGatheringRow key={g.event.id} g={g} />
+                ))}
+              </div>
+              {hasMore && (
+                <p
+                  className="mt-3 text-[12px] italic"
+                  style={{ color: 'rgba(12, 24, 38, 0.50)', fontFamily: 'Georgia, serif' }}
+                >
+                  More Gatherings beyond the next two weeks.
+                </p>
+              )}
+            </aside>
+          )}
+
+          {/* Your Collectives — no count next to the title (belonging
+              is not inventory). Empty state stays quiet for members
+              yet to join anything. */}
           <Section
-            title="Coming up"
-            subtitle="Upcoming Gatherings from the communities you belong to."
+            title="Your Collectives"
+            subtitle="Communities you&rsquo;re currently part of."
             noSpacing
-            className="mt-12"
+            className="order-3 lg:col-start-1 lg:row-start-2"
           >
-            <div className="flex flex-col gap-3">
-              {soon.map((g) => (
-                <SidebarGatheringRow key={g.event.id} g={g} />
-              ))}
-            </div>
-            {hasMore && (
-              <p
-                className="mt-3 text-[12px] italic"
-                style={{ color: 'rgba(12, 24, 38, 0.50)', fontFamily: 'Georgia, serif' }}
+            {cards.length > 0 ? (
+              <div className="grid gap-8 sm:grid-cols-2">
+                {cards.map((c) => (
+                  <CollectiveCard
+                    key={c.membership.space_id}
+                    card={c}
+                    publicCard={publicBySlug.get(c.membership.space_slug) ?? null}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div
+                className="rounded-2xl bg-white px-6 py-8 text-center"
+                style={ATLAS_CARD_STYLE}
               >
-                More Gatherings beyond the next two weeks.
-              </p>
+                <p
+                  className="text-[14px] italic"
+                  style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
+                >
+                  You&rsquo;re not part of any Collectives yet.
+                </p>
+              </div>
             )}
           </Section>
-        )}
 
-        {/* Your Collectives — the communities you're currently part
-            of. No count next to the title (belonging is not
-            inventory). The empty state stays for members yet to
-            join anything, but stays quiet. */}
-        <Section
-          title="Your Collectives"
-          subtitle="Communities you&rsquo;re currently part of."
-          noSpacing
-          className="mt-14"
-        >
-          {cards.length > 0 ? (
-            <div className="grid gap-8 sm:grid-cols-2">
-              {cards.map((c) => (
-                <CollectiveCard
-                  key={c.membership.space_id}
-                  card={c}
-                  publicCard={publicBySlug.get(c.membership.space_slug) ?? null}
-                />
-              ))}
+          {/* Elsewhere in the world — gentle invitations. Always
+              shows Explore Collectives; adds Discover Places and
+              Ways to Connect when the Discovery pillar flag is on.
+              Framed as doors, not tasks — the brief's "curiosity"
+              outcome lives here. */}
+          <Section
+            title="Elsewhere in the world"
+            subtitle="A few quiet doors, when you&rsquo;re curious."
+            noSpacing
+            className="order-4 lg:col-start-1 lg:row-start-3"
+          >
+            <div className={
+              discoveryOn
+                ? 'grid gap-8 sm:grid-cols-2 xl:grid-cols-3'
+                : 'grid gap-8 sm:grid-cols-2'
+            }>
+              <ExploreCollectivesCard
+                artUrl={exploreArt?.thumbnail_url ?? exploreArt?.image_url ?? null}
+              />
+              {discoveryOn && (
+                <>
+                  <DiscoverPlacesCard />
+                  <WaysToConnectCard />
+                </>
+              )}
             </div>
-          ) : (
+          </Section>
+
+          {/* ─────── For creators — visually separated below the
+              member surfaces so the two modes don't blur. Only
+              rendered when the reader is a creator/admin, or when
+              they've created at least one Collective. Sits in the
+              main column so the "Coming up" sidebar can occupy the
+              side column above it without competing. ─────── */}
+          {(creatorCards.length > 0 || isCreatorOrAdmin) && (
             <div
-              className="rounded-2xl bg-white px-6 py-8 text-center"
-              style={ATLAS_CARD_STYLE}
+              className="order-5 lg:col-start-1 lg:row-start-4 mt-8 pt-12"
+              style={{ borderTop: '1px dashed rgba(12,24,38,0.10)' }}
             >
               <p
-                className="text-[14px] italic"
-                style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
+                className="mb-2 text-[11px] font-semibold uppercase tracking-[0.28em]"
+                style={{ color: 'rgba(12,24,38,0.45)' }}
               >
-                You&rsquo;re not part of any Collectives yet.
+                For creators
               </p>
+              <h3
+                className="mb-8 font-serif text-[22px] leading-tight md:text-[24px]"
+                style={{ color: '#0C1826' }}
+              >
+                What you&rsquo;re building
+              </h3>
+
+              {creatorCards.length > 0 && (
+                <Section
+                  title="Collectives you created"
+                  subtitle="Communities you&rsquo;re building and managing."
+                  noSpacing
+                  className="mb-12"
+                >
+                  <div className="grid gap-8 sm:grid-cols-2">
+                    {creatorCards.map((c) => (
+                      <CreatorCollectiveCard
+                        key={c.summary.id}
+                        summary={c.summary}
+                        detail={c.detail}
+                      />
+                    ))}
+                  </div>
+                </Section>
+              )}
+
+              {isCreatorOrAdmin && (
+                <Section
+                  title="Create & Manage"
+                  noSpacing
+                >
+                  <div className="grid gap-8 sm:grid-cols-2">
+                    <CreatorStudioCard
+                      artUrl={creatorStudioArt?.thumbnail_url ?? creatorStudioArt?.image_url ?? null}
+                    />
+                  </div>
+                </Section>
+              )}
             </div>
           )}
-        </Section>
 
-        {/* Elsewhere in the world — gentle invitations. Always shows
-            Explore Collectives; adds Discover Places and Ways to
-            Connect when the Discovery pillar flag is on. Framed as
-            doors, not tasks — the brief's "curiosity" outcome lives
-            here. */}
-        <Section
-          title="Elsewhere in the world"
-          subtitle="A few quiet doors, when you&rsquo;re curious."
-          noSpacing
-          className="mt-14"
-        >
-          <div className={
-            discoveryOn
-              ? 'grid gap-8 sm:grid-cols-2 lg:grid-cols-3'
-              : 'grid gap-8 sm:grid-cols-2'
-          }>
-            <ExploreCollectivesCard
-              artUrl={exploreArt?.thumbnail_url ?? exploreArt?.image_url ?? null}
-            />
-            {discoveryOn && (
-              <>
-                <DiscoverPlacesCard />
-                <WaysToConnectCard />
-              </>
-            )}
-          </div>
-        </Section>
-
-        {/* ─────── For creators — visually separated below the member
-            surfaces so the two modes don't blur. Only rendered when
-            the reader is a creator/admin, or when they've created at
-            least one Collective. ─────── */}
-        {(creatorCards.length > 0 || isCreatorOrAdmin) && (
-          <div
-            className="mt-20 pt-12"
-            style={{ borderTop: '1px dashed rgba(12,24,38,0.10)' }}
-          >
-            <p
-              className="mb-2 text-[11px] font-semibold uppercase tracking-[0.28em]"
-              style={{ color: 'rgba(12,24,38,0.45)' }}
-            >
-              For creators
-            </p>
-            <h3
-              className="mb-8 font-serif text-[22px] leading-tight md:text-[24px]"
-              style={{ color: '#0C1826' }}
-            >
-              What you&rsquo;re building
-            </h3>
-
-            {creatorCards.length > 0 && (
-              <Section
-                title="Collectives you created"
-                subtitle="Communities you&rsquo;re building and managing."
-                noSpacing
-                className="mb-12"
-              >
-                <div className="grid gap-8 sm:grid-cols-2">
-                  {creatorCards.map((c) => (
-                    <CreatorCollectiveCard
-                      key={c.summary.id}
-                      summary={c.summary}
-                      detail={c.detail}
-                    />
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {isCreatorOrAdmin && (
-              <Section
-                title="Create & Manage"
-                noSpacing
-              >
-                <div className="grid gap-8 sm:grid-cols-2">
-                  <CreatorStudioCard
-                    artUrl={creatorStudioArt?.thumbnail_url ?? creatorStudioArt?.image_url ?? null}
-                  />
-                </div>
-              </Section>
-            )}
-          </div>
-        )}
-
+        </div>
       </main>
     </div>
   )
