@@ -205,7 +205,7 @@ export default async function DashboardPage() {
       {/* Welcome — warm greeting, unchanged from before. */}
       <WelcomeBanner firstName={firstName} />
 
-      <main className="mx-auto max-w-[1200px] px-6 pt-12 pb-24 md:px-10 md:pt-14 md:pb-28">
+      <main className="mx-auto max-w-[1440px] px-6 pt-12 pb-24 md:px-10 md:pt-14 md:pb-28">
 
         {/* Page title — kept for now (product decision to trial keeping
             vs. removing). Subtitle reframed toward the brief: what's
@@ -238,11 +238,22 @@ export default async function DashboardPage() {
             NOT sticky and NOT full-height — it sits quietly at the
             top of column 2 and lets the reading of the main column
             lead. When there's nothing coming, the whole aside is
-            skipped and the main column uses the available width. */}
+            skipped and the main column uses the available width.
+
+            Two grid choices that matter:
+              * `items-start` — items align to the top of their cells
+                rather than stretching. Prevents Recent Moments from
+                growing to match the sidebar's height.
+              * sidebar `lg:row-span-4` — spans all four possible
+                main-column rows so its natural height does NOT
+                inflate row 1. Each main-column row sizes to its own
+                content; the sidebar simply extends visually to the
+                right without dictating where Your Collectives
+                begins. */}
         <div
           className={
             soon.length > 0
-              ? 'grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-[minmax(0,1fr)_280px]'
+              ? 'grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start'
               : 'flex flex-col gap-12'
           }
         >
@@ -257,9 +268,10 @@ export default async function DashboardPage() {
               Recent Moments and Your Collectives on mobile. Hidden
               entirely when the two-week horizon is quiet. Uses the
               existing narrow-column SidebarGatheringRow treatment
-              because it is already compact. */}
+              because it is already compact. Spans all main-column
+              rows so it never inflates row 1's height. */}
           {soon.length > 0 && (
-            <aside className="order-2 lg:col-start-2 lg:row-start-1">
+            <aside className="order-2 lg:col-start-2 lg:row-start-1 lg:row-span-4 lg:self-start">
               <div className="mb-4">
                 <h3
                   className="font-serif text-[18px] leading-tight"
@@ -301,7 +313,7 @@ export default async function DashboardPage() {
             className="order-3 lg:col-start-1 lg:row-start-2"
           >
             {cards.length > 0 ? (
-              <div className="grid gap-8 sm:grid-cols-2">
+              <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-3">
                 {cards.map((c) => (
                   <CollectiveCard
                     key={c.membership.space_id}
@@ -384,7 +396,7 @@ export default async function DashboardPage() {
                   noSpacing
                   className="mb-12"
                 >
-                  <div className="grid gap-8 sm:grid-cols-2">
+                  <div className="grid gap-8 sm:grid-cols-2 xl:grid-cols-3">
                     {creatorCards.map((c) => (
                       <CreatorCollectiveCard
                         key={c.summary.id}
