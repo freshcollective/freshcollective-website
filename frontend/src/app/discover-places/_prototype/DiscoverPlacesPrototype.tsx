@@ -423,6 +423,11 @@ function TierAccordion({ places }: { places: PlaceMock[] }) {
         const hasItems  = g.items.length > 0
         return (
           <section key={g.tier} aria-labelledby={`tier-header-${g.tier}`}>
+            {/* The whole header is the button — chevron sits on the
+                left where a reader's eye naturally starts, followed
+                by the tier dot, title, and count pill. Motion-safe
+                rotation is preserved. Non-item tiers render no
+                chevron and stay non-interactive. */}
             <button
               type="button"
               id={`tier-header-${g.tier}`}
@@ -431,11 +436,32 @@ function TierAccordion({ places }: { places: PlaceMock[] }) {
               aria-disabled={!hasItems || undefined}
               onClick={() => hasItems && toggle(g.tier)}
               className={
-                'group flex w-full items-start justify-between gap-4 rounded-xl px-3 py-4 text-left transition-colors ' +
+                'group flex w-full items-start gap-3 rounded-xl px-3 py-4 text-left transition-colors ' +
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 ' +
                 (hasItems ? 'hover:bg-slate-50 cursor-pointer' : 'opacity-70 cursor-default')
               }
             >
+              {hasItems ? (
+                <span
+                  aria-hidden="true"
+                  className="mt-2 shrink-0 text-navy-500"
+                >
+                  <svg
+                    width="14" height="14" viewBox="0 0 14 14"
+                    className={
+                      'motion-safe:transition-transform motion-safe:duration-200 ' +
+                      (isOpen ? 'rotate-180' : '')
+                    }
+                  >
+                    <path d="M2 5l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                  </svg>
+                </span>
+              ) : (
+                // Reserve the chevron slot so titles align with
+                // expandable siblings even when a tier is empty.
+                <span aria-hidden="true" className="mt-2 h-[14px] w-[14px] shrink-0" />
+              )}
+
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span
@@ -459,20 +485,6 @@ function TierAccordion({ places }: { places: PlaceMock[] }) {
                   {meta.subheading}
                 </p>
               </div>
-
-              {hasItems && (
-                <span className="shrink-0 pt-1.5 text-navy-500" aria-hidden="true">
-                  <svg
-                    width="14" height="14" viewBox="0 0 14 14"
-                    className={
-                      'motion-safe:transition-transform motion-safe:duration-200 ' +
-                      (isOpen ? 'rotate-180' : '')
-                    }
-                  >
-                    <path d="M2 5l5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                  </svg>
-                </span>
-              )}
             </button>
 
             <div

@@ -29,21 +29,35 @@ export interface Atmosphere {
 }
 
 /**
- * Eight richer atmospheres, each a plausible watercolour-evening
- * variation on a single hue family. Enough variety to avoid
- * obvious repetition across a page of ~15–50 Places while staying
- * within one shared visual vocabulary. All read comfortably beneath
- * the shared PageHero navy.
+ * Fourteen watercolour-evening atmospheres, split across cool and
+ * warm families so a page of Places doesn't drift towards a single
+ * hue. Each entry is a monochromatic light→deeper pair — soft
+ * enough to read as watercolour, saturated enough to feel
+ * deliberate under the navy PageHero.
+ *
+ * Cool tones lean into what feels most Fresh-Collective (teals,
+ * blues, greens); warm tones favour lavender / coral / peach /
+ * raspberry over the previous brown/amber palettes, which were
+ * reading corporate.
  */
 export const PLACE_ATMOSPHERES: readonly Atmosphere[] = [
+  // Cool — teals, blues, greens
   { from: '#7DBEB7', to: '#3F7F7C' },   // deep coastal teal
+  { from: '#A9C7DC', to: '#6A93B4' },   // sky blue
   { from: '#8AA2C0', to: '#4A6688' },   // dusk harbour blue
-  { from: '#9EA9B8', to: '#5A6577' },   // slate mist (mountain / stone)
+  { from: '#A8D5C3', to: '#67A88C' },   // seafoam
+  { from: '#B4D9B8', to: '#7BB287' },   // fresh mint
   { from: '#8FA88A', to: '#4F6B4E' },   // forest sage
-  { from: '#CFA482', to: '#8B5837' },   // warm coast (sand + coral)
-  { from: '#C5A876', to: '#7E5A20' },   // amber inland
-  { from: '#94A190', to: '#4F5F52' },   // eucalyptus urban
-  { from: '#B9856F', to: '#7C4230' },   // terracotta / rose clay
+  { from: '#94A190', to: '#4F5F52' },   // eucalyptus
+
+  // Warm — lavenders, pinks, corals, peach
+  { from: '#BEB0D6', to: '#7F73A2' },   // lavender
+  { from: '#C6A5CC', to: '#8A6E97' },   // soft violet
+  { from: '#E7BAC1', to: '#B87786' },   // blush pink
+  { from: '#D0838F', to: '#983C4F' },   // raspberry
+  { from: '#EBA087', to: '#C46B4E' },   // coral
+  { from: '#F2B48A', to: '#D18052' },   // apricot
+  { from: '#F3C4A8', to: '#D6906E' },   // warm peach
 ] as const
 
 /**
