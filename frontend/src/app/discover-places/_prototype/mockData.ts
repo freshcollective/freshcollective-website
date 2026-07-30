@@ -44,6 +44,18 @@ export interface PlaceMock {
   activeCollectives: number
   upcomingGatherings: number
   activity: PlaceActivity
+  /** Curated artwork uploaded through World Management → Physical
+   *  Locations. When present, replaces the deterministic atmosphere
+   *  gradient on the card header. Optional here so the seed mocks
+   *  keep exercising the fallback path. */
+  hero_artwork_url?: string | null
+  artwork_alt_text?: string | null
+  /** Normalised focal point (0.0–1.0) for cropped renderings.
+   *  Applied via ``background-position`` on the card header so the
+   *  meaningful subject stays in-frame across breakpoints. Defaults
+   *  to dead centre when omitted. */
+  artwork_focal_x?: number
+  artwork_focal_y?: number
 }
 
 // ---------------------------------------------------------------------------

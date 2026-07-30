@@ -82,7 +82,11 @@ class Backfill(TypedDict, total=False):
 # ---------------------------------------------------------------------------
 # The mapping — authored by hand, per Stage 1 backfill decision.
 #
-#   EMBODY               → In person → Hobart, Tasmania
+#   EMBODY               → In person → Melbourne, Victoria
+#                          (sessions gather in South Croydon; the
+#                          Physical Location is the broad discovery
+#                          area, not the venue suburb — see
+#                          ``app.models.place`` for the rule)
 #   The Grove            → Online
 #   World Builders       → Online
 #
@@ -97,8 +101,8 @@ COLLECTIVES: list[Backfill] = [
     {
         "slug": "embody",
         "connection_style": "in_person",
-        "location_query": "Hobart, Tasmania, Australia",
-        "match_region": "Tasmania",
+        "location_query": "Melbourne, Victoria, Australia",
+        "match_region": "Victoria",
         "match_country": "Australia",
     },
     {

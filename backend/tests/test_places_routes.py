@@ -194,7 +194,9 @@ class TestList:
         result = list_places(db)
         assert [p.name for p in result] == ["Brisbane", "Melbourne"]
 
-    def test_response_shape_is_minimal(self, db, discovery_enabled):
+    def test_response_shape_carries_artwork_but_hides_admin_fields(
+        self, db, discovery_enabled,
+    ):
         db.add(_place(
             slug="byron-bay",
             name="Byron Bay",
@@ -206,9 +208,41 @@ class TestList:
         result = list_places(db)
         assert len(result) == 1
         assert isinstance(result[0], PlaceSummary)
+        # Public fields include the curated artwork payload so the
+        # Discover Places surface can prefer it over the atmospheric
+        # fallback. Admin-only fields (blurb, admin_note, coordinates,
+        # timezone, provider_place_id, status) stay off this shape.
         assert set(result[0].model_dump().keys()) == {
             "id", "slug", "name", "country_code", "region",
+            "hero_artwork_url", "artwork_alt_text",
+            "artwork_focal_x", "artwork_focal_y",
         }
+
+    def test_artwork_payload_surfaces_when_set(self, db, discovery_enabled):
+        db.add(_place(
+            slug="apollo-bay",
+            name="Apollo Bay",
+            country_code="AU",
+            hero_artwork_url="/api/uploads/place-artwork/apollo-bay/hero.jpg",
+            artwork_alt_text="Coastal cliffs at sunrise",
+            artwork_focal_x=0.35,
+            artwork_focal_y=0.6,
+        ))
+        db.flush()
+        [row] = list_places(db)
+        assert row.hero_artwork_url == "/api/uploads/place-artwork/apollo-bay/hero.jpg"
+        assert row.artwork_alt_text == "Coastal cliffs at sunrise"
+        assert row.artwork_focal_x == pytest.approx(0.35)
+        assert row.artwork_focal_y == pytest.approx(0.6)
+
+    def test_artwork_defaults_are_null_and_center(self, db, discovery_enabled):
+        db.add(_place(slug="hobart", name="Hobart"))
+        db.flush()
+        [row] = list_places(db)
+        assert row.hero_artwork_url is None
+        assert row.artwork_alt_text is None
+        assert row.artwork_focal_x == 0.5
+        assert row.artwork_focal_y == 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +301,49 @@ class TestResolve:
         # And it persisted.
         stored = db.query(Place).filter(Place.provider_place_id == "osm:node:12345").one()
         assert stored.name == "Melbourne"
+
+    def test_picker_created_place_lands_as_draft(
+        self, db, discovery_enabled, make_user, install_fake_provider,
+    ):
+        # Physical Locations are curated by admins. A picker-driven
+        # resolve therefore lands as ``draft`` so nothing suburb-level
+        # ever slips onto Discover Places automatically — only after
+        # an admin promotes the row does it become member-visible.
+        install_fake_provider(fetch_result=MELBOURNE_SUGGESTION)
+        creator = make_user(role="creator")
+
+        _run(resolve_place(
+            ResolveRequest(provider_place_id="osm:node:12345"),
+            db=db,
+            _user=creator,
+        ))
+        stored = db.query(Place).filter(Place.provider_place_id == "osm:node:12345").one()
+        assert stored.status == "draft"
+
+    def test_existing_active_place_stays_active_on_resolve(
+        self, db, discovery_enabled, make_user, install_fake_provider,
+    ):
+        # If the admin has already curated the area to ``active``,
+        # resolving the same provider id from a Creator must not
+        # regress its status.
+        db.add(_place(
+            slug="melbourne",
+            name="Melbourne",
+            status="active",
+            provider_place_id="osm:node:12345",
+        ))
+        db.commit()
+
+        install_fake_provider(fetch_result=MELBOURNE_SUGGESTION)
+        creator = make_user(role="creator")
+        resp = _run(resolve_place(
+            ResolveRequest(provider_place_id="osm:node:12345"),
+            db=db,
+            _user=creator,
+        ))
+        assert resp.created is False
+        stored = db.query(Place).filter(Place.provider_place_id == "osm:node:12345").one()
+        assert stored.status == "active"
 
     def test_dedupes_by_provider_place_id(
         self, db, discovery_enabled, make_user, install_fake_provider,

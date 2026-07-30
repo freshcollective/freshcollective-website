@@ -61,17 +61,52 @@ class TestPlace:
             db.flush()
 
     def test_status_check_rejects_unknown_values(self, db):
-        # Only 'active' and 'hidden' are permitted — deliberately no
-        # 'deleted' vocabulary. Curated places are hidden, not deleted.
+        # Vocabulary is deliberately closed: draft | active |
+        # hidden | archived. No 'deleted' — archive replaces it.
         db.add(_place(status="deleted"))
         with pytest.raises(IntegrityError):
             db.flush()
 
-    def test_status_hidden_is_allowed(self, db):
-        p = _place(status="hidden")
+    @pytest.mark.parametrize("status", ["draft", "active", "hidden", "archived"])
+    def test_status_lifecycle_values_are_allowed(self, db, status):
+        p = _place(status=status)
         db.add(p)
         db.flush()
-        assert p.status == "hidden"
+        assert p.status == status
+
+
+# ---------------------------------------------------------------------------
+# Place — artwork + focal point + admin note (migration 093)
+# ---------------------------------------------------------------------------
+
+class TestPlaceArtworkFields:
+    def test_defaults(self, db):
+        p = _place(slug="warrandyte", name="Warrandyte")
+        db.add(p)
+        db.flush()
+        assert p.hero_artwork_url is None
+        assert p.artwork_alt_text is None
+        assert p.artwork_focal_x == 0.5
+        assert p.artwork_focal_y == 0.5
+        assert p.admin_note is None
+
+    def test_can_set_artwork_payload(self, db):
+        p = _place(
+            slug="apollo-bay",
+            name="Apollo Bay",
+            hero_artwork_url="/api/uploads/place-artwork/apollo-bay.jpg",
+            artwork_alt_text="Coastal cliffs at sunrise",
+            artwork_focal_x=0.35,
+            artwork_focal_y=0.6,
+            admin_note="Editorial artwork commissioned 2026-07.",
+        )
+        db.add(p)
+        db.flush()
+        assert p.hero_artwork_url == "/api/uploads/place-artwork/apollo-bay.jpg"
+        assert p.artwork_alt_text == "Coastal cliffs at sunrise"
+        assert p.artwork_focal_x == pytest.approx(0.35)
+        assert p.artwork_focal_y == pytest.approx(0.6)
+        assert p.admin_note == "Editorial artwork commissioned 2026-07."
 
 
 # ---------------------------------------------------------------------------
@@ -223,10 +258,15 @@ class TestSchemaShape:
             "country_code",
             "region",
             "blurb",
+            "admin_note",
             "latitude",
             "longitude",
             "timezone",
             "provider_place_id",
+            "hero_artwork_url",
+            "artwork_alt_text",
+            "artwork_focal_x",
+            "artwork_focal_y",
             "status",
             "created_at",
             "updated_at",

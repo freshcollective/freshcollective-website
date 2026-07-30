@@ -1,12 +1,25 @@
 """
 Real-world Places for Discovery, Connection & Belonging.
 
-A Place is a geographic entity a person or Collective can be
-associated with — a city, or (rarely) a region when the honest
-answer really is broader than one city. Places are editorial, curated
-by hand as the platform expands into new cities; the seed script is
-idempotent and only adds Places where actual Fresh Collective activity
-exists.
+A Place is a **broad discovery area** — the answer to "what
+communities are in my area?". Cities ("Melbourne", "Hobart",
+"Auckland") and named regions where a whole area gathers under one
+banner ("Blue Mountains", "Sunshine Coast", "Mornington
+Peninsula") are the shape of a Place.
+
+**Sub-city localities are never Places.** Suburbs, neighbourhoods,
+precincts, individual venue suburbs (Fitzroy, Richmond, Croydon
+South) belong on the Collective or Gathering that inhabits them,
+not here — the Discover Places surface exists so a member can find
+communities nearby, and a per-suburb card would fragment discovery
+without adding meaning. Specific locality lives with the
+Collective (as descriptive copy) and precise venue lives with the
+Gathering (``venue_name``/``venue_address``).
+
+Places are editorial, curated by administrators as the platform
+expands into new discovery areas. The picker-driven resolve flow
+seeds new rows as ``draft`` so nothing suburb-level ever surfaces
+publicly without an admin's say-so.
 
 Places are deliberately separate from ``app.models.platform.Location``
 (the Atlas mythic-worldview layer used for Collective aesthetics).
@@ -54,7 +67,36 @@ class Place(Base):
     region: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Editorial description — a few paragraphs about what Fresh
     # Collective looks like here. Nullable while the copy is drafted.
+    # Distinct from admin_note: blurb may be surfaced publicly on
+    # Discover Places; admin_note never is.
     blurb: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Internal free-text note authored by administrators. Never
+    # surfaced publicly. Distinct from ``blurb`` (which is
+    # member-facing editorial copy) — this is the equivalent of
+    # a Post-it stuck to the record.
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Curated hero artwork uploaded through the World Management
+    # Physical Locations admin surface. When present, takes
+    # precedence over the deterministic atmospheric fallback used
+    # on Discover Places. This artwork MUST NOT be used on
+    # Collective cards, Collective About pages, Atlas Islands,
+    # Creator Studio identity, or member profile visuals — it is
+    # the geographic Place's identity, not a Collective's.
+    hero_artwork_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Accessible alt text for the uploaded artwork. Nullable
+    # because artwork can be uploaded before alt text is set;
+    # the admin UI encourages authoring it alongside upload.
+    artwork_alt_text: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Normalised focal point for the artwork (0.0–1.0). Used as
+    # CSS ``object-position`` so cropped renderings keep the
+    # meaningful centre of the image visible. Defaults to
+    # 0.5,0.5 (dead centre) — the safe fallback.
+    artwork_focal_x: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.5, server_default="0.5"
+    )
+    artwork_focal_y: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.5, server_default="0.5"
+    )
     # Coordinates — filled from the location autocomplete picker at
     # Place creation time. Nullable because early Places (Phase 0
     # seed style) may have been created without a provider payload.
@@ -77,10 +119,13 @@ class Place(Base):
     provider_place_id: Mapped[str | None] = mapped_column(
         String(200), nullable=True, unique=True, index=True
     )
-    # Only two statuses: 'active' (visible) and 'hidden' (not surfaced
-    # anywhere but preserved for links/history). No 'deleted' — Places
-    # are curated and rare; removing one is an editorial decision, not
-    # a lifecycle event.
+    # Lifecycle vocabulary used by the World Management admin
+    # surface:
+    #   draft    — being composed; never appears publicly.
+    #   active   — visible on Discover Places.
+    #   hidden   — preserved for links / history; not surfaced.
+    #   archived — retired; still queryable in admin.
+    # See migration 093.
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="active", server_default="active"
     )
@@ -96,7 +141,7 @@ class Place(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "status IN ('active', 'hidden')",
+            "status IN ('draft', 'active', 'hidden', 'archived')",
             name="places_status_check",
         ),
     )

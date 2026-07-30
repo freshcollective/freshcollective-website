@@ -523,9 +523,12 @@ function PlaceCard({ place, showTier }: { place: PlaceMock; showTier?: boolean }
   // but the code path is here ready for World-Management-authored
   // images to drop in later. Kept as a background-image on the
   // header div so cover / center behaviour matches the fallback
-  // gradient's rendering geometry.
-  const artworkUrl = (place as PlaceMock & { hero_artwork_url?: string | null })
-    .hero_artwork_url ?? null
+  // gradient's rendering geometry. When present, the focal point
+  // (authored in the Physical Locations admin) governs where the
+  // meaningful centre of the image sits after cropping.
+  const artworkUrl = place.hero_artwork_url ?? null
+  const focalX = place.artwork_focal_x ?? 0.5
+  const focalY = place.artwork_focal_y ?? 0.5
 
   return (
     <article
@@ -534,9 +537,14 @@ function PlaceCard({ place, showTier }: { place: PlaceMock; showTier?: boolean }
     >
       {artworkUrl ? (
         <div
-          aria-hidden="true"
-          className="h-28 bg-cover bg-center"
-          style={{ backgroundImage: `url("${artworkUrl}")` }}
+          role={place.artwork_alt_text ? 'img' : undefined}
+          aria-label={place.artwork_alt_text ?? undefined}
+          aria-hidden={place.artwork_alt_text ? undefined : 'true'}
+          className="h-28 bg-cover"
+          style={{
+            backgroundImage: `url("${artworkUrl}")`,
+            backgroundPosition: `${focalX * 100}% ${focalY * 100}%`,
+          }}
         />
       ) : (
         <div

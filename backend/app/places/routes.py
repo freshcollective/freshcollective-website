@@ -53,8 +53,14 @@ router = APIRouter(prefix="/api/places", tags=["places"])
 # ---------------------------------------------------------------------------
 
 class PlaceSummary(BaseModel):
-    """Public shape for a Place. Intentionally minimal — extend when a
-    real UI need appears, not before."""
+    """Public shape for a Place.
+
+    Includes curated artwork fields when set. Discover Places
+    prefers ``hero_artwork_url`` over the deterministic atmosphere
+    fallback; when it is ``None``, the client falls back to the
+    per-slug gradient. The focal point governs cropped renderings
+    (CSS ``object-position``) so meaningful subjects stay in-frame.
+    """
 
     model_config = {"from_attributes": True}
 
@@ -63,6 +69,10 @@ class PlaceSummary(BaseModel):
     name: str
     country_code: str
     region: str | None
+    hero_artwork_url: str | None
+    artwork_alt_text: str | None
+    artwork_focal_x: float
+    artwork_focal_y: float
 
 
 class LookupRequest(BaseModel):
@@ -226,7 +236,23 @@ async def resolve_place(
     Idempotent by ``provider_place_id``: if a Place with the same
     provider id already exists, return it. Otherwise, re-fetch the
     canonical suggestion from the provider (so the client cannot lie
-    about name or coordinates) and create the Place.
+    about name or coordinates) and create the Place **as a draft**.
+
+    Draft status is deliberate: the provider result may be at any
+    granularity (a suburb, a venue, an obscure hamlet), but
+    Discover Places is a curated surface for **broad discovery
+    areas** (see ``app.models.place``). Marking picker-created rows
+    as ``draft`` means:
+
+      * a Creator's Collective can still be linked to the Place
+        immediately (SpacePlace is orthogonal to status);
+      * Discover Places never surfaces the row until an admin
+        reviews it and either promotes it to ``active`` (with the
+        broad name they want members to see), merges it into an
+        existing broader Place, or leaves it as draft.
+
+    The public-facing name is therefore always an admin decision,
+    never a raw provider payload.
     """
     _ensure_discovery_flag_on()
 
@@ -254,6 +280,7 @@ async def resolve_place(
         longitude=suggestion.longitude,
         timezone=suggestion.timezone,
         provider_place_id=suggestion.provider_place_id,
+        status="draft",
     )
     db.add(place)
     db.commit()

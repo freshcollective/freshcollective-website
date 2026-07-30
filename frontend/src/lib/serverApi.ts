@@ -217,6 +217,34 @@ export const getAdminLocation = cache(async (key: string) => {
 })
 
 // ---------------------------------------------------------------------------
+// Physical Locations — admin surface for real-world Places (Discover Places).
+// Distinct from The Atlas above (mythic worldview for Collectives).
+// See docs/foundations/discovery-connection-belonging-location-model.md.
+// ---------------------------------------------------------------------------
+
+export async function getAdminPhysicalLocations(
+  opts?: { q?: string; status?: string; country?: string; sort?: string },
+) {
+  const params = new URLSearchParams()
+  if (opts?.q) params.set('q', opts.q)
+  if (opts?.status) params.set('status', opts.status)
+  if (opts?.country) params.set('country', opts.country)
+  if (opts?.sort) params.set('sort', opts.sort)
+  const qs = params.toString()
+  const res = await fetchWithSession(
+    `/api/admin/physical-locations${qs ? `?${qs}` : ''}`
+  )
+  if (!res.ok) return []
+  return res.json()
+}
+
+export const getAdminPhysicalLocation = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/admin/physical-locations/${slug}`)
+  if (!res.ok) return null
+  return res.json()
+})
+
+// ---------------------------------------------------------------------------
 // Mother World — platform-wide snapshot used by the World Management overview
 // page. Mirrors the shape of `AdminPlatformOverview` in backend/schemas.py.
 // ---------------------------------------------------------------------------

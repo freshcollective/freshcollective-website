@@ -22,9 +22,10 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: '🌍 OUR WORLD',
     items: [
-      { href: '/admin/overview',    label: 'Mother World', exact: true },
-      { href: '/admin/atlas',       label: 'Atlas' },
-      { href: '/admin/collectives', label: 'Collectives' },
+      { href: '/admin/overview',            label: 'Mother World', exact: true },
+      { href: '/admin/atlas',               label: 'Atlas' },
+      { href: '/admin/physical-locations',  label: 'Physical Locations' },
+      { href: '/admin/collectives',         label: 'Collectives' },
       { href: '/admin/creators',    label: 'Creators' },
       { href: '/admin/users',       label: 'Members' },
     ],
