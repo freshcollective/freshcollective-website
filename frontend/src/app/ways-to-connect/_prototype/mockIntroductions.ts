@@ -136,11 +136,15 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
   {
     // Has a photo set AND profile visibility permits sharing —
     // the server has populated avatarUrl and the card renders the
-    // image. Uses a deterministic prototype avatar service so the
-    // demo shows the photo state alongside the fallback state.
+    // image. Uses a local abstract SVG portrait
+    // (public/prototype/portraits/) so the prototype does not
+    // depend on any external avatar service, and so no external
+    // service can infer identity from the mock name. The pairing
+    // Emma ↔ portrait-01 is deliberate and stable across every
+    // render state.
     id: 'intro-shared-journey-emma',
     otherName: 'Emma',
-    avatarUrl: 'https://i.pravatar.cc/240?u=fc-prototype-emma',
+    avatarUrl: '/prototype/portraits/portrait-01.svg',
     intent: 'shared-journey',
     reasonSentence:
       "You're both part of The Grove, exploring Life in Alignment, and in Melbourne.",
@@ -177,8 +181,9 @@ export const INCOMING_INTRODUCTION: MockIntroduction = {
   otherName: 'James',
   // Photo set and visibility permits sharing — demonstrates the
   // photo state on the invitation card and (after accept) the
-  // conversation introduction panel.
-  avatarUrl: 'https://i.pravatar.cc/240?u=fc-prototype-james',
+  // conversation introduction panel. Local SVG portrait, paired
+  // deliberately with James and stable across every render state.
+  avatarUrl: '/prototype/portraits/portrait-02.svg',
   intent: 'shared-journey',
   reasonSentence:
     "You're both part of EMBODY, exploring Life in Alignment, and in Melbourne.",
