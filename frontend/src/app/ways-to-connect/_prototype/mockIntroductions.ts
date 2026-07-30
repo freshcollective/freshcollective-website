@@ -42,6 +42,18 @@ export type SharedKind =
 
 export interface SharedItem {
   kind: SharedKind
+  /** Always the most specific shared name available — the actual
+   *  Collective, Pathway, Gathering, Place or Theme name. Never a
+   *  generic category label like "same Gathering" or "the same
+   *  Pathway". Members should recognise the common ground at a
+   *  glance without having to interpret an abstract phrase.
+   *
+   *  When two members are booked into the same Gathering, use the
+   *  Gathering's actual title (optionally suffixed with a day for
+   *  readability, e.g. "Life in Alignment Circle · Tuesday"),
+   *  not the day alone. The recommendation service is responsible
+   *  for populating labels from the real entity names when it
+   *  replaces this fixture. */
   label: string
 }
 
@@ -114,10 +126,10 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
     avatarUrl: null,
     intent: 'right-now',
     reasonSentence:
-      "You're both part of The Grove and heading to the same Gathering on Tuesday.",
+      "You're both part of The Grove and booked into Tuesday's Life in Alignment Circle.",
     sharedItems: [
       { kind: 'collective', label: 'The Grove' },
-      { kind: 'gathering',  label: "Tuesday's Gathering" },
+      { kind: 'gathering',  label: 'Life in Alignment Circle · Tuesday' },
       { kind: 'pathway',    label: 'Life in Alignment' },
     ],
   },
@@ -131,7 +143,7 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
     avatarUrl: 'https://i.pravatar.cc/240?u=fc-prototype-emma',
     intent: 'shared-journey',
     reasonSentence:
-      "You've spent time in the same Collectives, are exploring the same Pathway, and are both in Melbourne.",
+      "You're both part of The Grove, exploring Life in Alignment, and in Melbourne.",
     sharedItems: [
       { kind: 'collective', label: 'The Grove' },
       { kind: 'pathway',    label: 'Life in Alignment' },
@@ -145,7 +157,7 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
     avatarUrl: null,
     intent: 'thoughtful',
     reasonSentence:
-      "You share a curiosity for reflection and creativity, and you're both circling Byron Bay.",
+      "You share Reflection and Creativity, and you're both drawn to Byron Bay.",
     sharedItems: [
       { kind: 'theme', label: 'Reflection' },
       { kind: 'theme', label: 'Creativity' },
