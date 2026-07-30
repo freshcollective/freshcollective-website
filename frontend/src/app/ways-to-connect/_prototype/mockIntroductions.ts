@@ -50,6 +50,21 @@ export interface MockIntroduction {
   id: string
   /** The other person's display name. Given name only for warmth. */
   otherName: string
+  /** The other person's profile photo URL, or null when either
+   *  no photo is set OR the member's profile visibility settings
+   *  do not permit showing it in this context.
+   *
+   *  Server-side is authoritative on visibility: the introduction
+   *  recommendation service must never populate this field for a
+   *  member who has kept their photo private. The client trusts
+   *  that "null means fall back" — it does not perform its own
+   *  visibility check.
+   *
+   *  When null (or the image fails to load), PortraitCircle
+   *  renders the serif-initial fallback at the same size, in the
+   *  same frame, on the same warm gradient.
+   */
+  avatarUrl: string | null
   /** Which intent bucket the recommendation engine would have
    *  placed this in. Not surfaced as a member-facing badge —
    *  turned into a gentle human eyebrow at the top of the card. */
@@ -93,8 +108,10 @@ export const SHARED_ICON: Record<SharedKind, string> = {
 
 export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
   {
+    // No photo set — renders the serif-initial fallback.
     id: 'intro-right-now-sarah',
     otherName: 'Sarah',
+    avatarUrl: null,
     intent: 'right-now',
     reasonSentence:
       "You're both part of The Grove and heading to the same Gathering on Tuesday.",
@@ -105,8 +122,13 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
     ],
   },
   {
+    // Has a photo set AND profile visibility permits sharing —
+    // the server has populated avatarUrl and the card renders the
+    // image. Uses a deterministic prototype avatar service so the
+    // demo shows the photo state alongside the fallback state.
     id: 'intro-shared-journey-emma',
     otherName: 'Emma',
+    avatarUrl: 'https://i.pravatar.cc/240?u=fc-prototype-emma',
     intent: 'shared-journey',
     reasonSentence:
       "You've spent time in the same Collectives, are exploring the same Pathway, and are both in Melbourne.",
@@ -117,8 +139,10 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
     ],
   },
   {
+    // No photo set — fallback.
     id: 'intro-thoughtful-anna',
     otherName: 'Anna',
+    avatarUrl: null,
     intent: 'thoughtful',
     reasonSentence:
       "You share a curiosity for reflection and creativity, and you're both circling Byron Bay.",
@@ -139,6 +163,10 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
 export const INCOMING_INTRODUCTION: MockIntroduction = {
   id: 'intro-incoming-james',
   otherName: 'James',
+  // Photo set and visibility permits sharing — demonstrates the
+  // photo state on the invitation card and (after accept) the
+  // conversation introduction panel.
+  avatarUrl: 'https://i.pravatar.cc/240?u=fc-prototype-james',
   intent: 'shared-journey',
   reasonSentence:
     "You're both part of EMBODY, exploring Life in Alignment, and in Melbourne.",

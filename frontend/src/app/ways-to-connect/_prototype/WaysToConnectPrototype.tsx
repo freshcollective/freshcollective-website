@@ -319,7 +319,7 @@ function IncomingInvitation({
         className="relative flex h-40 items-center justify-center md:h-44 md:w-40 md:shrink-0 md:rounded-2xl"
         style={{ background: portrait.wash }}
       >
-        <PortraitCircle name={intro.otherName} portrait={portrait} size={104} />
+        <PortraitCircle name={intro.otherName} avatarUrl={intro.avatarUrl} portrait={portrait} size={104} />
       </div>
 
       <div className="flex-1 px-6 py-6 md:pl-0 md:pr-8 md:py-8">
@@ -395,7 +395,7 @@ function IntroductionCard({
         className="relative flex h-40 items-center justify-center"
         style={{ background: portrait.wash }}
       >
-        <PortraitCircle name={intro.otherName} portrait={portrait} size={96} />
+        <PortraitCircle name={intro.otherName} avatarUrl={intro.avatarUrl} portrait={portrait} size={96} />
       </div>
 
       {/* Body */}
@@ -483,39 +483,66 @@ function IntroductionCard({
 
 
 // ---------------------------------------------------------------------------
-// Portrait circle — polished avatar placeholder in a warm palette.
-// Not a photo, not a utility circle; serif initial on a warm
-// gradient with a white outer ring. Ready to swap for a real
-// profile photo later without changing card geometry.
+// Portrait circle — displays the member's profile photo when one
+// is available and their profile visibility permits it, otherwise
+// falls back to the serif-initial treatment. Both states share
+// the same size, outer ring, shadow and card geometry so a card
+// looks identical structurally whether or not a photo is shown.
+//
+// The client does not perform its own visibility check — server-
+// side is authoritative. The recommendation service must populate
+// `avatarUrl` as null for any member who has kept their photo
+// private. If the image fails to load for any reason, we
+// transparently fall back to the initial.
 // ---------------------------------------------------------------------------
 
 function PortraitCircle({
-  name, portrait, size,
+  name, avatarUrl, portrait, size,
 }: {
   name: string
+  avatarUrl: string | null
   portrait: Portrait
   size: number
 }) {
+  const [imgFailed, setImgFailed] = useState(false)
   const initial = name.trim().charAt(0).toUpperCase() || '?'
+  const showPhoto = avatarUrl !== null && !imgFailed
+
   return (
     <div
       className="rounded-full bg-white shadow-[0_6px_18px_rgba(12,24,38,0.15)]"
       style={{ padding: 4, width: size + 8, height: size + 8 }}
-      aria-hidden="true"
     >
       <div
-        className="flex items-center justify-center rounded-full"
+        className="overflow-hidden rounded-full"
         style={{
           width: size,
           height: size,
-          background: portrait.circle,
-          color: portrait.ink,
-          fontFamily: 'Georgia, serif',
-          fontSize: Math.round(size * 0.42),
-          lineHeight: 1,
+          background: showPhoto ? '#F1F5F4' : portrait.circle,
         }}
       >
-        {initial}
+        {showPhoto ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={avatarUrl}
+            alt={`${name}'s profile photo`}
+            className="h-full w-full object-cover object-center"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="flex h-full w-full items-center justify-center"
+            style={{
+              color: portrait.ink,
+              fontFamily: 'Georgia, serif',
+              fontSize: Math.round(size * 0.42),
+              lineHeight: 1,
+            }}
+          >
+            {initial}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -606,7 +633,7 @@ function ConversationView({
           className="flex items-center gap-5 px-6 py-6 md:px-8"
           style={{ background: portrait.wash }}
         >
-          <PortraitCircle name={intro.otherName} portrait={portrait} size={72} />
+          <PortraitCircle name={intro.otherName} avatarUrl={intro.avatarUrl} portrait={portrait} size={72} />
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
               Welcome
