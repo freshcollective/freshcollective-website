@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import Container from '@/components/layout/Container'
+import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
 import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
 
@@ -11,29 +12,26 @@ export const metadata: Metadata = {
 }
 
 /**
- * Ways to Connect — Phase 0 placeholder.
- *
- * The pillar's connective tissue — the surface where members find
- * one another and choose to journey together — is not yet ready to
- * open. Rather than announcing that in software terms, the page
- * greets visitors with a quiet, honest sentence about how connection
- * grows here. See
- * ``docs/foundations/discovery-connection-belonging-v1.1.md``.
+ * Ways to Connect — Phase 0 placeholder inside the shared discovery
+ * hero family. The hero establishes the destination; the placeholder
+ * sentence beneath it is honest about the surface still opening.
+ * See docs/foundations/discovery-connection-belonging-v1.1.md.
  */
 export default function WaysToConnectPage() {
   if (!isDiscoveryPillarEnabled()) notFound()
 
   return (
     <SiteShell>
-      <Container className="py-24 md:py-32">
+      <PageHero
+        title="Ways to Connect"
+        supportingCopy="Meaningful connection grows through shared experiences."
+      />
+
+      {/* Placeholder body — deliberately quiet. Replaced by the real
+          Ways to Connect experience in a later stage. */}
+      <Container className="py-16 md:py-20">
         <div className="mx-auto max-w-xl">
-          <h1 className="mb-6 font-serif text-3xl text-navy-900 md:text-4xl">
-            Ways to Connect
-          </h1>
-          <p className="mb-6 font-serif text-lg italic leading-relaxed text-navy-600">
-            Meaningful connection grows through shared experiences.
-          </p>
-          <p className="text-[15px] leading-relaxed text-navy-500">
+          <p className="font-serif text-lg italic leading-relaxed text-navy-600">
             This part of the world will open as our communities
             continue to grow.
           </p>

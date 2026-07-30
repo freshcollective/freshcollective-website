@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
+import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
 import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
 import DiscoverPlacesPrototype from './_prototype/DiscoverPlacesPrototype'
@@ -7,22 +8,17 @@ import DiscoverPlacesPrototype from './_prototype/DiscoverPlacesPrototype'
 export const metadata: Metadata = {
   title: 'Discover Places · Fresh Collective',
   description:
-    'The cities, towns and regions where Fresh Collective is quietly growing.',
+    'The places where our communities are gathering, learning and belonging.',
 }
 
 /**
- * Discover Places — currently hosting a design prototype.
+ * Discover Places — currently hosting a design prototype behind
+ * the pillar's shared PageHero. The hero is authored at the page
+ * level so the prototype (and, later, the real Phase 1 surface)
+ * only owns its own content, not the destination framing.
  *
- * The pillar's flag still gates access: when
- * NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED is off, this route 404s and
- * ordinary users cannot reach it. When the flag is on, we render
- * ``_prototype/DiscoverPlacesPrototype`` — a client-side visual
- * prototype fed by local mock data, used to evaluate the browsing
- * feeling before Phase 1 design starts.
- *
- * Nothing here talks to /api/places or the database. When the real
- * Phase 1 page ships, replace the prototype mount with the
- * production experience and delete ``./_prototype`` in full.
+ * The flag gate is unchanged: when
+ * NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED is off, this route 404s.
  *
  * See docs/foundations/discovery-connection-belonging-v1.1.md.
  */
@@ -31,6 +27,10 @@ export default function DiscoverPlacesPage() {
 
   return (
     <SiteShell>
+      <PageHero
+        title="Where communities are growing"
+        supportingCopy="The places where our communities are gathering, learning and belonging."
+      />
       <DiscoverPlacesPrototype />
     </SiteShell>
   )

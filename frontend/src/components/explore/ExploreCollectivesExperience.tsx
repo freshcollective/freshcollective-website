@@ -6,6 +6,7 @@ import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import { formatCollectivePricingSummary } from '@/lib/pricing'
 import Container from '@/components/layout/Container'
+import PageHero from '@/components/layout/PageHero'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
 import type { SpaceWithMeta } from './spaceMeta'
 
@@ -255,48 +256,20 @@ export default function ExploreCollectivesExperience({
 
   return (
     <>
-      {/* ── Hero ── */}
-      <div className="py-8 sm:py-10" style={{ background: '#FDFCF9' }}>
-        <Container>
-          <div
-            className="overflow-hidden rounded-2xl px-8 py-10 sm:px-10 sm:py-12"
-            style={{
-              background: '#071824',
-              border: '1px solid rgba(56,160,158,0.22)',
-              boxShadow:
-                '0 0 0 1px rgba(56,160,158,0.08), 0 8px 32px rgba(7,24,36,0.18), 0 0 48px rgba(56,160,158,0.06)',
-            }}
-          >
-            {/* Teal accent line */}
-            <div
-              className="mb-5 h-[2px] w-8 rounded-full"
-              style={{ background: 'linear-gradient(90deg, #38A09E 0%, rgba(56,160,158,0.2) 100%)' }}
-            />
-
-            <h1 className="mb-3 font-serif" style={{ fontSize: 'clamp(2rem, 4vw, 3rem)', lineHeight: '1.1', letterSpacing: '-0.03em' }}>
-              <span
-                style={{
-                  display: 'inline-block',
-                  background: 'linear-gradient(90deg, #38A09E 0%, #FFFFFF 55%)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  backgroundClip: 'text',
-                }}
-              >
-                Explore collectives
-              </span>
-            </h1>
-
-            <p
-              className="max-w-[540px] text-[15px] leading-[1.78]"
-              style={{ color: '#FFFFFF' }}
-            >
-              Each collective is a creator-led learning environment — with pathways, gatherings,
-              and community in one intentional place. Find the one that fits where you are.
-            </p>
-          </div>
-        </Container>
-      </div>
+      {/* ── Hero — shared PageHero primitive (see
+              components/layout/PageHero.tsx). Discover Places and
+              Ways to Connect use the same primitive so all three
+              destinations sit in one visual family. ── */}
+      <PageHero
+        title="Explore collectives"
+        supportingCopy={
+          <>
+            Each collective is a creator-led learning environment —
+            with pathways, gatherings, and community in one
+            intentional place. Find the one that fits where you are.
+          </>
+        }
+      />
 
       {/* ── Theme filter + search ── */}
       <div

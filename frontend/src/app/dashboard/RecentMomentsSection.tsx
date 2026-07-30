@@ -18,12 +18,18 @@ export default async function RecentMomentsSection() {
 
   return (
     <section className="mb-10">
-      <p
-        className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em]"
-        style={{ color: '#0f766e' }}
+      {/* Title uses the same font-family and colour as the other Your
+          World section titles (Your Collectives, Elsewhere in the
+          world, Collectives you created). A touch smaller than the
+          major sections (20px vs 22–24px) so it reads as the
+          calmer, lighter section per the brief without slipping
+          back into eyebrow territory. */}
+      <h2
+        className="mb-4 font-serif text-[20px] leading-tight md:text-[22px]"
+        style={{ color: '#0C1826' }}
       >
         Recent Moments
-      </p>
+      </h2>
 
       {activities.length === 0 ? (
         <p

@@ -217,16 +217,11 @@ export default function DiscoverPlacesPrototype() {
     <div className="pb-24">
       <ScaleReviewControl scale={scale} onChange={handleScaleChange} />
 
-      <div className="mx-auto w-full max-w-6xl px-6 md:px-10 pt-10 md:pt-16">
-        {/* ── Page introduction ── */}
-        <header className="mb-10 md:mb-14 max-w-2xl">
-          <h1 className="mb-3 font-serif text-3xl text-navy-900 md:text-4xl">
-            Where communities are growing
-          </h1>
-          <p className="font-serif text-lg italic leading-relaxed text-navy-600">
-            The places where our communities are gathering, learning and belonging.
-          </p>
-        </header>
+      <div className="mx-auto w-full max-w-6xl px-6 md:px-10 pt-8 md:pt-10">
+        {/* The page-level heading now lives in the shared PageHero
+            mounted by ../page.tsx above the ScaleReviewControl and
+            this content. The prototype only owns its own controls
+            and grid from here down. */}
 
         {/* ── Controls ── */}
         {(showSearch || showFilters) && (
