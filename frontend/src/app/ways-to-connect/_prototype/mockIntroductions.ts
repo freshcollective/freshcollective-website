@@ -51,11 +51,27 @@ export interface MockIntroduction {
   /** The other person's display name. Given name only for warmth. */
   otherName: string
   /** Which intent bucket the recommendation engine would have
-   *  placed this in. Not surfaced as a member-facing badge — the
-   *  shared items themselves signal timeliness / accumulation /
-   *  curation. */
+   *  placed this in. Not surfaced as a member-facing badge —
+   *  turned into a gentle human eyebrow at the top of the card. */
   intent: IntentType
+  /** A short natural-language sentence explaining the shared
+   *  ground. Hand-authored per introduction so the card reads as
+   *  a considered introduction rather than a database join. */
+  reasonSentence: string
   sharedItems: SharedItem[]
+}
+
+
+// ---------------------------------------------------------------------------
+// Human eyebrow per intent. The internal intent labels
+// (right-now / shared-journey / thoughtful) never reach the
+// member — they become quiet human framings.
+// ---------------------------------------------------------------------------
+
+export const INTENT_FRAMING: Record<IntentType, string> = {
+  'right-now':      'Your paths are crossing this week',
+  'shared-journey': "You've been walking similar paths",
+  'thoughtful':     'We thought you might enjoy meeting',
 }
 
 /**
@@ -77,34 +93,35 @@ export const SHARED_ICON: Record<SharedKind, string> = {
 
 export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
   {
-    // Right now — a real, dated timely moment shared with the reader.
     id: 'intro-right-now-sarah',
     otherName: 'Sarah',
     intent: 'right-now',
+    reasonSentence:
+      "You're both part of The Grove and heading to the same Gathering on Tuesday.",
     sharedItems: [
       { kind: 'collective', label: 'The Grove' },
+      { kind: 'gathering',  label: "Tuesday's Gathering" },
       { kind: 'pathway',    label: 'Life in Alignment' },
-      { kind: 'gathering',  label: "You're both attending Tuesday night's Gathering" },
     ],
   },
   {
-    // Shared journey — accumulated overlap that has held over time.
     id: 'intro-shared-journey-emma',
     otherName: 'Emma',
     intent: 'shared-journey',
+    reasonSentence:
+      "You've spent time in the same Collectives, are exploring the same Pathway, and are both in Melbourne.",
     sharedItems: [
       { kind: 'collective', label: 'The Grove' },
-      { kind: 'collective', label: 'EMBODY' },
       { kind: 'pathway',    label: 'Life in Alignment' },
       { kind: 'place',      label: 'Melbourne' },
     ],
   },
   {
-    // Thoughtful — not the strongest overlap, but a considered
-    // introduction: shared theme + Place, no shared Collective yet.
     id: 'intro-thoughtful-anna',
     otherName: 'Anna',
     intent: 'thoughtful',
+    reasonSentence:
+      "You share a curiosity for reflection and creativity, and you're both circling Byron Bay.",
     sharedItems: [
       { kind: 'theme', label: 'Reflection' },
       { kind: 'theme', label: 'Creativity' },
@@ -123,6 +140,8 @@ export const INCOMING_INTRODUCTION: MockIntroduction = {
   id: 'intro-incoming-james',
   otherName: 'James',
   intent: 'shared-journey',
+  reasonSentence:
+    "You're both part of EMBODY, exploring Life in Alignment, and in Melbourne.",
   sharedItems: [
     { kind: 'collective', label: 'EMBODY' },
     { kind: 'pathway',    label: 'Life in Alignment' },
