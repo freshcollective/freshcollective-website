@@ -13,6 +13,7 @@ import {
   getSpaceEvents,
 } from '@/lib/serverApi'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
+import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
 import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary } from '@/types/platform'
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from './AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
@@ -21,24 +22,33 @@ import RecentMomentsSection from './RecentMomentsSection'
 export const metadata: Metadata = {
   title: 'Your World · Fresh Collective',
   description:
-    'The Collectives you belong to, the places you’re creating, and what’s happening next.',
+    "What's happening in your communities today, and a few quiet doors to elsewhere.",
 }
 
 /**
- * Your World — the member's personal overview page (route: /dashboard).
+ * Your World — the member's personal home (route: /dashboard).
  *
- * Two-column layout on desktop; single column on tablet/mobile with This
- * Week promoted to the second slot so the "what's next" answer stays high
- * on the page even without a sidebar.
+ * Reads as a home, not a dashboard. Answers "what is happening in my
+ * world today?" — never "what do I need to do?" See
+ * docs/experience/your-world.md for the design brief this page is
+ * measured against.
  *
- * Desktop main column order:
- *   1. Collectives you belong to
- *   2. Explore Collectives
- *   3. Collectives you created  (only if any)
- *   4. Create & Manage          (only if creator/admin)
- *
- * Right sidebar (desktop only):
- *   5. This Week — compact rows, cap at 4, "View all Gatherings" link
+ * Single-column vertical flow (no sticky sidebar). Order:
+ *   1. Welcome            — warm greeting, unchanged from before
+ *   2. Recent Moments     — retrospective, "while you were away"
+ *   3. Coming up          — upcoming Gatherings, invitational; hidden
+ *                            when there's nothing to say (breathing
+ *                            room, per the brief)
+ *   4. Your Collectives   — the communities you belong to; no count,
+ *                            grid of cards
+ *   5. Elsewhere          — Gentle Invitations: Explore Collectives
+ *                            (always), plus Discover Places and Ways
+ *                            to Connect when the Discovery pillar
+ *                            flag is on
+ *   6. For creators       — Collectives you've created + Creator
+ *                            Studio, visually separated below the
+ *                            member surfaces so the two modes don't
+ *                            blur
  */
 
 interface User {
@@ -86,17 +96,20 @@ async function getUser(): Promise<User | null> {
 }
 
 /**
- * Filter memberships' events down to the dashboard's "This Week" summary:
- *   - `thisWeek`:  up to 4 active events starting within the next 7 days
+ * Filter upcoming Gatherings for the "Coming up" section:
+ *   - `soon`:      up to 4 active events starting within the next 14 days
  *   - `hasMore`:   any upcoming event exists beyond what's shown (either
- *                  outside the 7-day window, or past the 4-item cap)
+ *                  outside the 14-day window, or past the 4-item cap)
  *
- * The dashboard is meant to answer "what should I do next?" — the full
- * schedule lives on the aggregate gatherings page.
+ * Two weeks (not one) is a gentle expansion — the previous 7-day window
+ * often produced an empty state on a quiet week even when a real
+ * Gathering sat 9 or 10 days out. Your World would rather show a
+ * warmer, slightly longer horizon than say "nothing scheduled" when
+ * something is genuinely coming.
  */
-function filterUpcoming(cards: MembershipCard[]): { thisWeek: UpcomingEvent[]; hasMore: boolean } {
+function filterUpcoming(cards: MembershipCard[]): { soon: UpcomingEvent[]; hasMore: boolean } {
   const now = Date.now()
-  const weekEnd = now + 7 * 24 * 60 * 60 * 1000
+  const windowEnd = now + 14 * 24 * 60 * 60 * 1000
   const all = cards
     .flatMap((c) => {
       const loc = c.space?.location
@@ -115,10 +128,10 @@ function filterUpcoming(cards: MembershipCard[]): { thisWeek: UpcomingEvent[]; h
     .filter((u) => u.event.status === 'active' && new Date(u.event.starts_at).getTime() > now)
     .sort((a, b) => new Date(a.event.starts_at).getTime() - new Date(b.event.starts_at).getTime())
 
-  const inWindow = all.filter((u) => new Date(u.event.starts_at).getTime() <= weekEnd)
-  const thisWeek = inWindow.slice(0, 4)
-  const hasMore = all.length > thisWeek.length
-  return { thisWeek, hasMore }
+  const inWindow = all.filter((u) => new Date(u.event.starts_at).getTime() <= windowEnd)
+  const soon = inWindow.slice(0, 4)
+  const hasMore = all.length > soon.length
+  return { soon, hasMore }
 }
 
 async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
@@ -180,7 +193,8 @@ export default async function DashboardPage() {
   )
 
   const publicBySlug = new Map(publicSpaces.map((s) => [s.slug, s]))
-  const { thisWeek, hasMore } = filterUpcoming(cards)
+  const { soon, hasMore } = filterUpcoming(cards)
+  const discoveryOn = isDiscoveryPillarEnabled()
 
   return (
     <div className="min-h-screen" style={{ background: '#FAFAF8' }}>
@@ -188,20 +202,16 @@ export default async function DashboardPage() {
           profile shortcut, logout) is provided by WorldShell mounted in
           dashboard/layout.tsx. Nothing to render here. */}
 
-      {/* Welcome banner — full-bleed dark section. */}
+      {/* Welcome — warm greeting, unchanged from before. */}
       <WelcomeBanner firstName={firstName} />
 
-      <main className="mx-auto max-w-[1200px] px-6 pt-12 pb-16 md:px-10 md:pt-14 md:pb-20">
+      <main className="mx-auto max-w-[1000px] px-6 pt-12 pb-24 md:px-10 md:pt-14 md:pb-28">
 
-        {/* Page title lives above the two-column grid so it spans the full
-            width on both desktop and mobile. */}
-        <div className="mb-10">
-          <p
-            className="mb-2 text-[11px] font-semibold uppercase tracking-[0.28em]"
-            style={{ color: '#38A09E' }}
-          >
-            Overview
-          </p>
+        {/* Page title — kept for now (product decision to trial keeping
+            vs. removing). Subtitle reframed toward the brief: what's
+            happening + a quiet nod to curiosity. No "Overview" eyebrow;
+            this is a home, not a dashboard section. */}
+        <div className="mb-12">
           <h2
             className="font-serif text-[26px] leading-tight md:text-[30px]"
             style={{ color: '#0C1826' }}
@@ -212,175 +222,160 @@ export default async function DashboardPage() {
             className="mt-2 max-w-[640px] text-[14px] italic leading-relaxed"
             style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
           >
-            The Collectives you belong to, the places you&rsquo;re creating,
-            and what&rsquo;s happening next.
+            What&rsquo;s happening in your communities today, and a
+            few quiet doors to elsewhere.
           </p>
         </div>
 
-        {/* Recent Moments — the "across your world" perspective. Sits
-            between the page title and the collectives grid so the
-            first answer on Your World is "what's happened since I was
-            last here?". */}
+        {/* Recent Moments — retrospective read: "here's what your
+            communities have been doing while you were away." */}
         <RecentMomentsSection />
 
-        {/* Two-column grid on lg+. Explicit lg:col-start / lg:row-start on
-            every child guarantees main-column items land in column 1 and
-            the aside stays in column 2. `order-N` only governs mobile,
-            where the single column falls back to auto-placement. */}
-        <div className="grid grid-cols-1 gap-x-12 gap-y-12 lg:grid-cols-[minmax(0,1fr)_320px]">
-
-          {/* ─────── Main column (lg:col-start-1) ─────── */}
-
-          {/* 1. Collectives you belong to */}
+        {/* Coming up — invitational not obligation. Only rendered
+            when there's actually something coming; if the horizon is
+            quiet, the page is allowed to breathe. */}
+        {soon.length > 0 && (
           <Section
-            className="order-1 lg:col-start-1 lg:row-start-1"
-            eyebrow="Where you belong"
-            title="Collectives you belong to"
-            subtitle="Communities you're currently part of."
-            count={cards.length}
+            title="Coming up"
+            subtitle="Upcoming Gatherings from the communities you belong to."
             noSpacing
+            className="mt-12"
           >
-            {cards.length > 0 ? (
-              <div className="grid gap-8 sm:grid-cols-2">
-                {cards.map((c) => (
-                  <CollectiveCard
-                    key={c.membership.space_id}
-                    card={c}
-                    publicCard={publicBySlug.get(c.membership.space_slug) ?? null}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div
-                className="rounded-2xl bg-white px-6 py-8 text-center"
-                style={ATLAS_CARD_STYLE}
+            <div className="flex flex-col gap-3">
+              {soon.map((g) => (
+                <SidebarGatheringRow key={g.event.id} g={g} />
+              ))}
+            </div>
+            {hasMore && (
+              <p
+                className="mt-3 text-[12px] italic"
+                style={{ color: 'rgba(12, 24, 38, 0.50)', fontFamily: 'Georgia, serif' }}
               >
-                <p
-                  className="text-[14px] italic"
-                  style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
-                >
-                  You&apos;re not part of any collectives yet.
-                </p>
-              </div>
+                More Gatherings beyond the next two weeks.
+              </p>
             )}
           </Section>
+        )}
 
-          {/* 2. Explore Collectives — sits directly under "belong to" in the
-              main column. Rendered inside the same sm:grid-cols-2 grid so
-              the card is exactly one Collective-card wide, left-aligned. */}
-          <Section
-            className="order-3 lg:col-start-1 lg:row-start-2"
-            eyebrow="Discover"
-            title="Explore Collectives"
-            subtitle="Discover places that feel like home."
-            noSpacing
-          >
+        {/* Your Collectives — the communities you're currently part
+            of. No count next to the title (belonging is not
+            inventory). The empty state stays for members yet to
+            join anything, but stays quiet. */}
+        <Section
+          title="Your Collectives"
+          subtitle="Communities you&rsquo;re currently part of."
+          noSpacing
+          className="mt-14"
+        >
+          {cards.length > 0 ? (
             <div className="grid gap-8 sm:grid-cols-2">
-              <ExploreCollectivesCard
-                artUrl={exploreArt?.thumbnail_url ?? exploreArt?.image_url ?? null}
-              />
-            </div>
-          </Section>
-
-          {/* 3. Collectives you created — every space the user owns, published
-              or draft. Hidden when there are none. Row 3 in the main column. */}
-          {creatorCards.length > 0 && (
-            <Section
-              className="order-4 lg:col-start-1 lg:row-start-3"
-              eyebrow="What you've created"
-              title="Collectives you created"
-              subtitle="Communities you're building and managing."
-              count={creatorCards.length}
-              noSpacing
-            >
-              <div className="grid gap-8 sm:grid-cols-2">
-                {creatorCards.map((c) => (
-                  <CreatorCollectiveCard
-                    key={c.summary.id}
-                    summary={c.summary}
-                    detail={c.detail}
-                  />
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {/* 4. Create & Manage — creators/admins only. Row 4 in the main
-              column. Creator Studio card sits in the same 2-col grid as
-              creator Collective cards above so it reads as the next card. */}
-          {isCreatorOrAdmin && (
-            <Section
-              className="order-5 lg:col-start-1 lg:row-start-4"
-              eyebrow="For creators"
-              title="Create & Manage"
-              noSpacing
-            >
-              <div className="grid gap-8 sm:grid-cols-2">
-                <CreatorStudioCard
-                  artUrl={creatorStudioArt?.thumbnail_url ?? creatorStudioArt?.image_url ?? null}
+              {cards.map((c) => (
+                <CollectiveCard
+                  key={c.membership.space_id}
+                  card={c}
+                  publicCard={publicBySlug.get(c.membership.space_slug) ?? null}
                 />
-              </div>
-            </Section>
-          )}
-
-          {/* ─────── Right sidebar (lg:col-start-2, spans all main rows) ─────── */}
-
-          {/* This Week — compact rows for a narrow column. On desktop the
-              aside spans all 4 possible main-column rows so col 2 stays
-              reserved even when the aside itself is short; `self-start`
-              plus `sticky top-24` keeps the block pinned near the top as
-              the main column scrolls. On mobile it slots in as order-2. */}
-          <aside className="order-2 lg:col-start-2 lg:row-start-1 lg:row-span-4 lg:sticky lg:top-24 lg:self-start">
-            <Section
-              eyebrow="Happening soon"
-              title="This Week"
-              subtitle={undefined}
-              noSpacing
-              compact
+              ))}
+            </div>
+          ) : (
+            <div
+              className="rounded-2xl bg-white px-6 py-8 text-center"
+              style={ATLAS_CARD_STYLE}
             >
-              {thisWeek.length > 0 ? (
-                <div className="flex flex-col gap-3">
-                  {thisWeek.map((g) => (
-                    <SidebarGatheringRow key={g.event.id} g={g} />
+              <p
+                className="text-[14px] italic"
+                style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
+              >
+                You&rsquo;re not part of any Collectives yet.
+              </p>
+            </div>
+          )}
+        </Section>
+
+        {/* Elsewhere in the world — gentle invitations. Always shows
+            Explore Collectives; adds Discover Places and Ways to
+            Connect when the Discovery pillar flag is on. Framed as
+            doors, not tasks — the brief's "curiosity" outcome lives
+            here. */}
+        <Section
+          title="Elsewhere in the world"
+          subtitle="A few quiet doors, when you&rsquo;re curious."
+          noSpacing
+          className="mt-14"
+        >
+          <div className={
+            discoveryOn
+              ? 'grid gap-8 sm:grid-cols-2 lg:grid-cols-3'
+              : 'grid gap-8 sm:grid-cols-2'
+          }>
+            <ExploreCollectivesCard
+              artUrl={exploreArt?.thumbnail_url ?? exploreArt?.image_url ?? null}
+            />
+            {discoveryOn && (
+              <>
+                <DiscoverPlacesCard />
+                <WaysToConnectCard />
+              </>
+            )}
+          </div>
+        </Section>
+
+        {/* ─────── For creators — visually separated below the member
+            surfaces so the two modes don't blur. Only rendered when
+            the reader is a creator/admin, or when they've created at
+            least one Collective. ─────── */}
+        {(creatorCards.length > 0 || isCreatorOrAdmin) && (
+          <div
+            className="mt-20 pt-12"
+            style={{ borderTop: '1px dashed rgba(12,24,38,0.10)' }}
+          >
+            <p
+              className="mb-2 text-[11px] font-semibold uppercase tracking-[0.28em]"
+              style={{ color: 'rgba(12,24,38,0.45)' }}
+            >
+              For creators
+            </p>
+            <h3
+              className="mb-8 font-serif text-[22px] leading-tight md:text-[24px]"
+              style={{ color: '#0C1826' }}
+            >
+              What you&rsquo;re building
+            </h3>
+
+            {creatorCards.length > 0 && (
+              <Section
+                title="Collectives you created"
+                subtitle="Communities you&rsquo;re building and managing."
+                noSpacing
+                className="mb-12"
+              >
+                <div className="grid gap-8 sm:grid-cols-2">
+                  {creatorCards.map((c) => (
+                    <CreatorCollectiveCard
+                      key={c.summary.id}
+                      summary={c.summary}
+                      detail={c.detail}
+                    />
                   ))}
                 </div>
-              ) : (
-                <div
-                  className="rounded-2xl bg-white px-5 py-6 text-center"
-                  style={ATLAS_CARD_STYLE}
-                >
-                  <p
-                    className="text-[13px] italic leading-relaxed"
-                    style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
-                  >
-                    Nothing is scheduled this week.
-                  </p>
+              </Section>
+            )}
+
+            {isCreatorOrAdmin && (
+              <Section
+                title="Create & Manage"
+                noSpacing
+              >
+                <div className="grid gap-8 sm:grid-cols-2">
+                  <CreatorStudioCard
+                    artUrl={creatorStudioArt?.thumbnail_url ?? creatorStudioArt?.image_url ?? null}
+                  />
                 </div>
-              )}
+              </Section>
+            )}
+          </div>
+        )}
 
-              {/* Always render "View all Gatherings" so members can reach
-                  the full schedule even when this week is empty. */}
-              <div className="mt-5">
-                <Link
-                  href="/gatherings"
-                  className="inline-flex items-center text-[13px] font-semibold transition-opacity hover:opacity-70"
-                  style={{ color: '#38A09E' }}
-                >
-                  View all Gatherings →
-                </Link>
-                {hasMore && (
-                  <p
-                    className="mt-1 text-[11px]"
-                    style={{ color: 'rgba(12, 24, 38, 0.50)' }}
-                  >
-                    More upcoming beyond this week.
-                  </p>
-                )}
-              </div>
-            </Section>
-          </aside>
-
-        </div>
       </main>
     </div>
   )
@@ -391,61 +386,45 @@ export default async function DashboardPage() {
 // ---------------------------------------------------------------------------
 
 function Section({
-  eyebrow, title, subtitle, count, children, noSpacing, compact, className,
+  eyebrow, title, subtitle, children, noSpacing, className,
 }: {
-  eyebrow: string
+  /** Optional small caps label above the title. Most Your World
+   *  sections drop this — a home shouldn't feel like a dashboard
+   *  of eyebrows. Kept as an option for the "For creators" band. */
+  eyebrow?: string
   title: string
   subtitle?: string
-  count?: number
   children: React.ReactNode
   /** When true, omit the top margin — used when the Section is placed
    *  inside a composed layout wrapper that already provides spacing. */
   noSpacing?: boolean
-  /** Sidebar variant: smaller title, tighter margins, no count chip on the
-   *  right (the narrow column can't spare the horizontal space). */
-  compact?: boolean
-  /** Extra classes for grid ordering. */
+  /** Extra classes for spacing / positioning. */
   className?: string
 }) {
   const spacingClass = noSpacing ? '' : 'mt-14 first:mt-10'
   return (
     <section className={[spacingClass, className].filter(Boolean).join(' ')}>
-      <div
-        className={
-          compact
-            ? 'mb-4 flex flex-wrap items-baseline justify-between gap-2'
-            : 'mb-6 flex flex-wrap items-baseline justify-between gap-4'
-        }
-      >
-        <div>
+      <div className="mb-6">
+        {eyebrow && (
           <p
             className="mb-2 text-[11px] font-semibold uppercase tracking-[0.28em]"
             style={{ color: '#38A09E' }}
           >
             {eyebrow}
           </p>
-          <h2
-            className={
-              compact
-                ? 'font-serif text-[18px] leading-tight'
-                : 'font-serif text-[22px] leading-tight md:text-[26px]'
-            }
-            style={{ color: '#0C1826' }}
+        )}
+        <h2
+          className="font-serif text-[22px] leading-tight md:text-[24px]"
+          style={{ color: '#0C1826' }}
+        >
+          {title}
+        </h2>
+        {subtitle && (
+          <p
+            className="mt-1.5 max-w-[560px] text-[13.5px] italic leading-relaxed"
+            style={{ color: 'rgba(12, 24, 38, 0.60)', fontFamily: 'Georgia, serif' }}
           >
-            {title}
-          </h2>
-          {subtitle && (
-            <p
-              className="mt-1.5 max-w-[560px] text-[13.5px] italic leading-relaxed"
-              style={{ color: 'rgba(12, 24, 38, 0.60)', fontFamily: 'Georgia, serif' }}
-            >
-              {subtitle}
-            </p>
-          )}
-        </div>
-        {!compact && count !== undefined && count > 0 && (
-          <p className="text-[12px]" style={{ color: 'rgba(12, 24, 38, 0.50)' }}>
-            {count === 1 ? '1 in your world' : `${count} in your world`}
+            {subtitle}
           </p>
         )}
       </div>
@@ -605,6 +584,83 @@ function ExploreCollectivesCard({ artUrl }: { artUrl?: string | null }) {
       <AtlasCardBody
         name="Explore Collectives"
         description="Discover other places you might feel at home in."
+        meta="Elsewhere in the world"
+        cta="Explore →"
+      />
+    </Link>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Discover Places card — Gentle Invitation to the Discovery pillar.
+// Only rendered when the pillar flag is on. The visual identity uses a
+// calm coastal-teal atmosphere so it reads as a place, not a menu.
+// ---------------------------------------------------------------------------
+
+function DiscoverPlacesCard() {
+  return (
+    <Link
+      href="/discover-places"
+      className="group block overflow-hidden rounded-2xl bg-white transition-all"
+      style={ATLAS_CARD_STYLE}
+    >
+      <div
+        className="relative w-full overflow-hidden"
+        style={{
+          aspectRatio: '3 / 2',
+          background:
+            'linear-gradient(135deg, rgba(181, 217, 213, 0.55) 0%, rgba(122, 182, 177, 0.60) 100%)',
+        }}
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse at 22% 22%, rgba(255,255,255,0.32), transparent 60%)',
+          }}
+        />
+      </div>
+      <AtlasCardBody
+        name="Discover Places"
+        description="The cities and regions where Fresh Collective communities are quietly growing."
+        meta="Elsewhere in the world"
+        cta="Explore →"
+      />
+    </Link>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Ways to Connect card — Gentle Invitation. Warm sand atmosphere to
+// distinguish it from Discover Places without loudness.
+// ---------------------------------------------------------------------------
+
+function WaysToConnectCard() {
+  return (
+    <Link
+      href="/ways-to-connect"
+      className="group block overflow-hidden rounded-2xl bg-white transition-all"
+      style={ATLAS_CARD_STYLE}
+    >
+      <div
+        className="relative w-full overflow-hidden"
+        style={{
+          aspectRatio: '3 / 2',
+          background:
+            'linear-gradient(135deg, rgba(232, 223, 211, 0.70) 0%, rgba(199, 185, 156, 0.65) 100%)',
+        }}
+      >
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse at 22% 22%, rgba(255,255,255,0.36), transparent 60%)',
+          }}
+        />
+      </div>
+      <AtlasCardBody
+        name="Ways to Connect"
+        description="Meaningful moments of connection — Gatherings, conversations, and shared journeys."
         meta="Elsewhere in the world"
         cta="Explore →"
       />
