@@ -576,9 +576,11 @@ function PlaceCard({ place, showTier }: { place: PlaceMock; showTier?: boolean }
           {place.region}, {place.country}
         </p>
 
-        <p className="mt-4 font-serif italic text-[14px] leading-relaxed text-navy-600">
-          {place.livingIdentity}
-        </p>
+        {/* The living-identity italic sentence used to sit here.
+            Removed because the themes and gathering summary below
+            already communicate the character of the place, and the
+            extra paragraph made the card body outweigh the artwork
+            header. */}
 
         {place.themes.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-1.5">
@@ -593,7 +595,7 @@ function PlaceCard({ place, showTier }: { place: PlaceMock; showTier?: boolean }
           </div>
         )}
 
-        <p className="mt-5 text-[13px] leading-relaxed text-navy-500">
+        <p className="mt-3 text-[13px] leading-relaxed text-navy-500">
           {characterLineFor(place)}
         </p>
       </div>
