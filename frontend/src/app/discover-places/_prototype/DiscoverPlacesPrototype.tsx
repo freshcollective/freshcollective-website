@@ -43,6 +43,10 @@
 import { useMemo, useState } from 'react'
 import { COLLECTIVE_THEMES } from '@/lib/themes'
 import {
+  atmosphereBackground,
+  atmosphereForSlug,
+} from '@/lib/placeAtmosphere'
+import {
   EARLY_WORLD,
   ESTABLISHED_WORLD,
   GROWING_WORLD,
@@ -98,37 +102,10 @@ const TIER_META: Record<Tier, {
   },
 }
 
-// Colour atmospheres for the card header. Deterministic per slug so
-// a Place keeps the same feel across every render.
-interface Gradient { from: string; to: string }
-const ATMOSPHERES: Gradient[] = [
-  { from: '#B5D9D5', to: '#7AB6B1' },   // coastal teal
-  { from: '#E8DFD3', to: '#C7B99C' },   // warm sand
-  { from: '#C8D6B8', to: '#94AE83' },   // sage
-  { from: '#B8C4D6', to: '#778EAA' },   // dusk navy
-  { from: '#E8CFC5', to: '#C89A88' },   // rose clay
-  { from: '#C4CED5', to: '#8896A2' },   // slate blue
-  { from: '#E8D9AE', to: '#BFAA6A' },   // pale ochre
-]
-
-function atmosphereFor(place: PlaceMock): Gradient {
-  let hash = 0
-  for (let i = 0; i < place.slug.length; i++) hash += place.slug.charCodeAt(i)
-  const pick = ATMOSPHERES[hash % ATMOSPHERES.length]
-  if (place.activity === 'emerging') {
-    return { from: mixWithWhite(pick.from, 0.25), to: mixWithWhite(pick.to, 0.25) }
-  }
-  return pick
-}
-
-function mixWithWhite(hex: string, ratio: number): string {
-  const n = parseInt(hex.slice(1), 16)
-  const r = (n >> 16) & 0xff
-  const g = (n >> 8) & 0xff
-  const b = n & 0xff
-  const mix = (c: number) => Math.round(c + (255 - c) * ratio)
-  return `#${((1 << 24) + (mix(r) << 16) + (mix(g) << 8) + mix(b)).toString(16).slice(1)}`
-}
+// The atmospheric fallback palette lives in lib/placeAtmosphere.ts
+// so it will outlive this prototype. Only the derivation call is
+// local — we pass the Place's `emerging` flag so quieter tiers
+// wash the palette towards white.
 
 function tierFor(place: PlaceMock): Tier {
   if (place.activity === 'emerging')   return 'emerging'
@@ -525,30 +502,41 @@ function TierAccordion({ places }: { places: PlaceMock[] }) {
 // ---------------------------------------------------------------------------
 
 function PlaceCard({ place, showTier }: { place: PlaceMock; showTier?: boolean }) {
-  const atmosphere = atmosphereFor(place)
   const tier       = tierFor(place)
   const meta       = TIER_META[tier]
+
+  // Real curated location artwork always takes precedence over the
+  // fallback palette. The fallback only renders when no artwork
+  // exists — which is every Place in the current prototype fixture,
+  // but the code path is here ready for World-Management-authored
+  // images to drop in later. Kept as a background-image on the
+  // header div so cover / center behaviour matches the fallback
+  // gradient's rendering geometry.
+  const artworkUrl = (place as PlaceMock & { hero_artwork_url?: string | null })
+    .hero_artwork_url ?? null
 
   return (
     <article
       aria-labelledby={`place-${place.slug}-name`}
       className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-shadow hover:shadow-[0_8px_24px_rgba(12,24,38,0.06)]"
     >
-      <div
-        aria-hidden="true"
-        className="relative h-24"
-        style={{
-          background: `linear-gradient(150deg, ${atmosphere.from}, ${atmosphere.to})`,
-        }}
-      >
+      {artworkUrl ? (
         <div
-          className="absolute inset-0"
+          aria-hidden="true"
+          className="h-28 bg-cover bg-center"
+          style={{ backgroundImage: `url("${artworkUrl}")` }}
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          className="h-28"
           style={{
-            background:
-              'radial-gradient(ellipse at 22% 22%, rgba(255,255,255,0.32), transparent 60%)',
+            background: atmosphereBackground(
+              atmosphereForSlug(place.slug, place.activity === 'emerging'),
+            ),
           }}
         />
-      </div>
+      )}
 
       <div className="flex flex-1 flex-col p-5">
         {showTier && (
