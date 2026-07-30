@@ -366,9 +366,16 @@ export default async function DashboardPage() {
           className="mt-14"
           noSpacing
         >
+          {/* Three invitations on one row from lg upward. At lg (1024px)
+              the full-width band gives ~944px inner, comfortably
+              hosting three ~293px cards with 32px gaps. Below lg the
+              layout falls back to 2-across, then a single column on
+              mobile. Chosen over xl:grid-cols-3 because most desktop
+              windows sit between 1200–1440 and xl (1280+) was leaving
+              a lonely orphan card underneath at common laptop widths. */}
           <div className={
             discoveryOn
-              ? 'grid gap-8 sm:grid-cols-2 xl:grid-cols-3'
+              ? 'grid gap-8 sm:grid-cols-2 lg:grid-cols-3'
               : 'grid gap-8 sm:grid-cols-2'
           }>
             <ExploreCollectivesCard
@@ -509,18 +516,29 @@ function Section({
 function WelcomeBanner({ firstName }: { firstName: string }) {
   return (
     <div
-      className="relative overflow-hidden px-6 py-10 md:px-10 md:py-14"
+      className="relative overflow-hidden px-6 py-8 md:px-10 md:py-11"
       style={{
         // Clean navy base, matching the Explore Collectives hero
         // (#071824). A very quiet horizontal light-fall from the
         // top-left adds dimension without turning the surface teal.
+        //
+        // Full-bleed (not a rounded card) is deliberate: Your World
+        // is the member's personal return point, so the welcome
+        // reads as an entry moment. Explore Collectives is the
+        // outward-facing destination and uses a contained card.
+        // Both share the navy visual family without becoming the
+        // same treatment.
         background:
           'radial-gradient(ellipse at 12% -20%, rgba(56,160,158,0.10), transparent 55%), '
           + 'linear-gradient(180deg, #071824 0%, #061421 100%)',
-        borderBottom: '1px solid rgba(56,160,158,0.16)',
-        boxShadow: '0 8px 40px rgba(7,24,36,0.22)',
+        borderBottom: '1px solid rgba(56,160,158,0.14)',
+        // Soft transition into the page below, not a heavy drop.
+        boxShadow: '0 4px 20px rgba(7,24,36,0.14)',
       }}
     >
+      {/* Inner container matches the max-w and horizontal padding of
+          <main> below so the welcome copy aligns with the page's
+          content start on every viewport. */}
       <div className="relative mx-auto max-w-[1440px]">
         <div
           className="mb-5 h-[2px] w-8 rounded-full"
