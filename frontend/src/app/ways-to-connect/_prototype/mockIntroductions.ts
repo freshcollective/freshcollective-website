@@ -134,17 +134,15 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
     ],
   },
   {
-    // Has a photo set AND profile visibility permits sharing —
-    // the server has populated avatarUrl and the card renders the
-    // image. Uses a local abstract SVG portrait
-    // (public/prototype/portraits/) so the prototype does not
-    // depend on any external avatar service, and so no external
-    // service can infer identity from the mock name. The pairing
-    // Emma ↔ portrait-01 is deliberate and stable across every
-    // render state.
+    // No prototype photo assigned right now — the card
+    // demonstrates the serif-initial fallback state. To exercise
+    // the photo state locally, drop an approved prototype JPG /
+    // PNG into public/prototype/portraits/ and set avatarUrl to
+    // "/prototype/portraits/<filename>". Pairing is deliberate,
+    // not derived from the mock name.
     id: 'intro-shared-journey-emma',
     otherName: 'Emma',
-    avatarUrl: '/prototype/portraits/portrait-01.svg',
+    avatarUrl: null,
     intent: 'shared-journey',
     reasonSentence:
       "You're both part of The Grove, exploring Life in Alignment, and in Melbourne.",
@@ -179,11 +177,14 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
 export const INCOMING_INTRODUCTION: MockIntroduction = {
   id: 'intro-incoming-james',
   otherName: 'James',
-  // Photo set and visibility permits sharing — demonstrates the
-  // photo state on the invitation card and (after accept) the
-  // conversation introduction panel. Local SVG portrait, paired
-  // deliberately with James and stable across every render state.
-  avatarUrl: '/prototype/portraits/portrait-02.svg',
+  // No prototype photo assigned right now — the invitation and
+  // (on accept) the conversation introduction panel render the
+  // serif-initial fallback. To exercise the photo state locally,
+  // drop an approved prototype JPG / PNG into
+  // public/prototype/portraits/ and set avatarUrl to
+  // "/prototype/portraits/<filename>". Pairing is deliberate,
+  // not derived from the mock name.
+  avatarUrl: null,
   intent: 'shared-journey',
   reasonSentence:
     "You're both part of EMBODY, exploring Life in Alignment, and in Melbourne.",
