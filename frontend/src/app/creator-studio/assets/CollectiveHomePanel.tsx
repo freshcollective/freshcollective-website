@@ -20,6 +20,10 @@ interface Props {
     name: string
     description: string | null
     hero_artwork_url: string | null
+    /** Long-form Atlas Entry, sourced from World Management. Rendered
+     *  read-only in Creator Studio so a Creator can feel the story
+     *  of their chosen island; editing lives in /admin/atlas. */
+    atlas_entry?: string | null
   } | null
   atmosphereNames: string[]
   colourPalette: {
@@ -85,6 +89,38 @@ export default function CollectiveHomePanel({
                 </p>
               )}
             </div>
+
+            {/* Atlas Entry — the long-form story of the island. Read-only,
+                sourced live from World Management (no duplicate storage in
+                Creator Studio, no editing surface here). Renders in a soft
+                paper-panel so it visually reads as reference material, not
+                as an editable field. */}
+            {location.atlas_entry && (
+              <div
+                className="mb-6 rounded-2xl px-5 py-5"
+                aria-label="About this island"
+                style={{
+                  background: 'rgba(56,160,158,0.03)',
+                  border: '1px solid rgba(56,160,158,0.14)',
+                }}
+              >
+                <p
+                  className="mb-2 text-[11px] font-semibold uppercase tracking-[0.20em]"
+                  style={{ color: '#38A09E' }}
+                >
+                  About this island
+                </p>
+                <div
+                  className="whitespace-pre-line text-[14px] leading-relaxed"
+                  style={{
+                    color: 'rgba(12,24,38,0.75)',
+                    fontFamily: 'Georgia, serif',
+                  }}
+                >
+                  {location.atlas_entry}
+                </div>
+              </div>
+            )}
 
             <div className="grid gap-5 md:grid-cols-2">
               <div>

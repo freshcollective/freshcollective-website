@@ -210,6 +210,12 @@ def _space_detail_response(space: Space, db: Session) -> dict:
                 "name": loc.name,
                 "description": loc.description,
                 "hero_artwork_url": loc.hero_artwork_url,
+                # Long-form Atlas Entry, sourced from World Management.
+                # Read-only in Creator Studio — the Atlas Entry helps a
+                # Creator understand the feeling and story of their
+                # chosen island, but never becomes something they
+                # manage. Editing lives in /admin/atlas.
+                "atlas_entry": loc.atlas_entry,
             }
     # Hydrate Colour Palette
     if space.colour_story_key:

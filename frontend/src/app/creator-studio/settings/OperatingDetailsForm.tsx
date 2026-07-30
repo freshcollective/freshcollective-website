@@ -121,9 +121,8 @@ export default function OperatingDetailsForm({ space }: Props) {
         className="mb-6 text-[14px] italic leading-relaxed"
         style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}
       >
-        Practical operating details. Kept separate from the
-        Collective&rsquo;s island, atmosphere and colour palette on
-        the Place &amp; Feel tab.
+        Choose how members participate and where your Collective
+        operates.
       </p>
 
       {/* Connection style — required active choice */}

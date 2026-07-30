@@ -18,6 +18,9 @@ interface Props {
     name: string
     description: string | null
     hero_artwork_url: string | null
+    /** Long-form Atlas Entry from World Management — passed through
+     *  to CollectiveHomePanel and rendered read-only. */
+    atlas_entry?: string | null
   } | null
   atmosphereNames: string[]
   colourPalette: {

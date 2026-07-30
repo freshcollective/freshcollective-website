@@ -60,6 +60,10 @@ export interface SpaceResponse {
     description: string | null
     hero_artwork_url: string | null
     thumbnail_artwork_url: string | null
+    /** Long-form Atlas Entry from World Management — read-only in
+     *  Creator Studio; helps the Creator understand the feeling and
+     *  story of the chosen island. Editing lives in /admin/atlas. */
+    atlas_entry?: string | null
   } | null
   /** Atlas v1.2 — the chosen Colour Palette drives collective-scoped CSS
    *  custom properties. Hydrated by the space detail endpoint. */
@@ -616,6 +620,10 @@ export interface CreatorSpaceDetail extends GuidancePanel {
     description: string | null
     hero_artwork_url: string | null
     thumbnail_artwork_url: string | null
+    /** Long-form Atlas Entry from World Management — read-only in
+     *  Creator Studio; helps the Creator understand the feeling and
+     *  story of the chosen island. Editing lives in /admin/atlas. */
+    atlas_entry?: string | null
   } | null
   colour_palette_key?: string | null
   colour_palette?: {
