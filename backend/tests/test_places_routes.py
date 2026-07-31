@@ -488,8 +488,11 @@ class TestGetPlace:
 
         detail = get_place("palette-city", db=db)
         by_title = {g.title: g for g in detail.upcoming_gatherings}
+        # Primary drives the border + title; accent drives the wash.
         assert by_title["Grove Circle"].collective_primary_colour == "#4B6B3A"
+        assert by_title["Grove Circle"].collective_accent_colour  == "#B8D0A5"
         assert by_title["Unstyled Circle"].collective_primary_colour is None
+        assert by_title["Unstyled Circle"].collective_accent_colour  is None
 
     def test_gathering_projection_omits_venue_address(
         self, db, discovery_enabled, make_space, make_event,

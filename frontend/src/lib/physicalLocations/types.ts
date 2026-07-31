@@ -58,11 +58,13 @@ export interface PublicPlaceSummary {
  *  instructions (those live on the Gathering's own detail page,
  *  gated by enrolment).
  *
- *  ``collective_primary_colour`` carries the parent Collective's
- *  Colour Palette primary hex so Gathering cards can visually
- *  inherit their Collective's personality without a second
- *  round-trip. Null when the Collective has no palette assigned;
- *  the card renders with a neutral fallback in that case. */
+ *  Carries the parent Collective's Colour Palette hexes (primary +
+ *  accent) so Gathering cards can visually inherit their Collective's
+ *  personality without a second round-trip. Primary is the deep
+ *  emphasis hex (used for the top border and title); accent is the
+ *  warm complement (used for the background wash). Both null when the
+ *  Collective has no palette assigned — the card renders with a
+ *  neutral fallback. */
 export interface PublicPlaceGathering {
   id: string
   title: string
@@ -79,6 +81,7 @@ export interface PublicPlaceGathering {
   ticket_currency: string | null
   thumbnail_url: string | null
   collective_primary_colour: string | null
+  collective_accent_colour: string | null
 }
 
 /** Full public detail for a single active Physical Location — the

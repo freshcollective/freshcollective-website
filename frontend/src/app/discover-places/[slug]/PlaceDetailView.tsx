@@ -10,6 +10,8 @@ import {
 import CollectiveCard from '@/components/explore/CollectiveCard'
 import { toSpaceWithMeta } from '@/components/explore/spaceMeta'
 import { rgbaFromHex } from '@/lib/collectivePalette'
+import { extractSessionTheme } from '@/lib/gatheringTitle'
+import { gatheringLabel } from '@/lib/gatheringTypes'
 import type {
   PublicPlaceDetail,
   PublicPlaceGathering,
@@ -255,7 +257,8 @@ function GatheringsSection({ gatherings }: { gatherings: PublicPlaceGathering[] 
 
 // Neutral fallback when a Collective has no Colour Palette assigned —
 // the same slate the base card border uses, so nothing shouts.
-const NEUTRAL_ACCENT = '#94a3b8'  // slate-400
+const NEUTRAL_HEX = '#94a3b8'  // slate-400
+const CHARCOAL    = '#0f172a'  // slate-900 — all body text
 
 function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
   const start = new Date(gathering.starts_at)
@@ -271,37 +274,51 @@ function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
   const format = formatAttendance(gathering)
 
   // Gatherings inherit their parent Collective's personality.
-  // A curated palette hex → 6px top band + a whisper of tint (~2.5%)
-  // + a title in the same colour. Charcoal for supporting text so
-  // legibility is never sacrificed to atmosphere.
-  const accent = gathering.collective_primary_colour ?? NEUTRAL_ACCENT
+  // ``primary`` is the deep emphasis hex — 8px top band + title.
+  // ``accent`` is the warm complement — a ~7% background wash so
+  // cards from the same Collective read as a family and cards from
+  // different Collectives form naturally distinct bands of colour.
+  // Body text stays charcoal so atmosphere never costs legibility.
+  const primary = gathering.collective_primary_colour ?? NEUTRAL_HEX
+  const wash    = gathering.collective_accent_colour
+    ?? gathering.collective_primary_colour
+    ?? NEUTRAL_HEX
   const inherited = !!gathering.collective_primary_colour
-  const tintedBg = rgbaFromHex(accent, 0.025)
+  const tintedBg  = rgbaFromHex(wash, 0.07)
+
+  // Simplified hierarchy: theme is the primary title (extracted from
+  // the creator-authored title); session type is the secondary line;
+  // the Collective name is quiet supporting metadata.
+  const theme = extractSessionTheme(gathering.title)
+  const sessionType = gatheringLabel(gathering.gathering_type)
 
   return (
     <li>
       <Link
         href={`/spaces/${gathering.space_slug}/events/${gathering.id}`}
         style={{
-          borderTopColor: accent,
-          borderTopWidth: '6px',
+          borderTopColor: primary,
+          borderTopWidth: '8px',
           backgroundColor: tintedBg,
         }}
         className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 p-4 transition-shadow hover:shadow-[0_6px_18px_rgba(12,24,38,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
       >
         <p
-          className="font-serif text-[16px] leading-snug"
-          style={{ color: inherited ? accent : '#0f172a' /* charcoal */ }}
+          className="font-serif text-[17px] leading-snug"
+          style={{ color: inherited ? primary : CHARCOAL }}
         >
-          {gathering.title}
+          {theme}
         </p>
-        <p className="mt-1 text-[12.5px] text-navy-600">
+        <p className="mt-1 text-[12.5px] font-medium" style={{ color: CHARCOAL }}>
+          {sessionType}
+        </p>
+        <p className="mt-3 text-[12.5px]" style={{ color: CHARCOAL, opacity: 0.7 }}>
           {gathering.space_name}
         </p>
-        <p className="mt-3 text-[12.5px] text-navy-700">
+        <p className="mt-2 text-[12.5px]" style={{ color: CHARCOAL, opacity: 0.85 }}>
           {dateStr} · {timeStr}
         </p>
-        <p className="mt-1 text-[12.5px] text-navy-600">
+        <p className="mt-1 text-[12.5px]" style={{ color: CHARCOAL, opacity: 0.7 }}>
           {format}
         </p>
       </Link>
