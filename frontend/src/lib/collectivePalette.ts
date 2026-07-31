@@ -225,5 +225,33 @@ function _relativeLuminance(r: number, g: number, b: number): number {
 }
 
 
+/**
+ * Return a hex ``amount`` darker than the source (multiplicative RGB
+ * shift; ``amount`` is a fraction in [0, 1]). Used to compute the
+ * darker top of a vertical gradient without needing a second stored
+ * palette slot. Silently returns the source on bad input.
+ *
+ * The approximation is intentionally simple — for the subtle 10–15%
+ * darkening used on Gathering-card headers, RGB multiplication is
+ * visually indistinguishable from an HSL-lightness shift and stays
+ * dependency-free.
+ */
+export function darkenHex(hex: string, amount: number): string {
+  const parsed = _parseHex(hex)
+  if (!parsed) return hex
+  const clamped = Math.max(0, Math.min(1, amount))
+  const factor  = 1 - clamped
+  const r = Math.round(parsed.r * factor)
+  const g = Math.round(parsed.g * factor)
+  const b = Math.round(parsed.b * factor)
+  return `#${_toHex2(r)}${_toHex2(g)}${_toHex2(b)}`
+}
+
+
+function _toHex2(n: number): string {
+  return n.toString(16).padStart(2, '0')
+}
+
+
 /** Exposed for tests + advanced callers. */
 export { rgbaFromHex }

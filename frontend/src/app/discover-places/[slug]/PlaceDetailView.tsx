@@ -9,7 +9,7 @@ import {
 } from '@/lib/placeAtmosphere'
 import CollectiveCard from '@/components/explore/CollectiveCard'
 import { toSpaceWithMeta } from '@/components/explore/spaceMeta'
-import { contrastText } from '@/lib/collectivePalette'
+import { contrastText, darkenHex } from '@/lib/collectivePalette'
 import { extractSessionTheme } from '@/lib/gatheringTitle'
 import type {
   PublicPlaceDetail,
@@ -143,12 +143,24 @@ function PlaceHero({ place }: { place: PublicPlaceDetail }) {
 // ---------------------------------------------------------------------------
 
 function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
-  const heading = place.collectives.length === 1
+  const count    = place.collectives.length
+  const isSolo   = count === 1
+  const heading  = isSolo
     ? `1 Collective in ${place.name}`
-    : `${place.collectives.length} Collectives in ${place.name}`
+    : `${count} Collectives in ${place.name}`
+  const transition = transitionCopy(place)
 
   return (
-    <section aria-labelledby="place-collectives-heading" className="py-10 md:py-14">
+    <section aria-labelledby="place-collectives-heading" className="py-12 md:py-16">
+      {transition && (
+        <p
+          className="mb-8 max-w-2xl font-serif text-[16px] italic leading-relaxed text-navy-600 md:mb-10 md:text-[17px]"
+          style={{ fontFamily: 'Georgia, serif' }}
+        >
+          {transition}
+        </p>
+      )}
+
       <div className="mb-6 md:mb-8">
         <h2
           id="place-collectives-heading"
@@ -156,7 +168,7 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
         >
           {heading}
         </h2>
-        {place.collectives.length === 0 && (
+        {count === 0 && (
           <p
             className="mt-3 font-serif text-[15px] italic leading-relaxed text-navy-500"
           >
@@ -166,7 +178,29 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
         )}
       </div>
 
-      {place.collectives.length > 0 && (
+      {isSolo && (
+        // A single Collective doesn't need a lonely row. The card sits
+        // beside a quiet supporting sentence that gives the section
+        // editorial context rather than an empty grid track.
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:items-center md:gap-10">
+          <CollectiveCard
+            key={place.collectives[0].id}
+            space={toSpaceWithMeta(place.collectives[0])}
+            isJoined={false}
+            isLoggedIn={false}
+          />
+          <aside>
+            <p
+              className="font-serif text-[15px] italic leading-relaxed text-navy-500 md:text-[16px]"
+              style={{ fontFamily: 'Georgia, serif' }}
+            >
+              This is the community currently making a home in {place.name}.
+            </p>
+          </aside>
+        </div>
+      )}
+
+      {count > 1 && (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {place.collectives.map((c) => (
             <CollectiveCard
@@ -180,6 +214,33 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
       )}
     </section>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Editorial transition — the short serif paragraph that sits between the
+// hero blurb and the Collectives heading. The intent is atmospheric,
+// not functional: it softens the shift from "the story of this place"
+// into "the communities currently here" so the page doesn't cut
+// abruptly into a count. Only rendered when the Place actually has
+// Collectives — the empty state does its own quiet framing.
+// ---------------------------------------------------------------------------
+
+function transitionCopy(place: PublicPlaceDetail): string | null {
+  const n = place.collectives.length
+  if (n === 0) return null
+  const communityWord = n === 1 ? 'community' : 'communities'
+  const opener = `Life is taking shape here. ${place.name} is currently home to ${numberWord(n)} Fresh Collective ${communityWord}`
+  return place.upcoming_gathering_count > 0
+    ? `${opener}, with regular Gatherings taking place throughout the month.`
+    : `${opener}.`
+}
+
+function numberWord(n: number): string {
+  const words = [
+    'zero', 'one', 'two', 'three', 'four', 'five',
+    'six',  'seven', 'eight', 'nine', 'ten',
+  ]
+  return words[n] ?? String(n)
 }
 
 // ---------------------------------------------------------------------------
@@ -259,22 +320,42 @@ function GatheringsSection({ gatherings }: { gatherings: PublicPlaceGathering[] 
 const NEUTRAL_HEX = '#475569'  // slate-600
 const CHARCOAL    = '#0f172a'  // slate-900 — all practical-detail text
 
+// Amount to darken the header hex for the top of the vertical gradient.
+// Kept subtle (~13%): enough to add depth without turning the header
+// into a two-tone shape.
+const HEADER_GRADIENT_DARKEN = 0.13
+
+// Attendance-format visual meta. Keeping this local rather than growing
+// the shared ``gatheringTypes`` module — the icon vocabulary is a
+// card-specific presentation choice, not platform vocabulary.
+const FORMAT_META: Record<
+  PublicPlaceGathering['attendance_format'],
+  { icon: string; label: string }
+> = {
+  in_person: { icon: '📍', label: 'In person' },
+  online:    { icon: '💻', label: 'Online' },
+  hybrid:    { icon: '🔀', label: 'Hybrid' },
+}
+
 /**
  * Compact sibling of the Discover Places location card. Same outer
  * shell — rounded, subtle border, hover shadow — split into two bands:
  *
- *   Header (solid Collective palette hex): theme + Collective name.
- *          Text colour is picked for accessible contrast against the
- *          Collective's own hex. This is the identity area.
- *   Body   (white): date/time and attendance format. No repetition of
- *          anything from the header. Legibility over atmosphere.
+ *   Header (solid Collective palette hex + gentle vertical gradient):
+ *          theme + Collective name label. Text colour is picked for
+ *          accessible contrast against the Collective's own hex.
+ *          This is the identity area.
+ *   Body   (white, generous padding): date is the strongest note,
+ *          time slightly quieter, attendance format shown as a small
+ *          pill; venue locality (when present) as a subtle tail line.
+ *          Never repeats anything from the header.
  *
  * Cards belonging to the same Collective share the same header colour
  * so they read as a visual family; different Collectives form
  * naturally distinct bands without any legend.
  */
 function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
-  const start = new Date(gathering.starts_at)
+  const start   = new Date(gathering.starts_at)
   const dateStr = start.toLocaleDateString(undefined, {
     weekday: 'short',
     day: 'numeric',
@@ -284,49 +365,74 @@ function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
     hour: 'numeric',
     minute: '2-digit',
   })
-  const format = formatAttendance(gathering)
 
   const headerHex = gathering.collective_primary_colour ?? NEUTRAL_HEX
+  const headerTop = darkenHex(headerHex, HEADER_GRADIENT_DARKEN)
   const headerFg  = contrastText(headerHex)
   const theme     = extractSessionTheme(gathering.title)
+  const format    = FORMAT_META[gathering.attendance_format]
+    ?? FORMAT_META.in_person
+  const showVenue =
+    gathering.attendance_format !== 'online'
+    && !!gathering.venue_name
 
   return (
     <li>
       <Link
         href={`/spaces/${gathering.space_slug}/events/${gathering.id}`}
-        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(12,24,38,0.04)] transition-shadow hover:shadow-[0_8px_22px_rgba(12,24,38,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
+        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(12,24,38,0.04)] transition-shadow hover:shadow-[0_10px_28px_rgba(12,24,38,0.09)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
       >
-        {/* Identity band — solid Collective hex. */}
+        {/* Identity band — vertical gradient built from the Collective's
+            own hex; text colour chosen automatically. */}
         <div
-          className="flex min-h-[112px] flex-col justify-center gap-1.5 px-5 py-5"
-          style={{ backgroundColor: headerHex, color: headerFg }}
+          className="flex min-h-[128px] flex-col justify-center gap-2 px-6 py-7"
+          style={{
+            backgroundImage: `linear-gradient(180deg, ${headerTop} 0%, ${headerHex} 100%)`,
+            color: headerFg,
+          }}
         >
           <p className="font-serif text-[22px] leading-tight">
             {theme}
           </p>
           <p
-            className="text-[12px] font-medium tracking-wide"
+            className="text-[11px] font-semibold uppercase tracking-[0.14em]"
             style={{ opacity: 0.85 }}
           >
             {gathering.space_name}
           </p>
         </div>
 
-        {/* Practical details — white, charcoal text. */}
+        {/* Practical details — white body, hierarchical. */}
         <div
-          className="flex flex-1 flex-col gap-1 px-5 py-4 text-[13px]"
+          className="flex flex-1 flex-col gap-2 px-6 py-5"
           style={{ color: CHARCOAL }}
         >
-          <p>{dateStr} · {timeStr}</p>
-          <p style={{ opacity: 0.7 }}>{format}</p>
+          <p className="font-serif text-[17px] leading-tight">
+            {dateStr}
+          </p>
+          <p className="text-[13px]" style={{ opacity: 0.72 }}>
+            {timeStr}
+          </p>
+          <div className="mt-1">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11.5px] font-medium"
+              style={{ color: CHARCOAL }}
+            >
+              <span aria-hidden="true">{format.icon}</span>
+              {format.label}
+            </span>
+          </div>
+          {showVenue && (
+            <p
+              className="mt-0.5 text-[12px] leading-snug"
+              style={{ color: CHARCOAL, opacity: 0.6 }}
+            >
+              {gathering.venue_name}
+            </p>
+          )}
         </div>
       </Link>
     </li>
   )
 }
 
-function formatAttendance(g: PublicPlaceGathering): string {
-  if (g.attendance_format === 'online') return 'Online'
-  const label = g.attendance_format === 'hybrid' ? 'Hybrid' : 'In person'
-  return g.venue_name ? `${label} · ${g.venue_name}` : label
-}

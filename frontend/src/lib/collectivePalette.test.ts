@@ -13,6 +13,7 @@ import { describe, test } from 'node:test'
 import {
   PALETTE_ROLES,
   contrastText,
+  darkenHex,
   deriveSoftTint,
   encodeCustomHex,
   encodePaletteRole,
@@ -152,6 +153,37 @@ describe('deriveSoftTint', () => {
   test('leaves invalid input alone (safe fallback)', () => {
     const { bg } = deriveSoftTint('not-a-hex')
     assert.equal(bg, 'not-a-hex')
+  })
+})
+
+
+describe('darkenHex', () => {
+  test('multiplicatively shifts each channel and pads to 6 chars', () => {
+    // 13% darker: 0x80 (128) * 0.87 = 111.36 → 111 → 0x6f.
+    assert.equal(darkenHex('#808080', 0.13), '#6f6f6f')
+    // A saturated warm hex — the classic Sunrise primary.
+    assert.equal(darkenHex('#D97A3F', 0.13), '#bd6a37')
+  })
+
+  test('amount 0 returns the source unchanged (case-normalised)', () => {
+    assert.equal(darkenHex('#3A6B7A', 0),   '#3a6b7a')
+  })
+
+  test('amount 1 collapses to black', () => {
+    assert.equal(darkenHex('#D97A3F', 1),   '#000000')
+  })
+
+  test('clamps out-of-range amounts', () => {
+    assert.equal(darkenHex('#D97A3F', -0.5), '#d97a3f')  // clamped to 0
+    assert.equal(darkenHex('#D97A3F', 2),    '#000000')  // clamped to 1
+  })
+
+  test('accepts #rgb shorthand', () => {
+    assert.equal(darkenHex('#f00', 0.5), '#800000')
+  })
+
+  test('leaves invalid input alone (safe fallback)', () => {
+    assert.equal(darkenHex('not-a-hex', 0.13), 'not-a-hex')
   })
 })
 
