@@ -21,6 +21,16 @@ const DISPLAY_BY_KEY: Record<string, SlotDisplay> = {
     guidance: 'Wide panoramic image · recommended 16:5 or 3:1 · minimum width 1600px · JPG, PNG or WebP.',
     placeholderBody: 'Add a panoramic view of the world to welcome the World Management team.',
   },
+  discover_places: {
+    aspectRatio: '3 / 2',
+    guidance: 'Landscape image · recommended 3:2 · minimum width 1200px · JPG, PNG or WebP.',
+    placeholderBody: 'The image shown on the Discover Places tile on the member dashboard.',
+  },
+  ways_to_connect: {
+    aspectRatio: '3 / 2',
+    guidance: 'Landscape image · recommended 3:2 · minimum width 1200px · JPG, PNG or WebP.',
+    placeholderBody: 'The image shown on the Ways to Connect tile on the member dashboard.',
+  },
 }
 const DEFAULT_DISPLAY: SlotDisplay = {
   aspectRatio: '3 / 2',

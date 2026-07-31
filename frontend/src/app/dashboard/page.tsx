@@ -181,6 +181,8 @@ export default async function DashboardPage() {
   const artworkByKey = new Map(platformArtwork.map((a) => [a.key, a]))
   const exploreArt = artworkByKey.get('explore_collectives') ?? null
   const creatorStudioArt = artworkByKey.get('creator_studio') ?? null
+  const discoverPlacesArt = artworkByKey.get('discover_places') ?? null
+  const waysToConnectArt = artworkByKey.get('ways_to_connect') ?? null
 
   const firstName = user?.name?.split(' ')[0] ?? 'friend'
   const isCreatorOrAdmin = user?.role === 'creator' || user?.role === 'admin'
@@ -403,8 +405,12 @@ export default async function DashboardPage() {
             />
             {discoveryOn && (
               <>
-                <DiscoverPlacesCard />
-                <WaysToConnectCard />
+                <DiscoverPlacesCard
+                  artUrl={discoverPlacesArt?.thumbnail_url ?? discoverPlacesArt?.image_url ?? null}
+                />
+                <WaysToConnectCard
+                  artUrl={waysToConnectArt?.thumbnail_url ?? waysToConnectArt?.image_url ?? null}
+                />
               </>
             )}
           </div>
@@ -709,7 +715,8 @@ function ExploreCollectivesCard({ artUrl }: { artUrl?: string | null }) {
 // calm coastal-teal atmosphere so it reads as a place, not a menu.
 // ---------------------------------------------------------------------------
 
-function DiscoverPlacesCard() {
+function DiscoverPlacesCard({ artUrl }: { artUrl?: string | null }) {
+  const resolved = resolveMediaUrl(artUrl ?? undefined)
   return (
     <Link
       href="/discover-places"
@@ -724,13 +731,22 @@ function DiscoverPlacesCard() {
             'linear-gradient(135deg, rgba(181, 217, 213, 0.55) 0%, rgba(122, 182, 177, 0.60) 100%)',
         }}
       >
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(ellipse at 22% 22%, rgba(255,255,255,0.32), transparent 60%)',
-          }}
-        />
+        {resolved ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={resolved}
+            alt="Discover Places"
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+          />
+        ) : (
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                'radial-gradient(ellipse at 22% 22%, rgba(255,255,255,0.32), transparent 60%)',
+            }}
+          />
+        )}
       </div>
       <AtlasCardBody
         name="Discover Places"
@@ -747,7 +763,8 @@ function DiscoverPlacesCard() {
 // distinguish it from Discover Places without loudness.
 // ---------------------------------------------------------------------------
 
-function WaysToConnectCard() {
+function WaysToConnectCard({ artUrl }: { artUrl?: string | null }) {
+  const resolved = resolveMediaUrl(artUrl ?? undefined)
   return (
     <Link
       href="/ways-to-connect"
@@ -762,13 +779,22 @@ function WaysToConnectCard() {
             'linear-gradient(135deg, rgba(232, 223, 211, 0.70) 0%, rgba(199, 185, 156, 0.65) 100%)',
         }}
       >
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(ellipse at 22% 22%, rgba(255,255,255,0.36), transparent 60%)',
-          }}
-        />
+        {resolved ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={resolved}
+            alt="Ways to Connect"
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+          />
+        ) : (
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                'radial-gradient(ellipse at 22% 22%, rgba(255,255,255,0.36), transparent 60%)',
+            }}
+          />
+        )}
       </div>
       <AtlasCardBody
         name="Ways to Connect"

@@ -55,6 +55,20 @@ PLATFORM_ARTWORK_KEYS: dict[str, dict[str, str]] = {
             "The panoramic image shown at the top of Mother World."
         ),
     },
+    "discover_places": {
+        "title": "Discover Places",
+        "description": (
+            "The shared artwork used for the Discover Places tile on the "
+            "member dashboard."
+        ),
+    },
+    "ways_to_connect": {
+        "title": "Ways to Connect",
+        "description": (
+            "The shared artwork used for the Ways to Connect tile on the "
+            "member dashboard."
+        ),
+    },
 }
 
 
