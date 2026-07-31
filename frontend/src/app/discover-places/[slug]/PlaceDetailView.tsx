@@ -179,24 +179,27 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
       </div>
 
       {isSolo && (
-        // A single Collective doesn't need a lonely row. The card sits
-        // beside a quiet supporting sentence that gives the section
-        // editorial context rather than an empty grid track.
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:items-center md:gap-10">
-          <CollectiveCard
-            key={place.collectives[0].id}
-            space={toSpaceWithMeta(place.collectives[0])}
-            isJoined={false}
-            isLoggedIn={false}
-          />
-          <aside>
-            <p
-              className="font-serif text-[15px] italic leading-relaxed text-navy-500 md:text-[16px]"
-              style={{ fontFamily: 'Georgia, serif' }}
-            >
-              This is the community currently making a home in {place.name}.
-            </p>
-          </aside>
+        // A single Collective doesn't need a lonely row and doesn't
+        // want an awkward two-column layout either. The card keeps
+        // the standard responsive card width; a quiet italic caption
+        // sits directly beneath it as editorial framing.
+        <div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <CollectiveCard
+                key={place.collectives[0].id}
+                space={toSpaceWithMeta(place.collectives[0])}
+                isJoined={false}
+                isLoggedIn={false}
+              />
+              <p
+                className="mt-3 text-[13.5px] italic leading-relaxed text-navy-500"
+                style={{ fontFamily: 'Georgia, serif' }}
+              >
+                This is the community currently making a home in {place.name}.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

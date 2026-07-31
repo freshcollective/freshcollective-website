@@ -27,6 +27,7 @@ away from Nominatim later.
 
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import datetime
 
@@ -240,6 +241,76 @@ def _slugify(name: str, country_code: str) -> str:
     while "--" in base:
         base = base.replace("--", "-")
     return base.strip("-") or country_code.lower()
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance between two lat/lng points, in kilometres.
+    Sufficient precision for the picker-to-Place absorption radius —
+    Places are curated at city / broad-region granularity, not to the
+    metre."""
+    r = 6371.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lng2 - lng1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+# Radius within which a picker suggestion is treated as "the same
+# discovery area" as an existing active Place. Chosen to cover a metro
+# region's Nominatim variants (Melbourne, City of Melbourne, Greater
+# Melbourne all resolve to the curated Melbourne) without swallowing
+# nearby distinct cities. Editorial Places are city-scale, so ~25 km
+# is a comfortable metro radius and well short of the next city.
+PLACE_ABSORPTION_RADIUS_KM = 25.0
+
+
+def _find_absorbing_active_place(
+    db: Session,
+    *,
+    lat: float | None,
+    lng: float | None,
+    country_code: str | None,
+    radius_km: float = PLACE_ABSORPTION_RADIUS_KM,
+) -> Place | None:
+    """Return the active Place whose curated area absorbs a picker
+    coordinate — the closest active Place within ``radius_km`` in the
+    same country, or None if nothing is near enough.
+
+    Why: the picker's provider (Nominatim) exposes multiple OSM
+    features for the same city (e.g. Melbourne, City of Melbourne,
+    Greater Melbourne). Deduplicating on ``provider_place_id`` alone
+    means a Creator who happens to pick a different variant creates
+    a fresh draft that a World Management admin then has to merge
+    into the curated Melbourne. The intent of Discover Places is that
+    a Creator's link to an approved discovery area should be
+    automatic — no admin step should sit between saving a location
+    and appearing on the location detail page. This absorbing lookup
+    closes that gap while still deferring genuinely new cities /
+    regions to admin curation (draft rows) as before.
+    """
+    if lat is None or lng is None or not country_code:
+        return None
+    candidates = db.execute(
+        select(Place).where(
+            Place.status == "active",
+            Place.country_code == country_code.upper(),
+            Place.latitude.isnot(None),
+            Place.longitude.isnot(None),
+        )
+    ).scalars().all()
+    best: Place | None = None
+    best_km = radius_km
+    for p in candidates:
+        # Narrowed above; the isnot(None) filter keeps the type checker
+        # happy at runtime — assert them so mypy-style intent is clear.
+        assert p.latitude is not None and p.longitude is not None
+        km = _haversine_km(lat, lng, p.latitude, p.longitude)
+        if km < best_km:
+            best = p
+            best_km = km
+    return best
 
 
 def _resolve_slug(db: Session, base_slug: str) -> str:
@@ -558,6 +629,20 @@ async def resolve_place(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="That place could not be resolved. Please pick again.",
         )
+
+    # Absorb into an existing active Place if the picker landed inside
+    # a curated discovery area. This makes the "Creator selects an
+    # approved active Physical Location → appears on Discover Places
+    # without admin intervention" flow work regardless of which
+    # Nominatim variant the Creator happens to click.
+    absorbed = _find_absorbing_active_place(
+        db,
+        lat=suggestion.latitude,
+        lng=suggestion.longitude,
+        country_code=suggestion.country_code,
+    )
+    if absorbed is not None:
+        return _to_response(absorbed, created=False)
 
     place = Place(
         id=f"place_{uuid.uuid4().hex[:12]}",

@@ -712,3 +712,354 @@ class TestResolve:
 
         assert resp.created is True
         assert resp.slug == "melbourne-2"
+
+    # -- Absorption into curated active Places --------------------------
+    #
+    # Nominatim exposes several OSM features for the same city
+    # (Melbourne / City of Melbourne / Greater Melbourne). Dedup by
+    # provider_place_id alone means a Creator picking a different
+    # variant creates a fresh draft that needs admin curation. The
+    # absorbing dedup closes that gap: a picker suggestion inside an
+    # existing active Place's radius should link straight to the
+    # curated Place, no draft, no admin step.
+
+    def test_absorbs_nearby_pick_into_existing_active_place(
+        self, db, discovery_enabled, make_user, install_fake_provider,
+    ):
+        # A curated active Melbourne already exists (with its own OSM
+        # relation id). The Creator picks a different OSM feature at
+        # a nearby coordinate — resolve must absorb it into Melbourne
+        # rather than create a draft.
+        db.add(_place(
+            slug="melbourne", name="Melbourne", country_code="AU",
+            status="active",
+            provider_place_id="osm:relation:4246124",
+            latitude=-37.8142, longitude=144.9631,
+        ))
+        db.commit()
+
+        # Same metro area, different OSM feature — the "City of
+        # Melbourne" relation, ~2 km north.
+        variant = LocationSuggestion(
+            provider_place_id="osm:relation:2404870",
+            name="City of Melbourne",
+            region="Victoria",
+            country="Australia",
+            country_code="AU",
+            latitude=-37.7963,
+            longitude=144.9614,
+            timezone="Australia/Melbourne",
+        )
+        install_fake_provider(fetch_result=variant)
+        creator = make_user(role="creator")
+
+        resp = _run(resolve_place(
+            ResolveRequest(provider_place_id="osm:relation:2404870"),
+            db=db,
+            _user=creator,
+        ))
+
+        # Returned the curated Melbourne, not a fresh draft.
+        assert resp.created is False
+        assert resp.slug == "melbourne"
+        # No new row was inserted.
+        assert db.query(Place).count() == 1
+
+    def test_distant_pick_still_creates_draft(
+        self, db, discovery_enabled, make_user, install_fake_provider,
+    ):
+        # An active Melbourne exists. A picker pick in Hobart (~600 km
+        # away) is a genuinely new discovery area — it must land as a
+        # draft for admin curation, not silently absorb into Melbourne.
+        db.add(_place(
+            slug="melbourne", name="Melbourne", country_code="AU",
+            status="active",
+            provider_place_id="osm:relation:4246124",
+            latitude=-37.8142, longitude=144.9631,
+        ))
+        db.commit()
+
+        hobart = LocationSuggestion(
+            provider_place_id="osm:relation:9999999",
+            name="Hobart",
+            region="Tasmania",
+            country="Australia",
+            country_code="AU",
+            latitude=-42.8821,
+            longitude=147.3272,
+            timezone="Australia/Hobart",
+        )
+        install_fake_provider(fetch_result=hobart)
+        creator = make_user(role="creator")
+
+        resp = _run(resolve_place(
+            ResolveRequest(provider_place_id="osm:relation:9999999"),
+            db=db,
+            _user=creator,
+        ))
+
+        assert resp.created is True
+        assert resp.slug == "hobart"
+        # Newly-created row lands as a draft — admin curation still
+        # governs new discovery areas.
+        stored = db.query(Place).filter(
+            Place.provider_place_id == "osm:relation:9999999"
+        ).one()
+        assert stored.status == "draft"
+
+    def test_absorption_respects_country_code(
+        self, db, discovery_enabled, make_user, install_fake_provider,
+    ):
+        # Melbourne, Australia already exists as an active curated
+        # Place. A Creator picking "Melbourne, Florida" from Nominatim
+        # is in a different country — even if it were geographically
+        # close by fluke, absorption must not cross national borders.
+        db.add(_place(
+            slug="melbourne", name="Melbourne", country_code="AU",
+            status="active",
+            provider_place_id="osm:relation:4246124",
+            latitude=-37.8142, longitude=144.9631,
+        ))
+        db.commit()
+
+        florida = LocationSuggestion(
+            provider_place_id="osm:relation:117646",
+            name="Melbourne",
+            region="Florida",
+            country="United States",
+            country_code="US",
+            latitude=28.0836,
+            longitude=-80.6081,
+            timezone="America/New_York",
+        )
+        install_fake_provider(fetch_result=florida)
+        creator = make_user(role="creator")
+
+        resp = _run(resolve_place(
+            ResolveRequest(provider_place_id="osm:relation:117646"),
+            db=db,
+            _user=creator,
+        ))
+
+        # A new US draft — not absorbed into Australian Melbourne.
+        assert resp.created is True
+        assert resp.slug == "melbourne-2"  # slug collision handled
+
+    def test_absorption_ignores_active_places_without_coordinates(
+        self, db, discovery_enabled, make_user, install_fake_provider,
+    ):
+        # A seed-only Place with no lat/lng cannot participate in
+        # proximity absorption. A Creator's pick creates a draft
+        # instead of silently swallowing into a coordinate-less row.
+        db.add(_place(
+            slug="melbourne", name="Melbourne", country_code="AU",
+            status="active",
+            provider_place_id=None,
+            latitude=None, longitude=None,
+        ))
+        db.commit()
+
+        install_fake_provider(fetch_result=MELBOURNE_SUGGESTION)
+        creator = make_user(role="creator")
+
+        resp = _run(resolve_place(
+            ResolveRequest(provider_place_id="osm:node:12345"),
+            db=db,
+            _user=creator,
+        ))
+        # Slug clash → -2 suffix.
+        assert resp.created is True
+        assert resp.slug == "melbourne-2"
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: Collective ↔ Physical Location visibility
+# ---------------------------------------------------------------------------
+# The six user-visible scenarios asked for by the Discover Place fix. Each
+# drives the real ``update_space`` PATCH path through to the public
+# ``get_place`` read path, so a regression in either surface fails a
+# named scenario rather than a helper unit test.
+
+class TestCollectivePlaceLifecycle:
+    def _melbourne(self):
+        return _place(
+            slug="melbourne", name="Melbourne", country_code="AU",
+            status="active",
+            provider_place_id="osm:relation:4246124",
+            latitude=-37.8142, longitude=144.9631,
+        )
+
+    def test_in_person_collective_appears_on_place_page(
+        self, db, discovery_enabled, make_space, make_user,
+    ):
+        from app.creator.routes import update_space
+        from app.creator.schemas import SpaceUpdateRequest
+        db.add(self._melbourne())
+        db.flush()
+        melb = db.query(Place).filter(Place.slug == "melbourne").one()
+        creator = make_user(role="creator")
+        space = make_space(
+            creator=creator, slug="in-person-coll", name="In Person Coll",
+            is_public=True, connection_style="online",
+        )
+        update_space(
+            slug=space.slug,
+            body=SpaceUpdateRequest(
+                connection_style="in_person",
+                primary_place_id=melb.id,
+            ),
+            db=db,
+            current_user=creator,
+        )
+        detail = get_place("melbourne", db=db)
+        assert [c.slug for c in detail.collectives] == ["in-person-coll"]
+
+    def test_hybrid_collective_appears_on_place_page(
+        self, db, discovery_enabled, make_space, make_user,
+    ):
+        """Hybrid ('both') is a participation format — the Collective
+        still has a geographic home and belongs on that Place page.
+        This is the specific case that regressed for The Grove."""
+        from app.creator.routes import update_space
+        from app.creator.schemas import SpaceUpdateRequest
+        db.add(self._melbourne())
+        db.flush()
+        melb = db.query(Place).filter(Place.slug == "melbourne").one()
+        creator = make_user(role="creator")
+        space = make_space(
+            creator=creator, slug="hybrid-coll", name="Hybrid Coll",
+            is_public=True, connection_style="online",
+        )
+        update_space(
+            slug=space.slug,
+            body=SpaceUpdateRequest(
+                connection_style="both",
+                primary_place_id=melb.id,
+            ),
+            db=db,
+            current_user=creator,
+        )
+        # Both the persisted style and the visibility must reflect the
+        # save. Online support does not exclude the Collective from
+        # its selected Place.
+        db.refresh(space)
+        assert space.connection_style == "both"
+        detail = get_place("melbourne", db=db)
+        assert [c.slug for c in detail.collectives] == ["hybrid-coll"]
+
+    def test_online_only_collective_never_appears_on_place_page(
+        self, db, discovery_enabled, make_space, make_user,
+    ):
+        db.add(self._melbourne())
+        db.flush()
+        creator = make_user(role="creator")
+        make_space(
+            creator=creator, slug="online-coll", name="Online Coll",
+            is_public=True, connection_style="online",
+        )
+        detail = get_place("melbourne", db=db)
+        assert detail.collectives == []
+
+    def test_removing_place_removes_collective_from_page(
+        self, db, discovery_enabled, make_space, make_user,
+    ):
+        from app.creator.routes import update_space
+        from app.creator.schemas import SpaceUpdateRequest
+        from app.models.place import SpacePlace
+        db.add(self._melbourne())
+        db.flush()
+        melb = db.query(Place).filter(Place.slug == "melbourne").one()
+        creator = make_user(role="creator")
+        space = make_space(
+            creator=creator, slug="fickle-coll", name="Fickle Coll",
+            is_public=True, connection_style="in_person",
+        )
+        db.add(SpacePlace(space_id=space.id, place_id=melb.id))
+        db.flush()
+        assert [c.slug for c in get_place("melbourne", db=db).collectives] == ["fickle-coll"]
+
+        # Creator flips back to online; the link must clear.
+        update_space(
+            slug=space.slug,
+            body=SpaceUpdateRequest(connection_style="online"),
+            db=db,
+            current_user=creator,
+        )
+        assert get_place("melbourne", db=db).collectives == []
+
+    def test_saving_same_location_repeatedly_does_not_duplicate_link(
+        self, db, discovery_enabled, make_space, make_user,
+    ):
+        from app.creator.routes import update_space
+        from app.creator.schemas import SpaceUpdateRequest
+        from app.models.place import SpacePlace
+        db.add(self._melbourne())
+        db.flush()
+        melb = db.query(Place).filter(Place.slug == "melbourne").one()
+        creator = make_user(role="creator")
+        space = make_space(
+            creator=creator, slug="stable-coll", name="Stable Coll",
+            is_public=True, connection_style="online",
+        )
+
+        for _ in range(3):
+            update_space(
+                slug=space.slug,
+                body=SpaceUpdateRequest(
+                    connection_style="both",
+                    primary_place_id=melb.id,
+                ),
+                db=db,
+                current_user=creator,
+            )
+
+        links = db.query(SpacePlace).filter(SpacePlace.space_id == space.id).all()
+        assert len(links) == 1
+        assert links[0].place_id == melb.id
+        # And the Place page still shows one Collective, not three.
+        detail = get_place("melbourne", db=db)
+        assert [c.slug for c in detail.collectives] == ["stable-coll"]
+
+    def test_hidden_archived_and_private_collectives_stay_excluded(
+        self, db, discovery_enabled, make_space, make_user,
+    ):
+        """Public-safety filtering must survive the linkage fix — a
+        Collective that has a SpacePlace link should still be hidden
+        if it is private, draft, hidden or archived."""
+        from app.models.place import SpacePlace
+        db.add(self._melbourne())
+        db.flush()
+        melb = db.query(Place).filter(Place.slug == "melbourne").one()
+
+        # Visible baseline — a public active Collective linked to Melbourne.
+        visible = make_space(
+            slug="visible-coll", name="Visible",
+            is_public=True, status="active",
+        )
+        # Private (public=False) — should not appear.
+        private = make_space(
+            slug="private-coll", name="Private",
+            is_public=False, status="active",
+        )
+        # Draft — should not appear.
+        drafted = make_space(
+            slug="drafted-coll", name="Drafted",
+            is_public=True, status="draft",
+        )
+        # Archived (implemented as status='archived' in the enum).
+        # The public query filters on ``SpaceStatus.active``, so any
+        # non-active status is excluded. We assert that here.
+        archived = make_space(
+            slug="archived-coll", name="Archived",
+            is_public=True, status="archived",
+        )
+        db.add_all([
+            SpacePlace(space_id=visible.id,  place_id=melb.id),
+            SpacePlace(space_id=private.id,  place_id=melb.id),
+            SpacePlace(space_id=drafted.id,  place_id=melb.id),
+            SpacePlace(space_id=archived.id, place_id=melb.id),
+        ])
+        db.flush()
+
+        detail = get_place("melbourne", db=db)
+        assert [c.slug for c in detail.collectives] == ["visible-coll"]
