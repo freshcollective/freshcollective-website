@@ -55,6 +55,18 @@ export interface SharedItem {
    *  for populating labels from the real entity names when it
    *  replaces this fixture. */
   label: string
+  /** Optional slug for the shared entity. Used by the card layout
+   *  as the deterministic seed for the atmospheric fallback
+   *  artwork when no real cover image is available. When omitted
+   *  the ``label`` is used as the seed instead. */
+  slug?: string
+  /** Optional URL to real cover artwork for the shared entity
+   *  (e.g. a Collective's cover image, a Place's hero artwork).
+   *  When present, this becomes the introduction card's hero
+   *  image; otherwise the atmospheric fallback is used. The
+   *  recommendation service will populate this from the real
+   *  entity's stored artwork when it replaces this fixture. */
+  artworkUrl?: string | null
 }
 
 export interface MockIntroduction {
@@ -128,9 +140,9 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
     reasonSentence:
       "You're both part of The Grove and booked into Tuesday's Life in Alignment Circle.",
     sharedItems: [
-      { kind: 'collective', label: 'The Grove' },
-      { kind: 'gathering',  label: 'Life in Alignment Circle · Tuesday' },
-      { kind: 'pathway',    label: 'Life in Alignment' },
+      { kind: 'collective', label: 'The Grove',                          slug: 'the-grove' },
+      { kind: 'gathering',  label: 'Life in Alignment Circle · Tuesday', slug: 'life-in-alignment-tuesday' },
+      { kind: 'pathway',    label: 'Life in Alignment',                  slug: 'life-in-alignment' },
     ],
   },
   {
@@ -147,9 +159,9 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
     reasonSentence:
       "You're both part of The Grove, exploring Life in Alignment, and in Melbourne.",
     sharedItems: [
-      { kind: 'collective', label: 'The Grove' },
-      { kind: 'pathway',    label: 'Life in Alignment' },
-      { kind: 'place',      label: 'Melbourne' },
+      { kind: 'collective', label: 'The Grove',          slug: 'the-grove' },
+      { kind: 'pathway',    label: 'Life in Alignment',  slug: 'life-in-alignment' },
+      { kind: 'place',      label: 'Melbourne',          slug: 'melbourne' },
     ],
   },
   {
@@ -161,9 +173,9 @@ export const OUTGOING_INTRODUCTIONS: MockIntroduction[] = [
     reasonSentence:
       "You share Reflection and Creativity, and you're both drawn to Byron Bay.",
     sharedItems: [
-      { kind: 'theme', label: 'Reflection' },
-      { kind: 'theme', label: 'Creativity' },
-      { kind: 'place', label: 'Byron Bay' },
+      { kind: 'theme', label: 'Reflection',  slug: 'reflection' },
+      { kind: 'theme', label: 'Creativity',  slug: 'creativity' },
+      { kind: 'place', label: 'Byron Bay',   slug: 'byron-bay' },
     ],
   },
 ]
@@ -189,8 +201,8 @@ export const INCOMING_INTRODUCTION: MockIntroduction = {
   reasonSentence:
     "You're both part of EMBODY, exploring Life in Alignment, and in Melbourne.",
   sharedItems: [
-    { kind: 'collective', label: 'EMBODY' },
-    { kind: 'pathway',    label: 'Life in Alignment' },
-    { kind: 'place',      label: 'Melbourne' },
+    { kind: 'collective', label: 'EMBODY',             slug: 'embody' },
+    { kind: 'pathway',    label: 'Life in Alignment',  slug: 'life-in-alignment' },
+    { kind: 'place',      label: 'Melbourne',          slug: 'melbourne' },
   ],
 }

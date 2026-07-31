@@ -1,30 +1,38 @@
 'use client'
 
 /**
- * PROTOTYPE — Ways to Connect (visual refinement pass)
+ * PROTOTYPE — Ways to Connect (unified four-card grid)
  * ============================================================
  *
  * TEMPORARY. Delete this whole `_prototype` folder when the real
  * Ways to Connect surface ships. See ../page.tsx for the mount
  * point and ./mockIntroductions.ts for the fixture.
  *
- * Ways to Connect is a thoughtful host quietly introducing three
- * members who already share meaningful common ground. Never more
- * than three. Never manufactured to fill space. Never a
- * directory, never a feed, never scored.
+ * The page is fundamentally about meeting people. Every card
+ * follows the same geometry:
  *
- * This iteration foregrounds the *people*: each card leads with
- * a portrait sitting in a warm atmospheric wash, then names the
- * person, then explains why they've been introduced in one
- * natural sentence, then offers the action. The internal intent
- * types (right-now / shared-journey / thoughtful) become quiet
- * human eyebrows; they never appear as system labels.
+ *   1. Square (1:1) visual area — the member's profile photo
+ *      when visible, otherwise a warm-neutral polished initial.
+ *      No shared-Collective / Place artwork here; the person
+ *      is the visual.
+ *   2. Person's name — primary heading (font-serif 20px).
+ *   3. Reason sentence — italic Georgia serif natural language
+ *      explaining the shared common ground.
+ *   4. Actions area — Say hello (suggestions) or Accept / Not now
+ *      (incoming invitation). The incoming invitation is marked
+ *      by a small teal "Invitation" eyebrow above the name and
+ *      lives in the same grid, first slot.
+ *
+ * Grid: 4 columns on wide desktop, 2 on tablet, 1 on mobile.
+ *
+ * The `ConversationView` placeholder is unchanged pending a
+ * separate messaging-surface integration and still uses the
+ * legacy intent-based portrait treatment.
  */
 
 import { useState } from 'react'
 import {
   INCOMING_INTRODUCTION,
-  INTENT_FRAMING,
   OUTGOING_INTRODUCTIONS,
   SHARED_ICON,
   type IntentType,
@@ -33,7 +41,7 @@ import {
 } from './mockIntroductions'
 
 
-type CardStatus = 'idle' | 'sent' | 'dismissed'
+type SentStatus = 'idle' | 'sent'
 type View = 'introductions' | 'conversation'
 
 interface ConversationState {
@@ -43,26 +51,32 @@ interface ConversationState {
 
 
 // ---------------------------------------------------------------------------
-// Portrait palette per intent — three warm human atmospheres so
-// the three cards feel deliberately different without becoming
-// categorised badges. All within one editorial family.
+// Warm-neutral portrait treatment used by the initial fallback.
+// A soft warm-stone gradient with a subtle top-left highlight;
+// deliberately neutral so it never reads as a category badge.
 // ---------------------------------------------------------------------------
 
-interface Portrait {
-  /** Card-scale washed background behind the portrait area. */
-  wash:    string
-  /** Portrait circle fill (subtle deeper tone of the wash). */
-  circle:  string
-  /** Ink colour for the portrait initials. */
-  ink:     string
-  /** Ambient tint for the whole card background — very soft. */
-  cardBg:  string
-  /** Border colour when the card is at rest. */
+const PORTRAIT_INITIAL_BG =
+  'radial-gradient(ellipse at 28% 26%, rgba(255,255,255,0.55), transparent 60%),' +
+  'linear-gradient(155deg, #EFEDE7 0%, #D8D3CA 100%)'
+const PORTRAIT_INITIAL_INK = '#2E3B47'
+const PORTRAIT_PHOTO_BG = '#F1EFEB'
+
+
+// ---------------------------------------------------------------------------
+// Intent-based palette retained only for ConversationView (unchanged
+// per scope). New card surfaces do not reference it.
+// ---------------------------------------------------------------------------
+
+interface IntentPortrait {
+  wash:       string
+  circle:     string
+  ink:        string
+  cardBg:     string
   cardBorder: string
 }
 
-const PORTRAIT_BY_INTENT: Record<IntentType, Portrait> = {
-  // Timely — warm apricot / peach, brighter for immediacy.
+const PORTRAIT_BY_INTENT: Record<IntentType, IntentPortrait> = {
   'right-now': {
     wash:       'radial-gradient(ellipse at 50% 55%, rgba(243,196,168,0.55), rgba(214,144,110,0.35) 70%, transparent 100%)',
     circle:     'linear-gradient(150deg, #F3C4A8 0%, #D6906E 100%)',
@@ -70,7 +84,6 @@ const PORTRAIT_BY_INTENT: Record<IntentType, Portrait> = {
     cardBg:     'rgba(243, 196, 168, 0.08)',
     cardBorder: 'rgba(214, 144, 110, 0.20)',
   },
-  // Accumulated — sage / eucalyptus, grounded and slow.
   'shared-journey': {
     wash:       'radial-gradient(ellipse at 50% 55%, rgba(180,217,184,0.50), rgba(123,178,135,0.32) 70%, transparent 100%)',
     circle:     'linear-gradient(150deg, #C6DEC0 0%, #7BB287 100%)',
@@ -78,7 +91,6 @@ const PORTRAIT_BY_INTENT: Record<IntentType, Portrait> = {
     cardBg:     'rgba(180, 217, 184, 0.08)',
     cardBorder: 'rgba(123, 178, 135, 0.22)',
   },
-  // Curated — lavender / soft violet, considered and quiet.
   'thoughtful': {
     wash:       'radial-gradient(ellipse at 50% 55%, rgba(198,165,204,0.50), rgba(138,110,151,0.32) 70%, transparent 100%)',
     circle:     'linear-gradient(150deg, #D4C1DA 0%, #A78BB4 100%)',
@@ -95,13 +107,13 @@ const PORTRAIT_BY_INTENT: Record<IntentType, Portrait> = {
 
 export default function WaysToConnectPrototype() {
   const [openToConnections, setOpenToConnections] = useState(true)
-  const [outgoingStatus, setOutgoingStatus]       = useState<Record<string, CardStatus>>({})
+  const [outgoingStatus, setOutgoingStatus]       = useState<Record<string, SentStatus>>({})
   const [incomingHandled, setIncomingHandled]     = useState(false)
   const [view, setView]                           = useState<View>('introductions')
   const [conversation, setConversation]           = useState<ConversationState | null>(null)
 
-  function markOutgoing(id: string, status: CardStatus) {
-    setOutgoingStatus((prev) => ({ ...prev, [id]: status }))
+  function markOutgoingSent(id: string) {
+    setOutgoingStatus((prev) => ({ ...prev, [id]: 'sent' }))
   }
 
   function acceptIncoming() {
@@ -115,9 +127,6 @@ export default function WaysToConnectPrototype() {
     setConversation(null)
   }
 
-  const visibleOutgoing = OUTGOING_INTRODUCTIONS
-    .filter((i) => outgoingStatus[i.id] !== 'dismissed')
-
   if (view === 'conversation' && conversation) {
     return (
       <ConversationView
@@ -128,353 +137,148 @@ export default function WaysToConnectPrototype() {
     )
   }
 
+  const showIncoming = !incomingHandled
+
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 pb-24 pt-8 md:px-10 md:pt-10">
-      {/* Compact preference strip — a reassuring status, not a
-          prompt. Full explanation lives behind a small disclosure
-          via "Manage". TODO(settings): move canonical control to
-          /settings/preferences. */}
-      <OpenToConnectionsStrip
-        enabled={openToConnections}
-        onToggle={() => setOpenToConnections((v) => !v)}
-      />
-
-      {openToConnections && !incomingHandled && (
-        <IncomingInvitation
-          intro={INCOMING_INTRODUCTION}
-          onAccept={acceptIncoming}
-          onDecline={() => setIncomingHandled(true)}
-        />
-      )}
-
+    <div className="mx-auto w-full max-w-6xl px-6 pb-24 pt-8 md:px-10 md:pt-10">
       {openToConnections ? (
-        <section aria-label="Introductions" className="mt-12">
-          <header className="mb-8 max-w-xl">
+        <section aria-label="Introductions">
+          <header className="mb-8 max-w-2xl">
             <h2 className="font-serif text-[24px] leading-tight text-navy-900 md:text-[28px]">
-              People you may enjoy meeting
+              Where your paths cross
             </h2>
             <p
               className="mt-2 text-[14.5px] italic leading-relaxed"
-              style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
+              style={{ color: 'rgba(12, 24, 38, 0.68)', fontFamily: 'Georgia, serif' }}
             >
-              Three thoughtful introductions, grounded in what you
-              already share.
+              Introductions rooted in the Collectives, Gatherings and
+              Places you already share.
             </p>
           </header>
 
-          {visibleOutgoing.length === 0 ? (
-            <EmptyIntroductions />
-          ) : (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {visibleOutgoing.map((intro) => (
-                <IntroductionCard
-                  key={intro.id}
-                  intro={intro}
-                  status={outgoingStatus[intro.id] ?? 'idle'}
-                  onIntroduce={() => markOutgoing(intro.id, 'sent')}
-                  onDismiss={() => markOutgoing(intro.id, 'dismissed')}
-                />
-              ))}
-            </div>
-          )}
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {showIncoming && (
+              <IntroductionCard
+                intro={INCOMING_INTRODUCTION}
+                eyebrow="Invitation"
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={acceptIncoming}
+                    className="rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
+                    style={{
+                      background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    Accept introduction
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIncomingHandled(true)}
+                    className="text-[13px] font-medium text-navy-500 transition-colors hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
+                  >
+                    Not now
+                  </button>
+                </div>
+              </IntroductionCard>
+            )}
+
+            {OUTGOING_INTRODUCTIONS.map((intro) => {
+              const status = outgoingStatus[intro.id] ?? 'idle'
+              return (
+                <IntroductionCard key={intro.id} intro={intro}>
+                  {status === 'sent' ? (
+                    <p
+                      aria-live="polite"
+                      className="text-[13px] italic leading-relaxed"
+                      style={{
+                        color: '#1E6E6C',
+                        fontFamily: 'Georgia, serif',
+                      }}
+                    >
+                      A hello is on its way to {intro.otherName}.
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => markOutgoingSent(intro.id)}
+                      className="text-[13px] font-semibold transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
+                      style={{ color: '#246B6A' }}
+                    >
+                      Say hello to {intro.otherName} →
+                    </button>
+                  )}
+                </IntroductionCard>
+              )
+            })}
+          </div>
         </section>
       ) : (
-        <PausedState onEnable={() => setOpenToConnections(true)} />
+        <PausedNotice />
       )}
+
+      <IntroductionPreferences
+        enabled={openToConnections}
+        onToggle={() => setOpenToConnections((v) => !v)}
+      />
     </div>
   )
 }
 
 
 // ---------------------------------------------------------------------------
-// Open to Connections — compact reassuring strip.
-// ---------------------------------------------------------------------------
-
-function OpenToConnectionsStrip({
-  enabled, onToggle,
-}: {
-  enabled: boolean
-  onToggle: () => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-
-  return (
-    <section
-      aria-label="Open to Connections"
-      className="rounded-xl border px-4 py-3 md:px-5"
-      style={{
-        borderColor: enabled ? 'rgba(56,160,158,0.22)' : 'rgba(12,24,38,0.10)',
-        background: enabled ? 'rgba(56,160,158,0.04)' : '#FFFFFF',
-      }}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <span
-            aria-hidden="true"
-            className="inline-block h-2 w-2 shrink-0 rounded-full"
-            style={{ background: enabled ? '#38A09E' : 'rgba(12,24,38,0.35)' }}
-          />
-          <p className="text-[13.5px]" style={{ color: 'rgba(12,24,38,0.75)' }}>
-            <span className="font-medium text-navy-900">
-              {enabled ? 'Open to Connections' : 'Connections are paused'}
-            </span>
-            <span className="mx-2 text-navy-300">·</span>
-            <span className="italic" style={{ fontFamily: 'Georgia, serif' }}>
-              {enabled
-                ? "You're open to thoughtful introductions based on meaningful shared experiences."
-                : "You won't appear in anyone else's introductions, and none will appear here."}
-            </span>
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          className="shrink-0 text-[13px] font-medium text-navy-500 underline underline-offset-2 transition-colors hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 rounded"
-        >
-          Manage
-        </button>
-      </div>
-
-      {expanded && (
-        <div className="mt-3 border-t pt-3" style={{ borderColor: 'rgba(12,24,38,0.06)' }}>
-          <p className="mb-3 text-[13px] leading-relaxed text-navy-700">
-            {enabled
-              ? "You may be introduced to members with genuine shared experiences, and you may appear on their Ways to Connect page. Introductions never happen without both of you being open to them."
-              : "Enable to be introduced only where genuine shared experience already exists. You can turn this off again at any time."}
-          </p>
-          <button
-            type="button"
-            onClick={onToggle}
-            className="text-[13px] font-medium text-navy-500 underline underline-offset-2 transition-colors hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 rounded"
-          >
-            {enabled ? 'Turn off Open to Connections' : 'Turn on Open to Connections'}
-          </button>
-        </div>
-      )}
-    </section>
-  )
-}
-
-
-// ---------------------------------------------------------------------------
-// Paused state — visible only when Open to Connections is off.
-// ---------------------------------------------------------------------------
-
-function PausedState({ onEnable }: { onEnable: () => void }) {
-  return (
-    <section className="mt-16">
-      <div className="mx-auto max-w-lg text-center">
-        <p
-          className="font-serif text-[20px] italic leading-relaxed"
-          style={{ color: 'rgba(12,24,38,0.68)' }}
-        >
-          Connections are paused.
-        </p>
-        <p className="mt-3 text-[14px] leading-relaxed text-navy-500">
-          Enable Open to Connections and Fresh Collective will
-          introduce you to a small number of members you already
-          share meaningful common ground with.
-        </p>
-        <button
-          type="button"
-          onClick={onEnable}
-          className="mt-6 rounded-full px-5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-          style={{
-            background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-            letterSpacing: '0.04em',
-          }}
-        >
-          Turn on Open to Connections
-        </button>
-      </div>
-    </section>
-  )
-}
-
-
-// ---------------------------------------------------------------------------
-// Incoming invitation — warm portrait invitation, not a form.
-// ---------------------------------------------------------------------------
-
-function IncomingInvitation({
-  intro, onAccept, onDecline,
-}: {
-  intro: MockIntroduction
-  onAccept: () => void
-  onDecline: () => void
-}) {
-  const portrait = PORTRAIT_BY_INTENT[intro.intent]
-
-  return (
-    <section
-      aria-label={`Introduction request from ${intro.otherName}`}
-      className="mt-8 overflow-hidden rounded-2xl border md:flex md:items-center md:gap-6 md:pl-6"
-      style={{
-        borderColor: portrait.cardBorder,
-        background: `linear-gradient(135deg, ${portrait.cardBg}, rgba(255,255,255,0.4))`,
-      }}
-    >
-      <div
-        className="relative flex h-40 items-center justify-center md:h-44 md:w-40 md:shrink-0 md:rounded-2xl"
-        style={{ background: portrait.wash }}
-      >
-        <PortraitCircle name={intro.otherName} avatarUrl={intro.avatarUrl} portrait={portrait} size={104} />
-      </div>
-
-      <div className="flex-1 px-6 py-6 md:pl-0 md:pr-8 md:py-8">
-        <p
-          className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: 'rgba(12,24,38,0.55)' }}
-        >
-          Invitation
-        </p>
-        <h3 className="font-serif text-[22px] leading-tight text-navy-900 md:text-[24px]">
-          {intro.otherName} would like an introduction
-        </h3>
-        <p
-          className="mt-3 max-w-lg text-[14.5px] italic leading-relaxed"
-          style={{ color: 'rgba(12,24,38,0.72)', fontFamily: 'Georgia, serif' }}
-        >
-          {intro.reasonSentence}
-        </p>
-
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onAccept}
-            className="rounded-full px-5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-            style={{
-              background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-              letterSpacing: '0.04em',
-            }}
-          >
-            Accept introduction
-          </button>
-          <button
-            type="button"
-            onClick={onDecline}
-            className="rounded-full px-4 py-2 text-[13px] font-medium text-navy-500 transition-colors hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-          >
-            Not now
-          </button>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-
-// ---------------------------------------------------------------------------
-// Introduction card — portrait-led editorial composition.
+// Introduction card — one geometry for suggestions and invitations.
 // ---------------------------------------------------------------------------
 
 function IntroductionCard({
-  intro, status, onIntroduce, onDismiss,
+  intro, eyebrow, children,
 }: {
   intro: MockIntroduction
-  status: CardStatus
-  onIntroduce: () => void
-  onDismiss: () => void
+  /** Optional small teal small-caps eyebrow above the name.
+   *  Used to mark the incoming invitation ("Invitation") without
+   *  changing the card's overall size or geometry. */
+  eyebrow?: string
+  /** Actions area rendered at the bottom of the card. Parent
+   *  controls what appears here (button, sent confirmation, etc.). */
+  children: React.ReactNode
 }) {
-  const portrait = PORTRAIT_BY_INTENT[intro.intent]
-  const eyebrow  = INTENT_FRAMING[intro.intent]
-  const chips    = intro.sharedItems.slice(0, 3)
-
   return (
     <article
       aria-labelledby={`intro-${intro.id}-name`}
-      className="flex flex-col overflow-hidden rounded-2xl border transition-shadow hover:shadow-[0_10px_28px_rgba(12,24,38,0.08)]"
-      style={{
-        borderColor: portrait.cardBorder,
-        background: `linear-gradient(180deg, ${portrait.cardBg} 0%, rgba(255,255,255,1) 55%)`,
-      }}
+      className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-shadow hover:shadow-[0_8px_24px_rgba(12,24,38,0.06)]"
     >
-      {/* Portrait area — the human being leads. */}
-      <div
-        className="relative flex h-40 items-center justify-center"
-        style={{ background: portrait.wash }}
-      >
-        <PortraitCircle name={intro.otherName} avatarUrl={intro.avatarUrl} portrait={portrait} size={96} />
-      </div>
+      <PortraitSquare name={intro.otherName} avatarUrl={intro.avatarUrl} />
 
-      {/* Body */}
-      <div className="flex flex-1 flex-col px-6 pb-6 pt-5">
-        <p
-          className="text-[11px] font-semibold uppercase tracking-[0.16em]"
-          style={{ color: 'rgba(12,24,38,0.55)' }}
-        >
-          {eyebrow}
-        </p>
+      <div className="flex flex-1 flex-col p-5">
+        {eyebrow && (
+          <p
+            className="text-[10.5px] font-semibold uppercase tracking-[0.24em]"
+            style={{ color: '#38A09E' }}
+          >
+            {eyebrow}
+          </p>
+        )}
         <h3
           id={`intro-${intro.id}-name`}
-          className="mt-1 font-serif text-[22px] leading-tight text-navy-900"
+          className={
+            (eyebrow ? 'mt-1 ' : '') +
+            'font-serif text-[20px] leading-tight text-navy-900'
+          }
         >
           {intro.otherName}
         </h3>
+
         <p
-          className="mt-3 text-[14px] italic leading-relaxed"
-          style={{ color: 'rgba(12,24,38,0.68)', fontFamily: 'Georgia, serif' }}
+          className="mt-3 text-[14px] leading-relaxed text-navy-700"
+          style={{ fontFamily: 'Georgia, serif' }}
         >
           {intro.reasonSentence}
         </p>
 
-        {chips.length > 0 && (
-          <ul className="mt-4 flex flex-wrap gap-1.5">
-            {chips.map((chip, i) => (
-              <li
-                key={i}
-                className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2.5 py-1 text-[11.5px] font-medium text-navy-700"
-                style={{ border: `1px solid ${portrait.cardBorder}` }}
-              >
-                <span aria-hidden="true" className="text-[10px]" style={{ color: portrait.ink }}>
-                  {SHARED_ICON[chip.kind]}
-                </span>
-                <span>{chip.label}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* Actions anchored at the bottom of the card. */}
-        <div className="mt-6 flex flex-1 items-end">
-          {status === 'idle' && (
-            <div className="flex w-full items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={onIntroduce}
-                className="rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-                style={{
-                  background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                  letterSpacing: '0.04em',
-                }}
-              >
-                Introduce Me
-              </button>
-              <button
-                type="button"
-                onClick={onDismiss}
-                className="text-[13px] text-navy-500 underline underline-offset-2 transition-colors hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 rounded"
-              >
-                Not right now
-              </button>
-            </div>
-          )}
-
-          {status === 'sent' && (
-            <p
-              aria-live="polite"
-              className="rounded-xl px-4 py-3 text-[13px] italic leading-relaxed"
-              style={{
-                background: 'rgba(56,160,158,0.08)',
-                color: '#1E6E6C',
-                fontFamily: 'Georgia, serif',
-              }}
-            >
-              Introduction sent. {intro.otherName} will see it next
-              time they open Ways to Connect.
-            </p>
-          )}
+        <div className="mt-auto pt-5">
+          {children}
         </div>
       </div>
     </article>
@@ -483,26 +287,16 @@ function IntroductionCard({
 
 
 // ---------------------------------------------------------------------------
-// Portrait circle — displays the member's profile photo when one
-// is available and their profile visibility permits it, otherwise
-// falls back to the serif-initial treatment. Both states share
-// the same size, outer ring, shadow and card geometry so a card
-// looks identical structurally whether or not a photo is shown.
-//
-// The client does not perform its own visibility check — server-
-// side is authoritative. The recommendation service must populate
-// `avatarUrl` as null for any member who has kept their photo
-// private. If the image fails to load for any reason, we
-// transparently fall back to the initial.
+// Square portrait — profile photo when visible, otherwise a warm
+// polished initial on a neutral gradient. Only two states — no
+// shared-context artwork stands in for a missing photo.
 // ---------------------------------------------------------------------------
 
-function PortraitCircle({
-  name, avatarUrl, portrait, size,
+function PortraitSquare({
+  name, avatarUrl,
 }: {
   name: string
   avatarUrl: string | null
-  portrait: Portrait
-  size: number
 }) {
   const [imgFailed, setImgFailed] = useState(false)
   const initial = name.trim().charAt(0).toUpperCase() || '?'
@@ -510,76 +304,110 @@ function PortraitCircle({
 
   return (
     <div
-      className="rounded-full bg-white shadow-[0_6px_18px_rgba(12,24,38,0.15)]"
-      style={{ padding: 4, width: size + 8, height: size + 8 }}
+      className="relative w-full overflow-hidden"
+      style={{
+        aspectRatio: '1 / 1',
+        background: showPhoto ? PORTRAIT_PHOTO_BG : PORTRAIT_INITIAL_BG,
+      }}
     >
-      <div
-        className="overflow-hidden rounded-full"
-        style={{
-          width: size,
-          height: size,
-          background: showPhoto ? '#F1F5F4' : portrait.circle,
-        }}
-      >
-        {showPhoto ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarUrl}
-            alt={`${name}'s profile photo`}
-            className="h-full w-full object-cover object-center"
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <div
-            aria-hidden="true"
-            className="flex h-full w-full items-center justify-center"
-            style={{
-              color: portrait.ink,
-              fontFamily: 'Georgia, serif',
-              fontSize: Math.round(size * 0.42),
-              lineHeight: 1,
-            }}
+      {showPhoto ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={avatarUrl}
+          alt={`${name}'s profile photo`}
+          className="absolute inset-0 h-full w-full object-cover object-center"
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 flex items-center justify-center"
+        >
+          <span
+            className="font-serif leading-none text-[56px] sm:text-[64px] lg:text-[52px]"
+            style={{ color: PORTRAIT_INITIAL_INK }}
           >
             {initial}
-          </div>
-        )}
-      </div>
+          </span>
+        </div>
+      )}
     </div>
   )
 }
 
 
 // ---------------------------------------------------------------------------
-// Empty state — no introductions available.
+// Paused notice — visible in place of the grid when the member has
+// closed introductions. The preferences section below still renders.
 // ---------------------------------------------------------------------------
 
-function EmptyIntroductions() {
+function PausedNotice() {
   return (
-    <div
-      className="rounded-2xl border px-6 py-10 text-center"
-      style={{ borderColor: 'rgba(12,24,38,0.08)', background: 'rgba(56,160,158,0.03)' }}
+    <section aria-label="Introductions paused" className="max-w-2xl">
+      <h2 className="font-serif text-[24px] leading-tight text-navy-900 md:text-[28px]">
+        Introductions are quiet for now.
+      </h2>
+      <p
+        className="mt-3 text-[14.5px] italic leading-relaxed"
+        style={{ color: 'rgba(12, 24, 38, 0.68)', fontFamily: 'Georgia, serif' }}
+      >
+        You&rsquo;ve paused introductions, so you won&rsquo;t appear
+        in anyone else&rsquo;s Ways to Connect and none will appear
+        here. Reopen them any time below.
+      </p>
+    </section>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// Preferences — quiet footer section beneath the grid.
+// ---------------------------------------------------------------------------
+
+function IntroductionPreferences({
+  enabled, onToggle,
+}: {
+  enabled: boolean
+  onToggle: () => void
+}) {
+  return (
+    <section
+      aria-label="Introduction preferences"
+      className="mt-16 border-t pt-8"
+      style={{ borderColor: 'rgba(12, 24, 38, 0.08)' }}
     >
       <p
-        className="mx-auto max-w-md font-serif text-[17px] italic leading-relaxed"
-        style={{ color: 'rgba(12,24,38,0.68)' }}
+        className="text-[10.5px] font-semibold uppercase tracking-[0.24em]"
+        style={{ color: '#38A09E' }}
       >
-        No introductions right now.
+        Introduction preferences
       </p>
-      <p className="mx-auto mt-3 max-w-md text-[13.5px] leading-relaxed text-navy-500">
-        Fresh Collective only introduces people who already share
-        meaningful common ground. When that emerges, an
-        introduction will quietly appear here.
-      </p>
-    </div>
+      <div className="mt-3 max-w-2xl">
+        <p
+          className="text-[14px] leading-relaxed"
+          style={{ color: 'rgba(12, 24, 38, 0.76)' }}
+        >
+          {enabled
+            ? "You're open to thoughtful introductions based on meaningful shared experiences. You may appear on someone else's Ways to Connect, and they may appear here — never without both of you being open to it."
+            : "Introductions are paused. You won't appear in anyone else's Ways to Connect, and none will appear here."}
+        </p>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="mt-3 text-[13px] font-semibold transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
+          style={{ color: '#246B6A' }}
+        >
+          {enabled ? 'Pause introductions →' : 'Reopen introductions →'}
+        </button>
+      </div>
+    </section>
   )
 }
 
 
 // ---------------------------------------------------------------------------
-// Conversation view — mock private conversation with the permanent
-// introduction panel and the ••• menu. Unchanged in behaviour;
-// portrait treatment added at the top so the reader sees who
-// they're conversing with.
+// Conversation view — UNCHANGED per scope. Retains the intent-based
+// portrait treatment pending a separate messaging-surface integration.
 // ---------------------------------------------------------------------------
 
 function ConversationView({
@@ -619,8 +447,6 @@ function ConversationView({
         ← Back to Ways to Connect
       </button>
 
-      {/* Permanent introduction panel — the shared context that
-          stays visible for the life of the conversation. */}
       <section
         aria-label="Introduction context"
         className="overflow-hidden rounded-2xl border"
@@ -633,7 +459,7 @@ function ConversationView({
           className="flex items-center gap-5 px-6 py-6 md:px-8"
           style={{ background: portrait.wash }}
         >
-          <PortraitCircle name={intro.otherName} avatarUrl={intro.avatarUrl} portrait={portrait} size={72} />
+          <ConversationPortrait name={intro.otherName} avatarUrl={intro.avatarUrl} portrait={portrait} size={72} />
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
               Welcome
@@ -645,8 +471,7 @@ function ConversationView({
         </div>
         <div className="px-6 py-5 md:px-8">
           <p className="text-[14px] leading-relaxed text-navy-700">
-            Fresh Collective introduced you because you already
-            share:
+            Fresh Collective introduced you because you already share:
           </p>
           <SharedItemList items={intro.sharedItems} className="mt-3" />
           <p
@@ -658,7 +483,6 @@ function ConversationView({
         </div>
       </section>
 
-      {/* Conversation area — placeholder for the prototype. */}
       <section
         aria-label={`Conversation with ${intro.otherName}`}
         className="mt-6 rounded-2xl border border-slate-200 bg-white"
@@ -670,7 +494,6 @@ function ConversationView({
             </p>
             <p className="text-[12px] text-navy-500">Private conversation</p>
           </div>
-
           <ConversationMenu
             open={menuOpen}
             onToggle={() => setMenuOpen((v) => !v)}
@@ -702,6 +525,59 @@ function ConversationView({
               the platform's messaging surface. */}
         </div>
       </section>
+    </div>
+  )
+}
+
+
+// Retained portrait treatment for ConversationView only.
+function ConversationPortrait({
+  name, avatarUrl, portrait, size,
+}: {
+  name: string
+  avatarUrl: string | null
+  portrait: IntentPortrait
+  size: number
+}) {
+  const [imgFailed, setImgFailed] = useState(false)
+  const initial = name.trim().charAt(0).toUpperCase() || '?'
+  const showPhoto = avatarUrl !== null && !imgFailed
+  return (
+    <div
+      className="rounded-full bg-white shadow-[0_6px_18px_rgba(12,24,38,0.15)]"
+      style={{ padding: 4, width: size + 8, height: size + 8 }}
+    >
+      <div
+        className="overflow-hidden rounded-full"
+        style={{
+          width: size,
+          height: size,
+          background: showPhoto ? '#F1F5F4' : portrait.circle,
+        }}
+      >
+        {showPhoto ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={avatarUrl}
+            alt={`${name}'s profile photo`}
+            className="h-full w-full object-cover object-center"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="flex h-full w-full items-center justify-center"
+            style={{
+              color: portrait.ink,
+              fontFamily: 'Georgia, serif',
+              fontSize: Math.round(size * 0.42),
+              lineHeight: 1,
+            }}
+          >
+            {initial}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -764,12 +640,6 @@ function MenuItem({
   )
 }
 
-
-// ---------------------------------------------------------------------------
-// Shared-item list — used only in the conversation intro panel now.
-// Bullet-list variant on cards was replaced by chips + reason
-// sentence per the visual refinement pass.
-// ---------------------------------------------------------------------------
 
 function SharedItemList({
   items, className,
