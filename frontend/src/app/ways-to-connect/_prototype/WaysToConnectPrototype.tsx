@@ -1,7 +1,8 @@
 'use client'
 
 /**
- * PROTOTYPE — Ways to Connect (unified four-card grid)
+ * PROTOTYPE — Ways to Connect (unified four-card grid + editorial
+ * conversation placeholder + session-scoped persistence)
  * ============================================================
  *
  * TEMPORARY. Delete this whole `_prototype` folder when the real
@@ -18,35 +19,121 @@
  *   2. Person's name — primary heading (font-serif 20px).
  *   3. Reason sentence — italic Georgia serif natural language
  *      explaining the shared common ground.
- *   4. Actions area — Say hello (suggestions) or Accept / Not now
- *      (incoming invitation). The incoming invitation is marked
- *      by a small teal "Invitation" eyebrow above the name and
- *      lives in the same grid, first slot.
+ *   4. Actions area — Say hello (suggestions), Accept / Not now
+ *      (incoming invitation), or Continue conversation (an
+ *      already-accepted introduction).
  *
  * Grid: 4 columns on wide desktop, 2 on tablet, 1 on mobile.
  *
- * The `ConversationView` placeholder is unchanged pending a
- * separate messaging-surface integration and still uses the
- * legacy intent-based portrait treatment.
+ * The `ConversationView` placeholder uses the same visual
+ * language (white cards, subtle borders, PortraitSquare, no emoji,
+ * no chips, no decorative gradients). Messages typed here are
+ * persisted for the current browser session only.
  */
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   INCOMING_INTRODUCTION,
   OUTGOING_INTRODUCTIONS,
-  SHARED_ICON,
-  type IntentType,
   type MockIntroduction,
-  type SharedItem,
 } from './mockIntroductions'
 
 
-type SentStatus = 'idle' | 'sent'
 type View = 'introductions' | 'conversation'
 
-interface ConversationState {
-  intro: MockIntroduction
-  banner: string | null
+interface OutgoingMessage {
+  id: string
+  text: string
+  sentAt: number
+}
+
+
+// ---------------------------------------------------------------------------
+// TODO(messaging-backend): DELETE THIS ENTIRE BLOCK when the real
+// conversations + messaging service arrives.
+//
+// Session-scoped prototype persistence. Backed by sessionStorage so
+// accepted invitations, sent-hello marks, and typed messages survive
+// refresh within the same browser tab. State is cleared automatically
+// when the tab or window closes. Not appropriate for production — no
+// server persistence, no cross-tab sync, no real message delivery.
+//
+// State shape is deliberately narrow so the replacement service can
+// map it to real records without needing shape parity:
+//   incoming[introId]  — lifecycle of an incoming invitation
+//   outgoingHelloed    — outgoing suggestions the member has replied to
+//   messages[introId]  — locally-composed messages, only ever the
+//                        current member's; the other party never
+//                        appears here in the prototype.
+// ---------------------------------------------------------------------------
+
+const STORAGE_KEY = 'fc.prototype.ways-to-connect.v1'
+
+type IncomingLifecycle = 'accepted' | 'declined' | 'ended'
+
+interface PrototypeState {
+  incoming: Record<string, IncomingLifecycle>
+  outgoingHelloed: string[]
+  messages: Record<string, OutgoingMessage[]>
+}
+
+const EMPTY_STATE: PrototypeState = {
+  incoming: {},
+  outgoingHelloed: [],
+  messages: {},
+}
+
+function loadPrototypeState(): PrototypeState {
+  if (typeof window === 'undefined') return EMPTY_STATE
+  try {
+    const raw = window.sessionStorage.getItem(STORAGE_KEY)
+    if (!raw) return EMPTY_STATE
+    const parsed = JSON.parse(raw) as Partial<PrototypeState>
+    return {
+      incoming: parsed.incoming ?? {},
+      outgoingHelloed: parsed.outgoingHelloed ?? [],
+      messages: parsed.messages ?? {},
+    }
+  } catch {
+    return EMPTY_STATE
+  }
+}
+
+function savePrototypeState(state: PrototypeState): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    // sessionStorage disabled or over quota — silently drop for the
+    // prototype. The real service will surface persistence errors.
+  }
+}
+
+function usePrototypeState() {
+  // Server render + first client paint use EMPTY_STATE so hydration
+  // matches. The effect below swaps in the persisted state — briefly
+  // gated by ``hydrated`` so we don't flash a stale invitation card
+  // for someone the member already accepted in this session.
+  const [state, setState] = useState<PrototypeState>(EMPTY_STATE)
+  const [hydrated, setHydrated] = useState(false)
+
+  useEffect(() => {
+    setState(loadPrototypeState())
+    setHydrated(true)
+  }, [])
+
+  const update = useCallback(
+    (patch: (prev: PrototypeState) => PrototypeState) => {
+      setState((prev) => {
+        const next = patch(prev)
+        savePrototypeState(next)
+        return next
+      })
+    },
+    [],
+  )
+
+  return { state, hydrated, update }
 }
 
 
@@ -64,157 +151,229 @@ const PORTRAIT_PHOTO_BG = '#F1EFEB'
 
 
 // ---------------------------------------------------------------------------
-// Intent-based palette retained only for ConversationView (unchanged
-// per scope). New card surfaces do not reference it.
-// ---------------------------------------------------------------------------
-
-interface IntentPortrait {
-  wash:       string
-  circle:     string
-  ink:        string
-  cardBg:     string
-  cardBorder: string
-}
-
-const PORTRAIT_BY_INTENT: Record<IntentType, IntentPortrait> = {
-  'right-now': {
-    wash:       'radial-gradient(ellipse at 50% 55%, rgba(243,196,168,0.55), rgba(214,144,110,0.35) 70%, transparent 100%)',
-    circle:     'linear-gradient(150deg, #F3C4A8 0%, #D6906E 100%)',
-    ink:        '#7C3F1E',
-    cardBg:     'rgba(243, 196, 168, 0.08)',
-    cardBorder: 'rgba(214, 144, 110, 0.20)',
-  },
-  'shared-journey': {
-    wash:       'radial-gradient(ellipse at 50% 55%, rgba(180,217,184,0.50), rgba(123,178,135,0.32) 70%, transparent 100%)',
-    circle:     'linear-gradient(150deg, #C6DEC0 0%, #7BB287 100%)',
-    ink:        '#2E4B34',
-    cardBg:     'rgba(180, 217, 184, 0.08)',
-    cardBorder: 'rgba(123, 178, 135, 0.22)',
-  },
-  'thoughtful': {
-    wash:       'radial-gradient(ellipse at 50% 55%, rgba(198,165,204,0.50), rgba(138,110,151,0.32) 70%, transparent 100%)',
-    circle:     'linear-gradient(150deg, #D4C1DA 0%, #A78BB4 100%)',
-    ink:        '#4B2E5A',
-    cardBg:     'rgba(198, 165, 204, 0.09)',
-    cardBorder: 'rgba(138, 110, 151, 0.22)',
-  },
-}
-
-
-// ---------------------------------------------------------------------------
 // Root
 // ---------------------------------------------------------------------------
 
 export default function WaysToConnectPrototype() {
   const [openToConnections, setOpenToConnections] = useState(true)
-  const [outgoingStatus, setOutgoingStatus]       = useState<Record<string, SentStatus>>({})
-  const [incomingHandled, setIncomingHandled]     = useState(false)
-  const [view, setView]                           = useState<View>('introductions')
-  const [conversation, setConversation]           = useState<ConversationState | null>(null)
+  const { state, hydrated, update } = usePrototypeState()
+  const [view, setView] = useState<View>('introductions')
+  const [conversationIntroId, setConversationIntroId] = useState<string | null>(null)
+  const [banner, setBanner] = useState<string | null>(null)
 
-  function markOutgoingSent(id: string) {
-    setOutgoingStatus((prev) => ({ ...prev, [id]: 'sent' }))
-  }
+  // ── Lifecycle handlers ───────────────────────────────────────────────
+  const acceptIncoming = useCallback(
+    (intro: MockIntroduction) => {
+      update((prev) => ({
+        ...prev,
+        incoming: { ...prev.incoming, [intro.id]: 'accepted' },
+      }))
+      setConversationIntroId(intro.id)
+      setBanner(null)
+      setView('conversation')
+    },
+    [update],
+  )
 
-  function acceptIncoming() {
-    setIncomingHandled(true)
-    setConversation({ intro: INCOMING_INTRODUCTION, banner: null })
+  const declineIncoming = useCallback(
+    (introId: string) => {
+      update((prev) => ({
+        ...prev,
+        incoming: { ...prev.incoming, [introId]: 'declined' },
+      }))
+    },
+    [update],
+  )
+
+  const openConversation = useCallback((intro: MockIntroduction) => {
+    setConversationIntroId(intro.id)
+    setBanner(null)
     setView('conversation')
-  }
+  }, [])
 
-  function closeConversation() {
+  const closeConversation = useCallback(() => {
     setView('introductions')
-    setConversation(null)
+    setConversationIntroId(null)
+    setBanner(null)
+  }, [])
+
+  const endIntroduction = useCallback(
+    (introId: string) => {
+      update((prev) => {
+        // Ending an introduction clears the messages too — the
+        // conversation no longer exists to hold them.
+        const nextMessages = { ...prev.messages }
+        delete nextMessages[introId]
+        return {
+          ...prev,
+          incoming: { ...prev.incoming, [introId]: 'ended' },
+          messages: nextMessages,
+        }
+      })
+      setView('introductions')
+      setConversationIntroId(null)
+      setBanner(null)
+    },
+    [update],
+  )
+
+  const markOutgoingHelloed = useCallback(
+    (introId: string) => {
+      update((prev) =>
+        prev.outgoingHelloed.includes(introId)
+          ? prev
+          : { ...prev, outgoingHelloed: [...prev.outgoingHelloed, introId] },
+      )
+    },
+    [update],
+  )
+
+  const sendMessage = useCallback(
+    (introId: string, text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      const msg: OutgoingMessage = { id: newId(), text: trimmed, sentAt: Date.now() }
+      update((prev) => ({
+        ...prev,
+        messages: {
+          ...prev.messages,
+          [introId]: [...(prev.messages[introId] ?? []), msg],
+        },
+      }))
+    },
+    [update],
+  )
+
+  // ── Derived data ─────────────────────────────────────────────────────
+  const incomingState = state.incoming[INCOMING_INTRODUCTION.id]
+  const showIncomingInvitation = incomingState === undefined
+  const activeConversations: MockIntroduction[] =
+    incomingState === 'accepted' ? [INCOMING_INTRODUCTION] : []
+  const outgoingHelloedSet = new Set(state.outgoingHelloed)
+
+  const currentConversation =
+    conversationIntroId !== null
+      ? activeConversations.find((c) => c.id === conversationIntroId) ?? null
+      : null
+
+  // ── Render ───────────────────────────────────────────────────────────
+
+  // Brief hydration gate — avoids flashing James as an invitation
+  // for a member who has already accepted him this session. The
+  // placeholder is exactly the same size as the main container so
+  // there is no cumulative layout shift.
+  if (!hydrated) {
+    return (
+      <div
+        aria-hidden="true"
+        className="mx-auto w-full max-w-6xl px-6 pb-24 pt-8 md:px-10 md:pt-10"
+        style={{ minHeight: 480 }}
+      />
+    )
   }
 
-  if (view === 'conversation' && conversation) {
+  if (view === 'conversation' && currentConversation) {
     return (
       <ConversationView
-        conversation={conversation}
-        setBanner={(msg) => setConversation({ ...conversation, banner: msg })}
+        intro={currentConversation}
+        messages={state.messages[currentConversation.id] ?? []}
+        banner={banner}
+        setBanner={setBanner}
+        onSendMessage={(text) => sendMessage(currentConversation.id, text)}
+        onEndIntroduction={() => endIntroduction(currentConversation.id)}
         onClose={closeConversation}
       />
     )
   }
 
-  const showIncoming = !incomingHandled
-
   return (
     <div className="mx-auto w-full max-w-6xl px-6 pb-24 pt-8 md:px-10 md:pt-10">
       {openToConnections ? (
-        <section aria-label="Introductions">
-          <header className="mb-8 max-w-2xl">
-            <h2 className="font-serif text-[24px] leading-tight text-navy-900 md:text-[28px]">
-              Where your paths cross
-            </h2>
-            <p
-              className="mt-2 text-[14.5px] italic leading-relaxed"
-              style={{ color: 'rgba(12, 24, 38, 0.68)', fontFamily: 'Georgia, serif' }}
-            >
-              Introductions rooted in the Collectives, Gatherings and
-              Places you already share.
-            </p>
-          </header>
+        <>
+          {activeConversations.length > 0 && (
+            <YourConversations
+              conversations={activeConversations}
+              onOpen={openConversation}
+            />
+          )}
 
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {showIncoming && (
-              <IntroductionCard
-                intro={INCOMING_INTRODUCTION}
-                eyebrow="Invitation"
+          <section
+            aria-label="Introductions"
+            className={activeConversations.length > 0 ? 'mt-14' : ''}
+          >
+            <header className="mb-8 max-w-2xl">
+              <h2 className="font-serif text-[24px] leading-tight text-navy-900 md:text-[28px]">
+                Where your paths cross
+              </h2>
+              <p
+                className="mt-2 text-[14.5px] italic leading-relaxed"
+                style={{ color: 'rgba(12, 24, 38, 0.68)', fontFamily: 'Georgia, serif' }}
               >
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={acceptIncoming}
-                    className="rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-                    style={{
-                      background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                      letterSpacing: '0.04em',
-                    }}
-                  >
-                    Accept introduction
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIncomingHandled(true)}
-                    className="text-[13px] font-medium text-navy-500 transition-colors hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
-                  >
-                    Not now
-                  </button>
-                </div>
-              </IntroductionCard>
-            )}
+                Introductions rooted in the Collectives, Gatherings and
+                Places you already share.
+              </p>
+            </header>
 
-            {OUTGOING_INTRODUCTIONS.map((intro) => {
-              const status = outgoingStatus[intro.id] ?? 'idle'
-              return (
-                <IntroductionCard key={intro.id} intro={intro}>
-                  {status === 'sent' ? (
-                    <p
-                      aria-live="polite"
-                      className="text-[13px] italic leading-relaxed"
-                      style={{
-                        color: '#1E6E6C',
-                        fontFamily: 'Georgia, serif',
-                      }}
-                    >
-                      A hello is on its way to {intro.otherName}.
-                    </p>
-                  ) : (
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {showIncomingInvitation && (
+                <IntroductionCard
+                  intro={INCOMING_INTRODUCTION}
+                  eyebrow="Invitation"
+                >
+                  <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
-                      onClick={() => markOutgoingSent(intro.id)}
-                      className="text-[13px] font-semibold transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
-                      style={{ color: '#246B6A' }}
+                      onClick={() => acceptIncoming(INCOMING_INTRODUCTION)}
+                      className="rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
+                      style={{
+                        background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                        letterSpacing: '0.04em',
+                      }}
                     >
-                      Say hello to {intro.otherName} →
+                      Accept introduction
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => declineIncoming(INCOMING_INTRODUCTION.id)}
+                      className="text-[13px] font-medium text-navy-500 transition-colors hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
+                    >
+                      Not now
+                    </button>
+                  </div>
                 </IntroductionCard>
-              )
-            })}
-          </div>
-        </section>
+              )}
+
+              {OUTGOING_INTRODUCTIONS.map((intro) => {
+                const helloed = outgoingHelloedSet.has(intro.id)
+                return (
+                  <IntroductionCard key={intro.id} intro={intro}>
+                    {helloed ? (
+                      <p
+                        aria-live="polite"
+                        className="text-[13px] italic leading-relaxed"
+                        style={{
+                          color: '#1E6E6C',
+                          fontFamily: 'Georgia, serif',
+                        }}
+                      >
+                        A hello is on its way to {intro.otherName}.
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => markOutgoingHelloed(intro.id)}
+                        className="text-[13px] font-semibold transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
+                        style={{ color: '#246B6A' }}
+                      >
+                        Say hello to {intro.otherName} →
+                      </button>
+                    )}
+                  </IntroductionCard>
+                )
+              })}
+            </div>
+          </section>
+        </>
       ) : (
         <PausedNotice />
       )}
@@ -229,7 +388,52 @@ export default function WaysToConnectPrototype() {
 
 
 // ---------------------------------------------------------------------------
-// Introduction card — one geometry for suggestions and invitations.
+// Your conversations — quiet section listing accepted introductions.
+// Same card geometry as the intro grid so the visual family holds.
+// ---------------------------------------------------------------------------
+
+function YourConversations({
+  conversations, onOpen,
+}: {
+  conversations: MockIntroduction[]
+  onOpen: (intro: MockIntroduction) => void
+}) {
+  return (
+    <section aria-label="Your conversations">
+      <header className="mb-8 max-w-2xl">
+        <h2 className="font-serif text-[24px] leading-tight text-navy-900 md:text-[28px]">
+          Your conversations
+        </h2>
+        <p
+          className="mt-2 text-[14.5px] italic leading-relaxed"
+          style={{ color: 'rgba(12, 24, 38, 0.68)', fontFamily: 'Georgia, serif' }}
+        >
+          Introductions you&rsquo;ve accepted. Continue when it feels right.
+        </p>
+      </header>
+
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {conversations.map((intro) => (
+          <IntroductionCard key={intro.id} intro={intro} eyebrow="Conversation">
+            <button
+              type="button"
+              onClick={() => onOpen(intro)}
+              className="text-[13px] font-semibold transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
+              style={{ color: '#246B6A' }}
+            >
+              Continue conversation →
+            </button>
+          </IntroductionCard>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// Introduction card — one geometry for suggestions, invitations,
+// and accepted conversations.
 // ---------------------------------------------------------------------------
 
 function IntroductionCard({
@@ -237,7 +441,7 @@ function IntroductionCard({
 }: {
   intro: MockIntroduction
   /** Optional small teal small-caps eyebrow above the name.
-   *  Used to mark the incoming invitation ("Invitation") without
+   *  Used to mark state ("Invitation", "Conversation") without
    *  changing the card's overall size or geometry. */
   eyebrow?: string
   /** Actions area rendered at the bottom of the card. Parent
@@ -406,20 +610,29 @@ function IntroductionPreferences({
 
 
 // ---------------------------------------------------------------------------
-// Conversation view — UNCHANGED per scope. Retains the intent-based
-// portrait treatment pending a separate messaging-surface integration.
+// Conversation view — the moment after accepting an introduction.
+//
+// Message state is owned by the parent (persisted via sessionStorage);
+// this component is purely presentational for messages. The composer
+// dispatches through `onSendMessage`, and `onEndIntroduction` marks
+// the lifecycle so the invitation and any past messages are cleared
+// for the rest of the session.
 // ---------------------------------------------------------------------------
 
 function ConversationView({
-  conversation, setBanner, onClose,
+  intro, messages, banner, setBanner,
+  onSendMessage, onEndIntroduction, onClose,
 }: {
-  conversation: ConversationState
+  intro: MockIntroduction
+  messages: OutgoingMessage[]
+  banner: string | null
   setBanner: (msg: string | null) => void
+  onSendMessage: (text: string) => void
+  onEndIntroduction: () => void
   onClose: () => void
 }) {
-  const { intro, banner } = conversation
-  const portrait = PORTRAIT_BY_INTENT[intro.intent]
   const [menuOpen, setMenuOpen] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
 
   function selectMenu(action: 'mute' | 'end' | 'report') {
     setMenuOpen(false)
@@ -428,7 +641,7 @@ function ConversationView({
       return
     }
     if (action === 'end') {
-      onClose()
+      onEndIntroduction()
       return
     }
     if (action === 'report') {
@@ -437,8 +650,14 @@ function ConversationView({
     }
   }
 
+  // Keep the newest message in view when the thread grows.
+  useEffect(() => {
+    if (messages.length === 0) return
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [messages.length])
+
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 pb-24 pt-8 md:px-10 md:pt-10">
+    <div className="mx-auto w-full max-w-4xl px-6 pb-24 pt-8 md:px-10 md:pt-10">
       <button
         type="button"
         onClick={onClose}
@@ -447,45 +666,59 @@ function ConversationView({
         ← Back to Ways to Connect
       </button>
 
+      {/* Welcome card — matches the introduction cards' language */}
       <section
         aria-label="Introduction context"
-        className="overflow-hidden rounded-2xl border"
-        style={{
-          borderColor: portrait.cardBorder,
-          background: `linear-gradient(135deg, ${portrait.cardBg}, rgba(255,255,255,0.5))`,
-        }}
+        className="overflow-hidden rounded-2xl border border-slate-200 bg-white md:flex md:items-stretch"
       >
-        <div
-          className="flex items-center gap-5 px-6 py-6 md:px-8"
-          style={{ background: portrait.wash }}
-        >
-          <ConversationPortrait name={intro.otherName} avatarUrl={intro.avatarUrl} portrait={portrait} size={72} />
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ color: '#38A09E' }}>
-              Welcome
-            </p>
-            <h2 className="mt-1 font-serif text-[22px] leading-tight text-navy-900">
-              You and {intro.otherName}
-            </h2>
-          </div>
+        <div className="mx-auto w-full max-w-[240px] md:mx-0 md:w-[36%] md:max-w-none md:shrink-0">
+          <PortraitSquare name={intro.otherName} avatarUrl={intro.avatarUrl} />
         </div>
-        <div className="px-6 py-5 md:px-8">
-          <p className="text-[14px] leading-relaxed text-navy-700">
+
+        <div className="flex-1 p-6 md:p-8">
+          <p
+            className="text-[10.5px] font-semibold uppercase tracking-[0.24em]"
+            style={{ color: '#38A09E' }}
+          >
+            Welcome
+          </p>
+          <h2 className="mt-2 font-serif text-[24px] leading-tight text-navy-900 md:text-[28px]">
+            {intro.otherName}
+          </h2>
+
+          <p className="mt-5 text-[14px] leading-relaxed text-navy-700">
             Fresh Collective introduced you because you already share:
           </p>
-          <SharedItemList items={intro.sharedItems} className="mt-3" />
+          <ul className="mt-3 space-y-1.5">
+            {intro.sharedItems.map((item, i) => (
+              <li
+                key={i}
+                className="flex items-start gap-2 text-[14px] leading-snug text-navy-700"
+              >
+                <span
+                  aria-hidden="true"
+                  className="mt-[0.4em] inline-block h-[3px] w-[3px] shrink-0 rounded-full"
+                  style={{ background: 'rgba(12, 24, 38, 0.35)' }}
+                />
+                <span>{item.label}</span>
+              </li>
+            ))}
+          </ul>
+
           <p
-            className="mt-4 text-[13.5px] italic leading-relaxed"
-            style={{ color: 'rgba(12,24,38,0.65)', fontFamily: 'Georgia, serif' }}
+            className="mt-6 text-[14px] italic leading-relaxed"
+            style={{ color: 'rgba(12, 24, 38, 0.68)', fontFamily: 'Georgia, serif' }}
           >
-            This is simply an opportunity to get to know one another.
+            There&rsquo;s nothing expected from here. Say hello if
+            and when it feels right.
           </p>
         </div>
       </section>
 
+      {/* Conversation panel — messaging-app rhythm */}
       <section
         aria-label={`Conversation with ${intro.otherName}`}
-        className="mt-6 rounded-2xl border border-slate-200 bg-white"
+        className="mt-6 flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white"
       >
         <header className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
           <div>
@@ -511,75 +744,163 @@ function ConversationView({
           </div>
         )}
 
-        <div className="min-h-[240px] px-5 py-16 text-center">
-          <p
-            className="text-[13.5px] italic leading-relaxed"
-            style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}
+        {messages.length === 0 ? (
+          <div
+            className="flex flex-1 flex-col items-center justify-center px-6 py-16 text-center"
+            style={{ minHeight: 320 }}
           >
-            The conversation belongs to the two of you from here.
-            {' '}
-            No prompts, no ice-breakers.
-          </p>
-          {/* TODO(messaging): mount the real private conversation
-              thread component once introductions integrate with
-              the platform's messaging surface. */}
-        </div>
+            <p className="font-serif text-[17px] leading-snug text-navy-900">
+              No messages yet.
+            </p>
+            <p
+              className="mt-3 max-w-sm text-[14px] italic leading-relaxed"
+              style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}
+            >
+              This space is now yours. Say hello whenever you&rsquo;re ready.
+            </p>
+          </div>
+        ) : (
+          <ul
+            role="log"
+            aria-live="polite"
+            aria-relevant="additions"
+            aria-label={`Messages with ${intro.otherName}`}
+            className="flex flex-col gap-3 px-5 py-6 md:px-6"
+            style={{ minHeight: 320 }}
+          >
+            {messages.map((m) => (
+              <li key={m.id} className="flex justify-end">
+                <div
+                  className="max-w-[78%] rounded-2xl px-4 py-2.5"
+                  style={{
+                    background: 'rgba(56, 160, 158, 0.10)',
+                    border: '1px solid rgba(56, 160, 158, 0.22)',
+                  }}
+                >
+                  <p
+                    className="whitespace-pre-wrap text-[14px] leading-relaxed text-navy-900"
+                  >
+                    {m.text}
+                  </p>
+                  <p
+                    className="mt-1 text-right text-[10.5px]"
+                    style={{ color: 'rgba(12, 24, 38, 0.48)' }}
+                  >
+                    <time dateTime={new Date(m.sentAt).toISOString()}>
+                      Just now
+                    </time>
+                  </p>
+                </div>
+              </li>
+            ))}
+            <div ref={bottomRef} aria-hidden="true" />
+          </ul>
+        )}
+
+        <MessageComposer onSend={onSendMessage} />
       </section>
     </div>
   )
 }
 
 
-// Retained portrait treatment for ConversationView only.
-function ConversationPortrait({
-  name, avatarUrl, portrait, size,
+// ---------------------------------------------------------------------------
+// Message composer — prototype-only.
+//
+// Local text state, no backend. Send is enabled once the trimmed
+// text is non-empty. Enter sends; Shift+Enter inserts a newline
+// (native textarea behaviour). The textarea auto-grows up to a
+// modest cap so long messages don't push the composer off-screen.
+// IME composition is respected — Enter during a composition never
+// sends.
+// ---------------------------------------------------------------------------
+
+const COMPOSER_MAX_HEIGHT = 140  // px — ~6 lines
+
+function MessageComposer({
+  onSend,
 }: {
-  name: string
-  avatarUrl: string | null
-  portrait: IntentPortrait
-  size: number
+  onSend: (text: string) => void
 }) {
-  const [imgFailed, setImgFailed] = useState(false)
-  const initial = name.trim().charAt(0).toUpperCase() || '?'
-  const showPhoto = avatarUrl !== null && !imgFailed
+  const [text, setText] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const trimmed = text.trim()
+  const canSend = trimmed.length > 0
+
+  function resizeTextarea() {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setText(e.target.value)
+    resizeTextarea()
+  }
+
+  function submit() {
+    if (!canSend) return
+    onSend(trimmed)
+    setText('')
+    const el = textareaRef.current
+    if (el) {
+      el.style.height = 'auto'
+      el.focus()
+    }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    const composing = (e.nativeEvent as KeyboardEvent).isComposing
+    if (e.key === 'Enter' && !e.shiftKey && !composing) {
+      e.preventDefault()
+      submit()
+    }
+  }
+
   return (
-    <div
-      className="rounded-full bg-white shadow-[0_6px_18px_rgba(12,24,38,0.15)]"
-      style={{ padding: 4, width: size + 8, height: size + 8 }}
-    >
-      <div
-        className="overflow-hidden rounded-full"
+    <div className="flex items-end gap-2 border-t border-slate-100 bg-white p-3">
+      <textarea
+        ref={textareaRef}
+        value={text}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        placeholder="Type a message…"
+        aria-label="Message"
+        rows={1}
+        className="flex-1 resize-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-[14px] leading-snug text-navy-900 placeholder:text-slate-400 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+        style={{ maxHeight: COMPOSER_MAX_HEIGHT }}
+      />
+      <button
+        type="button"
+        onClick={submit}
+        disabled={!canSend}
+        aria-disabled={!canSend}
+        className="shrink-0 rounded-full px-5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-45"
         style={{
-          width: size,
-          height: size,
-          background: showPhoto ? '#F1F5F4' : portrait.circle,
+          background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+          letterSpacing: '0.04em',
         }}
       >
-        {showPhoto ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarUrl}
-            alt={`${name}'s profile photo`}
-            className="h-full w-full object-cover object-center"
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <div
-            aria-hidden="true"
-            className="flex h-full w-full items-center justify-center"
-            style={{
-              color: portrait.ink,
-              fontFamily: 'Georgia, serif',
-              fontSize: Math.round(size * 0.42),
-              lineHeight: 1,
-            }}
-          >
-            {initial}
-          </div>
-        )}
-      </div>
+        Send
+      </button>
     </div>
   )
+}
+
+
+// ---------------------------------------------------------------------------
+// Small id helper for prototype message keys. Prefers the browser's
+// crypto.randomUUID() when available (it always is in the runtime
+// we support) and falls back to a random-string composite so the
+// call site can stay a pure function.
+// ---------------------------------------------------------------------------
+
+function newId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 
@@ -604,9 +925,9 @@ function ConversationMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-9 z-10 min-w-[180px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
+          className="absolute right-0 top-9 z-10 min-w-[200px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
         >
-          <MenuItem onClick={() => onSelect('mute')}>Mute</MenuItem>
+          <MenuItem onClick={() => onSelect('mute')}>Mute conversation</MenuItem>
           <MenuItem onClick={() => onSelect('end')}>End introduction</MenuItem>
           <MenuItem onClick={() => onSelect('report')} danger>Report concern</MenuItem>
         </div>
@@ -637,26 +958,5 @@ function MenuItem({
     >
       {children}
     </button>
-  )
-}
-
-
-function SharedItemList({
-  items, className,
-}: {
-  items: SharedItem[]
-  className?: string
-}) {
-  return (
-    <ul className={['space-y-1.5', className].filter(Boolean).join(' ')}>
-      {items.map((item, i) => (
-        <li key={i} className="flex items-start gap-2 text-[14px] leading-snug text-navy-700">
-          <span aria-hidden="true" className="w-4 shrink-0 text-center">
-            {SHARED_ICON[item.kind]}
-          </span>
-          <span>{item.label}</span>
-        </li>
-      ))}
-    </ul>
   )
 }
