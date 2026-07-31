@@ -80,19 +80,63 @@ export default function SimpleRichTextEditor({ value, onChange, placeholder, min
     <div className="rounded-xl border border-slate-200 bg-white focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-100">
       {/* Toolbar */}
       <div className="flex items-center gap-0.5 border-b border-slate-100 bg-slate-50 px-2 py-1.5 rounded-t-xl">
+        {/* Block-level style — Paragraph / H1 / H2 / H3. Headings are
+            first-class in the Member Hub renderer, so they need to be
+            first-class in the toolbar too — a Creator shouldn't have
+            to remember a keyboard shortcut to add one. */}
+        <select
+          value={
+            editor.isActive('heading', { level: 1 }) ? 'h1'
+            : editor.isActive('heading', { level: 2 }) ? 'h2'
+            : editor.isActive('heading', { level: 3 }) ? 'h3'
+            : 'p'
+          }
+          onChange={(e) => {
+            const v = e.target.value
+            const chain = editor.chain().focus()
+            if (v === 'p')       chain.setParagraph().run()
+            else if (v === 'h1') chain.toggleHeading({ level: 1 }).run()
+            else if (v === 'h2') chain.toggleHeading({ level: 2 }).run()
+            else if (v === 'h3') chain.toggleHeading({ level: 3 }).run()
+          }}
+          title="Text style"
+          className="mr-1 h-6 rounded bg-transparent px-1 text-[12px] text-black hover:bg-slate-100 focus:outline-none"
+        >
+          <option value="p">Paragraph</option>
+          <option value="h1">Heading 1</option>
+          <option value="h2">Heading 2</option>
+          <option value="h3">Heading 3</option>
+        </select>
+
+        <span className="mx-1 h-3.5 w-px bg-slate-200" />
+
         <ToolBtn
           onClick={() => editor.chain().focus().toggleBold().run()}
           active={editor.isActive('bold')}
-          title="Bold"
+          title="Bold (Cmd/Ctrl+B)"
         >
           <strong>B</strong>
         </ToolBtn>
         <ToolBtn
           onClick={() => editor.chain().focus().toggleItalic().run()}
           active={editor.isActive('italic')}
-          title="Italic"
+          title="Italic (Cmd/Ctrl+I)"
         >
           <em>I</em>
+        </ToolBtn>
+        {/* Clear formatting — removes marks on the current selection.
+            TipTap's toggleBold/toggleItalic can feel unresponsive when
+            the selection is collapsed at a mark boundary (it toggles
+            "stored marks" for future typing rather than existing
+            text). This button gives Creators an unambiguous way to
+            strip inline formatting: select the text, click Tx. */}
+        <ToolBtn
+          onClick={() =>
+            editor.chain().focus().unsetAllMarks().run()
+          }
+          title="Clear formatting"
+        >
+          Tx
         </ToolBtn>
 
         <span className="mx-1 h-3.5 w-px bg-slate-200" />
