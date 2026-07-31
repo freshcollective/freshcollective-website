@@ -244,6 +244,19 @@ export const getAdminPhysicalLocation = cache(async (slug: string) => {
   return res.json()
 })
 
+/** Public read of the active Physical Locations catalogue. Unlike the
+ *  admin helpers above, this hits the public /api/places surface — no
+ *  session cookie required, no draft / hidden / archived rows. */
+export const getPublicPlaces = cache(async () => {
+  try {
+    const res = await fetch(apiUrl('/api/places'), { cache: 'no-store' })
+    if (!res.ok) return []
+    return res.json()
+  } catch {
+    return []
+  }
+})
+
 // ---------------------------------------------------------------------------
 // Mother World — platform-wide snapshot used by the World Management overview
 // page. Mirrors the shape of `AdminPlatformOverview` in backend/schemas.py.

@@ -194,7 +194,7 @@ class TestList:
         result = list_places(db)
         assert [p.name for p in result] == ["Brisbane", "Melbourne"]
 
-    def test_response_shape_carries_artwork_but_hides_admin_fields(
+    def test_response_shape_carries_artwork_blurb_and_summary(
         self, db, discovery_enabled,
     ):
         db.add(_place(
@@ -202,21 +202,98 @@ class TestList:
             name="Byron Bay",
             country_code="AU",
             region="Northern Rivers",
-            blurb="Editorial note that must not leak.",
+            blurb="Byron is a coastal community.",
+            admin_note="Internal note — must not leak publicly.",
         ))
         db.flush()
         result = list_places(db)
         assert len(result) == 1
         assert isinstance(result[0], PlaceSummary)
-        # Public fields include the curated artwork payload so the
-        # Discover Places surface can prefer it over the atmospheric
-        # fallback. Admin-only fields (blurb, admin_note, coordinates,
-        # timezone, provider_place_id, status) stay off this shape.
+        # Public fields include the curated artwork payload + the
+        # admin-authored editorial blurb + a small activity summary
+        # so Discover Places renders without a second round-trip.
+        # admin_note, coordinates, timezone, provider_place_id and
+        # status stay off this shape.
         assert set(result[0].model_dump().keys()) == {
             "id", "slug", "name", "country_code", "region",
             "hero_artwork_url", "artwork_alt_text",
             "artwork_focal_x", "artwork_focal_y",
+            "blurb", "themes", "collective_count",
+            "upcoming_gathering_count",
         }
+        assert result[0].blurb == "Byron is a coastal community."
+
+    def test_admin_note_does_not_leak(self, db, discovery_enabled):
+        db.add(_place(
+            slug="secret",
+            name="Secret",
+            admin_note="Never expose this.",
+        ))
+        db.flush()
+        [row] = list_places(db)
+        assert "admin_note" not in row.model_dump()
+
+    def test_summary_aggregates_from_linked_active_collectives(
+        self, db, discovery_enabled, make_space,
+    ):
+        from app.models.place import SpacePlace
+        p = _place(slug="wollongong", name="Wollongong")
+        db.add(p)
+        db.flush()
+
+        s1 = make_space(themes=["Wellbeing", "Movement"])
+        s2 = make_space(themes=["Movement", "Leadership"])
+        db.add(SpacePlace(space_id=s1.id, place_id=p.id))
+        db.add(SpacePlace(space_id=s2.id, place_id=p.id))
+        db.flush()
+
+        [row] = list_places(db)
+        assert row.collective_count == 2
+        # Deduped + first-appearance order preserved.
+        assert row.themes == ["Wellbeing", "Movement", "Leadership"]
+
+    def test_summary_excludes_draft_and_archived_collectives(
+        self, db, discovery_enabled, make_space,
+    ):
+        from app.models.place import SpacePlace
+        p = _place(slug="counted-carefully", name="Counted Carefully")
+        db.add(p)
+        db.flush()
+
+        active   = make_space(themes=["Wellbeing"])
+        drafted  = make_space(status="draft",    themes=["Should not count"])
+        archived = make_space(status="archived", themes=["Also not counted"])
+        db.add(SpacePlace(space_id=active.id,   place_id=p.id))
+        db.add(SpacePlace(space_id=drafted.id,  place_id=p.id))
+        db.add(SpacePlace(space_id=archived.id, place_id=p.id))
+        db.flush()
+
+        [row] = list_places(db)
+        assert row.collective_count == 1
+        assert row.themes == ["Wellbeing"]
+
+    def test_upcoming_gathering_count(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        from datetime import datetime, timedelta
+        from app.models.place import SpacePlace
+        p = _place(slug="with-events", name="With Events")
+        db.add(p)
+        db.flush()
+
+        space = make_space()
+        db.add(SpacePlace(space_id=space.id, place_id=p.id))
+        db.flush()
+
+        # One future published event → counts; one past event → skipped.
+        make_event(space=space, starts_at=datetime.utcnow() + timedelta(days=3),
+                   ends_at=datetime.utcnow() + timedelta(days=3, hours=1))
+        make_event(space=space, starts_at=datetime.utcnow() - timedelta(days=3),
+                   ends_at=datetime.utcnow() - timedelta(days=3, hours=-1))
+        db.flush()
+
+        [row] = list_places(db)
+        assert row.upcoming_gathering_count == 1
 
     def test_artwork_payload_surfaces_when_set(self, db, discovery_enabled):
         db.add(_place(

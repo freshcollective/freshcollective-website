@@ -4,9 +4,12 @@
  * PROTOTYPE — Discover Places (iteration 3)
  * ============================================================
  *
- * TEMPORARY. Delete this whole `_prototype` folder when the real
- * Discover Places page ships. See ../page.tsx for the mount point
- * and ./mockData.ts for the fixture.
+ * NOT MOUNTED BY ANY ROUTE. As of 2026-07-31 the live route
+ * (``../page.tsx``) reads the real ``/api/places`` catalogue via
+ * ``DiscoverPlacesLive``. This file is kept for isolated design
+ * review — import it into a Storybook-style page during layout
+ * work, don't ship it. Delete when the design language has fully
+ * settled on the live route. Fixture lives in ``./mockData.ts``.
  *
  * The prompt for this iteration: "Does the page now feel scalable
  * without becoming a directory?"

@@ -3,7 +3,9 @@ import { notFound } from 'next/navigation'
 import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
 import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
-import DiscoverPlacesPrototype from './_prototype/DiscoverPlacesPrototype'
+import { getPublicPlaces } from '@/lib/serverApi'
+import type { PublicPlaceSummary } from '@/lib/physicalLocations/types'
+import DiscoverPlacesLive from './DiscoverPlacesLive'
 
 export const metadata: Metadata = {
   title: 'Discover Places · Fresh Collective',
@@ -12,18 +14,24 @@ export const metadata: Metadata = {
 }
 
 /**
- * Discover Places — currently hosting a design prototype behind
- * the pillar's shared PageHero. The hero is authored at the page
- * level so the prototype (and, later, the real Phase 1 surface)
- * only owns its own content, not the destination framing.
+ * Discover Places — the real member-facing surface, backed by the
+ * curated Physical Locations catalogue (``/api/places``). Only
+ * ``active`` Locations reach here; the API server-side filters out
+ * draft, hidden and archived rows.
+ *
+ * The design prototype used to render here; it now lives under
+ * ``_prototype/`` for isolated design review only and is not
+ * mounted by any route.
  *
  * The flag gate is unchanged: when
  * NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED is off, this route 404s.
  *
  * See docs/foundations/discovery-connection-belonging-v1.1.md.
  */
-export default function DiscoverPlacesPage() {
+export default async function DiscoverPlacesPage() {
   if (!isDiscoveryPillarEnabled()) notFound()
+
+  const places = (await getPublicPlaces()) as PublicPlaceSummary[]
 
   return (
     <SiteShell>
@@ -31,7 +39,7 @@ export default function DiscoverPlacesPage() {
         title="Where communities are growing"
         supportingCopy="The places where our communities are gathering, learning and belonging."
       />
-      <DiscoverPlacesPrototype />
+      <DiscoverPlacesLive places={places} />
     </SiteShell>
   )
 }

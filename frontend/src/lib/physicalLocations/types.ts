@@ -33,6 +33,26 @@ export interface CollectiveInPhysicalLocation {
   status: string
 }
 
+/** Public shape from ``/api/places`` — the member-facing Discover
+ *  Places surface. A superset of the admin summary card fields plus
+ *  the editorial blurb + a small aggregate summary of what's
+ *  happening in this location. */
+export interface PublicPlaceSummary {
+  id: string
+  slug: string
+  name: string
+  country_code: string
+  region: string | null
+  hero_artwork_url: string | null
+  artwork_alt_text: string | null
+  artwork_focal_x: number
+  artwork_focal_y: number
+  blurb: string | null
+  themes: string[]
+  collective_count: number
+  upcoming_gathering_count: number
+}
+
 export interface PhysicalLocationDetail {
   id: string
   slug: string

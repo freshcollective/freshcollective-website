@@ -121,6 +121,35 @@ export default function PhysicalLocationClient({ initialLocation }: Props) {
     patch({ blurb: blurb.trim() || null }, 'blurb')
   }, [patch, blurb])
 
+  const generateBlurbDraft = useCallback(async () => {
+    // If the textarea already carries text (either saved or edited
+    // in this session), require confirmation before replacing it.
+    if (blurb.trim().length > 0) {
+      const ok = confirm(
+        'Replace the current blurb with a fresh draft? Nothing will be saved until you click Save.',
+      )
+      if (!ok) return
+    }
+    setBusy('generate-blurb')
+    setError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/physical-locations/${loc.slug}/blurb/draft`),
+        { method: 'POST', credentials: 'include' },
+      )
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(typeof data.detail === 'string' ? data.detail : 'Could not draft a blurb.')
+      }
+      const { draft } = (await res.json()) as { draft: string }
+      setBlurb(draft)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not draft a blurb.')
+    } finally {
+      setBusy(null)
+    }
+  }, [blurb, loc.slug])
+
   const saveAdminNote = useCallback(() => {
     patch({ admin_note: adminNote.trim() || null }, 'admin-note')
   }, [patch, adminNote])
@@ -356,7 +385,8 @@ export default function PhysicalLocationClient({ initialLocation }: Props) {
       {/* ─── 2. Blurb ─────────────────────────────────────────────── */}
       <Section title="Editorial blurb" eyebrow="Two">
         <p className="mb-5 text-[13.5px] italic" style={{ color: 'rgba(12,24,38,0.62)', fontFamily: 'Georgia, serif' }}>
-          Member-facing description for Discover Places. A few paragraphs about what Fresh Collective looks like here.
+          Member-facing description for Discover Places. A few short
+          paragraphs about what Fresh Collective looks like here.
         </p>
         <TextArea
           value={blurb}
@@ -365,10 +395,19 @@ export default function PhysicalLocationClient({ initialLocation }: Props) {
           rows={8}
           placeholder="What draws people to gather here?"
         />
-        <div className="mt-5">
+        <div className="mt-5 flex flex-wrap items-center gap-2">
           <PrimaryButton onClick={saveBlurb} disabled={!blurbDirty || busy !== null}>
             {busy === 'blurb' ? 'Saving…' : 'Save blurb'}
           </PrimaryButton>
+          <SecondaryButton onClick={generateBlurbDraft} disabled={busy !== null}>
+            {busy === 'generate-blurb' ? 'Drafting…' : 'Generate draft'}
+          </SecondaryButton>
+          <span
+            className="text-[12px] italic"
+            style={{ color: 'rgba(12,24,38,0.55)', fontFamily: 'Georgia, serif' }}
+          >
+            Drafts fill the field above — nothing is saved until you click Save.
+          </span>
         </div>
       </Section>
 

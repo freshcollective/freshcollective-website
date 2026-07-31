@@ -28,16 +28,18 @@ away from Nominatim later.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_creator_user
 from app.core.config import settings
 from app.core.database import get_db
-from app.models.place import Place
+from app.models.place import Place, SpacePlace
+from app.models.platform import Event, Space, SpaceStatus
 from app.models.user import User
 from app.services.location_providers import (
     LocationSuggestion,
@@ -60,6 +62,13 @@ class PlaceSummary(BaseModel):
     fallback; when it is ``None``, the client falls back to the
     per-slug gradient. The focal point governs cropped renderings
     (CSS ``object-position``) so meaningful subjects stay in-frame.
+
+    Also carries a small "what's happening here" summary — the
+    admin-authored blurb, an aggregate theme list from linked
+    active Collectives, and counts — so a Discover Places card can
+    render without a second round-trip. Nothing here reveals the
+    identity of individual Collectives; that's the /discover-places
+    detail page's job (not built yet).
     """
 
     model_config = {"from_attributes": True}
@@ -73,6 +82,10 @@ class PlaceSummary(BaseModel):
     artwork_alt_text: str | None
     artwork_focal_x: float
     artwork_focal_y: float
+    blurb: str | None
+    themes: list[str]
+    collective_count: int
+    upcoming_gathering_count: int
 
 
 class LookupRequest(BaseModel):
@@ -189,20 +202,92 @@ def _resolve_slug(db: Session, base_slug: str) -> str:
 
 @router.get("", response_model=list[PlaceSummary])
 def list_places(db: Session = Depends(get_db)) -> list[PlaceSummary]:
-    """List every active Place. Hidden Places are excluded.
+    """List every active Place with a small activity summary.
 
-    No pagination — Places are editorial and rare; the list is
-    expected to stay small enough for a single response for a long
-    time. When that changes, extend the shape.
+    Draft, hidden, and archived Places never appear here — only
+    ``active`` rows. No pagination — Places are editorial and rare;
+    the list is expected to stay small enough for a single response
+    for a long time. When that changes, extend the shape.
     """
     _ensure_discovery_flag_on()
 
-    rows = db.execute(
+    places = db.execute(
         select(Place)
         .where(Place.status == "active")
         .order_by(Place.name)
     ).scalars().all()
-    return [PlaceSummary.model_validate(r) for r in rows]
+
+    if not places:
+        return []
+
+    place_ids = [p.id for p in places]
+
+    # Active Collective count per Place — one aggregate query.
+    count_rows = db.execute(
+        select(SpacePlace.place_id, func.count(Space.id))
+        .join(Space, Space.id == SpacePlace.space_id)
+        .where(
+            SpacePlace.place_id.in_(place_ids),
+            Space.status == SpaceStatus.active,
+        )
+        .group_by(SpacePlace.place_id)
+    ).all()
+    counts_by_place: dict[str, int] = {pid: int(c) for pid, c in count_rows}
+
+    # Themes aggregated from linked active Collectives — dedup +
+    # preserve first-appearance order for stability. Fetched in one
+    # query so we don't do N+1.
+    theme_rows = db.execute(
+        select(SpacePlace.place_id, Space.themes)
+        .join(Space, Space.id == SpacePlace.space_id)
+        .where(
+            SpacePlace.place_id.in_(place_ids),
+            Space.status == SpaceStatus.active,
+        )
+    ).all()
+    themes_by_place: dict[str, list[str]] = {pid: [] for pid in place_ids}
+    for place_id, themes in theme_rows:
+        seen = set(themes_by_place[place_id])
+        for t in themes or []:
+            if t and t not in seen:
+                themes_by_place[place_id].append(t)
+                seen.add(t)
+
+    # Upcoming published gatherings per Place — Events on linked
+    # active Collectives with ``starts_at`` in the future.
+    now = datetime.utcnow()
+    gather_rows = db.execute(
+        select(SpacePlace.place_id, func.count(Event.id))
+        .join(Space, Space.id == SpacePlace.space_id)
+        .join(Event, Event.space_id == Space.id)
+        .where(
+            SpacePlace.place_id.in_(place_ids),
+            Space.status == SpaceStatus.active,
+            Event.is_published.is_(True),
+            Event.starts_at > now,
+        )
+        .group_by(SpacePlace.place_id)
+    ).all()
+    upcoming_by_place: dict[str, int] = {pid: int(c) for pid, c in gather_rows}
+
+    return [
+        PlaceSummary(
+            id=p.id,
+            slug=p.slug,
+            name=p.name,
+            country_code=p.country_code,
+            region=p.region,
+            hero_artwork_url=p.hero_artwork_url,
+            artwork_alt_text=p.artwork_alt_text,
+            artwork_focal_x=p.artwork_focal_x,
+            artwork_focal_y=p.artwork_focal_y,
+            blurb=p.blurb,
+            themes=themes_by_place.get(p.id, []),
+            collective_count=counts_by_place.get(p.id, 0),
+            upcoming_gathering_count=upcoming_by_place.get(p.id, 0),
+        )
+        for p in places
+    ]
 
 
 @router.post("/lookup", response_model=LookupResponse)

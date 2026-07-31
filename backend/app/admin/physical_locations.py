@@ -60,8 +60,9 @@ from app.auth.dependencies import get_admin_user
 from app.core.database import get_db
 from app.core.storage import delete_file, save_file
 from app.models.place import Place, SpacePlace
-from app.models.platform import Space
+from app.models.platform import Space, SpaceStatus
 from app.models.user import User
+from app.services.place_blurb import draft_blurb
 
 
 router = APIRouter(prefix="/api/admin/physical-locations", tags=["admin-physical-locations"])
@@ -483,6 +484,89 @@ def clear_artwork(
     db.commit()
     db.refresh(place)
     return _detail_from(place, db)
+
+
+# ---------------------------------------------------------------------------
+# Delete
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Editorial blurb draft
+# ---------------------------------------------------------------------------
+
+class BlurbDraftResponse(BaseModel):
+    """Return payload for the draft-blurb endpoint.
+
+    The draft is **not persisted** — the admin edits it in the
+    UI and saves via PATCH when ready. This preserves the rule
+    that admin copy is always explicitly saved by a human, and
+    guarantees existing text is never overwritten by generation.
+    """
+
+    draft: str
+    source: str = Field(
+        description=(
+            "How the draft was produced — 'template' today; will be "
+            "e.g. 'llm' once an AI backend is wired up."
+        ),
+    )
+    existing_blurb_present: bool = Field(
+        description=(
+            "True if the Physical Location already has a saved "
+            "blurb; the client should require explicit confirmation "
+            "before replacing existing text with this draft."
+        ),
+    )
+
+
+@router.post("/{slug}/blurb/draft", response_model=BlurbDraftResponse)
+def draft_location_blurb(
+    slug: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> BlurbDraftResponse:
+    """Produce a draft editorial blurb for a Physical Location.
+
+    Does not touch the DB. The generated text is returned to the
+    client for the admin to review and edit; saving happens only
+    when the admin submits the standard PATCH. Uses linked active
+    Collective themes when available; falls back to a plain
+    location-based sentence when there is no activity yet.
+    """
+    place = _get_by_slug(slug, db)
+    themes = _themes_for_place(place.id, db)
+    active_count = _collective_counts_by_place(db).get(place.id, 0)
+    draft = draft_blurb(
+        name=place.name,
+        region=place.region,
+        country_code=place.country_code,
+        themes=themes,
+        active_collective_count=active_count,
+    )
+    return BlurbDraftResponse(
+        draft=draft,
+        source="template",
+        existing_blurb_present=bool(place.blurb and place.blurb.strip()),
+    )
+
+
+def _themes_for_place(place_id: str, db: Session) -> list[str]:
+    """Dedup + preserve first-appearance order across linked active
+    Collectives. Same shape as ``/api/places``' aggregation so the
+    admin sees the same evidence the public surface would."""
+    rows = db.execute(
+        select(Space.themes)
+        .join(SpacePlace, SpacePlace.space_id == Space.id)
+        .where(SpacePlace.place_id == place_id, Space.status == SpaceStatus.active)
+    ).all()
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for (themes,) in rows:
+        for t in themes or []:
+            if t and t not in seen:
+                seen.add(t)
+                ordered.append(t)
+    return ordered
 
 
 # ---------------------------------------------------------------------------
