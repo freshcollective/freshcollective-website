@@ -6,7 +6,7 @@ node_modules/
 # Next.js
 .next/
 out/
-build/
+/build/
 
 # Environment variables — never commit these
 .env

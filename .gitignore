@@ -6,7 +6,7 @@ node_modules/
 # Next.js
 .next/
 out/
-build/
+/frontend/build/
 
 # Environment variables
 .env
