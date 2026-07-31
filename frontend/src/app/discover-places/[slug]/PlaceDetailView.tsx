@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import { resolveMediaUrl } from '@/lib/api'
 import {
   atmosphereBackground,
@@ -12,6 +13,9 @@ import type {
   PublicPlaceDetail,
   PublicPlaceGathering,
 } from '@/lib/physicalLocations/types'
+
+const GATHERINGS_WINDOW_DAYS = 30
+const GATHERINGS_INITIAL_LIMIT = 8
 
 const COUNTRY_NAMES: Record<string, string> = {
   AU: 'Australia',
@@ -39,7 +43,10 @@ function countryName(code: string): string {
  *      by Explore Collectives. Each card carries the Collective's own
  *      artwork + identity; the location's artwork never leaks here.
  *   3. Upcoming Gatherings — public / effectively-public events on
- *      those Collectives. Omitted entirely when there are none.
+ *      those Collectives. Condensed to the next 30 days as a compact
+ *      grid so it supports (never overpowers) the Collectives section.
+ *      A "View all" reveal exposes anything further out. Omitted when
+ *      nothing sits inside the 30-day window.
  */
 export default function PlaceDetailView({ place }: { place: PublicPlaceDetail }) {
   return (
@@ -174,11 +181,38 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
 }
 
 // ---------------------------------------------------------------------------
-// Gatherings
+// Gatherings — condensed presentation.
+//
+// Places are the enduring frame; Collectives are the primary entity;
+// Gatherings are supporting content and must never visually overpower
+// them. The section shows only the next 30 days (max 8) as compact
+// cards, then offers a "View all" reveal when more upcoming exist.
+// The underlying data isn't filtered — only its presentation.
 // ---------------------------------------------------------------------------
 
 function GatheringsSection({ gatherings }: { gatherings: PublicPlaceGathering[] }) {
+  const [showAll, setShowAll] = useState(false)
+
   if (gatherings.length === 0) return null
+
+  const cutoff = Date.now() + GATHERINGS_WINDOW_DAYS * 24 * 60 * 60 * 1000
+  const withinWindow = gatherings.filter(
+    (g) => new Date(g.starts_at).getTime() <= cutoff,
+  )
+
+  // Calm empty state: no gatherings inside the 30-day window. Rather
+  // than announce "none coming up" and colour the page with absence,
+  // omit the section entirely. Any further-out gatherings surface on
+  // their Collective's own gatherings page.
+  if (withinWindow.length === 0) return null
+
+  const hasMore =
+    gatherings.length > withinWindow.length
+    || withinWindow.length > GATHERINGS_INITIAL_LIMIT
+
+  const cards = showAll
+    ? gatherings
+    : withinWindow.slice(0, GATHERINGS_INITIAL_LIMIT)
 
   return (
     <section
@@ -193,44 +227,33 @@ function GatheringsSection({ gatherings }: { gatherings: PublicPlaceGathering[] 
           Upcoming Gatherings
         </h2>
         <p className="mt-1.5 text-[13.5px] text-navy-500">
-          {gatherings.length === 1
-            ? '1 upcoming Gathering'
-            : `${gatherings.length} upcoming Gatherings`}
+          {showAll ? 'All upcoming Gatherings.' : 'Coming up in the next month.'}
         </p>
       </div>
 
-      <ul className="divide-y divide-slate-100">
-        {gatherings.map((g) => (
-          <GatheringRow key={g.id} gathering={g} />
+      <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {cards.map((g) => (
+          <GatheringCard key={g.id} gathering={g} />
         ))}
       </ul>
+
+      {!showAll && hasMore && (
+        <div className="mt-6 flex justify-center md:mt-8">
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-navy-700 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
+          >
+            View all upcoming Gatherings →
+          </button>
+        </div>
+      )}
     </section>
   )
 }
 
-function GatheringRow({ gathering }: { gathering: PublicPlaceGathering }) {
-  const when = formatWhen(gathering.starts_at, gathering.ends_at)
-  const format = formatAttendance(gathering)
-
-  return (
-    <li className="py-5">
-      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <p className="font-serif text-[18px] leading-snug text-navy-900">
-          {gathering.title}
-        </p>
-        <p className="text-[12.5px] text-navy-500">
-          {gathering.space_name}
-        </p>
-      </div>
-      <p className="mt-1.5 text-[13px] text-navy-600">
-        {when} · {format}
-      </p>
-    </li>
-  )
-}
-
-function formatWhen(startsAt: string, endsAt: string | null): string {
-  const start = new Date(startsAt)
+function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
+  const start = new Date(gathering.starts_at)
   const dateStr = start.toLocaleDateString(undefined, {
     weekday: 'short',
     day: 'numeric',
@@ -240,15 +263,29 @@ function formatWhen(startsAt: string, endsAt: string | null): string {
     hour: 'numeric',
     minute: '2-digit',
   })
-  if (endsAt) {
-    const end = new Date(endsAt)
-    const endTimeStr = end.toLocaleTimeString(undefined, {
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-    return `${dateStr}, ${timeStr}–${endTimeStr}`
-  }
-  return `${dateStr}, ${timeStr}`
+  const format = formatAttendance(gathering)
+
+  return (
+    <li>
+      <Link
+        href={`/spaces/${gathering.space_slug}/events/${gathering.id}`}
+        className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-[0_6px_18px_rgba(12,24,38,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
+      >
+        <p className="font-serif text-[16px] leading-snug text-navy-900 group-hover:text-teal-800">
+          {gathering.title}
+        </p>
+        <p className="mt-1 text-[12.5px] text-navy-500">
+          {gathering.space_name}
+        </p>
+        <p className="mt-3 text-[12.5px] text-navy-700">
+          {dateStr} · {timeStr}
+        </p>
+        <p className="mt-1 text-[12.5px] text-navy-500">
+          {format}
+        </p>
+      </Link>
+    </li>
+  )
 }
 
 function formatAttendance(g: PublicPlaceGathering): string {
