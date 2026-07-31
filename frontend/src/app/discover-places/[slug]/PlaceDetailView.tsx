@@ -9,9 +9,8 @@ import {
 } from '@/lib/placeAtmosphere'
 import CollectiveCard from '@/components/explore/CollectiveCard'
 import { toSpaceWithMeta } from '@/components/explore/spaceMeta'
-import { rgbaFromHex } from '@/lib/collectivePalette'
+import { contrastText } from '@/lib/collectivePalette'
 import { extractSessionTheme } from '@/lib/gatheringTitle'
-import { gatheringLabel } from '@/lib/gatheringTypes'
 import type {
   PublicPlaceDetail,
   PublicPlaceGathering,
@@ -256,10 +255,24 @@ function GatheringsSection({ gatherings }: { gatherings: PublicPlaceGathering[] 
 }
 
 // Neutral fallback when a Collective has no Colour Palette assigned —
-// the same slate the base card border uses, so nothing shouts.
-const NEUTRAL_HEX = '#94a3b8'  // slate-400
-const CHARCOAL    = '#0f172a'  // slate-900 — all body text
+// a quiet slate rather than a shouty accent.
+const NEUTRAL_HEX = '#475569'  // slate-600
+const CHARCOAL    = '#0f172a'  // slate-900 — all practical-detail text
 
+/**
+ * Compact sibling of the Discover Places location card. Same outer
+ * shell — rounded, subtle border, hover shadow — split into two bands:
+ *
+ *   Header (solid Collective palette hex): theme + Collective name.
+ *          Text colour is picked for accessible contrast against the
+ *          Collective's own hex. This is the identity area.
+ *   Body   (white): date/time and attendance format. No repetition of
+ *          anything from the header. Legibility over atmosphere.
+ *
+ * Cards belonging to the same Collective share the same header colour
+ * so they read as a visual family; different Collectives form
+ * naturally distinct bands without any legend.
+ */
 function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
   const start = new Date(gathering.starts_at)
   const dateStr = start.toLocaleDateString(undefined, {
@@ -273,54 +286,40 @@ function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
   })
   const format = formatAttendance(gathering)
 
-  // Gatherings inherit their parent Collective's personality.
-  // ``primary`` is the deep emphasis hex — 8px top band + title.
-  // ``accent`` is the warm complement — a ~7% background wash so
-  // cards from the same Collective read as a family and cards from
-  // different Collectives form naturally distinct bands of colour.
-  // Body text stays charcoal so atmosphere never costs legibility.
-  const primary = gathering.collective_primary_colour ?? NEUTRAL_HEX
-  const wash    = gathering.collective_accent_colour
-    ?? gathering.collective_primary_colour
-    ?? NEUTRAL_HEX
-  const inherited = !!gathering.collective_primary_colour
-  const tintedBg  = rgbaFromHex(wash, 0.07)
-
-  // Simplified hierarchy: theme is the primary title (extracted from
-  // the creator-authored title); session type is the secondary line;
-  // the Collective name is quiet supporting metadata.
-  const theme = extractSessionTheme(gathering.title)
-  const sessionType = gatheringLabel(gathering.gathering_type)
+  const headerHex = gathering.collective_primary_colour ?? NEUTRAL_HEX
+  const headerFg  = contrastText(headerHex)
+  const theme     = extractSessionTheme(gathering.title)
 
   return (
     <li>
       <Link
         href={`/spaces/${gathering.space_slug}/events/${gathering.id}`}
-        style={{
-          borderTopColor: primary,
-          borderTopWidth: '8px',
-          backgroundColor: tintedBg,
-        }}
-        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 p-4 transition-shadow hover:shadow-[0_6px_18px_rgba(12,24,38,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
+        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(12,24,38,0.04)] transition-shadow hover:shadow-[0_8px_22px_rgba(12,24,38,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
       >
-        <p
-          className="font-serif text-[17px] leading-snug"
-          style={{ color: inherited ? primary : CHARCOAL }}
+        {/* Identity band — solid Collective hex. */}
+        <div
+          className="flex min-h-[112px] flex-col justify-center gap-1.5 px-5 py-5"
+          style={{ backgroundColor: headerHex, color: headerFg }}
         >
-          {theme}
-        </p>
-        <p className="mt-1 text-[12.5px] font-medium" style={{ color: CHARCOAL }}>
-          {sessionType}
-        </p>
-        <p className="mt-3 text-[12.5px]" style={{ color: CHARCOAL, opacity: 0.7 }}>
-          {gathering.space_name}
-        </p>
-        <p className="mt-2 text-[12.5px]" style={{ color: CHARCOAL, opacity: 0.85 }}>
-          {dateStr} · {timeStr}
-        </p>
-        <p className="mt-1 text-[12.5px]" style={{ color: CHARCOAL, opacity: 0.7 }}>
-          {format}
-        </p>
+          <p className="font-serif text-[22px] leading-tight">
+            {theme}
+          </p>
+          <p
+            className="text-[12px] font-medium tracking-wide"
+            style={{ opacity: 0.85 }}
+          >
+            {gathering.space_name}
+          </p>
+        </div>
+
+        {/* Practical details — white, charcoal text. */}
+        <div
+          className="flex flex-1 flex-col gap-1 px-5 py-4 text-[13px]"
+          style={{ color: CHARCOAL }}
+        >
+          <p>{dateStr} · {timeStr}</p>
+          <p style={{ opacity: 0.7 }}>{format}</p>
+        </div>
       </Link>
     </li>
   )

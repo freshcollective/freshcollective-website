@@ -173,18 +173,55 @@ export function resolveHex(
 
 // Small #RRGGBB → rgba() helper — silently returns the source on bad input.
 function rgbaFromHex(hex: string, alpha: number): string {
+  const parsed = _parseHex(hex)
+  if (!parsed) return hex
+  return `rgba(${parsed.r},${parsed.g},${parsed.b},${alpha})`
+}
+
+
+/** Parse #rgb or #rrggbb into 8-bit channels; null on bad input. */
+function _parseHex(hex: string): { r: number; g: number; b: number } | null {
   const trimmed = hex.trim().replace(/^#/, '')
-  let full = trimmed
-  if (trimmed.length === 3) {
-    // Expand shorthand #abc → #aabbcc
-    full = trimmed.split('').map((c) => c + c).join('')
-  }
-  if (!/^[0-9a-f]{6}$/i.test(full)) return hex
+  const full = trimmed.length === 3
+    ? trimmed.split('').map((c) => c + c).join('')
+    : trimmed
+  if (!/^[0-9a-f]{6}$/i.test(full)) return null
   const n = parseInt(full, 16)
-  const r = (n >> 16) & 0xff
-  const g = (n >> 8) & 0xff
-  const b = n & 0xff
-  return `rgba(${r},${g},${b},${alpha})`
+  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
+}
+
+
+/**
+ * Pick the text colour that gives the higher WCAG contrast ratio against
+ * a solid background hex — pure white ``#ffffff`` or near-black
+ * ``#0f172a`` (slate-900). Used when rendering text on top of an
+ * arbitrary Collective palette hex where we can't hand-pair fg/bg
+ * ahead of time.
+ *
+ * Falls back to charcoal on unparseable input rather than throwing —
+ * the caller is usually rendering a card and a slightly off colour is
+ * preferable to a blank space.
+ */
+const CONTRAST_DARK  = '#0f172a'  // slate-900
+const CONTRAST_LIGHT = '#ffffff'
+
+export function contrastText(bgHex: string): typeof CONTRAST_DARK | typeof CONTRAST_LIGHT {
+  const parsed = _parseHex(bgHex)
+  if (!parsed) return CONTRAST_DARK
+  const bgL = _relativeLuminance(parsed.r, parsed.g, parsed.b)
+  const contrastWithWhite = (1.0 + 0.05) / (bgL + 0.05)
+  const contrastWithBlack = (bgL + 0.05) / 0.05
+  return contrastWithBlack >= contrastWithWhite ? CONTRAST_DARK : CONTRAST_LIGHT
+}
+
+
+function _relativeLuminance(r: number, g: number, b: number): number {
+  // WCAG 2.x: linearise each channel then apply Rec. 709 weights.
+  const lin = (c: number) => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
 }
 
 

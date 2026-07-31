@@ -12,6 +12,7 @@ import { describe, test } from 'node:test'
 // @ts-expect-error - Node-native import path
 import {
   PALETTE_ROLES,
+  contrastText,
   deriveSoftTint,
   encodeCustomHex,
   encodePaletteRole,
@@ -151,5 +152,52 @@ describe('deriveSoftTint', () => {
   test('leaves invalid input alone (safe fallback)', () => {
     const { bg } = deriveSoftTint('not-a-hex')
     assert.equal(bg, 'not-a-hex')
+  })
+})
+
+
+describe('contrastText', () => {
+  test('picks white on the deep seeded primaries', () => {
+    // All of these are the "strong emphasis" primary from a seeded FC palette.
+    for (const bg of [
+      '#5C4A33',  // Earth & Moss
+      '#3A6B7A',  // Ocean & Sand
+      '#3F4A73',  // Midnight
+      '#7A4C7C',  // Wildflowers
+      '#2C5A3E',  // Forest
+      '#6E2B3A',  // Berry & Bark
+      '#6B5C8C',  // Lavender & Dusk
+      '#2C556E',  // Deep Ocean
+    ]) {
+      assert.equal(contrastText(bg), '#ffffff', `expected white on ${bg}`)
+    }
+  })
+
+  test('picks dark charcoal on light or warm-medium primaries', () => {
+    // Palettes whose primary reads light enough that black beats white.
+    for (const bg of [
+      '#D97A3F',  // Sunrise — warm orange
+      '#C89B4A',  // Honey & Cream
+      '#A0B4C4',  // Snow & Sky
+      '#ECEDEA',  // Mist & Stone background (edge case, very light)
+      '#FFFFFF',
+    ]) {
+      assert.equal(contrastText(bg), '#0f172a', `expected charcoal on ${bg}`)
+    }
+  })
+
+  test('white on pure black, charcoal on pure white', () => {
+    assert.equal(contrastText('#000000'), '#ffffff')
+    assert.equal(contrastText('#FFFFFF'), '#0f172a')
+  })
+
+  test('accepts #rgb shorthand', () => {
+    assert.equal(contrastText('#000'), '#ffffff')
+    assert.equal(contrastText('#fff'), '#0f172a')
+  })
+
+  test('falls back to charcoal on unparseable input rather than throwing', () => {
+    assert.equal(contrastText('not-a-hex'), '#0f172a')
+    assert.equal(contrastText(''),          '#0f172a')
   })
 })
