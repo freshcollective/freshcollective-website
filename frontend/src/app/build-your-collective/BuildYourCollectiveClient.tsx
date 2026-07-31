@@ -17,9 +17,10 @@ import ColourPaletteStep from '@/components/build/steps/ColourPaletteStep'
 import IdentityStep from '@/components/build/steps/IdentityStep'
 import WelcomeMessageStep from '@/components/build/steps/WelcomeMessageStep'
 import PracticalDetailsStep from '@/components/build/steps/PracticalDetailsStep'
-import ConfirmationStep from '@/components/build/steps/ConfirmationStep'
+import ConfirmationStep, {
+  type OpenDestination,
+} from '@/components/build/steps/ConfirmationStep'
 import OpeningTransition from '@/components/build/OpeningTransition'
-import PortalTransition from '@/components/build/PortalTransition'
 
 interface Props {
   options: BuildYourCollectiveOptions
@@ -40,8 +41,11 @@ interface Props {
  *   change-location  — start at 1, seed from existing collective, PATCH at end
  *   edit-identity    — start at 2, keep existing location, PATCH at end
  *
- * The opening interlude and portal transition play only in create mode.
- * In edit modes we return the creator straight to Creator Studio on save.
+ * In create mode step 7 is the combined arrival + World Builders
+ * invitation. The two CTAs both trigger POST /open exactly once (guarded
+ * by the busy flag) and route the creator to either World Builders or
+ * their new collective's Creator Studio. In edit modes step 7 keeps the
+ * simpler "Save your collective" reveal.
  */
 export default function BuildYourCollectiveClient({
   options, initialDraft, mode, slug,
@@ -55,9 +59,6 @@ export default function BuildYourCollectiveClient({
   const [openError, setOpenError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [interlude, setInterlude] = useState(false)
-  const [portal, setPortal] = useState(false)
-  const [portalPhase, setPortalPhase] = useState<'idle' | 'travelling' | 'arriving'>('idle')
-  const openedSlugRef = useRef<string | null>(null)
 
   const draftRef = useRef(draft)
   useEffect(() => { draftRef.current = draft }, [draft])
@@ -118,11 +119,16 @@ export default function BuildYourCollectiveClient({
     }
   }, [goTo, mode])
 
-  // Selected location resolved for the reveal / portal
+  // Selected location resolved for the reveal
   const selectedLocation: LocationOption | null =
     options.locations.find((l) => l.id === draft.location_id) ?? null
 
-  const finishOrOpen = useCallback(async () => {
+  const finishOrOpen = useCallback(async (destination?: OpenDestination) => {
+    // Double-click / rapid re-entry guard: if a create/save is already
+    // in flight, ignore any further clicks. Both primary and secondary
+    // CTAs share the same busy flag so neither can trigger a duplicate.
+    if (busy) return
+
     setBusy(true)
     setOpenError(null)
 
@@ -133,9 +139,6 @@ export default function BuildYourCollectiveClient({
     const atmos = draftRef.current.atmosphere_keys ?? []
 
     if (mode === 'create') {
-      // Play portal alongside the API call
-      setPortal(true)
-      setPortalPhase('travelling')
       const body = {
         name: (draftRef.current.name ?? '').trim(),
         description: draftRef.current.description?.trim() || null,
@@ -163,20 +166,34 @@ export default function BuildYourCollectiveClient({
           const data = await res.json().catch(() => ({}))
           const detail = (data as { detail?: unknown }).detail
           setOpenError(typeof detail === 'string' ? detail : 'We could not open your collective. Please check your choices.')
-          setPortal(false)
-          setPortalPhase('idle')
           setBusy(false)
           return
         }
-        const { slug: newSlug } = await res.json() as { slug: string }
-        openedSlugRef.current = newSlug
-        if (typeof window !== 'undefined') {
-          window.sessionStorage.setItem('fc.justOpenedCollective', newSlug)
+        const { slug: newSlug, world_builders_slug } = await res.json() as {
+          slug: string
+          name: string
+          world_builders_slug: string | null
         }
+        // Route based on which CTA the creator clicked. World Builders
+        // routes into the Pathways area — that's where the guided
+        // Creator experience lives. Creator Studio routes into the
+        // Community view of the newly-created collective (the natural
+        // "hearth" of the space; the current /creator/spaces/{slug}
+        // root renders Settings, which isn't the right first landing).
+        if (destination === 'world_builders' && world_builders_slug) {
+          router.push(`/spaces/${world_builders_slug}/pathways`)
+        } else if (destination === 'creator_studio') {
+          router.push(`/creator/spaces/${newSlug}/community`)
+        } else if (world_builders_slug) {
+          router.push(`/spaces/${world_builders_slug}/pathways`)
+        } else {
+          router.push(`/creator/spaces/${newSlug}/community`)
+        }
+        // Deliberately leave busy=true — the navigation is in flight,
+        // and we don't want the CTAs re-enabling before the next page
+        // takes over.
       } catch {
         setOpenError('Something got in the way. Please try again in a moment.')
-        setPortal(false)
-        setPortalPhase('idle')
         setBusy(false)
       }
       return
@@ -212,23 +229,7 @@ export default function BuildYourCollectiveClient({
       setOpenError('Something got in the way. Please try again in a moment.')
       setBusy(false)
     }
-  }, [mode, slug, router])
-
-  const finishPortal = useCallback(() => {
-    setPortalPhase('arriving')
-    const s = openedSlugRef.current
-    if (s) router.push(`/creator/spaces/${s}`)
-  }, [router])
-
-  if (portal) {
-    return (
-      <PortalTransition
-        artworkUrl={selectedLocation?.hero_artwork_url ?? null}
-        locationName={selectedLocation?.name ?? null}
-        onDone={finishPortal}
-      />
-    )
-  }
+  }, [busy, mode, slug, router])
 
   if (interlude) {
     return <OpeningTransition onDone={finishInterlude} />
@@ -310,7 +311,7 @@ export default function BuildYourCollectiveClient({
           mode={mode}
           onOpen={finishOrOpen}
           onBack={() => setStep(mode === 'create' ? 6 : 5)}
-          opening={busy || portalPhase !== 'idle'}
+          opening={busy}
           error={openError ?? saveError}
         />
       )

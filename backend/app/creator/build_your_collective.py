@@ -50,6 +50,7 @@ from app.models.platform import (
     SpaceRole,
 )
 from app.models.user import User
+from app.services.creator_eligibility import AUTO_ROLE_SOURCE
 
 
 router = APIRouter(prefix="/api/creator/build-your-collective", tags=["build-your-collective"])
@@ -118,6 +119,11 @@ class DraftOut(BaseModel):
 class OpenCollectiveResponse(BaseModel):
     slug: str
     name: str
+    # Slug of the auto-grant collective (World Builders) the creator holds
+    # active membership in, if any. The client uses this to route the
+    # creator into World Builders after their new collective is opened.
+    # None when no such membership exists.
+    world_builders_slug: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -369,7 +375,32 @@ def open_collective(
 
     db.commit()
     db.refresh(space)
-    return OpenCollectiveResponse(slug=space.slug, name=space.name)
+
+    world_builders_slug = _find_world_builders_slug(current_user.id, db)
+    return OpenCollectiveResponse(
+        slug=space.slug,
+        name=space.name,
+        world_builders_slug=world_builders_slug,
+    )
+
+
+def _find_world_builders_slug(user_id: str, db: Session) -> str | None:
+    """Return the slug of an auto-grant space (World Builders) the user
+    holds active auto_role membership in, or None. Structural lookup —
+    matches the reconciler's philosophy of discovering spaces by the
+    ``auto_grant_role`` flag rather than a hardcoded slug."""
+    row = (
+        db.query(Space.slug)
+        .join(SpaceMembership, SpaceMembership.space_id == Space.id)
+        .filter(
+            Space.auto_grant_role.isnot(None),
+            SpaceMembership.user_id == user_id,
+            SpaceMembership.source == AUTO_ROLE_SOURCE,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+        )
+        .first()
+    )
+    return row[0] if row else None
 
 
 # ---------------------------------------------------------------------------
