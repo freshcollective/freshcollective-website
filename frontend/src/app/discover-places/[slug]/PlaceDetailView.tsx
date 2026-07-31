@@ -9,6 +9,7 @@ import {
 } from '@/lib/placeAtmosphere'
 import CollectiveCard from '@/components/explore/CollectiveCard'
 import { toSpaceWithMeta } from '@/components/explore/spaceMeta'
+import { rgbaFromHex } from '@/lib/collectivePalette'
 import type {
   PublicPlaceDetail,
   PublicPlaceGathering,
@@ -252,6 +253,10 @@ function GatheringsSection({ gatherings }: { gatherings: PublicPlaceGathering[] 
   )
 }
 
+// Neutral fallback when a Collective has no Colour Palette assigned —
+// the same slate the base card border uses, so nothing shouts.
+const NEUTRAL_ACCENT = '#94a3b8'  // slate-400
+
 function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
   const start = new Date(gathering.starts_at)
   const dateStr = start.toLocaleDateString(undefined, {
@@ -265,22 +270,38 @@ function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
   })
   const format = formatAttendance(gathering)
 
+  // Gatherings inherit their parent Collective's personality.
+  // A curated palette hex → 6px top band + a whisper of tint (~2.5%)
+  // + a title in the same colour. Charcoal for supporting text so
+  // legibility is never sacrificed to atmosphere.
+  const accent = gathering.collective_primary_colour ?? NEUTRAL_ACCENT
+  const inherited = !!gathering.collective_primary_colour
+  const tintedBg = rgbaFromHex(accent, 0.025)
+
   return (
     <li>
       <Link
         href={`/spaces/${gathering.space_slug}/events/${gathering.id}`}
-        className="group flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-[0_6px_18px_rgba(12,24,38,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
+        style={{
+          borderTopColor: accent,
+          borderTopWidth: '6px',
+          backgroundColor: tintedBg,
+        }}
+        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 p-4 transition-shadow hover:shadow-[0_6px_18px_rgba(12,24,38,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
       >
-        <p className="font-serif text-[16px] leading-snug text-navy-900 group-hover:text-teal-800">
+        <p
+          className="font-serif text-[16px] leading-snug"
+          style={{ color: inherited ? accent : '#0f172a' /* charcoal */ }}
+        >
           {gathering.title}
         </p>
-        <p className="mt-1 text-[12.5px] text-navy-500">
+        <p className="mt-1 text-[12.5px] text-navy-600">
           {gathering.space_name}
         </p>
         <p className="mt-3 text-[12.5px] text-navy-700">
           {dateStr} · {timeStr}
         </p>
-        <p className="mt-1 text-[12.5px] text-navy-500">
+        <p className="mt-1 text-[12.5px] text-navy-600">
           {format}
         </p>
       </Link>

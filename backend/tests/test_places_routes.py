@@ -437,6 +437,60 @@ class TestGetPlace:
         assert "Members Only" not in titles
         assert "Was Yesterday" not in titles
 
+    def test_gathering_inherits_parent_collective_primary_colour(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        """Gathering cards must inherit the parent Collective's Colour
+        Palette primary hex — the projection carries that colour so the
+        client can visually mark Gatherings as belonging to a Collective
+        without a second round-trip."""
+        from datetime import datetime, timedelta
+        from app.models.place import SpacePlace
+        from app.models.platform import ColourStory
+
+        db.add(ColourStory(
+            id="cs_test", key="earth-and-moss", name="Earth & Moss",
+            palette={
+                "primary":    "#4B6B3A",
+                "secondary":  "#7C9A6B",
+                "accent":     "#B8D0A5",
+                "background": "#F4F6EF",
+            },
+            position=0, is_active=True,
+        ))
+        p = _place(slug="palette-city", name="Palette City")
+        db.add(p)
+        db.flush()
+
+        # Two collectives, only one with a palette assigned; the second
+        # exercises the null-fallback path.
+        with_palette = make_space(is_public=True, colour_story_key="earth-and-moss")
+        without_palette = make_space(is_public=True)
+        db.add_all([
+            SpacePlace(space_id=with_palette.id,    place_id=p.id),
+            SpacePlace(space_id=without_palette.id, place_id=p.id),
+        ])
+        db.flush()
+
+        future = datetime.utcnow() + timedelta(days=3)
+        make_event(
+            space=with_palette, title="Grove Circle",
+            starts_at=future, ends_at=future + timedelta(hours=1),
+            is_public=True,
+        )
+        make_event(
+            space=without_palette, title="Unstyled Circle",
+            starts_at=future + timedelta(days=1),
+            ends_at=future + timedelta(days=1, hours=1),
+            is_public=True,
+        )
+        db.flush()
+
+        detail = get_place("palette-city", db=db)
+        by_title = {g.title: g for g in detail.upcoming_gatherings}
+        assert by_title["Grove Circle"].collective_primary_colour == "#4B6B3A"
+        assert by_title["Unstyled Circle"].collective_primary_colour is None
+
     def test_gathering_projection_omits_venue_address(
         self, db, discovery_enabled, make_space, make_event,
     ):

@@ -94,7 +94,16 @@ class PlaceGathering(BaseModel):
     """Member-safe public projection of an upcoming Gathering on a
     Physical Location detail page. Never exposes venue address or
     private access instructions — those are enrolment-gated on the
-    Gathering's own detail page."""
+    Gathering's own detail page.
+
+    Carries the parent Collective's primary palette hex so Gathering
+    cards can visually inherit the Collective's personality without
+    the client needing a second round-trip. This encodes the platform
+    rule: Places have identity, Collectives have personality,
+    Gatherings inherit their Collective's personality. Null when the
+    Collective has no Colour Palette assigned yet — the client falls
+    back to a neutral rendering.
+    """
 
     id: str
     title: str
@@ -110,6 +119,7 @@ class PlaceGathering(BaseModel):
     ticket_price_cents: int | None
     ticket_currency: str | None
     thumbnail_url: str | None
+    collective_primary_colour: str | None  # hex from parent Collective's Colour Palette
 
 
 class PlaceDetail(BaseModel):
@@ -385,6 +395,26 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
     gatherings: list[PlaceGathering] = []
     if linked_spaces:
         space_by_id = {s.id: s for s in linked_spaces}
+        # Per-Collective primary palette hex, so each Gathering card
+        # can inherit its parent Collective's personality. One aggregate
+        # lookup keyed by ``colour_story_key`` — avoids N+1 for pages
+        # where several Collectives share the same palette.
+        from app.models.platform import ColourStory
+        palette_keys = {
+            s.colour_story_key for s in linked_spaces if s.colour_story_key
+        }
+        primary_by_key: dict[str, str | None] = {}
+        if palette_keys:
+            cs_rows = db.execute(
+                select(ColourStory).where(ColourStory.key.in_(palette_keys))
+            ).scalars().all()
+            for cs in cs_rows:
+                pal = cs.palette or {}
+                primary_by_key[cs.key] = pal.get("primary")
+        primary_by_space: dict[str, str | None] = {
+            s.id: primary_by_key.get(s.colour_story_key)
+            for s in linked_spaces
+        }
         now = datetime.utcnow()
         event_rows = db.execute(
             select(Event)
@@ -417,6 +447,7 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
                 ticket_price_cents=e.ticket_price_cents,
                 ticket_currency=e.ticket_currency,
                 thumbnail_url=e.thumbnail_url,
+                collective_primary_colour=primary_by_space.get(e.space_id),
             )
             for e in event_rows
         ]

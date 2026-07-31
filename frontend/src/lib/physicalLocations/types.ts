@@ -56,7 +56,13 @@ export interface PublicPlaceSummary {
 /** One upcoming Gathering on a location detail page. Member-safe
  *  projection — never carries the venue address or private access
  *  instructions (those live on the Gathering's own detail page,
- *  gated by enrolment). */
+ *  gated by enrolment).
+ *
+ *  ``collective_primary_colour`` carries the parent Collective's
+ *  Colour Palette primary hex so Gathering cards can visually
+ *  inherit their Collective's personality without a second
+ *  round-trip. Null when the Collective has no palette assigned;
+ *  the card renders with a neutral fallback in that case. */
 export interface PublicPlaceGathering {
   id: string
   title: string
@@ -72,6 +78,7 @@ export interface PublicPlaceGathering {
   ticket_price_cents: number | null
   ticket_currency: string | null
   thumbnail_url: string | null
+  collective_primary_colour: string | null
 }
 
 /** Full public detail for a single active Physical Location — the
