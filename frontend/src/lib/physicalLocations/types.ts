@@ -53,6 +53,37 @@ export interface PublicPlaceSummary {
   upcoming_gathering_count: number
 }
 
+/** One upcoming Gathering on a location detail page. Member-safe
+ *  projection — never carries the venue address or private access
+ *  instructions (those live on the Gathering's own detail page,
+ *  gated by enrolment). */
+export interface PublicPlaceGathering {
+  id: string
+  title: string
+  space_slug: string
+  space_name: string
+  starts_at: string
+  ends_at: string | null
+  gathering_type: string
+  attendance_format: 'online' | 'in_person' | 'hybrid'
+  venue_name: string | null
+  booking_access_type: string
+  capacity: number | null
+  ticket_price_cents: number | null
+  ticket_currency: string | null
+  thumbnail_url: string | null
+}
+
+/** Full public detail for a single active Physical Location — the
+ *  payload behind ``/discover-places/[slug]``. Bundles the location's
+ *  own fields, the Collectives that live here (in the same
+ *  ``PublicSpaceCard`` shape as Explore Collectives so the same card
+ *  component renders), and upcoming member-eligible Gatherings. */
+export interface PublicPlaceDetail extends PublicPlaceSummary {
+  collectives: import('@/types/platform').PublicSpaceCard[]
+  upcoming_gatherings: PublicPlaceGathering[]
+}
+
 export interface PhysicalLocationDetail {
   id: string
   slug: string

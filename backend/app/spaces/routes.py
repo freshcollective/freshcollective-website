@@ -109,6 +109,23 @@ def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
         .order_by(Space.created_at)
         .all()
     )
+    return hydrate_public_space_cards(spaces, db)
+
+
+def hydrate_public_space_cards(
+    spaces: list[Space], db: Session,
+) -> list[PublicSpaceCard]:
+    """Project a list of Space rows into ``PublicSpaceCard`` payloads.
+
+    Extracted so other public surfaces (e.g. ``GET /api/places/{slug}``)
+    can render Collectives with exactly the same shape and aggregations
+    the Explore Collectives listing uses — the frontend re-uses the
+    same card component on both pages, so any drift here would ripple
+    into visual inconsistency.
+
+    Caller is responsible for filtering (status / is_public / etc.);
+    this helper just does the aggregate hydration.
+    """
     if not spaces:
         return []
 

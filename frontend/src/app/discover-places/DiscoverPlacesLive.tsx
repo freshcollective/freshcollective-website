@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { resolveMediaUrl } from '@/lib/api'
 import {
@@ -219,9 +220,10 @@ function PlaceCard({ place }: { place: PublicPlaceSummary }) {
   const focalY = place.artwork_focal_y ?? 0.5
 
   return (
-    <article
+    <Link
+      href={`/discover-places/${place.slug}`}
       aria-labelledby={`place-${place.slug}-name`}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-shadow hover:shadow-[0_8px_24px_rgba(12,24,38,0.06)]"
+      className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-shadow hover:shadow-[0_8px_24px_rgba(12,24,38,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
     >
       {artworkUrl ? (
         <div
@@ -279,7 +281,7 @@ function PlaceCard({ place }: { place: PublicPlaceSummary }) {
           {activityLine(place.collective_count, place.upcoming_gathering_count)}
         </p>
       </div>
-    </article>
+    </Link>
   )
 }
 

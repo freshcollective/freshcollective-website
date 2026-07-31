@@ -257,6 +257,19 @@ export const getPublicPlaces = cache(async () => {
   }
 })
 
+/** Public read of a single active Physical Location's detail — powers
+ *  ``/discover-places/[slug]``. Returns null for missing / draft /
+ *  hidden / archived rows so the page can 404 cleanly. */
+export const getPublicPlace = cache(async (slug: string) => {
+  try {
+    const res = await fetch(apiUrl(`/api/places/${slug}`), { cache: 'no-store' })
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+})
+
 // ---------------------------------------------------------------------------
 // Mother World — platform-wide snapshot used by the World Management overview
 // page. Mirrors the shape of `AdminPlatformOverview` in backend/schemas.py.

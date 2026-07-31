@@ -41,10 +41,12 @@ from app.core.database import get_db
 from app.models.place import Place, SpacePlace
 from app.models.platform import Event, Space, SpaceStatus
 from app.models.user import User
+from app.spaces.schemas import PublicSpaceCard
 from app.services.location_providers import (
     LocationSuggestion,
     get_location_provider,
 )
+from app.spaces.routes import hydrate_public_space_cards
 
 
 router = APIRouter(prefix="/api/places", tags=["places"])
@@ -86,6 +88,56 @@ class PlaceSummary(BaseModel):
     themes: list[str]
     collective_count: int
     upcoming_gathering_count: int
+
+
+class PlaceGathering(BaseModel):
+    """Member-safe public projection of an upcoming Gathering on a
+    Physical Location detail page. Never exposes venue address or
+    private access instructions — those are enrolment-gated on the
+    Gathering's own detail page."""
+
+    id: str
+    title: str
+    space_slug: str
+    space_name: str
+    starts_at: datetime
+    ends_at: datetime | None
+    gathering_type: str
+    attendance_format: str        # online | in_person | hybrid
+    venue_name: str | None        # coarse locality only — never the address
+    booking_access_type: str
+    capacity: int | None
+    ticket_price_cents: int | None
+    ticket_currency: str | None
+    thumbnail_url: str | None
+
+
+class PlaceDetail(BaseModel):
+    """Full public detail for a single Physical Location — powers the
+    /discover-places/{slug} member page. Bundles the location's own
+    payload, the list of Collectives that belong here (in the same
+    ``PublicSpaceCard`` shape the Explore Collectives listing uses,
+    so both pages render with the same card component), and the
+    upcoming Gatherings that are eligible for members to see.
+
+    Admin-only fields never leak: ``admin_note``, coordinates,
+    ``provider_place_id`` and status are all absent."""
+
+    id: str
+    slug: str
+    name: str
+    country_code: str
+    region: str | None
+    hero_artwork_url: str | None
+    artwork_alt_text: str | None
+    artwork_focal_x: float
+    artwork_focal_y: float
+    blurb: str | None
+    themes: list[str]
+    collective_count: int
+    upcoming_gathering_count: int
+    collectives: list[PublicSpaceCard]
+    upcoming_gatherings: list[PlaceGathering]
 
 
 class LookupRequest(BaseModel):
@@ -288,6 +340,121 @@ def list_places(db: Session = Depends(get_db)) -> list[PlaceSummary]:
         )
         for p in places
     ]
+
+
+@router.get("/{slug}", response_model=PlaceDetail)
+def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
+    """Public detail for a single active Physical Location.
+
+    Draft, hidden, and archived Locations 404 here — the same rule
+    the list surface uses. The payload bundles the Location's own
+    public fields, the Collectives that belong here (rendered with
+    the same ``PublicSpaceCard`` shape as Explore Collectives so
+    the same card component can be reused visually), and the
+    upcoming public / effectively-public Gatherings on those
+    Collectives.
+    """
+    _ensure_discovery_flag_on()
+
+    place = db.execute(
+        select(Place).where(Place.slug == slug, Place.status == "active")
+    ).scalar_one_or_none()
+    if place is None:
+        raise HTTPException(status_code=404, detail="Physical Location not found.")
+
+    # Linked Collectives — same public filter as /api/public/spaces
+    # (active + public + not auto-grant). ``hydrate_public_space_cards``
+    # produces the identical shape the Explore listing uses.
+    linked_spaces = db.execute(
+        select(Space)
+        .join(SpacePlace, SpacePlace.space_id == Space.id)
+        .where(
+            SpacePlace.place_id == place.id,
+            Space.status == SpaceStatus.active,
+            Space.is_public.is_(True),
+            Space.auto_grant_role.is_(None),
+        )
+        .order_by(Space.created_at)
+    ).scalars().all()
+    collectives = hydrate_public_space_cards(list(linked_spaces), db)
+
+    # Upcoming gatherings — published, future, and either explicitly
+    # public or effectively public (``paid_separately`` tickets show
+    # up on the paid Gathering surface for anyone). The same rule the
+    # Space events endpoint applies for anonymous callers.
+    gatherings: list[PlaceGathering] = []
+    if linked_spaces:
+        space_by_id = {s.id: s for s in linked_spaces}
+        now = datetime.utcnow()
+        event_rows = db.execute(
+            select(Event)
+            .where(
+                Event.space_id.in_(list(space_by_id.keys())),
+                Event.is_published.is_(True),
+                Event.starts_at > now,
+                Event.status == "active",
+                (Event.is_public.is_(True)) | (Event.booking_access_type == "paid_separately"),
+            )
+            .order_by(Event.starts_at)
+            .limit(20)
+        ).scalars().all()
+        gatherings = [
+            PlaceGathering(
+                id=e.id,
+                title=e.title,
+                space_slug=space_by_id[e.space_id].slug,
+                space_name=space_by_id[e.space_id].name,
+                starts_at=e.starts_at,
+                ends_at=e.ends_at,
+                gathering_type=e.gathering_type,
+                attendance_format=e.attendance_format,
+                # venue_name is the coarse locality (e.g. "Private
+                # residence · South Croydon"); the full address stays
+                # gated on the Gathering's own detail page.
+                venue_name=e.venue_name,
+                booking_access_type=e.booking_access_type,
+                capacity=e.capacity,
+                ticket_price_cents=e.ticket_price_cents,
+                ticket_currency=e.ticket_currency,
+                thumbnail_url=e.thumbnail_url,
+            )
+            for e in event_rows
+        ]
+
+    # Aggregate themes + counts identical to the list endpoint so the
+    # detail card header can display the same numbers.
+    seen: set[str] = set()
+    theme_order: list[str] = []
+    for s in linked_spaces:
+        for t in s.themes or []:
+            if t and t not in seen:
+                seen.add(t)
+                theme_order.append(t)
+    upcoming_all_count = db.execute(
+        select(func.count(Event.id)).where(
+            Event.space_id.in_([s.id for s in linked_spaces]) if linked_spaces else False,
+            Event.is_published.is_(True),
+            Event.starts_at > datetime.utcnow(),
+        )
+    ).scalar_one() if linked_spaces else 0
+
+    return PlaceDetail(
+        id=place.id,
+        slug=place.slug,
+        name=place.name,
+        country_code=place.country_code,
+        region=place.region,
+        hero_artwork_url=place.hero_artwork_url,
+        artwork_alt_text=place.artwork_alt_text,
+        artwork_focal_x=place.artwork_focal_x,
+        artwork_focal_y=place.artwork_focal_y,
+        blurb=place.blurb,
+        themes=theme_order,
+        collective_count=len(linked_spaces),
+        upcoming_gathering_count=int(upcoming_all_count),
+        collectives=collectives,
+        upcoming_gatherings=gatherings,
+    )
 
 
 @router.post("/lookup", response_model=LookupResponse)

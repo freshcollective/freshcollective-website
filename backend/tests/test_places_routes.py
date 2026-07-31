@@ -29,6 +29,7 @@ from app.places.routes import (
     LookupRequest,
     PlaceSummary,
     ResolveRequest,
+    get_place,
     list_places,
     lookup_places,
     resolve_place,
@@ -294,6 +295,175 @@ class TestList:
 
         [row] = list_places(db)
         assert row.upcoming_gathering_count == 1
+
+
+# ---------------------------------------------------------------------------
+# GET /api/places/{slug} — the detail surface behind /discover-places/[slug]
+# ---------------------------------------------------------------------------
+
+class TestGetPlace:
+    def test_returns_active_place(self, db, discovery_enabled):
+        db.add(_place(
+            slug="melbourne",
+            name="Melbourne",
+            region="Victoria",
+            country_code="AU",
+            blurb="A creative, connected city.",
+            hero_artwork_url="/api/uploads/place-artwork/melbourne/hero.png",
+            artwork_alt_text="Melbourne skyline",
+        ))
+        db.flush()
+
+        detail = get_place("melbourne", db=db)
+        assert detail.slug == "melbourne"
+        assert detail.name == "Melbourne"
+        assert detail.region == "Victoria"
+        assert detail.blurb == "A creative, connected city."
+        assert detail.hero_artwork_url == "/api/uploads/place-artwork/melbourne/hero.png"
+        assert detail.artwork_alt_text == "Melbourne skyline"
+        assert detail.collectives == []
+        assert detail.upcoming_gatherings == []
+        assert detail.collective_count == 0
+
+    def test_flag_off_returns_503(self, db, discovery_disabled):
+        db.add(_place(slug="whatever", name="Whatever"))
+        db.flush()
+        with pytest.raises(HTTPException) as ex:
+            get_place("whatever", db=db)
+        assert ex.value.status_code == 503
+
+    def test_draft_place_404s(self, db, discovery_enabled):
+        db.add(_place(slug="draft-town", name="Draft Town", status="draft"))
+        db.flush()
+        with pytest.raises(HTTPException) as ex:
+            get_place("draft-town", db=db)
+        assert ex.value.status_code == 404
+
+    def test_hidden_and_archived_places_404(self, db, discovery_enabled):
+        db.add_all([
+            _place(slug="hidden-town",   status="hidden"),
+            _place(slug="archived-town", status="archived"),
+        ])
+        db.flush()
+        for slug in ("hidden-town", "archived-town"):
+            with pytest.raises(HTTPException) as ex:
+                get_place(slug, db=db)
+            assert ex.value.status_code == 404
+
+    def test_missing_slug_404s(self, db, discovery_enabled):
+        with pytest.raises(HTTPException) as ex:
+            get_place("nowhere", db=db)
+        assert ex.value.status_code == 404
+
+    def test_lists_linked_public_active_collectives_only(
+        self, db, discovery_enabled, make_space,
+    ):
+        from app.models.place import SpacePlace
+        p = _place(slug="curated", name="Curated")
+        db.add(p)
+        db.flush()
+
+        # Public + active + no auto_grant_role — should appear.
+        included = make_space(
+            slug="included-coll", name="Included",
+            is_public=True, themes=["Wellbeing"],
+        )
+        # Private space — must not appear on the public detail.
+        private = make_space(
+            slug="private-coll", name="Private",
+            is_public=False, themes=["Should not appear"],
+        )
+        # Draft — must not appear.
+        drafted = make_space(
+            slug="drafted-coll", name="Drafted",
+            status="draft", is_public=True, themes=["Also skipped"],
+        )
+        db.add_all([
+            SpacePlace(space_id=included.id, place_id=p.id),
+            SpacePlace(space_id=private.id,  place_id=p.id),
+            SpacePlace(space_id=drafted.id,  place_id=p.id),
+        ])
+        db.flush()
+
+        detail = get_place("curated", db=db)
+        assert [c.slug for c in detail.collectives] == ["included-coll"]
+        assert detail.collective_count == 1
+        # Themes list comes from the surviving Collective(s) only.
+        assert detail.themes == ["Wellbeing"]
+
+    def test_upcoming_gatherings_are_public_and_future(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        from datetime import datetime, timedelta
+        from app.models.place import SpacePlace
+        p = _place(slug="with-events", name="With Events")
+        db.add(p)
+        db.flush()
+
+        space = make_space(is_public=True)
+        db.add(SpacePlace(space_id=space.id, place_id=p.id))
+        db.flush()
+
+        future = datetime.utcnow() + timedelta(days=4)
+        past   = datetime.utcnow() - timedelta(days=4)
+        # Public future — shows up.
+        make_event(
+            space=space, title="Open Circle",
+            starts_at=future, ends_at=future + timedelta(hours=1),
+            is_public=True,
+        )
+        # Private future (not paid_separately) — hidden. The
+        # make_event fixture defaults ``booking_access_type`` to
+        # 'paid_separately' for the ticket flow's happy path, so an
+        # override is required here to make this event truly private.
+        make_event(
+            space=space, title="Members Only",
+            starts_at=future + timedelta(days=1),
+            ends_at=future + timedelta(days=1, hours=1),
+            is_public=False,
+            booking_access_type="included_with_collective",
+        )
+        # Public past — hidden.
+        make_event(
+            space=space, title="Was Yesterday",
+            starts_at=past, ends_at=past + timedelta(hours=1),
+            is_public=True,
+        )
+        db.flush()
+
+        detail = get_place("with-events", db=db)
+        titles = [g.title for g in detail.upcoming_gatherings]
+        assert "Open Circle" in titles
+        assert "Members Only" not in titles
+        assert "Was Yesterday" not in titles
+
+    def test_gathering_projection_omits_venue_address(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        from datetime import datetime, timedelta
+        from app.models.place import SpacePlace
+        p = _place(slug="private-venue", name="Private Venue")
+        db.add(p)
+        db.flush()
+        space = make_space(is_public=True)
+        db.add(SpacePlace(space_id=space.id, place_id=p.id))
+        db.flush()
+
+        starts = datetime.utcnow() + timedelta(days=2)
+        make_event(
+            space=space, title="Somatic Circle",
+            starts_at=starts, ends_at=starts + timedelta(hours=1),
+            is_public=True,
+            venue_name="Private residence · South Croydon",
+            venue_address="12 Actual Street, South Croydon VIC 3136",
+        )
+        db.flush()
+
+        detail = get_place("private-venue", db=db)
+        [g] = detail.upcoming_gatherings
+        assert g.venue_name == "Private residence · South Croydon"
+        # Only coarse locality reaches the public shape.
+        assert "venue_address" not in g.model_dump()
 
     def test_artwork_payload_surfaces_when_set(self, db, discovery_enabled):
         db.add(_place(
