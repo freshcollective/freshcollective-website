@@ -57,7 +57,7 @@ export default function PlaceDetailView({ place }: { place: PublicPlaceDetail })
 
       <div className="mx-auto w-full max-w-6xl px-6 md:px-10">
         <CollectivesSection place={place} />
-        <GatheringsSection gatherings={place.upcoming_gatherings} />
+        <GatheringsSection place={place} />
       </div>
     </article>
   )
@@ -148,19 +148,9 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
   const heading  = isSolo
     ? `1 Collective in ${place.name}`
     : `${count} Collectives in ${place.name}`
-  const transition = transitionCopy(place)
 
   return (
     <section aria-labelledby="place-collectives-heading" className="py-12 md:py-16">
-      {transition && (
-        <p
-          className="mb-8 max-w-2xl font-serif text-[16px] italic leading-relaxed text-navy-600 md:mb-10 md:text-[17px]"
-          style={{ fontFamily: 'Georgia, serif' }}
-        >
-          {transition}
-        </p>
-      )}
-
       <div className="mb-6 md:mb-8">
         <h2
           id="place-collectives-heading"
@@ -219,32 +209,6 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Editorial transition — the short serif paragraph that sits between the
-// hero blurb and the Collectives heading. The intent is atmospheric,
-// not functional: it softens the shift from "the story of this place"
-// into "the communities currently here" so the page doesn't cut
-// abruptly into a count. Only rendered when the Place actually has
-// Collectives — the empty state does its own quiet framing.
-// ---------------------------------------------------------------------------
-
-function transitionCopy(place: PublicPlaceDetail): string | null {
-  const n = place.collectives.length
-  if (n === 0) return null
-  const communityWord = n === 1 ? 'community' : 'communities'
-  const opener = `Life is taking shape here. ${place.name} is currently home to ${numberWord(n)} Fresh Collective ${communityWord}`
-  return place.upcoming_gathering_count > 0
-    ? `${opener}, with regular Gatherings taking place throughout the month.`
-    : `${opener}.`
-}
-
-function numberWord(n: number): string {
-  const words = [
-    'zero', 'one', 'two', 'three', 'four', 'five',
-    'six',  'seven', 'eight', 'nine', 'ten',
-  ]
-  return words[n] ?? String(n)
-}
 
 // ---------------------------------------------------------------------------
 // Gatherings — condensed presentation.
@@ -256,9 +220,10 @@ function numberWord(n: number): string {
 // The underlying data isn't filtered — only its presentation.
 // ---------------------------------------------------------------------------
 
-function GatheringsSection({ gatherings }: { gatherings: PublicPlaceGathering[] }) {
+function GatheringsSection({ place }: { place: PublicPlaceDetail }) {
   const [showAll, setShowAll] = useState(false)
 
+  const gatherings = place.upcoming_gatherings
   if (gatherings.length === 0) return null
 
   const cutoff = Date.now() + GATHERINGS_WINDOW_DAYS * 24 * 60 * 60 * 1000
@@ -285,6 +250,18 @@ function GatheringsSection({ gatherings }: { gatherings: PublicPlaceGathering[] 
       aria-labelledby="place-gatherings-heading"
       className="border-t border-slate-100 py-10 md:py-14"
     >
+      {/* Editorial bridge — sits between the Collectives and the
+          Gatherings, inviting the reader onward into what's happening
+          this month. Only rendered when there are gatherings inside
+          the window; the section as a whole is already null-guarded
+          above. */}
+      <p
+        className="mb-8 max-w-2xl font-serif text-[16px] italic leading-relaxed text-navy-600 md:mb-10 md:text-[17px]"
+        style={{ fontFamily: 'Georgia, serif' }}
+      >
+        Life is taking shape here. Explore the Gatherings happening across {place.name} over the coming month.
+      </p>
+
       <div className="mb-6 md:mb-8">
         <h2
           id="place-gatherings-heading"
