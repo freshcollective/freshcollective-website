@@ -367,7 +367,7 @@ function InsideCollectiveSection({ artFor }: { artFor: (key: string) => string |
     },
     {
       title: 'Resources you can return to.',
-      body: 'Practical materials the creator shares for members to use in their own time — recordings, guides, workbooks and worksheets, all kept in one place. A reference shelf that grows as the Collective does.',
+      body: 'Practical materials for members to use in their own time — recordings, guides, workbooks and worksheets, all kept in one place. A reference shelf that grows as the Collective does.',
       artKey: 'homepage_resources',
       atmosphereSlug: 'inside-resources',
       artAlt: 'Resources shared inside a Fresh Collective community',
