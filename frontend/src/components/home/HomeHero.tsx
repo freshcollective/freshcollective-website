@@ -59,19 +59,6 @@ export default function HomeHero() {
       <Container>
         <div className="max-w-[680px]">
 
-          <div className="mb-5 flex items-center gap-3">
-            <div
-              className="h-px w-6 shrink-0"
-              style={{ background: 'rgba(212,176,72,0.45)' }}
-            />
-            <span
-              className="text-[10.5px] font-semibold uppercase tracking-[0.20em]"
-              style={{ color: '#FFFFFF' }}
-            >
-              Fresh Collective
-            </span>
-          </div>
-
           <h1
             className="mb-6"
             style={{
@@ -103,11 +90,13 @@ export default function HomeHero() {
               fontSize: 'clamp(0.9375rem, 1.4vw, 1.0625rem)',
               lineHeight: '1.80',
               color: '#FFFFFF',
-              maxWidth: '460px',
+              maxWidth: '560px',
               letterSpacing: '-0.01em',
             }}
           >
-            Fresh Collective brings together people, ideas, and communities built on trust, curiosity, kindness, and collaboration — because as technology evolves, meaningful connection matters more than ever.
+            Fresh Collective is a home for many Collectives, where
+            people can learn, lead, connect and grow together. There
+            are Collectives you can join, or you can build your own.
           </p>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -130,7 +119,7 @@ export default function HomeHero() {
                 boxShadow: '0 4px 24px rgba(0,0,0,0.30)',
               }}
             >
-              Build a Collective
+              Create a Collective
             </Link>
           </div>
 

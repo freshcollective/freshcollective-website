@@ -1,1156 +1,831 @@
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import HomeHero from '@/components/home/HomeHero'
+import { atmosphereBackground, atmosphereForSlug } from '@/lib/placeAtmosphere'
+import { resolveMediaUrl } from '@/lib/api'
+import { getPublicPlatformArtwork, type PublicPlatformArtwork } from '@/lib/serverApi'
 
-/* ─── Dual Intent ───────────────────────────────────────────────────────────── */
+/**
+ * Fresh Collective homepage.
+ *
+ * Three-part narrative, presented as one continuous editorial page
+ * rather than a stack of chapter title cards. The overall body stays
+ * white so the artwork, cards, and small accents carry the colour;
+ * the closing invitation returns to deep navy for a calm final moment.
+ *
+ * Managed artwork lives in the shared World Artwork registry
+ * (see backend/app/admin/platform_artwork.py, keys `homepage_*`).
+ * Missing artwork falls back to atmospheric gradients or, where the
+ * brief prefers, a hand-coded interface visual.
+ *
+ * TODO(homepage-screenshots): the four "Life inside a Collective"
+ * cards use hand-coded editorial mockups. When real product surfaces
+ * are strong enough to capture, drop the PNGs under
+ * `public/homepage/screenshots/` and swap the mockup component for
+ * an <img>.
+ */
 
-function DualIntent() {
+export const metadata: Metadata = {
+  title: 'Fresh Collective — a home for creator-led communities',
+  description:
+    'Fresh Collective is a home for creator-led communities where people learn, gather, connect and grow together. Explore a collective, or create one of your own.',
+  openGraph: {
+    title: 'Fresh Collective — a home for creator-led communities',
+    description:
+      'Places where people learn together, gather and grow. Explore a collective, or create one of your own.',
+    type: 'website',
+  },
+}
+
+
+// ─── Design tokens (scoped to this file) ─────────────────────────────
+const TEAL = '#38A09E'
+const TEAL_DEEP = '#246B6A'
+const NAVY = '#0C1826'
+const NAVY_DEEP = '#071824'
+const INK_BODY = 'rgba(12, 24, 38, 0.80)'
+const INK_SOFT = 'rgba(12, 24, 38, 0.66)'
+const INK_TERTIARY = 'rgba(12, 24, 38, 0.52)'
+const HAIRLINE = 'rgba(12, 24, 38, 0.10)'
+
+
+
+function buildArtLookup(items: PublicPlatformArtwork[]): (key: string) => string | null {
+  const byKey = new Map(items.map((a) => [a.key, a]))
+  return (key: string) => {
+    const item = byKey.get(key)
+    if (!item) return null
+    return resolveMediaUrl(item.image_url ?? item.thumbnail_url ?? undefined) ?? null
+  }
+}
+
+
+export default async function HomePage() {
+  const artwork = await getPublicPlatformArtwork().catch(() => [] as PublicPlatformArtwork[])
+  const artFor = buildArtLookup(artwork)
+
+  return (
+    <SiteShell heroHeader>
+      <HomeHero />
+      <Belief />
+      <ExploreSection artFor={artFor} />
+      <InsideCollectiveSection artFor={artFor} />
+      <CreatorSection artUrl={artFor('homepage_creator_studio')} />
+      <ClosingInvitation artUrl={artFor('homepage_closing_invitation')} />
+    </SiteShell>
+  )
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// BELIEF — the philosophy beat that immediately follows the hero.
+//
+// Focal point is the headline. Second sentence carries the teal→navy
+// gradient. Body copy and "Come and see" sit as secondary detail.
+// ═══════════════════════════════════════════════════════════════════
+
+function Belief() {
   return (
     <section
-      className="py-12 sm:py-24"
+      className="pt-20 pb-14 sm:pt-28 sm:pb-16"
       style={{ background: '#FFFFFF' }}
     >
       <Container>
+        <div className="mx-auto max-w-[860px] text-center">
 
-        {/* Copy block */}
-        <div className="mb-12 sm:mb-14" style={{ maxWidth: '620px' }}>
+          <h2
+            className="mx-auto font-serif leading-[1.08] text-navy-900"
+            style={{
+              fontSize: 'clamp(2.125rem, 5.4vw, 3.75rem)',
+              letterSpacing: '-0.03em',
+              color: NAVY,
+              maxWidth: '780px',
+            }}
+          >
+            <span className="block">Most platforms optimise for engagement.</span>
+            <span
+              className="mt-2 block"
+              style={{
+                backgroundImage: `linear-gradient(100deg, ${TEAL} 0%, ${TEAL_DEEP} 55%, ${NAVY} 100%)`,
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                color: 'transparent',
+              }}
+            >
+              We optimise for belonging.
+            </span>
+          </h2>
+
           <p
-            className="mb-7"
-            style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E' }}
+            className="mx-auto mt-10 max-w-[620px] text-[16px] italic leading-relaxed"
+            style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
           >
-            For learners and creators
+            Meaningful communities grow when people feel welcomed,
+            supported and able to contribute. Every part of Fresh
+            Collective has been built to encourage connection — to
+            create more human moments, rather than simply more
+            consumption.
           </p>
-          <div className="mb-6">
-            <p style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 650, color: '#0F172A' }}>
-              Some people come here to learn.{' '}
-              <span style={{
-                backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                color: 'transparent',
-              }}>
-                Some come to share what they know.
-              </span>
-            </p>
-            <p className="mt-4" style={{ fontSize: 'clamp(1.5rem, 2.6vw, 2.125rem)', letterSpacing: '-0.04em', lineHeight: '1.46', fontWeight: 650, color: '#0F172A' }}>
-              Some come to find{' '}
-              <span style={{
-                backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                color: 'transparent',
-              }}>
-                community, conversation, and a more human way to grow.
-              </span>
-            </p>
-            <p className="mt-5" style={{ fontSize: 'clamp(0.9rem, 1.4vw, 1rem)', color: '#000000', letterSpacing: '-0.01em', lineHeight: '1.5' }}>
-              Fresh Collective is a home for creator-led collectives shaped around connection, belonging, and positive change.
-            </p>
-          </div>
-        </div>
-
-        {/* Cards */}
-        <div className="grid gap-5 sm:grid-cols-2 sm:gap-6">
-
-          {/* CARD 1 — Learners */}
-          <div
-            className="flex flex-col rounded-2xl p-8 sm:p-10"
-            style={{
-              background: '#F4FBFA',
-              border: '1px solid rgba(56,160,158,0.14)',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 4px 8px rgba(0,0,0,0.04), 0 16px 48px rgba(0,0,0,0.09)',
-            }}
+          <p
+            className="mx-auto mt-5 max-w-[620px] text-[16px] italic leading-relaxed"
+            style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
           >
-            {/* Icon */}
-            <div
-              className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl"
-              style={{ background: 'rgba(56,160,158,0.10)' }}
-            >
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <circle cx="10" cy="7.5" r="3" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M4 16.5c0-2.761 2.686-5 6-5s6 2.239 6 5" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            </div>
-
-            <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '6px' }}>
-              For learners
-            </p>
-            <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#08101E', lineHeight: '1.2' }}>
-              Find your collective
-            </h3>
-            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: '#000000' }}>
-              Explore communities built around shared interests, meaningful learning, honest conversation, and supportive connection.
-            </p>
-
-            <div className="mb-6" style={{ height: '1px', background: 'rgba(15,23,42,0.07)' }} />
-
-            <div className="mb-8 space-y-5">
-              {[
-                { num: '1', heading: 'Connection and belonging', body: 'Join a community where you can show up as you are.' },
-                { num: '2', heading: 'Shared learning and growth', body: 'Explore pathways and ideas alongside others on a similar path.' },
-              ].map(({ num, heading, body }) => (
-                <div key={num} className="flex gap-4">
-                  <div
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-                    style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
-                  >
-                    {num}
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '13.5px', fontWeight: 630, color: '#08101E', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
-                    <p style={{ fontSize: '13px', color: '#000000', lineHeight: '1.6' }}>{body}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-auto">
-              <Link
-                href="/spaces"
-                className="inline-flex items-center text-[14.5px] font-bold transition-opacity hover:opacity-70"
-                style={{ color: '#38A09E' }}
-              >
-                Explore Collectives →
-              </Link>
-            </div>
-          </div>
-
-          {/* CARD 2 — Creators */}
-          <div
-            className="flex flex-col rounded-2xl p-8 sm:p-10"
-            style={{
-              background: 'linear-gradient(145deg, #073B3A 0%, #062F35 100%)',
-              border: '1px solid rgba(66,199,198,0.22)',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.12), 0 16px 48px rgba(0,0,0,0.22)',
-            }}
-          >
-            {/* Icon */}
-            <div
-              className="mb-6 flex h-10 w-10 items-center justify-center rounded-xl"
-              style={{ background: 'rgba(255,255,255,0.10)' }}
-            >
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#8FE3E2" strokeWidth="1.5" strokeLinejoin="round"/>
-                <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#8FE3E2" strokeWidth="1.5" strokeLinejoin="round"/>
-                <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#8FE3E2" strokeWidth="1.5" strokeLinejoin="round"/>
-                <path d="M14 11.5v5M11.5 14h5" stroke="#8FE3E2" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-            </div>
-
-            <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#8FE3E2', marginBottom: '6px' }}>
-              For creators
-            </p>
-            <h3 className="mb-3" style={{ fontSize: '1.25rem', fontWeight: 660, letterSpacing: '-0.03em', color: 'rgba(255,255,255,0.92)', lineHeight: '1.2' }}>
-              Create your collective
-            </h3>
-            <p className="mb-6" style={{ fontSize: '15px', lineHeight: '1.78', color: '#FFFFFF' }}>
-              Build a space for your people to gather, learn, contribute, and grow — without losing the human heart of your work.
-            </p>
-
-            <div className="mb-6" style={{ height: '1px', background: 'rgba(255,255,255,0.14)' }} />
-
-            <div className="mb-8 space-y-5">
-              {[
-                { num: '1', heading: 'Build your space', body: 'Design a community around your work, purpose, or area of care.' },
-                { num: '2', heading: 'Gather and guide people', body: 'Share your knowledge while keeping the human heart of your work.' },
-              ].map(({ num, heading, body }) => (
-                <div key={num} className="flex gap-4">
-                  <div
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
-                    style={{ background: 'rgba(255,255,255,0.10)', color: '#8FE3E2' }}
-                  >
-                    {num}
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '13.5px', fontWeight: 630, color: 'rgba(255,255,255,0.90)', letterSpacing: '-0.01em', marginBottom: '2px' }}>{heading}</p>
-                    <p style={{ fontSize: '13px', color: '#FFFFFF', lineHeight: '1.6' }}>{body}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-auto">
-              <Link
-                href="/for-creators"
-                className="inline-flex items-center text-[14.5px] font-bold transition-opacity hover:opacity-90"
-                style={{ color: '#8FE3E2' }}
-              >
-                Build a Collective →
-              </Link>
-            </div>
-          </div>
-
+            People grow through what they do together — the
+            conversations they have, the sessions they show up for,
+            the small contributions that help someone else along.
+            A membership that leaves a mark isn&rsquo;t measured in
+            what you consumed; it&rsquo;s measured in what you took
+            part in.
+          </p>
         </div>
-
       </Container>
     </section>
   )
 }
 
-/* ─── Ecosystem Features ─────────────────────────────────────────────────────── */
 
-/* Shared chrome bar for all mockup panels */
-function PanelChrome({ title }: { title: string }) {
+// ═══════════════════════════════════════════════════════════════════
+// SECTION OPENING — a small heading + intro block that lives inside
+// a section (not on its own titled "chapter" page). No numerals, no
+// separate background, no divider ornaments.
+// ═══════════════════════════════════════════════════════════════════
+
+function SectionOpening({
+  title, body, className,
+}: {
+  title: string
+  body?: string
+  className?: string
+}) {
   return (
-    <div className="flex items-center gap-2 px-4" style={{ height: '38px', background: '#EDEEF1', borderBottom: '1px solid rgba(0,0,0,0.08)' }}>
-      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#F87171' }} />
-      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#FBBF24' }} />
-      <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#34D399' }} />
-      <span style={{ fontSize: '11px', fontWeight: 600, color: '#000000', marginLeft: '10px', letterSpacing: '0.01em' }}>{title}</span>
+    <div className={`mx-auto max-w-[680px] text-center ${className ?? ''}`}>
+      <h2
+        className="font-serif leading-[1.1] text-navy-900"
+        style={{
+          fontSize: 'clamp(1.875rem, 4.4vw, 2.75rem)',
+          letterSpacing: '-0.03em',
+          color: NAVY,
+        }}
+      >
+        {title}
+      </h2>
+      {body && (
+        <p
+          className="mx-auto mt-5 max-w-[560px] text-[15.5px] italic leading-relaxed"
+          style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
+        >
+          {body}
+        </p>
+      )}
     </div>
   )
 }
 
-function EcosystemStatement() {
-  return (
-    <section className="py-14 sm:py-28" style={{ background: '#FAFAF8' }}>
-      <Container>
 
-        {/* Centred heading */}
-        <div className="mx-auto mb-12 sm:mb-20 max-w-[640px] text-center">
-          <p style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '16px' }}>
-            Platform
-          </p>
-          <h2 style={{ fontSize: 'clamp(1.75rem, 4vw, 3rem)', letterSpacing: '-0.04em', lineHeight: '1.15', fontWeight: 660, color: '#0F172A', marginBottom: '16px' }}>
-            Fresh Collective is an{' '}
-            <span style={{
-              backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
-              WebkitBackgroundClip: 'text',
-              backgroundClip: 'text',
-              color: 'transparent',
-            }}>
-              ecosystem for human connection.
-            </span>
-          </h2>
-          <p style={{ fontSize: '16px', lineHeight: '1.78', color: '#000000' }}>
-            A creator-led platform where communities can grow through shared knowledge, meaningful relationships, and collective contribution.
-          </p>
-        </div>
+// ═══════════════════════════════════════════════════════════════════
+// EXPLORE THE WORLD — heading + three discovery cards.
+// ═══════════════════════════════════════════════════════════════════
 
-        {/* Feature rows */}
-        <div className="space-y-12 sm:space-y-28">
-
-          {/* ROW 1 — Collectives: text left, visual right */}
-          <div className="grid items-center gap-12 sm:grid-cols-[42fr_58fr] sm:gap-16">
-            <div className="border-l-2 border-[rgba(56,160,158,0.22)] pl-4 sm:border-l-0 sm:pl-0">
-              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <circle cx="7" cy="7" r="2.5" stroke="#38A09E" strokeWidth="1.5"/>
-                  <circle cx="13" cy="7" r="2.5" stroke="#38A09E" strokeWidth="1.5"/>
-                  <path d="M2 16c0-2.21 2.239-4 5-4s5 1.79 5 4" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
-                  <path d="M13 12c1.5 0 5 .9 5 4" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
-                Collectives for belonging
-              </h3>
-              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: '#000000' }}>
-                Each collective is its own community space where people can connect around shared values, interests, learning, or lived experience.
-              </p>
-            </div>
-
-            {/* Panel 1 — Collective browse */}
-            <div className="hidden sm:block" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
-              <PanelChrome title="Explore Collectives" />
-              <div style={{ background: '#fff', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {/* Hero collective card */}
-                <div style={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.07)' }}>
-                  <div style={{ height: '64px', background: 'linear-gradient(135deg, #0D2B2B 0%, #1A4A4A 50%, #38A09E 100%)', position: 'relative', padding: '14px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                    <div style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#FFFFFF', marginBottom: '3px' }}>Creator-led Collective</div>
-                    <div style={{ fontSize: '14px', fontWeight: 660, color: '#fff', letterSpacing: '-0.02em' }}>Living Intentionally</div>
-                  </div>
-                  <div style={{ padding: '12px 16px', background: '#fff' }}>
-                    <div style={{ fontSize: '12px', color: '#000000', lineHeight: '1.55', marginBottom: '10px' }}>Slow down, reflect, and build a life that actually fits.</div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#000000' }}>24 members</span>
-                        <span style={{ width: '3px', height: '3px', borderRadius: '50%', background: 'rgba(15,23,42,0.20)', display: 'inline-block' }} />
-                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#000000' }}>3 pathways</span>
-                      </div>
-                      <div className="flex items-center gap-1.5" style={{ background: 'rgba(56,160,158,0.08)', borderRadius: '999px', padding: '3px 8px' }}>
-                        <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#38A09E' }} />
-                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#38A09E' }}>Live this week</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {/* Two smaller collective cards */}
-                <div className="grid gap-2.5" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                  {[
-                    { name: 'Deep Work Practice', count: '18', accent: '#38A09E' },
-                    { name: 'Creative Leadership', count: '31', accent: '#C4981A' },
-                  ].map(({ name, count, accent }) => (
-                    <div key={name} style={{ borderRadius: '8px', border: '1px solid rgba(15,23,42,0.07)', padding: '12px', background: '#FAFAF8' }}>
-                      <div style={{ width: '20px', height: '3px', borderRadius: '2px', background: accent, marginBottom: '8px', opacity: 0.7 }} />
-                      <div style={{ fontSize: '11.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.01em', marginBottom: '4px', lineHeight: '1.3' }}>{name}</div>
-                      <div style={{ fontSize: '10.5px', color: '#000000' }}>{count} members</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ROW 2 — Pathways: visual left, text right */}
-          <div className="grid items-center gap-12 sm:grid-cols-[58fr_42fr] sm:gap-16">
-
-            {/* Panel 2 — Pathway progress */}
-            <div className="hidden sm:block sm:order-1" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
-              <PanelChrome title="Guided Pathway" />
-              <div style={{ background: '#fff', display: 'flex', minHeight: '280px' }}>
-                {/* Left sidebar — step list */}
-                <div style={{ width: '42%', borderRight: '1px solid rgba(15,23,42,0.07)', padding: '16px' }}>
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#000000', marginBottom: '12px' }}>Modules</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    {[
-                      { label: 'Week 1', done: true, active: false },
-                      { label: 'Week 2', done: true, active: false },
-                      { label: 'Week 3', done: false, active: true },
-                      { label: 'Week 4', done: false, active: false },
-                    ].map(({ label, done, active }) => (
-                      <div key={label} className="flex items-center gap-2.5" style={{ padding: '7px 8px', borderRadius: '6px', background: active ? 'rgba(56,160,158,0.08)' : 'transparent' }}>
-                        <div style={{ width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, background: done ? '#38A09E' : active ? 'rgba(56,160,158,0.15)' : 'rgba(15,23,42,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {done && <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3l2 2 4-4" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                        </div>
-                        <span style={{ fontSize: '12px', color: done ? '#0F172A' : active ? '#38A09E' : '#000000', fontWeight: active ? 640 : done ? 540 : 400 }}>{label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(15,23,42,0.07)' }}>
-                    <div style={{ fontSize: '10px', color: '#000000', marginBottom: '6px' }}>Overall progress</div>
-                    <div style={{ height: '4px', borderRadius: '2px', background: 'rgba(15,23,42,0.08)' }}>
-                      <div style={{ width: '50%', height: '100%', borderRadius: '2px', background: 'linear-gradient(to right, #38A09E, #55C4C2)' }} />
-                    </div>
-                    <div style={{ fontSize: '10px', color: '#38A09E', fontWeight: 600, marginTop: '5px' }}>Module 2 of 4</div>
-                  </div>
-                </div>
-                {/* Right — lesson content */}
-                <div style={{ flex: 1, padding: '16px' }}>
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '6px' }}>Current · Week 3</div>
-                  <div style={{ fontSize: '13.5px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '10px', lineHeight: '1.35' }}>What shifts when you slow down and notice?</div>
-                  <div style={{ fontSize: '11.5px', color: '#000000', lineHeight: '1.62', marginBottom: '14px' }}>
-                    Reflect on a moment when a decision felt completely right — not exciting, just settled. What was present?
-                  </div>
-                  <div style={{ borderRadius: '8px', padding: '10px 12px', background: '#F4FBFA', border: '1px solid rgba(56,160,158,0.14)', marginBottom: '12px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#38A09E', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '5px' }}>Reflection prompt</div>
-                    <div style={{ fontSize: '11.5px', color: '#000000', lineHeight: '1.55', fontStyle: 'italic' }}>"What would I choose if I wasn't afraid of it being wrong?"</div>
-                  </div>
-                  <div style={{ height: '1px', background: 'rgba(15,23,42,0.06)', marginBottom: '10px' }} />
-                  <div style={{ fontSize: '11px', color: '#000000' }}>3 lessons · 1 reflection · Est. 20 min</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="order-1 sm:order-2 border-l-2 border-[rgba(56,160,158,0.22)] pl-4 sm:border-l-0 sm:pl-0">
-              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <path d="M4 10h12M10 4l6 6-6 6" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-              <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
-                Pathways for growth
-              </h3>
-              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: '#000000' }}>
-                Guide your people through courses, practices, reflections, or learning journeys that help them move from interest to integration.
-              </p>
-            </div>
-          </div>
-
-          {/* ROW 3 — Gatherings: text left, visual right */}
-          <div className="grid items-center gap-12 sm:grid-cols-[42fr_58fr] sm:gap-16">
-            <div className="border-l-2 border-[rgba(56,160,158,0.22)] pl-4 sm:border-l-0 sm:pl-0">
-              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(56,160,158,0.10)' }}>
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <rect x="3" y="4" width="14" height="13" rx="2" stroke="#38A09E" strokeWidth="1.5"/>
-                  <path d="M3 8h14M7 2v3M13 2v3" stroke="#38A09E" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
-                Gatherings for real connection
-              </h3>
-              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: '#000000' }}>
-                Host live sessions, workshops, circles, classes, or community touchpoints that bring people together in real time.
-              </p>
-            </div>
-
-            {/* Panel 3 — Gatherings & community */}
-            <div className="hidden sm:block" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
-              <PanelChrome title="Conversations" />
-              <div style={{ background: '#fff', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {/* Event card */}
-                <div style={{ borderRadius: '10px', border: '1px solid rgba(56,160,158,0.18)', padding: '14px 16px', background: '#F4FBFA' }}>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#38A09E', marginBottom: '4px' }}>Live Gathering</div>
-                      <div style={{ fontSize: '14px', fontWeight: 650, color: '#0F172A', letterSpacing: '-0.02em', marginBottom: '2px' }}>Monthly open call</div>
-                      <div style={{ fontSize: '11px', color: '#000000' }}>60 min · structured · led</div>
-                    </div>
-                    <div style={{ borderRadius: '8px', padding: '6px 10px', background: '#38A09E', textAlign: 'center', flexShrink: 0 }}>
-                      <div style={{ fontSize: '16px', fontWeight: 700, color: '#fff', lineHeight: 1 }}>14</div>
-                      <div style={{ fontSize: '9px', fontWeight: 600, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>May</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-3">
-                    {[1,2,3,4].map(i => (
-                      <div key={i} style={{ width: '22px', height: '22px', borderRadius: '50%', background: `rgba(56,160,158,${0.18 + i*0.07})`, border: '2px solid #fff', marginLeft: i > 1 ? '-6px' : 0 }} />
-                    ))}
-                    <span style={{ fontSize: '11px', color: '#000000', marginLeft: '8px' }}>+21 attending</span>
-                  </div>
-                </div>
-                {/* Community prompt thread */}
-                <div style={{ borderRadius: '10px', border: '1px solid rgba(15,23,42,0.07)', padding: '14px 16px', background: '#FAFAF8' }}>
-                  <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.13em', textTransform: 'uppercase', color: '#000000', marginBottom: '8px' }}>This week's prompt</div>
-                  <div style={{ fontSize: '13px', color: '#0F172A', fontWeight: 540, lineHeight: '1.58', marginBottom: '10px', fontStyle: 'italic' }}>
-                    "What would you do if you stopped waiting to feel ready?"
-                  </div>
-                  <div style={{ height: '1px', background: 'rgba(15,23,42,0.06)', marginBottom: '10px' }} />
-                  {[
-                    { initials: 'SR', text: "I'd finally start the project I've been putting off for two years.", color: '#38A09E' },
-                    { initials: 'MK', text: "Honestly — I'd have that conversation I keep avoiding.", color: '#C4981A' },
-                  ].map(({ initials, text, color }) => (
-                    <div key={initials} className="flex items-start gap-2.5 mb-2 last:mb-0">
-                      <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: `${color}22`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <span style={{ fontSize: '8.5px', fontWeight: 700, color }}>{initials}</span>
-                      </div>
-                      <div style={{ fontSize: '11.5px', color: '#000000', lineHeight: '1.55', paddingTop: '2px' }}>{text}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ROW 4 — Creator tools: visual left, text right */}
-          <div className="grid items-center gap-12 sm:grid-cols-[58fr_42fr] sm:gap-16">
-
-            {/* Panel 4 — Creator workspace */}
-            <div className="hidden sm:block" style={{ borderRadius: '16px', overflow: 'hidden', border: '1px solid rgba(15,23,42,0.09)', boxShadow: '0 2px 4px rgba(0,0,0,0.04), 0 8px 24px rgba(0,0,0,0.06), 0 24px 64px rgba(0,0,0,0.08)' }}>
-              <PanelChrome title="Creator Workspace" />
-              <div style={{ background: '#fff', display: 'flex', minHeight: '280px' }}>
-                {/* Sidebar nav */}
-                <div style={{ width: '38%', borderRight: '1px solid rgba(15,23,42,0.07)', padding: '16px', background: '#FAFAF8' }}>
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#000000', marginBottom: '10px' }}>My Collective</div>
-                  {[
-                    { label: 'Pathways', active: true },
-                    { label: 'Events', active: false },
-                    { label: 'Conversations', active: false },
-                    { label: 'Resources', active: false },
-                  ].map(({ label, active }) => (
-                    <div key={label} style={{ padding: '7px 10px', borderRadius: '6px', marginBottom: '2px', background: active ? 'rgba(212,176,72,0.10)' : 'transparent', cursor: 'default' }}>
-                      <span style={{ fontSize: '12px', color: active ? '#B8891A' : '#000000', fontWeight: active ? 640 : 400 }}>{label}</span>
-                    </div>
-                  ))}
-                  <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(15,23,42,0.07)' }}>
-                    <div style={{ fontSize: '10px', color: '#000000', marginBottom: '4px' }}>Members</div>
-                    <div style={{ fontSize: '18px', fontWeight: 660, color: '#0F172A', letterSpacing: '-0.03em' }}>34</div>
-                    <div style={{ fontSize: '10px', color: '#38A09E', fontWeight: 600 }}>+3 this week</div>
-                  </div>
-                </div>
-                {/* Main panel — pathway list */}
-                <div style={{ flex: 1, padding: '16px' }}>
-                  <div className="flex items-center justify-between mb-3">
-                    <div style={{ fontSize: '12px', fontWeight: 640, color: '#0F172A', letterSpacing: '-0.01em' }}>Active Pathways</div>
-                    <div style={{ fontSize: '10px', fontWeight: 700, color: '#B8891A', letterSpacing: '0.05em', cursor: 'default' }}>+ New</div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {[
-                      { name: 'Living with Intention', steps: '4 modules', status: 'Published', dot: '#38A09E' },
-                      { name: 'Deep Work Essentials', steps: '6 lessons', status: 'Published', dot: '#38A09E' },
-                      { name: 'Creative Practice', steps: '5 lessons', status: 'Draft', dot: '#C4981A' },
-                    ].map(({ name, steps, status, dot }) => (
-                      <div key={name} className="flex items-center justify-between" style={{ borderRadius: '7px', padding: '9px 11px', background: '#F8F8F6', border: '1px solid rgba(15,23,42,0.06)' }}>
-                        <div>
-                          <div style={{ fontSize: '12px', fontWeight: 580, color: '#0F172A', marginBottom: '2px' }}>{name}</div>
-                          <div style={{ fontSize: '10.5px', color: '#000000' }}>{steps}</div>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: dot }} />
-                          <span style={{ fontSize: '10.5px', color: '#000000', fontWeight: 500 }}>{status}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid rgba(15,23,42,0.06)' }}>
-                    <div style={{ fontSize: '10.5px', color: '#B8891A', fontWeight: 600 }}>2 upcoming events · Next: May 18</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="border-l-2 border-[rgba(196,152,26,0.28)] pl-4 sm:border-l-0 sm:pl-0">
-              <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: 'rgba(212,176,72,0.12)' }}>
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                  <rect x="3" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
-                  <rect x="11" y="3" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
-                  <rect x="3" y="11" width="6" height="6" rx="1.5" stroke="#C4981A" strokeWidth="1.5" strokeLinejoin="round"/>
-                  <path d="M14 11.5v5M11.5 14h5" stroke="#C4981A" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <h3 style={{ fontSize: '1.375rem', fontWeight: 660, letterSpacing: '-0.03em', color: '#0F172A', lineHeight: '1.25', marginBottom: '12px' }}>
-                For creators with something meaningful to share
-              </h3>
-              <p style={{ fontSize: '15.5px', lineHeight: '1.80', color: '#000000' }}>
-                Fresh Collective is for teachers, facilitators, coaches, practitioners, guides, and community builders. Your work deserves a space that feels clear, supportive, and human.
-              </p>
-            </div>
-          </div>
-
-        </div>
-      </Container>
-    </section>
-  )
+interface DiscoveryEntry {
+  artKey: string
+  atmosphereSlug: string
+  title: string
+  body: string
+  href: string
+  cta: string
+  alt: string
 }
 
-/* ─── Fresh Ideas (dark card) ───────────────────────────────────────────────── */
+const DISCOVERY_ENTRIES: DiscoveryEntry[] = [
+  {
+    artKey: 'homepage_explore_collectives',
+    atmosphereSlug: 'homepage-explore-collectives',
+    title: 'Explore Collectives',
+    body: 'Find Collectives shaped around what you care about — the ideas, practices and journeys that match your interests, needs or direction.',
+    href: '/spaces',
+    cta: 'Explore Collectives',
+    alt: 'Fresh Collective — Explore Collectives',
+  },
+  {
+    artKey: 'homepage_discover_places',
+    atmosphereSlug: 'homepage-discover-places',
+    title: 'Discover Places',
+    body: 'See where Collectives are gathering across cities, regions and other real-world places.',
+    href: '/discover-places',
+    cta: 'Discover Places',
+    alt: 'Fresh Collective — Discover Places',
+  },
+  {
+    artKey: 'homepage_ways_to_connect',
+    atmosphereSlug: 'homepage-ways-to-connect',
+    title: 'Ways to Connect',
+    body: 'Meet people through the meaningful things you already share — the Collectives you belong to, the Pathways you walk, the Places you gather in.',
+    href: '/ways-to-connect',
+    cta: 'See how it works',
+    alt: 'Fresh Collective — Ways to Connect',
+  },
+]
 
-function FreshIdeas() {
+function ExploreSection({ artFor }: { artFor: (key: string) => string | null }) {
   return (
-    <section className="py-12 sm:py-20" style={{ background: '#FAFAF8' }}>
+    <section className="py-16 sm:py-20" style={{ background: '#FFFFFF' }}>
       <Container>
-        <div
-          className="relative overflow-hidden"
-          style={{
-            borderRadius: '24px',
-            background: '#071824',
-            border: '1px solid rgba(255,255,255,0.07)',
-            boxShadow: '0 48px 120px rgba(0,0,0,0.30), 0 16px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.12)',
-          }}
-        >
-          {/* Teal radial glow — top right */}
-          <div
-            className="pointer-events-none absolute inset-0"
-            aria-hidden="true"
-            style={{
-              background: 'radial-gradient(ellipse 80% 60% at 90% -5%, rgba(56,160,158,0.22) 0%, transparent 65%)',
-            }}
-          />
-          {/* Secondary glow — bottom left */}
-          <div
-            className="pointer-events-none absolute inset-0"
-            aria-hidden="true"
-            style={{
-              background: 'radial-gradient(ellipse 50% 55% at -5% 105%, rgba(56,160,158,0.09) 0%, transparent 60%)',
-            }}
-          />
-
-          <div style={{ padding: 'clamp(2.5rem, 5.5vw, 5rem) clamp(1.25rem, 5.5vw, 5rem)' }}>
-
-            {/* Eyebrow */}
-            <div className="mb-6 sm:mb-10 flex items-center gap-3">
-              <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(85,184,182,0.60)' }} />
-              <span style={{ fontSize: '12px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#FFFFFF' }}>
-                Built for human connection
-              </span>
-            </div>
-
-            {/* Heading */}
-            <h2
-              style={{
-                fontSize: 'clamp(2rem, 4.5vw, 4.25rem)',
-                letterSpacing: '-0.04em',
-                lineHeight: '1.08',
-                fontWeight: 660,
-                marginBottom: '1.75rem',
-                maxWidth: '640px',
-              }}
-            >
-              <span style={{ color: '#FFFFFF' }}>Meaningful communities</span>
-              <br />
-              <span
-                style={{
-                  backgroundImage: 'linear-gradient(90deg, #42C7C6 0%, #7FDAD9 35%, #D8F5F2 65%, #FFFFFF 90%)',
-                  WebkitBackgroundClip: 'text',
-                  backgroundClip: 'text',
-                  color: 'transparent',
-                }}
-              >
-                need space to breathe.
-              </span>
-            </h2>
-
-            {/* Body */}
-            <div style={{ maxWidth: '560px' }}>
-              <p
-                style={{
-                  fontSize: 'clamp(1rem, 1.5vw, 1.125rem)',
-                  lineHeight: '1.85',
-                  color: '#FFFFFF',
-                  marginBottom: '1.25rem',
-                  letterSpacing: '-0.01em',
-                }}
-              >
-                Fresh Collective is built for communities that believe meaningful relationships, shared experience, and supportive belonging are worth protecting.
-              </p>
-              <p
-                style={{
-                  fontSize: 'clamp(1rem, 1.5vw, 1.125rem)',
-                  lineHeight: '1.85',
-                  color: '#FFFFFF',
-                  letterSpacing: '-0.01em',
-                }}
-              >
-                Not more noise. Not passive content. A place where people, ideas, and communities can gather, grow, and contribute to something real.
-              </p>
-            </div>
-
-          </div>
-        </div>
-      </Container>
-    </section>
-  )
-}
-
-/* ─── The Way We Feel ───────────────────────────────────────────────────────── */
-
-function TheWayWeFeelSection() {
-  return (
-    <section className="py-12 sm:py-20" style={{ background: '#FFFFFF' }}>
-      <Container>
-        <div className="text-center">
-
-          {/* Eyebrow */}
-          <div className="mb-6 flex items-center justify-center gap-3">
-            <div style={{ height: '1px', width: '1.5rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
-            <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E' }}>
-              Our belief
-            </span>
-            <div style={{ height: '1px', width: '1.5rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
-          </div>
-
-          {/* Heading */}
-          <h2
-            style={{
-              fontSize: 'clamp(1.875rem, 4vw, 3.75rem)',
-              letterSpacing: '-0.04em',
-              lineHeight: '1.1',
-              fontWeight: 660,
-              marginBottom: '1.25rem',
-            }}
-          >
-            <span style={{ display: 'block', color: '#0F172A' }}>Humans thrive through</span>
-            <span
-              style={{
-                display: 'block',
-                backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                color: 'transparent',
-              }}
-            >
-              connection, belonging, and contribution.
-            </span>
-          </h2>
-
-          {/* Supporting line */}
-          <p
-            style={{
-              fontSize: 'clamp(0.9375rem, 1.3vw, 1.0625rem)',
-              lineHeight: '1.78',
-              color: '#000000',
-              maxWidth: '480px',
-              margin: '0 auto',
-              letterSpacing: '-0.01em',
-            }}
-          >
-            As technology evolves, meaningful relationships, shared experiences, and supportive communities become more important than ever.
-          </p>
-
-        </div>
-      </Container>
-    </section>
-  )
-}
-
-/* ─── Where the Learning Lives ──────────────────────────────────────────────── */
-
-function WhereTheLearningLives() {
-  const features: { title: string; desc: string; iconBg: string; iconColor: string }[] = [
-    {
-      title: 'A public About page',
-      desc: 'Create a clear, welcoming space that explains your community and invites the right people in.',
-      iconBg: 'rgba(56,160,158,0.12)',
-      iconColor: '#38A09E',
-    },
-    {
-      title: 'Pathways, resources, and gatherings',
-      desc: 'Offer guided learning, shared materials, and live sessions — all in one organised place.',
-      iconBg: 'rgba(56,160,158,0.12)',
-      iconColor: '#38A09E',
-    },
-    {
-      title: 'Members, access, and bookings',
-      desc: 'Manage your community with less friction, whether it is free, paid, or invite-only.',
-      iconBg: 'rgba(56,160,158,0.12)',
-      iconColor: '#38A09E',
-    },
-    {
-      title: 'Free or paid spaces',
-      desc: 'Build open or paid collectives without making the experience feel transactional.',
-      iconBg: 'rgba(56,160,158,0.12)',
-      iconColor: '#38A09E',
-    },
-    {
-      title: 'Warm and easy to navigate',
-      desc: 'Keep your community organised, calm, and clear — for you and for the people who join.',
-      iconBg: 'rgba(56,160,158,0.12)',
-      iconColor: '#38A09E',
-    },
-  ]
-
-  return (
-    <section className="py-14 sm:py-28" style={{ background: '#F3FAFA' }}>
-      <Container>
-        <div className="grid items-center gap-12 sm:grid-cols-[45fr_55fr] sm:gap-16">
-
-          {/* ── Visual panel ────────────────────────────────────────────────── */}
-          <div
-            className="relative overflow-hidden order-2 sm:order-1"
-            style={{
-              borderRadius: '20px',
-              background: 'linear-gradient(155deg, #0A1F20 0%, #0D2B2B 55%, #091C1C 100%)',
-              minHeight: '420px',
-              boxShadow: '0 24px 64px rgba(0,0,0,0.20), 0 4px 16px rgba(0,0,0,0.10)',
-            }}
-          >
-            {/* Teal glow */}
-            <div
-              className="pointer-events-none absolute inset-0"
-              aria-hidden="true"
-              style={{
-                background: 'radial-gradient(ellipse 80% 55% at 55% 15%, rgba(56,160,158,0.28) 0%, transparent 65%)',
-              }}
+        <SectionOpening
+          title="Explore the world."
+          body="Fresh Collective gives you different ways to discover where you might belong. Explore Collectives by name, theme or the experiences they offer. Discover communities gathering in your local area. Or meet people whose Pathways, Gatherings and interests already cross with your own."
+          className="mb-10 sm:mb-14"
+        />
+        <div className="grid gap-6 md:grid-cols-3">
+          {DISCOVERY_ENTRIES.map((entry) => (
+            <DiscoveryCard
+              key={entry.artKey}
+              entry={entry}
+              artUrl={artFor(entry.artKey)}
             />
-
-            <div style={{ padding: '28px', position: 'relative' }}>
-
-              {/* Label badge */}
-              <div
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: '7px',
-                  background: 'rgba(56,160,158,0.14)',
-                  border: '1px solid rgba(85,184,182,0.22)',
-                  borderRadius: '8px',
-                  padding: '5px 12px',
-                  marginBottom: '22px',
-                }}
-              >
-                <div style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#42C7C6' }} />
-                <span style={{ fontSize: '10.5px', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#7FDAD9' }}>
-                  Guided pathway
-                </span>
-              </div>
-
-              {/* Pathway progress card */}
-              <div
-                style={{
-                  background: 'rgba(255,255,255,0.06)',
-                  border: '1px solid rgba(255,255,255,0.10)',
-                  borderRadius: '14px',
-                  padding: '18px 20px',
-                  marginBottom: '12px',
-                }}
-              >
-                <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase' as const, color: '#42C7C6', marginBottom: '12px' }}>
-                  Current pathway
-                </div>
-                <div style={{ display: 'flex', gap: '7px', marginBottom: '14px' }}>
-                  {(['Wk 1', 'Wk 2', 'Wk 3', 'Wk 4'] as const).map((label, i) => (
-                    <div
-                      key={label}
-                      style={{
-                        flex: 1, height: '36px', borderRadius: '8px',
-                        background: i === 0 ? 'rgba(56,160,158,0.28)' : 'rgba(255,255,255,0.05)',
-                        border: `1px solid ${i === 0 ? 'rgba(56,160,158,0.40)' : 'rgba(255,255,255,0.06)'}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: i === 0 ? '#7FDAD9' : '#FFFFFF' }}>
-                        {label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.07)' }}>
-                  <div style={{ height: '3px', width: '28%', borderRadius: '2px', backgroundImage: 'linear-gradient(90deg, #38A09E, #55C4C2)' }} />
-                </div>
-              </div>
-
-              {/* Two smaller cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: '12px',
-                    padding: '14px 15px',
-                  }}
-                >
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#D4B048', marginBottom: '6px' }}>
-                    Live Layer
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#FFFFFF', lineHeight: '1.5' }}>
-                    Monthly gathering
-                  </div>
-                </div>
-                <div
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: '12px',
-                    padding: '14px 15px',
-                  }}
-                >
-                  <div style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#FFFFFF', marginBottom: '6px' }}>
-                    Practice
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#FFFFFF', lineHeight: '1.5' }}>
-                    One experiment this week
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-          {/* ── Text + feature list ──────────────────────────────────────────── */}
-          <div className="order-1 sm:order-2">
-
-            {/* Eyebrow */}
-            <div className="mb-6 flex items-center gap-3">
-              <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
-              <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' as const, color: '#38A09E' }}>
-                The structure
-              </span>
-            </div>
-
-            {/* Heading */}
-            <h2
-              style={{
-                fontSize: 'clamp(1.75rem, 2.8vw, 2.75rem)',
-                letterSpacing: '-0.04em',
-                lineHeight: '1.1',
-                fontWeight: 660,
-                color: '#0F172A',
-                marginBottom: '1.25rem',
-              }}
-            >
-              Everything your collective needs to{' '}
-              <span
-                style={{
-                  backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
-                  WebkitBackgroundClip: 'text',
-                  backgroundClip: 'text',
-                  color: 'transparent',
-                }}
-              >
-                breathe and grow.
-              </span>
-            </h2>
-
-            {/* Supporting line */}
-            <p
-              style={{
-                fontSize: 'clamp(0.9375rem, 1.2vw, 1rem)',
-                lineHeight: '1.78',
-                color: '#000000',
-                marginBottom: '2rem',
-                letterSpacing: '-0.01em',
-                maxWidth: '420px',
-              }}
-            >
-              Fresh Collective gives creators the tools to build communities that feel clear, supportive, and genuinely human.
-            </p>
-
-            {/* Feature rows */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {features.map(({ title, desc, iconBg, iconColor }) => (
-                <div
-                  key={title}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '14px',
-                    padding: '14px 16px',
-                    background: '#FFFFFF',
-                    border: '1px solid rgba(15,23,42,0.07)',
-                    borderRadius: '12px',
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: '32px', height: '32px', borderRadius: '8px',
-                      background: iconBg,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div style={{ width: '12px', height: '12px', borderRadius: '3px', background: iconColor }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: 650, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: '1.3', marginBottom: '2px' }}>
-                      {title}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#000000', lineHeight: '1.55', letterSpacing: '-0.01em' }}>
-                      {desc}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-          </div>
+          ))}
         </div>
       </Container>
     </section>
   )
 }
 
-/* ─── Good Questions ────────────────────────────────────────────────────────── */
+function DiscoveryCard({
+  entry, artUrl,
+}: {
+  entry: DiscoveryEntry
+  artUrl: string | null
+}) {
+  return (
+    <Link
+      href={entry.href}
+      className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-shadow hover:shadow-[0_10px_28px_rgba(12,24,38,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
+    >
+      <div
+        className="relative w-full overflow-hidden"
+        style={{ aspectRatio: '5 / 3' }}
+      >
+        {artUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={artUrl}
+            alt={entry.alt}
+            className="absolute inset-0 h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.02]"
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0"
+            style={{
+              background: atmosphereBackground(atmosphereForSlug(entry.atmosphereSlug, false)),
+            }}
+          />
+        )}
+      </div>
+      <div className="flex flex-1 flex-col p-6 md:p-7">
+        <h3
+          className="font-serif text-[22px] leading-tight md:text-[24px]"
+          style={{ color: NAVY }}
+        >
+          {entry.title}
+        </h3>
+        <p
+          className="mt-3 text-[14px] leading-relaxed"
+          style={{ color: INK_BODY, fontFamily: 'Georgia, serif' }}
+        >
+          {entry.body}
+        </p>
+        <p
+          className="mt-auto pt-6 text-[13px] font-semibold transition-transform group-hover:translate-x-0.5"
+          style={{ color: TEAL_DEEP }}
+        >
+          {entry.cta} →
+        </p>
+      </div>
+    </Link>
+  )
+}
 
-function GoodQuestions() {
-  const qa = [
+
+// ═══════════════════════════════════════════════════════════════════
+// LIFE INSIDE A COLLECTIVE — four editorial feature rows.
+//
+// No cards, no borders, no dividers. Each row is a spread — copy on
+// one side, the interface visual on the other, alternating. The
+// mockups themselves are the hero; whitespace defines the rhythm.
+//
+// Column proportions vary per feature so the four rows never feel
+// mechanically identical (Apple / Airbnb / Notion editorial style).
+//
+// Mockups render directly on the page white with a soft ambient
+// shadow — floating product photography rather than framed cards.
+// ═══════════════════════════════════════════════════════════════════
+
+// All four Life-inside compositions share exactly the same artwork
+// frame — outer image size, aspect ratio, radius and base shadow are
+// constants applied by ArtworkFeatureComposition.
+//
+// The grid template flips per row so the ARTWORK column is always
+// the wider one regardless of whether the row shows copy-left or
+// copy-right. Without this flip, source-order swapping alone would
+// leave the artwork in the narrow column on flipped rows.
+const INSIDE_ASPECT = '3 / 2'
+const INSIDE_GRID_COPY_LEFT  = 'md:grid-cols-[minmax(0,0.78fr)_minmax(0,1.3fr)]'
+const INSIDE_GRID_COPY_RIGHT = 'md:grid-cols-[minmax(0,1.3fr)_minmax(0,0.78fr)]'
+
+interface Feature {
+  title: string
+  body: string
+  artKey: string
+  atmosphereSlug: string
+  artAlt: string
+}
+
+function InsideCollectiveSection({ artFor }: { artFor: (key: string) => string | null }) {
+  const features: Feature[] = [
     {
-      q: 'What is Fresh Collective?',
-      a: 'Fresh Collective is a platform for creator-led communities. It brings together collectives, pathways, gatherings, resources, and community spaces in one simple place.',
+      title: 'Walk meaningful Pathways.',
+      body: 'Pathways are creator-guided journeys made up of thoughtful steps — courses, programs, practices, prompts, reflections and materials to learn from and grow.',
+      artKey: 'homepage_pathways',
+      atmosphereSlug: 'inside-pathways',
+      artAlt: 'A Pathway inside a Fresh Collective community',
     },
     {
-      q: 'Who is it for?',
-      a: 'Fresh Collective is for creators, facilitators, teachers, coaches, practitioners, and community builders who want to bring people together around meaningful learning, connection, and growth.',
+      title: 'Come together at Gatherings.',
+      body: 'Gatherings bring members and creators together online or in person — sessions, circles, workshops and events. Human-centred, interactive, and worth showing up for.',
+      artKey: 'homepage_gatherings',
+      atmosphereSlug: 'inside-gatherings',
+      artAlt: 'A Gathering inside a Fresh Collective community',
     },
     {
-      q: 'What is a collective?',
-      a: 'A collective is a community space built around a shared purpose, interest, practice, or body of work. Each collective can include pathways, live gatherings, resources, conversations, and member access.',
+      title: 'Continue in Conversation.',
+      body: 'Conversations give members a place to keep talking between Gatherings and Pathway steps — reflect on what has been shared, welcome new arrivals, and support one another along the way.',
+      artKey: 'homepage_conversations',
+      atmosphereSlug: 'inside-conversations',
+      artAlt: 'Members in conversation inside a Fresh Collective community',
     },
     {
-      q: 'Can I join more than one collective?',
-      a: 'Yes. You can explore and join the collectives that feel relevant to you.',
-    },
-    {
-      q: 'Can I create my own collective?',
-      a: 'Yes. Fresh Collective is being built to support creators who want to gather their people, share their work, and build community in a more connected way.',
-    },
-    {
-      q: 'Is Fresh Collective just for courses?',
-      a: 'No. Courses can live here, but Fresh Collective is bigger than that. It is designed for communities, learning journeys, live sessions, shared resources, conversations, and ongoing connection.',
+      title: 'Resources you can return to.',
+      body: 'Practical materials the creator shares for members to use in their own time — recordings, guides, workbooks and worksheets, all kept in one place. A reference shelf that grows as the Collective does.',
+      artKey: 'homepage_resources',
+      atmosphereSlug: 'inside-resources',
+      artAlt: 'Resources shared inside a Fresh Collective community',
     },
   ]
 
   return (
-    <section className="py-14 sm:py-28" style={{ background: '#FFFFFF' }}>
+    <section className="py-24 sm:py-32" style={{ background: '#FFFFFF' }}>
       <Container>
-        <div className="grid gap-10 sm:grid-cols-[38fr_62fr] sm:gap-16">
+        <SectionOpening
+          title="Life inside a Collective."
+          body="Every Collective holds different experiences, including — Pathways to walk, Gatherings to attend, Conversations to connect, and Resources to return to. Together they shape the daily rhythm of belonging."
+          className="mb-20 sm:mb-28"
+        />
 
-          {/* Left: heading */}
-          <div>
-            <div className="mb-6 flex items-center gap-3">
-              <div style={{ height: '1px', width: '2rem', flexShrink: 0, background: 'rgba(56,160,158,0.45)' }} />
-              <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#38A09E' }}>
-                Questions
-              </span>
-            </div>
-
-            <h2
-              style={{
-                fontSize: 'clamp(1.875rem, 3vw, 2.875rem)',
-                letterSpacing: '-0.04em',
-                lineHeight: '1.1',
-                fontWeight: 660,
-              }}
-            >
-              <span style={{ display: 'block', color: '#0F172A' }}>Good questions deserve</span>
-              <span
-                style={{
-                  display: 'block',
-                  backgroundImage: 'linear-gradient(100deg, #0F8F8D 0%, #26B9B7 45%, #67D8D6 100%)',
-                  WebkitBackgroundClip: 'text',
-                  backgroundClip: 'text',
-                  color: 'transparent',
-                }}
-              >
-                honest answers.
-              </span>
-            </h2>
-          </div>
-
-          {/* Right: accordion */}
-          <div className="flex flex-col gap-3 sm:pr-8">
-            {qa.map(({ q, a }) => (
-              <details
-                key={q}
-                className="group rounded-2xl border border-[rgba(66,199,198,0.14)] bg-[#F7FCFC]
-                  shadow-[0_1px_6px_rgba(0,0,0,0.06)]
-                  hover:bg-[#F1FAFA]
-                  open:border-[rgba(56,160,158,0.32)] open:shadow-[0_4px_24px_rgba(56,160,158,0.09)]"
-              >
-                <summary className="flex cursor-pointer list-none select-none items-center justify-between gap-4 px-6 py-5">
-                  <span style={{ fontSize: '15px', fontWeight: 620, color: '#0F172A', letterSpacing: '-0.02em', lineHeight: '1.4' }}>
-                    {q}
-                  </span>
-                  <div
-                    className="shrink-0 transition-transform duration-200 group-open:rotate-180"
-                    style={{
-                      width: '28px', height: '28px', borderRadius: '50%',
-                      background: 'rgba(56,160,158,0.09)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                      <path d="M2.5 4.5L6 8L9.5 4.5" stroke="#38A09E" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </div>
-                </summary>
-                <div style={{ padding: '0 1.5rem 1.25rem' }}>
-                  <div style={{ height: '1px', background: 'rgba(56,160,158,0.12)', marginBottom: '1rem' }} />
-                  <p style={{ fontSize: '15px', lineHeight: '1.78', color: '#000000', letterSpacing: '-0.01em' }}>
-                    {a}
-                  </p>
-                </div>
-              </details>
-            ))}
-          </div>
-
+        <div className="mx-auto flex max-w-[1160px] flex-col gap-20 md:gap-28">
+          {features.map((feature, i) => (
+            <FeatureRow
+              key={feature.title}
+              feature={feature}
+              flipped={i % 2 === 1}
+              artUrl={artFor(feature.artKey)}
+            />
+          ))}
         </div>
       </Container>
     </section>
   )
 }
 
-/* ─── Final CTA ─────────────────────────────────────────────────────────────── */
+function FeatureRow({
+  feature, flipped, artUrl,
+}: {
+  feature: Feature
+  flipped: boolean
+  artUrl: string | null
+}) {
+  const copy = (
+    <div className="flex flex-col justify-center">
+      <h3
+        className="font-serif leading-[1.08] text-navy-900"
+        style={{
+          fontSize: 'clamp(1.75rem, 3.4vw, 2.5rem)',
+          letterSpacing: '-0.02em',
+          color: NAVY,
+        }}
+      >
+        {feature.title}
+      </h3>
+      <p
+        className="mt-5 max-w-[420px] text-[15.5px] leading-relaxed"
+        style={{ color: INK_BODY, fontFamily: 'Georgia, serif' }}
+      >
+        {feature.body}
+      </p>
+    </div>
+  )
 
-function FinalCTA() {
+  const artwork = (
+    <ArtworkFeatureComposition
+      artworkUrl={artUrl}
+      atmosphereSlug={feature.atmosphereSlug}
+      artworkAlt={feature.artAlt}
+    />
+  )
+
+  // The grid template flips so the artwork is always in the wider
+  // 1.3fr column, and source order flips to match — no `order`
+  // trickery. Result: identical artwork dimensions on every row.
+  const gridClass = flipped ? INSIDE_GRID_COPY_RIGHT : INSIDE_GRID_COPY_LEFT
+
   return (
-    <section className="py-14 sm:py-28" style={{ background: '#FAFAF8' }}>
-      <Container>
+    <div className={`grid grid-cols-1 items-center gap-12 md:gap-20 ${gridClass}`}>
+      {flipped ? (
+        <>{artwork}{copy}</>
+      ) : (
+        <>{copy}{artwork}</>
+      )}
+    </div>
+  )
+}
 
-        {/* Card */}
+// Artwork feature composition — one shared component for all four
+// rows. Edge-to-edge photograph (or atmospheric gradient fallback)
+// inside a fixed 3:2 rounded frame. No overlay layer.
+function ArtworkFeatureComposition({
+  artworkUrl, atmosphereSlug, artworkAlt,
+}: {
+  artworkUrl: string | null
+  atmosphereSlug: string
+  artworkAlt: string
+}) {
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-3xl"
+      style={{
+        aspectRatio: INSIDE_ASPECT,
+        boxShadow:
+          '0 24px 60px rgba(12, 24, 38, 0.14),' +
+          '0 6px 20px rgba(12, 24, 38, 0.08)',
+      }}
+    >
+      {artworkUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={artworkUrl}
+          alt={artworkAlt}
+          className="absolute inset-0 h-full w-full object-cover object-center"
+        />
+      ) : (
         <div
-          className="relative overflow-hidden"
-          style={{
-            borderRadius: '28px',
-            background: '#071824',
-            border: '1px solid rgba(255,255,255,0.07)',
-            boxShadow: '0 8px 48px rgba(0,0,0,0.28), 0 2px 12px rgba(0,0,0,0.18)',
-            padding: 'clamp(2.5rem, 5.5vw, 5.5rem) clamp(1.25rem, 6vw, 5rem)',
-          }}
-        >
+          aria-hidden="true"
+          className="absolute inset-0"
+          style={{ background: atmosphereBackground(atmosphereForSlug(atmosphereSlug, false)) }}
+        />
+      )}
+    </div>
+  )
+}
 
-          {/* Teal radial glow — top-centre */}
+
+// ═══════════════════════════════════════════════════════════════════
+// CREATOR SECTION — heading, wide anchor image, outcomes, CTA.
+//
+// When homepage_creator_studio artwork is uploaded, that's the anchor.
+// Otherwise fall back to a polished Creator Studio interface mockup
+// (not a plain atmospheric gradient — this section deserves a real
+// interface moment).
+// ═══════════════════════════════════════════════════════════════════
+
+function CreatorSection({ artUrl }: { artUrl: string | null }) {
+  const outcomes = [
+    {
+      title: 'Design your place.',
+      body: 'Choose the atmosphere, the palette, the voice — the feeling people get when they visit your Collective.',
+    },
+    {
+      title: 'Build Pathways.',
+      body: 'Guide members through your programs, courses and memberships.',
+    },
+    {
+      title: 'Host Gatherings.',
+      body: 'Set live moments — circles, workshops, retreats, video calls, movement sessions and more — and welcome people in for that human connection.',
+    },
+    {
+      title: 'Grow your community.',
+      body: 'Watch your Collective blossom as people return, participate, contribute and stay.',
+    },
+  ]
+
+  return (
+    <section className="py-16 sm:py-20" style={{ background: '#FFFFFF' }}>
+      <Container>
+        <SectionOpening
+          title="Build a place of your own."
+          body="Every meaningful community begins with someone deciding to bring people together. Fresh Collective gives you the tools to start building a Collective people want to return to."
+          className="mb-10 sm:mb-12"
+        />
+
+        {/* Anchor — managed artwork if present, otherwise a polished
+            Creator Studio interface mockup. */}
+        <div className="mx-auto max-w-[1080px]">
           <div
-            className="pointer-events-none absolute inset-0"
-            aria-hidden="true"
+            className="relative w-full overflow-hidden rounded-3xl bg-white"
             style={{
-              background: 'radial-gradient(ellipse 75% 55% at 50% -10%, rgba(56,160,158,0.18) 0%, transparent 65%)',
+              aspectRatio: artUrl ? '16 / 9' : undefined,
+              border: '1px solid rgba(12, 24, 38, 0.08)',
+              boxShadow: '0 1px 3px rgba(12, 24, 38, 0.04)',
+            }}
+          >
+            {artUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={artUrl}
+                alt="Fresh Collective — Creator Studio"
+                className="absolute inset-0 h-full w-full object-cover object-center"
+              />
+            ) : (
+              <CreatorStudioMockup />
+            )}
+          </div>
+        </div>
+
+        {/* Outcomes */}
+        <div className="mx-auto mt-12 max-w-[880px] sm:mt-14">
+          <ul className="grid gap-x-14 gap-y-8 sm:grid-cols-2">
+            {outcomes.map((o) => (
+              <li key={o.title}>
+                <h4
+                  className="font-serif text-[20px] leading-tight"
+                  style={{ color: NAVY, letterSpacing: '-0.01em' }}
+                >
+                  {o.title}
+                </h4>
+                <p
+                  className="mt-2 text-[14.5px] leading-relaxed"
+                  style={{ color: INK_BODY, fontFamily: 'Georgia, serif' }}
+                >
+                  {o.body}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-10 text-center">
+            <Link
+              href="/for-creators"
+              className="text-[14px] font-semibold transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
+              style={{ color: TEAL_DEEP }}
+            >
+              See what else is available to creators →
+            </Link>
+          </div>
+        </div>
+      </Container>
+    </section>
+  )
+}
+
+
+// Creator Studio interface mockup — polished, editorial, uses the
+// same design tokens as the real /creator-studio/home surface.
+function CreatorStudioMockup() {
+  return (
+    <div className="flex flex-col gap-8 p-8 md:flex-row md:gap-10 md:p-12">
+      {/* Left column — collective identity + Today's focus */}
+      <div className="flex-1">
+        <p
+          className="text-[10.5px] font-semibold uppercase tracking-[0.24em]"
+          style={{ color: TEAL }}
+        >
+          Collective Overview
+        </p>
+        <h4
+          className="mt-2 font-serif text-[26px] leading-tight md:text-[30px]"
+          style={{ color: NAVY, letterSpacing: '-0.02em' }}
+        >
+          The Grove
+        </h4>
+        <p className="mt-1 text-[13px]" style={{ color: INK_SOFT }}>
+          Alive and open · 47 members
+        </p>
+
+        <div className="mt-6">
+          <div className="mb-3 flex items-baseline justify-between">
+            <p className="font-serif text-[16px]" style={{ color: NAVY }}>
+              Today&rsquo;s focus
+            </p>
+            <span
+              className="rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold"
+              style={{ background: 'rgba(56, 160, 158, 0.10)', color: TEAL_DEEP }}
+            >
+              2 waiting
+            </span>
+          </div>
+          <div
+            className="relative overflow-hidden rounded-xl bg-white px-4 py-3.5 pl-5"
+            style={{ border: `1px solid ${HAIRLINE}` }}
+          >
+            <span
+              className="absolute inset-y-0 left-0 w-[3px]"
+              style={{ background: `linear-gradient(180deg, ${TEAL} 0%, rgba(56, 160, 158, 0.55) 100%)` }}
+              aria-hidden="true"
+            />
+            <p className="text-[13.5px] font-semibold" style={{ color: NAVY }}>
+              A pathway is waiting to open
+            </p>
+            <p className="mt-1 text-[12.5px]" style={{ color: INK_BODY }}>
+              Publish when it feels ready.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Right column — Snapshot stats */}
+      <div className="md:w-[280px] md:shrink-0">
+        <p
+          className="text-[10.5px] font-semibold uppercase tracking-[0.24em]"
+          style={{ color: TEAL }}
+        >
+          Snapshot
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2.5">
+          <MiniStat label="Members" value="47" tint="teal" />
+          <MiniStat label="Pathways" value="5" tint="teal" />
+          <MiniStat label="Gatherings" value="2" tint="gold" />
+          <MiniStat label="Conversations" value="12" tint="teal" />
+        </div>
+
+        <p
+          className="mt-6 text-[10.5px] font-semibold uppercase tracking-[0.24em]"
+          style={{ color: TEAL }}
+        >
+          What to do next
+        </p>
+        <ul className="mt-3 flex flex-col gap-2">
+          {['Create a pathway', 'Invite members', 'Host a gathering'].map((label) => (
+            <li
+              key={label}
+              className="flex items-center justify-between rounded-xl px-3.5 py-2.5"
+              style={{ border: `1px solid ${HAIRLINE}` }}
+            >
+              <span className="text-[13px]" style={{ color: NAVY }}>{label}</span>
+              <span aria-hidden="true" className="text-[13px] font-semibold" style={{ color: TEAL_DEEP }}>→</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+function MiniStat({
+  label, value, tint,
+}: {
+  label: string
+  value: string
+  tint: 'teal' | 'gold'
+}) {
+  const bg = tint === 'teal' ? 'rgba(56, 160, 158, 0.10)' : 'rgba(212, 176, 72, 0.14)'
+  return (
+    <div
+      className="rounded-xl bg-white px-3 py-2.5"
+      style={{ border: `1px solid ${HAIRLINE}` }}
+    >
+      <div className="flex items-start justify-between">
+        <p className="text-[10.5px] font-medium uppercase" style={{ color: INK_SOFT, letterSpacing: '0.08em' }}>
+          {label}
+        </p>
+        <span
+          className="h-4 w-4 shrink-0 rounded-full"
+          style={{ background: bg }}
+          aria-hidden="true"
+        />
+      </div>
+      <p className="mt-1 font-serif text-[22px] leading-none" style={{ color: NAVY }}>
+        {value}
+      </p>
+    </div>
+  )
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// CLOSING INVITATION — deep navy card, warm text, dual CTAs.
+//
+// Optional supporting artwork sits as a soft background layer only
+// when uploaded; a dark overlay keeps the copy legible either way.
+// ═══════════════════════════════════════════════════════════════════
+
+function ClosingInvitation({ artUrl }: { artUrl: string | null }) {
+  return (
+    <section className="py-16 sm:py-20" style={{ background: '#FFFFFF' }}>
+      <Container>
+        <div
+          className="relative mx-auto max-w-[1080px] overflow-hidden rounded-3xl"
+          style={{ background: NAVY_DEEP, boxShadow: '0 24px 60px rgba(7, 24, 36, 0.24)' }}
+        >
+          {/* Optional artwork — sits behind the dark overlay so it
+              never overpowers the heading. */}
+          {artUrl && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={artUrl}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover object-center"
+                style={{ opacity: 0.28 }}
+              />
+              <div
+                aria-hidden="true"
+                className="absolute inset-0"
+                style={{
+                  background: `linear-gradient(180deg, rgba(7, 24, 36, 0.35) 0%, rgba(7, 24, 36, 0.72) 60%, rgba(7, 24, 36, 0.88) 100%)`,
+                }}
+              />
+            </>
+          )}
+
+          {/* Teal atmospheric glow (always present) */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-0"
+            style={{
+              background:
+                'radial-gradient(ellipse 80% 50% at 50% 0%, rgba(56, 160, 158, 0.20) 0%, transparent 65%)',
             }}
           />
 
-          {/* Content */}
-          <div className="relative z-10 flex flex-col items-center text-center">
-
-            {/* Gold rule */}
-            <div className="mb-8 h-px w-10" style={{ background: 'rgba(212,176,72,0.40)' }} />
-
+          <div className="relative px-8 py-20 text-center sm:px-14 sm:py-28">
+            <div
+              className="mx-auto h-[2px] w-14 rounded-full"
+              style={{ background: 'linear-gradient(90deg, rgba(212, 176, 72, 0.85) 0%, rgba(212, 176, 72, 0.30) 100%)' }}
+              aria-hidden="true"
+            />
             <h2
-              className="mb-5"
+              className="mx-auto mt-10 max-w-[560px] font-serif leading-[1.1]"
               style={{
-                fontSize: 'clamp(2rem, 5vw, 4.25rem)',
-                letterSpacing: '-0.04em',
-                lineHeight: '1.08',
-                fontWeight: 660,
-              }}
-            >
-              <span style={{ display: 'block', color: '#ffffff' }}>Find your collective.</span>
-              <span
-                style={{
-                  display: 'block',
-                  backgroundImage: 'linear-gradient(100deg, #42C7C6 0%, #7FDAD9 30%, #D8F5F2 58%, #FFFFFF 82%, #FFFFFF 100%)',
-                  WebkitBackgroundClip: 'text',
-                  backgroundClip: 'text',
-                  color: 'transparent',
-                }}
-              >
-                Or create one.
-              </span>
-            </h2>
-
-            <p
-              className="mb-10"
-              style={{
-                fontSize: 'clamp(0.9375rem, 1.3vw, 1rem)',
-                lineHeight: '1.80',
+                fontSize: 'clamp(2rem, 5vw, 3.25rem)',
+                letterSpacing: '-0.03em',
                 color: '#FFFFFF',
-                maxWidth: '400px',
-                letterSpacing: '-0.01em',
               }}
             >
-              Fresh Collective is for people who believe there is a better way — built on connection, kindness, curiosity, authenticity, collaboration, and positive change.
+              <span className="block">Find your Collective.</span>
+              <span className="block">Or create one.</span>
+            </h2>
+            <p
+              className="mx-auto mt-6 max-w-[480px] text-[15.5px] italic leading-relaxed"
+              style={{ color: 'rgba(255, 255, 255, 0.76)', fontFamily: 'Georgia, serif' }}
+            >
+              Every meaningful community begins with someone deciding to
+              bring people together.
             </p>
-
-            {/* Buttons */}
-            <div className="flex w-full flex-col items-center justify-center gap-3 sm:w-auto sm:flex-row sm:gap-x-5">
+            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href="/spaces"
-                className="inline-flex w-full items-center justify-center rounded-xl px-8 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90 sm:w-auto"
+                className="inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 sm:w-auto"
                 style={{
-                  background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                  boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
+                  background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
+                  letterSpacing: '0.04em',
+                  boxShadow: '0 6px 24px rgba(56, 160, 158, 0.35)',
                 }}
               >
                 Explore Collectives
               </Link>
-
-              <span
-                className="hidden sm:inline"
-                style={{
-                  fontSize: '13px',
-                  color: '#FFFFFF',
-                  letterSpacing: '0.02em',
-                  userSelect: 'none',
-                }}
-              >
-                or
-              </span>
-
               <Link
                 href="/for-creators"
-                className="inline-flex w-full items-center justify-center rounded-xl px-8 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px hover:bg-[#E8FAFA] sm:w-auto"
+                className="inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold transition-colors sm:w-auto"
                 style={{
-                  background: '#ffffff',
-                  color: '#38A09E',
-                  border: '1px solid rgba(56,160,158,0.22)',
-                  boxShadow: '0 2px 12px rgba(0,0,0,0.14)',
+                  background: 'transparent',
+                  border: '1px solid rgba(255, 255, 255, 0.22)',
+                  color: '#FFFFFF',
+                  letterSpacing: '0.04em',
                 }}
               >
-                Build a Collective
+                Create a Collective
               </Link>
             </div>
-
-            {/* Gold rule */}
-            <div className="mt-10 h-px w-10" style={{ background: 'rgba(212,176,72,0.40)' }} />
-
           </div>
         </div>
-
       </Container>
     </section>
   )
 }
 
-/* ─── Page ──────────────────────────────────────────────────────────────────── */
 
-export default function Home() {
+// ═══════════════════════════════════════════════════════════════════
+// Small shared bits.
+// ═══════════════════════════════════════════════════════════════════
+
+function SectionEyebrow({ label }: { label: string }) {
   return (
-    <SiteShell heroHeader publicOnly>
-      <HomeHero />
-      <DualIntent />
-      <EcosystemStatement />
-      <FreshIdeas />
-      <TheWayWeFeelSection />
-      <WhereTheLearningLives />
-      <GoodQuestions />
-      <FinalCTA />
-    </SiteShell>
+    <p
+      className="text-[10.5px] font-semibold uppercase tracking-[0.24em]"
+      style={{ color: TEAL }}
+    >
+      {label}
+    </p>
   )
 }

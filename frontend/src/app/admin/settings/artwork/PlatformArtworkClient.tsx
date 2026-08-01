@@ -31,10 +31,127 @@ const DISPLAY_BY_KEY: Record<string, SlotDisplay> = {
     guidance: 'Landscape image · recommended 3:2 · minimum width 1200px · JPG, PNG or WebP.',
     placeholderBody: 'The image shown on the Ways to Connect tile on the member dashboard.',
   },
+  // ── Public homepage — discovery cards (4:3 / 5:3 landscape) ───────
+  homepage_explore_collectives: {
+    aspectRatio: '5 / 3',
+    guidance: 'Landscape image · recommended 4:3 or 5:3 · minimum width 1200px · JPG, PNG or WebP.',
+    placeholderBody: 'The hero image on the Explore Collectives card on the public homepage.',
+  },
+  homepage_discover_places: {
+    aspectRatio: '5 / 3',
+    guidance: 'Landscape image · recommended 4:3 or 5:3 · minimum width 1200px · JPG, PNG or WebP.',
+    placeholderBody: 'The hero image on the Discover Places card on the public homepage.',
+  },
+  homepage_ways_to_connect: {
+    aspectRatio: '5 / 3',
+    guidance: 'Landscape image · recommended 4:3 or 5:3 · minimum width 1200px · JPG, PNG or WebP.',
+    placeholderBody: 'The hero image on the Ways to Connect card on the public homepage.',
+  },
+  // ── Public homepage — Creator Studio anchor (wide 16:9) ───────────
+  homepage_creator_studio: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP.',
+    placeholderBody: 'The large editorial image anchoring the For Creators section on the public homepage.',
+  },
+  // ── Public homepage — Closing invitation (optional, panoramic) ────
+  homepage_closing_invitation: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape or panoramic · recommended 16:9 or wider · optional — leave empty to render without an image.',
+    placeholderBody: 'Optional supporting image behind the closing invitation. Only shown if uploaded.',
+  },
+  // ── Public homepage — Life inside a Collective (4 atmospheric frames) ──
+  // Each holds a floating UI in the centre, so the artwork breathes
+  // around a card in the middle rather than needing to hold detail
+  // there. 4:3 is a comfortable editorial proportion.
+  homepage_pathways: {
+    aspectRatio: '4 / 3',
+    guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. Reused as the Pathways page hero.',
+    placeholderBody: 'The atmospheric image behind the Pathways feature. Falls back to a tasteful gradient if empty.',
+  },
+  homepage_gatherings: {
+    aspectRatio: '4 / 3',
+    guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. Reused as the Gatherings page hero.',
+    placeholderBody: 'The atmospheric image behind the Gatherings feature. Falls back to a tasteful gradient if empty.',
+  },
+  homepage_conversations: {
+    aspectRatio: '4 / 3',
+    guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. Reused as the Conversations page hero.',
+    placeholderBody: 'The atmospheric image behind the Conversations feature. Falls back to a tasteful gradient if empty.',
+  },
+  homepage_resources: {
+    aspectRatio: '4 / 3',
+    guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. Reused as the Resources page hero.',
+    placeholderBody: 'The atmospheric image behind the Resources feature. Falls back to a tasteful gradient if empty.',
+  },
 }
 const DEFAULT_DISPLAY: SlotDisplay = {
   aspectRatio: '3 / 2',
   guidance: 'Drag & drop a JPG, PNG or WebP onto the preview — or use the buttons below.',
+}
+
+
+// Grouping metadata for the manager UI. Order here is render order.
+// Any key not listed here falls into the "Other" group so a forgotten
+// backend addition still appears in the manager rather than vanishing.
+interface Group {
+  key: string
+  label: string
+  description: string
+  keys: string[]
+}
+
+const GROUPS: Group[] = [
+  {
+    key: 'member_dashboard',
+    label: 'Member Dashboard',
+    description: 'Artwork on the Your World tiles that members see when they sign in.',
+    keys: ['explore_collectives', 'creator_studio', 'discover_places', 'ways_to_connect'],
+  },
+  {
+    key: 'homepage',
+    label: 'Public Homepage',
+    description: 'Artwork used across the public homepage at /. Each slot has a graceful atmospheric fallback when no image is uploaded.',
+    keys: [
+      'homepage_explore_collectives',
+      'homepage_discover_places',
+      'homepage_ways_to_connect',
+      'homepage_pathways',
+      'homepage_gatherings',
+      'homepage_conversations',
+      'homepage_resources',
+      'homepage_creator_studio',
+      'homepage_closing_invitation',
+    ],
+  },
+  {
+    key: 'world_management',
+    label: 'World Management',
+    description: 'Artwork inside the admin surfaces.',
+    keys: ['mother_world_hero'],
+  },
+]
+
+function groupItems(items: PlatformArtworkItem[]) {
+  const byKey = new Map(items.map((it) => [it.key, it]))
+  const seen = new Set<string>()
+  const groups = GROUPS.map((g) => {
+    const groupItems = g.keys
+      .map((k) => byKey.get(k))
+      .filter((it): it is PlatformArtworkItem => Boolean(it))
+    groupItems.forEach((it) => seen.add(it.key))
+    return { ...g, items: groupItems }
+  }).filter((g) => g.items.length > 0)
+  const other = items.filter((it) => !seen.has(it.key))
+  if (other.length > 0) {
+    groups.push({
+      key: 'other',
+      label: 'Other',
+      description: 'Slots not yet grouped in the manager. Add them to GROUPS in PlatformArtworkClient.tsx.',
+      keys: other.map((it) => it.key),
+      items: other,
+    })
+  }
+  return groups
 }
 
 /**
@@ -72,9 +189,29 @@ export default function PlatformArtworkClient({ initialItems }: Props) {
         </p>
       </header>
 
-      <div className="space-y-8">
-        {items.map((item) => (
-          <ArtworkRow key={item.key} item={item} onChange={replaceItem} />
+      <div className="space-y-14">
+        {groupItems(items).map((group) => (
+          <section key={group.key}>
+            <div className="mb-5">
+              <p
+                className="text-[10.5px] font-semibold uppercase tracking-[0.28em]"
+                style={{ color: '#38A09E' }}
+              >
+                {group.label}
+              </p>
+              <p
+                className="mt-2 max-w-[560px] text-[13.5px] italic leading-relaxed"
+                style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
+              >
+                {group.description}
+              </p>
+            </div>
+            <div className="space-y-8">
+              {group.items.map((item) => (
+                <ArtworkRow key={item.key} item={item} onChange={replaceItem} />
+              ))}
+            </div>
+          </section>
         ))}
       </div>
     </div>

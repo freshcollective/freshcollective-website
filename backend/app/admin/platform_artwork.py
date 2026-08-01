@@ -69,6 +69,81 @@ PLATFORM_ARTWORK_KEYS: dict[str, dict[str, str]] = {
             "member dashboard."
         ),
     },
+    # ─── Public Homepage ────────────────────────────────────────────
+    # Artwork consumed by the public homepage at /. Each card falls
+    # back to a deterministic atmospheric gradient (placeAtmosphere.ts)
+    # when no image is uploaded, so a fresh install still looks intentional.
+    "homepage_explore_collectives": {
+        "title": "Homepage — Explore Collectives",
+        "description": (
+            "The hero image on the Explore Collectives discovery card on "
+            "the public homepage."
+        ),
+    },
+    "homepage_discover_places": {
+        "title": "Homepage — Discover Places",
+        "description": (
+            "The hero image on the Discover Places discovery card on "
+            "the public homepage."
+        ),
+    },
+    "homepage_ways_to_connect": {
+        "title": "Homepage — Ways to Connect",
+        "description": (
+            "The hero image on the Ways to Connect discovery card on "
+            "the public homepage."
+        ),
+    },
+    "homepage_creator_studio": {
+        "title": "Homepage — Creator Studio",
+        "description": (
+            "The large editorial image anchoring the For Creators section "
+            "on the public homepage."
+        ),
+    },
+    "homepage_closing_invitation": {
+        "title": "Homepage — Closing Invitation",
+        "description": (
+            "Optional supporting image behind the closing invitation at "
+            "the end of the homepage. Leave empty to render without an image."
+        ),
+    },
+    # Life inside a Collective — atmospheric artwork behind each
+    # feature's floating UI. Also intended as the hero image on the
+    # dedicated Pathways / Gatherings / Conversations / Library pages
+    # when those are built, so the assets are reusable.
+    "homepage_pathways": {
+        "title": "Homepage — Pathways",
+        "description": (
+            "Atmospheric image behind the Pathways feature on the public "
+            "homepage. Also used as the hero image on the dedicated "
+            "Pathways page when built."
+        ),
+    },
+    "homepage_gatherings": {
+        "title": "Homepage — Gatherings",
+        "description": (
+            "Atmospheric image behind the Gatherings feature on the public "
+            "homepage. Also used as the hero image on the dedicated "
+            "Gatherings page when built."
+        ),
+    },
+    "homepage_conversations": {
+        "title": "Homepage — Conversations",
+        "description": (
+            "Atmospheric image behind the Conversations feature on the "
+            "public homepage. Also used as the hero image on the dedicated "
+            "Conversations page when built."
+        ),
+    },
+    "homepage_resources": {
+        "title": "Homepage — Resources",
+        "description": (
+            "Atmospheric image behind the Resources feature on the public "
+            "homepage. Also used as the hero image on the dedicated "
+            "Resources page when built."
+        ),
+    },
 }
 
 

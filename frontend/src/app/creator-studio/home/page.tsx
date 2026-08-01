@@ -28,21 +28,34 @@ import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeade
  * All data derives from existing endpoints. No new backend surface.
  */
 
+// Palette tokens used across the page. Kept local (rather than reaching
+// for a shared design-token file) so the polish stays scoped to this
+// route without cross-file churn.
+const TEAL = '#38A09E'
+const TEAL_DEEP = '#246B6A'
+const NAVY = '#0C1826'
+const INK_CHARCOAL = 'rgba(12, 24, 38, 0.78)'  // primary secondary text
+const INK_SOFT = 'rgba(12, 24, 38, 0.66)'      // slightly quieter body copy
+const INK_TERTIARY = 'rgba(12, 24, 38, 0.48)'  // timestamps, helper hints
+const HAIRLINE = '1px solid rgba(12, 24, 38, 0.06)'
+const TEAL_TINT_BG = 'rgba(56, 160, 158, 0.10)'
+const GOLD_TINT_BG = 'rgba(212, 176, 72, 0.14)'
+
+type Tint = 'teal' | 'gold'
+
 export default async function CreatorStudioCollectiveHome() {
   const activeSummary = await getActiveCreatorSpace()
 
   if (!activeSummary) {
     return (
       <div className="mx-auto max-w-[1180px] px-8 py-10 md:px-10 md:py-14">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-500">
-          Collective Overview
-        </p>
-        <h1 className="font-serif text-[28px] leading-tight text-navy-900 md:text-[36px]">
+        <SectionEyebrow label="Collective Overview" />
+        <h1 className="mt-3 font-serif text-[28px] leading-tight text-navy-900 md:text-[36px]">
           You don&apos;t have a collective yet.
         </h1>
         <p
           className="mt-3 max-w-md text-[15px] leading-relaxed italic"
-          style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
+          style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
         >
           Head back to Your World to build your first collective.
         </p>
@@ -140,7 +153,7 @@ export default async function CreatorStudioCollectiveHome() {
   }
 
   // ── Recent moments ───────────────────────────────────────────────────
-  type Moment = { icon: string; text: string; when: string; href?: string }
+  type Moment = { icon: string; tint: Tint; text: string; when: string; href?: string }
   const moments: Moment[] = []
 
   // Recent pathway updates (top 3 by updated_at)
@@ -151,17 +164,19 @@ export default async function CreatorStudioCollectiveHome() {
     const stamp = p.updated_at || p.created_at
     moments.push({
       icon: '📖',
+      tint: 'teal',
       text: `Pathway "${p.title}" was updated`,
       when: stamp,
       href: `/creator-studio/pathways/${p.slug}`,
     })
   })
 
-  // Nearest upcoming gathering
+  // Nearest upcoming gathering — gold tint marks the celebratory nature
   if (upcomingEvents.length > 0) {
     const next = upcomingEvents[0]
     moments.push({
       icon: '📅',
+      tint: 'gold',
       text: `Next gathering: "${next.title}"`,
       when: next.starts_at,
       href: '/creator-studio/gatherings',
@@ -176,6 +191,7 @@ export default async function CreatorStudioCollectiveHome() {
   recentJoins.forEach((m) => {
     moments.push({
       icon: '🤝',
+      tint: 'teal',
       text: `${m.display_name ?? 'A member'} joined`,
       when: m.joined_at ?? '',
       href: '/creator-studio/people',
@@ -217,52 +233,50 @@ export default async function CreatorStudioCollectiveHome() {
 
           {/* Today's focus */}
           <section>
-            <div className="mb-4 flex items-baseline justify-between">
+            <div className="mb-4 flex items-baseline justify-between gap-4">
               <h2 className="font-serif text-[22px] leading-tight text-navy-900">
                 Today&apos;s focus
               </h2>
               {focus.length > 0 && (
-                <p className="text-[12.5px] text-slate-500">
+                <span
+                  className="shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold"
+                  style={{ background: TEAL_TINT_BG, color: TEAL_DEEP }}
+                >
                   {focus.length} {focus.length === 1 ? 'thing' : 'things'} waiting
-                </p>
+                </span>
               )}
             </div>
             {focus.length === 0 ? (
               <div
-                className="rounded-2xl px-6 py-8 text-center"
-                style={{ background: '#FBFAF6' }}
+                className="overflow-hidden rounded-2xl px-6 py-9 text-center"
+                style={{
+                  background:
+                    'linear-gradient(135deg, rgba(56, 160, 158, 0.08) 0%, rgba(212, 176, 72, 0.06) 100%)',
+                  border: '1px solid rgba(56, 160, 158, 0.14)',
+                }}
               >
-                <p
-                  className="font-serif text-[17px] leading-snug text-navy-900"
+                <div
+                  className="mx-auto mb-4 flex h-9 w-9 items-center justify-center rounded-full"
+                  style={{ background: '#FFFFFF', border: `1px solid ${TEAL_TINT_BG}` }}
+                  aria-hidden="true"
                 >
+                  <span style={{ color: TEAL_DEEP, fontSize: 16 }}>✓</span>
+                </div>
+                <p className="font-serif text-[17px] leading-snug text-navy-900">
                   Everything looks good today.
                 </p>
                 <p
                   className="mx-auto mt-2 max-w-sm text-[13.5px] italic leading-relaxed"
-                  style={{ color: 'rgba(12, 24, 38, 0.60)', fontFamily: 'Georgia, serif' }}
+                  style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
                 >
                   No draft content waiting, no gatherings needing attention.
                 </p>
               </div>
             ) : (
-              <ul className="space-y-2">
+              <ul className="space-y-2.5">
                 {focus.map((item, i) => (
                   <li key={i}>
-                    <Link
-                      href={item.href}
-                      className="group flex items-start justify-between gap-4 rounded-xl bg-white px-5 py-4 transition-colors hover:bg-slate-50"
-                      style={{ border: '1px solid rgba(12, 24, 38, 0.06)' }}
-                    >
-                      <div className="min-w-0">
-                        <p className="text-[14px] font-medium text-navy-900">{item.title}</p>
-                        <p className="mt-1 text-[13px] leading-relaxed text-slate-600">{item.desc}</p>
-                      </div>
-                      <span
-                        className="mt-1 shrink-0 text-[12.5px] font-medium text-teal-700 transition-transform group-hover:translate-x-0.5"
-                      >
-                        {item.action} →
-                      </span>
-                    </Link>
+                    <FocusCard item={item} />
                   </li>
                 ))}
               </ul>
@@ -278,9 +292,9 @@ export default async function CreatorStudioCollectiveHome() {
               <p
                 className="rounded-2xl bg-white px-5 py-6 text-[13.5px] italic"
                 style={{
-                  color: 'rgba(12, 24, 38, 0.60)',
+                  color: INK_SOFT,
                   fontFamily: 'Georgia, serif',
-                  border: '1px solid rgba(12, 24, 38, 0.06)',
+                  border: HAIRLINE,
                 }}
               >
                 Nothing yet — as members arrive and pathways move, they&apos;ll appear here.
@@ -289,34 +303,7 @@ export default async function CreatorStudioCollectiveHome() {
               <ul className="space-y-2">
                 {recentMoments.map((m, i) => (
                   <li key={i}>
-                    {m.href ? (
-                      <Link
-                        href={m.href}
-                        className="flex items-center gap-3 rounded-xl bg-white px-5 py-3 transition-colors hover:bg-slate-50"
-                        style={{ border: '1px solid rgba(12, 24, 38, 0.06)' }}
-                      >
-                        <span aria-hidden="true" className="text-[15px]">{m.icon}</span>
-                        <span className="min-w-0 flex-1 text-[13.5px] leading-relaxed text-navy-900">
-                          {m.text}
-                        </span>
-                        <span className="shrink-0 text-[11.5px] text-slate-500">
-                          {formatRelative(m.when)}
-                        </span>
-                      </Link>
-                    ) : (
-                      <div
-                        className="flex items-center gap-3 rounded-xl bg-white px-5 py-3"
-                        style={{ border: '1px solid rgba(12, 24, 38, 0.06)' }}
-                      >
-                        <span aria-hidden="true" className="text-[15px]">{m.icon}</span>
-                        <span className="min-w-0 flex-1 text-[13.5px] leading-relaxed text-navy-900">
-                          {m.text}
-                        </span>
-                        <span className="shrink-0 text-[11.5px] text-slate-500">
-                          {formatRelative(m.when)}
-                        </span>
-                      </div>
-                    )}
+                    <MomentRow moment={m} />
                   </li>
                 ))}
               </ul>
@@ -329,27 +316,67 @@ export default async function CreatorStudioCollectiveHome() {
 
           {/* Snapshot */}
           <section>
-            <p className="mb-3 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Snapshot
-            </p>
-            <dl className="grid grid-cols-2 gap-3">
-              <SnapCell label="Members" value={memberCount} href="/creator-studio/people" />
-              <SnapCell label="Pathways" value={pathways.length} href="/creator-studio/pathways" />
-              <SnapCell label="Upcoming gatherings" value={upcomingEvents.length} href="/creator-studio/gatherings" />
-              <SnapCell label="Conversations" value={null} href="/creator-studio/community" />
+            <SectionEyebrow label="Snapshot" />
+            <dl className="mt-3 grid grid-cols-2 gap-3">
+              <SnapCell
+                label="Members"
+                value={memberCount}
+                href="/creator-studio/people"
+                icon="👥"
+                tint="teal"
+              />
+              <SnapCell
+                label="Pathways"
+                value={pathways.length}
+                href="/creator-studio/pathways"
+                icon="🧭"
+                tint="teal"
+              />
+              <SnapCell
+                label="Upcoming gatherings"
+                value={upcomingEvents.length}
+                href="/creator-studio/gatherings"
+                icon="📅"
+                tint="gold"
+              />
+              <SnapCell
+                label="Conversations"
+                value={null}
+                href="/creator-studio/community"
+                icon="💬"
+                tint="teal"
+              />
             </dl>
           </section>
 
           {/* Quick actions */}
           <section>
-            <p className="mb-3 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              What to do next
-            </p>
-            <div className="space-y-2">
-              <QuickAction href="/creator-studio/pathways/new" label="Create pathway" />
-              <QuickAction href="/creator-studio/gatherings" label="Create gathering" />
-              <QuickAction href="/creator-studio/community" label="Start a conversation" />
-              <QuickAction href="/creator-studio/resources" label="Add a resource" />
+            <SectionEyebrow label="What to do next" />
+            <div className="mt-3 space-y-2">
+              <QuickAction
+                href="/creator-studio/pathways/new"
+                label="Create pathway"
+                icon="🧭"
+                tint="teal"
+              />
+              <QuickAction
+                href="/creator-studio/gatherings"
+                label="Create gathering"
+                icon="📅"
+                tint="gold"
+              />
+              <QuickAction
+                href="/creator-studio/community"
+                label="Start a conversation"
+                icon="💬"
+                tint="teal"
+              />
+              <QuickAction
+                href="/creator-studio/resources"
+                label="Add a resource"
+                icon="📎"
+                tint="gold"
+              />
             </div>
           </section>
         </div>
@@ -359,37 +386,206 @@ export default async function CreatorStudioCollectiveHome() {
 }
 
 // ---------------------------------------------------------------------------
+// Shared bits — kept inline so the polish stays contained to this route
+// ---------------------------------------------------------------------------
 
-function SnapCell({
-  label, value, href,
+function SectionEyebrow({ label }: { label: string }) {
+  return (
+    <p
+      className="text-[10.5px] font-semibold uppercase tracking-[0.24em]"
+      style={{ color: TEAL }}
+    >
+      {label}
+    </p>
+  )
+}
+
+function TintedIcon({
+  icon, tint, size = 34,
 }: {
-  label: string
-  value: number | null
-  href: string
+  icon: string
+  tint: Tint
+  size?: number
+}) {
+  const bg = tint === 'gold' ? GOLD_TINT_BG : TEAL_TINT_BG
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-full"
+      style={{
+        background: bg,
+        width: size,
+        height: size,
+        fontSize: Math.round(size * 0.48),
+        lineHeight: 1,
+      }}
+      aria-hidden="true"
+    >
+      {icon}
+    </span>
+  )
+}
+
+function FocusCard({
+  item,
+}: {
+  item: { title: string; desc: string; href: string; action: string }
 }) {
   return (
     <Link
-      href={href}
-      className="rounded-xl bg-white px-4 py-3 transition-colors hover:bg-slate-50"
-      style={{ border: '1px solid rgba(12, 24, 38, 0.06)' }}
+      href={item.href}
+      className="group relative flex items-start justify-between gap-4 overflow-hidden rounded-xl bg-white px-5 py-4 pl-6 transition-colors"
+      style={{ border: HAIRLINE }}
     >
-      <p className="text-[11px] text-slate-500">{label}</p>
-      <p className="mt-1 font-serif text-[20px] leading-none text-navy-900">
-        {value ?? <span className="text-[14px] italic text-slate-400">—</span>}
-      </p>
+      {/* Teal accent stripe on the left — gives the section its warmer presence */}
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 w-[3px]"
+        style={{
+          background: `linear-gradient(180deg, ${TEAL} 0%, rgba(56, 160, 158, 0.55) 100%)`,
+        }}
+      />
+      <div className="min-w-0">
+        <p className="text-[14.5px] font-semibold text-navy-900">{item.title}</p>
+        <p className="mt-1 text-[13px] leading-relaxed" style={{ color: INK_CHARCOAL }}>
+          {item.desc}
+        </p>
+      </div>
+      <span
+        className="mt-1 shrink-0 text-[12.5px] font-semibold transition-transform group-hover:translate-x-0.5"
+        style={{ color: TEAL_DEEP }}
+      >
+        {item.action} →
+      </span>
+      {/* Soft teal hover wash */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100"
+        style={{ background: 'rgba(56, 160, 158, 0.04)' }}
+      />
     </Link>
   )
 }
 
-function QuickAction({ href, label }: { href: string; label: string }) {
+function MomentRow({
+  moment,
+}: {
+  moment: { icon: string; tint: Tint; text: string; when: string; href?: string }
+}) {
+  const interior = (
+    <>
+      <TintedIcon icon={moment.icon} tint={moment.tint} size={32} />
+      <span
+        className="min-w-0 flex-1 text-[14px] leading-relaxed"
+        style={{ color: NAVY }}
+      >
+        {moment.text}
+      </span>
+      <span
+        className="shrink-0 text-[11.5px] font-medium"
+        style={{ color: INK_TERTIARY }}
+      >
+        {formatRelative(moment.when)}
+      </span>
+    </>
+  )
+  const baseClass = 'group relative flex items-center gap-3 overflow-hidden rounded-xl bg-white px-4 py-3 transition-colors'
+  const baseStyle = { border: HAIRLINE }
+  const hoverWash = (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100"
+      style={{ background: 'rgba(56, 160, 158, 0.05)' }}
+    />
+  )
+  if (moment.href) {
+    return (
+      <Link href={moment.href} className={baseClass} style={baseStyle}>
+        {interior}
+        {hoverWash}
+      </Link>
+    )
+  }
+  return (
+    <div className={baseClass.replace(' group', '')} style={baseStyle}>
+      {interior}
+    </div>
+  )
+}
+
+function SnapCell({
+  label, value, href, icon, tint,
+}: {
+  label: string
+  value: number | null
+  href: string
+  icon: string
+  tint: Tint
+}) {
   return (
     <Link
       href={href}
-      className="flex items-center justify-between rounded-xl bg-white px-4 py-3 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-navy-900"
-      style={{ border: '1px solid rgba(12, 24, 38, 0.06)' }}
+      className="group relative overflow-hidden rounded-xl bg-white px-4 py-3.5 transition-colors"
+      style={{ border: HAIRLINE }}
     >
-      <span>{label}</span>
-      <span aria-hidden="true" className="text-teal-700">→</span>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p
+            className="text-[11px] font-medium uppercase tracking-[0.10em]"
+            style={{ color: INK_SOFT }}
+          >
+            {label}
+          </p>
+          <p
+            className="mt-1.5 font-serif text-[24px] leading-none"
+            style={{ color: NAVY }}
+          >
+            {value ?? <span className="text-[15px] italic" style={{ color: INK_TERTIARY }}>—</span>}
+          </p>
+        </div>
+        <TintedIcon icon={icon} tint={tint} size={30} />
+      </div>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100"
+        style={{ background: 'rgba(56, 160, 158, 0.05)' }}
+      />
+    </Link>
+  )
+}
+
+function QuickAction({
+  href, label, icon, tint,
+}: {
+  href: string
+  label: string
+  icon: string
+  tint: Tint
+}) {
+  return (
+    <Link
+      href={href}
+      className="group relative flex items-center gap-3 overflow-hidden rounded-xl bg-white px-4 py-3 transition-colors"
+      style={{ border: HAIRLINE }}
+    >
+      <TintedIcon icon={icon} tint={tint} size={30} />
+      <span
+        className="flex-1 text-[13.5px] font-semibold"
+        style={{ color: NAVY }}
+      >
+        {label}
+      </span>
+      <span
+        aria-hidden="true"
+        className="shrink-0 text-[13px] font-semibold transition-transform group-hover:translate-x-0.5"
+        style={{ color: TEAL_DEEP }}
+      >
+        →
+      </span>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100"
+        style={{ background: 'rgba(56, 160, 158, 0.05)' }}
+      />
     </Link>
   )
 }
@@ -410,3 +606,4 @@ function formatRelative(iso: string): string {
   if (diff < 7 * day) return past ? `${Math.floor(diff / day)}d ago` : `in ${Math.floor(diff / day)}d`
   return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
 }
+
