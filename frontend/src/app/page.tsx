@@ -3,6 +3,8 @@ import Link from 'next/link'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import HomeHero from '@/components/home/HomeHero'
+import ArtworkFeatureComposition from '@/components/marketing/ArtworkFeatureComposition'
+import ClosingInvitation from '@/components/marketing/ClosingInvitation'
 import { atmosphereBackground, atmosphereForSlug } from '@/lib/placeAtmosphere'
 import { resolveMediaUrl } from '@/lib/api'
 import { getPublicPlatformArtwork, type PublicPlatformArtwork } from '@/lib/serverApi'
@@ -44,10 +46,8 @@ export const metadata: Metadata = {
 const TEAL = '#38A09E'
 const TEAL_DEEP = '#246B6A'
 const NAVY = '#0C1826'
-const NAVY_DEEP = '#071824'
 const INK_BODY = 'rgba(12, 24, 38, 0.80)'
 const INK_SOFT = 'rgba(12, 24, 38, 0.66)'
-const INK_TERTIARY = 'rgba(12, 24, 38, 0.52)'
 const HAIRLINE = 'rgba(12, 24, 38, 0.10)'
 
 
@@ -73,7 +73,13 @@ export default async function HomePage() {
       <ExploreSection artFor={artFor} />
       <InsideCollectiveSection artFor={artFor} />
       <CreatorSection artUrl={artFor('homepage_creator_studio')} />
-      <ClosingInvitation artUrl={artFor('homepage_closing_invitation')} />
+      <ClosingInvitation
+        headingLines={['Find your Collective.', 'Or create one.']}
+        body="Every meaningful community begins with someone deciding to bring people together."
+        primaryCta={{ label: 'Explore Collectives', href: '/spaces' }}
+        secondaryCta={{ label: 'Create a Collective', href: '/for-creators' }}
+        artUrl={artFor('homepage_closing_invitation')}
+      />
     </SiteShell>
   )
 }
@@ -322,15 +328,10 @@ function DiscoveryCard({
 // shadow — floating product photography rather than framed cards.
 // ═══════════════════════════════════════════════════════════════════
 
-// All four Life-inside compositions share exactly the same artwork
-// frame — outer image size, aspect ratio, radius and base shadow are
-// constants applied by ArtworkFeatureComposition.
-//
 // The grid template flips per row so the ARTWORK column is always
 // the wider one regardless of whether the row shows copy-left or
 // copy-right. Without this flip, source-order swapping alone would
 // leave the artwork in the narrow column on flipped rows.
-const INSIDE_ASPECT = '3 / 2'
 const INSIDE_GRID_COPY_LEFT  = 'md:grid-cols-[minmax(0,0.78fr)_minmax(0,1.3fr)]'
 const INSIDE_GRID_COPY_RIGHT = 'md:grid-cols-[minmax(0,1.3fr)_minmax(0,0.78fr)]'
 
@@ -449,45 +450,6 @@ function FeatureRow({
     </div>
   )
 }
-
-// Artwork feature composition — one shared component for all four
-// rows. Edge-to-edge photograph (or atmospheric gradient fallback)
-// inside a fixed 3:2 rounded frame. No overlay layer.
-function ArtworkFeatureComposition({
-  artworkUrl, atmosphereSlug, artworkAlt,
-}: {
-  artworkUrl: string | null
-  atmosphereSlug: string
-  artworkAlt: string
-}) {
-  return (
-    <div
-      className="relative w-full overflow-hidden rounded-3xl"
-      style={{
-        aspectRatio: INSIDE_ASPECT,
-        boxShadow:
-          '0 24px 60px rgba(12, 24, 38, 0.14),' +
-          '0 6px 20px rgba(12, 24, 38, 0.08)',
-      }}
-    >
-      {artworkUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={artworkUrl}
-          alt={artworkAlt}
-          className="absolute inset-0 h-full w-full object-cover object-center"
-        />
-      ) : (
-        <div
-          aria-hidden="true"
-          className="absolute inset-0"
-          style={{ background: atmosphereBackground(atmosphereForSlug(atmosphereSlug, false)) }}
-        />
-      )}
-    </div>
-  )
-}
-
 
 // ═══════════════════════════════════════════════════════════════════
 // CREATOR SECTION — heading, wide anchor image, outcomes, CTA.
@@ -711,121 +673,3 @@ function MiniStat({
 }
 
 
-// ═══════════════════════════════════════════════════════════════════
-// CLOSING INVITATION — deep navy card, warm text, dual CTAs.
-//
-// Optional supporting artwork sits as a soft background layer only
-// when uploaded; a dark overlay keeps the copy legible either way.
-// ═══════════════════════════════════════════════════════════════════
-
-function ClosingInvitation({ artUrl }: { artUrl: string | null }) {
-  return (
-    <section className="py-16 sm:py-20" style={{ background: '#FFFFFF' }}>
-      <Container>
-        <div
-          className="relative mx-auto max-w-[1080px] overflow-hidden rounded-3xl"
-          style={{ background: NAVY_DEEP, boxShadow: '0 24px 60px rgba(7, 24, 36, 0.24)' }}
-        >
-          {/* Optional artwork — sits behind the dark overlay so it
-              never overpowers the heading. */}
-          {artUrl && (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={artUrl}
-                alt=""
-                aria-hidden="true"
-                className="absolute inset-0 h-full w-full object-cover object-center"
-                style={{ opacity: 0.28 }}
-              />
-              <div
-                aria-hidden="true"
-                className="absolute inset-0"
-                style={{
-                  background: `linear-gradient(180deg, rgba(7, 24, 36, 0.35) 0%, rgba(7, 24, 36, 0.72) 60%, rgba(7, 24, 36, 0.88) 100%)`,
-                }}
-              />
-            </>
-          )}
-
-          {/* Teal atmospheric glow (always present) */}
-          <div
-            aria-hidden="true"
-            className="absolute inset-0"
-            style={{
-              background:
-                'radial-gradient(ellipse 80% 50% at 50% 0%, rgba(56, 160, 158, 0.20) 0%, transparent 65%)',
-            }}
-          />
-
-          <div className="relative px-8 py-20 text-center sm:px-14 sm:py-28">
-            <div
-              className="mx-auto h-[2px] w-14 rounded-full"
-              style={{ background: 'linear-gradient(90deg, rgba(212, 176, 72, 0.85) 0%, rgba(212, 176, 72, 0.30) 100%)' }}
-              aria-hidden="true"
-            />
-            <h2
-              className="mx-auto mt-10 max-w-[560px] font-serif leading-[1.1]"
-              style={{
-                fontSize: 'clamp(2rem, 5vw, 3.25rem)',
-                letterSpacing: '-0.03em',
-                color: '#FFFFFF',
-              }}
-            >
-              <span className="block">Find your Collective.</span>
-              <span className="block">Or create one.</span>
-            </h2>
-            <p
-              className="mx-auto mt-6 max-w-[480px] text-[15.5px] italic leading-relaxed"
-              style={{ color: 'rgba(255, 255, 255, 0.76)', fontFamily: 'Georgia, serif' }}
-            >
-              Every meaningful community begins with someone deciding to
-              bring people together.
-            </p>
-            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Link
-                href="/spaces"
-                className="inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 sm:w-auto"
-                style={{
-                  background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
-                  letterSpacing: '0.04em',
-                  boxShadow: '0 6px 24px rgba(56, 160, 158, 0.35)',
-                }}
-              >
-                Explore Collectives
-              </Link>
-              <Link
-                href="/for-creators"
-                className="inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold transition-colors sm:w-auto"
-                style={{
-                  background: 'transparent',
-                  border: '1px solid rgba(255, 255, 255, 0.22)',
-                  color: '#FFFFFF',
-                  letterSpacing: '0.04em',
-                }}
-              >
-                Create a Collective
-              </Link>
-            </div>
-          </div>
-        </div>
-      </Container>
-    </section>
-  )
-}
-
-
-// ═══════════════════════════════════════════════════════════════════
-// Small shared bits.
-// ═══════════════════════════════════════════════════════════════════
-
-function SectionEyebrow({ label }: { label: string }) {
-  return (
-    <p
-      className="text-[10.5px] font-semibold uppercase tracking-[0.24em]"
-      style={{ color: TEAL }}
-    >
-      {label}
-    </p>
-  )
-}
