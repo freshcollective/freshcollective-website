@@ -144,6 +144,49 @@ PLATFORM_ARTWORK_KEYS: dict[str, dict[str, str]] = {
             "Resources page when built."
         ),
     },
+    # For Creators page — one image per creator account, presented as
+    # editorial rows on /for-creators. Falls back to atmospheric gradients
+    # when no image is uploaded so the page still reads considered.
+    "for_creators_community": {
+        "title": "For Creators — Community Collective",
+        "description": (
+            "Editorial image for the Community Collective account row on "
+            "the public For Creators page. Local, welcoming, small-group "
+            "energy — a shared table, a neighbourhood gathering."
+        ),
+    },
+    "for_creators_creator": {
+        "title": "For Creators — Creator",
+        "description": (
+            "Editorial image for the Creator account row on the public "
+            "For Creators page. A single creator at work — a studio, a "
+            "practitioner's space, considered craft."
+        ),
+    },
+    "for_creators_pro": {
+        "title": "For Creators — Creator Portfolio",
+        "description": (
+            "Editorial image for the Creator Portfolio account row on the "
+            "public For Creators page. Several places thriving under one "
+            "hand — a small village, a scene with multiple centres."
+        ),
+    },
+    "for_creators_organisation": {
+        "title": "For Creators — Ecosystem",
+        "description": (
+            "Editorial image for the Ecosystem account row on the public "
+            "For Creators page. A wider connected landscape — an ecosystem "
+            "view, a horizon of interlinked places."
+        ),
+    },
+    "for_creators_world_builders": {
+        "title": "For Creators — World Builders",
+        "description": (
+            "Editorial image for the World Builders Collective section on "
+            "the public For Creators page. Creators learning together — "
+            "a shared workspace, a considered space of practice."
+        ),
+    },
 }
 
 

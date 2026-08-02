@@ -83,6 +83,32 @@ const DISPLAY_BY_KEY: Record<string, SlotDisplay> = {
     guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. Reused as the Resources page hero.',
     placeholderBody: 'The atmospheric image behind the Resources feature. Falls back to a tasteful gradient if empty.',
   },
+  // ── For Creators page — one image per creator account (4 rows) ───
+  for_creators_community: {
+    aspectRatio: '4 / 3',
+    guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. Local, welcoming, small-group energy.',
+    placeholderBody: 'Editorial image for the Community Collective row on /for-creators.',
+  },
+  for_creators_creator: {
+    aspectRatio: '4 / 3',
+    guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. A single creator at work.',
+    placeholderBody: 'Editorial image for the Creator row on /for-creators.',
+  },
+  for_creators_pro: {
+    aspectRatio: '4 / 3',
+    guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. Several places thriving under one hand.',
+    placeholderBody: 'Editorial image for the Creator Portfolio row on /for-creators.',
+  },
+  for_creators_organisation: {
+    aspectRatio: '4 / 3',
+    guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. A wider connected ecosystem.',
+    placeholderBody: 'Editorial image for the Ecosystem row on /for-creators.',
+  },
+  for_creators_world_builders: {
+    aspectRatio: '4 / 3',
+    guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. Creators learning together — considered practice, shared workspace.',
+    placeholderBody: 'Editorial image for the World Builders Collective section on /for-creators.',
+  },
 }
 const DEFAULT_DISPLAY: SlotDisplay = {
   aspectRatio: '3 / 2',
@@ -121,6 +147,18 @@ const GROUPS: Group[] = [
       'homepage_resources',
       'homepage_creator_studio',
       'homepage_closing_invitation',
+    ],
+  },
+  {
+    key: 'for_creators',
+    label: 'For Creators',
+    description: 'Artwork on the public /for-creators page. One image per creator account row (Community Collective, Creator, Creator Portfolio, Ecosystem). Each has an atmospheric fallback when empty.',
+    keys: [
+      'for_creators_community',
+      'for_creators_creator',
+      'for_creators_pro',
+      'for_creators_organisation',
+      'for_creators_world_builders',
     ],
   },
   {
