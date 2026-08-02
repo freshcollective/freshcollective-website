@@ -87,6 +87,9 @@ class PlanCapability:
     pooled_member_allowance: Optional[int] = None
     caretaker_limit_per_collective: Optional[int] = None
     storage_allowance_mb: Optional[int] = None
+    # Maximum number of Pathways per Collective. `None` means no cap
+    # (Creator / Pro / Organisation). Community caps at 5.
+    pathways_max_per_collective: Optional[int] = None
 
     # Categorical capabilities
     location_scope: LocationScope = "atlas_full"
@@ -128,6 +131,7 @@ COMMUNITY = PlanCapability(
     active_collective_limit=1,
     member_allowance_per_collective=100,
     caretaker_limit_per_collective=1,
+    pathways_max_per_collective=5,   # capped at five Pathways
     location_scope="community_only",
     analytics_level="basic",
     paid_offers_enabled=False,
@@ -174,7 +178,7 @@ CREATOR = PlanCapability(
     approval_required=False,
     is_self_service=True,
     is_purchasable=True,
-    transaction_fee_basis_points=None,  # TBD — higher tier (%)
+    transaction_fee_basis_points=800,  # 8% on Creator paid offers
     storage_allowance_mb=None,          # TBD
     card_headline=(
         "One paid collective with commercial tools for up to 500 members."
@@ -210,7 +214,7 @@ PRO = PlanCapability(
     approval_required=False,
     is_self_service=True,
     is_purchasable=True,
-    transaction_fee_basis_points=None,  # TBD — lower tier (%)
+    transaction_fee_basis_points=300,  # 3% on Pro paid offers (lower tier)
     storage_allowance_mb=None,          # TBD
     card_headline=(
         "Up to five collectives with greater capacity, collaboration and growth tools."

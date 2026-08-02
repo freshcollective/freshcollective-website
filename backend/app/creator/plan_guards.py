@@ -264,6 +264,38 @@ def guard_paid_offers_enabled(user: User, db: Session, pricing_type: str) -> Non
         )
 
 
+def guard_pathway_limit(user: User, space: Space, db: Session) -> None:
+    """Refuse a new Pathway when the plan caps how many a Collective may
+    hold. Community is capped at five; Creator / Pro / Organisation are
+    uncapped. Platform Owner bypasses.
+
+    Called from the create-pathway route before insertion. Existing
+    Pathways are grandfathered — the guard only fires on creation.
+    """
+    if is_platform_owner(user):
+        return
+
+    plan = resolve_creator_plan(user, db)
+    if plan is None or plan.pathways_max_per_collective is None:
+        return   # no cap for this plan
+
+    from app.models.platform import Pathway   # local import avoids cycle
+    current = (
+        db.query(Pathway)
+        .filter(Pathway.space_id == space.id)
+        .count()
+    )
+    if current >= plan.pathways_max_per_collective:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Your {plan.display_name} plan includes "
+                f"{plan.pathways_max_per_collective} Pathways per Collective. "
+                "Upgrade to Creator to add more."
+            ),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Location filtering (used by GET /options to build the picker list)
 # ---------------------------------------------------------------------------

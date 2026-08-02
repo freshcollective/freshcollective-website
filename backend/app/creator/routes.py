@@ -1708,6 +1708,10 @@ def create_pathway(
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
 
+    # Enforce plan-level Pathway cap (currently: Community = 5, others uncapped).
+    from app.creator.plan_guards import guard_pathway_limit
+    guard_pathway_limit(current_user, space, db)
+
     pslug = body.slug or _pathway_slug(space, body.title, None, db)
     existing = db.query(Pathway).filter(Pathway.space_id == space.id, Pathway.slug == pslug).first()
     if existing:
