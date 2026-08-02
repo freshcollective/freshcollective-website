@@ -171,19 +171,19 @@ export default function SpaceAboutCTA({
     )
   }
 
-  // Paid collective — show informational button; payment not yet connected
+  // Paid collective — link into the checkout prototype. The checkout
+  // page reads getMe() and branches logged-in vs logged-out onward,
+  // so this one entry point works for both cases.
   if (isPaidPricingType(pricingType)) {
     return (
       <div className="flex flex-col gap-2">
-        <div
-          className="block w-full rounded-xl px-4 py-2.5 text-center text-[14px] font-semibold text-white opacity-60"
+        <Link
+          href={`/checkout/member?collective=${slug}`}
+          className={tealBtn}
           style={tealStyle}
         >
-          Join — payment coming soon
-        </div>
-        <p className="text-center text-[11px] text-black">
-          Payment processing is being set up. Check back soon.
-        </p>
+          Join collective
+        </Link>
       </div>
     )
   }

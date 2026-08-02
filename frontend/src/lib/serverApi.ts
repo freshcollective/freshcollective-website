@@ -1,6 +1,6 @@
 import { cache } from 'react'
 import { cookies } from 'next/headers'
-import { apiUrl } from './api'
+import { apiUrl, resolveMediaUrl } from './api'
 import { SESSION_COOKIE } from './session'
 import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
@@ -349,6 +349,25 @@ export const getPublicPlatformArtwork = cache(async (): Promise<PublicPlatformAr
   if (!res.ok) return []
   return res.json()
 })
+
+/** Build a `(key) => resolved URL | null` lookup over the public
+ *  Platform Artwork list. Prefers the hero image and falls back to the
+ *  thumbnail; returns null when the key is unknown or the row has no
+ *  uploaded image (callers show an atmospheric fallback in that case).
+ *
+ *  Shared by /for-creators, /checkout/creator, /signup/creator and
+ *  /ecosystem-interest so image resolution and fallback logic can't
+ *  drift between marketing surfaces. */
+export function buildPlatformArtLookup(
+  items: PublicPlatformArtwork[],
+): (key: string) => string | null {
+  const byKey = new Map(items.map((a) => [a.key, a]))
+  return (key: string) => {
+    const item = byKey.get(key)
+    if (!item) return null
+    return resolveMediaUrl(item.image_url ?? item.thumbnail_url ?? undefined) ?? null
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Admin Collectives — Gallery/List redesign feed

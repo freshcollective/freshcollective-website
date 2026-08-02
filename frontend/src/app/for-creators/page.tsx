@@ -4,8 +4,12 @@ import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import ArtworkFeatureComposition from '@/components/marketing/ArtworkFeatureComposition'
 import ClosingInvitation from '@/components/marketing/ClosingInvitation'
-import { resolveMediaUrl } from '@/lib/api'
-import { getPublicPlatformArtwork, type PublicPlatformArtwork } from '@/lib/serverApi'
+import {
+  buildPlatformArtLookup,
+  getPublicPlatformArtwork,
+  type PublicPlatformArtwork,
+} from '@/lib/serverApi'
+import { PUBLIC_PLANS } from '@/lib/plans'
 
 /**
  * /for-creators — editorial companion to the homepage.
@@ -42,19 +46,9 @@ const INK_BODY = 'rgba(12, 24, 38, 0.80)'
 const INK_SOFT = 'rgba(12, 24, 38, 0.66)'
 
 
-function buildArtLookup(items: PublicPlatformArtwork[]): (key: string) => string | null {
-  const byKey = new Map(items.map((a) => [a.key, a]))
-  return (key: string) => {
-    const item = byKey.get(key)
-    if (!item) return null
-    return resolveMediaUrl(item.image_url ?? item.thumbnail_url ?? undefined) ?? null
-  }
-}
-
-
 export default async function ForCreatorsPage() {
   const artwork = await getPublicPlatformArtwork().catch(() => [] as PublicPlatformArtwork[])
-  const artFor = buildArtLookup(artwork)
+  const artFor = buildPlatformArtLookup(artwork)
 
   return (
     <SiteShell>
@@ -65,7 +59,7 @@ export default async function ForCreatorsPage() {
       <ClosingInvitation
         headingLines={['Ready to build your Collective?']}
         body="Bring your ideas, experiences and community together in one place—and create something people genuinely want to return to."
-        primaryCta={{ label: 'Start building', href: '/signup?plan=creator' }}
+        primaryCta={{ label: 'Choose your plan', href: '/for-creators#plans' }}
       />
     </SiteShell>
   )
@@ -264,7 +258,7 @@ const PLANS: Plan[] = [
       'Up to 5 Pathways',
       'For non-commercial gatherings',
     ],
-    cta: { label: 'Start for free', href: '/signup?plan=community' },
+    cta: { label: 'Start for free', href: PUBLIC_PLANS.community.ctaHref },
     artKey: 'for_creators_community',
     atmosphereSlug: 'for-creators-community',
     artAlt: 'A Community Collective on Fresh Collective — a shared table, a small local gathering',
@@ -280,7 +274,7 @@ const PLANS: Plan[] = [
       'Unlimited Pathways',
       '8% platform fee on paid offers',
     ],
-    cta: { label: 'Choose Creator', href: '/signup?plan=creator' },
+    cta: { label: 'Choose Creator', href: PUBLIC_PLANS.creator.ctaHref },
     artKey: 'for_creators_creator',
     atmosphereSlug: 'for-creators-creator',
     artAlt: 'A single creator at work — a studio, considered craft',
@@ -297,7 +291,7 @@ const PLANS: Plan[] = [
       'Multiple workspaces per Collective',
       '3% platform fee on paid offers',
     ],
-    cta: { label: 'Choose Creator Portfolio', href: '/signup?plan=pro' },
+    cta: { label: 'Choose Creator Portfolio', href: PUBLIC_PLANS.pro.ctaHref },
     artKey: 'for_creators_pro',
     atmosphereSlug: 'for-creators-pro',
     artAlt: 'Several Collectives thriving under one Creator — a connected landscape',
@@ -506,15 +500,12 @@ function WorldBuildersSection({ artUrl }: { artUrl: string | null }) {
               ideas and connect with other creators building alongside
               you.
             </p>
-            <div className="mt-8">
-              <Link
-                href="/world-builders"
-                className="text-[14px] font-semibold transition-opacity hover:opacity-80"
-                style={{ color: TEAL_DEEP }}
-              >
-                Explore World Builders →
-              </Link>
-            </div>
+            <p
+              className="mt-6 max-w-[460px] text-[14px] italic leading-relaxed"
+              style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
+            >
+              Included automatically with every Creator plan.
+            </p>
           </div>
           <ArtworkFeatureComposition
             artworkUrl={artUrl}
