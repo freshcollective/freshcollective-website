@@ -79,6 +79,7 @@ export default async function HomePage() {
         primaryCta={{ label: 'Explore Collectives', href: '/spaces' }}
         secondaryCta={{ label: 'Create a Collective', href: '/for-creators' }}
         artUrl={artFor('homepage_closing_invitation')}
+        buttonVariant="hero"
       />
     </SiteShell>
   )

@@ -34,11 +34,19 @@ interface Props {
   secondaryCta?: CTALink
   /** Optional background artwork rendered behind a dark overlay. */
   artUrl?: string | null
+  /** Button visual variant. `'pill'` (default) uses compact rounded
+   *  pills — the /for-creators closing card uses this. `'hero'`
+   *  matches the taller, less-rounded buttons in HomeHero so the
+   *  homepage closing card reads as a direct continuation of the
+   *  hero. */
+  buttonVariant?: 'pill' | 'hero'
 }
 
 export default function ClosingInvitation({
   headingLines, body, primaryCta, secondaryCta, artUrl = null,
+  buttonVariant = 'pill',
 }: Props) {
+  const isHero = buttonVariant === 'hero'
   return (
     <section className="py-16 sm:py-20" style={{ background: '#FFFFFF' }}>
       <Container>
@@ -106,25 +114,48 @@ export default function ClosingInvitation({
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link
                 href={primaryCta.href}
-                className="inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 sm:w-auto"
-                style={{
-                  background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
-                  letterSpacing: '0.04em',
-                  boxShadow: '0 6px 24px rgba(56, 160, 158, 0.35)',
-                }}
+                className={
+                  isHero
+                    ? 'inline-flex w-full items-center justify-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90 sm:w-auto'
+                    : 'inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 sm:w-auto'
+                }
+                style={
+                  isHero
+                    ? {
+                        background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
+                        boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
+                      }
+                    : {
+                        background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
+                        letterSpacing: '0.04em',
+                        boxShadow: '0 6px 24px rgba(56, 160, 158, 0.35)',
+                      }
+                }
               >
                 {primaryCta.label}
               </Link>
               {secondaryCta && (
                 <Link
                   href={secondaryCta.href}
-                  className="inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold transition-colors sm:w-auto"
-                  style={{
-                    background: 'transparent',
-                    border: '1px solid rgba(255, 255, 255, 0.22)',
-                    color: '#FFFFFF',
-                    letterSpacing: '0.04em',
-                  }}
+                  className={
+                    isHero
+                      ? 'inline-flex w-full items-center justify-center rounded-xl px-7 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px bg-white hover:bg-[#F6F6F6] sm:w-auto'
+                      : 'inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold transition-colors sm:w-auto'
+                  }
+                  style={
+                    isHero
+                      ? {
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          color: '#0F172A',
+                          boxShadow: '0 4px 24px rgba(0,0,0,0.30)',
+                        }
+                      : {
+                          background: 'transparent',
+                          border: '1px solid rgba(255, 255, 255, 0.22)',
+                          color: '#FFFFFF',
+                          letterSpacing: '0.04em',
+                        }
+                  }
                 >
                   {secondaryCta.label}
                 </Link>
