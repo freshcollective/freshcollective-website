@@ -84,6 +84,24 @@ export const getPublicSpaces = cache(async (): Promise<PublicSpaceCard[]> => {
   }
 })
 
+/** Fetch a single publicly-visible Collective by slug. Returns null on
+ *  404 / network error / unlisted (private, draft, auto-grant) so the
+ *  caller can render a not-found state without a try/catch. */
+export const getPublicSpace = cache(
+  async (slug: string): Promise<PublicSpaceCard | null> => {
+    try {
+      const res = await fetch(
+        apiUrl(`/api/public/spaces/${encodeURIComponent(slug)}`),
+        { cache: 'no-store' },
+      )
+      if (!res.ok) return null
+      return res.json()
+    } catch {
+      return null
+    }
+  },
+)
+
 export const getSpace = cache(async (slug: string) => {
   const res = await fetchWithSession(`/api/spaces/${slug}`)
   if (!res.ok) return null

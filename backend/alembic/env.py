@@ -20,6 +20,7 @@ import app.models.access_pass      # noqa: F401 — registers access pass / book
 import app.models.notification     # noqa: F401 — registers notification model
 import app.models.activity         # noqa: F401 — registers activity engine model
 import app.models.place            # noqa: F401 — registers Place + SpacePlace models
+import app.models.purchase_intent  # noqa: F401 — registers PurchaseIntent (Stage 1 payment-first foundation)
 
 config = context.config
 

@@ -3,9 +3,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
-import { getMe, getPublicSpaces } from '@/lib/serverApi'
+import { getMe, getPublicSpace } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
-import type { PublicSpaceCard } from '@/types/platform'
 
 /**
  * /checkout/member?collective=<slug> — payment placeholder for someone
@@ -39,10 +38,10 @@ export default async function CheckoutMemberPage({
   const { collective: slug } = await searchParams
   if (!slug) notFound()
 
-  // Prototype approach: filter the existing public list. When Stripe
-  // lands, replace with a dedicated GET /api/public/spaces/{slug}.
-  const spaces = await getPublicSpaces().catch(() => [] as PublicSpaceCard[])
-  const collective = spaces.find((s) => s.slug === slug)
+  // Fetch the single public Collective directly. Returns null for
+  // unknown, private, draft or auto-grant Collectives — all rendered
+  // as 404 rather than a "Join undefined" fallback.
+  const collective = await getPublicSpace(slug)
   if (!collective) notFound()
 
   const me = await getMe().catch(() => null)

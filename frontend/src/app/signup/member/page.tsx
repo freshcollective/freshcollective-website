@@ -4,9 +4,8 @@ import { notFound, redirect } from 'next/navigation'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import PrototypeSignupForm from '@/components/checkout/PrototypeSignupForm'
-import { getMe, getPublicSpaces } from '@/lib/serverApi'
+import { getMe, getPublicSpace } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
-import type { PublicSpaceCard } from '@/types/platform'
 
 /**
  * /signup/member?collective=<slug> — member signup prototype for
@@ -39,8 +38,7 @@ export default async function SignupMemberPage({
   const { collective: slug } = await searchParams
   if (!slug) notFound()
 
-  const spaces = await getPublicSpaces().catch(() => [] as PublicSpaceCard[])
-  const collective = spaces.find((s) => s.slug === slug)
+  const collective = await getPublicSpace(slug)
   if (!collective) notFound()
 
   const me = await getMe().catch(() => null)

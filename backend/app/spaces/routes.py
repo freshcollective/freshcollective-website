@@ -96,20 +96,54 @@ public_router = APIRouter(prefix="/api/public", tags=["public"])
 # Public (unauthenticated) discovery endpoint
 # ---------------------------------------------------------------------------
 
+def _public_space_query(db: Session):
+    """The single source of truth for "which Spaces may be shown on
+    a public surface". Any change here rewires both the list endpoint
+    and the single-slug endpoint below in lock-step.
+
+    Predicates (kept identical to the historical list filter so no
+    caller sees a regression):
+      * ``status == 'active'``     — never surface drafts / archived
+      * ``is_public == true``      — private Collectives are invisible
+      * ``auto_grant_role IS NULL``— hides operational Spaces such as
+                                     World Builders, whose membership
+                                     is managed automatically.
+    """
+    return db.query(Space).filter(
+        Space.status == "active",
+        Space.is_public.is_(True),
+        Space.auto_grant_role.is_(None),
+    )
+
+
 @public_router.get("/spaces", response_model=list[PublicSpaceCard])
 def list_public_spaces(db: Session = Depends(get_db)) -> list[PublicSpaceCard]:
     """Return all public active spaces with aggregated counts — no auth required."""
-    spaces = (
-        db.query(Space)
-        .filter(
-            Space.status == "active",
-            Space.is_public.is_(True),
-            Space.auto_grant_role.is_(None),
-        )
-        .order_by(Space.created_at)
-        .all()
-    )
+    spaces = _public_space_query(db).order_by(Space.created_at).all()
     return hydrate_public_space_cards(spaces, db)
+
+
+@public_router.get("/spaces/{slug}", response_model=PublicSpaceCard)
+def get_public_space(slug: str, db: Session = Depends(get_db)) -> PublicSpaceCard:
+    """Return a single publicly-visible Collective by slug — no auth.
+
+    Uses the same filter as :func:`list_public_spaces` so any Collective
+    that would not appear in the list is *not* addressable here either
+    (returns 404). Prevents an unlisted Collective (draft, private, or
+    auto-grant) from being surfaced through the single-slug route.
+
+    Hydration goes through ``hydrate_public_space_cards`` so the
+    returned shape is byte-for-byte the same as an entry in the list
+    response — no private membership, creator-contact, unpublished
+    pricing or admin fields are exposed.
+    """
+    space = _public_space_query(db).filter(Space.slug == slug).one_or_none()
+    if space is None:
+        raise HTTPException(status_code=404, detail="Collective not found.")
+    cards = hydrate_public_space_cards([space], db)
+    # Hydration always returns exactly one card for a single input row;
+    # a defensive index guard would only mask a bug.
+    return cards[0]
 
 
 def hydrate_public_space_cards(
