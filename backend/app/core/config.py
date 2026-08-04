@@ -16,6 +16,20 @@ class Settings(BaseSettings):
     stripe_secret_key: str | None = None
     stripe_webhook_secret: str | None = None
 
+    # Stripe recurring Price IDs for Creator subscriptions. These live in
+    # Stripe (Products → Prices) and are looked up by env var so no ID is
+    # ever hard-coded in application source. Leave unset in development
+    # when Stripe itself is not configured — the checkout service reports
+    # an isolated "not configured" state rather than pretending to work.
+    stripe_price_id_creator: str | None = None
+    stripe_price_id_pro: str | None = None
+
+    # Absolute base URL of the public frontend, used to build Stripe
+    # success/cancel URLs. Defaults to `frontend_origin` when unset;
+    # split as a distinct setting so a future CDN-fronted deployment can
+    # override the payment return URL without changing CORS.
+    public_app_url: str | None = None
+
     # Standalone Gathering ticket sales — hard-off by default. Even when
     # set to True, the checkout endpoint additionally refuses to create a
     # Session in live Stripe mode unless the operator has explicitly
@@ -96,6 +110,13 @@ class Settings(BaseSettings):
         if self.stripe_secret_key and self.stripe_secret_key.startswith("sk_live_"):
             return "live"
         return "test"
+
+    @property
+    def resolved_public_app_url(self) -> str:
+        """Base URL used to construct Stripe success/cancel URLs.
+        Falls back to `frontend_origin` when the dedicated
+        `public_app_url` is unset."""
+        return (self.public_app_url or self.frontend_origin).rstrip("/")
 
 
 settings = Settings()

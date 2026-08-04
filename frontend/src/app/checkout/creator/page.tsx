@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import ArtworkFeatureComposition from '@/components/marketing/ArtworkFeatureComposition'
+import CreatorCheckoutButton from '@/components/checkout/CreatorCheckoutButton'
 import {
   buildPlatformArtLookup,
   getMe,
@@ -36,9 +37,7 @@ export const metadata: Metadata = {
 }
 
 const NAVY = '#0C1826'
-const TEAL = '#38A09E'
 const TEAL_DEEP = '#246B6A'
-const INK_BODY = 'rgba(12, 24, 38, 0.80)'
 const INK_SOFT = 'rgba(12, 24, 38, 0.66)'
 
 export default async function CheckoutCreatorPage({
@@ -58,20 +57,11 @@ export default async function CheckoutCreatorPage({
     redirect('/signup/creator?plan=community')
   }
 
-  const [me, artwork] = await Promise.all([
+  const [, artwork] = await Promise.all([
     getMe().catch(() => null),
     getPublicPlatformArtwork().catch(() => [] as PublicPlatformArtwork[]),
   ])
-  const isLoggedIn = Boolean(me?.id)
   const artUrl = buildPlatformArtLookup(artwork)(plan.artworkKey)
-
-  // Where the "Preview the next step" button sends the visitor:
-  //   - Logged out → the creator signup prototype
-  //   - Logged in  → the honest holding screen for an upgrade flow
-  //                  (they must not be sent through a second signup)
-  const nextHref = isLoggedIn
-    ? `/checkout/next?flow=upgrade&plan=${plan.slug}&preview=true`
-    : `/signup/creator?plan=${plan.slug}&preview=true`
 
   return (
     <SiteShell>
@@ -154,18 +144,12 @@ export default async function CheckoutCreatorPage({
                 </ul>
               </div>
 
-              <div className="mt-8 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-                <Link
-                  href={nextHref}
-                  className="inline-flex items-center rounded-full px-7 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-                  style={{
-                    background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
-                    letterSpacing: '0.04em',
-                    boxShadow: '0 6px 24px rgba(56, 160, 158, 0.30)',
-                  }}
-                >
-                  Preview the next step →
-                </Link>
+              <div className="mt-8 flex flex-col items-start gap-4">
+                {/* Stage 2: real Stripe Checkout Session creation.
+                    Falls back to an honest "not configured" banner
+                    when Stripe credentials are unset — never a fake
+                    success. */}
+                <CreatorCheckoutButton planSlug={plan.slug} />
                 <Link
                   href="/for-creators#plans"
                   className="text-[14px] font-semibold transition-opacity hover:opacity-80"

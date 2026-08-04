@@ -37,6 +37,7 @@ from app.creator.routes import router as creator_router
 from app.creator.build_your_collective import router as build_your_collective_router
 from app.uploads.routes import uploads_router
 from app.checkout.routes import router as checkout_router
+from app.purchases.routes import router as purchases_router
 from app.webhooks.routes import router as webhooks_router
 from app.messages.routes import creator_router as messages_creator_router, member_router as messages_member_router
 from app.places.routes import router as places_router
@@ -115,6 +116,7 @@ app.include_router(build_your_collective_router)
 app.include_router(uploads_router)
 app.include_router(invites_router)
 app.include_router(checkout_router)
+app.include_router(purchases_router)
 app.include_router(webhooks_router)
 app.include_router(notifications_router)
 app.include_router(activities_router)
