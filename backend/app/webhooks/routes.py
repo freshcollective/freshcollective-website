@@ -108,6 +108,145 @@ async def stripe_webhook(
 
 
 # ---------------------------------------------------------------------------
+# PurchaseIntent-backed fulfilment (Stage 3+)
+# ---------------------------------------------------------------------------
+
+def _handle_purchase_intent_completed(
+    session: dict, db: Session, metadata: dict,
+) -> None:
+    """
+    checkout.session.completed for a Session created from a
+    PurchaseIntent (metadata carries ``purchase_intent_id``).
+
+    Responsibilities are deliberately narrow:
+
+      1. Locate the intent by id (with row lock).
+      2. Idempotency: skip if already ``consumed`` / ``refunded``,
+         and skip mark-paid work if already ``paid``.
+      3. On first delivery, transition ``pending → paid``, snapshot
+         Stripe's subscription/customer IDs, and record the
+         customer_details.email as ``claim_email``.
+      4. If ``payer_user_id`` is set, immediately claim the intent
+         for that user via the shared claim orchestrator. Otherwise
+         leave the intent in ``paid`` for the frontend claim flow.
+
+    All business logic lives in ``app.purchases.claim`` and
+    ``app.creator.plan_activation``. This handler is a dispatcher.
+    """
+    from app.models.purchase_intent import (
+        PurchaseIntent,
+        PurchaseIntentKind,
+        PurchaseIntentStatus,
+    )
+    from app.models.user import User
+    from app.purchases.claim import ClaimError, claim_intent
+
+    intent_id = metadata.get("purchase_intent_id", "")
+    if not intent_id:
+        logger.error(
+            "purchase_intent webhook: missing purchase_intent_id in metadata "
+            "session=%s", session.get("id"),
+        )
+        return
+
+    intent = (
+        db.query(PurchaseIntent)
+        .filter(PurchaseIntent.id == intent_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if intent is None:
+        # Same policy as the pathway path — event is already
+        # dispatched by Stripe; log and return 200 so Stripe stops
+        # retrying (retries won't help find a missing row).
+        logger.error(
+            "purchase_intent webhook: intent %s not found "
+            "(session=%s)", intent_id, session.get("id"),
+        )
+        return
+
+    # Idempotency: terminal states are safe no-ops.
+    if intent.status in (
+        PurchaseIntentStatus.consumed,
+        PurchaseIntentStatus.refunded,
+    ):
+        logger.info(
+            "purchase_intent webhook: intent %s already %s — skipping.",
+            intent.id, intent.status.value,
+        )
+        return
+
+    # Payment must actually have been made. Stripe's payment_status
+    # on subscription-mode sessions is 'paid' on success and 'unpaid'
+    # otherwise; refuse to progress if we somehow got the wrong event.
+    payment_status = session.get("payment_status", "")
+    if payment_status not in ("paid", "no_payment_required"):
+        logger.warning(
+            "purchase_intent webhook: payment_status=%s intent=%s "
+            "session=%s — skipping.",
+            payment_status, intent.id, session.get("id"),
+        )
+        return
+
+    # First-time delivery: mark paid + snapshot provider IDs.
+    if intent.status == PurchaseIntentStatus.pending:
+        intent.status = PurchaseIntentStatus.paid
+        intent.paid_at = datetime.utcnow()
+        intent.provider_subscription_id = session.get("subscription")
+        intent.provider_customer_id = session.get("customer")
+        customer_details = session.get("customer_details") or {}
+        email = (customer_details.get("email") or "").strip().lower()
+        if email:
+            intent.claim_email = email
+        db.flush()
+
+    # If the payer is a known Fresh Collective user, activate now.
+    # Otherwise leave the intent in ``paid`` — the visitor's return
+    # to /checkout/complete drives activation via the claim endpoint.
+    if intent.payer_user_id:
+        user = (
+            db.query(User)
+            .filter(User.id == intent.payer_user_id)
+            .one_or_none()
+        )
+        if user is None:
+            logger.error(
+                "purchase_intent webhook: payer_user_id %s for intent "
+                "%s no longer exists — leaving intent paid for claim.",
+                intent.payer_user_id, intent.id,
+            )
+            # Persist the mark-paid so the frontend claim path can
+            # still recover the purchase.
+            db.commit()
+            return
+        try:
+            claim_intent(db, intent, user)
+        except ClaimError as exc:
+            # Deliberate: activation failure must NOT swallow the
+            # paid status. Roll back this delivery's writes so Stripe
+            # retries and the next delivery finds the intent in its
+            # actual state (either still paid, if the mark-paid was
+            # from a prior delivery, or still pending here).
+            logger.exception(
+                "purchase_intent webhook: auto-claim failed for intent "
+                "%s user=%s: %s", intent.id, user.id, exc,
+            )
+            db.rollback()
+            raise
+    else:
+        logger.info(
+            "purchase_intent webhook: intent %s marked paid; awaiting "
+            "visitor claim (no payer_user_id).", intent.id,
+        )
+
+    # Persist everything: the mark-paid transition and, when the payer
+    # was known, the full activation (subscription + role + WB + audit
+    # + consumption). Without this commit the SQLAlchemy session
+    # rolls back on request end and none of the above survives.
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
 # Standalone paid Gathering fulfilment (Stage 2B)
 # ---------------------------------------------------------------------------
 
@@ -233,6 +372,16 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     # ---------------------------------------------------------------
     if metadata.get("purchase_type") == "standalone_gathering":
         _handle_gathering_ticket_completed(session, db, metadata)
+        return
+
+    # ---------------------------------------------------------------
+    # PurchaseIntent-backed sessions (Stage 3+). The presence of
+    # ``purchase_intent_id`` in metadata means the Session was
+    # created via ``app.purchases.checkout``; dispatch to the
+    # dedicated handler which routes further by intent.kind.
+    # ---------------------------------------------------------------
+    if metadata.get("purchase_intent_id"):
+        _handle_purchase_intent_completed(session, db, metadata)
         return
 
     pathway_id: str = metadata.get("pathway_id", "")

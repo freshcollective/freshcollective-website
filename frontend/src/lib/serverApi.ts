@@ -84,6 +84,44 @@ export const getPublicSpaces = cache(async (): Promise<PublicSpaceCard[]> => {
   }
 })
 
+export interface PurchaseByTokenResponse {
+  status: 'pending' | 'paid' | 'consumed' | 'cancelled' | 'expired' | 'refunded'
+  kind: 'creator_subscription' | 'collective_membership' | 'pathway' | 'gathering'
+  plan_slug: string | null
+  plan_display_name: string | null
+  claim_email: string | null
+  claim_email_has_account: boolean
+  payer_bound: boolean
+  claim_token_expired: boolean
+  consumed_by_current_user: boolean
+}
+
+/** Fetch the safe summary of a PurchaseIntent by claim token. Returns
+ *  null on 404 or network error so the caller can render an "invalid
+ *  link" state without a try/catch. Forwards the session cookie so
+ *  the backend can compute ``consumed_by_current_user`` correctly. */
+export const getPurchaseByToken = cache(
+  async (token: string): Promise<PurchaseByTokenResponse | null> => {
+    try {
+      const cookieStore = await cookies()
+      const sessionToken = cookieStore.get(SESSION_COOKIE)?.value ?? ''
+      const res = await fetch(
+        apiUrl(`/api/purchases/by-token?token=${encodeURIComponent(token)}`),
+        {
+          cache: 'no-store',
+          headers: sessionToken
+            ? { Cookie: `${SESSION_COOKIE}=${sessionToken}` }
+            : {},
+        },
+      )
+      if (!res.ok) return null
+      return res.json()
+    } catch {
+      return null
+    }
+  },
+)
+
 /** Fetch a single publicly-visible Collective by slug. Returns null on
  *  404 / network error / unlisted (private, draft, auto-grant) so the
  *  caller can render a not-found state without a try/catch. */

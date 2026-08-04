@@ -25,11 +25,22 @@ for schema errors) and no PurchaseIntent row is written. If step 5
 fails, the DB transaction is rolled back explicitly so the pending
 intent from step 4 does not persist as an orphan.
 
-What this file explicitly does NOT do (belongs to later stages):
-  * consume PurchaseIntents
-  * process Stripe webhooks
-  * create accounts
-  * grant Creator capability / entitlements
+Stage 3 additions:
+
+  * ``GET /api/purchases/by-token`` — public read-only summary of an
+    intent, keyed by the raw claim token. Used by ``/checkout/complete``
+    to render the correct state without exposing internal IDs.
+  * ``POST /api/purchases/claim`` — activates a paid intent for the
+    currently-authenticated user. Requires a valid session cookie.
+  * ``POST /api/purchases/claim-with-signup`` — creates a new account
+    against the intent's ``claim_email`` and activates in the same
+    transaction. Sets the session cookie on success.
+
+All three claim endpoints delegate business logic to
+``app.purchases.claim`` (kind-agnostic orchestration) and
+``app.creator.plan_activation`` (Creator-plan-specific domain).
+Webhook processing lives in ``app.webhooks.routes`` — this file
+never receives Stripe events directly.
 """
 
 from __future__ import annotations
@@ -38,13 +49,25 @@ import logging
 from typing import Literal, Optional
 
 import stripe
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_optional_user
+from app.auth.dependencies import get_current_user, get_optional_user
+from app.auth.routes import set_session_cookie
+from app.auth import service as auth_service
 from app.checkout.stripe_client import StripeNotConfiguredError, is_configured
 from app.core.database import get_db
+from app.creator.plan_activation import (
+    ActivationConflictError,
+    CreatorPlanActivationError,
+)
+from app.models.creator_billing import CreatorPlan
+from app.models.purchase_intent import (
+    PurchaseIntent,
+    PurchaseIntentKind,
+    PurchaseIntentStatus,
+)
 from app.models.user import User
 from app.purchases.checkout import (
     InvalidIntentStateError,
@@ -53,6 +76,17 @@ from app.purchases.checkout import (
     create_checkout_session_for_intent,
     create_creator_subscription_intent,
     missing_env_var_for_creator_plan,
+)
+from app.purchases.claim import (
+    ClaimTokenExpiredError,
+    IntentAlreadyConsumedByOtherUserError,
+    IntentEmailMismatchError,
+    IntentNotPaidError,
+    InvalidClaimTokenError,
+    UnsupportedIntentKindError,
+    claim_intent,
+    fetch_intent_by_raw_token,
+    is_claim_token_expired,
 )
 
 logger = logging.getLogger(__name__)
@@ -234,4 +268,264 @@ def create_creator_subscription_checkout(
         checkout_url=result.checkout_url,
         purchase_intent_id=result.purchase_intent_id,
         provider_checkout_session_id=result.provider_checkout_session_id,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Stage 3 — Claim endpoints
+# ═══════════════════════════════════════════════════════════════════
+
+
+class PurchaseByTokenResponse(BaseModel):
+    """Public, safe summary of an intent — sized to what the
+    /checkout/complete page needs to decide which state to render.
+    Does not expose ``payer_user_id`` or provider IDs."""
+    status: str = Field(..., description="pending | paid | consumed | expired | cancelled | refunded")
+    kind: str
+    plan_slug: str | None = None
+    plan_display_name: str | None = None
+    claim_email: str | None = None
+    claim_email_has_account: bool = False
+    payer_bound: bool = Field(
+        ...,
+        description=(
+            "True if the intent was created while a user was logged in "
+            "(so activation should happen automatically via webhook, "
+            "not via a claim flow)."
+        ),
+    )
+    claim_token_expired: bool
+    consumed_by_current_user: bool = False
+
+
+class ClaimResponse(BaseModel):
+    purchase_intent_id: str
+    status: str
+    next_url: str = Field(..., description="Where the frontend should send the visitor now.")
+
+
+class ClaimTokenBody(BaseModel):
+    token: str = Field(..., min_length=32)
+
+
+class ClaimWithSignupBody(BaseModel):
+    token: str = Field(..., min_length=32)
+    name: str = Field(..., min_length=1, max_length=200)
+    password: str = Field(..., min_length=8, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, v: str) -> str:
+        return v.strip()
+
+
+_NEXT_URL_CREATOR_STUDIO = "/creator-studio"
+
+
+@router.get(
+    "/by-token",
+    response_model=PurchaseByTokenResponse,
+)
+def get_purchase_by_token(
+    token: str,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+) -> PurchaseByTokenResponse:
+    """Return a safe summary of the intent identified by ``token``.
+    Public — no session required. Used by the /checkout/complete
+    server component to pick the correct rendered state.
+
+    Returns 404 for unknown tokens. Never reveals internal IDs.
+    """
+    try:
+        intent = fetch_intent_by_raw_token(db, token)
+    except InvalidClaimTokenError:
+        raise HTTPException(status_code=404, detail="Unknown claim token.")
+
+    plan_display_name: str | None = None
+    if intent.plan_slug:
+        plan = (
+            db.query(CreatorPlan)
+            .filter(CreatorPlan.slug == intent.plan_slug)
+            .first()
+        )
+        if plan is not None:
+            plan_display_name = plan.name
+
+    claim_email_has_account = False
+    if intent.claim_email:
+        existing = auth_service.get_user_by_email(db, intent.claim_email)
+        claim_email_has_account = existing is not None
+
+    consumed_by_current_user = bool(
+        current_user
+        and intent.status == PurchaseIntentStatus.consumed
+        and intent.consumed_by_user_id == current_user.id
+    )
+
+    return PurchaseByTokenResponse(
+        status=intent.status.value,
+        kind=intent.kind.value,
+        plan_slug=intent.plan_slug,
+        plan_display_name=plan_display_name,
+        claim_email=intent.claim_email,
+        claim_email_has_account=claim_email_has_account,
+        payer_bound=intent.payer_user_id is not None,
+        claim_token_expired=is_claim_token_expired(intent),
+        consumed_by_current_user=consumed_by_current_user,
+    )
+
+
+@router.post("/claim", response_model=ClaimResponse)
+def claim_purchase(
+    body: ClaimTokenBody,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ClaimResponse:
+    """Activate the intent for the currently-authenticated user.
+
+    Preconditions enforced by the shared claim orchestrator:
+      * token resolves to an intent (else 404)
+      * intent is ``paid`` (else 409)
+      * intent's claim_email matches the current user's email
+        (else 403)
+
+    Idempotent: replaying the request for the same user after
+    activation returns the same success payload without side effects.
+    """
+    try:
+        intent = fetch_intent_by_raw_token(db, body.token, for_update=True)
+    except InvalidClaimTokenError:
+        raise HTTPException(status_code=404, detail="Unknown claim token.")
+
+    if is_claim_token_expired(intent) and intent.status != PurchaseIntentStatus.consumed:
+        # Elapsed-and-not-yet-consumed. Intent stays ``paid`` per
+        # Stage 1 invariant — this is a support-recoverable state.
+        raise HTTPException(
+            status_code=410,
+            detail="Claim link has expired. Please contact support.",
+        )
+
+    try:
+        claim_intent(db, intent, current_user)
+    except IntentNotPaidError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except IntentAlreadyConsumedByOtherUserError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except IntentEmailMismatchError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except UnsupportedIntentKindError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except ActivationConflictError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CreatorPlanActivationError as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    db.commit()
+    return ClaimResponse(
+        purchase_intent_id=intent.id,
+        status=intent.status.value,
+        next_url=_NEXT_URL_CREATOR_STUDIO,
+    )
+
+
+@router.post("/claim-with-signup", response_model=ClaimResponse)
+def claim_with_signup(
+    body: ClaimWithSignupBody,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+) -> ClaimResponse:
+    """Create a Fresh Collective account against the intent's
+    ``claim_email`` and activate the intent in the same transaction.
+    Sets the ``fc_session`` cookie on success.
+
+    * Refuses when a session is already active — returning visitors
+      use ``POST /claim`` instead.
+    * Refuses when no ``claim_email`` is set on the intent (webhook
+      hasn't fired yet; the frontend should render 'waiting').
+    * Refuses when an account already exists for ``claim_email``
+      (the frontend should redirect the visitor to sign in and then
+      call /claim).
+    * Refuses when the claim token has expired.
+
+    Idempotency: a repeat POST for the *same* email after the account
+    exists will return 409; the frontend then flips to the "sign in"
+    state. There is no window where an orphan account could be
+    created — user creation and activation share a transaction, and
+    any activation failure rolls the User row back.
+    """
+    if current_user is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="You are already signed in. Use POST /claim instead.",
+        )
+
+    try:
+        intent = fetch_intent_by_raw_token(db, body.token, for_update=True)
+    except InvalidClaimTokenError:
+        raise HTTPException(status_code=404, detail="Unknown claim token.")
+
+    if is_claim_token_expired(intent):
+        raise HTTPException(
+            status_code=410,
+            detail="Claim link has expired. Please contact support.",
+        )
+    if intent.status != PurchaseIntentStatus.paid:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This purchase is not yet confirmed as paid. Please "
+                "wait a moment and try again."
+            ),
+        )
+    if not intent.claim_email:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Payment has been received but Stripe has not yet "
+                "delivered the payer's email. Please wait a moment "
+                "and try again."
+            ),
+        )
+
+    email = intent.claim_email.strip().lower()
+    if auth_service.get_user_by_email(db, email) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "An account already exists for this email. Please sign "
+                "in and try again."
+            ),
+        )
+
+    # Create the account. `create_user` flushes but does not commit,
+    # so activation failure below still rolls the row back.
+    new_user = auth_service.create_user(db, body.name, email, body.password)
+
+    try:
+        claim_intent(db, intent, new_user)
+    except (
+        IntentNotPaidError,
+        IntentAlreadyConsumedByOtherUserError,
+        IntentEmailMismatchError,
+        UnsupportedIntentKindError,
+        ActivationConflictError,
+        CreatorPlanActivationError,
+    ) as exc:
+        db.rollback()  # atomic: user row is also removed
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    db.commit()
+
+    # Open a session for the freshly-created account.
+    token = auth_service.create_session_token(new_user)
+    set_session_cookie(response, token)
+
+    return ClaimResponse(
+        purchase_intent_id=intent.id,
+        status=intent.status.value,
+        next_url=_NEXT_URL_CREATOR_STUDIO,
     )

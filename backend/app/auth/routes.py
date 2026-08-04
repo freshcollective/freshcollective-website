@@ -33,7 +33,7 @@ limiter = Limiter(key_func=get_remote_address)
 COOKIE_MAX_AGE = 7 * 24 * 60 * 60  # 7 days
 
 
-def _set_session_cookie(response: Response, token: str) -> None:
+def set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         key=SESSION_COOKIE,
         value=token,
@@ -75,7 +75,7 @@ async def login(
             detail="This account has been cancelled.",
         )
     token = service.create_session_token(user)
-    _set_session_cookie(response, token)
+    set_session_cookie(response, token)
     return UserResponse.model_validate(user)
 
 
@@ -95,7 +95,7 @@ async def signup(
         )
     user = service.create_user(db, payload.name, payload.email, payload.password)
     token = service.create_session_token(user)
-    _set_session_cookie(response, token)
+    set_session_cookie(response, token)
     return UserResponse.model_validate(user)
 
 
@@ -337,5 +337,5 @@ async def reset_password(
             detail="This reset link is invalid or has expired. Please request a new one.",
         )
     token = service.create_session_token(user)
-    _set_session_cookie(response, token)
+    set_session_cookie(response, token)
     return UserResponse.model_validate(user)

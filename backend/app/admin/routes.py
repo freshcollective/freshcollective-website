@@ -17,6 +17,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.admin import service
+from app.creator.plan_activation import ActivationSource, activate_creator_plan
 from app.admin.schemas import (
     AdminAccessRequestRow,
     AdminAccessResponse,
@@ -325,29 +326,6 @@ def _resolve_grant_ends_at(
     return starts_at.replace(year=year, month=month, day=day)
 
 
-def _record_grant_event(
-    db: Session,
-    *,
-    subscription: CreatorSubscription,
-    action: str,
-    reason: str | None,
-    note: str | None,
-    actor_user_id: str | None,
-) -> None:
-    """Append a row to the creator_plan_grants history table."""
-    db.add(CreatorPlanGrant(
-        id=str(uuid4()),
-        subscription_id=subscription.id,
-        action=action,
-        creator_plan_id=subscription.creator_plan_id,
-        starts_at=subscription.starts_at,
-        ends_at=subscription.ends_at,
-        reason=reason,
-        note=note,
-        actor_user_id=actor_user_id,
-    ))
-
-
 @router.post(
     "/creator-subscriptions/grant",
     response_model=GrantPlanAccessResult,
@@ -391,7 +369,11 @@ def grant_creator_plan_access(
     starts_at = body.starts_at or datetime.utcnow()
     ends_at = _resolve_grant_ends_at(starts_at, body.ends_at, body.duration)
 
-    # --- Conflict handling ------------------------------------------------
+    # --- Conflict handling — mirrors the pre-refactor error messages so
+    # existing operator tooling / tests continue to see the same 409
+    # copy. The shared service raises ActivationConflictError with a
+    # different message shape, so we still perform this admin-facing
+    # check ourselves before delegating.
     existing_active = (
         db.query(CreatorSubscription)
         .filter(
@@ -411,7 +393,6 @@ def grant_creator_plan_access(
                     "subscription first or use a separate override workflow."
                 ),
             )
-        # existing manual grant — refuse and hint at the right action
         raise HTTPException(
             status_code=409,
             detail=(
@@ -421,83 +402,23 @@ def grant_creator_plan_access(
             ),
         )
 
-    # --- Create / reactivate ---------------------------------------------
-    existing_inactive = (
-        db.query(CreatorSubscription)
-        .filter(CreatorSubscription.user_id == body.creator_user_id)
-        .order_by(CreatorSubscription.created_at.desc())
-        .first()
-    )
-    now = datetime.utcnow()
-    if existing_inactive and existing_inactive.source == "manual_grant":
-        # Reactivate the prior manual grant so limit-check queries still
-        # find a single row per creator. Its history remains preserved in
-        # `creator_plan_grants`.
-        sub = existing_inactive
-        sub.creator_plan_id = plan.id
-        sub.status = CreatorSubscriptionStatus.active
-        sub.starts_at = starts_at
-        sub.ends_at = ends_at
-        sub.source = "manual_grant"
-        sub.grant_reason = body.reason
-        sub.granted_by_user_id = admin.id
-        sub.grant_note = note
-        sub.revoked_at = None
-        sub.revoked_by_user_id = None
-        sub.revoked_reason = None
-        sub.updated_at = now
-        reactivated = True
-    else:
-        sub = CreatorSubscription(
-            id=str(uuid4()),
-            user_id=body.creator_user_id,
-            creator_plan_id=plan.id,
-            status=CreatorSubscriptionStatus.active,
+    # --- Delegate to the shared activation service ------------------------
+    result = activate_creator_plan(
+        db,
+        creator,
+        plan.slug,
+        ActivationSource(
+            source="manual_grant",
+            reason=body.reason,
+            note=note,
+            actor_user_id=admin.id,
             starts_at=starts_at,
             ends_at=ends_at,
-            source="manual_grant",
-            grant_reason=body.reason,
-            granted_by_user_id=admin.id,
-            grant_note=note,
-        )
-        db.add(sub)
-        reactivated = False
-
-    db.flush()
-    _record_grant_event(
-        db, subscription=sub, action="granted",
-        reason=body.reason, note=note, actor_user_id=admin.id,
+        ),
     )
     db.commit()
-    db.refresh(sub)
-
-    # --- Notify creator ---------------------------------------------------
-    try:
-        reason_label = _PLAN_REASON_LABELS.get(body.reason, body.reason)
-        if ends_at is not None:
-            message = (
-                f"Fresh Collective granted you access to the {plan.name} "
-                f"plan until {ends_at.strftime('%d %b %Y')}. "
-                f"Reason: {reason_label}."
-            )
-        else:
-            message = (
-                f"Fresh Collective granted you ongoing access to the "
-                f"{plan.name} plan. Reason: {reason_label}."
-            )
-        create_notification(
-            db=db,
-            recipient_id=creator.id,
-            notification_type="creator_plan_granted_by_platform",
-            title=f"Plan access granted — {plan.name}",
-            message=message,
-            url=None,
-        )
-    except Exception:  # pragma: no cover
-        import logging
-        logging.getLogger(__name__).exception(
-            "grant_creator_plan_access: creator notification failed"
-        )
+    db.refresh(result.subscription)
+    sub = result.subscription
 
     return GrantPlanAccessResult(
         subscription_id=sub.id,
@@ -507,13 +428,13 @@ def grant_creator_plan_access(
         note=note,
         starts_at=sub.starts_at,
         ends_at=sub.ends_at,
-        granted_at=sub.updated_at if reactivated else sub.created_at,
+        granted_at=sub.updated_at if result.was_reactivated else sub.created_at,
         granted_by_user_id=admin.id,
         creator_name=creator.name,
         creator_email=creator.email,
         plan_slug=plan.slug,
         plan_name=plan.name,
-        reactivated=reactivated,
+        reactivated=result.was_reactivated,
     )
 
 
@@ -548,7 +469,7 @@ def extend_creator_plan_grant(
     new_ends_at = _resolve_grant_ends_at(sub.starts_at, body.ends_at, body.duration)
     sub.ends_at = new_ends_at
     sub.updated_at = datetime.utcnow()
-    _record_grant_event(
+    service.record_grant_event(
         db, subscription=sub, action="extended",
         reason=None, note=(body.note or "").strip() or None,
         actor_user_id=admin.id,
@@ -609,7 +530,7 @@ def revoke_creator_plan_grant(
     sub.revoked_by_user_id = admin.id
     sub.revoked_reason = (body.reason or "").strip() or None
     sub.updated_at = now
-    _record_grant_event(
+    service.record_grant_event(
         db, subscription=sub, action="revoked",
         reason=body.reason, note=(body.note or "").strip() or None,
         actor_user_id=admin.id,
