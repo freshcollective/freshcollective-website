@@ -41,7 +41,7 @@ from app.purchases.routes import router as purchases_router
 from app.webhooks.routes import router as webhooks_router
 from app.messages.routes import creator_router as messages_creator_router, member_router as messages_member_router
 from app.places.routes import router as places_router
-from app.comms.routes import router as comms_admin_router
+from app.comms.routes import router as comms_admin_router, member_router as comms_member_router
 from app.core.config import settings
 
 logging.basicConfig(
@@ -125,6 +125,7 @@ app.include_router(messages_creator_router)
 app.include_router(messages_member_router)
 app.include_router(places_router)
 app.include_router(comms_admin_router)
+app.include_router(comms_member_router)
 
 
 # ---------------------------------------------------------------------------

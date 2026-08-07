@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from datetime import time as _time
+
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -26,7 +28,9 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    SmallInteger,
     String,
+    Time,
     UniqueConstraint,
     func,
 )
@@ -239,4 +243,137 @@ class CommunicationEvent(Base):
         # WHERE dedupe_key IS NOT NULL is created in migration 097 via
         # raw SQL — SQLAlchemy's Index() does not model partial
         # PostgreSQL indexes portably.
+    )
+
+
+# ---------------------------------------------------------------------------
+# Preferences, consents, member settings (Milestone 2)
+# ---------------------------------------------------------------------------
+
+
+_CONSENT_KIND_ENUM = Enum(
+    "terms_of_service",
+    "privacy_policy",
+    "marketing",
+    "product_updates",
+    "creator_broadcast",
+    name="communication_consent_kind_enum",
+    create_type=False,
+)
+
+_CONSENT_STATE_ENUM = Enum(
+    "granted",
+    "revoked",
+    name="communication_consent_state_enum",
+    create_type=False,
+)
+
+
+class CommunicationPreference(Base):
+    """A single (user × category × channel) deviation from the default.
+
+    Rows are written only when a member deviates from the seeded
+    ``communication_channel_defaults``. Effective preference resolution
+    is therefore ``preference override, else channel default``.
+
+    Locked channels (``is_locked=True`` on the channel default) refuse
+    override writes — the resolution helpers enforce this so callers
+    receive a clear error rather than a silent no-op.
+    """
+
+    __tablename__ = "communication_preferences"
+
+    id: Mapped[str] = mapped_column(String(), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    category_key: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("communication_categories.key", ondelete="CASCADE"),
+        nullable=False,
+    )
+    channel: Mapped[str] = mapped_column(_CHANNEL_ENUM, nullable=False)
+    priority: Mapped[str] = mapped_column(_PRIORITY_ENUM, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "category_key", "channel",
+            name="uq_comm_pref_user_category_channel",
+        ),
+        Index("ix_communication_preferences_user", "user_id"),
+    )
+
+
+class CommunicationConsent(Base):
+    """Append-only consent log.
+
+    A new row is inserted for every consent state transition; the
+    latest row for (user, consent_kind) is authoritative. Never
+    updated in place.
+
+    ``source`` records what captured the consent (form URL, event
+    key, migration source). ``evidence_ip_hash`` and
+    ``evidence_ua_hash`` store hashed request signals for audit
+    without retaining identifying data.
+    """
+
+    __tablename__ = "communication_consents"
+
+    id: Mapped[str] = mapped_column(String(), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    consent_kind: Mapped[str] = mapped_column(_CONSENT_KIND_ENUM, nullable=False)
+    state: Mapped[str] = mapped_column(_CONSENT_STATE_ENUM, nullable=False)
+    policy_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source: Mapped[str] = mapped_column(String(200), nullable=False)
+    evidence_ip_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    evidence_ua_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_communication_consents_user_kind_occurred_at",
+            "user_id",
+            "consent_kind",
+            "occurred_at",
+        ),
+    )
+
+
+class CommunicationMemberSettings(Base):
+    """Per-user global settings — timezone, quiet hours, digest arrival
+    times. One row per user, lazily created the first time the member
+    changes anything. All fields are nullable; NULL means "use platform
+    default" (see :mod:`app.comms.preferences` for the effective
+    defaults).
+    """
+
+    __tablename__ = "communication_member_settings"
+
+    user_id: Mapped[str] = mapped_column(
+        String(),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    quiet_hours_start_local: Mapped[_time | None] = mapped_column(Time(), nullable=True)
+    quiet_hours_end_local: Mapped[_time | None] = mapped_column(Time(), nullable=True)
+    daily_digest_send_local_time: Mapped[_time | None] = mapped_column(Time(), nullable=True)
+    # ISO weekday: 0=Monday .. 6=Sunday. NULL → platform default (6, Sunday).
+    weekly_digest_send_local_weekday: Mapped[int | None] = mapped_column(
+        SmallInteger(), nullable=True
+    )
+    weekly_digest_send_local_time: Mapped[_time | None] = mapped_column(Time(), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
     )
