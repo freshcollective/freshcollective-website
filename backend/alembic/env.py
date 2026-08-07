@@ -21,6 +21,8 @@ import app.models.notification     # noqa: F401 — registers notification model
 import app.models.activity         # noqa: F401 — registers activity engine model
 import app.models.place            # noqa: F401 — registers Place + SpacePlace models
 import app.models.purchase_intent  # noqa: F401 — registers PurchaseIntent (Stage 1 payment-first foundation)
+import app.models.community_care    # noqa: F401 — registers CommunityCare models (User FKs reference these)
+import app.comms.models             # noqa: F401 — registers Communications Layer models (Milestone 1)
 
 config = context.config
 
