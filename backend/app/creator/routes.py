@@ -280,13 +280,15 @@ def _ensure_creator_write_allowed(user: User, space: Space, db: Session) -> None
 
 
 def _get_managed_space(slug: str, user: User, db: Session) -> Space:
-    """Return the Space if the user owns it or is a creator/moderator."""
+    """Return the Space if the user owns it or is a creator/moderator.
+
+    Platform admins do not get automatic creator rights over other creators'
+    collectives here — for cross-collective oversight, use the admin portal
+    (`/admin/...`). Creator Studio treats admins like any other creator.
+    """
     space = db.query(Space).filter(Space.slug == slug).first()
     if not space:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
-
-    if user.role == "admin":
-        return space  # admins can manage anything
 
     is_owner = space.creator_id == user.id
     if not is_owner:
@@ -647,8 +649,6 @@ def list_my_spaces(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> list[Space]:
-    if current_user.role == "admin":
-        return db.query(Space).order_by(Space.name).all()
     owned = db.query(Space).filter(Space.creator_id == current_user.id).all()
     membered = (
         db.query(Space)
