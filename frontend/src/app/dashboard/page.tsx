@@ -14,7 +14,7 @@ import {
 } from '@/lib/serverApi'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
-import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary } from '@/types/platform'
+import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary, UserProfile } from '@/types/platform'
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from './AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
 import RecentMomentsSection from './RecentMomentsSection'
@@ -43,7 +43,7 @@ const FULL_WIDTH_CARD_GRID = 'grid gap-8 sm:grid-cols-2 lg:grid-cols-3'
 export const metadata: Metadata = {
   title: 'Your World · Fresh Collective',
   description:
-    "What's happening in your communities today, and a few quiet doors to elsewhere.",
+    "What's happening in your communities today, and a few doorways into the rest of Fresh Collective.",
 }
 
 /**
@@ -72,13 +72,6 @@ export const metadata: Metadata = {
  *                            blur
  */
 
-interface User {
-  id: string
-  email: string
-  name: string | null
-  role: string
-}
-
 interface MembershipCard {
   membership: SpaceMembership
   space: SpaceResponse | null
@@ -100,7 +93,7 @@ interface UpcomingEvent {
   fallbackBg: string
 }
 
-async function getUser(): Promise<User | null> {
+async function getUser(): Promise<UserProfile | null> {
   const cookieStore = await cookies()
   const session = cookieStore.get(SESSION_COOKIE)
   if (!session) return null
@@ -166,7 +159,7 @@ async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
 
 export default async function DashboardPage() {
   const [user, memberships, publicSpaces, platformArtwork, creatorSpaces]: [
-    User | null,
+    UserProfile | null,
     SpaceMembership[],
     PublicSpaceCard[],
     Awaited<ReturnType<typeof getPublicPlatformArtwork>>,
@@ -183,6 +176,7 @@ export default async function DashboardPage() {
   const creatorStudioArt = artworkByKey.get('creator_studio') ?? null
   const discoverPlacesArt = artworkByKey.get('discover_places') ?? null
   const waysToConnectArt = artworkByKey.get('ways_to_connect') ?? null
+  const orientationArt = artworkByKey.get('new_to_fresh_collective') ?? null
 
   const firstName = user?.name?.split(' ')[0] ?? 'friend'
   const isCreatorOrAdmin = user?.role === 'creator' || user?.role === 'admin'
@@ -247,7 +241,7 @@ export default async function DashboardPage() {
             style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
           >
             What&rsquo;s happening in your communities today, and a
-            few quiet doors to elsewhere.
+            few doorways into the rest of Fresh Collective.
           </p>
         </div>
 
@@ -385,7 +379,7 @@ export default async function DashboardPage() {
             page width so 3 invitations sit on one row at xl. */}
         <Section
           title="Elsewhere in the world"
-          subtitle="A few quiet doors, when you&rsquo;re curious."
+          subtitle="A few doorways, when you&rsquo;re curious."
           className="mt-14"
           noSpacing
         >
@@ -400,6 +394,11 @@ export default async function DashboardPage() {
               ? FULL_WIDTH_CARD_GRID
               : 'grid gap-8 sm:grid-cols-2'
           }>
+            {user && !user.has_completed_onboarding && (
+              <OrientationCard
+                artUrl={orientationArt?.thumbnail_url ?? orientationArt?.image_url ?? null}
+              />
+            )}
             <ExploreCollectivesCard
               artUrl={exploreArt?.thumbnail_url ?? exploreArt?.image_url ?? null}
             />
@@ -661,6 +660,60 @@ function CollectiveCard({
 // Explore Collectives — final Atlas card in the My Collectives grid
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Orientation card — the soft entry into the (now-optional) Fresh
+// Collective orientation. Rendered conditionally when the visitor
+// hasn't completed it. Fills the same slot in "Elsewhere in the world"
+// as the other invitations so a first-visit member sees it as one of
+// several doors, not as a nag.
+// ---------------------------------------------------------------------------
+
+function OrientationCard({ artUrl }: { artUrl?: string | null }) {
+  const resolved = resolveMediaUrl(artUrl ?? undefined)
+  return (
+    <Link
+      href="/onboarding"
+      className="group block overflow-hidden rounded-2xl bg-white transition-all"
+      style={ATLAS_CARD_STYLE}
+    >
+      <div
+        className="relative w-full overflow-hidden"
+        style={{
+          aspectRatio: '3 / 2',
+          background:
+            'linear-gradient(135deg, rgba(212, 176, 72, 0.18) 0%, rgba(247, 232, 200, 0.22) 55%, rgba(56, 160, 158, 0.14) 100%)',
+        }}
+      >
+        {resolved ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={resolved}
+            alt="New to Fresh Collective"
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+          />
+        ) : (
+          <svg
+            viewBox="0 0 240 160"
+            className="absolute left-1/2 top-1/2 h-32 w-40 -translate-x-1/2 -translate-y-1/2 transition-transform duration-500 group-hover:scale-[1.05]"
+            aria-hidden="true"
+          >
+            <circle cx="120" cy="60" r="24" fill="#D4B048" opacity="0.55" />
+            <path d="M 20 118 Q 120 108 220 118" stroke="#38A09E" strokeWidth="1.5" fill="none" opacity="0.55" />
+            <path d="M 60 130 Q 120 122 180 130" stroke="#38A09E" strokeWidth="0.8" fill="none" opacity="0.35" />
+          </svg>
+        )}
+      </div>
+      <AtlasCardBody
+        name="New to Fresh Collective?"
+        description="Take a short tour of how Collectives, Pathways, Gatherings and Conversations work."
+        meta="A gentle introduction"
+        cta="Start here →"
+      />
+    </Link>
+  )
+}
+
+
 function ExploreCollectivesCard({ artUrl }: { artUrl?: string | null }) {
   const resolved = resolveMediaUrl(artUrl ?? undefined)
   return (
@@ -750,7 +803,7 @@ function DiscoverPlacesCard({ artUrl }: { artUrl?: string | null }) {
       </div>
       <AtlasCardBody
         name="Discover Places"
-        description="The cities and regions where Fresh Collective communities are quietly growing."
+        description="The cities and regions where Fresh Collective communities are taking root."
         meta="Elsewhere in the world"
         cta="Explore →"
       />

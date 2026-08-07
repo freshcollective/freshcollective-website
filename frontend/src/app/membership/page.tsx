@@ -39,7 +39,7 @@ export default function MembershipPage() {
                   { label: "Start Here", name: "REAL Journey", color: "border-teal-200 bg-teal-50", labelColor: "text-teal-700" },
                   { label: "The Heart", name: "Live Layer", color: "border-gold-200 bg-gold-50", labelColor: "text-gold-700" },
                   { label: "The Rooms", name: "Deepening Pathways", color: "border-navy-100 bg-navy-50", labelColor: "text-navy-700" },
-                  { label: "Conversations", name: "Shared space", color: "border-border bg-surface", labelColor: "text-teal-600" },
+                  { label: "Conversations", name: "Shared place", color: "border-border bg-surface", labelColor: "text-teal-600" },
                 ].map((item) => (
                   <div
                     key={item.label}
@@ -129,7 +129,7 @@ export default function MembershipPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.15em] text-teal-600">
                   Conversations
                 </p>
-                <h3 className="font-serif text-xl text-navy-900">Shared space</h3>
+                <h3 className="font-serif text-xl text-navy-900">Shared place</h3>
                 <p className="text-sm leading-relaxed text-[#4A5568]">
                   A feed, member reflections, and discussion threads tied to live calls and REAL
                   phases. You are not doing this alone.
@@ -159,7 +159,7 @@ export default function MembershipPage() {
                   <p className="text-sm leading-relaxed text-[#4A5568]">
                     You open your REAL Journey phase. A short lesson. A reflection prompt to carry
                     with you. Five minutes, not fifty. You move on with your day. The work begins to
-                    settle quietly underneath everything else.
+                    settle underneath everything else.
                   </p>
                 </div>
               </div>

@@ -379,7 +379,7 @@ export default async function EventDetailPage({ params }: Props) {
                       : access.value === 'included_with_pathway'
                         ? 'Included for members enrolled in the linked Pathway.'
                         : access.value === 'invitation_only'
-                          ? 'Members register only when a caretaker adds them.'
+                          ? 'Members register only when a Creator adds them.'
                           : 'Your ticket reserves one place and gives you access to this Gathering only.'
                 }
               />
@@ -414,7 +414,7 @@ export default async function EventDetailPage({ params }: Props) {
               </p>
               <p className="text-[13.5px] leading-relaxed" style={{ color: '#6B2C7A' }}>
                 This Gathering is by invitation. Please contact the
-                caretaker if you&rsquo;d like to attend.
+                Creator if you&rsquo;d like to attend.
               </p>
             </div>
           )}

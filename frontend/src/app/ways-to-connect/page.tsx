@@ -8,7 +8,7 @@ import WaysToConnectPrototype from './_prototype/WaysToConnectPrototype'
 export const metadata: Metadata = {
   title: 'Ways to Connect · Fresh Collective',
   description:
-    'A good host quietly introducing two people at a gathering. Fresh Collective reveals the connections that already exist.',
+    'A good host introducing two people at a gathering. Fresh Collective reveals the connections that already exist.',
 }
 
 /**

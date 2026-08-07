@@ -103,7 +103,7 @@ export default async function EcosystemInterestPage() {
                 style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
               >
                 A way to register interest will appear here once it&rsquo;s
-                genuinely working. Until then, we&rsquo;d rather be quiet
+                genuinely working. Until then, we&rsquo;d rather wait
                 than pretend.
               </p>
 

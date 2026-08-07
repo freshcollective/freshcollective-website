@@ -320,6 +320,31 @@ class ClaimWithSignupBody(BaseModel):
 
 
 _NEXT_URL_CREATOR_STUDIO = "/creator-studio"
+_NEXT_URL_CREATOR_ONBOARDING = "/creator-onboarding"
+
+
+def _resolve_next_url(intent: PurchaseIntent, user: User) -> str:
+    """Decide where the frontend should send the visitor after
+    activation, based on intent kind + this user's onboarding state.
+
+    Keeping the decision server-side means adding new intent kinds
+    (paid Pathway / Gathering / Collective membership in later
+    stages) is a one-file edit rather than requiring every consumer
+    to re-implement the routing.
+    """
+    if intent.kind == PurchaseIntentKind.creator_subscription:
+        # Fresh Creators (and existing Members who just became
+        # Creators) go through the short Creator welcome once.
+        # Existing Creators — either those backfilled by migration
+        # 096 or those who've already completed it — skip straight
+        # to Creator Studio.
+        if user.creator_onboarded_at is None:
+            return _NEXT_URL_CREATOR_ONBOARDING
+        return _NEXT_URL_CREATOR_STUDIO
+    # Future kinds (Stage 5+): collective_membership → /spaces/{slug},
+    # pathway → /spaces/{slug}/pathways/{slug}, gathering →
+    # /spaces/{slug}/events/{id}. Until then, a safe fallback.
+    return _NEXT_URL_CREATOR_STUDIO
 
 
 @router.get(
@@ -427,7 +452,7 @@ def claim_purchase(
     return ClaimResponse(
         purchase_intent_id=intent.id,
         status=intent.status.value,
-        next_url=_NEXT_URL_CREATOR_STUDIO,
+        next_url=_resolve_next_url(intent, current_user),
     )
 
 
@@ -527,5 +552,5 @@ def claim_with_signup(
     return ClaimResponse(
         purchase_intent_id=intent.id,
         status=intent.status.value,
-        next_url=_NEXT_URL_CREATOR_STUDIO,
+        next_url=_resolve_next_url(intent, new_user),
     )

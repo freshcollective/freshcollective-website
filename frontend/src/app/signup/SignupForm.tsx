@@ -8,9 +8,14 @@ import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
 
 function getSafeRedirect(next?: string): string {
-  if (!next) return '/onboarding'
+  // Default post-signup destination is Your World. The Fresh Collective
+  // orientation is now optional and discoverable there — signup is no
+  // longer expected to funnel every new account through the tour.
+  // Contextual entry points (join a Collective, buy a Pathway, book a
+  // Gathering) pass their own `next` param and remain honored.
+  if (!next) return '/dashboard'
   if (/^\/(?!\/|\\)/.test(next)) return next
-  return '/onboarding'
+  return '/dashboard'
 }
 
 type CheckoutContext =

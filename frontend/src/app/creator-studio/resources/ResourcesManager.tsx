@@ -21,6 +21,7 @@ import {
   useConfirm,
   useToast,
 } from '@/components/platform'
+import { PlusIcon } from '@/components/creator/PrimaryActionLink'
 import type {
   CreatorPathway,
   CreatorResource,
@@ -613,7 +614,7 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
 
       {/* Action row */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <Button variant="primary" onClick={openCreate}>+ Add resource</Button>
+        <Button variant="primary" iconStart={<PlusIcon />} onClick={openCreate}>Add resource</Button>
         <SearchInput
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -669,7 +670,7 @@ export default function ResourcesManager({ spaceSlug, initialResources, pathways
         <EmptyState
           title="No resources yet"
           description="Add links, files, guides, and tools for your members."
-          action={<Button variant="primary" onClick={openCreate}>+ Add first resource</Button>}
+          action={<Button variant="primary" iconStart={<PlusIcon />} onClick={openCreate}>Add first resource</Button>}
         />
       ) : visible.length === 0 ? (
         <EmptyState

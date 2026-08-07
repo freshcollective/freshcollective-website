@@ -3,6 +3,8 @@ import {
   getBuildYourCollectiveOptions,
   getBuildYourCollectiveDraft,
   getCreatorSpace,
+  getPublicPlatformArtwork,
+  buildPlatformArtLookup,
 } from '@/lib/serverApi'
 import type { BuildYourCollectiveOptions, DraftData, BuildMode } from '@/lib/build-your-collective/types'
 import BuildYourCollectiveClient from './BuildYourCollectiveClient'
@@ -26,13 +28,25 @@ export default async function BuildYourCollectivePage({ searchParams }: PageProp
     : rawMode === 'edit-identity' ? 'edit-identity'
     : 'create'
 
-  const [options, draftResponse]: [BuildYourCollectiveOptions | null, { data: DraftData } | null] =
-    await Promise.all([
-      getBuildYourCollectiveOptions(),
-      mode === 'create' ? getBuildYourCollectiveDraft() : Promise.resolve(null),
-    ])
+  const [options, draftResponse, artwork] = await Promise.all([
+    getBuildYourCollectiveOptions(),
+    mode === 'create' ? getBuildYourCollectiveDraft() : Promise.resolve(null),
+    getPublicPlatformArtwork(),
+  ]) as [
+    BuildYourCollectiveOptions | null,
+    { data: DraftData } | null,
+    Awaited<ReturnType<typeof getPublicPlatformArtwork>>,
+  ]
 
   if (!options) redirect('/creator-studio')
+
+  const artFor = buildPlatformArtLookup(artwork)
+  const heroArt = {
+    atmosphere:     artFor('creator_ritual_atmosphere'),
+    identity:       artFor('creator_ritual_identity'),
+    welcomeMessage: artFor('creator_ritual_welcome_message'),
+    practical:      artFor('creator_ritual_practical'),
+  }
 
   // Edit modes prime the client from the existing collective, not a draft.
   let seededDraft: DraftData = {}
@@ -67,6 +81,7 @@ export default async function BuildYourCollectivePage({ searchParams }: PageProp
       initialDraft={mode === 'create' ? (draftResponse?.data ?? {}) : seededDraft}
       mode={mode}
       slug={seededSlug}
+      heroArt={heroArt}
     />
   )
 }

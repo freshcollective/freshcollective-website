@@ -3,6 +3,8 @@
 import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { Button } from '@/components/platform'
+import { PlusIcon } from '@/components/creator/PrimaryActionLink'
 import type { ChannelManageDetail } from '@/lib/serverApi'
 import type { CreatorEvent, CreatorPathway, MemberProfile } from '@/types/platform'
 
@@ -237,15 +239,19 @@ export default function ManageChannelsClient({
         </div>
       )}
 
-      {/* Add Channel — collapsed pill until opened */}
+      {/* Add Channel — primary action, matches other Creator Studio CTAs.
+          Opens the inline create form below when clicked. */}
       {!createOpen ? (
-        <button
-          type="button"
-          onClick={() => { setCreateOpen(true); setError('') }}
-          className="mb-6 w-full rounded-xl border border-dashed border-border bg-surface px-5 py-4 text-left text-sm text-black transition-colors hover:border-teal-300 hover:text-teal-600"
-        >
-          + Add a Channel
-        </button>
+        <div className="mb-6">
+          <Button
+            variant="primary"
+            size="md"
+            iconStart={<PlusIcon />}
+            onClick={() => { setCreateOpen(true); setError('') }}
+          >
+            Add a Channel
+          </Button>
+        </div>
       ) : (
         <CreateChannelForm
           form={createForm}

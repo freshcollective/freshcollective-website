@@ -68,11 +68,13 @@ export interface DraftData {
   pricing_note?: string | null
 }
 
-/** Steps in the ritual, in order. */
+/** Steps in the ritual, in order. Atmosphere precedes Location — the
+ *  feeling of a collective is chosen first, and the island is chosen
+ *  as the visual home for that feeling. */
 export const STEPS = [
   'welcome',
-  'location',
   'atmosphere',
+  'location',
   'colour_palette',
   'identity',
   'welcome_message',

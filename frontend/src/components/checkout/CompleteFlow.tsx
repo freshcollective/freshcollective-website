@@ -59,6 +59,12 @@ export default function CompleteFlow({
   const [flow, setFlow] = useState<Flow>(() =>
     resolveFlow(initialData, currentUserEmail),
   )
+  // Where to send the visitor after the welcome splash. The backend
+  // decides this (per intent kind + user onboarding state) and hands
+  // it back on the /claim and /claim-with-signup responses. Defaults
+  // to Creator Studio as a safe fallback for the already-consumed
+  // path (we don't re-hit the claim endpoint in that case).
+  const [nextUrl, setNextUrl] = useState<string>('/creator-studio')
 
   // Poll while payment is pending — Stripe webhook may arrive slightly
   // after the visitor returns from Checkout.
@@ -102,6 +108,10 @@ export default function CompleteFlow({
           body: JSON.stringify({ token }),
         })
         if (res.ok) {
+          const body = await res.json().catch(() => null)
+          if (body?.next_url && typeof body.next_url === 'string') {
+            setNextUrl(body.next_url)
+          }
           setFlow({ kind: 'welcome' })
           return
         }
@@ -113,12 +123,14 @@ export default function CompleteFlow({
     })()
   }, [flow.kind, token])
 
-  // Welcome splash → auto-redirect to Creator Studio.
+  // Welcome splash → auto-redirect to the backend-decided
+  // destination (/creator-onboarding for a fresh Creator,
+  // /creator-studio for a returning one).
   useEffect(() => {
     if (flow.kind !== 'welcome') return
-    const t = setTimeout(() => router.push('/creator-studio'), 1800)
+    const t = setTimeout(() => router.push(nextUrl), 1800)
     return () => clearTimeout(t)
-  }, [flow.kind, router])
+  }, [flow.kind, router, nextUrl])
 
   return (
     <div className="mx-auto max-w-[560px]">
@@ -129,6 +141,8 @@ export default function CompleteFlow({
         currentUserName,
         token,
         setFlow,
+        setNextUrl,
+        nextUrl,
       })}
     </div>
   )
@@ -194,12 +208,14 @@ interface RenderCtx {
   currentUserName: string | null
   token: string
   setFlow: (f: Flow) => void
+  setNextUrl: (url: string) => void
+  nextUrl: string
 }
 
 function renderFlow(flow: Flow, ctx: RenderCtx): React.ReactNode {
   switch (flow.kind) {
     case 'welcome':
-      return <Welcome planDisplayName={ctx.planDisplayName} />
+      return <Welcome planDisplayName={ctx.planDisplayName} nextUrl={ctx.nextUrl} />
     case 'auto-claim':
       return <ActivatingSplash planDisplayName={ctx.planDisplayName} />
     case 'pending':
@@ -217,7 +233,16 @@ function renderFlow(flow: Flow, ctx: RenderCtx): React.ReactNode {
   }
 }
 
-function Welcome({ planDisplayName }: { planDisplayName: string | null }) {
+function Welcome({
+  planDisplayName, nextUrl,
+}: { planDisplayName: string | null; nextUrl: string }) {
+  const goesToOnboarding = nextUrl === '/creator-onboarding'
+  const tail = goesToOnboarding
+    ? 'Taking you to your welcome…'
+    : 'Taking you to Creator Studio…'
+  const cta = goesToOnboarding
+    ? 'Continue →'
+    : 'Continue to Creator Studio →'
   return (
     <div className="text-center">
       <h1
@@ -242,11 +267,11 @@ function Welcome({ planDisplayName }: { planDisplayName: string | null }) {
         className="mt-6 text-[15px] italic"
         style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
       >
-        Taking you to Creator Studio…
+        {tail}
       </p>
       <div className="mt-8">
         <Link
-          href="/creator-studio"
+          href={nextUrl}
           className="inline-flex items-center rounded-full px-6 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
           style={{
             background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
@@ -254,7 +279,7 @@ function Welcome({ planDisplayName }: { planDisplayName: string | null }) {
             boxShadow: '0 6px 24px rgba(56, 160, 158, 0.30)',
           }}
         >
-          Continue to Creator Studio →
+          {cta}
         </Link>
       </div>
     </div>
@@ -448,7 +473,7 @@ function WrongUserCard({ claimEmail, currentUserEmail, token }: RenderCtx) {
 }
 
 function SignupCard(ctx: RenderCtx) {
-  const { token, claimEmail, planDisplayName, setFlow } = ctx
+  const { token, claimEmail, planDisplayName, setFlow, setNextUrl } = ctx
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -471,6 +496,10 @@ function SignupCard(ctx: RenderCtx) {
         const body = await res.json().catch(() => ({}))
         setError(extractErrorMessage(body) || 'Could not create your account.')
         return
+      }
+      const body = await res.json().catch(() => null)
+      if (body?.next_url && typeof body.next_url === 'string') {
+        setNextUrl(body.next_url)
       }
       setFlow({ kind: 'welcome' })
       // Ensure server components re-fetch with the new session cookie.

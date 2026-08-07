@@ -96,15 +96,15 @@ function SummaryCard({
 const PRICING_OPTIONS = [
   {
     title: 'Free collective',
-    description: 'Members join at no cost. Great for community-led spaces.',
+    description: 'Members join at no cost. Great for community-led collectives.',
   },
   {
     title: 'Paid collective',
-    description: 'Charge a one-time or recurring fee for full Space access.',
+    description: 'Charge a one-time or recurring fee for full Collective access.',
   },
   {
     title: 'Paid pathway',
-    description: 'Offer individual pathways for purchase within a free or paid Space.',
+    description: 'Offer individual pathways for purchase within a free or paid Collective.',
   },
   {
     title: 'Paid gathering',
@@ -112,7 +112,7 @@ const PRICING_OPTIONS = [
   },
   {
     title: 'Included with membership',
-    description: 'Bundle Space access into a platform-wide membership subscription.',
+    description: 'Bundle Collective access into a platform-wide membership subscription.',
   },
 ]
 

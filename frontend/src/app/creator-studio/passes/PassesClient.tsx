@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import type { AccessPassAdminSummary, CreatorPathway, CreatorMemberDetail } from '@/types/platform'
 import { apiUrl } from '@/lib/api'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
+import { Button } from '@/components/platform/Button'
+import { PlusIcon } from '@/components/creator/PrimaryActionLink'
 
 interface Props {
   passes: AccessPassAdminSummary[]
@@ -344,13 +346,14 @@ export default function PassesClient({ passes, spaceName, spaceSlug, headerLocat
         location={headerLocation}
         coverImageUrl={headerCoverImageUrl}
         action={
-          <button
+          <Button
+            variant="primary"
+            size="md"
+            iconStart={<PlusIcon />}
             onClick={() => setShowGrantModal(true)}
-            className="rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
             Grant pass
-          </button>
+          </Button>
         }
       />
 

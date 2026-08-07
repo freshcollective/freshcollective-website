@@ -772,7 +772,7 @@ export default function EventForm({
                 )}
                 {a.value === 'invitation_only' && (
                   <p className="mt-0.5 text-[12px] italic leading-relaxed" style={{ color: 'rgba(12,24,38,0.55)' }}>
-                    Members register only when a caretaker adds them manually.
+                    Members register only when a Creator adds them manually.
                   </p>
                 )}
               </div>

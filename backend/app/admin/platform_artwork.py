@@ -69,6 +69,28 @@ PLATFORM_ARTWORK_KEYS: dict[str, dict[str, str]] = {
             "member dashboard."
         ),
     },
+    "new_to_fresh_collective": {
+        "title": "New to Fresh Collective",
+        "description": (
+            "The tile shown in \u2018Elsewhere in the world\u2019 on Your "
+            "World for members who haven\u2019t yet completed the "
+            "orientation. A gentle door into /onboarding \u2014 a first "
+            "horizon, warm and unhurried."
+        ),
+    },
+    # ─── Auth Pages ─────────────────────────────────────────────────
+    # Shared full-bleed background artwork behind /login and /signup.
+    # Falls back to the bundled ``/world/login-hero.png`` when no image
+    # is uploaded, so a fresh install still has a proper background.
+    "auth_background": {
+        "title": "Login & Signup Background",
+        "description": (
+            "The full-bleed world artwork behind the /login and /signup "
+            "pages. A calm, spacious view of the Fresh Collective world "
+            "\u2014 read through a deep navy overlay, so mid-tone or "
+            "richly-lit images sit best."
+        ),
+    },
     # ─── Public Homepage ────────────────────────────────────────────
     # Artwork consumed by the public homepage at /. Each card falls
     # back to a deterministic atmospheric gradient (placeAtmosphere.ts)
@@ -185,6 +207,78 @@ PLATFORM_ARTWORK_KEYS: dict[str, dict[str, str]] = {
             "Editorial image for the World Builders Collective section on "
             "the public For Creators page. Creators learning together — "
             "a shared workspace, a considered space of practice."
+        ),
+    },
+    # ─── Onboarding — Member ────────────────────────────────────────
+    # Hero artwork shown at the top of each Member onboarding step
+    # (/onboarding). Each step falls back to a small SVG scene when no
+    # image is uploaded, so a fresh install still reads intentional.
+    "member_onboarding_welcome": {
+        "title": "Member Onboarding — Welcome",
+        "description": (
+            "Hero image for step 1 of the Member orientation. The first "
+            "moment of arrival — a horizon, an opening in the world."
+        ),
+    },
+    "member_onboarding_interests": {
+        "title": "Member Onboarding — What draws you here",
+        "description": (
+            "Hero image for step 2 of the Member orientation. A compass, "
+            "an archipelago, or the sense of choosing a direction."
+        ),
+    },
+    "member_onboarding_how_it_works": {
+        "title": "Member Onboarding — How this place works",
+        "description": (
+            "Hero image for step 3 of the Member orientation. Reads as "
+            "a living environment with several rooms — pathways, "
+            "gatherings, conversations, resources — held together."
+        ),
+    },
+    "member_onboarding_arrival": {
+        "title": "Member Onboarding — Arrival",
+        "description": (
+            "Hero image for the final step of the Member orientation. "
+            "A threshold, an invitation into Your World."
+        ),
+    },
+    # ─── Onboarding — Creator ───────────────────────────────────────
+    # Creator welcome (/creator-onboarding) and the ritual steps in
+    # Build Your Collective. Island + Colour Palette are omitted on
+    # purpose — those steps already have strong native artwork.
+    "creator_onboarding_welcome": {
+        "title": "Creator Onboarding — Welcome",
+        "description": (
+            "Hero image for /creator-onboarding, shown once after Creator "
+            "plan activation. A calm arrival at a new vantage point."
+        ),
+    },
+    "creator_ritual_atmosphere": {
+        "title": "Build Your Collective — Atmosphere",
+        "description": (
+            "Hero image for the Atmosphere step of Build Your Collective. "
+            "Evokes feeling and mood — light, weather, air."
+        ),
+    },
+    "creator_ritual_identity": {
+        "title": "Build Your Collective — Identity",
+        "description": (
+            "Hero image for the Identity Statement step of Build Your "
+            "Collective. A single, clear mark — the heart of the space."
+        ),
+    },
+    "creator_ritual_welcome_message": {
+        "title": "Build Your Collective — Welcome Message",
+        "description": (
+            "Hero image for the Welcome Message step of Build Your "
+            "Collective. A door opening, a room warmed for arrival."
+        ),
+    },
+    "creator_ritual_practical": {
+        "title": "Build Your Collective — Practical Details",
+        "description": (
+            "Hero image for the Practical Details step of Build Your "
+            "Collective. Grounded, considered, plain."
         ),
     },
 }

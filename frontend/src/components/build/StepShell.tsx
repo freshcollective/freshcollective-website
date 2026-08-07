@@ -24,12 +24,22 @@ interface Props {
   children: React.ReactNode
   /** Hides horizon marker + back button on the opening and confirmation. */
   spacious?: boolean
+  /** Optional "Save & continue later" affordance. When provided, the
+   *  ritual saves the current draft and returns the creator to Your
+   *  World; they can pick up from Creator Studio whenever they're
+   *  ready. Omitted on Welcome / Confirmation. */
+  onSkip?: () => void
+  /** Optional hero rendered above the header (typically an
+   *  OnboardingHero). Kept as a node so the caller decides the
+   *  fallback artwork per step. Location and Colour Palette steps
+   *  omit this — they carry their own strong native artwork. */
+  hero?: React.ReactNode
 }
 
 export default function StepShell({
   stepIndex, eyebrow, heading, whisper, onBack, onContinue,
   continueLabel = 'Continue', canContinue = true, saving = false,
-  saveError, children, spacious = false,
+  saveError, children, spacious = false, onSkip, hero,
 }: Props) {
   return (
     <main
@@ -41,7 +51,31 @@ export default function StepShell({
         color: '#0C1826',
       }}
     >
-      <div className="mx-auto max-w-[900px] px-6 pb-20 pt-16 md:px-10 md:pt-24">
+      {onSkip && (
+        <div className="mx-auto flex max-w-[900px] justify-end px-6 pt-6 md:px-10 md:pt-8">
+          <button
+            type="button"
+            onClick={onSkip}
+            className="text-[12.5px] italic transition-opacity hover:opacity-70"
+            style={{
+              color: 'rgba(12, 24, 38, 0.48)',
+              fontFamily: 'Georgia, serif',
+              letterSpacing: '0.01em',
+            }}
+          >
+            Save &amp; continue later →
+          </button>
+        </div>
+      )}
+
+      <div
+        className={
+          onSkip
+            ? 'mx-auto max-w-[900px] px-6 pb-20 pt-8 md:px-10 md:pt-10'
+            : 'mx-auto max-w-[900px] px-6 pb-20 pt-16 md:px-10 md:pt-24'
+        }
+      >
+        {hero && <div className="mb-10">{hero}</div>}
         {(eyebrow || heading || whisper) && (
           <header className="mb-12 text-center md:mb-16">
             {eyebrow && (

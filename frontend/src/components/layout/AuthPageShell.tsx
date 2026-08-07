@@ -1,18 +1,21 @@
 import Link from 'next/link'
 import PublicHeader from './PublicHeader'
+import AuthPageBackground from './AuthPageBackground'
+import { getPublicPlatformArtwork, buildPlatformArtLookup } from '@/lib/serverApi'
 
 /**
  * Shared visual shell for the /login and /signup pages.
  *
- * One coherent entry-experience: full-bleed Atlas artwork, deep navy
- * overlay, transparent header, two-column composition on desktop
- * (welcome copy left, auth card right), minimal footer.
+ * One coherent entry-experience: full-bleed Atlas artwork (see
+ * AuthPageBackground — swap the image there), deep navy overlay,
+ * transparent header, two-column composition on desktop (welcome copy
+ * left, auth card right), minimal footer.
  *
  * The forms themselves are not abstracted — /login and /signup keep
  * their own card components so field logic, validation, and API calls
  * stay explicit and independently maintainable.
  */
-export default function AuthPageShell({
+export default async function AuthPageShell({
   welcomeTitle,
   welcomeSubtitle,
   children,
@@ -22,41 +25,20 @@ export default function AuthPageShell({
   /** The auth card (login form or signup form). */
   children: React.ReactNode
 }) {
+  // Admin-managed background artwork (slot: ``auth_background``).
+  // ``AuthPageBackground`` falls back to the bundled login-hero.png
+  // when this returns null, so a fresh install still has a background.
+  const artwork = await getPublicPlatformArtwork().catch(() => [])
+  const artFor = buildPlatformArtLookup(artwork)
+  const backgroundUrl = artFor('auth_background')
+
   return (
     <div
       className="relative flex min-h-screen w-full flex-col overflow-x-hidden"
       style={{ background: '#050B14' }}
     >
       {/* ─────── Full-bleed world background + navy overlay ─────── */}
-      <div className="absolute inset-0" aria-hidden="true">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/world/login-hero.png"
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-          style={{ objectPosition: 'center 40%' }}
-        />
-        {/* Deep navy → teal gradient overlay. Heavier on the right so the
-            auth card sits on the darker area for maximum contrast; lighter
-            on the left so a hint of the world imagery breathes through
-            under the welcome copy. */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              'linear-gradient(115deg, rgba(5,11,20,0.62) 0%, rgba(7,24,36,0.78) 45%, rgba(7,24,36,0.90) 100%)',
-          }}
-        />
-        {/* Subtle top+bottom vignette keeps header + footer readable
-            regardless of image content in those regions. */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              'linear-gradient(180deg, rgba(5,11,20,0.35) 0%, transparent 25%, transparent 75%, rgba(5,11,20,0.45) 100%)',
-          }}
-        />
-      </div>
+      <AuthPageBackground imageUrl={backgroundUrl} />
 
       {/* ─────── Transparent overlay header ─────── */}
       <PublicHeader overlay />

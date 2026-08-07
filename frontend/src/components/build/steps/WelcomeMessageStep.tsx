@@ -1,33 +1,43 @@
 'use client'
 
 import StepShell from '../StepShell'
+import OnboardingHero from '@/components/onboarding/OnboardingHero'
 
 interface Props {
   value: string
   onChange: (v: string) => void
   onContinue: () => void
   onBack: () => void
+  onSkip?: () => void
+  heroUrl?: string | null
 }
 
 export default function WelcomeMessageStep({
-  value, onChange, onContinue, onBack,
+  value, onChange, onContinue, onBack, onSkip, heroUrl = null,
 }: Props) {
   const trimmed = value.trim()
   const canContinue = trimmed.length >= 20
   const whisper =
-    trimmed.length > 0 && trimmed.length < 30
-      ? 'A little more, if you wish.'
+    trimmed.length === 0
+      ? 'If you\u2019d like, write a few words to welcome people into your collective.'
       : 'Speak to them the way you would if they had just walked through your door.'
 
   return (
     <StepShell
       stepIndex={5}
-      eyebrow="Five"
       heading="How would you like to welcome people?"
       whisper={whisper}
       onBack={onBack}
       onContinue={onContinue}
       canContinue={canContinue}
+      onSkip={onSkip}
+      hero={
+        <OnboardingHero
+          imageUrl={heroUrl}
+          alt=""
+          fallback={<WelcomeMessageMark />}
+        />
+      }
     >
       <div className="mx-auto max-w-[620px]">
         <textarea
@@ -54,5 +64,16 @@ export default function WelcomeMessageStep({
         />
       </div>
     </StepShell>
+  )
+}
+
+function WelcomeMessageMark() {
+  return (
+    <svg viewBox="0 0 200 200" className="h-full w-full" aria-hidden="true">
+      <rect x="66" y="70" width="68" height="88" rx="4" fill="none" stroke="#38A09E" strokeWidth="1.2" opacity="0.55" />
+      <path d="M 100 158 L 100 70" stroke="#38A09E" strokeWidth="1" opacity="0.45" />
+      <path d="M 100 70 L 100 60 L 122 78" stroke="#D4B048" strokeWidth="1.3" fill="none" opacity="0.75" />
+      <circle cx="118" cy="114" r="2.5" fill="#D4B048" opacity="0.85" />
+    </svg>
   )
 }

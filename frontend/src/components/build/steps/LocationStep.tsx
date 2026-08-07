@@ -10,6 +10,7 @@ interface Props {
   onChange: (id: string) => void
   onContinue: () => void
   onBack: () => void
+  onSkip?: () => void
 }
 
 /**
@@ -24,7 +25,7 @@ interface Props {
  * labelled group so it's visually clear which options are which.
  */
 export default function LocationStep({
-  locations, value, onChange, onContinue, onBack,
+  locations, value, onChange, onContinue, onBack, onSkip,
 }: Props) {
   const cornerstones = locations.filter((l) => l.location_type === 'CORNERSTONE')
   const atlas = locations.filter((l) => l.location_type === 'ATLAS')
@@ -34,13 +35,13 @@ export default function LocationStep({
 
   return (
     <StepShell
-      stepIndex={1}
-      eyebrow="One"
+      stepIndex={2}
       heading="Choose your island"
-      whisper="Each island represents a different feeling and atmosphere. Choose the one that best reflects the experience you want to create for your members."
+      whisper="Your island is the visual home of your collective — the atmosphere and feeling made into a place. The artwork, mood and setting all belong to it. Choose the island that fits the feeling you just described; your members will return to it every time they visit."
       onBack={onBack}
       onContinue={onContinue}
       canContinue={!!value}
+      onSkip={onSkip}
     >
       {grouped ? (
         <div className="space-y-16">

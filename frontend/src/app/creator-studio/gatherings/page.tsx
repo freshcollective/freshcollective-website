@@ -3,6 +3,7 @@ import { getActiveCreatorSpace, getCreatorEvents, getCreatorSpace } from '@/lib/
 import type { CreatorEvent, CreatorSpaceDetail } from '@/types/platform'
 import CreatorEventRow from '@/app/creator/spaces/[slug]/events/CreatorEventRow'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
+import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
 
 /**
  * Creator Studio → Gatherings.
@@ -56,13 +57,9 @@ export default async function GatheringsPage() {
                   {archiveLinkLabel}
                 </Link>
               )}
-              <Link
-                href={`/creator/spaces/${primarySpace.slug}/events/new`}
-                className="rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-              >
-                + Create Gathering
-              </Link>
+              <PrimaryActionLink href={`/creator/spaces/${primarySpace.slug}/events/new`}>
+                Create Gathering
+              </PrimaryActionLink>
             </div>
           }
         />

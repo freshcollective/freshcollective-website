@@ -32,7 +32,7 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
   // Hydrate the active space's palette so the shared colour picker
   // (callouts, container tint, buttons, text/highlight shortcuts)
   // resolves against the correct collective everywhere under
-  // /creator-studio/*. Switching collectives (via Your World) changes
+  // /creator-studio/*. Switching collectives (via My World) changes
   // the active-space cookie; the next navigation re-fetches with the
   // new slug so palette leakage between collectives is not possible.
   let palette: CollectivePaletteMeta | null = null

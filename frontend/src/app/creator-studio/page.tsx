@@ -7,7 +7,9 @@ import {
   getCreatorEvents,
   getCreatorBilling,
   getSpaceMembers,
+  getBuildYourCollectiveDraft,
 } from '@/lib/serverApi'
+import type { DraftData } from '@/lib/build-your-collective/types'
 import { resolveMediaUrl } from '@/lib/api'
 import type {
   CreatorEvent,
@@ -18,25 +20,38 @@ import type {
 } from '@/types/platform'
 
 /**
- * Your World — the Creator Studio landing.
+ * My World — the Creator Studio landing.
  *
- * Inspired by the admin's Atlas: an artwork-first, editorially calm
- * view of the collectives a creator is tending. The former checklist
- * dashboard — an SaaS-shaped attention list — is replaced by a grid
- * of collective cards, each anchored by its Location artwork. The
- * currently-active collective is highlighted. Clicking a card sets
- * that collective active and takes the creator into it.
- *
- * Every visit answers the guiding question: *which collectives am I
- * tending, and which one am I in right now?*
+ * The creator's own management space, distinct from Your World (the
+ * Member home at /dashboard). Artwork-first, editorially calm view of
+ * the collectives a creator is tending. Every visit answers *which
+ * collectives am I tending, and which one am I in right now?* Clicking
+ * a card sets that collective active and takes the creator into it.
  */
 
 export default async function CreatorStudioHome() {
-  const [profile, spacesRaw] = await Promise.all([
+  const [profile, spacesRaw, draftResponse] = await Promise.all([
     getMe(),
     getCreatorSpaces(),
+    getBuildYourCollectiveDraft(),
   ])
   const spaces: SpaceSummary[] = spacesRaw as SpaceSummary[]
+
+  // A "started" draft has crossed past the Welcome step OR carries a
+  // real choice. Fresh drafts (auto-created on page load) with no user
+  // input should not surface a "Continue setting up" prompt.
+  const draftData: DraftData | null = (draftResponse as { data?: DraftData } | null)?.data ?? null
+  const hasStartedDraft =
+    !!draftData &&
+    (
+      (draftData.step ?? 0) > 0 ||
+      !!draftData.location_id ||
+      (draftData.atmosphere_keys?.length ?? 0) > 0 ||
+      !!draftData.colour_palette_key ||
+      !!(draftData.identity_statement ?? '').trim() ||
+      !!(draftData.welcome_message ?? '').trim() ||
+      !!(draftData.name ?? '').trim()
+    )
 
   const firstName = profile?.name?.split(' ')[0] ?? 'there'
 
@@ -90,7 +105,7 @@ export default async function CreatorStudioHome() {
           className="mb-3 text-[11px] font-semibold uppercase tracking-[0.28em]"
           style={{ color: '#0f766e' }}
         >
-          Your World
+          My World
         </p>
         <h1
           className="font-serif text-[32px] leading-tight md:text-[42px]"
@@ -121,26 +136,52 @@ export default async function CreatorStudioHome() {
           className="rounded-3xl px-8 py-16 text-center"
           style={{ background: '#FBFAF6' }}
         >
-          <p className="mb-2 font-serif text-[24px] leading-snug text-navy-900">
-            Your first collective begins with a name.
-          </p>
-          <p
-            className="mx-auto mb-8 max-w-md text-[14.5px] leading-relaxed italic"
-            style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
-          >
-            Choose where in the Fresh Collective world it lives, and start shaping the
-            experience the people who find it will walk into.
-          </p>
-          <Link
-            href="/build-your-collective"
-            className="inline-flex items-center rounded-full px-6 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{
-              background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-              letterSpacing: '0.04em',
-            }}
-          >
-            Build your first collective →
-          </Link>
+          {hasStartedDraft ? (
+            <>
+              <p className="mb-2 font-serif text-[24px] leading-snug text-navy-900">
+                Your collective is waiting where you left it.
+              </p>
+              <p
+                className="mx-auto mb-8 max-w-md text-[14.5px] leading-relaxed italic"
+                style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
+              >
+                Pick up where you paused — nothing is lost, nothing is hurried.
+              </p>
+              <Link
+                href="/build-your-collective"
+                className="inline-flex items-center rounded-full px-6 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+                style={{
+                  background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                Continue setting up your collective →
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="mb-2 font-serif text-[24px] leading-snug text-navy-900">
+                Your first collective begins with a name.
+              </p>
+              <p
+                className="mx-auto mb-8 max-w-md text-[14.5px] leading-relaxed italic"
+                style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
+              >
+                Choose where in the Fresh Collective world it lives, and start shaping the
+                experience the people who find it will walk into.
+              </p>
+              <Link
+                href="/build-your-collective"
+                className="inline-flex items-center rounded-full px-6 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
+                style={{
+                  background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                Build your first collective →
+              </Link>
+            </>
+          )}
         </div>
       )}
 

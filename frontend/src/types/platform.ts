@@ -528,6 +528,7 @@ export interface UserProfile {
   avatar_url: string | null
   is_public: boolean
   has_completed_onboarding: boolean
+  has_completed_creator_onboarding: boolean
   interests: string[]
 }
 

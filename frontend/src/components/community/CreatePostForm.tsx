@@ -3,6 +3,8 @@
 import { forwardRef, useImperativeHandle, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { Button } from '@/components/platform'
+import { PlusIcon } from '@/components/creator/PrimaryActionLink'
 import EmojiPicker from './EmojiPicker'
 import MentionTextarea, { type MentionTextareaHandle } from './MentionTextarea'
 import PollComposer, { EMPTY_POLL, type PollComposerValue } from './PollComposer'
@@ -225,13 +227,15 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
 
   if (!open) {
     return (
-      <div ref={rootRef as React.RefObject<HTMLDivElement>}>
-        <button
+      <div ref={rootRef as React.RefObject<HTMLDivElement>} className="mb-4">
+        <Button
+          variant="primary"
+          size="md"
+          iconStart={<PlusIcon />}
           onClick={() => setOpen(true)}
-          className="w-full rounded-xl border border-dashed border-border bg-surface px-5 py-4 text-left text-sm text-black transition-colors hover:border-teal-300 hover:text-teal-600"
         >
-          Start a conversation…
-        </button>
+          Start a conversation
+        </Button>
       </div>
     )
   }

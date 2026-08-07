@@ -14,12 +14,12 @@ import LogoutButton from '@/components/layout/LogoutButton'
  * the sidebar's own collective card also removes the second source of
  * truth that used to drift out of sync with the page.
  *
- * To switch collectives, a Creator returns to Your World.
+ * To switch collectives, a Creator returns to My World.
  *
  * Information architecture:
  *   - THE COLLECTIVE / OFFERINGS / COMMUNITY / COMMERCE group everything
  *     that belongs to the currently-active collective. Switching
- *     collectives (via Your World) changes what these destinations show.
+ *     collectives (via My World) changes what these destinations show.
  *   - ACCOUNT sits separately at the bottom because it belongs to the
  *     signed-in creator across ALL of their collectives.
  *
@@ -45,12 +45,14 @@ interface NavItem {
 }
 
 /**
- * Standalone nav — sits above the grouped sections. "Your World" is
- * the place a creator chooses which collective to work in, so it does
- * not belong under any of the collective-scoped groups.
+ * Standalone nav — sits above the grouped sections. "My World" is
+ * the creator's own management space where they choose which collective
+ * to work in; it doesn't belong under any of the collective-scoped
+ * groups. Distinct from Your World (the Member home at /dashboard),
+ * which the "Back to Your World" band above the brand links to.
  */
 const STANDALONE_NAV: NavItem[] = [
-  { href: '/creator-studio', label: 'Your World', exact: true },
+  { href: '/creator-studio', label: 'My World', exact: true },
 ]
 
 const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
@@ -131,6 +133,30 @@ export default function CreatorStudioSidebar({ user, hasCollective }: Props) {
             Creator Studio
           </div>
         </div>
+      </div>
+
+      {/* ── Back to Your World ── prominent exit to Member Your World.
+           Sits above the nav so it's the clearest way out of Creator
+           Studio; visually distinct from the nav so it never blends in
+           as "just another item." */}
+      <div className="px-4 pt-4">
+        <Link
+          href="/dashboard"
+          className="group flex items-center gap-2 rounded-lg px-3 py-2.5 text-[13px] font-semibold transition-colors"
+          style={{
+            background: 'rgba(56, 160, 158, 0.08)',
+            border: '1px solid rgba(56, 160, 158, 0.24)',
+            color: '#0f766e',
+          }}
+        >
+          <span
+            aria-hidden="true"
+            className="transition-transform group-hover:-translate-x-0.5"
+          >
+            ←
+          </span>
+          <span>Back to Your World</span>
+        </Link>
       </div>
 
       {/* ── Nav ── */}
@@ -240,12 +266,6 @@ export default function CreatorStudioSidebar({ user, hasCollective }: Props) {
         <p className="truncate text-[11px] text-slate-500">
           {user.name ?? user.email}
         </p>
-        <Link
-          href="/dashboard"
-          className="block text-[12px] text-slate-600 transition-colors hover:text-slate-800"
-        >
-          ← Back to Your World
-        </Link>
         <LogoutButton className="block text-[12px] text-slate-600 transition-colors hover:text-red-500" />
       </div>
     </div>

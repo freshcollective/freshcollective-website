@@ -207,7 +207,7 @@ export default async function MemberProfilePage({ params }: Props) {
               </div>
               <div className="h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />
               <div>
-                <p className="mb-1 text-[14px] font-semibold text-navy-900">Shared spaces</p>
+                <p className="mb-1 text-[14px] font-semibold text-navy-900">Shared collectives</p>
                 <p className="text-[13px] leading-relaxed text-black">
                   Collectives and pathways in common can appear here.
                 </p>

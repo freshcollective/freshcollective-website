@@ -22,24 +22,42 @@ import ConfirmationStep, {
 } from '@/components/build/steps/ConfirmationStep'
 import OpeningTransition from '@/components/build/OpeningTransition'
 
+export interface BuildYourCollectiveHeroArt {
+  atmosphere: string | null
+  identity: string | null
+  welcomeMessage: string | null
+  practical: string | null
+}
+
+const EMPTY_HERO_ART: BuildYourCollectiveHeroArt = {
+  atmosphere: null,
+  identity: null,
+  welcomeMessage: null,
+  practical: null,
+}
+
 interface Props {
   options: BuildYourCollectiveOptions
   initialDraft: DraftData
   mode: BuildMode
   slug: string | null
+  heroArt?: BuildYourCollectiveHeroArt
 }
 
 /**
  * Orchestrator for Build Your Collective (Atlas v1.2).
  *
  * Steps 0..7:
- *   0 welcome  1 location  2 atmosphere  3 colour_palette
+ *   0 welcome  1 atmosphere  2 location  3 colour_palette
  *   4 identity  5 welcome_message  6 practical  7 confirmation
+ *
+ * The feeling of a collective is chosen before its island: the creator
+ * names the atmosphere first, then picks the island that embodies it.
  *
  * Modes:
  *   create           — start at 0, autosave draft, POST /open at end
- *   change-location  — start at 1, seed from existing collective, PATCH at end
- *   edit-identity    — start at 2, keep existing location, PATCH at end
+ *   change-location  — start at 2 (Location), seed from existing collective, PATCH at end
+ *   edit-identity    — start at 1 (Atmosphere), keep existing location, PATCH at end
  *
  * In create mode step 7 is the combined arrival + World Builders
  * invitation. The two CTAs both trigger POST /open exactly once (guarded
@@ -48,11 +66,11 @@ interface Props {
  * simpler "Save your collective" reveal.
  */
 export default function BuildYourCollectiveClient({
-  options, initialDraft, mode, slug,
+  options, initialDraft, mode, slug, heroArt = EMPTY_HERO_ART,
 }: Props) {
   const router = useRouter()
 
-  const startStep = mode === 'change-location' ? 1 : mode === 'edit-identity' ? 2 : 0
+  const startStep = mode === 'change-location' ? 2 : mode === 'edit-identity' ? 1 : 0
   const [draft, setDraft] = useState<DraftData>(initialDraft)
   const [step, setStep] = useState<number>(initialDraft.step ?? startStep)
   const [busy, setBusy] = useState(false)
@@ -89,12 +107,39 @@ export default function BuildYourCollectiveClient({
     setStep(next)
   }, [saveDraft])
 
-  // Edit-identity mode: skip the Location step even when the creator hits Back.
+  // Back-navigation guards. Each edit mode has a start step it should
+  // never rewind past (there's nothing sensible before it — the creator
+  // arrived directly).
   const backFrom = useCallback((current: number) => {
-    if (mode === 'edit-identity' && current === 2) return  // don't go back to Location
-    if (mode !== 'create' && current === 1) return          // don't go back to Welcome in edit
+    if (mode === 'change-location' && current === 2) return  // Location is the start
+    if (mode === 'edit-identity' && current === 1) return    // Atmosphere is the start
+    if (mode === 'edit-identity' && current === 3) {         // Palette → back skips Location
+      goTo(1)
+      return
+    }
+    if (mode !== 'create' && current === 1) return           // any edit: never rewind to Welcome
     goTo(current - 1)
   }, [goTo, mode])
+
+  // Atmosphere → next depends on mode: edit-identity keeps its existing
+  // island and jumps to Colour Palette; every other mode continues to
+  // Location as the natural next choice.
+  const goFromAtmosphere = useCallback(() => {
+    if (mode === 'edit-identity') goTo(3)
+    else goTo(2)
+  }, [goTo, mode])
+
+  // Save current progress (create mode only — edit modes have no draft
+  // table entry) and return the creator to My World inside Creator
+  // Studio. The empty-state on /creator-studio surfaces a "Continue
+  // setting up your collective →" affordance when a draft exists; the
+  // same /build-your-collective link resumes from the saved step.
+  const skip = useCallback(async () => {
+    if (mode === 'create') {
+      await saveDraft(step)
+    }
+    router.push('/creator-studio')
+  }, [mode, saveDraft, step, router])
 
   // In edit modes we skip Practical Details (name/description/pricing).
   const stepAfterWelcomeMessage = mode === 'create' ? 6 : 7  // create → practical; edit → confirmation
@@ -176,18 +221,21 @@ export default function BuildYourCollectiveClient({
         }
         // Route based on which CTA the creator clicked. World Builders
         // routes into the Pathways area — that's where the guided
-        // Creator experience lives. Creator Studio routes into the
-        // Community view of the newly-created collective (the natural
-        // "hearth" of the space; the current /creator/spaces/{slug}
-        // root renders Settings, which isn't the right first landing).
+        // Creator experience lives. Creator Studio routes to the new
+        // collective's Overview via the switch route, which sets the
+        // active-space cookie so the whole sidebar + shell reflect
+        // this collective from the very next render. Overview is the
+        // natural home for a brand-new collective: it surfaces the
+        // next actions (add pathway, add resource, invite people)
+        // without dropping the creator into any single tool.
         if (destination === 'world_builders' && world_builders_slug) {
           router.push(`/spaces/${world_builders_slug}/pathways`)
         } else if (destination === 'creator_studio') {
-          router.push(`/creator/spaces/${newSlug}/community`)
+          router.push(`/creator-studio/collective/switch/${newSlug}`)
         } else if (world_builders_slug) {
           router.push(`/spaces/${world_builders_slug}/pathways`)
         } else {
-          router.push(`/creator/spaces/${newSlug}/community`)
+          router.push(`/creator-studio/collective/switch/${newSlug}`)
         }
         // Deliberately leave busy=true — the navigation is in flight,
         // and we don't want the CTAs re-enabling before the next page
@@ -241,23 +289,26 @@ export default function BuildYourCollectiveClient({
 
     case 1:
       return (
-        <LocationStep
-          locations={options.locations}
-          value={draft.location_id ?? null}
-          onChange={(id) => patch({ location_id: id })}
-          onContinue={() => goTo(2)}
+        <AtmosphereStep
+          atmospheres={options.atmospheres}
+          value={draft.atmosphere_keys ?? []}
+          onChange={(keys) => patch({ atmosphere_keys: keys })}
+          onContinue={goFromAtmosphere}
           onBack={() => backFrom(1)}
+          onSkip={skip}
+          heroUrl={heroArt.atmosphere}
         />
       )
 
     case 2:
       return (
-        <AtmosphereStep
-          atmospheres={options.atmospheres}
-          value={draft.atmosphere_keys ?? []}
-          onChange={(keys) => patch({ atmosphere_keys: keys })}
+        <LocationStep
+          locations={options.locations}
+          value={draft.location_id ?? null}
+          onChange={(id) => patch({ location_id: id })}
           onContinue={() => goTo(3)}
           onBack={() => backFrom(2)}
+          onSkip={skip}
         />
       )
 
@@ -269,6 +320,7 @@ export default function BuildYourCollectiveClient({
           onChange={(k) => patch({ colour_palette_key: k })}
           onContinue={() => goTo(4)}
           onBack={() => backFrom(3)}
+          onSkip={skip}
         />
       )
 
@@ -279,6 +331,8 @@ export default function BuildYourCollectiveClient({
           onChange={(v) => patch({ identity_statement: v })}
           onContinue={() => goTo(5)}
           onBack={() => backFrom(4)}
+          onSkip={skip}
+          heroUrl={heroArt.identity}
         />
       )
 
@@ -289,6 +343,8 @@ export default function BuildYourCollectiveClient({
           onChange={(v) => patch({ welcome_message: v })}
           onContinue={goToRevealFromWelcomeMessage}
           onBack={() => backFrom(5)}
+          onSkip={skip}
+          heroUrl={heroArt.welcomeMessage}
         />
       )
 
@@ -300,6 +356,8 @@ export default function BuildYourCollectiveClient({
           onChange={patch}
           onContinue={goFromPractical}
           onBack={() => backFrom(6)}
+          onSkip={skip}
+          heroUrl={heroArt.practical}
         />
       )
 

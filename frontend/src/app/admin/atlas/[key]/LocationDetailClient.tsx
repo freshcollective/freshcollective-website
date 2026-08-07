@@ -234,7 +234,7 @@ export default function LocationDetailClient({ initialLocation }: Props) {
               onChange={setDescription}
               maxLength={2000}
               rows={3}
-              placeholder="Ancient forest. Quiet conversations beneath towering trees."
+              placeholder="Ancient forest. Conversations unfolding beneath towering trees."
             />
           </Field>
           <Field label="Type">

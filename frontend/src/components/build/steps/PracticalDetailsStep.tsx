@@ -1,6 +1,7 @@
 'use client'
 
 import StepShell from '../StepShell'
+import OnboardingHero from '@/components/onboarding/OnboardingHero'
 import type { DraftData, Visibility, PricingType } from '@/lib/build-your-collective/types'
 
 interface Props {
@@ -8,10 +9,12 @@ interface Props {
   onChange: (patch: Partial<DraftData>) => void
   onContinue: () => void
   onBack: () => void
+  onSkip?: () => void
+  heroUrl?: string | null
 }
 
 export default function PracticalDetailsStep({
-  value, onChange, onContinue, onBack,
+  value, onChange, onContinue, onBack, onSkip, heroUrl = null,
 }: Props) {
   const name = (value.name ?? '').trim()
   const canContinue = name.length >= 2
@@ -22,12 +25,19 @@ export default function PracticalDetailsStep({
   return (
     <StepShell
       stepIndex={6}
-      eyebrow="Six"
       heading="Now for the practical things."
       whisper="Simple details, quickly done."
       onBack={onBack}
       onContinue={onContinue}
       canContinue={canContinue}
+      onSkip={onSkip}
+      hero={
+        <OnboardingHero
+          imageUrl={heroUrl}
+          alt=""
+          fallback={<PracticalMark />}
+        />
+      }
     >
       <div className="mx-auto flex max-w-[560px] flex-col gap-7">
         <Field label="What is this collective called?">
@@ -44,7 +54,7 @@ export default function PracticalDetailsStep({
             value={value.description ?? ''}
             onChange={(v) => onChange({ description: v })}
             maxLength={300}
-            placeholder="e.g. A quiet place for women returning to themselves."
+            placeholder="e.g. A place for women returning to themselves."
           />
         </Field>
 
@@ -188,5 +198,16 @@ function SegmentedRadio<T extends string>({
         )
       })}
     </div>
+  )
+}
+
+function PracticalMark() {
+  return (
+    <svg viewBox="0 0 200 200" className="h-full w-full" aria-hidden="true">
+      <rect x="52" y="82" width="96" height="60" rx="4" fill="none" stroke="#38A09E" strokeWidth="1.2" opacity="0.55" />
+      <line x1="52" y1="102" x2="148" y2="102" stroke="#38A09E" strokeWidth="1" opacity="0.35" />
+      <line x1="72" y1="118" x2="132" y2="118" stroke="#38A09E" strokeWidth="0.9" opacity="0.28" />
+      <line x1="72" y1="130" x2="120" y2="130" stroke="#38A09E" strokeWidth="0.9" opacity="0.28" />
+    </svg>
   )
 }

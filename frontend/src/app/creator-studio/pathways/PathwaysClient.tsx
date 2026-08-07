@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import type { CreatorPathway, CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
+import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
 
 /**
  * Creator Studio → Pathways.
@@ -126,15 +127,11 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
       <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
         <p className="mb-2 text-[16px] font-semibold text-navy-900">No collective selected.</p>
         <p className="mb-6 text-[14px] leading-relaxed text-black">
-          Choose a collective from Your World to see the journeys inside it.
+          Choose a collective from My World to see the journeys inside it.
         </p>
-        <Link
-          href="/creator-studio"
-          className="inline-flex items-center rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-        >
-          Your World
-        </Link>
+        <PrimaryActionLink href="/creator-studio" showIcon={false}>
+          Go to My World
+        </PrimaryActionLink>
       </div>
     )
   }
@@ -159,16 +156,9 @@ export default function PathwaysClient({ initialPathways, activeSpace, collectiv
         >
           Create a guided journey for members to move through over time.
         </p>
-        <Link
-          href="/creator-studio/pathways/new"
-          className="inline-flex items-center rounded-full px-6 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-          style={{
-            background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-            letterSpacing: '0.04em',
-          }}
-        >
-          Create pathway →
-        </Link>
+        <PrimaryActionLink href="/creator-studio/pathways/new">
+          Create pathway
+        </PrimaryActionLink>
       </div>
     )
   }

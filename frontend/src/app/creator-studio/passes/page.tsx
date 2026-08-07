@@ -1,6 +1,6 @@
-import Link from 'next/link'
 import { getActiveCreatorSpace, getCreatorPasses, getCreatorSpace } from '@/lib/serverApi'
 import type { AccessPassAdminSummary, CreatorSpaceDetail } from '@/types/platform'
+import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
 import PassesClient from './PassesClient'
 
 export default async function CreatorPassesPage() {
@@ -12,15 +12,11 @@ export default async function CreatorPassesPage() {
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
           <p className="mb-2 text-[16px] font-semibold text-navy-900">Select a collective first.</p>
           <p className="mb-6 text-[14px] leading-relaxed text-black">
-            Choose a collective from Your World to see member passes.
+            Choose a collective from My World to see member passes.
           </p>
-          <Link
-            href="/creator-studio"
-            className="inline-flex items-center rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-          >
-            Your World
-          </Link>
+          <PrimaryActionLink href="/creator-studio" showIcon={false}>
+            Go to My World
+          </PrimaryActionLink>
         </div>
       </div>
     )

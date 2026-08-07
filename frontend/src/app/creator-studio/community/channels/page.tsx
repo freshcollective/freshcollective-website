@@ -42,6 +42,18 @@ export default async function ManageChannelsPage() {
   return (
     <div className="w-full max-w-[980px] px-8 py-8 md:px-10 md:py-10">
 
+      {/* Navigation crumb — sits above the section header so the primary
+          action (Add a Channel) reads as the main call-to-action for this
+          page. Kept understated so it doesn't compete with primary CTAs. */}
+      <div className="mb-4">
+        <Link
+          href="/creator-studio/community"
+          className="inline-flex items-center gap-1 text-[12.5px] font-medium text-black transition-colors hover:text-teal-700"
+        >
+          ← Back to Conversations
+        </Link>
+      </div>
+
       <div className="mb-8">
         <p
           className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.16em]"
@@ -52,22 +64,10 @@ export default async function ManageChannelsPage() {
         <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Channels</h1>
         <p className="mt-2 text-[14px] leading-relaxed text-black">
           Shape distinct places for conversation within your collective.
-          Create open places everyone can enjoy, private spaces for smaller
+          Create open places everyone can enjoy, private places for smaller
           circles, or Channels linked to Pathways and Gatherings so people
           arrive when they belong.
         </p>
-        <div className="mt-4">
-          <Link
-            href="/creator-studio/community"
-            className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-medium transition-colors"
-            style={{
-              background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
-              color: 'var(--fc-accent, #0f766e)',
-            }}
-          >
-            ← Back to Conversations
-          </Link>
-        </div>
       </div>
 
       {!activeSpace ? (

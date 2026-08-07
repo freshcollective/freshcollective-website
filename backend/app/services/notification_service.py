@@ -558,8 +558,8 @@ def trigger_caretaker_reply_to_question(
         if not is_caretaker:
             return
 
-        responder_name = responder.name or "A caretaker"
-        title = "A caretaker replied to your question"
+        responder_name = responder.name or "A Creator"
+        title = "A Creator replied to your question"
         message = f"{responder_name} replied to your question."
         space = db.query(Space).filter(Space.id == post.space_id).first()
         notif_url = f"/spaces/{space.slug}/community/{post.id}" if space else None

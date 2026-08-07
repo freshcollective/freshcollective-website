@@ -6,6 +6,7 @@ import {
   getCreatorEvents,
   getSpaceMembers,
 } from '@/lib/serverApi'
+import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
 import type {
   CreatorEvent,
   CreatorPathway,
@@ -57,16 +58,12 @@ export default async function CreatorStudioCollectiveHome() {
           className="mt-3 max-w-md text-[15px] leading-relaxed italic"
           style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
         >
-          Head back to Your World to build your first collective.
+          Head back to My World to build your first collective.
         </p>
         <div className="mt-6 flex gap-3">
-          <Link
-            href="/creator-studio"
-            className="inline-flex items-center rounded-full px-5 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-          >
-            Your World →
-          </Link>
+          <PrimaryActionLink href="/creator-studio" showIcon={false}>
+            Go to My World
+          </PrimaryActionLink>
         </div>
       </div>
     )
@@ -211,7 +208,7 @@ export default async function CreatorStudioCollectiveHome() {
           <>
             {spaceDetail?.tagline
               ? <span>{spaceDetail.tagline}</span>
-              : <span>{isDraft ? 'A quiet draft, ready for what comes next.' : 'Alive and open.'}</span>}
+              : <span>{isDraft ? 'A draft, ready for what comes next.' : 'Alive and open.'}</span>}
             {spaceDetail?.location?.name && (
               <>
                 <span className="mx-2 text-white/50" aria-hidden="true">·</span>

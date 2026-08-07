@@ -138,4 +138,5 @@ class ProfileResponse(BaseModel):
     avatar_url: str | None
     is_public: bool
     has_completed_onboarding: bool
+    has_completed_creator_onboarding: bool
     interests: list[str]

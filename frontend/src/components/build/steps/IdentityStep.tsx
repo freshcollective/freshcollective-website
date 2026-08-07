@@ -1,16 +1,19 @@
 'use client'
 
 import StepShell from '../StepShell'
+import OnboardingHero from '@/components/onboarding/OnboardingHero'
 
 interface Props {
   value: string
   onChange: (v: string) => void
   onContinue: () => void
   onBack: () => void
+  onSkip?: () => void
+  heroUrl?: string | null
 }
 
 export default function IdentityStep({
-  value, onChange, onContinue, onBack,
+  value, onChange, onContinue, onBack, onSkip, heroUrl = null,
 }: Props) {
   const trimmed = value.trim()
   const canContinue = trimmed.length >= 8
@@ -18,12 +21,19 @@ export default function IdentityStep({
   return (
     <StepShell
       stepIndex={4}
-      eyebrow="Four"
       heading="In one sentence, what makes this collective unique?"
-      whisper="This is not marketing copy. It's the heart of the collective — what you will keep returning to."
+      whisper="It's the heart of the collective — what you will keep returning to."
       onBack={onBack}
       onContinue={onContinue}
       canContinue={canContinue}
+      onSkip={onSkip}
+      hero={
+        <OnboardingHero
+          imageUrl={heroUrl}
+          alt=""
+          fallback={<IdentityMark />}
+        />
+      }
     >
       <div className="mx-auto max-w-[620px]">
         <textarea
@@ -58,5 +68,15 @@ export default function IdentityStep({
         </p>
       </div>
     </StepShell>
+  )
+}
+
+function IdentityMark() {
+  return (
+    <svg viewBox="0 0 200 200" className="h-full w-full" aria-hidden="true">
+      <circle cx="100" cy="100" r="52" fill="none" stroke="#38A09E" strokeWidth="1.2" opacity="0.40" />
+      <circle cx="100" cy="100" r="28" fill="none" stroke="#38A09E" strokeWidth="1" opacity="0.55" />
+      <circle cx="100" cy="100" r="6" fill="#D4B048" opacity="0.85" />
+    </svg>
   )
 }

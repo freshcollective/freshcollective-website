@@ -216,7 +216,7 @@ def can_book(
         # only until it ships.
         return BookingGate(
             False, "invitation_only",
-            "This gathering is invitation only. Please contact the caretaker.",
+            "This gathering is invitation only. Please contact the Creator.",
         )
 
     # 'free' and 'included_with_collective' both require an active

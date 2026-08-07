@@ -287,7 +287,7 @@ class TestClaimEndpoint:
             ClaimTokenBody(token=raw), db=db, current_user=user,
         )
         assert result.status == "consumed"
-        assert result.next_url == "/creator-studio"
+        assert result.next_url == "/creator-onboarding"
         assert user.role == "creator"
 
     def test_wrong_email_returns_403(self, db, make_user, _plans, world_builders):
@@ -315,6 +315,24 @@ class TestClaimEndpoint:
                 ClaimTokenBody(token=raw), db=db, current_user=user,
             )
         assert exc.value.status_code == 410
+
+    def test_next_url_skips_onboarding_when_already_onboarded(
+        self, db, make_user, _plans, world_builders,
+    ):
+        """An existing Creator who has already completed the Creator
+        welcome (backfilled by migration 096 or completed later) is
+        sent straight to Creator Studio — never re-runs onboarding."""
+        from datetime import datetime as _dt
+        user = make_user(role="user", email="onboarded@example.test")
+        user.creator_onboarded_at = _dt.utcnow()
+        db.flush()
+        _, raw = _make_paid_intent(
+            db, plan_slug="creator", claim_email=user.email,
+        )
+        result = claim_purchase(
+            ClaimTokenBody(token=raw), db=db, current_user=user,
+        )
+        assert result.next_url == "/creator-studio"
 
     def test_replay_after_activation_returns_success(
         self, db, make_user, _plans, world_builders,
@@ -370,7 +388,7 @@ class TestClaimWithSignupEndpoint:
             response=response, db=db, current_user=None,
         )
         assert result.status == "consumed"
-        assert result.next_url == "/creator-studio"
+        assert result.next_url == "/creator-onboarding"
 
         # Session cookie set (Starlette records this via raw_headers).
         set_cookie_headers = [

@@ -73,7 +73,7 @@ export default function SpaceSettingsForm({ space }: { space: SpaceData }) {
         <input
           value={tagline}
           onChange={(e) => setTagline(e.target.value)}
-          placeholder="A short phrase that captures the spirit of this space"
+          placeholder="A short phrase that captures the spirit of this collective"
           className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
         />
       </div>
@@ -84,7 +84,7 @@ export default function SpaceSettingsForm({ space }: { space: SpaceData }) {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={4}
-          placeholder="What will members find here? What is the intention of this space?"
+          placeholder="What will members find here? What is the intention of this collective?"
           className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
         />
       </div>

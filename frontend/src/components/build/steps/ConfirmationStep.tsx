@@ -52,13 +52,16 @@ export default function ConfirmationStep({
   return (
     <StepShell stepIndex={7} spacious onBack={onBack}>
       <div className="mx-auto flex max-w-[720px] flex-col items-center text-center">
-        {/* Hero — the Location's curated Atlas artwork */}
+        {/* Hero — the Location's curated Atlas artwork.
+            Sized to match (and slightly exceed) the onboarding hero
+            band so the completion screen reads as the culmination of
+            the ritual, not a summary card. */}
         <div
           className="w-full overflow-hidden rounded-3xl"
           style={{
-            maxWidth: 480,
+            maxWidth: 720,
             aspectRatio: '3 / 2',
-            boxShadow: '0 24px 60px rgba(12, 24, 38, 0.10), 0 4px 16px rgba(12, 24, 38, 0.05)',
+            boxShadow: '0 28px 72px rgba(12, 24, 38, 0.12), 0 6px 20px rgba(12, 24, 38, 0.06)',
             border: '1px solid rgba(12, 24, 38, 0.05)',
             background: '#F4F7F6',
           }}

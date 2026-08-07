@@ -126,6 +126,7 @@ def _profile_response(user: User, cp: "CreatorProfile | None") -> ProfileRespons
         avatar_url=cp.avatar_url if cp else None,
         is_public=cp.is_public if cp else False,
         has_completed_onboarding=user.onboarding_completed_at is not None,
+        has_completed_creator_onboarding=user.creator_onboarded_at is not None,
         interests=interests,
     )
 
@@ -226,6 +227,24 @@ async def complete_onboarding(
     current_user.interests = _json.dumps(payload.interests)
     db.commit()
     return {"message": "Welcome to Fresh Collective."}
+
+
+@router.post("/me/complete-creator-onboarding")
+async def complete_creator_onboarding(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Mark the short Creator-specific welcome as complete. Idempotent.
+
+    Independent of ``complete-onboarding`` (the Member orientation).
+    Called by ``/creator-onboarding`` when the visitor clicks the
+    "Build your first Collective" CTA.
+    """
+    from datetime import datetime
+    if current_user.creator_onboarded_at is None:
+        current_user.creator_onboarded_at = datetime.now()
+        db.commit()
+    return {"message": "Creator onboarding complete."}
 
 
 @router.get("/me/memberships")

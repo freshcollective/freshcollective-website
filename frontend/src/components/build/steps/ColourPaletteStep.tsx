@@ -9,6 +9,7 @@ interface Props {
   onChange: (key: string) => void
   onContinue: () => void
   onBack: () => void
+  onSkip?: () => void
 }
 
 /**
@@ -17,17 +18,17 @@ interface Props {
  * accents, links, dividers. It does not affect the Location artwork.
  */
 export default function ColourPaletteStep({
-  palettes, value, onChange, onContinue, onBack,
+  palettes, value, onChange, onContinue, onBack, onSkip,
 }: Props) {
   return (
     <StepShell
       stepIndex={3}
-      eyebrow="Three"
       heading="Which colours give your collective its voice?"
       whisper="The palette becomes the visual language of your collective — buttons, accents, links."
       onBack={onBack}
       onContinue={onContinue}
       canContinue={!!value}
+      onSkip={onSkip}
     >
       <div className="grid gap-3 md:grid-cols-2">
         {palettes.map((s) => {

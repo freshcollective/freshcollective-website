@@ -31,6 +31,16 @@ const DISPLAY_BY_KEY: Record<string, SlotDisplay> = {
     guidance: 'Landscape image · recommended 3:2 · minimum width 1200px · JPG, PNG or WebP.',
     placeholderBody: 'The image shown on the Ways to Connect tile on the member dashboard.',
   },
+  new_to_fresh_collective: {
+    aspectRatio: '3 / 2',
+    guidance: 'Landscape image · recommended 3:2 · minimum width 1200px · JPG, PNG or WebP. A gentle first horizon — unhurried, warm.',
+    placeholderBody: 'The tile shown in “Elsewhere in the world” for members who haven’t yet completed the orientation. Falls back to a soft gold + teal atmospheric scene when empty.',
+  },
+  auth_background: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 or wider · minimum width 1920px · JPG, PNG or WebP. Rendered full-bleed under a deep navy overlay — mid-tone or richly-lit images sit best.',
+    placeholderBody: 'The world artwork behind /login and /signup. Falls back to the bundled login-hero.png when empty.',
+  },
   // ── Public homepage — discovery cards (4:3 / 5:3 landscape) ───────
   homepage_explore_collectives: {
     aspectRatio: '5 / 3',
@@ -109,6 +119,53 @@ const DISPLAY_BY_KEY: Record<string, SlotDisplay> = {
     guidance: 'Landscape image · recommended 4:3 · minimum width 1200px · JPG, PNG or WebP. Creators learning together — considered practice, shared workspace.',
     placeholderBody: 'Editorial image for the World Builders Collective section on /for-creators.',
   },
+  // ── Onboarding — Member (wide hero on each step) ─────────────────
+  member_onboarding_welcome: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. A first horizon.',
+    placeholderBody: 'Hero image for the opening step of the Member orientation. Falls back to a small SVG horizon when empty.',
+  },
+  member_onboarding_interests: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. A sense of choosing a direction.',
+    placeholderBody: 'Hero image for the interests step of the Member orientation. Falls back to a small SVG compass when empty.',
+  },
+  member_onboarding_how_it_works: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. A living environment with several rooms held together.',
+    placeholderBody: 'Hero image for the "How this place works" step. Falls back to a small SVG scene when empty.',
+  },
+  member_onboarding_arrival: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. A threshold — an invitation to enter.',
+    placeholderBody: 'Hero image for the final arrival step. Falls back to a small SVG archipelago when empty.',
+  },
+  // ── Onboarding — Creator (welcome + ritual steps) ───────────────
+  creator_onboarding_welcome: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. A calm arrival at a new vantage point.',
+    placeholderBody: 'Hero image for /creator-onboarding — shown once after Creator plan activation.',
+  },
+  creator_ritual_atmosphere: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. Evokes feeling and mood — light, weather, air.',
+    placeholderBody: 'Hero image for the Atmosphere step of Build Your Collective.',
+  },
+  creator_ritual_identity: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. A single, clear mark — the heart of the space.',
+    placeholderBody: 'Hero image for the Identity Statement step of Build Your Collective.',
+  },
+  creator_ritual_welcome_message: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. A door opening, a room warmed for arrival.',
+    placeholderBody: 'Hero image for the Welcome Message step of Build Your Collective.',
+  },
+  creator_ritual_practical: {
+    aspectRatio: '16 / 9',
+    guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. Grounded, considered, plain.',
+    placeholderBody: 'Hero image for the Practical Details step of Build Your Collective.',
+  },
 }
 const DEFAULT_DISPLAY: SlotDisplay = {
   aspectRatio: '3 / 2',
@@ -131,7 +188,7 @@ const GROUPS: Group[] = [
     key: 'member_dashboard',
     label: 'Member Dashboard',
     description: 'Artwork on the Your World tiles that members see when they sign in.',
-    keys: ['explore_collectives', 'creator_studio', 'discover_places', 'ways_to_connect'],
+    keys: ['explore_collectives', 'creator_studio', 'discover_places', 'ways_to_connect', 'new_to_fresh_collective'],
   },
   {
     key: 'homepage',
@@ -159,6 +216,35 @@ const GROUPS: Group[] = [
       'for_creators_pro',
       'for_creators_organisation',
       'for_creators_world_builders',
+    ],
+  },
+  {
+    key: 'auth_pages',
+    label: 'Auth Pages',
+    description: 'Shared artwork behind /login and /signup. Both pages read from the same slot so they feel like one coherent entry experience.',
+    keys: ['auth_background'],
+  },
+  {
+    key: 'onboarding_member',
+    label: 'Onboarding — Member',
+    description: 'Hero artwork shown at the top of each Member orientation step at /onboarding. Each step has a small SVG fallback when no image is uploaded.',
+    keys: [
+      'member_onboarding_welcome',
+      'member_onboarding_interests',
+      'member_onboarding_how_it_works',
+      'member_onboarding_arrival',
+    ],
+  },
+  {
+    key: 'onboarding_creator',
+    label: 'Onboarding — Creator',
+    description: 'Hero artwork for the Creator welcome (/creator-onboarding) and the ritual steps in Build Your Collective. Island and Colour Palette are deliberately omitted — those steps already have native artwork.',
+    keys: [
+      'creator_onboarding_welcome',
+      'creator_ritual_atmosphere',
+      'creator_ritual_identity',
+      'creator_ritual_welcome_message',
+      'creator_ritual_practical',
     ],
   },
   {

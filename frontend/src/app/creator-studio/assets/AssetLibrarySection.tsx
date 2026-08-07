@@ -18,6 +18,7 @@ import {
   useConfirm,
   useToast,
 } from '@/components/platform'
+import { PlusIcon } from '@/components/creator/PrimaryActionLink'
 import type {
   CreatorMediaAsset,
   MediaAssetType,
@@ -871,8 +872,8 @@ export default function AssetLibrarySection({ initialAssets, spaceSlug, spaceNam
             Upload and manage the visual assets used across this collective — banners, logos, icons, thumbnails, audio, video, and downloads.
           </Text>
         </div>
-        <Button variant="primary" onClick={() => setShowUpload(true)}>
-          + Upload asset
+        <Button variant="primary" iconStart={<PlusIcon />} onClick={() => setShowUpload(true)}>
+          Upload asset
         </Button>
       </div>
 
@@ -959,7 +960,7 @@ export default function AssetLibrarySection({ initialAssets, spaceSlug, spaceNam
           title="No assets yet"
           description="Upload your first asset — image, video, audio, or file — to use across this collective."
           action={
-            <Button variant="primary" onClick={() => setShowUpload(true)}>
+            <Button variant="primary" iconStart={<PlusIcon />} onClick={() => setShowUpload(true)}>
               Upload first asset
             </Button>
           }

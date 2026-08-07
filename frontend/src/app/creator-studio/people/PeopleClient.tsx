@@ -6,6 +6,8 @@ import type { AccessRequest, AccessPassAdminSummary, AddMemberResponse, CreatorM
 import { apiUrl } from '@/lib/api'
 import { formatPathwayPrice } from '@/lib/pathwayAccess'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
+import { Button } from '@/components/platform/Button'
+import { PlusIcon } from '@/components/creator/PrimaryActionLink'
 
 // ---------------------------------------------------------------------------
 // Display helpers
@@ -1828,14 +1830,20 @@ function AddPersonModal({ spaceSlug, existingMemberEmails, existingInviteEmails,
             </div>
             {error && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">{error}</p>}
             <div className="mt-6 flex items-center gap-3">
-              <button disabled={!email.trim() || loading} onClick={handleSubmit}
-                className="flex-1 rounded-xl px-5 py-2.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}>
+              <Button
+                variant="primary"
+                size="md"
+                fullWidth
+                loading={loading}
+                disabled={!email.trim()}
+                iconStart={loading ? undefined : <PlusIcon />}
+                onClick={handleSubmit}
+              >
                 {loading ? 'Adding…' : 'Add member'}
-              </button>
-              <button onClick={onClose} className="rounded-xl border border-border px-4 py-2.5 text-[13px] font-medium text-black hover:bg-slate-50">
+              </Button>
+              <Button variant="secondary" size="md" onClick={onClose}>
                 Cancel
-              </button>
+              </Button>
             </div>
           </>
         )}
@@ -2718,16 +2726,14 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
         location={headerLocation}
         coverImageUrl={headerCoverImageUrl}
         action={
-          <button
+          <Button
+            variant="primary"
+            size="md"
+            iconStart={<PlusIcon />}
             onClick={() => setAddPersonOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-              <path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
             Add member
-          </button>
+          </Button>
         }
       />
 

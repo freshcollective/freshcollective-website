@@ -1,6 +1,7 @@
 'use client'
 
 import StepShell from '../StepShell'
+import OnboardingHero from '@/components/onboarding/OnboardingHero'
 import type { AtmosphereOption } from '@/lib/build-your-collective/types'
 
 interface Props {
@@ -9,12 +10,14 @@ interface Props {
   onChange: (keys: string[]) => void
   onContinue: () => void
   onBack: () => void
+  onSkip?: () => void
+  heroUrl?: string | null
 }
 
 const REQUIRED = 5
 
 export default function AtmosphereStep({
-  atmospheres, value, onChange, onContinue, onBack,
+  atmospheres, value, onChange, onContinue, onBack, onSkip, heroUrl = null,
 }: Props) {
   const chosen = new Set(value)
 
@@ -30,8 +33,7 @@ export default function AtmosphereStep({
 
   return (
     <StepShell
-      stepIndex={2}
-      eyebrow="Two"
+      stepIndex={1}
       heading="How do you hope people feel when they arrive?"
       whisper={
         remaining > 0
@@ -41,6 +43,14 @@ export default function AtmosphereStep({
       onBack={onBack}
       onContinue={onContinue}
       canContinue={chosen.size === REQUIRED}
+      onSkip={onSkip}
+      hero={
+        <OnboardingHero
+          imageUrl={heroUrl}
+          alt=""
+          fallback={<AtmosphereMark />}
+        />
+      }
     >
       <div className="mx-auto flex max-w-[720px] flex-wrap justify-center gap-3">
         {atmospheres.map((a) => {
@@ -68,5 +78,22 @@ export default function AtmosphereStep({
         })}
       </div>
     </StepShell>
+  )
+}
+
+function AtmosphereMark() {
+  return (
+    <svg viewBox="0 0 200 200" className="h-full w-full" aria-hidden="true">
+      <defs>
+        <radialGradient id="atmosGlow" cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0%" stopColor="#D4B048" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="#D4B048" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx="100" cy="100" r="70" fill="url(#atmosGlow)" />
+      <path d="M 20 88 Q 100 80 180 88" stroke="#38A09E" strokeWidth="1.1" fill="none" opacity="0.55" />
+      <path d="M 20 112 Q 100 104 180 112" stroke="#38A09E" strokeWidth="0.9" fill="none" opacity="0.40" />
+      <path d="M 20 132 Q 100 124 180 132" stroke="#38A09E" strokeWidth="0.7" fill="none" opacity="0.28" />
+    </svg>
   )
 }

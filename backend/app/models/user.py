@@ -37,6 +37,13 @@ class User(Base):
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True
     )
+    # Creator onboarding (short, Creator-specific welcome shown once
+    # after plan activation, before Build Your Collective). Independent
+    # of ``onboarding_completed_at`` — the two flows serve different
+    # audiences and are never gates for one another.
+    creator_onboarded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
     interests: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False

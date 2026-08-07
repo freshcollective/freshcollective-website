@@ -151,7 +151,7 @@ COMMUNITY = PlanCapability(
     card_features=(
         "One approved active collective",
         "Up to 100 members",
-        "One caretaker",
+        "One Creator",
         "Community Location choices",
         "Community, pathway, gathering and resource basics",
         "No paid offers",
@@ -186,7 +186,7 @@ CREATOR = PlanCapability(
     card_features=(
         "One active collective",
         "Up to 500 members",
-        "One caretaker",
+        "One Creator",
         "Full Atlas Location selection",
         "Paid memberships, pathways and resources",
         "Standard analytics",
@@ -222,7 +222,7 @@ PRO = PlanCapability(
     card_features=(
         "Up to 5 active collectives",
         "Pooled member allowance across collectives",
-        "Multiple caretakers per collective",
+        "Multiple Creators per collective",
         "Full Atlas Location selection",
         "Paid memberships, pathways and resources",
         "Advanced analytics and automations",
