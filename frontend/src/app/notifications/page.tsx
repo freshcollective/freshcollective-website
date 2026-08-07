@@ -1,9 +1,15 @@
 import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import { SESSION_COOKIE } from '@/lib/session'
 import type { NotificationsResponse, NotificationItem } from '@/types/platform'
+import {
+  notificationDestination,
+  notificationLabel,
+  notificationRelativeTime,
+  notificationTint,
+} from '@/lib/notifications'
 import NotificationsClient from './NotificationsClient'
+import NotificationRowLink from './NotificationRowLink'
 
 async function getNotifications(limit = 50, offset = 0): Promise<NotificationsResponse> {
   const cookieStore = await cookies()
@@ -25,143 +31,65 @@ async function getNotifications(limit = 50, offset = 0): Promise<NotificationsRe
   }
 }
 
-function typeBadgeLabel(type: string): string {
-  const map: Record<string, string> = {
-    comment_reply: 'Reply',
-    new_post: 'Conversation',
-    event_reminder: 'Event',
-    new_pathway: 'Pathway',
-    new_pathway_step: 'New Step',
-    admin_broadcast: 'Announcement',
-    new_member: 'Member',
-    event_registration: 'Booking',
-    pathway_completed: 'Completed',
-    direct_message: 'Message',
-    // Community Phase 1
-    mention: 'Mention',
-    caretaker_answer: 'Answered',
-  }
-  return map[type] ?? type
-}
-
-function typeBadgeColor(type: string): string {
-  const map: Record<string, string> = {
-    comment_reply: '#38A09E',
-    new_post: '#6B7280',
-    event_reminder: '#F59E0B',
-    new_pathway: '#8B5CF6',
-    new_pathway_step: '#8B5CF6',
-    admin_broadcast: '#EF4444',
-    new_member: '#10B981',
-    event_registration: '#3B82F6',
-    pathway_completed: '#38A09E',
-    direct_message: '#0f766e',
-    // Community Phase 1
-    mention: '#5C4577',
-    caretaker_answer: '#0f766e',
-  }
-  return map[type] ?? '#9CA3AF'
-}
-
-function relativeTime(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMin = Math.floor(diffMs / 60000)
-  const diffHr = Math.floor(diffMs / 3600000)
-  const diffDay = Math.floor(diffMs / 86400000)
-  if (diffMin < 1) return 'Just now'
-  if (diffMin < 60) return `${diffMin} min ago`
-  if (diffHr < 24) return `${diffHr}h ago`
-  if (diffDay === 1) return 'Yesterday'
-  return `${diffDay}d ago`
-}
-
 export default async function NotificationsPage() {
-  const data = await getNotifications(50, 0)
-  const { notifications, unread_count } = data
+  const { notifications, unread_count } = await getNotifications(50, 0)
 
   return (
-    <div className="min-h-screen" style={{ background: '#F5F5F2' }}>
+    <div
+      className="min-h-screen"
+      style={{
+        background:
+          'radial-gradient(90% 40% at 50% 0%, rgba(56, 160, 158, 0.05), transparent 65%),' +
+          'linear-gradient(180deg, #FBFDFD 0%, #FFFFFF 100%)',
+      }}
+    >
       <div className="mx-auto max-w-2xl px-4 py-10">
-        {/* Page header */}
-        <div className="mb-6 flex items-center justify-between">
+        {/* Header */}
+        <div className="mb-6 flex items-end justify-between">
           <div>
-            <h1 className="text-[22px] font-bold tracking-[-0.02em] text-navy-950">
+            <p
+              className="mb-2 text-[11px] font-semibold uppercase"
+              style={{ color: '#0f766e', letterSpacing: '0.24em' }}
+            >
               Notifications
+            </p>
+            <h1
+              className="font-serif text-[26px] leading-tight"
+              style={{ color: '#0C1826', letterSpacing: '-0.01em' }}
+            >
+              {unread_count > 0
+                ? `${unread_count} new ${unread_count === 1 ? 'note' : 'notes'} for you`
+                : 'You\u2019re all caught up.'}
             </h1>
-            {unread_count > 0 && (
-              <p className="mt-0.5 text-[13px] text-black">
-                {unread_count} unread
-              </p>
-            )}
           </div>
           {unread_count > 0 && <NotificationsClient />}
         </div>
 
         {/* List */}
-        <div className="overflow-hidden rounded-xl border border-navy-100 bg-white">
+        <div
+          className="overflow-hidden rounded-2xl bg-white"
+          style={{ border: '1px solid rgba(12, 24, 38, 0.06)' }}
+        >
           {notifications.length === 0 ? (
             <div className="px-6 py-16 text-center">
-              <p className="text-[15px] text-black">No notifications yet.</p>
-              <p className="mt-1 text-[13px] text-black">
-                We&apos;ll notify you about activity in your collectives.
+              <p
+                className="font-serif text-[17px]"
+                style={{ color: '#0C1826' }}
+              >
+                Nothing to note yet.
+              </p>
+              <p
+                className="mx-auto mt-2 max-w-sm text-[13.5px] italic leading-relaxed"
+                style={{ color: 'rgba(12, 24, 38, 0.60)', fontFamily: 'Georgia, serif' }}
+              >
+                Activity in your collectives will land here — only when it matters.
               </p>
             </div>
           ) : (
-            <ul className="divide-y divide-navy-50">
-              {notifications.map((notif: NotificationItem) => (
-                <li
-                  key={notif.id}
-                  className="flex items-start gap-4 px-5 py-4"
-                  style={
-                    !notif.is_read
-                      ? { background: 'rgba(56,160,158,0.03)', borderLeft: '3px solid #38A09E' }
-                      : { borderLeft: '3px solid transparent' }
-                  }
-                >
-                  {/* Unread indicator */}
-                  <div className="mt-1.5 flex-shrink-0">
-                    {!notif.is_read ? (
-                      <span
-                        className="block h-2 w-2 rounded-full"
-                        style={{ background: '#38A09E' }}
-                      />
-                    ) : (
-                      <span className="block h-2 w-2" />
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* Type badge */}
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
-                        style={{ background: typeBadgeColor(notif.notification_type) }}
-                      >
-                        {typeBadgeLabel(notif.notification_type)}
-                      </span>
-                      <span className="text-[12px] text-black">
-                        {relativeTime(notif.created_at)}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-[14px] font-semibold text-navy-900 leading-snug">
-                      {notif.title}
-                    </p>
-                    <p className="mt-0.5 text-[13px] text-black leading-snug">
-                      {notif.message}
-                    </p>
-                    {notif.url && (
-                      <a
-                        href={notif.url}
-                        className="mt-1.5 inline-block text-[12px] font-medium transition-colors"
-                        style={{ color: '#38A09E' }}
-                      >
-                        View &rarr;
-                      </a>
-                    )}
-                  </div>
+            <ul>
+              {notifications.map((notif) => (
+                <li key={notif.id}>
+                  <NotificationRow notif={notif} />
                 </li>
               ))}
             </ul>
@@ -169,5 +97,91 @@ export default async function NotificationsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function NotificationRow({ notif }: { notif: NotificationItem }) {
+  const tint = notificationTint(notif.notification_type)
+  const label = notificationLabel(notif.notification_type)
+  const href = notificationDestination(notif)
+  const unread = !notif.is_read
+
+  return (
+    <NotificationRowLink
+      notificationId={notif.id}
+      href={href}
+      markReadIfUnread={unread}
+      className="group flex items-start gap-4 px-5 py-4 transition-colors hover:bg-slate-50"
+      style={{
+        borderTop: '1px solid rgba(12, 24, 38, 0.05)',
+        background: unread ? 'rgba(56, 160, 158, 0.03)' : '#FFFFFF',
+        borderLeft: unread ? '3px solid #38A09E' : '3px solid transparent',
+      }}
+    >
+      {/* Category icon disc — full colour when unread, muted greyscale
+          when read. Same shape either way so rows still scan cleanly. */}
+      <span
+        aria-hidden="true"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[15px]"
+        style={
+          unread
+            ? { background: tint.bg, color: tint.fg }
+            : { background: 'rgba(12, 24, 38, 0.05)', color: 'rgba(12, 24, 38, 0.40)' }
+        }
+      >
+        {tint.icon}
+      </span>
+
+      {/* Content — when read, everything drops in weight + colour. */}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={
+              unread
+                ? { background: tint.bg, color: tint.fg }
+                : {
+                    background: 'rgba(12, 24, 38, 0.05)',
+                    color: 'rgba(12, 24, 38, 0.50)',
+                  }
+            }
+          >
+            {label}
+          </span>
+          <span
+            className="text-[12px]"
+            style={{ color: unread ? 'rgba(12, 24, 38, 0.50)' : 'rgba(12, 24, 38, 0.38)' }}
+          >
+            {notificationRelativeTime(notif.created_at)}
+          </span>
+        </div>
+        <p
+          className="mt-1.5 text-[14.5px] leading-snug"
+          style={{
+            color: unread ? '#0C1826' : 'rgba(12, 24, 38, 0.55)',
+            fontWeight: unread ? 600 : 400,
+          }}
+        >
+          {notif.title}
+        </p>
+        {notif.message && (
+          <p
+            className="mt-0.5 text-[13.5px] leading-snug"
+            style={{ color: unread ? 'rgba(12, 24, 38, 0.72)' : 'rgba(12, 24, 38, 0.45)' }}
+          >
+            {notif.message}
+          </p>
+        )}
+      </div>
+
+      {/* Chevron only appears on hover — subtle affordance, never noisy. */}
+      <span
+        aria-hidden="true"
+        className="mt-1.5 shrink-0 text-[13px] opacity-0 transition-opacity group-hover:opacity-100"
+        style={{ color: '#38A09E' }}
+      >
+        →
+      </span>
+    </NotificationRowLink>
   )
 }

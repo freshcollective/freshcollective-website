@@ -5,21 +5,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import type { NotificationItem, NotificationsResponse } from '@/types/platform'
-
-function relativeTime(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMin = Math.floor(diffMs / 60000)
-  const diffHr = Math.floor(diffMs / 3600000)
-  const diffDay = Math.floor(diffMs / 86400000)
-
-  if (diffMin < 1) return 'Just now'
-  if (diffMin < 60) return `${diffMin} min ago`
-  if (diffHr < 24) return `${diffHr}h ago`
-  if (diffDay === 1) return 'Yesterday'
-  return `${diffDay}d ago`
-}
+import {
+  notificationDestination,
+  notificationLabel,
+  notificationRelativeTime,
+  notificationTint,
+} from '@/lib/notifications'
 
 interface Props {
   initialCount: number
@@ -127,9 +118,9 @@ export default function NotificationBell({ initialCount }: Props) {
       }
     }
     setOpen(false)
-    if (notif.url) {
-      router.push(notif.url)
-    }
+    // Always navigate — the shared resolver falls back to a sensible
+    // destination when the notification has no url of its own.
+    router.push(notificationDestination(notif))
   }
 
   return (
@@ -196,38 +187,79 @@ export default function NotificationBell({ initialCount }: Props) {
                 No notifications yet.
               </div>
             ) : (
-              notifications.map((notif) => (
-                <button
-                  key={notif.id}
-                  onClick={() => void handleNotificationClick(notif)}
-                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-navy-50"
-                  style={
-                    !notif.is_read
-                      ? { borderLeft: '3px solid #38A09E', background: 'rgba(56,160,158,0.04)' }
-                      : { borderLeft: '3px solid transparent' }
-                  }
-                >
-                  {/* Unread dot */}
-                  {!notif.is_read && (
+              notifications.map((notif) => {
+                const tint = notificationTint(notif.notification_type)
+                const label = notificationLabel(notif.notification_type)
+                const unread = !notif.is_read
+                return (
+                  <button
+                    key={notif.id}
+                    onClick={() => void handleNotificationClick(notif)}
+                    className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-navy-50"
+                    style={
+                      unread
+                        ? { borderLeft: '3px solid #38A09E', background: 'rgba(56,160,158,0.04)' }
+                        : { borderLeft: '3px solid transparent' }
+                    }
+                  >
+                    {/* Category disc — full colour when unread, muted
+                        greyscale when read so read rows visually recede. */}
                     <span
-                      className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: '#38A09E' }}
-                    />
-                  )}
-                  {notif.is_read && <span className="mt-1.5 h-2 w-2 shrink-0" />}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium text-navy-900 leading-snug">
-                      {notif.title}
-                    </p>
-                    <p className="mt-0.5 truncate text-[12px] text-black leading-snug">
-                      {notif.message}
-                    </p>
-                    <p className="mt-1 text-[11px] text-black">
-                      {relativeTime(notif.created_at)}
-                    </p>
-                  </div>
-                </button>
-              ))
+                      aria-hidden="true"
+                      className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px]"
+                      style={
+                        unread
+                          ? { background: tint.bg, color: tint.fg }
+                          : { background: 'rgba(12,24,38,0.05)', color: 'rgba(12,24,38,0.40)' }
+                      }
+                    >
+                      {tint.icon}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="rounded-full px-1.5 py-px text-[10.5px] font-semibold"
+                          style={
+                            unread
+                              ? { background: tint.bg, color: tint.fg }
+                              : { background: 'rgba(12,24,38,0.05)', color: 'rgba(12,24,38,0.50)' }
+                          }
+                        >
+                          {label}
+                        </span>
+                        {unread && (
+                          <span
+                            className="h-1.5 w-1.5 rounded-full"
+                            style={{ background: '#38A09E' }}
+                            aria-label="unread"
+                          />
+                        )}
+                      </div>
+                      <p
+                        className="mt-1 text-[13px] leading-snug"
+                        style={{
+                          color: unread ? '#0C1826' : 'rgba(12,24,38,0.55)',
+                          fontWeight: unread ? 500 : 400,
+                        }}
+                      >
+                        {notif.title}
+                      </p>
+                      <p
+                        className="mt-0.5 truncate text-[12px] leading-snug"
+                        style={{ color: unread ? 'rgba(12,24,38,0.68)' : 'rgba(12,24,38,0.45)' }}
+                      >
+                        {notif.message}
+                      </p>
+                      <p
+                        className="mt-1 text-[11px]"
+                        style={{ color: unread ? 'rgba(12,24,38,0.48)' : 'rgba(12,24,38,0.36)' }}
+                      >
+                        {notificationRelativeTime(notif.created_at)}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })
             )}
           </div>
 
