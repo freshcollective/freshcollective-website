@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
@@ -44,6 +44,7 @@ from app.comms.models import (
     CommunicationDelivery,
     CommunicationEvent,
     CommunicationIntent,
+    CommunicationWebhookEvent,
 )
 from app.comms.preferences import (
     LockedPreferenceError,
@@ -72,6 +73,9 @@ from app.comms.schemas import (
     AdminIntentRow,
     AdminRegisteredEventType,
     AdminRegistryResponse,
+    AdminWebhookEventDetail,
+    AdminWebhookEventListResponse,
+    AdminWebhookEventRow,
     ConsentStateRow,
     DeliveryAttemptDetail,
     DeliveryAttemptSummary,
@@ -86,8 +90,10 @@ from app.comms.schemas import (
     ShadowParityDayRow,
     ShadowParityDiscrepancy,
     ShadowParityReport,
+    WebhookReceiveResponse,
 )
 from app.comms.shadow import compute_parity_report, reconcile_shadow
+from app.comms.webhooks import get_webhook_provider, receive
 from app.comms.worker import dispatch_due
 from app.core.config import settings
 from app.core.database import get_db
@@ -863,3 +869,140 @@ def shadow_parity(
             ShadowParityDiscrepancy(**d) for d in report.recent_discrepancies
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# Public webhook receiver (Milestone 6)
+#
+# One route per provider, keyed by ``provider_key`` in the path. The
+# provider must be a registered :class:`WebhookProvider`; if not, we
+# return 404 rather than 200 so misconfigured provider webhooks fail
+# visibly. Signature verification happens inside ``receive()``; the
+# response is always 200 once the raw payload has been recorded to
+# the ledger, even when the signature fails — the ledger row captures
+# the failure so tampering attempts are auditable rather than lost.
+# ---------------------------------------------------------------------------
+
+
+webhook_router = APIRouter(prefix="/api/webhooks/comms", tags=["webhooks", "comms"])
+
+
+@webhook_router.post(
+    "/{provider_key}",
+    response_model=WebhookReceiveResponse,
+    summary="Receive one inbound webhook from a provider",
+)
+async def receive_webhook(
+    provider_key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> WebhookReceiveResponse:
+    if get_webhook_provider(provider_key) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No webhook provider registered under {provider_key!r}.",
+        )
+    raw_body = await request.body()
+    outcome = receive(
+        db,
+        provider_key=provider_key,
+        headers=dict(request.headers),
+        raw_body=raw_body,
+    )
+    return WebhookReceiveResponse(
+        provider_key=outcome.provider_key,
+        signature_verified=outcome.signature_verified,
+        persisted=len(outcome.persisted_ids),
+        duplicate_skipped=outcome.duplicate_skipped,
+        processed=outcome.processed,
+        process_errors=outcome.process_errors,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Admin — webhook ledger (Milestone 6)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/webhook-events",
+    response_model=AdminWebhookEventListResponse,
+    summary="List received webhook events",
+)
+def list_webhook_events(
+    limit: int = 50,
+    offset: int = 0,
+    provider_key: str | None = None,
+    event_type: str | None = None,
+    unprocessed: bool = False,
+    since: datetime | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> AdminWebhookEventListResponse:
+    if limit < 1 or limit > 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="limit must be between 1 and 200.",
+        )
+    if offset < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="offset must be >= 0.",
+        )
+
+    q = select(CommunicationWebhookEvent)
+    count_q = select(func.count()).select_from(CommunicationWebhookEvent)
+
+    if provider_key is not None:
+        q = q.where(CommunicationWebhookEvent.provider_key == provider_key)
+        count_q = count_q.where(
+            CommunicationWebhookEvent.provider_key == provider_key
+        )
+    if event_type is not None:
+        q = q.where(CommunicationWebhookEvent.event_type == event_type)
+        count_q = count_q.where(
+            CommunicationWebhookEvent.event_type == event_type
+        )
+    if unprocessed:
+        q = q.where(CommunicationWebhookEvent.processed_at.is_(None))
+        count_q = count_q.where(
+            CommunicationWebhookEvent.processed_at.is_(None)
+        )
+    if since is not None:
+        q = q.where(CommunicationWebhookEvent.received_at >= since)
+        count_q = count_q.where(
+            CommunicationWebhookEvent.received_at >= since
+        )
+
+    total = db.execute(count_q).scalar_one()
+    rows = db.execute(
+        q.order_by(desc(CommunicationWebhookEvent.received_at))
+         .limit(limit)
+         .offset(offset)
+    ).scalars().all()
+
+    return AdminWebhookEventListResponse(
+        items=[AdminWebhookEventRow.model_validate(r) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/webhook-events/{event_id}",
+    response_model=AdminWebhookEventDetail,
+    summary="Get one received webhook event (with raw payload)",
+)
+def get_webhook_event(
+    event_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> AdminWebhookEventDetail:
+    row = db.get(CommunicationWebhookEvent, event_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webhook event not found.",
+        )
+    return AdminWebhookEventDetail.model_validate(row)

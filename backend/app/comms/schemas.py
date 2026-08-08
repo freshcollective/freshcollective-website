@@ -343,3 +343,53 @@ class ReconcilerResultResponse(BaseModel):
     count: int
     skipped_no_comparator: list[str]
     duplicate_skipped: int
+
+
+# ---------------------------------------------------------------------------
+# Inbound webhooks (Milestone 6)
+# ---------------------------------------------------------------------------
+
+
+class WebhookReceiveResponse(BaseModel):
+    """Return shape for POST /api/webhooks/comms/{provider_key}.
+
+    Deliberately terse so providers see minimal information back —
+    outcomes are for our own observability, not for the caller to
+    react to.
+    """
+
+    provider_key: str
+    signature_verified: bool
+    persisted: int
+    duplicate_skipped: int
+    processed: int
+    process_errors: int
+
+
+class AdminWebhookEventRow(BaseModel):
+    """Compact row for the webhook ledger list."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    provider_key: str
+    provider_event_id: str | None
+    event_type: str
+    provider_message_id: str | None
+    signature_verified: bool
+    received_at: datetime
+    processed_at: datetime | None
+    process_error: str | None
+
+
+class AdminWebhookEventDetail(AdminWebhookEventRow):
+    """Full webhook detail — adds the raw payload for debugging."""
+
+    raw_payload: dict[str, Any]
+
+
+class AdminWebhookEventListResponse(BaseModel):
+    items: list[AdminWebhookEventRow]
+    total: int
+    limit: int
+    offset: int

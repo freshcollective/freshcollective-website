@@ -27,6 +27,13 @@ from app.comms.events import emit
 from app.comms import routing  # noqa: F401 — registration
 from app.comms import templates  # noqa: F401 — registration
 
+# Register inbound webhook providers (Milestone 6). Same pattern as
+# the outbound delivery provider bootstrap — the registry is populated
+# at import so the receiver route can look up providers by key without
+# an explicit init step.
+from app.comms.webhooks import _bootstrap_webhook_providers as _bootstrap_wh
+_bootstrap_wh()
+
 __all__ = [
     "Channel",
     "Priority",

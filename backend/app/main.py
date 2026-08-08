@@ -45,6 +45,7 @@ from app.comms.routes import (
     router as comms_admin_router,
     member_router as comms_member_router,
     internal_router as comms_internal_router,
+    webhook_router as comms_webhook_router,
 )
 from app.core.config import settings
 
@@ -131,6 +132,7 @@ app.include_router(places_router)
 app.include_router(comms_admin_router)
 app.include_router(comms_member_router)
 app.include_router(comms_internal_router)
+app.include_router(comms_webhook_router)
 
 
 # ---------------------------------------------------------------------------

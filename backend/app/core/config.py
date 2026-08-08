@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     email_from: str | None = None
     email_reply_to: str | None = None
+    # Resend inbound webhook secret (Svix format, e.g. "whsec_...").
+    # When unset, the /api/webhooks/comms/resend receiver refuses
+    # every payload with a 401 — no accidental "signature verified"
+    # state in development.
+    resend_webhook_secret: str | None = None
 
     # Platform owner — the founder / operator of Fresh Collective. Surfaces
     # as the "Owner" role badge in World Management. Only one person ever

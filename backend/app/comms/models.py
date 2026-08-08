@@ -407,6 +407,23 @@ _DELIVERY_STATUS_ENUM = Enum(
     create_type=False,
 )
 
+# ── M6 additions ────────────────────────────────────────────────────
+
+_DELIVERY_TERMINAL_OUTCOME_ENUM = Enum(
+    "delivered",
+    "bounced",
+    "complained",
+    name="communication_delivery_terminal_outcome_enum",
+    create_type=False,
+)
+
+_DELIVERY_BOUNCE_CLASS_ENUM = Enum(
+    "hard",
+    "soft",
+    name="communication_delivery_bounce_class_enum",
+    create_type=False,
+)
+
 
 # ── M5a additions ────────────────────────────────────────────────────
 
@@ -586,12 +603,63 @@ class CommunicationDelivery(Base):
         DateTime(timezone=False), nullable=True
     )
 
+    # M6: terminal outcomes populated by inbound provider webhooks.
+    # Kept distinct from ``status`` because "the provider accepted the
+    # request" and "the recipient's inbox accepted the message" are
+    # genuinely different questions. See migration 101's architecture
+    # note on webhook events being observations, not user actions.
+    terminal_outcome: Mapped[str | None] = mapped_column(
+        _DELIVERY_TERMINAL_OUTCOME_ENUM, nullable=True,
+    )
+    terminal_outcome_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    bounce_class: Mapped[str | None] = mapped_column(
+        _DELIVERY_BOUNCE_CLASS_ENUM, nullable=True,
+    )
+
     __table_args__ = (
         UniqueConstraint(
             "intent_id", "attempt_number",
             name="uq_comm_delivery_intent_attempt",
         ),
     )
+
+
+class CommunicationWebhookEvent(Base):
+    """Raw ledger of inbound provider webhook payloads (M6).
+
+    Every received webhook lands here — verified or not — so the
+    system has a durable audit trail before any mapping runs. The
+    partial unique index on ``(provider_key, provider_event_id)`` is
+    the primary idempotency guarantee.
+
+    ``processed_at`` is set after the mapping (delivery update +
+    intent state transition + suppression side-effect) completes
+    successfully. ``process_error`` captures why processing was
+    skipped or failed. The raw payload is immutable evidence.
+    """
+
+    __tablename__ = "communication_webhook_events"
+
+    id: Mapped[str] = mapped_column(String(), primary_key=True)
+    provider_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_event_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    provider_message_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True,
+    )
+    signature_verified: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    raw_payload: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}",
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False,
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    process_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
 
 
 # ---------------------------------------------------------------------------
