@@ -101,6 +101,16 @@ DELIVERY_STATUS_ACCEPTED = "accepted"
 DELIVERY_STATUS_FAILED = "failed"
 
 
+# ── Delivery mode (M5a) ─────────────────────────────────────────────
+# An immutable classification on every intent. ``shadow`` intents are
+# observations of what the M5b routing pipeline would have produced;
+# they must never be dispatched. The worker filters ``live`` only in
+# ``claim_next_batch`` — the guarantee is structural, not conventional.
+DELIVERY_MODE_SHADOW = "shadow"
+DELIVERY_MODE_LIVE = "live"
+ALL_DELIVERY_MODES = (DELIVERY_MODE_SHADOW, DELIVERY_MODE_LIVE)
+
+
 # ---------------------------------------------------------------------------
 # Exceptions
 # ---------------------------------------------------------------------------
@@ -183,6 +193,7 @@ def create_intent(
     payload_body_text: str | None = None,
     payload_metadata: dict[str, Any] | None = None,
     scheduled_for: datetime | None = None,
+    delivery_mode: str = DELIVERY_MODE_LIVE,
 ) -> CommunicationIntent:
     """Create + persist a single intent.
 
@@ -219,6 +230,11 @@ def create_intent(
         raise InvalidIntentError(
             "At least one of payload_body_html or payload_body_text is required."
         )
+    if delivery_mode not in ALL_DELIVERY_MODES:
+        raise InvalidIntentError(
+            f"Unknown delivery_mode: {delivery_mode!r}. Expected one of "
+            f"{ALL_DELIVERY_MODES}."
+        )
 
     now = _now_naive()
     is_silent = priority == PRIORITY_SILENT
@@ -235,6 +251,7 @@ def create_intent(
         topic_key=topic_key,
         channel=channel,
         priority=priority,
+        delivery_mode=delivery_mode,
         provider_key=provider_key,
         template_key=template_key,
         template_version=template_version,
@@ -331,12 +348,16 @@ def claim_next_batch(
     check_at = now or _now_naive()
     # FOR UPDATE SKIP LOCKED is Postgres-specific. Emitted as text so
     # SQLAlchemy doesn't try to rewrite it under a different dialect.
+    # ``delivery_mode = 'live'`` is the structural guarantee that
+    # shadow observations are never dispatched — see migration 100's
+    # architecture note.
     rows = db.execute(
         text(
             """
             SELECT id
               FROM communication_intents
              WHERE state = 'queued'
+               AND delivery_mode = 'live'
                AND (scheduled_for IS NULL OR scheduled_for <= :check_at)
              ORDER BY created_at
              LIMIT :limit

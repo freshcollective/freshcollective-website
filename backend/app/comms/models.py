@@ -408,6 +408,49 @@ _DELIVERY_STATUS_ENUM = Enum(
 )
 
 
+# ── M5a additions ────────────────────────────────────────────────────
+
+_DELIVERY_MODE_ENUM = Enum(
+    "shadow",
+    "live",
+    name="communication_delivery_mode_enum",
+    create_type=False,
+)
+
+_DIGEST_CADENCE_ENUM = Enum(
+    "daily",
+    "weekly",
+    name="communication_digest_cadence_enum",
+    create_type=False,
+)
+
+_SUPPRESSION_REASON_ENUM = Enum(
+    "bounced",
+    "complained",
+    "manual",
+    "unsubscribed",
+    name="communication_suppression_reason_enum",
+    create_type=False,
+)
+
+_SUPPRESSION_ADDRESS_TYPE_ENUM = Enum(
+    "email",
+    "phone",
+    "push_token",
+    name="communication_suppression_address_type_enum",
+    create_type=False,
+)
+
+_SHADOW_PARITY_ENUM = Enum(
+    "match",
+    "shadow_extra",
+    "legacy_extra",
+    "payload_mismatch",
+    name="communication_shadow_parity_enum",
+    create_type=False,
+)
+
+
 class CommunicationIntent(Base):
     """A decision to deliver a specific event to a specific recipient
     on a specific channel via a specific provider.
@@ -461,6 +504,16 @@ class CommunicationIntent(Base):
     )
     channel: Mapped[str] = mapped_column(_CHANNEL_ENUM, nullable=False)
     priority: Mapped[str] = mapped_column(_PRIORITY_ENUM, nullable=False)
+    # Immutable classification (M5a): "shadow" intents are observations
+    # of what the M5 routing pipeline would have produced; the worker
+    # only ever claims "live" intents. See migration 100's docstring
+    # for the architectural invariant.
+    delivery_mode: Mapped[str] = mapped_column(
+        _DELIVERY_MODE_ENUM,
+        nullable=False,
+        default="live",
+        server_default="live",
+    )
     provider_key: Mapped[str] = mapped_column(String(64), nullable=False)
     template_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     template_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -538,4 +591,150 @@ class CommunicationDelivery(Base):
             "intent_id", "attempt_number",
             name="uq_comm_delivery_intent_attempt",
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Digest buffer, suppression list, shadow comparisons (Milestone 5a)
+# ---------------------------------------------------------------------------
+
+
+class CommunicationDigestItem(Base):
+    """One unit of content that will be aggregated into a future digest.
+
+    When the M5b decision layer resolves a priority of ``daily_digest``
+    or ``weekly_digest``, it inserts one row here rather than creating
+    a queued intent. The ordinary M4 delivery worker never looks at
+    this table — digest items can never be dispatched as individual
+    sends. The M13 digest worker consumes unconsumed items in a
+    scheduled window, groups by ``(user_id, category_key, cadence)``,
+    renders one digest, creates a single ``CommunicationIntent``, and
+    marks the items ``consumed_at`` + ``consumed_by_intent_id``.
+    """
+
+    __tablename__ = "communication_digest_items"
+
+    id: Mapped[str] = mapped_column(String(), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    category_key: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("communication_categories.key", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    cadence: Mapped[str] = mapped_column(_DIGEST_CADENCE_ENUM, nullable=False)
+    event_id: Mapped[str | None] = mapped_column(
+        String(),
+        ForeignKey("communication_events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_type: Mapped[str] = mapped_column(_SOURCE_TYPE_ENUM, nullable=False)
+    source_id: Mapped[str | None] = mapped_column(String(), nullable=True)
+    human_reason: Mapped[str] = mapped_column(String(240), nullable=False)
+    item_payload: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    scheduled_window_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False,
+    )
+    scheduled_window_end: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    consumed_by_intent_id: Mapped[str | None] = mapped_column(
+        String(),
+        ForeignKey("communication_intents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
+class CommunicationSuppression(Base):
+    """Hard-block list keyed by hashed address.
+
+    Populated automatically by M6's inbound provider webhooks (bounce,
+    complaint, unsubscribe) and manually via the admin surface for
+    operator quarantine. The M5b decision layer reads this table
+    before creating any live intent — a hit produces a
+    ``state='suppressed'`` intent with the reason recorded.
+
+    The address itself is never stored — only a SHA-256 hex digest of
+    the lowercased, whitespace-stripped value. This preserves lookup
+    while ensuring the suppression list doesn't itself become a
+    PII inventory.
+    """
+
+    __tablename__ = "communication_suppressions"
+
+    id: Mapped[str] = mapped_column(String(), primary_key=True)
+    address_type: Mapped[str] = mapped_column(
+        _SUPPRESSION_ADDRESS_TYPE_ENUM, nullable=False,
+    )
+    address_value_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reason: Mapped[str] = mapped_column(_SUPPRESSION_REASON_ENUM, nullable=False)
+    source_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "address_type", "address_value_hash",
+            name="uq_comm_suppression_address",
+        ),
+    )
+
+
+class CommunicationShadowComparison(Base):
+    """Reconciliation record produced by the M5c cron. One row per
+    event compared, capturing the parity verdict between the legacy
+    trigger's output and the M5b routing pipeline's shadow intents.
+
+    Deprecated after every topic is live and dropped in the M15
+    cleanup pass. Never referenced by delivery code — this table
+    exists solely for cutover confidence.
+    """
+
+    __tablename__ = "communication_shadow_comparisons"
+
+    id: Mapped[str] = mapped_column(String(), primary_key=True)
+    event_id: Mapped[str] = mapped_column(
+        String(),
+        ForeignKey("communication_events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    topic_key: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("communication_topics.key", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    category_key: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("communication_categories.key", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    shadow_intent_ids: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list, server_default="[]"
+    )
+    legacy_notification_ids: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list, server_default="[]"
+    )
+    parity: Mapped[str] = mapped_column(_SHADOW_PARITY_ENUM, nullable=False)
+    discrepancy_detail: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    compared_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("event_id", name="uq_comm_shadow_comparison_event"),
     )
