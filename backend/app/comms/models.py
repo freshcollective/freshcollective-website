@@ -30,6 +30,7 @@ from sqlalchemy import (
     JSON,
     SmallInteger,
     String,
+    Text,
     Time,
     UniqueConstraint,
     func,
@@ -376,4 +377,165 @@ class CommunicationMemberSettings(Base):
     weekly_digest_send_local_time: Mapped[_time | None] = mapped_column(Time(), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Intent + delivery (Milestone 4)
+# ---------------------------------------------------------------------------
+
+
+_INTENT_STATE_ENUM = Enum(
+    "queued",
+    "dispatching",
+    "sent",
+    "delivered",
+    "bounced",
+    "complained",
+    "failed",
+    "suppressed",
+    "recorded",
+    name="communication_intent_state_enum",
+    create_type=False,
+)
+
+_DELIVERY_STATUS_ENUM = Enum(
+    "pending",
+    "accepted",
+    "failed",
+    name="communication_delivery_status_enum",
+    create_type=False,
+)
+
+
+class CommunicationIntent(Base):
+    """A decision to deliver a specific event to a specific recipient
+    on a specific channel via a specific provider.
+
+    Carries denormalised event context (source/category/topic) for
+    efficient history queries, the rendered payload snapshot for
+    "what was sent", and template provenance
+    (``template_key``/``template_version``/``template_context``) for
+    "what was intended" — so re-rendering remains possible as
+    templates evolve.
+
+    State machine (enforced in ``app.comms.intents``):
+
+        creation → recorded (priority=silent, terminal)
+                 → queued
+                    → suppressed (decision layer, terminal)
+                    → dispatching (worker claim)
+                        → sent → delivered | bounced | complained (webhooks)
+                        → failed (terminal)
+
+    The ``dispatching`` state gives crash recovery a foothold — a
+    worker that dies mid-send leaves visible evidence, and a future
+    recovery job can reset stuck rows.
+    """
+
+    __tablename__ = "communication_intents"
+
+    id: Mapped[str] = mapped_column(String(), primary_key=True)
+    event_id: Mapped[str | None] = mapped_column(
+        String(),
+        ForeignKey("communication_events.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    recipient_user_id: Mapped[str | None] = mapped_column(
+        String(),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    recipient_address: Mapped[str] = mapped_column(Text(), nullable=False)
+    source_type: Mapped[str] = mapped_column(_SOURCE_TYPE_ENUM, nullable=False)
+    source_id: Mapped[str | None] = mapped_column(String(), nullable=True)
+    category_key: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("communication_categories.key", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    topic_key: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("communication_topics.key", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    channel: Mapped[str] = mapped_column(_CHANNEL_ENUM, nullable=False)
+    priority: Mapped[str] = mapped_column(_PRIORITY_ENUM, nullable=False)
+    provider_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    template_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    template_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    template_context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    human_reason: Mapped[str] = mapped_column(String(240), nullable=False)
+    payload_subject: Mapped[str] = mapped_column(Text(), nullable=False)
+    payload_body_html: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    payload_body_text: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    payload_metadata: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    scheduled_for: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    state: Mapped[str] = mapped_column(_INTENT_STATE_ENUM, nullable=False)
+    suppression_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    dispatching_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+    terminal_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+
+
+class CommunicationDelivery(Base):
+    """One provider attempt against a :class:`CommunicationIntent`.
+
+    Retries produce multiple deliveries per intent (M5+). Each row
+    records the RenderedPayload handed to the provider
+    (``request_snapshot``) and the ProviderResult it returned
+    (``response_snapshot``) — so post-hoc debugging never needs to
+    re-derive what was sent.
+    """
+
+    __tablename__ = "communication_deliveries"
+
+    id: Mapped[str] = mapped_column(String(), primary_key=True)
+    intent_id: Mapped[str] = mapped_column(
+        String(),
+        ForeignKey("communication_intents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(SmallInteger(), nullable=False)
+    status: Mapped[str] = mapped_column(_DELIVERY_STATUS_ENUM, nullable=False)
+    provider_message_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    request_snapshot: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    response_snapshot: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    error_class: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    attempted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "intent_id", "attempt_number",
+            name="uq_comm_delivery_intent_attempt",
+        ),
     )

@@ -1,23 +1,32 @@
 """Routes for the Communications Layer.
 
-Admin surface (Milestone 1)
----------------------------
-  * ``GET /api/admin/comms/events``           — paginated list
-  * ``GET /api/admin/comms/events/{event_id}`` — full detail
-  * ``GET /api/admin/comms/registry``         — every registered event_type
+Admin surface
+-------------
+  * ``GET /api/admin/comms/events``           — event log list (M1)
+  * ``GET /api/admin/comms/events/{event_id}`` — event detail (M1)
+  * ``GET /api/admin/comms/registry``         — registered event_types (M1)
+  * ``GET /api/admin/comms/intents``          — intent list (M4)
+  * ``GET /api/admin/comms/intents/{id}``     — intent detail + deliveries (M4)
+  * ``GET /api/admin/comms/deliveries``       — flat delivery list (M4)
 
-Member surface (Milestone 2)
-----------------------------
-  * ``GET  /api/comms/preferences/me`` — full preference matrix + settings + consent
-  * ``PATCH /api/comms/preferences/me`` — partial update
-  * ``GET  /api/comms/consents/me``    — consent state (audit-oriented duplicate)
+Member surface
+--------------
+  * ``GET  /api/comms/preferences/me`` — preference matrix + settings + consent (M2)
+  * ``PATCH /api/comms/preferences/me`` — partial update (M2)
+  * ``GET  /api/comms/consents/me``    — consent state audit view (M2)
+  * ``GET  /api/comms/history/me``     — communications history (M4)
+
+Internal
+--------
+  * ``POST /api/internal/comms/dispatch-due`` — protected by
+    X-Internal-Token; runs one worker cycle (M4)
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
@@ -29,9 +38,12 @@ from app.comms.categories import (
     ALL_SOURCES,
     TOPIC_TO_CATEGORY,
 )
+from app.comms.intents import ALL_STATES
 from app.comms.models import (
     CommunicationConsent,
+    CommunicationDelivery,
     CommunicationEvent,
+    CommunicationIntent,
 )
 from app.comms.preferences import (
     LockedPreferenceError,
@@ -50,17 +62,29 @@ from app.comms.preferences import (
 )
 from app.comms.registry import registered_event_types, get_event_definition
 from app.comms.schemas import (
+    AdminDeliveryListResponse,
+    AdminDeliveryRow,
     AdminEventDetail,
     AdminEventListResponse,
     AdminEventRow,
+    AdminIntentDetail,
+    AdminIntentListResponse,
+    AdminIntentRow,
     AdminRegisteredEventType,
     AdminRegistryResponse,
     ConsentStateRow,
+    DeliveryAttemptDetail,
+    DeliveryAttemptSummary,
+    DispatchResultResponse,
+    HistoryIntentRow,
+    HistoryResponse,
     MemberSettingsResponse,
     MyPreferencesPatch,
     MyPreferencesResponse,
     PreferenceCategoryRow,
 )
+from app.comms.worker import dispatch_due
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
 
@@ -392,3 +416,361 @@ def get_my_consents(
     current_user: User = Depends(get_current_user),
 ) -> list[ConsentStateRow]:
     return _consent_response(db, current_user.id)
+
+
+# ---------------------------------------------------------------------------
+# Communications history (Milestone 4)
+# ---------------------------------------------------------------------------
+
+
+def _delivery_summary(row: CommunicationDelivery) -> DeliveryAttemptSummary:
+    return DeliveryAttemptSummary(
+        id=row.id,
+        provider_key=row.provider_key,
+        attempt_number=row.attempt_number,
+        status=row.status,
+        provider_message_id=row.provider_message_id,
+        error_class=row.error_class,
+        attempted_at=row.attempted_at,
+        settled_at=row.settled_at,
+    )
+
+
+def _delivery_detail(row: CommunicationDelivery) -> DeliveryAttemptDetail:
+    return DeliveryAttemptDetail(
+        id=row.id,
+        provider_key=row.provider_key,
+        attempt_number=row.attempt_number,
+        status=row.status,
+        provider_message_id=row.provider_message_id,
+        error_class=row.error_class,
+        error_detail=row.error_detail,
+        attempted_at=row.attempted_at,
+        settled_at=row.settled_at,
+        request_snapshot=dict(row.request_snapshot or {}),
+        response_snapshot=dict(row.response_snapshot or {}),
+    )
+
+
+def _history_row(intent: CommunicationIntent) -> HistoryIntentRow:
+    deliveries = sorted(
+        [_delivery_summary(d) for d in getattr(intent, "deliveries", []) or []],
+        key=lambda d: d.attempt_number,
+    )
+    return HistoryIntentRow(
+        id=intent.id,
+        source_type=intent.source_type,
+        source_id=intent.source_id,
+        category_key=intent.category_key,
+        channel=intent.channel,
+        priority=intent.priority,
+        human_reason=intent.human_reason,
+        payload_subject=intent.payload_subject,
+        state=intent.state,
+        scheduled_for=intent.scheduled_for,
+        created_at=intent.created_at,
+        sent_at=intent.sent_at,
+        terminal_at=intent.terminal_at,
+        deliveries=deliveries,
+    )
+
+
+@member_router.get(
+    "/history/me",
+    response_model=HistoryResponse,
+    summary="Paginated communications history for the current member",
+)
+def get_my_history(
+    limit: int = 25,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> HistoryResponse:
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="limit must be between 1 and 100.",
+        )
+    if offset < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="offset must be >= 0.",
+        )
+
+    base_q = select(CommunicationIntent).where(
+        CommunicationIntent.recipient_user_id == current_user.id,
+    )
+    total = db.execute(
+        select(func.count()).select_from(base_q.subquery())
+    ).scalar_one()
+
+    intents = db.execute(
+        base_q.order_by(desc(CommunicationIntent.created_at))
+        .limit(limit)
+        .offset(offset)
+    ).scalars().all()
+
+    intent_ids = [i.id for i in intents]
+    deliveries_by_intent: dict[str, list[CommunicationDelivery]] = {i.id: [] for i in intents}
+    if intent_ids:
+        rows = db.execute(
+            select(CommunicationDelivery).where(
+                CommunicationDelivery.intent_id.in_(intent_ids),
+            )
+        ).scalars().all()
+        for r in rows:
+            deliveries_by_intent[r.intent_id].append(r)
+
+    items = []
+    for intent in intents:
+        # Attach deliveries as a plain list so _history_row can read
+        # them without a relationship being defined on the model.
+        object.__setattr__(intent, "deliveries", deliveries_by_intent.get(intent.id, []))
+        items.append(_history_row(intent))
+
+    return HistoryResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Admin — intents + deliveries (Milestone 4)
+# ---------------------------------------------------------------------------
+
+
+def _admin_intent_row(intent: CommunicationIntent) -> AdminIntentRow:
+    return AdminIntentRow.model_validate(intent)
+
+
+@router.get(
+    "/intents",
+    response_model=AdminIntentListResponse,
+    summary="List communication intents",
+)
+def list_intents(
+    limit: int = 50,
+    offset: int = 0,
+    state: str | None = None,
+    category: str | None = None,
+    channel: str | None = None,
+    source_type: str | None = None,
+    provider_key: str | None = None,
+    recipient_user_id: str | None = None,
+    event_id: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> AdminIntentListResponse:
+    if limit < 1 or limit > 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="limit must be between 1 and 200.",
+        )
+    if offset < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="offset must be >= 0.",
+        )
+    if state is not None and state not in ALL_STATES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"state must be one of {ALL_STATES}",
+        )
+    if category is not None and category not in ALL_CATEGORIES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"category must be one of {ALL_CATEGORIES}",
+        )
+    if channel is not None and channel not in ALL_CHANNELS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"channel must be one of {ALL_CHANNELS}",
+        )
+    if source_type is not None and source_type not in ALL_SOURCES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"source_type must be one of {ALL_SOURCES}",
+        )
+
+    q = select(CommunicationIntent)
+    count_q = select(func.count()).select_from(CommunicationIntent)
+
+    def _apply(q_, filters):  # small local helper to keep repetition down
+        for col, val in filters:
+            if val is not None:
+                q_ = q_.where(col == val)
+        return q_
+
+    conditions = [
+        (CommunicationIntent.state, state),
+        (CommunicationIntent.category_key, category),
+        (CommunicationIntent.channel, channel),
+        (CommunicationIntent.source_type, source_type),
+        (CommunicationIntent.provider_key, provider_key),
+        (CommunicationIntent.recipient_user_id, recipient_user_id),
+        (CommunicationIntent.event_id, event_id),
+    ]
+    q = _apply(q, conditions)
+    count_q = _apply(count_q, conditions)
+    if since is not None:
+        q = q.where(CommunicationIntent.created_at >= since)
+        count_q = count_q.where(CommunicationIntent.created_at >= since)
+    if until is not None:
+        q = q.where(CommunicationIntent.created_at < until)
+        count_q = count_q.where(CommunicationIntent.created_at < until)
+
+    total = db.execute(count_q).scalar_one()
+    rows = db.execute(
+        q.order_by(desc(CommunicationIntent.created_at)).limit(limit).offset(offset)
+    ).scalars().all()
+
+    return AdminIntentListResponse(
+        items=[_admin_intent_row(r) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/intents/{intent_id}",
+    response_model=AdminIntentDetail,
+    summary="Get one intent with all its deliveries",
+)
+def get_intent(
+    intent_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> AdminIntentDetail:
+    intent = db.get(CommunicationIntent, intent_id)
+    if intent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Intent not found.",
+        )
+    deliveries = db.execute(
+        select(CommunicationDelivery)
+        .where(CommunicationDelivery.intent_id == intent_id)
+        .order_by(CommunicationDelivery.attempt_number)
+    ).scalars().all()
+
+    return AdminIntentDetail(
+        id=intent.id,
+        event_id=intent.event_id,
+        recipient_user_id=intent.recipient_user_id,
+        recipient_address=intent.recipient_address,
+        source_type=intent.source_type,
+        source_id=intent.source_id,
+        category_key=intent.category_key,
+        topic_key=intent.topic_key,
+        channel=intent.channel,
+        priority=intent.priority,
+        provider_key=intent.provider_key,
+        template_key=intent.template_key,
+        template_version=intent.template_version,
+        template_context=intent.template_context,
+        human_reason=intent.human_reason,
+        payload_subject=intent.payload_subject,
+        payload_body_html=intent.payload_body_html,
+        payload_body_text=intent.payload_body_text,
+        payload_metadata=dict(intent.payload_metadata or {}),
+        state=intent.state,
+        suppression_reason=intent.suppression_reason,
+        scheduled_for=intent.scheduled_for,
+        created_at=intent.created_at,
+        queued_at=intent.queued_at,
+        dispatching_at=intent.dispatching_at,
+        sent_at=intent.sent_at,
+        terminal_at=intent.terminal_at,
+        deliveries=[_delivery_detail(d) for d in deliveries],
+    )
+
+
+@router.get(
+    "/deliveries",
+    response_model=AdminDeliveryListResponse,
+    summary="List delivery attempts",
+)
+def list_deliveries(
+    limit: int = 50,
+    offset: int = 0,
+    provider_key: str | None = None,
+    delivery_status: str | None = None,
+    intent_id: str | None = None,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> AdminDeliveryListResponse:
+    if limit < 1 or limit > 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="limit must be between 1 and 200.",
+        )
+    if delivery_status is not None and delivery_status not in ("pending", "accepted", "failed"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="delivery_status must be one of pending|accepted|failed",
+        )
+
+    q = select(CommunicationDelivery)
+    count_q = select(func.count()).select_from(CommunicationDelivery)
+    if provider_key is not None:
+        q = q.where(CommunicationDelivery.provider_key == provider_key)
+        count_q = count_q.where(CommunicationDelivery.provider_key == provider_key)
+    if delivery_status is not None:
+        q = q.where(CommunicationDelivery.status == delivery_status)
+        count_q = count_q.where(CommunicationDelivery.status == delivery_status)
+    if intent_id is not None:
+        q = q.where(CommunicationDelivery.intent_id == intent_id)
+        count_q = count_q.where(CommunicationDelivery.intent_id == intent_id)
+
+    total = db.execute(count_q).scalar_one()
+    rows = db.execute(
+        q.order_by(desc(CommunicationDelivery.attempted_at)).limit(limit).offset(offset)
+    ).scalars().all()
+
+    return AdminDeliveryListResponse(
+        items=[AdminDeliveryRow.model_validate(r) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Internal — worker dispatch (Milestone 4)
+# ---------------------------------------------------------------------------
+
+
+internal_router = APIRouter(prefix="/api/internal/comms", tags=["internal", "comms"])
+
+
+@internal_router.post(
+    "/dispatch-due",
+    response_model=DispatchResultResponse,
+    summary="Run one worker cycle — claim + dispatch queued intents",
+)
+def dispatch_due_endpoint(
+    limit: int = 50,
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+    db: Session = Depends(get_db),
+) -> DispatchResultResponse:
+    """Cron-callable endpoint. Requires ``X-Internal-Token`` matching
+    ``JWT_SECRET`` (same protection scheme as
+    ``/api/internal/send-event-reminders``).
+    """
+    if not x_internal_token or x_internal_token != settings.jwt_secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid X-Internal-Token.",
+        )
+    if limit < 1 or limit > 500:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="limit must be between 1 and 500.",
+        )
+    processed = dispatch_due(db, limit=limit)
+    return DispatchResultResponse(processed=processed, count=len(processed))

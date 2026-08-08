@@ -165,3 +165,140 @@ class MyPreferencesPatch(BaseModel):
     preferences: list[PreferenceUpdate] | None = None
     member_settings: MemberSettingsPatch | None = None
     consents: list[ConsentUpdate] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Intent + delivery surfaces (Milestone 4)
+# ---------------------------------------------------------------------------
+
+
+class DeliveryAttemptSummary(BaseModel):
+    """One provider attempt summary — the sparse shape the history
+    endpoint returns per intent.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    provider_key: str
+    attempt_number: int
+    status: str
+    provider_message_id: str | None
+    error_class: str | None
+    attempted_at: datetime
+    settled_at: datetime | None
+
+
+class DeliveryAttemptDetail(DeliveryAttemptSummary):
+    """Full delivery record — includes error_detail + snapshots.
+    Admin-only."""
+
+    request_snapshot: dict[str, Any]
+    response_snapshot: dict[str, Any]
+    error_detail: str | None
+
+
+class HistoryIntentRow(BaseModel):
+    """One entry in the member's communications history."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    source_type: str
+    source_id: str | None
+    category_key: str
+    channel: str
+    priority: str
+    human_reason: str
+    subject: str = Field(alias="payload_subject")
+    state: str
+    scheduled_for: datetime | None
+    created_at: datetime
+    sent_at: datetime | None
+    terminal_at: datetime | None
+    deliveries: list[DeliveryAttemptSummary] = Field(default_factory=list)
+
+
+class HistoryResponse(BaseModel):
+    items: list[HistoryIntentRow]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminIntentRow(BaseModel):
+    """Compact row for the admin intents list."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    event_id: str | None
+    recipient_user_id: str | None
+    recipient_address: str
+    source_type: str
+    source_id: str | None
+    category_key: str
+    topic_key: str
+    channel: str
+    priority: str
+    provider_key: str
+    template_key: str | None
+    template_version: str | None
+    human_reason: str
+    payload_subject: str
+    state: str
+    suppression_reason: str | None
+    scheduled_for: datetime | None
+    created_at: datetime
+    queued_at: datetime | None
+    dispatching_at: datetime | None
+    sent_at: datetime | None
+    terminal_at: datetime | None
+
+
+class AdminIntentDetail(AdminIntentRow):
+    """Intent + all its delivery attempts + full payload + template
+    context. Everything an admin needs for debugging."""
+
+    payload_body_html: str | None
+    payload_body_text: str | None
+    payload_metadata: dict[str, Any]
+    template_context: dict[str, Any] | None
+    deliveries: list[DeliveryAttemptDetail]
+
+
+class AdminIntentListResponse(BaseModel):
+    items: list[AdminIntentRow]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminDeliveryRow(BaseModel):
+    """One row in the admin deliveries list."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    intent_id: str
+    provider_key: str
+    attempt_number: int
+    status: str
+    provider_message_id: str | None
+    error_class: str | None
+    attempted_at: datetime
+    settled_at: datetime | None
+
+
+class AdminDeliveryListResponse(BaseModel):
+    items: list[AdminDeliveryRow]
+    total: int
+    limit: int
+    offset: int
+
+
+class DispatchResultResponse(BaseModel):
+    """Return shape for the internal dispatch endpoint."""
+
+    processed: list[str]
+    count: int
