@@ -70,6 +70,39 @@ class Settings(BaseSettings):
     # The Australian financial year runs 1 July → 30 June in this zone.
     platform_timezone: str = "Australia/Sydney"
 
+    # Communications Layer — rollout control (Milestone 5c).
+    #
+    #   COMMS_SHADOW      — when True, every emit() at an instrumented
+    #                       trigger site also drives the M5b routing
+    #                       pipeline in shadow mode. The legacy
+    #                       communication path remains authoritative;
+    #                       shadow observations never dispatch. Default
+    #                       False keeps the new pipeline entirely dormant
+    #                       in production.
+    #   COMMS_LIVE_TOPICS — comma-separated topic and/or category keys
+    #                       promoted to live routing. For each key in
+    #                       this list, the legacy trigger no-ops and
+    #                       the routing pipeline creates delivery_mode=
+    #                       'live' intents that the worker dispatches.
+    #                       Cutover is config-controlled only; there is
+    #                       no database toggle or admin UI that can
+    #                       flip a topic live. Recommended cutover
+    #                       order: direct_messages, gatherings,
+    #                       pathways, conversations, account,
+    #                       moderation, creator_updates,
+    #                       platform_updates. Requires 3 consecutive
+    #                       UTC days of 100% shadow parity per the
+    #                       admin parity report before promotion.
+    comms_shadow: bool = False
+    comms_live_topics: str = ""
+    # Minimum age (seconds) an event must reach before the shadow
+    # reconciler will attempt to compare it. Gives both the legacy
+    # BackgroundTasks trigger and the shadow routing task time to
+    # complete before parity is assessed. Configurable so cron
+    # cadence and infrastructure latency can be tuned without a code
+    # change; default 60 seconds is conservative.
+    comms_reconciler_min_event_age_seconds: int = 60
+
     # Community Care — Stage 2A ships review muscle behind this flag.
     # When False (the default), the /api/admin/community-care/* endpoints
     # respond with 503 so a half-built surface can't be discovered by

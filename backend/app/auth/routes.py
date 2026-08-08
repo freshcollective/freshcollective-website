@@ -330,8 +330,32 @@ async def forgot_password(
             logger.warning("PASSWORD RESET LINK (development):")
             logger.warning(reset_url)
             logger.warning("========================================\n")
-        subject, html = password_reset_email(reset_url=reset_url)
-        email_service.send(to=payload.email, subject=subject, html_body=html)
+        # Communications Layer (M5c) — emit alongside the legacy email
+        # send. Live cutover swaps the legacy send for the routing
+        # pipeline's live intent.
+        from app.comms import Source, emit as comms_emit
+        from app.comms.rollout import is_event_live, schedule_routing_if_needed
+        # Look up the user id from email — needed so the resolver can
+        # target the account owner. Missing user is fine (the email
+        # gate above already gates on token existence).
+        reset_user = db.query(User).filter(User.email == payload.email).first()
+        ev = comms_emit(
+            db,
+            event_type="account.password_reset_requested",
+            source_type=Source.FRESH_COLLECTIVE,
+            actor_user_id=reset_user.id if reset_user else None,
+            subject_type="password_reset",
+            payload={"reset_url": reset_url},
+        )
+        db.commit()
+        schedule_routing_if_needed(
+            None,  # forgot-password has no BackgroundTasks parameter — sync route is fine
+            ev,
+            "account.password_reset_requested",
+        )
+        if not is_event_live("account.password_reset_requested"):
+            subject, html = password_reset_email(reset_url=reset_url)
+            email_service.send(to=payload.email, subject=subject, html_body=html)
 
     # Response copy stays deliberately vague so this endpoint doesn't
     # leak whether an address is registered.

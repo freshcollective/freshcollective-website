@@ -203,7 +203,19 @@ def trigger_comment_reply(post_id: str, comment_id: str, commenter_id: str) -> N
         db.close()
 
 
+def _rollout_is_live(event_type: str) -> bool:
+    """Local wrapper so triggers can guard without importing the
+    rollout module at module load (which would pull the comms
+    package in earlier than necessary)."""
+    from app.comms.rollout import is_event_live
+    return is_event_live(event_type)
+
+
 def trigger_new_post(post_id: str, space_id: str, author_id: str) -> None:
+    # M5c cutover guard — when this topic is live in COMMS_LIVE_TOPICS,
+    # the routing pipeline owns delivery; the legacy path no-ops.
+    if _rollout_is_live("community.post.published"):
+        return
     """Notify all space members with new_post_email=True (excluding the author)."""
     db = SessionLocal()
     try:
@@ -578,6 +590,9 @@ def trigger_caretaker_reply_to_question(
 
 
 def trigger_booking_confirmed(event_id: str, user_id: str) -> None:
+    # M5c cutover guard — see trigger_new_post above.
+    if _rollout_is_live("gathering.booking.confirmed"):
+        return
     """Confirmation email to the member who booked a gathering.
 
     Companion to :func:`trigger_event_booking_creator` — that one tells

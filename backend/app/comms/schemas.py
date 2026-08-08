@@ -302,3 +302,44 @@ class DispatchResultResponse(BaseModel):
 
     processed: list[str]
     count: int
+
+
+# ---------------------------------------------------------------------------
+# Shadow parity (Milestone 5c)
+# ---------------------------------------------------------------------------
+
+
+class ShadowParityDayRow(BaseModel):
+    day: str                           # ISO date, UTC calendar
+    events_observed: int
+    comparisons_recorded: int
+    matches: int
+    mismatches_by_dim: dict[str, int]
+    day_qualifies: bool
+
+
+class ShadowParityDiscrepancy(BaseModel):
+    event_id: str
+    parity: str
+    detail: str | None = None
+    compared_at: str                    # ISO
+
+
+class ShadowParityReport(BaseModel):
+    scope_kind: str                     # "topic" | "category"
+    scope_key: str
+    window_days: int
+    events_observed: int
+    comparisons_recorded: int
+    parity_pct: float
+    consecutive_perfect_days: int
+    eligible_for_live: bool
+    days: list[ShadowParityDayRow]
+    recent_discrepancies: list[ShadowParityDiscrepancy]
+
+
+class ReconcilerResultResponse(BaseModel):
+    compared: list[str]
+    count: int
+    skipped_no_comparator: list[str]
+    duplicate_skipped: int

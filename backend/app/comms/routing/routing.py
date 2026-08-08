@@ -14,6 +14,7 @@ originating write.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -25,6 +26,9 @@ from app.comms.models import CommunicationEvent
 from app.comms.routing.decision import DecisionOutcome, process_one
 from app.comms.routing.provider_map import supported_channels_for_category
 from app.comms.routing.resolver import get_resolver_for
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -82,6 +86,16 @@ def route_event(
 
     resolver = get_resolver_for(event.event_type)
     if resolver is None:
+        # Surface this loudly rather than silently. An emit reaching
+        # routing without a resolver means either (a) a new event type
+        # was emitted before its resolver landed, or (b) the routing
+        # registry failed to bootstrap. Both are worth an operator's
+        # attention.
+        logger.warning(
+            "comms routing: no resolver registered for event_type=%s "
+            "(event_id=%s, delivery_mode=%s) — routing skipped",
+            event.event_type, event.id, delivery_mode,
+        )
         result.skipped.append({
             "reason": "no_resolver_registered",
             "event_type": event.event_type,

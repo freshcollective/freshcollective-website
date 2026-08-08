@@ -533,6 +533,25 @@ def create_community_post(
             background_tasks.add_task(
                 trigger_mention, post.id, None, current_user.id, uid,
             )
+        # Communications Layer (M5c) — emit the event alongside the
+        # legacy trigger. Shadow mode observes; live mode swaps in
+        # (the legacy trigger no-ops when the topic is live).
+        from app.comms import Source, emit as comms_emit
+        from app.comms.rollout import schedule_routing_if_needed
+        _comms_event = comms_emit(
+            db,
+            event_type="community.post.published",
+            source_type=Source.CREATOR,
+            source_id=current_user.id,
+            actor_user_id=current_user.id,
+            subject_type="post", subject_id=post.id,
+            context={"space_id": space.id, "collective_name": space.name},
+            payload={"post_id": post.id, "excerpt": (body.body or "")[:280]},
+        )
+        db.commit()
+        schedule_routing_if_needed(
+            background_tasks, _comms_event, "community.post.published",
+        )
     # For scheduled posts: no triggers fire now. The publisher loop
     # (or on-demand publish check) fires them at publication time and
     # stamps `notifications_processed_at` so retries can't duplicate.

@@ -303,6 +303,26 @@ def creator_send_message(
         thread_url=thread_url,
         preview=text[:80],
     )
+    # Communications Layer (M5c) — emit alongside the legacy notify.
+    from app.comms import Source, emit
+    from app.comms.rollout import schedule_routing_if_needed
+    event = emit(
+        db,
+        event_type="dm.message.sent",
+        source_type=Source.CREATOR,
+        source_id=current_user.id,
+        actor_user_id=current_user.id,
+        subject_type="thread", subject_id=thread.id,
+        context={"space_id": space.id},
+        payload={
+            "recipient_id": body.member_id,
+            "sender_name": sender_name,
+            "thread_id": thread.id,
+            "excerpt": text[:80],
+        },
+    )
+    db.commit()
+    schedule_routing_if_needed(background_tasks, event, "dm.message.sent")
 
     return _thread_detail(thread, current_user.id, db)
 
@@ -417,6 +437,26 @@ def member_reply(
         thread_url=None,  # Creator views via Creator Studio
         preview=text[:80],
     )
+    # Communications Layer (M5c) — emit alongside the legacy notify.
+    from app.comms import Source, emit
+    from app.comms.rollout import schedule_routing_if_needed
+    event = emit(
+        db,
+        event_type="dm.message.sent",
+        source_type=Source.CREATOR,
+        source_id=current_user.id,
+        actor_user_id=current_user.id,
+        subject_type="thread", subject_id=thread.id,
+        context={"space_id": space.id},
+        payload={
+            "recipient_id": thread.creator_id,
+            "sender_name": sender_name,
+            "thread_id": thread.id,
+            "excerpt": text[:80],
+        },
+    )
+    db.commit()
+    schedule_routing_if_needed(background_tasks, event, "dm.message.sent")
 
     return _thread_detail(thread, current_user.id, db)
 
@@ -456,6 +496,11 @@ def _notify_direct_message(
     thread_url: str | None,
     preview: str,
 ) -> None:
+    # M5c cutover guard — when dm.message.sent is live, the routing
+    # pipeline handles delivery and this legacy notify no-ops.
+    from app.comms.rollout import is_event_live
+    if is_event_live("dm.message.sent"):
+        return
     from app.services.notification_service import send_notification
     send_notification(
         recipient_id=recipient_id,

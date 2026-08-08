@@ -82,7 +82,12 @@ from app.comms.schemas import (
     MyPreferencesPatch,
     MyPreferencesResponse,
     PreferenceCategoryRow,
+    ReconcilerResultResponse,
+    ShadowParityDayRow,
+    ShadowParityDiscrepancy,
+    ShadowParityReport,
 )
+from app.comms.shadow import compute_parity_report, reconcile_shadow
 from app.comms.worker import dispatch_due
 from app.core.config import settings
 from app.core.database import get_db
@@ -774,3 +779,87 @@ def dispatch_due_endpoint(
         )
     processed = dispatch_due(db, limit=limit)
     return DispatchResultResponse(processed=processed, count=len(processed))
+
+
+@internal_router.post(
+    "/reconcile-shadow",
+    response_model=ReconcilerResultResponse,
+    summary="Run one shadow reconciliation cycle",
+)
+def reconcile_shadow_endpoint(
+    limit: int = 200,
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+    db: Session = Depends(get_db),
+) -> ReconcilerResultResponse:
+    """Cron-callable endpoint. Records one ``communication_shadow_
+    comparisons`` row per event that has a registered comparator and
+    doesn't yet have a comparison row. Idempotent — safe to call at
+    any cadence.
+    """
+    if not x_internal_token or x_internal_token != settings.jwt_secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid X-Internal-Token.",
+        )
+    if limit < 1 or limit > 2000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="limit must be between 1 and 2000.",
+        )
+    result = reconcile_shadow(db, limit=limit)
+    return ReconcilerResultResponse(
+        compared=result.compared_event_ids,
+        count=len(result.compared_event_ids),
+        skipped_no_comparator=result.skipped_no_comparator,
+        duplicate_skipped=result.duplicate_skipped,
+    )
+
+
+@router.get(
+    "/shadow-parity",
+    response_model=ShadowParityReport,
+    summary="Per-topic (or per-category) shadow parity metrics",
+)
+def shadow_parity(
+    topic: str,
+    window_days: int = 7,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_admin_user),
+) -> ShadowParityReport:
+    """Read-only observational surface. Reports parity metrics for
+    the given topic or category over a UTC-day window and states
+    whether the topic is currently eligible for live cutover. Never
+    mutates ``COMMS_LIVE_TOPICS`` — promotion is config-only.
+    """
+    if window_days < 1 or window_days > 90:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="window_days must be between 1 and 90.",
+        )
+    report = compute_parity_report(
+        db, scope_key=topic, window_days=window_days,
+    )
+    return ShadowParityReport(
+        scope_kind=report.scope_kind,
+        scope_key=report.scope_key,
+        window_days=report.window_days,
+        events_observed=report.events_observed,
+        comparisons_recorded=report.comparisons_recorded,
+        parity_pct=report.parity_pct,
+        consecutive_perfect_days=report.consecutive_perfect_days,
+        eligible_for_live=report.eligible_for_live,
+        days=[
+            ShadowParityDayRow(
+                day=d.day.isoformat(),
+                events_observed=d.events_observed,
+                comparisons_recorded=d.comparisons_recorded,
+                matches=d.matches,
+                mismatches_by_dim=d.mismatches_by_dim,
+                day_qualifies=d.day_qualifies,
+            )
+            for d in report.days
+        ],
+        recent_discrepancies=[
+            ShadowParityDiscrepancy(**d) for d in report.recent_discrepancies
+        ],
+    )
