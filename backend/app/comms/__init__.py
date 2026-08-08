@@ -21,9 +21,17 @@ from app.comms import models  # noqa: F401
 from app.comms.categories import Channel, Priority, Source
 from app.comms.events import emit
 
+# Importing the routing + templates packages registers every resolver
+# and template at process start. The registrations are pure Python
+# side effects — no DB reads or writes at import time.
+from app.comms import routing  # noqa: F401 — registration
+from app.comms import templates  # noqa: F401 — registration
+
 __all__ = [
     "Channel",
     "Priority",
     "Source",
     "emit",
+    "routing",
+    "templates",
 ]
