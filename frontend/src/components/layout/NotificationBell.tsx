@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import type { NotificationItem, NotificationsResponse } from '@/types/platform'
 import {
+  markNotificationRead,
   notificationDestination,
   notificationLabel,
   notificationRelativeTime,
@@ -102,25 +103,38 @@ export default function NotificationBell({ initialCount }: Props) {
     }
   }
 
-  const handleNotificationClick = async (notif: NotificationItem) => {
+  // Click handler for a notification row. Rows render as <Link>, so
+  // native anchor navigation is what actually moves the user; this
+  // handler only takes care of mark-as-read + closing the dropdown
+  // + a router.refresh so the destination page's server data reflects
+  // the just-flipped is_read flag.
+  //
+  // Note: modifier-clicks (cmd/ctrl/shift/alt, middle click) fall
+  // through so the browser can honour "open in new tab" — we don't
+  // mark-as-read in that case because the user is *saving* the item
+  // to read later, not opening it.
+  const handleNotificationClick = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    notif: NotificationItem,
+  ) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
     if (!notif.is_read) {
-      try {
-        await fetch(apiUrl(`/api/notifications/${notif.id}/read`), {
-          method: 'POST',
-          credentials: 'include',
-        })
-        setNotifications((prev) =>
-          prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
-        )
-        setUnreadCount((prev) => Math.max(0, prev - 1))
-      } catch {
-        // Silently ignore
-      }
+      // Optimistic local update — the badge count + unread stripe
+      // update immediately even if the API call is slow. The shared
+      // helper swallows its own errors so navigation is never
+      // blocked by a slow or failing mark-read call.
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+      )
+      setUnreadCount((prev) => Math.max(0, prev - 1))
+      void markNotificationRead(notif.id)
     }
     setOpen(false)
-    // Always navigate — the shared resolver falls back to a sensible
-    // destination when the notification has no url of its own.
-    router.push(notificationDestination(notif))
+    // Let <Link>'s default navigation handle the URL change. A
+    // router.refresh() invalidates the destination's server cache so
+    // the just-read flag propagates to any server-rendered notification
+    // counts on the next page.
+    router.refresh()
   }
 
   return (
@@ -191,10 +205,12 @@ export default function NotificationBell({ initialCount }: Props) {
                 const tint = notificationTint(notif.notification_type)
                 const label = notificationLabel(notif.notification_type)
                 const unread = !notif.is_read
+                const href = notificationDestination(notif)
                 return (
-                  <button
+                  <Link
                     key={notif.id}
-                    onClick={() => void handleNotificationClick(notif)}
+                    href={href}
+                    onClick={(e) => handleNotificationClick(e, notif)}
                     className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-navy-50"
                     style={
                       unread
@@ -257,7 +273,7 @@ export default function NotificationBell({ initialCount }: Props) {
                         {notificationRelativeTime(notif.created_at)}
                       </p>
                     </div>
-                  </button>
+                  </Link>
                 )
               })
             )}

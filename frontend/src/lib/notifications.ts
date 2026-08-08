@@ -129,6 +129,28 @@ export function notificationDestination(notif: NotificationItem): string {
 }
 
 /**
+ * Fire the mark-as-read side effect for a notification click. Kept
+ * separate from navigation so the caller can choose *how* to
+ * navigate (Link click, router.push, etc.) — both the dropdown and
+ * the full-page notification row funnel through this so the read
+ * marker is guaranteed to fire before navigation regardless of
+ * surface.
+ *
+ * Never throws — a mark-read failure must not block navigation.
+ */
+export async function markNotificationRead(notificationId: string): Promise<void> {
+  const { apiUrl } = await import('@/lib/api')
+  try {
+    await fetch(apiUrl(`/api/notifications/${notificationId}/read`), {
+      method: 'POST',
+      credentials: 'include',
+    })
+  } catch {
+    // Non-critical — navigation must proceed regardless.
+  }
+}
+
+/**
  * Warmer relative time — same shape as the previous helpers but with
  * a graceful degrade to an absolute date for anything older than a
  * week. Kept close to spoken English.

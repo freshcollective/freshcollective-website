@@ -21,6 +21,7 @@
 
 import { useCallback, useState } from 'react'
 import { apiUrl } from '@/lib/api'
+import { Switch } from '@/components/platform'
 import type { NotificationPrefs, SpaceMembership } from '@/types/platform'
 
 // ---------------------------------------------------------------------------
@@ -132,6 +133,11 @@ function Chevron({ open }: { open: boolean }) {
 // Toggle
 // ---------------------------------------------------------------------------
 
+// Toggle used to live here inline; it duplicated (and mis-sized) the
+// shared platform Switch. Replaced with `Switch` so thumb positioning
+// stays consistent across notification settings and every other
+// toggle-using surface. The small local adapter preserves the
+// existing `(v: boolean) => void` callsite ergonomics.
 function Toggle({
   id, checked, onChange, disabled,
 }: {
@@ -141,25 +147,12 @@ function Toggle({
   disabled?: boolean
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
+    <Switch
       id={id}
-      aria-checked={checked}
+      checked={checked}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={[
-        'relative h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-teal-300 focus:ring-offset-1 disabled:opacity-40',
-        checked ? 'bg-teal-500' : 'bg-slate-200',
-      ].join(' ')}
-    >
-      <span
-        className={[
-          'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0.5',
-        ].join(' ')}
-      />
-    </button>
+      onChange={(e) => onChange(e.target.checked)}
+    />
   )
 }
 

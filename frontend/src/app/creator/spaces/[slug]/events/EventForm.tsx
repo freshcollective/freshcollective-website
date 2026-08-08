@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
 import type { CreatorEvent, CreatorPathway } from '@/types/platform'
+import { Switch } from '@/components/platform'
 import {
   GATHERING_TYPES,
   ATTENDANCE_FORMATS,
@@ -40,6 +41,11 @@ function toLocalDatetime(iso: string) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+// Toggle used to live here inline; it duplicated (and mis-sized) the
+// shared platform Switch. Replaced with `Switch` so thumb positioning
+// stays consistent with the rest of the platform. The small local
+// adapter below preserves the `(v: boolean) => void` callsite ergonomics
+// without every caller reaching for `e.target.checked`.
 function Toggle({
   checked,
   onChange,
@@ -50,25 +56,11 @@ function Toggle({
   disabled?: boolean
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
+    <Switch
+      checked={checked}
       disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={[
-        'relative h-5 w-9 rounded-full transition-colors',
-        checked ? 'bg-teal-500' : 'bg-slate-200',
-        disabled ? 'cursor-not-allowed opacity-60' : '',
-      ].join(' ')}
-    >
-      <span
-        className={[
-          'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0.5',
-        ].join(' ')}
-      />
-    </button>
+      onChange={(e) => onChange(e.target.checked)}
+    />
   )
 }
 

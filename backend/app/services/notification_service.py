@@ -291,7 +291,18 @@ def trigger_event_booking_creator(event_id: str, booking_user_id: str) -> None:
 
         title = "New event booking"
         message = f"{booker_name} booked a spot for \"{event.title}\"."
-        notif_url = None  # TODO: link to creator studio event detail when available
+        # Deep-link into the creator view of the Gathering — this page
+        # renders the bookings list next to the event itself, which is
+        # exactly what a creator wants when a booking notification lands.
+        # Member-facing `/spaces/…/events/…` wouldn't show them the
+        # booking they were told about.
+        space = (
+            db.query(Space).filter(Space.id == event.space_id).first()
+            if event.space_id else None
+        )
+        notif_url = (
+            f"/creator/spaces/{space.slug}/events/{event.id}" if space else None
+        )
 
         # Notify all creators and moderators in the space
         privileged_memberships = (

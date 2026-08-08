@@ -1935,10 +1935,12 @@ def get_event(
     if not event:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found.")
 
-    # Non-members can only see public events
-    is_member = False
+    # Non-members can only see public events. The membership row is
+    # kept alongside the boolean so the caretaker check further down
+    # can read its role without a second query.
+    membership: SpaceMembership | None = None
     if current_user:
-        is_member = bool(
+        membership = (
             db.query(SpaceMembership)
             .filter(
                 SpaceMembership.user_id == current_user.id,
@@ -1947,6 +1949,7 @@ def get_event(
             )
             .first()
         )
+    is_member = membership is not None
     # Paid-separately Gatherings are effectively-public for the purpose of
     # this visibility check — non-members with the URL must be able to see
     # the price + purchase panel. Members-only events (any other access

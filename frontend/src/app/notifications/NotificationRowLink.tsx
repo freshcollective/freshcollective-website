@@ -1,12 +1,16 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { apiUrl } from '@/lib/api'
+import { markNotificationRead } from '@/lib/notifications'
 
 /**
  * Client wrapper around a full-row link on the notifications page.
  * Marks the notification as read *before* navigating so the badge
  * count and unread stripe update on return.
+ *
+ * Uses the shared ``markNotificationRead`` helper so the dropdown
+ * (NotificationBell) and this row hit the mark-read endpoint the same
+ * way — keeps behaviour consistent when either surface is opened.
  */
 interface Props {
   notificationId: string
@@ -28,14 +32,7 @@ export default function NotificationRowLink({
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
     e.preventDefault()
     if (markReadIfUnread) {
-      try {
-        await fetch(apiUrl(`/api/notifications/${notificationId}/read`), {
-          method: 'POST',
-          credentials: 'include',
-        })
-      } catch {
-        // Non-critical — navigate anyway
-      }
+      await markNotificationRead(notificationId)
     }
     router.push(href)
     router.refresh()

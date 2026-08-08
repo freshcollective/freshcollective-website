@@ -60,7 +60,18 @@ export const Switch = forwardRef<HTMLInputElement, Props>(function Switch(
     </span>
   )
 
-  if (!label && !description) return control
+  // Even when there's no visible label/description, wrap the control
+  // in a <label htmlFor>. The native checkbox is `sr-only`, so without
+  // an enclosing label the visual track/thumb has no mouse click
+  // target — only keyboard toggle would work. The label restores
+  // pointer parity with keyboard.
+  if (!label && !description) {
+    return (
+      <label htmlFor={inputId} className="inline-flex cursor-pointer items-center">
+        {control}
+      </label>
+    )
+  }
 
   return (
     <label htmlFor={inputId} className="flex cursor-pointer items-start gap-3">
