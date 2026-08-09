@@ -682,6 +682,35 @@ export const getCreatorMedia = cache(async (slug: string) => {
   return res.json()
 })
 
+/** Unified Library — every asset (files + links) in one payload,
+ *  plus the folder list so the sidebar can render without a second
+ *  round trip. Server filters via query params:
+ *    ?type=image|video|audio|document|link|any
+ *    ?folder=<id>|none|all
+ *    ?q=<search>
+ */
+export const getCreatorLibrary = cache(async (
+  slug: string,
+  opts: {
+    type?: 'image' | 'video' | 'audio' | 'document' | 'link' | 'any'
+    folder?: string
+    q?: string
+    limit?: number
+    offset?: number
+  } = {},
+) => {
+  const params = new URLSearchParams()
+  if (opts.type) params.set('type', opts.type)
+  if (opts.folder) params.set('folder', opts.folder)
+  if (opts.q) params.set('q', opts.q)
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit))
+  if (opts.offset !== undefined) params.set('offset', String(opts.offset))
+  const qs = params.toString() ? `?${params.toString()}` : ''
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/library${qs}`)
+  if (!res.ok) return { items: [], total: 0, limit: 50, offset: 0, folders: [] }
+  return res.json()
+})
+
 export const getCreatorStepResources = cache(async (slug: string, pathwaySlug: string, stepSlug: string) => {
   const res = await fetchWithSession(
     `/api/creator/spaces/${slug}/pathways/${pathwaySlug}/steps/${stepSlug}/resources`,

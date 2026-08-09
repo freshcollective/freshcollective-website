@@ -140,6 +140,10 @@ export interface StepDetail extends StepSummary {
 
 export interface PathwaySection {
   id: string
+  /** URL-safe chapter identifier — the Knowledge Guide chapter
+   *  switcher's `?section=` value. Empty string on older backend
+   *  responses; the chapter helper handles that case. */
+  slug?: string
   title: string
   position: number
   steps: StepSummary[]
@@ -829,10 +833,67 @@ export interface CreatorMediaAsset {
   file_size_bytes: number
   extension: string
   status: MediaAssetStatus
+  /** Unified Library folder — nullable ("All items"). */
+  folder_id?: string | null
   /** Count of pathway-block references (read-only). */
   usage_count: number
   created_at: string
   updated_at: string
+}
+
+// ── Unified Library ─────────────────────────────────────────────────
+//
+// One creator surface over two backing stores. The creator never sees
+// which store an item lives in — the frontend just reads
+// ``LibraryItem`` from ``GET /api/creator/spaces/{slug}/library``.
+
+/** Category the unified Library sorts items into. Maps loosely to
+ *  MIME family for files; ``link`` is the SpaceResource kind. */
+export type LibraryMediaType = 'image' | 'video' | 'audio' | 'document'
+
+export interface LibraryFolder {
+  id: string
+  name: string
+  position: number
+  item_count: number
+}
+
+export interface LibraryFileInfo {
+  url: string
+  mime_type: string | null
+  size_bytes: number | null
+  original_filename: string | null
+  media_type: LibraryMediaType
+  extension: string | null
+}
+
+export interface LibraryLinkInfo {
+  url: string
+  resource_type: string
+}
+
+export interface LibraryItem {
+  /** 'file' = ``CreatorMediaAsset``; 'link' = ``SpaceResource``.
+   *  Implementation detail — used only to route mutations to the
+   *  right endpoint. Not surfaced to the creator. */
+  kind: 'file' | 'link'
+  id: string
+  title: string
+  description: string | null
+  folder_id: string | null
+  used_in_count: number
+  file: LibraryFileInfo | null
+  link: LibraryLinkInfo | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LibraryListResponse {
+  items: LibraryItem[]
+  total: number
+  limit: number
+  offset: number
+  folders: LibraryFolder[]
 }
 
 export interface StepResource {
