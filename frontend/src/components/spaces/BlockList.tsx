@@ -75,11 +75,21 @@ function withContainerBase(
     // through, instead of asking every caller to pre-key its JSX.
     return React.isValidElement(node) ? React.cloneElement(node, { key }) : node
   }
+  // ``--fc-quote-accent`` scopes the blockquote accent colour to this
+  // container. RichTextRenderer's blockquote reads it, so a quote
+  // inside a Sunrise-pink container gets Sunrise's own strong accent
+  // rather than the platform teal. Cascades through the whole subtree
+  // — no per-block wiring needed.
+  const scopedStyle = {
+    background: palette.bg,
+    borderColor: palette.border,
+    ['--fc-quote-accent' as string]: palette.accent,
+  } as React.CSSProperties
   return (
     <div
       key={key}
       className="my-6 rounded-xl border px-5 py-5"
-      style={{ background: palette.bg, borderColor: palette.border }}
+      style={scopedStyle}
     >
       {node}
     </div>

@@ -28,11 +28,12 @@
  */
 
 import {
+  darkenHex,
   deriveSoftTint,
   parseStoredColour,
   paletteHex,
   type CollectivePaletteMeta,
-} from './collectivePalette'
+} from './collectivePalette.ts'
 
 export type CalloutColour =
   | 'teal'
@@ -134,22 +135,41 @@ export function resolveCalloutPalette(
  * Handles ``palette:<role>``, ``custom:#hex``, and legacy fixed keys
  * (teal, gold, …). Server-safe (no "use client") so Server Components
  * can call it directly with a palette fetched from ``getSpace``.
+ *
+ * Returns:
+ *   * ``bg``     — soft (10%) tint used as the container background
+ *   * ``border`` — subtle 1px border (32% alpha of the same source)
+ *   * ``accent`` — full-strength hex from the same palette family.
+ *                  Used as ``--fc-quote-accent`` on the container so
+ *                  child blockquotes read a stronger, palette-native
+ *                  accent instead of the platform-default teal-300.
+ *                  For legacy chip keys we darken the (already-mid)
+ *                  border hex so the accent stays saturated without
+ *                  needing a per-chip lookup table.
  */
 export function resolveContainerPalette(
   containerStyle: string | null | undefined,
   palette?: CollectivePaletteMeta | null,
-): { bg: string; border: string } | null {
+): { bg: string; border: string; accent: string } | null {
   const parsed = parseStoredColour(containerStyle)
   if (parsed.kind === 'palette') {
     const hex = paletteHex(parsed.role, palette)
-    return hex ? deriveSoftTint(hex) : null
+    if (!hex) return null
+    return { ...deriveSoftTint(hex), accent: hex }
   }
   if (parsed.kind === 'custom') {
-    return deriveSoftTint(parsed.hex)
+    return { ...deriveSoftTint(parsed.hex), accent: parsed.hex }
   }
   if (parsed.kind === 'legacy' && COLOUR_BY_KEY[parsed.key]) {
     const match = COLOUR_BY_KEY[parsed.key]
-    return { bg: match.bg, border: match.border }
+    return {
+      bg: match.bg,
+      border: match.border,
+      // Legacy chips ship a mid-strength border. Darken it a touch
+      // so the derived quote accent reads as an accent, not another
+      // pastel wash on top of the container's own soft border.
+      accent: darkenHex(match.border, 0.35),
+    }
   }
   return null
 }

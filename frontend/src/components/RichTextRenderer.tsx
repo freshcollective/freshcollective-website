@@ -184,10 +184,17 @@ function renderNode(node: DocNode, key: string): React.ReactNode {
       )
 
     case 'blockquote':
+      // Blockquote accent reads a scoped CSS variable so that a quote
+      // inside a palette-coloured container adopts the container's own
+      // accent instead of the platform default teal. The variable is
+      // set by ``withContainerBase`` (member) and ``BlockPreview``
+      // (editor); when no container is active the fallback keeps the
+      // long-standing teal-300 look.
       return (
         <blockquote
           key={key}
-          className="my-4 border-l-4 border-teal-300 pl-4 italic text-black"
+          className="my-4 border-l-4 pl-4 italic text-black"
+          style={{ borderColor: 'var(--fc-quote-accent, #5eead4)' }}
         >
           {node.content?.map((child, i) => renderNode(child, `${key}-${i}`))}
         </blockquote>

@@ -393,10 +393,18 @@ export function BlockPreview({
   if (inner == null) return null
   const palette = resolveContainerPalette(block.container_style, collectivePalette)
   if (!palette) return inner
+  // Scope ``--fc-quote-accent`` to the preview wrapper so blockquotes
+  // inside the preview render with the same palette-derived accent
+  // members will see. Keeps editor + member surface visually parallel.
+  const scopedStyle = {
+    background: palette.bg,
+    borderColor: palette.border,
+    ['--fc-quote-accent' as string]: palette.accent,
+  } as React.CSSProperties
   return (
     <div
       className="rounded-lg border px-4 py-3"
-      style={{ background: palette.bg, borderColor: palette.border }}
+      style={scopedStyle}
     >
       {inner}
     </div>
