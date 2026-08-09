@@ -499,13 +499,18 @@ function renderBlockPreviewInner({
       )
     }
     const altText = block.label ?? asset?.title ?? ''
+    // Preview mirrors the member render: subtle neutral drop shadow
+    // so the writer sees the same lift they'll see on the page.
+    // Kept out of the file-picker / gallery thumbnails and the small
+    // dropdown chip — those already sit in framed cards where a
+    // shadow would look like a box-on-a-box.
     return (
       <figure className="my-7">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={imgSrc}
           alt={altText}
-          className="block w-full rounded-xl object-cover"
+          className="block w-full rounded-xl object-cover shadow-[0_1px_3px_rgba(15,30,55,0.08),0_2px_8px_rgba(15,30,55,0.04)]"
           style={{ maxHeight: 520 }}
         />
         {block.caption && (

@@ -131,19 +131,12 @@ export default function StepDiscussion({
         </div>
       </div>
 
-      {/* Comment list */}
-      {comments.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 px-6 py-6 text-[14.5px] leading-relaxed text-black">
-          <p>The conversation begins with someone.</p>
-          <p className="mt-2">
-            If something resonated, ask a question, share a reflection, or simply
-            let others know what landed for you.
-          </p>
-          <p className="mt-2 font-medium" style={{ color: '#0f766e' }}>
-            Be the first to begin.
-          </p>
-        </div>
-      ) : (
+      {/* Comment list. When there are no comments yet we render
+          nothing underneath the composer — the composer's placeholder
+          + heading already communicate the invitation, and the old
+          "The conversation begins with someone…" block made every
+          pathway step feel verbose without adding information. */}
+      {comments.length > 0 && (
         <div className="flex flex-col gap-4">
           {comments.map((comment) => (
             <div key={comment.id} className="flex gap-3">

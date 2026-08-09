@@ -164,10 +164,19 @@ export function renderBlocks(
       // replace an intentionally decorative image with the asset
       // title, breaking screen-reader intent.
       const alt = block.label ?? block.media_asset?.title ?? ''
+      // Subtle neutral drop shadow so screenshots and diagrams don't
+      // vanish into a white page background. Deliberately understated:
+      // no border, no bg, no surrounding frame — just enough depth to
+      // separate the image from the page. Kept neutral (navy-tinted)
+      // so palette-coloured containers never bleed into the shadow.
       return withContainer(
         <figure className="my-6">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt={alt} className="w-full rounded-xl" />
+          <img
+            src={src}
+            alt={alt}
+            className="w-full rounded-xl shadow-[0_1px_3px_rgba(15,30,55,0.08),0_2px_8px_rgba(15,30,55,0.04)]"
+          />
           {block.caption && <figcaption className="mt-2 text-center text-[12px] text-black">{block.caption}</figcaption>}
         </figure>,
         block, id,
