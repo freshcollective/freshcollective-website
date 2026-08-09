@@ -326,9 +326,9 @@ export function MediaPicker({
   if (filtered.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-slate-200 p-4 text-center">
-        <p className="text-[13px] text-black">{emptyMessage ?? 'No assets available.'}</p>
-        <Link href="/creator-studio/assets" className="mt-1.5 inline-block text-[13px] font-medium text-teal-600 hover:underline">
-          Open Assets →
+        <p className="text-[13px] text-black">{emptyMessage ?? 'No files in the Library yet.'}</p>
+        <Link href="/creator-studio/library" className="mt-1.5 inline-block text-[13px] font-medium text-teal-600 hover:underline">
+          Open Library →
         </Link>
       </div>
     )
@@ -341,7 +341,7 @@ export function MediaPicker({
         onChange={e => onChange(e.target.value || null)}
         className="field-input"
       >
-        <option value="">— Select from Assets —</option>
+        <option value="">— Select from Library —</option>
         {filtered.map(a => (
           <option key={a.id} value={a.id}>{a.title} · {a.original_filename}</option>
         ))}
@@ -1224,8 +1224,17 @@ export function BlockEditForm({
       {t === 'resource' && (
         <ResourceFields
           resources={resources}
+          assets={assets}
           resourceId={resourceId}
-          onResourceIdChange={setResourceId}
+          onResourceIdChange={(id) => {
+            setResourceId(id)
+            if (id) setMediaAssetId(null)
+          }}
+          mediaAssetId={mediaAssetId}
+          onMediaAssetIdChange={(id) => {
+            setMediaAssetId(id)
+            if (id) setResourceId(null)
+          }}
           titleOverride={label}
           onTitleOverrideChange={setLabel}
           descriptionOverride={caption}
@@ -2061,77 +2070,139 @@ function AssetGridModal({
 
 function ResourceFields({
   resources,
+  assets,
   resourceId,
   onResourceIdChange,
+  mediaAssetId,
+  onMediaAssetIdChange,
   titleOverride,
   onTitleOverrideChange,
   descriptionOverride,
   onDescriptionOverrideChange,
 }: {
   resources: CreatorResource[]
+  assets: CreatorMediaAsset[]
   resourceId: string | null
   onResourceIdChange: (id: string | null) => void
+  mediaAssetId: string | null
+  onMediaAssetIdChange: (id: string | null) => void
   titleOverride: string
   onTitleOverrideChange: (v: string) => void
   descriptionOverride: string
   onDescriptionOverrideChange: (v: string) => void
 }) {
-  const selected = resourceId ? resources.find(r => r.id === resourceId) ?? null : null
-  const sorted = [...resources].sort((a, b) => a.title.localeCompare(b.title))
+  // Unified Library picker: files (CreatorMediaAsset) and links
+  // (SpaceResource) surface in one dropdown, distinguished by an
+  // internal kind. The block writes one FK or the other depending on
+  // which item the creator picked.
+  const activeAssets = assets.filter(a => a.status === 'active')
+  const selectedAsset = mediaAssetId
+    ? activeAssets.find(a => a.id === mediaAssetId) ?? null
+    : null
+  const selectedResource = resourceId
+    ? resources.find(r => r.id === resourceId) ?? null
+    : null
+  const totalItems = activeAssets.length + resources.length
+  const compositeValue = selectedAsset
+    ? `file:${selectedAsset.id}`
+    : selectedResource
+      ? `link:${selectedResource.id}`
+      : ''
 
-  if (resources.length === 0) {
+  function handleCompositeChange(value: string) {
+    if (!value) {
+      onResourceIdChange(null)
+      onMediaAssetIdChange(null)
+      return
+    }
+    const [kind, id] = value.split(':', 2)
+    if (kind === 'file') {
+      onMediaAssetIdChange(id)
+    } else {
+      onResourceIdChange(id)
+    }
+  }
+
+  if (totalItems === 0) {
     return (
       <div className="rounded-lg border border-dashed border-slate-200 bg-white p-4 text-center">
-        <p className="text-[13px] text-black">No Resources yet in this collective.</p>
+        <p className="text-[13px] text-black">Your Library is empty.</p>
         <Link
-          href="/creator-studio/resources"
+          href="/creator-studio/library"
           className="mt-1.5 inline-block text-[13px] font-medium text-teal-600 hover:underline"
         >
-          Open Resources →
+          Open Library →
         </Link>
         <p className="mt-2 text-[11px] text-black">
-          Resource blocks link an existing Resource — they don&apos;t upload a new file.
+          Resource blocks link an existing Library item — they don&apos;t upload a new file.
         </p>
       </div>
     )
   }
 
+  const sortedAssets = [...activeAssets].sort((a, b) => a.title.localeCompare(b.title))
+  const sortedResources = [...resources].sort((a, b) => a.title.localeCompare(b.title))
+
   return (
     <>
       <div>
-        <label className="field-label">Resource from this collective</label>
+        <label className="field-label">Library item</label>
         <select
-          value={resourceId ?? ''}
-          onChange={e => onResourceIdChange(e.target.value || null)}
+          value={compositeValue}
+          onChange={e => handleCompositeChange(e.target.value)}
           className="field-input"
           autoFocus
         >
-          <option value="">— Select a Resource —</option>
-          {sorted.map(r => {
-            const draft = r.status !== 'published'
-            const scopeLabel = r.scope === 'pathway' ? 'Pathway' : 'General'
-            return (
-              <option key={r.id} value={r.id}>
-                {r.title} · {r.resource_type} · {scopeLabel}{draft ? ' · Draft' : ''}
-              </option>
-            )
-          })}
+          <option value="">— Select from Library —</option>
+          {sortedAssets.length > 0 && (
+            <optgroup label="Files">
+              {sortedAssets.map(a => (
+                <option key={`file:${a.id}`} value={`file:${a.id}`}>
+                  {a.title} · {a.media_type}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {sortedResources.length > 0 && (
+            <optgroup label="Links & Documents">
+              {sortedResources.map(r => {
+                const draft = r.status !== 'published'
+                return (
+                  <option key={`link:${r.id}`} value={`link:${r.id}`}>
+                    {r.title} · {r.resource_type}{draft ? ' · Draft' : ''}
+                  </option>
+                )
+              })}
+            </optgroup>
+          )}
         </select>
         <p className="mt-1 text-[11px] text-black">
-          Links to an existing Resource. Updates to the Resource flow through to every step that
-          references it. Drafts are hidden from members.
+          Pick a file or link from the Library. Edits to the item flow through
+          to every step that embeds it.
         </p>
       </div>
 
-      {selected && (
+      {selectedAsset && (
         <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-          <p className="text-[13px] font-semibold text-navy-900">{selected.title}</p>
-          {selected.description && (
-            <p className="mt-0.5 text-[12px] leading-snug text-black">{selected.description}</p>
+          <p className="text-[13px] font-semibold text-navy-900">{selectedAsset.title}</p>
+          {selectedAsset.description && (
+            <p className="mt-0.5 text-[12px] leading-snug text-black">{selectedAsset.description}</p>
           )}
           <p className="mt-1.5 text-[11px] text-black">
-            {selected.resource_type}
-            {selected.status !== 'published' && (
+            {selectedAsset.media_type} · {selectedAsset.original_filename}
+          </p>
+        </div>
+      )}
+
+      {selectedResource && (
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+          <p className="text-[13px] font-semibold text-navy-900">{selectedResource.title}</p>
+          {selectedResource.description && (
+            <p className="mt-0.5 text-[12px] leading-snug text-black">{selectedResource.description}</p>
+          )}
+          <p className="mt-1.5 text-[11px] text-black">
+            {selectedResource.resource_type}
+            {selectedResource.status !== 'published' && (
               <span className="ml-1 font-semibold text-amber-700">· Draft (hidden from members)</span>
             )}
           </p>
@@ -2146,7 +2217,11 @@ function ResourceFields({
           value={titleOverride}
           onChange={e => onTitleOverrideChange(e.target.value)}
           className="field-input"
-          placeholder={selected?.title ?? 'Leave blank to use the Resource title'}
+          placeholder={
+            selectedAsset?.title
+              ?? selectedResource?.title
+              ?? 'Leave blank to use the Library item title'
+          }
         />
       </div>
 
@@ -2158,7 +2233,11 @@ function ResourceFields({
           value={descriptionOverride}
           onChange={e => onDescriptionOverrideChange(e.target.value)}
           className="field-input"
-          placeholder={selected?.description ?? 'Leave blank to use the Resource description'}
+          placeholder={
+            selectedAsset?.description
+              ?? selectedResource?.description
+              ?? 'Leave blank to use the Library item description'
+          }
         />
       </div>
     </>

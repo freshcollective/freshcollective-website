@@ -384,16 +384,49 @@ export function renderBlocks(
     }
 
     if (t === 'resource') {
-      // Hide entirely from members if the linked Resource was deleted or is
-      // still in draft. Mirrors the Resources page rule (only `published`
-      // resources surface to members) — see backend spaces/routes.py.
-      const r = block.resource
-      if (!r || r.status !== 'published') return null
-      const title = block.label || r.title
-      const description = block.caption || r.description
-      const href = r.url ? (r.url.startsWith('http') ? r.url : `${API_BASE}${r.url.startsWith('/') ? r.url : `/api/uploads/${r.url}`}`) : null
+      // A resource block card can point at either a Library link
+      // (SpaceResource, ``block.resource``) or a Library file
+      // (CreatorMediaAsset, ``block.media_asset``). Both come from
+      // the same unified Library — the block editor picks whichever
+      // the creator selected. Hide the block if neither is populated
+      // (deleted / draft link) so member surfaces self-heal.
+      const linkRef = block.resource && block.resource.status === 'published' ? block.resource : null
+      const mediaRef = block.media_asset ?? null
+
+      let title = ''
+      let description: string | null = null
+      let href: string | null = null
+      let cardTypeLabel = ''
+      let isFile = false
+      let downloadName: string | undefined
+      if (linkRef) {
+        title = block.label || linkRef.title
+        description = block.caption || linkRef.description
+        href = linkRef.url
+          ? (linkRef.url.startsWith('http')
+              ? linkRef.url
+              : `${API_BASE}${linkRef.url.startsWith('/') ? linkRef.url : `/api/uploads/${linkRef.url}`}`)
+          : null
+        cardTypeLabel = linkRef.resource_type
+        isFile = !!linkRef.file_name || ['file', 'guide', 'template', 'replay', 'audio', 'video'].includes(linkRef.resource_type)
+        downloadName = isFile && linkRef.file_name ? linkRef.file_name : undefined
+      } else if (mediaRef) {
+        title = block.label || mediaRef.title
+        description = block.caption || null
+        href = mediaRef.file_url
+          ? (mediaRef.file_url.startsWith('http')
+              ? mediaRef.file_url
+              : `${API_BASE}${mediaRef.file_url.startsWith('/') ? mediaRef.file_url : `/api/uploads/${mediaRef.file_url}`}`)
+          : null
+        cardTypeLabel = mediaRef.media_type
+        // Every media asset backs a downloadable file — audio/video
+        // still render as a Download card here (creators embed them
+        // inline via audio/video_embed blocks when they want playback).
+        isFile = true
+        downloadName = mediaRef.original_filename ?? undefined
+      }
+
       if (!href) return null
-      const isFile = !!r.file_name || ['file', 'guide', 'template', 'replay', 'audio', 'video'].includes(r.resource_type)
       const ctaLabel = isFile ? 'Download resource' : 'Open resource'
       return withContainerBase(
         <a
@@ -401,7 +434,7 @@ export function renderBlocks(
           href={href}
           target={isFile ? undefined : '_blank'}
           rel={isFile ? undefined : 'noopener noreferrer'}
-          download={isFile && r.file_name ? r.file_name : undefined}
+          download={downloadName}
           className="group my-5 flex items-start gap-4 rounded-xl border border-border bg-white px-5 py-4 transition-colors hover:border-teal-300"
         >
           <span
@@ -414,7 +447,7 @@ export function renderBlocks(
             <div className="flex items-center gap-2">
               <p className="truncate text-[15px] font-semibold text-navy-900 group-hover:text-teal-700">{title}</p>
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                {r.resource_type}
+                {cardTypeLabel}
               </span>
             </div>
             {description && (
