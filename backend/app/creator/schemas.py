@@ -1386,14 +1386,42 @@ VALID_CONTAINER_STYLES = (
 )
 
 
+_PALETTE_ROLE_PATTERN = re.compile(r"^palette:(primary|secondary|accent|background)$")
+_CUSTOM_HEX_PATTERN = re.compile(r"^custom:#[0-9a-fA-F]{6}$")
+
+
 def _validate_container_style(v: str | None) -> str | None:
+    """Accept the three storage flavours the frontend picker emits:
+
+      * ``None`` / empty → clears any existing container style
+      * ``palette:<role>`` where role ∈ primary|secondary|accent|background
+        → resolved against the collective palette at render time
+      * ``custom:#RRGGBB`` → literal hex; preserved verbatim across
+        palette changes
+      * one of the eight legacy fixed keys (teal|gold|blue|rose|sage|
+        grey|lilac|orange) → kept for back-compat with pre-migration
+        rows that still hold these values
+
+    A prior version of this validator accepted only the legacy set,
+    which silently 422'd every new palette-driven selection and left
+    the block's container_style untouched on the server (the autosave
+    handler swallows the error). See docs/container-style.md and the
+    calloutPalette resolver on the frontend for the encoding contract.
+    """
     if v is None or v == "":
         return None
-    if v not in VALID_CONTAINER_STYLES:
-        raise ValueError(
-            f"Invalid container style. Must be one of: {', '.join(VALID_CONTAINER_STYLES)}"
-        )
-    return v
+    if v in VALID_CONTAINER_STYLES:
+        return v
+    if _PALETTE_ROLE_PATTERN.match(v):
+        return v
+    if _CUSTOM_HEX_PATTERN.match(v):
+        return v
+    raise ValueError(
+        "Invalid container style. Expected one of "
+        f"{', '.join(VALID_CONTAINER_STYLES)}, "
+        "'palette:<primary|secondary|accent|background>', "
+        "or 'custom:#RRGGBB'."
+    )
 
 
 class BlockMediaInfo(BaseModel):
