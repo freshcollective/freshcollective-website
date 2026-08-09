@@ -135,6 +135,7 @@ from app.models.platform import (
     Enrollment,
     Event,
     EventBooking,
+    LibraryFolder,
     ManualMember,
     ManualMemberStatus,
     ManualMemberPathwayAccess,
@@ -4070,6 +4071,7 @@ def _serialise_media(a: CreatorMediaAsset, usage_count: int) -> dict:
         "file_size_bytes": a.file_size_bytes,
         "extension": a.extension,
         "status": a.status.value if hasattr(a.status, "value") else str(a.status),
+        "folder_id": a.folder_id,
         "usage_count": usage_count,
         "created_at": a.created_at,
         "updated_at": a.updated_at,
@@ -4186,6 +4188,21 @@ def update_media(
             if t and t.lower() not in [d.lower() for d in deduped]:
                 deduped.append(t)
         asset.tags = ", ".join(deduped) if deduped else None
+    # Folder move — distinguish "omitted" (leave alone) from "sent as
+    # null" (move to All items). Explicitly-set folder ids are
+    # validated against the space so a caller can't attach an asset
+    # to a folder owned by another Collective.
+    if "folder_id" in body.model_fields_set:
+        if body.folder_id is None:
+            asset.folder_id = None
+        else:
+            target = db.query(LibraryFolder).filter(
+                LibraryFolder.id == body.folder_id,
+                LibraryFolder.space_id == space.id,
+            ).first()
+            if not target:
+                raise HTTPException(status_code=400, detail="Unknown folder.")
+            asset.folder_id = target.id
     db.commit()
     db.refresh(asset)
     counts = _media_usage_counts(db, [asset.id])
@@ -4896,6 +4913,26 @@ def _validate_pathway_ids(space: Space, pathway_ids: list[str], db: Session) -> 
     return rows
 
 
+def _resolve_library_folder(
+    folder_id: str | None, space: Space, db: Session,
+) -> str | None:
+    """Validate an incoming folder id against the current Collective.
+
+    Returns the folder id on hit, ``None`` when the caller sent null
+    or omitted the field. Raises 400 for an unknown or cross-space
+    id so a mis-scoped write can't cross Collective boundaries.
+    """
+    if not folder_id:
+        return None
+    folder = db.query(LibraryFolder).filter(
+        LibraryFolder.id == folder_id,
+        LibraryFolder.space_id == space.id,
+    ).first()
+    if not folder:
+        raise HTTPException(status_code=400, detail="Unknown folder.")
+    return folder.id
+
+
 def _legacy_scope_for(pathways: list[Pathway]) -> tuple[str, str | None]:
     """Compute legacy (scope, pathway_id) tuple from the v2 pathway list.
 
@@ -4968,6 +5005,7 @@ def _serialise_resource(r: SpaceResource, usage_count: int) -> dict:
         "usage_count": usage_count,
         "scope": r.scope,
         "pathway_id": r.pathway_id,
+        "folder_id": r.folder_id,
         "created_at": r.created_at,
         "updated_at": r.updated_at,
     }
@@ -5001,6 +5039,7 @@ def create_space_resource(
     resolved_ids = _resolve_pathway_ids(body.pathway_ids, body.scope, body.pathway_id) or []
     attached = _validate_pathway_ids(space, resolved_ids, db)
     legacy_scope, legacy_pid = _legacy_scope_for(attached)
+    folder_id = _resolve_library_folder(body.folder_id, space, db)
     resource = SpaceResource(
         id=uuid4().hex,
         space_id=space.id,
@@ -5011,6 +5050,7 @@ def create_space_resource(
         url=body.url.strip() if body.url else None,
         status=body.status,
         sort_order=body.sort_order,
+        folder_id=folder_id,
         scope=legacy_scope,
         pathway_id=legacy_pid,
         pathways=attached,
@@ -5108,6 +5148,13 @@ def update_space_resource(
         resource.status = body.status
     if body.sort_order is not None:
         resource.sort_order = body.sort_order
+
+    # Folder move — distinguish "omitted" from "sent as null".
+    if "folder_id" in body.model_fields_set:
+        if body.folder_id is None:
+            resource.folder_id = None
+        else:
+            resource.folder_id = _resolve_library_folder(body.folder_id, space, db)
 
     # Pathway assignment: accept v2 list OR legacy scope/pathway_id, then
     # rewrite the join rows + sync legacy columns.

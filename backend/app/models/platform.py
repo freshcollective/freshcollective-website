@@ -1797,8 +1797,55 @@ class SpaceAccessRequest(Base):
 
 
 # ---------------------------------------------------------------------------
-# Media Library
+# Library — one creator surface over the two asset stores
+#
+# ``LibraryFolder`` is a flat organisational group that spans both the
+# media-asset table (files) and the resource table (links). Every
+# folder belongs to exactly one Space; items reference the folder via
+# a nullable ``folder_id`` FK on both asset tables so an item can
+# also live in "All items" without a folder.
+#
+# Nesting is deliberately left out of v1. A later migration can add a
+# ``parent_folder_id`` without breaking existing rows.
 # ---------------------------------------------------------------------------
+
+
+class LibraryFolder(Base):
+    """One creator-named folder in the unified Library.
+
+    Folders are optional — an asset with ``folder_id = NULL`` appears
+    in "All items". A folder can hold both file-backed assets
+    (``CreatorMediaAsset``) and link-backed items (``SpaceResource``);
+    the creator never sees the split.
+    """
+
+    __tablename__ = "space_library_folders"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    space_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    position: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_space_library_folders_space_position", "space_id", "position"),
+    )
+
 
 class CreatorMediaAsset(Base):
     """
@@ -1851,6 +1898,13 @@ class CreatorMediaAsset(Base):
         nullable=False,
         default=MediaStatus.active,
         server_default="active",
+    )
+    # Unified Library folder — nullable. When null, appears in "All items".
+    folder_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("space_library_folders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
@@ -2186,6 +2240,13 @@ class SpaceResource(Base):
     )
     pathway_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("pathways.id", ondelete="SET NULL"), nullable=True
+    )
+    # Unified Library folder — nullable. When null, appears in "All items".
+    folder_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("space_library_folders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"

@@ -245,6 +245,8 @@ class ResourceCreateRequest(BaseModel):
     url: str | None = None
     status: str = "draft"
     sort_order: int = 0
+    # Unified Library folder — optional. Null → "All items".
+    folder_id: str | None = None
     # v2 multi-pathway. Empty/missing list = General. Legacy `scope` and
     # `pathway_id` fields are still accepted from old clients but ignored
     # whenever `pathway_ids` is provided; route writes both old + new for
@@ -286,6 +288,10 @@ class ResourceUpdateRequest(BaseModel):
     url: str | None = None
     status: str | None = None
     sort_order: int | None = None
+    # Unified Library folder. Explicit ``null`` moves to "All items";
+    # omitting the field leaves the folder unchanged. Handler uses
+    # ``model_fields_set`` to distinguish.
+    folder_id: str | None = None
     pathway_ids: list[str] | None = None
     # Legacy (kept for back-compat)
     scope: str | None = None
@@ -334,6 +340,8 @@ class ResourceResponse(BaseModel):
     file_size: int | None
     status: str
     sort_order: int
+    # Unified Library folder — nullable ("All items").
+    folder_id: str | None = None
     # v2: list of pathways this resource belongs to. Empty list = General.
     pathways: list[ResourcePathwayInfo] = []
     # Count of references from step + about blocks. Computed server-side
@@ -1214,6 +1222,8 @@ class MediaAssetResponse(BaseModel):
     file_size_bytes: int
     extension: str
     status: str
+    # Unified Library folder — nullable ("All items").
+    folder_id: str | None = None
     usage_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -1224,6 +1234,11 @@ class MediaAssetUpdateRequest(BaseModel):
     description: str | None = None
     alt_text: str | None = None
     tags: str | None = None
+    # Unified Library folder. Explicit ``null`` moves the asset to
+    # "All items"; omitting the field leaves the folder unchanged.
+    # The handler uses ``model_fields_set`` to distinguish "not sent"
+    # from "sent as null".
+    folder_id: str | None = None
 
     @field_validator("title")
     @classmethod
