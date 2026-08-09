@@ -185,6 +185,12 @@ class SectionWithSteps(BaseModel):
     """A pathway section/module with its nested steps."""
 
     id: str
+    # URL-safe chapter identifier derived from title + id. Stable
+    # enough for member bookmarks; the id suffix keeps the slug
+    # unique even if two sections share a title. Used by the
+    # Knowledge Guide chapter switcher; ignored by the Guided
+    # Experience surface.
+    slug: str = ''
     title: str
     position: int
     steps: list[StepSummary]

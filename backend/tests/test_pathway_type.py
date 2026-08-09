@@ -233,6 +233,28 @@ class TestMemberOverviewIncludesType:
         )
         assert result.pathway_type == "knowledge_guide"
 
+    def test_overview_sections_carry_slug(self, db, make_user, make_space):
+        # The step-URL redirect for a Knowledge Guide needs to look up
+        # the owning section's slug to build the canonical chapter URL.
+        # Overview payload must expose it (it did not before this
+        # commit) so the redirect stays a single fetch.
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _make_pathway(db, space, pathway_type="knowledge_guide")
+        sec = _make_section(db, pathway, title="Getting Started", position=0)
+        _make_step(db, pathway, title="First", position=0, section=sec, section_position=0)
+        member = _make_member(db, make_user, space)
+        db.commit()
+
+        result = get_pathway_overview(
+            slug=space.slug,
+            pathway_slug=pathway.slug,
+            db=db,
+            current_user=member,
+        )
+        assert len(result.sections) == 1
+        assert result.sections[0].slug.startswith("getting-started-")
+
     def test_guided_pathway_overview_reports_guided_type(
         self, db, make_user, make_space,
     ):

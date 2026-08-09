@@ -174,13 +174,24 @@ export default async function StepPage({ params }: Props) {
   // palette; the resolvers fall through to legacy/default handling.
   const collectivePalette: CollectivePaletteMeta | null = space?.colour_palette ?? null
 
-  // Knowledge Guides are rendered as one continuous document on the
-  // pathway landing — every step URL forwards to the same page,
-  // anchored to the step's section on the continuous document.
-  // Preserves bookmarks and notification deep-links after a pathway
-  // is switched to Knowledge Guide.
+  // Knowledge Guides render each Section as its own chapter document
+  // at ``?section=<section-slug>``. Redirect the legacy step URL to
+  // the owning chapter's canonical URL + step anchor. If the pathway
+  // has no named sections (flat mode), no ?section is needed. If
+  // the step is unsectioned within a sectioned pathway, it lives in
+  // the synthetic ``more`` chapter.
   if (overview?.pathway_type === 'knowledge_guide') {
-    redirect(`/spaces/${slug}/pathways/${pathwaySlug}#step-${stepSlug}`)
+    const base = `/spaces/${slug}/pathways/${pathwaySlug}`
+    const sections = overview.sections ?? []
+    if (sections.length === 0) {
+      // Flat guide — everything scrolls on one page, hash is enough.
+      redirect(`${base}#step-${stepSlug}`)
+    }
+    const owningSection = sections.find((sec) =>
+      sec.steps.some((s) => s.slug === stepSlug),
+    )
+    const chapterSlug = owningSection?.slug ?? 'more'
+    redirect(`${base}?section=${encodeURIComponent(chapterSlug)}#step-${stepSlug}`)
   }
 
   if (!step) notFound()

@@ -2555,6 +2555,7 @@ def get_pathway_overview(
         )
         sections.append(SectionWithSteps(
             id=sec.id,
+            slug=_section_slug(sec),
             title=sec.title,
             position=sec.position,
             steps=[summary_by_id[s.id] for s in sec_steps if s.id in summary_by_id],

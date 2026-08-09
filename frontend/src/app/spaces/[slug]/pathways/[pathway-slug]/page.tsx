@@ -3,6 +3,10 @@ import Link from 'next/link'
 import { getPathwayOverview, getMyPasses, getKnowledgeGuide, getSpace } from '@/lib/serverApi'
 import PathwayAutoRevalidate from '@/components/spaces/PathwayAutoRevalidate'
 import KnowledgeGuideView from '@/components/spaces/KnowledgeGuideView'
+import {
+  computeChapters,
+  isFlatKnowledgeGuide,
+} from '@/components/spaces/knowledgeGuideChapters'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
@@ -265,10 +269,10 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
   }
 
   // Knowledge Guide branch — this pathway is a continuous reference
-  // document. Fetch the full guide payload in one round trip and
-  // render inline; skip the Guided Experience redirect-to-first-step
-  // logic entirely. No progress, no completion, no next/previous
-  // navigation — just the guide.
+  // document. Chapters correspond 1-to-1 to named Sections; only the
+  // active chapter renders in the reading pane. ``?section=<slug>``
+  // is canonical — the bare landing URL redirects to the first
+  // chapter so bookmarks and shares always name their chapter.
   if (!isComingSoon && pathway.pathway_type === 'knowledge_guide') {
     const [guide, space]: [
       KnowledgeGuide | null,
@@ -278,9 +282,44 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
       getSpace(slug),
     ])
     if (!guide) notFound()
+
+    const chapters = computeChapters(guide)
+    const flat = isFlatKnowledgeGuide(guide)
+
+    if (!flat && chapters.length > 0) {
+      const requested = typeof sp.section === 'string' ? sp.section : null
+      const activeChapter = chapters.find((c) => c.slug === requested)
+      if (!activeChapter) {
+        // Canonical URL — redirect any bare or unknown ?section to
+        // the first chapter. Every chapter thereafter has a stable,
+        // shareable URL.
+        redirect(
+          `/spaces/${slug}/pathways/${pathwaySlug}?section=${encodeURIComponent(chapters[0].slug)}`,
+        )
+      }
+      return (
+        <KnowledgeGuideView
+          guide={guide}
+          spaceSlug={slug}
+          pathwaySlug={pathwaySlug}
+          chapters={chapters}
+          activeChapter={activeChapter}
+          flat={false}
+          collectivePalette={space?.colour_palette ?? null}
+        />
+      )
+    }
+
+    // Flat mode — no named sections. Render every step continuously,
+    // no ?section= convention, no dropdown.
     return (
       <KnowledgeGuideView
         guide={guide}
+        spaceSlug={slug}
+        pathwaySlug={pathwaySlug}
+        chapters={chapters}
+        activeChapter={null}
+        flat
         collectivePalette={space?.colour_palette ?? null}
       />
     )
