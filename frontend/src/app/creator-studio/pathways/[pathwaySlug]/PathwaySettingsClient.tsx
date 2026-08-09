@@ -1058,6 +1058,12 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
   const [pricingMode, setPricingMode]   = useState<string>(pathway.pricing_mode ?? 'legacy')
   const [priceDollars, setPriceDollars] = useState(centsToDisplay(pathway.price_cents))
   const [currency, setCurrency]         = useState(pathway.currency ?? 'AUD')
+  const [pathwayType, setPathwayType]   = useState<'guided_experience' | 'knowledge_guide'>(
+    pathway.pathway_type ?? 'guided_experience',
+  )
+  const [pathwayTypeSaving, setPathwayTypeSaving] = useState(false)
+  const [pathwayTypeError, setPathwayTypeError]   = useState<string | null>(null)
+  const [pathwayTypeSaved, setPathwayTypeSaved]   = useState(false)
   const [loading, setLoading]           = useState(false)
   const [saved, setSaved]               = useState(false)
   const [error, setError]               = useState<string | null>(null)
@@ -1068,6 +1074,61 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
   const [coverUrl, setCoverUrl]             = useState<string | null>(pathway.cover_image_url ?? null)
   const [coverError, setCoverError]         = useState<string | null>(null)
   const [coverSaved, setCoverSaved]         = useState(false)
+
+  async function handlePathwayTypeChange(next: 'guided_experience' | 'knowledge_guide') {
+    if (next === pathwayType) return
+
+    // Switching type never migrates data — StepProgress rows stay put,
+    // enrolments stay valid — but the member surface changes shape.
+    // A confirmation goes up when the pathway is live so an operator
+    // clicking the wrong radio doesn't quietly flip the experience for
+    // real members. Draft/coming-soon/archived pathways switch silently.
+    if (pathway.status === 'active') {
+      const goingToGuide = next === 'knowledge_guide'
+      const warning = goingToGuide
+        ? 'Switch this Pathway to a Knowledge Guide?\n\n'
+          + 'Members will see one continuous document instead of the step-by-step '
+          + 'flow. Progress and reflections are preserved but no longer displayed. '
+          + 'Existing step URLs will redirect to the guide.'
+        : 'Switch this Pathway to a Guided Experience?\n\n'
+          + 'Members will see the step-by-step flow with progress and completion. '
+          + 'Any progress recorded from the previous type will reappear.'
+      if (!window.confirm(warning)) return
+    }
+
+    setPathwayTypeSaving(true)
+    setPathwayTypeError(null)
+    setPathwayTypeSaved(false)
+    const prev = pathwayType
+    setPathwayType(next)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}`),
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ pathway_type: next }),
+        },
+      )
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setPathwayTypeError(
+          typeof body.detail === 'string' ? body.detail : 'Could not save Pathway Type.',
+        )
+        setPathwayType(prev)
+        return
+      }
+      setPathwayTypeSaved(true)
+      startTransition(() => router.refresh())
+      setTimeout(() => setPathwayTypeSaved(false), 3000)
+    } catch {
+      setPathwayTypeError('Could not save Pathway Type.')
+      setPathwayType(prev)
+    } finally {
+      setPathwayTypeSaving(false)
+    }
+  }
 
   async function handleCoverChange(next: string | null) {
     setCoverError(null)
@@ -1247,6 +1308,91 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
             {loading ? 'Saving…' : 'Save changes'}
           </button>
         </div>
+      </div>
+
+      {/* ── 1b. Pathway Type — Guided Experience vs Knowledge Guide.
+             One choice, saved on change. The content editor is
+             identical either way — only how members experience the
+             pathway differs. ── */}
+      <div className="rounded-2xl border border-border bg-white p-6">
+        <h2 className="mb-1 text-[14px] font-semibold text-navy-900">Pathway Type</h2>
+        <p className="mb-4 text-[12.5px] text-black">
+          How members experience this pathway.
+        </p>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <label
+            className={`flex cursor-pointer flex-col rounded-xl border p-4 transition-colors ${
+              pathwayType === 'guided_experience'
+                ? 'border-teal-400 bg-teal-50/40'
+                : 'border-slate-200 hover:border-slate-300'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <input
+                type="radio"
+                name="pathway_type"
+                value="guided_experience"
+                checked={pathwayType === 'guided_experience'}
+                onChange={() => void handlePathwayTypeChange('guided_experience')}
+                disabled={pathwayTypeSaving}
+                className="mt-1 h-4 w-4 accent-teal-500"
+              />
+              <div>
+                <span className="block text-[13.5px] font-semibold text-navy-900">
+                  Guided Experience
+                </span>
+                <span className="mt-1 block text-[12.5px] text-black">
+                  Steps in order, with progress, reflections, and next / previous
+                  navigation. Best for structured journeys.
+                </span>
+              </div>
+            </div>
+          </label>
+
+          <label
+            className={`flex cursor-pointer flex-col rounded-xl border p-4 transition-colors ${
+              pathwayType === 'knowledge_guide'
+                ? 'border-teal-400 bg-teal-50/40'
+                : 'border-slate-200 hover:border-slate-300'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <input
+                type="radio"
+                name="pathway_type"
+                value="knowledge_guide"
+                checked={pathwayType === 'knowledge_guide'}
+                onChange={() => void handlePathwayTypeChange('knowledge_guide')}
+                disabled={pathwayTypeSaving}
+                className="mt-1 h-4 w-4 accent-teal-500"
+              />
+              <div>
+                <span className="block text-[13.5px] font-semibold text-navy-900">
+                  Knowledge Guide
+                </span>
+                <span className="mt-1 block text-[12.5px] text-black">
+                  One continuous document, with sections as chapters. No progress
+                  or completion. Best for practical reference material.
+                </span>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        {pathwayTypeError && (
+          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-600">
+            {pathwayTypeError}
+          </p>
+        )}
+        {pathwayTypeSaved && (
+          <p
+            className="mt-3 rounded-lg px-3 py-2 text-[13px] font-medium"
+            style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}
+          >
+            Pathway Type saved.
+          </p>
+        )}
       </div>
 
       {/* ── 2. Access & pricing + Pathway cover — side by side on desktop. ── */}

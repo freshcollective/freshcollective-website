@@ -11,6 +11,9 @@ export interface PathwaySummary {
   price_cents: number | null
   currency: string | null
   billing_interval: string | null
+  /** How members experience this pathway. Defaults to
+   *  'guided_experience' for every existing pathway. */
+  pathway_type?: 'guided_experience' | 'knowledge_guide'
   user_has_access: boolean
   step_count: number
   unlock_offer_names: string[]
@@ -194,8 +197,46 @@ export interface PathwayWithSteps {
   price_cents: number | null
   currency: string | null
   billing_interval: string | null
+  /** Presentation type — the pathway landing branches on this to
+   *  render either the Guided step list or the Knowledge Guide
+   *  continuous document. Defaults server-side to
+   *  'guided_experience'. */
+  pathway_type?: 'guided_experience' | 'knowledge_guide'
   user_has_access: boolean
   payment_options: PaymentOptionSummary[]
+}
+
+/** Knowledge Guide continuous-document payload — returned by
+ *  ``GET /api/spaces/{slug}/pathways/{pathway_slug}/guide``. Only
+ *  valid for Knowledge Guide pathways; the endpoint returns 409 for
+ *  Guided Experience pathways. */
+export interface KnowledgeGuide {
+  id: string
+  slug: string
+  title: string
+  description: string | null
+  cover_image_url: string | null
+  pathway_type: 'knowledge_guide'
+  orphan_steps: KnowledgeGuideStep[]
+  sections: KnowledgeGuideSection[]
+}
+
+export interface KnowledgeGuideSection {
+  id: string
+  slug: string
+  title: string
+  banner_image_url: string | null
+  steps: KnowledgeGuideStep[]
+}
+
+export interface KnowledgeGuideStep {
+  id: string
+  slug: string
+  title: string
+  /** Same block shape the per-step endpoint returns — rendered by
+   *  the shared BlockList so guided and guide surfaces stay
+   *  identical at the block level. */
+  blocks: unknown[]
 }
 
 export interface CreatorSection {
@@ -649,6 +690,12 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   } | null
 }
 
+/** How members experience a pathway. Guided Experience is the
+ *  original per-step flow; Knowledge Guide renders the whole pathway
+ *  as one continuous reference document. Same content model either
+ *  way — the type only affects the member surface. */
+export type PathwayType = 'guided_experience' | 'knowledge_guide'
+
 export interface CreatorPathway {
   id: string
   slug: string
@@ -663,6 +710,7 @@ export interface CreatorPathway {
   currency: string | null
   billing_interval: string | null
   is_sequential: boolean
+  pathway_type: PathwayType
   position: number
   step_count: number
   updated_at: string | null
