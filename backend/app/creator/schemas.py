@@ -421,6 +421,7 @@ class PathwayUpdateRequest(BaseModel):
     currency: str | None = None
     billing_interval: str | None = None
     cover_image_url: str | None = None
+    pathway_type: str | None = None
 
     @field_validator("status")
     @classmethod
@@ -443,6 +444,15 @@ class PathwayUpdateRequest(BaseModel):
             raise ValueError("pricing_mode must be 'legacy' or 'payment_options'.")
         return v
 
+    @field_validator("pathway_type")
+    @classmethod
+    def validate_pathway_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in ("guided_experience", "knowledge_guide"):
+            raise ValueError(
+                "pathway_type must be 'guided_experience' or 'knowledge_guide'."
+            )
+        return v
+
 
 class PathwayResponse(BaseModel):
     model_config = {"from_attributes": True}
@@ -459,6 +469,7 @@ class PathwayResponse(BaseModel):
     currency: str = "AUD"
     billing_interval: str | None = None
     is_sequential: bool
+    pathway_type: str = "guided_experience"
     position: int
     step_count: int = 0
     updated_at: datetime | None = None

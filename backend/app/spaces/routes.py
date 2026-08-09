@@ -48,7 +48,10 @@ from app.spaces.schemas import (
     ContinueResponse,
     EventDetail,
     EventSummary,
+    GuideSection,
+    GuideStep,
     InviteLookupResponse,
+    KnowledgeGuideResponse,
     NotificationPrefsResponse,
     NotificationPrefsUpdate,
     PathwayProgress,
@@ -1112,6 +1115,10 @@ def list_pathways(
             price_cents=p.price_cents,
             currency=p.currency,
             billing_interval=p.billing_interval,
+            pathway_type=(
+                p.pathway_type.value if hasattr(p.pathway_type, "value")
+                else str(p.pathway_type or "guided_experience")
+            ),
             user_has_access=has_access,
             step_count=step_counts.get(p.id, 0),
             unlock_offer_names=unlock_offer_names_by_pathway.get(p.id, []),
@@ -2475,6 +2482,10 @@ def get_pathway(
         price_cents=p.price_cents,
         currency=p.currency,
         billing_interval=p.billing_interval,
+        pathway_type=(
+            p.pathway_type.value if hasattr(p.pathway_type, "value")
+            else str(p.pathway_type or "guided_experience")
+        ),
         user_has_access=_compute_pathway_access(current_user, p, space, db),
         step_count=db.query(func.count(PathwayStep.id)).filter(PathwayStep.pathway_id == p.id).scalar() or 0,
         unlock_offer_names=unlock_offer_names,
@@ -2633,6 +2644,10 @@ def get_pathway_overview(
         price_cents=pathway.price_cents,
         currency=pathway.currency,
         billing_interval=pathway.billing_interval,
+        pathway_type=(
+            pathway.pathway_type.value if hasattr(pathway.pathway_type, "value")
+            else str(pathway.pathway_type or "guided_experience")
+        ),
         user_has_access=user_has_access,
         payment_options=option_summaries,
     )
@@ -2760,6 +2775,23 @@ def get_step(
     )
 
 
+def _reject_if_knowledge_guide(pathway: Pathway) -> None:
+    """Guard endpoints that don't apply to Knowledge Guide pathways.
+
+    Knowledge Guides deliberately have no progress or completion — the
+    frontend never renders "Mark complete", so a request landing here
+    is either stale client state or a scripted call. Refuse it rather
+    than silently creating a meaningless StepProgress row.
+    """
+    ptype = getattr(pathway, "pathway_type", None)
+    ptype_val = ptype.value if hasattr(ptype, "value") else str(ptype or "")
+    if ptype_val == "knowledge_guide":
+        raise HTTPException(
+            status_code=409,
+            detail="Knowledge Guide pathways do not track step completion.",
+        )
+
+
 @router.post(
     "/{slug}/pathways/{pathway_slug}/steps/{step_slug}/complete",
     response_model=CompleteStepResponse,
@@ -2774,6 +2806,7 @@ def complete_step(
 ) -> CompleteStepResponse:
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _reject_if_knowledge_guide(pathway)
     _check_pathway_access(current_user, pathway, space, db)
     step = _get_step_or_404(pathway.id, step_slug, db)
 
@@ -2939,6 +2972,132 @@ def list_step_blocks(
         .order_by(PathwayStepBlock.position)
         .all()
     )
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Guide — continuous document view
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/{slug}/pathways/{pathway_slug}/guide",
+    response_model=KnowledgeGuideResponse,
+)
+def get_knowledge_guide(
+    slug: str,
+    pathway_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> KnowledgeGuideResponse:
+    """Return every section, step, and block for a Knowledge Guide in
+    one round trip so the frontend can render a single continuous
+    document without per-step network calls.
+
+    Refuses (409) for Guided Experience pathways so a stale client
+    doesn't get half-loaded content — those pathways use the existing
+    per-step endpoints.
+    """
+    space = _get_space_visible_to(slug, db, current_user)
+    pathway = _get_pathway_or_404(space.id, pathway_slug, db)
+    _check_pathway_access(current_user, pathway, space, db)
+
+    ptype = getattr(pathway, "pathway_type", None)
+    ptype_val = ptype.value if hasattr(ptype, "value") else str(ptype or "")
+    if ptype_val != "knowledge_guide":
+        raise HTTPException(
+            status_code=409,
+            detail="This endpoint is only valid for Knowledge Guide pathways.",
+        )
+
+    # One query for every step in the pathway; a second for every
+    # block. Both bounded by pathway_id so the payload can't be
+    # inflated by another Collective's data.
+    steps = (
+        db.query(PathwayStep)
+        .filter(PathwayStep.pathway_id == pathway.id)
+        .order_by(
+            PathwayStep.section_id.nulls_first(),
+            PathwayStep.section_position.nulls_last(),
+            PathwayStep.position,
+        )
+        .all()
+    )
+
+    step_ids = [s.id for s in steps]
+    blocks_by_step: dict[str, list[PathwayStepBlock]] = {sid: [] for sid in step_ids}
+    if step_ids:
+        block_rows = (
+            db.query(PathwayStepBlock)
+            .options(
+                selectinload(PathwayStepBlock.media_asset),
+                selectinload(PathwayStepBlock.resource),
+            )
+            .filter(PathwayStepBlock.step_id.in_(step_ids))
+            .order_by(PathwayStepBlock.position)
+            .all()
+        )
+        for b in block_rows:
+            blocks_by_step.setdefault(b.step_id, []).append(b)
+
+    def _serialize_step(step: PathwayStep) -> GuideStep:
+        return GuideStep(
+            id=step.id,
+            slug=step.slug,
+            title=step.title,
+            blocks=[
+                StepBlockResponse.model_validate(b).model_dump(mode="json")
+                for b in blocks_by_step.get(step.id, [])
+            ],
+        )
+
+    # Section-less steps land in `orphan_steps` so a KG author who has
+    # not yet organised into chapters still gets a usable document.
+    orphan_steps = [_serialize_step(s) for s in steps if s.section_id is None]
+
+    db_sections = (
+        db.query(PathwaySection)
+        .filter(PathwaySection.pathway_id == pathway.id)
+        .order_by(PathwaySection.position)
+        .all()
+    )
+    steps_by_section: dict[str, list[PathwayStep]] = {sec.id: [] for sec in db_sections}
+    for s in steps:
+        if s.section_id and s.section_id in steps_by_section:
+            steps_by_section[s.section_id].append(s)
+
+    sections = [
+        GuideSection(
+            id=sec.id,
+            slug=_section_slug(sec),
+            title=sec.title,
+            banner_image_url=sec.banner_image_url,
+            steps=[_serialize_step(s) for s in steps_by_section.get(sec.id, [])],
+        )
+        for sec in db_sections
+    ]
+
+    return KnowledgeGuideResponse(
+        id=pathway.id,
+        slug=pathway.slug,
+        title=pathway.title,
+        description=pathway.description,
+        cover_image_url=pathway.cover_image_url,
+        pathway_type="knowledge_guide",
+        orphan_steps=orphan_steps,
+        sections=sections,
+    )
+
+
+def _section_slug(section: PathwaySection) -> str:
+    """Sections don't carry a slug column; derive a stable, URL-safe
+    anchor from ``title`` + ``id`` so the frontend can hash-navigate to
+    a chapter without a database round trip. The id suffix guards
+    against title collisions within a pathway.
+    """
+    import re
+    base = re.sub(r"[^a-z0-9]+", "-", (section.title or "").lower()).strip("-")
+    if not base:
+        base = "chapter"
+    return f"{base}-{section.id[:8]}"
 
 
 # ---------------------------------------------------------------------------

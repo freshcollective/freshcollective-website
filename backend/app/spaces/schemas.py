@@ -32,6 +32,9 @@ class PathwaySummary(BaseModel):
     price_cents: int | None = None
     currency: str | None = None
     billing_interval: str | None = None
+    # 'guided_experience' | 'knowledge_guide'. Default keeps every
+    # legacy pathway rendering exactly as it did before.
+    pathway_type: str = 'guided_experience'
     user_has_access: bool = False
     step_count: int = 0
     unlock_offer_names: list[str] = []
@@ -245,8 +248,54 @@ class PathwayWithSteps(BaseModel):
     price_cents: int | None = None
     currency: str | None = None
     billing_interval: str | None = None
+    # 'guided_experience' | 'knowledge_guide'. The member frontend
+    # branches on this to render either the per-step Guided flow or
+    # the continuous Knowledge Guide document.
+    pathway_type: str = 'guided_experience'
     user_has_access: bool = False
     payment_options: list[PaymentOptionSummary] = []
+
+
+# ── Knowledge Guide continuous view ──────────────────────────────────
+
+
+class GuideStep(BaseModel):
+    """One step's ordered blocks, embedded inline into a KG chapter."""
+
+    id: str
+    slug: str
+    title: str
+    blocks: list[dict]
+
+
+class GuideSection(BaseModel):
+    """One chapter of a Knowledge Guide — a section with its steps."""
+
+    id: str
+    slug: str
+    title: str
+    banner_image_url: str | None = None
+    steps: list[GuideStep] = []
+
+
+class KnowledgeGuideResponse(BaseModel):
+    """Full continuous document for a Knowledge Guide pathway.
+
+    Returns every section + every step + every block in one round
+    trip. Not used for Guided Experience pathways — those use the
+    existing per-step endpoints.
+    """
+
+    id: str
+    slug: str
+    title: str
+    description: str | None
+    cover_image_url: str | None = None
+    pathway_type: str = 'knowledge_guide'
+    # Ungrouped steps — steps with no section, rendered above the
+    # sectioned chapters. Empty for well-organised guides.
+    orphan_steps: list[GuideStep] = []
+    sections: list[GuideSection] = []
 
 
 class CompleteStepRequest(BaseModel):

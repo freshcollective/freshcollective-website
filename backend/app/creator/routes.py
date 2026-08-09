@@ -1659,6 +1659,10 @@ def list_pathways(
             "currency": p.currency,
             "billing_interval": p.billing_interval,
             "is_sequential": p.is_sequential,
+            "pathway_type": (
+                p.pathway_type.value if hasattr(p.pathway_type, "value")
+                else str(p.pathway_type)
+            ),
             "position": p.position,
             "step_count": step_count,
             "updated_at": p.updated_at,
@@ -1691,6 +1695,10 @@ def get_pathway(
         "currency": pathway.currency,
         "billing_interval": pathway.billing_interval,
         "is_sequential": pathway.is_sequential,
+        "pathway_type": (
+            pathway.pathway_type.value if hasattr(pathway.pathway_type, "value")
+            else str(pathway.pathway_type)
+        ),
         "position": pathway.position,
         "step_count": step_count,
         "updated_at": pathway.updated_at,
@@ -1792,6 +1800,12 @@ def update_pathway(
             pathway.currency = val
         elif field == "cover_image_url":
             pathway.cover_image_url = _normalise_banner_image(val)
+        elif field == "pathway_type" and val is not None:
+            # Type is a hot-switch: no data is migrated or dropped. The
+            # frontend surfaces a confirmation when the pathway has
+            # enrolments; we don't hard-block here so an operator can
+            # correct a mistake even on an active pathway.
+            pathway.pathway_type = val
 
     db.commit()
     db.refresh(pathway)
@@ -1802,6 +1816,10 @@ def update_pathway(
                                              "currency", "billing_interval", "is_sequential", "position",
                                              "updated_at", "created_at"]},
         "status": pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status),
+        "pathway_type": (
+            pathway.pathway_type.value if hasattr(pathway.pathway_type, "value")
+            else str(pathway.pathway_type)
+        ),
         "step_count": step_count,
     }
 

@@ -75,6 +75,21 @@ class PathwayStatus(str, enum.Enum):
     archived = "archived"
 
 
+class PathwayType(str, enum.Enum):
+    """How members experience a Pathway.
+
+    ``guided_experience`` (default) — the original per-step flow with
+    progress, reflections, next/previous navigation.
+
+    ``knowledge_guide`` — one continuous reference document rendered on
+    the pathway landing page. Sections become chapters, steps render
+    inline. No progress or completion is displayed.
+    """
+
+    guided_experience = "guided_experience"
+    knowledge_guide = "knowledge_guide"
+
+
 class StepContentType(str, enum.Enum):
     text = "text"
     video = "video"
@@ -522,6 +537,16 @@ class Pathway(Base):
         nullable=False,
         default=PathwayStatus.active,
         server_default="active",
+    )
+    # How members experience the content. Existing rows default to
+    # ``guided_experience`` so the change is a no-op for them; new
+    # pathways can opt into ``knowledge_guide`` for a continuous
+    # reference-document presentation. Same content model either way.
+    pathway_type: Mapped[PathwayType] = mapped_column(
+        SAEnum(PathwayType, name="pathway_type_enum", create_type=False),
+        nullable=False,
+        default=PathwayType.guided_experience,
+        server_default="guided_experience",
     )
     # Display order within the Space
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
