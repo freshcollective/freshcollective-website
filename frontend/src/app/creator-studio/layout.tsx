@@ -8,7 +8,7 @@ import {
   ACTIVE_SPACE_COOKIE,
 } from '@/lib/serverApi'
 import CreatorStudioShell from './CreatorStudioShell'
-import { CollectivePaletteContextProvider } from '@/components/collective/CollectivePaletteContext'
+import CollectiveThemeProvider from '@/components/collective/CollectiveThemeProvider'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import type { CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
 
@@ -45,11 +45,17 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
     }
   }
 
+  // CollectiveThemeProvider composes the palette React context AND
+  // sets the palette-scoped CSS custom properties (--fc-accent,
+  // --fc-accent-soft, --fc-accent-line, --fc-accent-strong). Editor
+  // previews (BlockPreview, reflection-prompt renderings, callout
+  // fallbacks) read those vars — without them the previews all
+  // fall back to teal regardless of the collective's chosen palette.
   return (
-    <CollectivePaletteContextProvider palette={palette}>
+    <CollectiveThemeProvider palette={palette}>
       <CreatorStudioShell user={profile} hasCollective={!!activeSpace}>
         {children}
       </CreatorStudioShell>
-    </CollectivePaletteContextProvider>
+    </CollectiveThemeProvider>
   )
 }
