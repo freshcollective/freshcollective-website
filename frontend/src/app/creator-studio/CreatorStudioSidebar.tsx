@@ -61,14 +61,15 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
     items: [
       { href: '/creator-studio/home',     label: 'Collective Overview', requiresCollective: true },
       { href: '/creator-studio/settings', label: 'Collective Settings', activeOnPath: /^\/creator\/spaces\/[^/]+$/, requiresCollective: true },
-      { href: '/creator-studio/assets',   label: 'Media Library',       requiresCollective: true },
+      // One unified surface for uploaded files + external links. Replaces
+      // the old "Media Library" and "Resources" entries.
+      { href: '/creator-studio/library',  label: 'Library',             requiresCollective: true },
     ],
   },
   {
     label: '📖 OFFERINGS',
     items: [
       { href: '/creator-studio/pathways',  label: 'Pathways',   activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/, requiresCollective: true },
-      { href: '/creator-studio/resources', label: 'Resources',  requiresCollective: true },
     ],
   },
   {

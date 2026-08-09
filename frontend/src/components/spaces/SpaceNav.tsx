@@ -41,7 +41,6 @@ export default function SpaceNav({ spaceSlug, spaceName: _spaceName, isMember, u
     },
     { label: 'Pathways',  href: `${base}/pathways`, icon: '◎' },
     { label: 'Gatherings', href: `${base}/events`,    icon: '◷' },
-    { label: 'Resources',  href: `${base}/resources`, icon: '◫' },
     { label: 'Members',    href: `${base}/members`,   icon: '◉' },
     { label: 'About',     href: `${base}/about`,    icon: '◇' },
   ]

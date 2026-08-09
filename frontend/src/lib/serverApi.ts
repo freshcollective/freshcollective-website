@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl, resolveMediaUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, AggregatedResourcesResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 // Re-export so existing callers keep working. The canonical definition
 // lives in ``@/lib/activeSpaceCookie`` because the proxy middleware also
@@ -588,11 +588,9 @@ export const getCreatorPathways = cache(async (slug: string) => {
   return res.json()
 })
 
-export const getSpaceResources = cache(async (slug: string): Promise<AggregatedResourcesResponse> => {
-  const res = await fetchWithSession(`/api/spaces/${slug}/resources`)
-  if (!res.ok) return { standalone_resources: [], pathway_resource_groups: [] }
-  return res.json()
-})
+// getSpaceResources removed — member-facing Resources page retired.
+// Members access resources via Pathways (Guided or Knowledge Guide);
+// no aggregated list endpoint exists any more.
 
 export const getCreatorResources = cache(async (slug: string) => {
   const res = await fetchWithSession(`/api/creator/spaces/${slug}/resources`)

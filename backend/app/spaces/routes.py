@@ -66,10 +66,11 @@ from app.spaces.schemas import (
     SpaceAccessStatus,
     SpaceResponse,
     SpaceSummary,
-    CollectiveResourceResponse,
-    AggregatedResourcesResponse,
-    PathwayResourceGroup,
-    PathwayResourceItem,
+    # CollectiveResourceResponse / AggregatedResourcesResponse /
+    # PathwayResourceGroup / PathwayResourceItem — retired with the
+    # member Resources page. Kept in schemas.py in case a Phase 2
+    # analytics feature wants a similar shape; not imported here to
+    # avoid dead references.
     StepCommentAuthor,
     StepCommentCreate,
     StepCommentItem,
@@ -2291,167 +2292,15 @@ def download_ics(
 
 
 # ---------------------------------------------------------------------------
-# Space Resources (member-facing — members only, published resources only)
-# ---------------------------------------------------------------------------
-
-@router.get("/{slug}/resources", response_model=AggregatedResourcesResponse)
-def list_space_resources(
-    slug: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    space = _get_space_or_404(slug, db)
-    membership = (
-        db.query(SpaceMembership)
-        .filter(
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.user_id == current_user.id,
-            SpaceMembership.status == "active",
-        )
-        .first()
-    )
-    if not membership and current_user.role not in ("admin", "creator"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Members only.")
-
-    # -- Resources v2: drive groupings from the many-to-many join table ------
-    # "General" = published resources with NO pathway attachments.
-    # "Pathway X" = published resources with X in their pathway list.
-    # Archived resources (status = 'archived') are excluded everywhere on
-    # the member side, same rule as drafts.
-    all_published = (
-        db.query(SpaceResource)
-        .filter(
-            SpaceResource.space_id == space.id,
-            SpaceResource.status == "published",
-        )
-        .order_by(SpaceResource.sort_order, SpaceResource.created_at)
-        .all()
-    )
-    # General set = those with empty `pathways` relationship (selectin-loaded)
-    standalone_orm = [r for r in all_published if not r.pathways]
-    standalone = [CollectiveResourceResponse.model_validate(r) for r in standalone_orm]
-
-    # -- Pathway resource groups (accessible active pathways) -----------------
-    pathways = (
-        db.query(Pathway)
-        .filter(Pathway.space_id == space.id, Pathway.status == "active")
-        .order_by(Pathway.position)
-        .all()
-    )
-
-    # Bucket published resources by every pathway they're attached to.
-    # A resource attached to two pathways appears in both buckets — that
-    # is the whole point of the v2 many-to-many.
-    scoped_by_pathway: dict[str, list[SpaceResource]] = {}
-    for r in all_published:
-        for p in r.pathways:
-            scoped_by_pathway.setdefault(p.id, []).append(r)
-
-    pathway_groups: list[PathwayResourceGroup] = []
-    for pathway in pathways:
-        if not _compute_pathway_access(current_user, pathway, space, db):
-            continue
-
-        access_type = (
-            pathway.access_type.value
-            if hasattr(pathway.access_type, "value")
-            else str(pathway.access_type or "free")
-        )
-        access_label = (
-            "Free" if access_type == "free"
-            else "Included" if access_type == "included"
-            else "Purchased"
-        )
-
-        items: list[PathwayResourceItem] = []
-
-        # 1. Pathway-scoped SpaceResource records
-        for r in scoped_by_pathway.get(pathway.id, []):
-            items.append(PathwayResourceItem(
-                id=r.id,
-                title=r.title,
-                description=r.description,
-                resource_type=r.resource_type,
-                url=r.url,
-                file_name=r.file_name,
-                file_size=r.file_size,
-                is_downloadable=bool(r.file_name),
-                source="pathway_resource",
-            ))
-
-        # 2. StepResource records and content_url from pathway steps
-        steps = (
-            db.query(PathwayStep)
-            .filter(PathwayStep.pathway_id == pathway.id)
-            .order_by(PathwayStep.position)
-            .all()
-        )
-        step_ids = [s.id for s in steps]
-        step_map = {s.id: s for s in steps}
-
-        if step_ids:
-            step_resources = (
-                db.query(StepResource)
-                .filter(StepResource.step_id.in_(step_ids))
-                .order_by(StepResource.position)
-                .all()
-            )
-            for sr in step_resources:
-                if sr.step_id not in step_map:
-                    continue
-                items.append(PathwayResourceItem(
-                    id=sr.id,
-                    title=sr.title,
-                    description=sr.description,
-                    resource_type=sr.resource_type,
-                    url=sr.url,
-                    file_name=sr.file_name,
-                    file_size=sr.file_size,
-                    mime_type=sr.mime_type,
-                    is_downloadable=sr.is_downloadable,
-                    step_id=sr.step_id,
-                    step_title=step_map[sr.step_id].title,
-                    source="pathway_step",
-                ))
-
-            # Include content_url for video/audio steps as a resource item.
-            # content_url is the step's primary media (not supplementary),
-            # but it IS a link/file members should be able to access from
-            # the Resources page.
-            for step in steps:
-                if step.content_url:
-                    ct = (
-                        step.content_type.value
-                        if hasattr(step.content_type, "value")
-                        else str(step.content_type or "text")
-                    )
-                    if ct in ("video", "audio"):
-                        items.append(PathwayResourceItem(
-                            id=f"step_content_{step.id}",
-                            title=step.title,
-                            description=None,
-                            resource_type=ct,
-                            url=step.content_url,
-                            is_downloadable=False,
-                            step_id=step.id,
-                            step_title=step.title,
-                            source="pathway_step_content",
-                        ))
-
-        if items:
-            pathway_groups.append(PathwayResourceGroup(
-                pathway_id=pathway.id,
-                pathway_title=pathway.title,
-                pathway_slug=pathway.slug,
-                access_label=access_label,
-                resources=items,
-            ))
-
-    return AggregatedResourcesResponse(
-        standalone_resources=standalone,
-        pathway_resource_groups=pathway_groups,
-    )
-
+# Space Resources (member-facing) — RETIRED.
+#
+# Members no longer browse a raw list of resources. Creators surface
+# resources through Pathways instead (Guided Experiences or Knowledge
+# Guides), embedding Library items as ``resource`` blocks. The member
+# ``/api/spaces/{slug}/resources`` endpoint has been removed; any
+# stale client hitting it now sees a 404. The underlying
+# ``SpaceResource`` table is unchanged — it powers the creator-only
+# Library alongside ``CreatorMediaAsset``.
 
 @router.get("/{slug}/pathways/{pathway_slug}", response_model=PathwaySummary)
 def get_pathway(
