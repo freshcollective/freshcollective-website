@@ -15,7 +15,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel
-from sqlalchemy import func, text
+from sqlalchemy import false as sa_false, func, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.dependencies import get_creator_user
@@ -77,6 +77,13 @@ from app.creator.schemas import (
     InvitationCreateRequest,
     InvitationResponse,
     BlockMediaInfo,
+    LibraryFolderCreateRequest,
+    LibraryFolderResponse,
+    LibraryFolderUpdateRequest,
+    LibraryItem,
+    LibraryFileInfo,
+    LibraryLinkInfo,
+    LibraryListResponse,
     MediaAssetResponse,
     MediaAssetUpdateRequest,
     PathwayCreateRequest,
@@ -4051,6 +4058,376 @@ def _media_usage_counts(db: Session, asset_ids: list[str]) -> dict[str, int]:
     for aid, n in about_rows:
         counts[aid] = counts.get(aid, 0) + int(n)
     return counts
+
+
+# ---------------------------------------------------------------------------
+# Library — folders + unified list
+# ---------------------------------------------------------------------------
+
+
+def _folder_item_counts(db: Session, space_id: str) -> dict[str, int]:
+    """Return ``{folder_id: item_count}`` for every folder in a Space,
+    summed across both asset stores.
+
+    Folders with zero items still get a 0 (the caller merges with the
+    folder list to render the sidebar).
+    """
+    media_rows = (
+        db.query(CreatorMediaAsset.folder_id, func.count(CreatorMediaAsset.id))
+        .filter(
+            CreatorMediaAsset.space_id == space_id,
+            CreatorMediaAsset.status == "active",
+            CreatorMediaAsset.folder_id.isnot(None),
+        )
+        .group_by(CreatorMediaAsset.folder_id)
+        .all()
+    )
+    resource_rows = (
+        db.query(SpaceResource.folder_id, func.count(SpaceResource.id))
+        .filter(
+            SpaceResource.space_id == space_id,
+            SpaceResource.folder_id.isnot(None),
+        )
+        .group_by(SpaceResource.folder_id)
+        .all()
+    )
+    counts: dict[str, int] = {}
+    for fid, n in media_rows:
+        counts[fid] = counts.get(fid, 0) + int(n)
+    for fid, n in resource_rows:
+        counts[fid] = counts.get(fid, 0) + int(n)
+    return counts
+
+
+def _serialise_folder(folder: LibraryFolder, item_count: int) -> dict:
+    return {
+        "id": folder.id,
+        "name": folder.name,
+        "position": folder.position,
+        "item_count": item_count,
+    }
+
+
+@router.get(
+    "/spaces/{slug}/library/folders",
+    response_model=list[LibraryFolderResponse],
+)
+def list_library_folders(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    folders = (
+        db.query(LibraryFolder)
+        .filter(LibraryFolder.space_id == space.id)
+        .order_by(LibraryFolder.position, LibraryFolder.created_at)
+        .all()
+    )
+    counts = _folder_item_counts(db, space.id)
+    return [_serialise_folder(f, counts.get(f.id, 0)) for f in folders]
+
+
+@router.post(
+    "/spaces/{slug}/library/folders",
+    response_model=LibraryFolderResponse,
+    status_code=201,
+)
+def create_library_folder(
+    slug: str,
+    body: LibraryFolderCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    # Default position — one past the current max, so new folders land
+    # at the bottom of the sidebar rather than the top.
+    if body.position is None:
+        max_pos = (
+            db.query(func.coalesce(func.max(LibraryFolder.position), -1))
+            .filter(LibraryFolder.space_id == space.id)
+            .scalar()
+        )
+        position = int(max_pos) + 1
+    else:
+        position = body.position
+    folder = LibraryFolder(
+        id=f"flr_{uuid4().hex[:12]}",
+        space_id=space.id,
+        name=body.name,
+        position=position,
+    )
+    db.add(folder)
+    db.commit()
+    db.refresh(folder)
+    return _serialise_folder(folder, 0)
+
+
+@router.patch(
+    "/spaces/{slug}/library/folders/{folder_id}",
+    response_model=LibraryFolderResponse,
+)
+def update_library_folder(
+    slug: str,
+    folder_id: str,
+    body: LibraryFolderUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    folder = db.query(LibraryFolder).filter(
+        LibraryFolder.id == folder_id,
+        LibraryFolder.space_id == space.id,
+    ).first()
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found.")
+    if body.name is not None:
+        folder.name = body.name
+    if body.position is not None:
+        folder.position = body.position
+    db.commit()
+    db.refresh(folder)
+    counts = _folder_item_counts(db, space.id)
+    return _serialise_folder(folder, counts.get(folder.id, 0))
+
+
+@router.delete(
+    "/spaces/{slug}/library/folders/{folder_id}",
+    status_code=204,
+)
+def delete_library_folder(
+    slug: str,
+    folder_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    folder = db.query(LibraryFolder).filter(
+        LibraryFolder.id == folder_id,
+        LibraryFolder.space_id == space.id,
+    ).first()
+    if not folder:
+        raise HTTPException(status_code=404, detail="Folder not found.")
+    # ON DELETE SET NULL on the child FKs. Contents fall back to
+    # "All items" — never deleted with the folder.
+    db.delete(folder)
+    db.commit()
+
+
+# ── Unified Library list ────────────────────────────────────────────
+
+_MEDIA_TYPE_TO_LIBRARY: dict[str, str] = {
+    "image": "image",
+    "video": "video",
+    "audio": "audio",
+    "document": "document",
+    "other": "document",
+}
+
+# Legacy SpaceResource resource_type values that predate this milestone.
+# Anything not 'link' is surfaced as a file-kind item so historical
+# content still appears in the Library even before the Phase 2 migration.
+_LEGACY_RESOURCE_TYPE_TO_MEDIA: dict[str, str] = {
+    "file": "document",
+    "guide": "document",
+    "template": "document",
+    "replay": "video",
+    "audio": "audio",
+    "video": "video",
+    "other": "document",
+}
+
+
+@router.get(
+    "/spaces/{slug}/library",
+    response_model=LibraryListResponse,
+)
+def list_library(
+    slug: str,
+    type: str = "any",           # image | video | audio | document | link | any
+    folder: str = "all",         # <folder-id> | none | all
+    q: str = "",
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    """Return the unified Library — every asset the creator can pick
+    from, aggregated across the file store and the link store.
+
+    Filters (all optional):
+      * ``type`` — image | video | audio | document | link | any
+      * ``folder`` — a folder id, ``none`` (uncategorised), or
+        ``all`` (default; every folder + uncategorised)
+      * ``q`` — substring match on title / description
+      * ``limit`` / ``offset`` — pagination across the merged list
+    """
+    space = _get_managed_space(slug, current_user, db)
+
+    include_files = type in ("any", "image", "video", "audio", "document")
+    include_links = type in ("any", "link")
+
+    q_norm = q.strip().lower()
+
+    # ── Files (CreatorMediaAsset) ───────────────────────────────────
+    media_rows: list[CreatorMediaAsset] = []
+    if include_files:
+        query = db.query(CreatorMediaAsset).filter(
+            CreatorMediaAsset.space_id == space.id,
+            CreatorMediaAsset.status == "active",
+        )
+        if type in ("image", "video", "audio", "document"):
+            # 'document' filter accepts both stored media_type=document
+            # AND media_type=other, since 'other' is where unfamiliar
+            # file types land and the creator's mental model is "it's
+            # a file, show it under Documents".
+            if type == "document":
+                query = query.filter(
+                    CreatorMediaAsset.media_type.in_(["document", "other"]),
+                )
+            else:
+                query = query.filter(CreatorMediaAsset.media_type == type)
+        if folder == "none":
+            query = query.filter(CreatorMediaAsset.folder_id.is_(None))
+        elif folder != "all":
+            query = query.filter(CreatorMediaAsset.folder_id == folder)
+        if q_norm:
+            query = query.filter(
+                CreatorMediaAsset.title.ilike(f"%{q_norm}%")
+                | CreatorMediaAsset.description.ilike(f"%{q_norm}%")
+            )
+        media_rows = query.all()
+
+    # ── Links + legacy file rows (SpaceResource) ────────────────────
+    # New items always have resource_type='link'. Legacy rows with
+    # other resource_types are treated as files below.
+    resource_rows: list[SpaceResource] = []
+    if include_files or include_links:
+        query = db.query(SpaceResource).filter(
+            SpaceResource.space_id == space.id,
+            SpaceResource.status != "archived",
+        )
+        if type == "link":
+            query = query.filter(SpaceResource.resource_type == "link")
+        elif type in ("image", "video", "audio", "document"):
+            # Legacy file-type rows only.
+            legacy_matching = [
+                rt for rt, mt in _LEGACY_RESOURCE_TYPE_TO_MEDIA.items()
+                if mt == type
+            ]
+            if not legacy_matching:
+                query = query.filter(sa_false())
+            else:
+                query = query.filter(
+                    SpaceResource.resource_type.in_(legacy_matching),
+                )
+        # type == 'any' → no resource_type filter (we surface both
+        # links and legacy files together)
+        if folder == "none":
+            query = query.filter(SpaceResource.folder_id.is_(None))
+        elif folder != "all":
+            query = query.filter(SpaceResource.folder_id == folder)
+        if q_norm:
+            query = query.filter(
+                SpaceResource.title.ilike(f"%{q_norm}%")
+                | SpaceResource.description.ilike(f"%{q_norm}%")
+            )
+        resource_rows = query.all()
+
+    # ── Usage counts (folded into the LibraryItem for the "used in N" chip) ──
+    resource_ids = [r.id for r in resource_rows]
+    resource_usage = _usage_counts_by_resource_id(db, resource_ids)
+    media_ids = [a.id for a in media_rows]
+    media_usage = _media_usage_counts(db, media_ids)
+
+    # ── Merge + serialise ───────────────────────────────────────────
+    items: list[dict] = []
+    for a in media_rows:
+        media_type_val = (
+            a.media_type.value if hasattr(a.media_type, "value")
+            else str(a.media_type)
+        )
+        items.append({
+            "kind": "file",
+            "id": a.id,
+            "title": a.title,
+            "description": a.description,
+            "folder_id": a.folder_id,
+            "used_in_count": media_usage.get(a.id, 0),
+            "file": {
+                "url": a.file_url,
+                "mime_type": a.mime_type,
+                "size_bytes": a.file_size_bytes,
+                "original_filename": a.original_filename,
+                "media_type": _MEDIA_TYPE_TO_LIBRARY.get(media_type_val, "document"),
+                "extension": a.extension,
+            },
+            "link": None,
+            "created_at": a.created_at,
+            "updated_at": a.updated_at,
+        })
+    for r in resource_rows:
+        rt = r.resource_type
+        if rt == "link":
+            items.append({
+                "kind": "link",
+                "id": r.id,
+                "title": r.title,
+                "description": r.description,
+                "folder_id": r.folder_id,
+                "used_in_count": resource_usage.get(r.id, 0),
+                "file": None,
+                "link": {
+                    "url": r.url or "",
+                    "resource_type": rt,
+                },
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
+            })
+        else:
+            # Legacy file-type SpaceResource. Presented as a file to
+            # the creator so old and new uploads coexist smoothly.
+            items.append({
+                "kind": "file",
+                "id": r.id,
+                "title": r.title,
+                "description": r.description,
+                "folder_id": r.folder_id,
+                "used_in_count": resource_usage.get(r.id, 0),
+                "file": {
+                    "url": r.url or "",
+                    "mime_type": None,
+                    "size_bytes": r.file_size,
+                    "original_filename": r.file_name,
+                    "media_type": _LEGACY_RESOURCE_TYPE_TO_MEDIA.get(rt, "document"),
+                    "extension": None,
+                },
+                "link": None,
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
+            })
+
+    # Sort merged list by updated_at desc so the newest edits float up
+    # regardless of which store they came from.
+    items.sort(key=lambda x: x["updated_at"], reverse=True)
+    total = len(items)
+    items = items[offset : offset + limit]
+
+    folders = (
+        db.query(LibraryFolder)
+        .filter(LibraryFolder.space_id == space.id)
+        .order_by(LibraryFolder.position, LibraryFolder.created_at)
+        .all()
+    )
+    folder_counts = _folder_item_counts(db, space.id)
+
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "folders": [_serialise_folder(f, folder_counts.get(f.id, 0)) for f in folders],
+    }
 
 
 def _serialise_media(a: CreatorMediaAsset, usage_count: int) -> dict:

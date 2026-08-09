@@ -372,6 +372,106 @@ class ResourceUsageResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Library — one creator surface over the two asset stores
+# ---------------------------------------------------------------------------
+
+
+class LibraryFolderResponse(BaseModel):
+    """One folder in the unified Library."""
+
+    model_config = {"from_attributes": True}
+    id: str
+    name: str
+    position: int
+    item_count: int = 0
+
+
+class LibraryFolderCreateRequest(BaseModel):
+    name: str
+    position: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Folder name is required.")
+        if len(v) > 200:
+            raise ValueError("Folder name must be 200 characters or fewer.")
+        return v
+
+
+class LibraryFolderUpdateRequest(BaseModel):
+    name: str | None = None
+    position: int | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("Folder name cannot be empty.")
+        if len(v) > 200:
+            raise ValueError("Folder name must be 200 characters or fewer.")
+        return v
+
+
+class LibraryFileInfo(BaseModel):
+    """Shape for a ``kind='file'`` Library item — the file portion.
+
+    Files live in ``creator_media_assets``; legacy file rows in
+    ``space_resources`` (uploaded via the pre-Library Resources page)
+    are also surfaced here with derived fields so the creator sees
+    every historical file alongside new uploads.
+    """
+
+    url: str
+    mime_type: str | None = None
+    size_bytes: int | None = None
+    original_filename: str | None = None
+    media_type: str  # image | video | audio | document | other
+    extension: str | None = None
+
+
+class LibraryLinkInfo(BaseModel):
+    """Shape for a ``kind='link'`` Library item — the link portion."""
+
+    url: str
+    resource_type: str  # 'link' for new items; legacy values preserved
+
+
+class LibraryItem(BaseModel):
+    """One entry in the unified Library list.
+
+    ``kind`` discriminates the two backing tables; the creator never
+    sees this — it drives which of ``file`` / ``link`` is populated.
+    """
+
+    kind: str  # 'file' | 'link'
+    id: str
+    title: str
+    description: str | None = None
+    folder_id: str | None = None
+    used_in_count: int = 0
+    file: LibraryFileInfo | None = None
+    link: LibraryLinkInfo | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class LibraryListResponse(BaseModel):
+    items: list[LibraryItem]
+    total: int
+    limit: int
+    offset: int
+    # Always returned so the sidebar can render without a second
+    # round trip. Cheap — one query per Collective.
+    folders: list[LibraryFolderResponse] = []
+
+
+# ---------------------------------------------------------------------------
 # Pathways
 # ---------------------------------------------------------------------------
 
