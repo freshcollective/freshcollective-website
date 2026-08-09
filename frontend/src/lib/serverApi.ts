@@ -164,6 +164,18 @@ export const getPathwayOverview = cache(async (spaceSlug: string, pathwaySlug: s
   return res.json()
 })
 
+/** Full continuous document for a Knowledge Guide pathway. Returns null
+ *  on any non-200 response — the caller (KG view) treats this as
+ *  "content not yet available" and renders an empty state rather than
+ *  a hard error. */
+export const getKnowledgeGuide = cache(async (spaceSlug: string, pathwaySlug: string) => {
+  const res = await fetchWithSession(
+    `/api/spaces/${spaceSlug}/pathways/${pathwaySlug}/guide`,
+  )
+  if (!res.ok) return null
+  return res.json()
+})
+
 export const getStep = cache(async (spaceSlug: string, pathwaySlug: string, stepSlug: string) => {
   const res = await fetchWithSession(
     `/api/spaces/${spaceSlug}/pathways/${pathwaySlug}/steps/${stepSlug}`,

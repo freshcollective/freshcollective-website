@@ -1,10 +1,17 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { getPathwayOverview, getMyPasses } from '@/lib/serverApi'
+import { getPathwayOverview, getMyPasses, getKnowledgeGuide, getSpace } from '@/lib/serverApi'
 import PathwayAutoRevalidate from '@/components/spaces/PathwayAutoRevalidate'
+import KnowledgeGuideView from '@/components/spaces/KnowledgeGuideView'
 import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
-import type { PathwayWithSteps, StepSummary, AccessPassSummary } from '@/types/platform'
+import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
+import type {
+  PathwayWithSteps,
+  StepSummary,
+  AccessPassSummary,
+  KnowledgeGuide,
+} from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string }>
@@ -255,6 +262,28 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
   // Redirect locked users to the About page (preview/sales page) instead of showing a wall
   if (locked) {
     redirect(`/spaces/${slug}/pathways/${pathwaySlug}/about`)
+  }
+
+  // Knowledge Guide branch — this pathway is a continuous reference
+  // document. Fetch the full guide payload in one round trip and
+  // render inline; skip the Guided Experience redirect-to-first-step
+  // logic entirely. No progress, no completion, no next/previous
+  // navigation — just the guide.
+  if (!isComingSoon && pathway.pathway_type === 'knowledge_guide') {
+    const [guide, space]: [
+      KnowledgeGuide | null,
+      { colour_palette?: CollectivePaletteMeta | null } | null,
+    ] = await Promise.all([
+      getKnowledgeGuide(slug, pathwaySlug),
+      getSpace(slug),
+    ])
+    if (!guide) notFound()
+    return (
+      <KnowledgeGuideView
+        guide={guide}
+        collectivePalette={space?.colour_palette ?? null}
+      />
+    )
   }
 
   // For accessible users with steps, skip the overview and go straight to the right step —
