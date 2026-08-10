@@ -631,3 +631,56 @@ class NotificationPrefsUpdate(BaseModel):
     push_gathering_reminders: bool | None = None
     push_replies: bool | None = None
     push_announcements: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# Offer Pages — public read shape
+# ---------------------------------------------------------------------------
+
+
+class OfferPageTargetSnapshot(BaseModel):
+    """A small denormalised snapshot of the target so the public
+    Offer Page can render pricing + CTA target without a second
+    round trip. Populated at request time; the fields exposed are
+    intentionally minimal to avoid coupling the Offer Page to the
+    full target schema.
+    """
+
+    kind: str                                 # 'pathway' in V1
+    id: str
+    slug: str
+    title: str
+    description: str | None = None
+    cover_image_url: str | None = None
+    # Pricing (target-live — Offer Page does not override in V1).
+    access_type: str | None = None
+    price_cents: int | None = None
+    currency: str | None = None
+    billing_interval: str | None = None
+    # CTA routing hint — the frontend uses this to build the button
+    # href without knowing per-target checkout paths itself.
+    checkout_path: str | None = None
+    # The pathway landing URL — used by the "You already have this"
+    # CTA state so a member with access is sent straight to the
+    # content, not the checkout.
+    enter_path: str | None = None
+
+
+class PublicOfferPage(BaseModel):
+    """Public shape of an Offer Page. Only ``published`` pages are
+    exposed to non-owners; owners see drafts through the same
+    endpoint (mirrors the existing About-page visibility pattern).
+    """
+
+    id: str
+    slug: str
+    title: str
+    promise: str | None
+    hero_image_url: str | None
+    status: str
+    sections_config: dict
+    target: OfferPageTargetSnapshot
+    # ``true`` when the requesting member (or admin/creator) already
+    # holds access to the target. The frontend swaps the primary CTA
+    # from "Purchase" to "Continue" in this case.
+    user_has_target_access: bool = False

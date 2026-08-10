@@ -264,6 +264,31 @@ def guard_paid_offers_enabled(user: User, db: Session, pricing_type: str) -> Non
         )
 
 
+def guard_offer_pages_enabled(user: User, db: Session) -> None:
+    """Reject Offer Page writes on a plan that doesn't allow commercial
+    offers. Community plan → 403; Creator / Pro / Organisation → allowed;
+    Platform Owner bypasses.
+
+    Reuses the existing ``paid_offers_enabled`` capability — Offer
+    Pages are a commercial surface and align with the same "can this
+    creator sell?" distinction that gates paid pricing today. If the
+    two ever diverge, add a dedicated ``offer_pages_enabled`` flag on
+    :class:`PlanCapability` then.
+    """
+    if is_platform_owner(user):
+        return
+    plan = resolve_creator_plan(user, db)
+    if plan is None or not plan.paid_offers_enabled:
+        plan_name = plan.display_name if plan else "current"
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Your {plan_name} plan does not include Offer Pages. "
+                "Upgrade to Creator to publish paid offers."
+            ),
+        )
+
+
 def guard_pathway_limit(user: User, space: Space, db: Session) -> None:
     """Refuse a new Pathway when the plan caps how many a Collective may
     hold. Community is capped at five; Creator / Pro / Organisation are
@@ -337,6 +362,7 @@ __all__ = [
     "effective_collective_allowance",
     "guard_active_collective_limit",
     "guard_location_allowed",
+    "guard_offer_pages_enabled",
     "guard_paid_offers_enabled",
     "allowed_location_query",
     "PLANS_BY_SLUG",

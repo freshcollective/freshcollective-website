@@ -2049,3 +2049,250 @@ class AccessPassAdminOut(BaseModel):
     # Booking stats
     total_bookings: int = 0
     recent_bookings: int = 0  # last 30 days
+
+
+# ---------------------------------------------------------------------------
+# Offer Pages
+#
+# Section content is stored on the model as ``sections_config: dict``.
+# The typed models below describe the shapes each section holds and
+# are used only at the request boundary — reads return the dict
+# verbatim so shape changes never break existing rows.
+# ---------------------------------------------------------------------------
+
+
+ALLOWED_OFFER_TARGET_KINDS: set[str] = {"pathway"}
+ALLOWED_OFFER_STATUSES: set[str] = {"draft", "published", "archived"}
+
+
+class OfferInvitationSection(BaseModel):
+    """Rich-text welcome copy above the What's Included section.
+
+    ``body`` is TipTap JSON (same shape used by step / about blocks).
+    The public renderer will hand this to the shared RichTextRenderer;
+    the editor will restrict the toolbar to a conservative set of
+    marks so pages don't drift into freeform layout.
+    """
+
+    enabled: bool = False
+    body: str | None = None
+
+
+class OfferWhatsIncludedSection(BaseModel):
+    """Simple checklist of what a member receives."""
+
+    enabled: bool = False
+    items: list[str] = []
+
+    @field_validator("items")
+    @classmethod
+    def _clean(cls, v: list[str]) -> list[str]:
+        out: list[str] = []
+        for raw in v:
+            trimmed = (raw or "").strip()
+            if trimmed:
+                out.append(trimmed[:300])
+        return out
+
+
+class OfferPracticalSection(BaseModel):
+    """A typed dict for the at-a-glance table on the public page.
+
+    Every field is optional; blank ones don't render. Kept as simple
+    strings for V1 so a creator can write ``"6 weeks, weekly"`` or
+    ``"Tuesdays 7pm AEST"`` without wrangling structured date pickers.
+    """
+
+    enabled: bool = False
+    dates: str | None = None
+    duration: str | None = None
+    location: str | None = None
+    format: str | None = None                # 'online' | 'in_person' | 'hybrid' (free-text in V1)
+    access_period: str | None = None
+    capacity: str | None = None
+    requirements: str | None = None
+
+
+class OfferFaqItem(BaseModel):
+    question: str
+    answer: str
+
+    @field_validator("question", "answer")
+    @classmethod
+    def _clean(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("FAQ question and answer are required.")
+        return v
+
+
+class OfferFaqsSection(BaseModel):
+    enabled: bool = False
+    items: list[OfferFaqItem] = []
+
+
+class OfferCreatorSection(BaseModel):
+    """Rendered on the public page from ``Space.creator`` /
+    ``CreatorProfile``. No editable fields today — the toggle just
+    decides whether the section renders.
+    """
+
+    enabled: bool = False
+
+
+class OfferSectionsConfig(BaseModel):
+    """The full sections blob. Reserved keys (``testimonials``) are
+    left off the model on purpose so the editor doesn't surface a
+    half-built section — the sections_config dict remains open for
+    them to slot in later without a migration.
+    """
+
+    invitation: OfferInvitationSection = OfferInvitationSection()
+    whats_included: OfferWhatsIncludedSection = OfferWhatsIncludedSection()
+    practical: OfferPracticalSection = OfferPracticalSection()
+    faqs: OfferFaqsSection = OfferFaqsSection()
+    creator: OfferCreatorSection = OfferCreatorSection()
+
+
+class OfferPageCreateRequest(BaseModel):
+    title: str
+    target_kind: str = "pathway"
+    target_id: str
+    slug: str | None = None                  # auto from title if omitted
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Title is required.")
+        if len(v) > 200:
+            raise ValueError("Title must be 200 characters or fewer.")
+        return v
+
+    @field_validator("target_kind")
+    @classmethod
+    def _kind(cls, v: str) -> str:
+        if v not in ALLOWED_OFFER_TARGET_KINDS:
+            raise ValueError(
+                f"Unsupported target kind. Expected one of: "
+                f"{', '.join(sorted(ALLOWED_OFFER_TARGET_KINDS))}."
+            )
+        return v
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().lower()
+        if not v:
+            return None
+        if len(v) > 120:
+            raise ValueError("Slug must be 120 characters or fewer.")
+        if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", v):
+            raise ValueError(
+                "Slug must contain only lowercase letters, numbers and hyphens."
+            )
+        return v
+
+
+class OfferPageUpdateRequest(BaseModel):
+    """PATCH body. Every field optional; ``model_fields_set`` is
+    used at the handler for the ``slug`` and ``hero_image_url`` fields
+    where explicit-null needs to be distinguishable from omitted.
+    """
+
+    title: str | None = None
+    promise: str | None = None
+    hero_image_url: str | None = None
+    slug: str | None = None
+    status: str | None = None
+    sections_config: OfferSectionsConfig | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("Title cannot be empty.")
+        if len(v) > 200:
+            raise ValueError("Title must be 200 characters or fewer.")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if v not in ALLOWED_OFFER_STATUSES:
+            raise ValueError(
+                f"Status must be one of: {', '.join(sorted(ALLOWED_OFFER_STATUSES))}."
+            )
+        return v
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().lower()
+        if not v:
+            raise ValueError("Slug cannot be empty.")
+        if len(v) > 120:
+            raise ValueError("Slug must be 120 characters or fewer.")
+        if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", v):
+            raise ValueError(
+                "Slug must contain only lowercase letters, numbers and hyphens."
+            )
+        return v
+
+
+class OfferPageResponse(BaseModel):
+    """Full editor payload."""
+
+    model_config = {"from_attributes": True}
+
+    id: str
+    space_id: str
+    slug: str
+    title: str
+    promise: str | None
+    hero_image_url: str | None
+    target_kind: str
+    target_id: str
+    status: str
+    # Returned as the raw dict — the typed shape only matters at
+    # the write boundary. Old rows with older shapes decode
+    # gracefully into a dict of whatever they hold.
+    sections_config: dict
+    published_at: datetime | None
+    # True once the Offer Page has ever been published. Frontend
+    # uses this to lock the slug permanently (link stability). This
+    # is separate from ``status`` — an unpublished page can still
+    # be "published_ever" and therefore slug-locked.
+    slug_locked: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class OfferPageSummary(BaseModel):
+    """Row for the ``/creator-studio/offers`` index list."""
+
+    model_config = {"from_attributes": True}
+
+    id: str
+    slug: str
+    title: str
+    hero_image_url: str | None
+    target_kind: str
+    target_id: str
+    # Target snapshot so the index can render "Pathway — Home Practice"
+    # without a second lookup per row. Populated by the route handler,
+    # not read from the ORM.
+    target_title: str | None = None
+    status: str
+    slug_locked: bool = False
+    updated_at: datetime

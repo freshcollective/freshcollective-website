@@ -2601,3 +2601,85 @@ class PlatformArtwork(Base):
         onupdate=func.now(),
         nullable=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# Offer Pages — public presentation layer over existing sellables
+# ---------------------------------------------------------------------------
+#
+# An Offer Page presents one sellable (Pathway in V1; Gathering,
+# Space membership, or Bundle in later phases) as a beautiful,
+# Fresh Collective-branded public page. It owns hero, invitation,
+# what's-included, practical details and FAQs; it does NOT own
+# commerce — the CTA deep-links to the existing target-specific
+# checkout flow.
+#
+# Design invariants preserved:
+#
+#   * ``target_id`` is a plain string with no FK. Future target
+#     kinds slot in without a migration.
+#   * ``sections_config`` is a JSON blob. Sections have known
+#     shapes and the "structured creative freedom" design intent
+#     asks Fresh Collective to own the layout; typed inputs per
+#     section are enough and let us iterate the shape without
+#     migrations.
+#   * ``published_at`` is set on the first publish and never
+#     cleared. Slug is permanently locked once published_at is
+#     non-null so a link a Creator has ever shared publicly always
+#     resolves to the same Offer Page.
+#
+# See ``docs/offer-pages.md`` for the full V1 scope and the
+# eventual generic Offer entity's relationship to this presentation
+# layer.
+
+class OfferPage(Base):
+    """A public presentation page for a sellable in this Collective."""
+
+    __tablename__ = "offer_pages"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    space_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    promise: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hero_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # ``'pathway'`` for V1. Deliberately open-ended so gathering /
+    # space_membership / bundle target kinds can slot in without a
+    # migration.
+    target_kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    # No FK — see model docstring above.
+    target_id: Mapped[str] = mapped_column(String, nullable=False)
+    # ``'draft'`` | ``'published'`` | ``'archived'``.
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default="draft",
+    )
+    # Typed sections stored as a dict of ``{ section_key: content }``
+    # so shapes can evolve without a migration. See the request /
+    # response schemas in ``app/creator/schemas.py`` for the exact
+    # shape each section holds.
+    sections_config: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}",
+    )
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("space_id", "slug", name="offer_pages_space_slug_unique"),
+        Index("ix_offer_pages_space_status", "space_id", "status"),
+        Index("ix_offer_pages_target", "target_kind", "target_id"),
+    )

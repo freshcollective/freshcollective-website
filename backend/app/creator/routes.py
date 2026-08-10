@@ -36,6 +36,7 @@ from app.creator.plan_config import (
 from app.creator.plan_guards import (
     guard_active_collective_limit,
     guard_location_allowed,
+    guard_offer_pages_enabled,
     guard_paid_offers_enabled,
     is_platform_owner as _is_platform_owner,
 )
@@ -86,6 +87,10 @@ from app.creator.schemas import (
     LibraryListResponse,
     MediaAssetResponse,
     MediaAssetUpdateRequest,
+    OfferPageCreateRequest,
+    OfferPageResponse,
+    OfferPageSummary,
+    OfferPageUpdateRequest,
     PathwayCreateRequest,
     PathwayResponse,
     PathwayUpdateRequest,
@@ -144,6 +149,7 @@ from app.models.platform import (
     EventBooking,
     LibraryFolder,
     ManualMember,
+    OfferPage,
     ManualMemberStatus,
     ManualMemberPathwayAccess,
     Pathway,
@@ -7252,3 +7258,310 @@ def list_space_payment_options(
         .all()
     )
     return [PathwayUnlockOptionResponse(id=o.id, name=o.name, payment_type=o.payment_type.value) for o in opts]
+
+
+# ---------------------------------------------------------------------------
+# Offer Pages — creator surface (CRUD)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_offer_target(
+    target_kind: str, target_id: str, space: Space, db: Session,
+) -> tuple[str, str]:
+    """Validate an Offer Page target and return ``(kind, title)`` for
+    the response snapshot.
+
+    For V1 the only valid kind is ``pathway`` and it must belong to
+    the same Collective as the Offer Page. This is where the
+    ``target_id`` string is checked; there is no FK constraint on
+    the column so future kinds can slot in without a migration.
+    """
+    if target_kind == "pathway":
+        pathway = db.query(Pathway).filter(
+            Pathway.id == target_id,
+            Pathway.space_id == space.id,
+        ).first()
+        if not pathway:
+            raise HTTPException(
+                status_code=400,
+                detail="Target pathway not found in this Collective.",
+            )
+        return ("pathway", pathway.title)
+    raise HTTPException(
+        status_code=400,
+        detail=f"Unsupported target kind: {target_kind!r}.",
+    )
+
+
+def _target_title(kind: str, target_id: str, db: Session) -> str | None:
+    """Look up a target's display title for the index list. Returns
+    None when the target has since been deleted, which is a valid
+    state — the offer row survives so the creator can retarget."""
+    if kind == "pathway":
+        p = db.query(Pathway).filter(Pathway.id == target_id).first()
+        return p.title if p else None
+    return None
+
+
+def _generate_unique_offer_slug(
+    space_id: str, base: str, db: Session,
+) -> str:
+    """Slugify + numeric suffix to guarantee uniqueness per space."""
+    cleaned = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-") or "offer"
+    cleaned = cleaned[:120].rstrip("-")
+    candidate = cleaned
+    n = 2
+    while db.query(OfferPage).filter(
+        OfferPage.space_id == space_id,
+        OfferPage.slug == candidate,
+    ).first() is not None:
+        suffix = f"-{n}"
+        candidate = (cleaned[: 120 - len(suffix)]).rstrip("-") + suffix
+        n += 1
+    return candidate
+
+
+def _serialise_offer_page(op: OfferPage) -> dict:
+    """Editor-facing shape. ``slug_locked`` is a derived flag —
+    permanent once ``published_at`` has ever been set."""
+    return {
+        "id": op.id,
+        "space_id": op.space_id,
+        "slug": op.slug,
+        "title": op.title,
+        "promise": op.promise,
+        "hero_image_url": op.hero_image_url,
+        "target_kind": op.target_kind,
+        "target_id": op.target_id,
+        "status": op.status,
+        "sections_config": op.sections_config or {},
+        "published_at": op.published_at,
+        "slug_locked": op.published_at is not None,
+        "created_at": op.created_at,
+        "updated_at": op.updated_at,
+    }
+
+
+def _serialise_offer_page_summary(op: OfferPage, target_title: str | None) -> dict:
+    return {
+        "id": op.id,
+        "slug": op.slug,
+        "title": op.title,
+        "hero_image_url": op.hero_image_url,
+        "target_kind": op.target_kind,
+        "target_id": op.target_id,
+        "target_title": target_title,
+        "status": op.status,
+        "slug_locked": op.published_at is not None,
+        "updated_at": op.updated_at,
+    }
+
+
+@router.get(
+    "/spaces/{slug}/offers",
+    response_model=list[OfferPageSummary],
+    summary="List Offer Pages for this Collective",
+)
+def list_offer_pages(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    rows = (
+        db.query(OfferPage)
+        .filter(OfferPage.space_id == space.id)
+        .order_by(OfferPage.updated_at.desc())
+        .all()
+    )
+    return [
+        _serialise_offer_page_summary(op, _target_title(op.target_kind, op.target_id, db))
+        for op in rows
+    ]
+
+
+@router.post(
+    "/spaces/{slug}/offers",
+    response_model=OfferPageResponse,
+    status_code=201,
+    summary="Create a new Offer Page (starts as draft)",
+)
+def create_offer_page(
+    slug: str,
+    body: OfferPageCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    # Community plan → 403. Offer Pages are a commercial surface; the
+    # ``paid_offers_enabled`` capability decides who may author them.
+    # Platform Owner bypasses. See ``plan_guards.guard_offer_pages_enabled``.
+    guard_offer_pages_enabled(current_user, db)
+    space = _get_managed_space(slug, current_user, db)
+    # Validate target now so we never persist an offer that points at
+    # something that doesn't belong to this Collective.
+    _resolve_offer_target(body.target_kind, body.target_id, space, db)
+
+    if body.slug:
+        # Explicit slug — enforce uniqueness. This is the only place
+        # a caller can supply a slug at create time; PATCH slug
+        # changes are locked once published (see update handler).
+        conflict = db.query(OfferPage).filter(
+            OfferPage.space_id == space.id,
+            OfferPage.slug == body.slug,
+        ).first()
+        if conflict:
+            raise HTTPException(
+                status_code=400,
+                detail="An Offer Page with this slug already exists in this Collective.",
+            )
+        slug_value = body.slug
+    else:
+        slug_value = _generate_unique_offer_slug(space.id, body.title, db)
+
+    row = OfferPage(
+        id=f"ofp_{uuid4().hex[:12]}",
+        space_id=space.id,
+        slug=slug_value,
+        title=body.title,
+        target_kind=body.target_kind,
+        target_id=body.target_id,
+        status="draft",
+        sections_config={},
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _serialise_offer_page(row)
+
+
+@router.get(
+    "/spaces/{slug}/offers/{offer_slug}",
+    response_model=OfferPageResponse,
+    summary="Get one Offer Page by slug (owner view — includes drafts)",
+)
+def get_offer_page(
+    slug: str,
+    offer_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    space = _get_managed_space(slug, current_user, db)
+    row = db.query(OfferPage).filter(
+        OfferPage.space_id == space.id,
+        OfferPage.slug == offer_slug,
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Offer Page not found.")
+    return _serialise_offer_page(row)
+
+
+@router.patch(
+    "/spaces/{slug}/offers/{offer_slug}",
+    response_model=OfferPageResponse,
+    summary="Update an Offer Page (partial)",
+)
+def update_offer_page(
+    slug: str,
+    offer_slug: str,
+    body: OfferPageUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    guard_offer_pages_enabled(current_user, db)
+    space = _get_managed_space(slug, current_user, db)
+    row = db.query(OfferPage).filter(
+        OfferPage.space_id == space.id,
+        OfferPage.slug == offer_slug,
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Offer Page not found.")
+
+    sent = body.model_fields_set
+
+    # ── Slug — permanently locked once the page has ever been published.
+    if "slug" in sent and body.slug is not None and body.slug != row.slug:
+        if row.published_at is not None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "This Offer Page has been published — its slug is "
+                    "permanently locked so previously shared links stay "
+                    "stable. Create a new Offer Page if you need a "
+                    "different URL."
+                ),
+            )
+        conflict = db.query(OfferPage).filter(
+            OfferPage.space_id == space.id,
+            OfferPage.slug == body.slug,
+            OfferPage.id != row.id,
+        ).first()
+        if conflict:
+            raise HTTPException(
+                status_code=400,
+                detail="An Offer Page with this slug already exists in this Collective.",
+            )
+        row.slug = body.slug
+
+    # ── Straightforward text fields
+    if "title" in sent and body.title is not None:
+        row.title = body.title
+    if "promise" in sent:
+        row.promise = (body.promise or "").strip() or None
+    if "hero_image_url" in sent:
+        # Empty string clears the image; explicit None also clears.
+        val = (body.hero_image_url or "").strip() if body.hero_image_url else None
+        row.hero_image_url = val or None
+
+    # ── Sections
+    if "sections_config" in sent and body.sections_config is not None:
+        # Dump the typed shape so we persist a plain dict — future
+        # readers pull the raw dict back out without needing the
+        # Pydantic model in the loop.
+        row.sections_config = body.sections_config.model_dump()
+
+    # ── Status transitions
+    if "status" in sent and body.status is not None:
+        row.status = body.status
+        if body.status == "published" and row.published_at is None:
+            row.published_at = datetime.utcnow()
+        # published_at is never cleared — see model docstring.
+
+    db.commit()
+    db.refresh(row)
+    return _serialise_offer_page(row)
+
+
+@router.delete(
+    "/spaces/{slug}/offers/{offer_slug}",
+    status_code=204,
+    summary="Delete an Offer Page (draft only; archive published ones instead)",
+)
+def delete_offer_page(
+    slug: str,
+    offer_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+):
+    guard_offer_pages_enabled(current_user, db)
+    space = _get_managed_space(slug, current_user, db)
+    row = db.query(OfferPage).filter(
+        OfferPage.space_id == space.id,
+        OfferPage.slug == offer_slug,
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Offer Page not found.")
+    # Hard delete is only safe when the page never went public —
+    # otherwise the URL might still be shared out there and a
+    # subsequent identically-slugged Offer Page would silently
+    # capture the old traffic. Force ``archive`` in that case.
+    if row.published_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This Offer Page has been published — archive it instead "
+                "so previously shared links keep resolving to the same "
+                "record."
+            ),
+        )
+    db.delete(row)
+    db.commit()

@@ -20,6 +20,7 @@ from app.models.platform import (
     EntitlementStatus,
     Event,
     EventBooking,
+    OfferPage,
     Pathway,
     PathwayAboutBlock,
     PathwayEntitlement,
@@ -54,11 +55,13 @@ from app.spaces.schemas import (
     KnowledgeGuideResponse,
     NotificationPrefsResponse,
     NotificationPrefsUpdate,
+    OfferPageTargetSnapshot,
     PathwayProgress,
     PathwaySummary,
     PathwayWithSteps,
     PaymentOptionScheduleSummary,
     PaymentOptionSummary,
+    PublicOfferPage,
     PublicSpaceCard,
     SaveNotesRequest,
     SaveNotesResponse,
@@ -3194,3 +3197,147 @@ def update_notification_settings(
     db.commit()
     db.refresh(prefs)
     return _prefs_response(space, prefs)
+
+
+# ---------------------------------------------------------------------------
+# Offer Pages — public read
+#
+# One public endpoint. Only ``published`` Offer Pages are exposed to
+# non-owners; ``draft`` and ``archived`` return 404. Owners
+# (creators/moderators of the Collective, or admins) see every status
+# through the same URL — mirrors the pathway About page's preview
+# behaviour so we don't need a separate ``?preview=1`` mode.
+# ---------------------------------------------------------------------------
+
+
+def _viewer_owns_space(user: "User | None", space: Space, db: Session) -> bool:
+    """True when the viewer can preview draft / archived Offer Pages.
+
+    Site admins always qualify. Otherwise the viewer must hold an
+    active creator or moderator membership on the Collective.
+    """
+    if user is None:
+        return False
+    if user.role == "admin":
+        return True
+    return db.query(SpaceMembership).filter(
+        SpaceMembership.space_id == space.id,
+        SpaceMembership.user_id == user.id,
+        SpaceMembership.status == SpaceMembershipStatus.active,
+        SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]),
+    ).first() is not None
+
+
+def _build_target_snapshot(
+    row: OfferPage, space: Space, viewer: "User | None", db: Session,
+) -> tuple[OfferPageTargetSnapshot, bool]:
+    """Resolve an Offer Page's target and return ``(snapshot, has_access)``.
+
+    Returns None-shaped snapshot fields when the target has since
+    been deleted so the frontend can render an honest "unavailable"
+    state instead of crashing on a missing reference. Access lookup
+    reuses the existing pathway helper so entitlement / enrolment /
+    admin all behave identically to the pathway landing page.
+    """
+    if row.target_kind == "pathway":
+        pathway = db.query(Pathway).filter(
+            Pathway.id == row.target_id,
+            Pathway.space_id == space.id,
+        ).first()
+        if not pathway:
+            # Target deleted — surface an empty snapshot so the
+            # public renderer can show an "Unavailable" state
+            # without crashing. Access defaults to False.
+            return (
+                OfferPageTargetSnapshot(
+                    kind="pathway",
+                    id=row.target_id,
+                    slug="",
+                    title="(Unavailable)",
+                ),
+                False,
+            )
+        access_type = (
+            pathway.access_type.value
+            if hasattr(pathway.access_type, "value")
+            else str(pathway.access_type or "free")
+        )
+        checkout_path = (
+            f"/spaces/{space.slug}/pathways/{pathway.slug}/checkout"
+            if access_type in ("one_time", "subscription", "included_with_offer")
+            else None
+        )
+        has_access = _compute_pathway_access(viewer, pathway, space, db)
+        return (
+            OfferPageTargetSnapshot(
+                kind="pathway",
+                id=pathway.id,
+                slug=pathway.slug,
+                title=pathway.title,
+                description=pathway.description,
+                cover_image_url=pathway.cover_image_url,
+                access_type=access_type,
+                price_cents=pathway.price_cents,
+                currency=pathway.currency,
+                billing_interval=pathway.billing_interval,
+                checkout_path=checkout_path,
+                enter_path=f"/spaces/{space.slug}/pathways/{pathway.slug}",
+            ),
+            has_access,
+        )
+    # Future kinds slot in here. For now anything unknown returns
+    # an empty snapshot.
+    return (
+        OfferPageTargetSnapshot(
+            kind=row.target_kind,
+            id=row.target_id,
+            slug="",
+            title="(Unavailable)",
+        ),
+        False,
+    )
+
+
+@router.get(
+    "/{slug}/offers/{offer_slug}",
+    response_model=PublicOfferPage,
+    summary="Public read of an Offer Page (owners see drafts)",
+)
+def get_public_offer_page(
+    slug: str,
+    offer_slug: str,
+    db: Session = Depends(get_db),
+    current_user: "User | None" = Depends(get_optional_user),
+):
+    # Space visibility mirrors the pathway About endpoint —
+    # unlisted collectives are still reachable by direct URL.
+    space = _get_space_visible_to(slug, db, current_user)
+
+    row = db.query(OfferPage).filter(
+        OfferPage.space_id == space.id,
+        OfferPage.slug == offer_slug,
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Offer Page not found.")
+
+    # Only ``published`` is publicly visible. Owners see every
+    # status (draft + archived) through the same URL so we never
+    # need a separate preview mode.
+    if row.status != "published":
+        if not _viewer_owns_space(current_user, space, db):
+            raise HTTPException(status_code=404, detail="Offer Page not found.")
+
+    target_snapshot, has_access = _build_target_snapshot(
+        row, space, current_user, db,
+    )
+    return PublicOfferPage(
+        id=row.id,
+        slug=row.slug,
+        title=row.title,
+        promise=row.promise,
+        hero_image_url=row.hero_image_url,
+        status=row.status,
+        sections_config=row.sections_config or {},
+        target=target_snapshot,
+        user_has_target_access=has_access,
+    )
