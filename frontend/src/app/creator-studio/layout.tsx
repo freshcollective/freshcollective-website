@@ -5,6 +5,7 @@ import {
   getMe,
   getCreatorSpaces,
   getCreatorSpace,
+  getCreatorBilling,
   ACTIVE_SPACE_COOKIE,
 } from '@/lib/serverApi'
 import CreatorStudioShell from './CreatorStudioShell'
@@ -45,6 +46,26 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
     }
   }
 
+  // Plan-tier flag — used to hide commercial-only sidebar items on
+  // Community plan and to render an upgrade page instead of the
+  // editor when a Community creator direct-navigates to those routes.
+  // Platform Owner (``is_platform_owner=true``) always sees the
+  // commercial surface. A billing fetch failure defaults to false so
+  // we err on hiding rather than exposing a paywalled surface with
+  // no guardrail.
+  let paidOffersEnabled = false
+  try {
+    const billing = await getCreatorBilling()
+    if (billing) {
+      paidOffersEnabled = !!(
+        billing.is_platform_owner
+        || billing.current_plan?.paid_offers_enabled
+      )
+    }
+  } catch (err) {
+    console.error('[creator-studio/layout] billing fetch failed:', err)
+  }
+
   // CollectiveThemeProvider composes the palette React context AND
   // sets the palette-scoped CSS custom properties (--fc-accent,
   // --fc-accent-soft, --fc-accent-line, --fc-accent-strong). Editor
@@ -53,7 +74,11 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
   // fall back to teal regardless of the collective's chosen palette.
   return (
     <CollectiveThemeProvider palette={palette}>
-      <CreatorStudioShell user={profile} hasCollective={!!activeSpace}>
+      <CreatorStudioShell
+        user={profile}
+        hasCollective={!!activeSpace}
+        paidOffersEnabled={paidOffersEnabled}
+      >
         {children}
       </CreatorStudioShell>
     </CollectiveThemeProvider>

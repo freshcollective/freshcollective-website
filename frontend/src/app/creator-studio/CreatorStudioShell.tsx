@@ -27,13 +27,25 @@ interface Props {
   /** Whether the creator has at least one collective. Controls sidebar
    *  dimming of collective-scoped destinations. */
   hasCollective: boolean
+  /** True when the current creator's plan (or Platform Owner status)
+   *  unlocks commercial surfaces such as Offer Pages. Controls which
+   *  sidebar entries render. Hidden entirely on Community. */
+  paidOffersEnabled?: boolean
 }
 
-export default function CreatorStudioShell({ children, user, hasCollective }: Props) {
+export default function CreatorStudioShell({
+  children, user, hasCollective, paidOffersEnabled = false,
+}: Props) {
   return (
     <AppShell
       variant="sidebar"
-      sidebar={<CreatorStudioSidebar user={user} hasCollective={hasCollective} />}
+      sidebar={
+        <CreatorStudioSidebar
+          user={user}
+          hasCollective={hasCollective}
+          paidOffersEnabled={paidOffersEnabled}
+        />
+      }
       mobileBrand={
         <span className="font-serif text-[16px] text-[color:var(--fc-ink-heading)]">
           Creator Studio

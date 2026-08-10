@@ -3327,6 +3327,20 @@ def get_public_offer_page(
         if not _viewer_owns_space(current_user, space, db):
             raise HTTPException(status_code=404, detail="Offer Page not found.")
 
+    # Future — plan-downgrade handling for commercial pages.
+    #
+    # Product intent: when a Creator's plan lapses back to Community,
+    # their previously-published Offer Pages should become publicly
+    # unavailable (returning 404 here, or a soft "temporarily
+    # unavailable" state) WITHOUT deleting the underlying rows, and
+    # should restore automatically if the paid plan is reactivated.
+    # This is not implemented yet — today the only plan gate is
+    # write-side (``guard_paid_offers_enabled`` at create / update),
+    # so a page published on Creator will keep serving after a
+    # downgrade until we add a runtime read-side check here (and a
+    # matching handler on subscription-lapsed webhooks). Track when
+    # commercial content downgrade policy is decided.
+
     target_snapshot, has_access = _build_target_snapshot(
         row, space, current_user, db,
     )

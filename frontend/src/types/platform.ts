@@ -1256,6 +1256,104 @@ export interface CreatorBillingResponse {
   is_platform_owner: boolean
 }
 
+
+// ---------------------------------------------------------------------------
+// Offer Pages
+//
+// Presentation-layer entity: an Offer Page is a public sales page for
+// an existing sellable (Pathway in V1). Commerce plumbing stays where
+// it is — the CTA deep-links to the target's existing checkout.
+// ---------------------------------------------------------------------------
+
+export type OfferPageStatus = 'draft' | 'published' | 'archived'
+export type OfferPageTargetKind = 'pathway'  // extendable in later milestones
+
+/** Restrained TipTap JSON. The Invitation editor exposes a small
+ *  set of marks (bold, italic, links) + paragraphs + a single
+ *  heading level; content is stored as a JSON string. */
+export type OfferInvitationBody = string
+
+export interface OfferInvitationSection {
+  enabled: boolean
+  body: string | null
+}
+
+export interface OfferWhatsIncludedSection {
+  enabled: boolean
+  items: string[]
+}
+
+export interface OfferPracticalSection {
+  enabled: boolean
+  dates: string | null
+  duration: string | null
+  location: string | null
+  format: string | null
+  access_period: string | null
+  capacity: string | null
+  requirements: string | null
+}
+
+export interface OfferFaqItem {
+  question: string
+  answer: string
+}
+
+export interface OfferFaqsSection {
+  enabled: boolean
+  items: OfferFaqItem[]
+}
+
+export interface OfferCreatorSection {
+  enabled: boolean
+}
+
+/** The typed sections shape the editor writes. The backend stores it
+ *  as a JSON blob and returns the raw dict on reads — the frontend
+ *  narrows via ``normaliseSectionsConfig`` at the editor boundary
+ *  so shape evolution never crashes a page. */
+export interface OfferSectionsConfig {
+  invitation: OfferInvitationSection
+  whats_included: OfferWhatsIncludedSection
+  practical: OfferPracticalSection
+  faqs: OfferFaqsSection
+  creator: OfferCreatorSection
+}
+
+/** Full editor payload. */
+export interface CreatorOfferPage {
+  id: string
+  space_id: string
+  slug: string
+  title: string
+  promise: string | null
+  hero_image_url: string | null
+  target_kind: OfferPageTargetKind
+  target_id: string
+  status: OfferPageStatus
+  sections_config: Partial<OfferSectionsConfig> & Record<string, unknown>
+  published_at: string | null
+  /** Derived on the backend: permanent once ``published_at`` is set. */
+  slug_locked: boolean
+  created_at: string
+  updated_at: string
+}
+
+/** Index row — light shape for the Offer Pages list. */
+export interface CreatorOfferPageSummary {
+  id: string
+  slug: string
+  title: string
+  hero_image_url: string | null
+  target_kind: OfferPageTargetKind
+  target_id: string
+  /** Populated by the server; null if the target has been deleted. */
+  target_title: string | null
+  status: OfferPageStatus
+  slug_locked: boolean
+  updated_at: string
+}
+
 /** Minimal shared shape used by block editor sub-components. */
 export interface EditorBlock {
   id: string

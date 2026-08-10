@@ -42,6 +42,10 @@ interface NavItem {
   activeOnPath?: RegExp
   /** Dims until an active collective exists. */
   requiresCollective?: boolean
+  /** When set, the item only renders when the current plan unlocks
+   *  paid offers (Creator / Pro / Organisation / Platform Owner).
+   *  Community-plan sidebar therefore doesn't include it at all. */
+  requiresPaidOffers?: boolean
 }
 
 /**
@@ -69,7 +73,8 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
   {
     label: '📖 OFFERINGS',
     items: [
-      { href: '/creator-studio/pathways',  label: 'Pathways',   activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/, requiresCollective: true },
+      { href: '/creator-studio/pathways',  label: 'Pathways',      activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/, requiresCollective: true },
+      { href: '/creator-studio/offers',    label: 'Offer Pages',   requiresCollective: true, requiresPaidOffers: true },
     ],
   },
   {
@@ -99,9 +104,15 @@ interface Props {
    *  dimming of collective-scoped nav items; when false, links stay
    *  visible but visually muted and route to the create flow. */
   hasCollective: boolean
+  /** When true, commercial-only sidebar entries (e.g. Offer Pages)
+   *  are included. Community plan → false → entry is not rendered
+   *  at all. Platform Owner → always true. */
+  paidOffersEnabled?: boolean
 }
 
-export default function CreatorStudioSidebar({ user, hasCollective }: Props) {
+export default function CreatorStudioSidebar({
+  user, hasCollective, paidOffersEnabled = false,
+}: Props) {
   const pathname = usePathname()
 
   function isActive(href: string, exact?: boolean, activeOnPath?: RegExp) {
@@ -194,7 +205,16 @@ export default function CreatorStudioSidebar({ user, hasCollective }: Props) {
               {label}
             </p>
             <ul className="space-y-0.5">
-              {items.map(({ href, label: itemLabel, exact, activeOnPath, requiresCollective }) => {
+              {items
+                // Plan-gated items (e.g. Offer Pages) are omitted
+                // entirely on plans that can't use them — dimming
+                // would still hint at a feature the plan doesn't
+                // include. If we ever want an "Upgrade" nudge, it
+                // belongs on My World, not here.
+                .filter(({ requiresPaidOffers }) =>
+                  !requiresPaidOffers || paidOffersEnabled,
+                )
+                .map(({ href, label: itemLabel, exact, activeOnPath, requiresCollective }) => {
                 const active = isActive(href, exact, activeOnPath)
                 const dimmed = (requiresCollective ?? false) && !hasCollective
                 return (

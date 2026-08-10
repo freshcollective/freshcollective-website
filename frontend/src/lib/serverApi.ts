@@ -588,6 +588,25 @@ export const getCreatorPathways = cache(async (slug: string) => {
   return res.json()
 })
 
+// ── Offer Pages ─────────────────────────────────────────────────────
+
+/** Index list of Offer Pages for a Collective. Empty on error. */
+export const getCreatorOfferPages = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/offers`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+/** Full editor payload for a single Offer Page. Null on 404 / auth /
+ *  network error so the server component can render notFound(). */
+export const getCreatorOfferPage = cache(async (slug: string, offerSlug: string) => {
+  const res = await fetchWithSession(
+    `/api/creator/spaces/${slug}/offers/${offerSlug}`,
+  )
+  if (!res.ok) return null
+  return res.json()
+})
+
 // getSpaceResources removed — member-facing Resources page retired.
 // Members access resources via Pathways (Guided or Knowledge Guide);
 // no aggregated list endpoint exists any more.
