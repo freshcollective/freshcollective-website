@@ -5822,6 +5822,12 @@ def create_payment_option(
         id=str(uuid4()),
         space_id=space.id,
         pathway_id=pathway.id,
+        # Every option carries an explicit polymorphic attachment
+        # since migration 105. This creator surface only ever
+        # attaches to a Pathway; series-attached options are
+        # authored on a future surface.
+        attaches_to_kind="pathway",
+        attaches_to_id=pathway.id,
         grants_pathway_id=body.grants_pathway_id,
         name=body.name.strip(),
         description=body.description,

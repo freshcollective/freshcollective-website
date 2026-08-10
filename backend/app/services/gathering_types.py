@@ -121,6 +121,13 @@ ACCESS_TYPES: tuple[tuple[str, str], ...] = (
     ("free",                    "Free"),
     ("included_with_collective","Included with Collective membership"),
     ("included_with_pathway",   "Included with a Pathway"),
+    # A Gathering in this Series is bookable only with an active
+    # AccessPass whose ``eligible_series_id`` matches. Distinct from
+    # ``included_with_pathway`` because a Series is not a Pathway,
+    # and distinct from mere ``series_id`` membership — an Event may
+    # belong to a Series for grouping/presentation while remaining
+    # ``free`` or ``included_with_collective``.
+    ("included_with_series",    "Included with a term pass"),
     ("paid_separately",         "Paid separately"),
     ("invitation_only",         "Invitation only"),
 )

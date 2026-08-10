@@ -240,6 +240,14 @@ def can_book(
             "You need access to the linked pathway to book this gathering.",
         )
 
+    # 'included_with_series' — the pass check itself runs inside
+    # ``book_event`` (it needs write access to the AccessPass to
+    # decrement credits, so the enforcement stays where the mutation
+    # is). Here we just require space membership, mirroring
+    # ``included_with_collective``.
+    if access == "included_with_series":
+        return _OK
+
     # 'free' and 'included_with_collective' — space membership is enough.
     return _OK
 

@@ -912,6 +912,71 @@ class StepResource(Base):
 
 
 # ---------------------------------------------------------------------------
+# Event Series (Gathering Series / Term)
+# ---------------------------------------------------------------------------
+
+class EventSeries(Base):
+    """A defined term / cohort / program grouping multiple Events.
+
+    Introduced so a purchase can be scoped to *this term* rather than
+    to a Pathway that happens to gate the sessions. An ``EventSeries``
+    owns the term window (``starts_at`` / ``ends_at``); its
+    membership is the set of Events whose ``series_id`` points here.
+
+    Deliberately spare. Ordering + hero art beyond ``cover_image_url``
+    are OfferPage concerns, not Series concerns — this table is the
+    what/when, not the how-to-present.
+
+    Distinct from ``Event.recurrence_series_id`` (a bulk-create UUID
+    tag from migration 034) which just marks "these rows were created
+    together". A Series is semantic membership; recurrence_series is
+    provenance.
+    """
+
+    __tablename__ = "event_series"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    space_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    slug: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Series window. ``starts_at`` is required — every Series begins
+    # on some date. ``ends_at`` is nullable so an ongoing weekly
+    # circle can be a Series without pretending to end. Finite terms
+    # (cohorts / EMBODY Terms) simply set both. A ``term_pass``
+    # PaymentOption attached to an ongoing Series can still bound
+    # its own AccessPass window via the option's ``term_end_date``.
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    # 'draft' | 'published' | 'archived'. String, not enum — mirrors
+    # offer_pages.status.
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default="draft",
+    )
+    cover_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("space_id", "slug", name="event_series_space_slug_unique"),
+        Index("ix_event_series_space_status", "space_id", "status"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
 
@@ -961,6 +1026,17 @@ class Event(Base):
     recurrence_label: Mapped[str | None] = mapped_column(Text, nullable=True)
     recurrence_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recurrence_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Semantic series/term membership — the ``EventSeries`` this event
+    # belongs to. Distinct from ``recurrence_series_id`` above, which
+    # is a low-level "these rows were created together" tag. A single
+    # bulk-create may set both; a hand-created event can be added to
+    # an existing series independently.
+    series_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("event_series.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     # Visibility — public events are visible to logged-out/non-member users
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     # Thumbnail for visual identity in event lists and detail

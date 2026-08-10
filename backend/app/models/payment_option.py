@@ -48,8 +48,18 @@ class PaymentOption(Base):
     pathway_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("pathways.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    # Polymorphic attachment — every option attaches to *something* it
+    # is displayed alongside and priced against. In V1 that is either
+    # a Pathway or an EventSeries. No FK on ``attaches_to_id`` so
+    # future kinds (individual gathering, bundle) slot in without a
+    # migration — mirrors the pattern used by ``offer_pages.target_*``.
+    # Backfilled from ``pathway_id`` for legacy rows in migration 105.
+    attaches_to_kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    attaches_to_id: Mapped[str] = mapped_column(String, nullable=False)
     # Which pathway entitlement is granted on purchase.
-    # NULL → defaults to pathway_id at purchase time.
+    # NULL → defaults to pathway_id at purchase time for pathway-attached
+    # options; for series-attached options, NULL means "no pathway
+    # entitlement granted — this option grants booking rights only".
     grants_pathway_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("pathways.id", ondelete="SET NULL"), nullable=True
     )
@@ -116,4 +126,5 @@ class PaymentOption(Base):
     __table_args__ = (
         Index("ix_payment_options_space_id", "space_id"),
         Index("ix_payment_options_pathway_id", "pathway_id"),
+        Index("ix_payment_options_attaches_to", "attaches_to_kind", "attaches_to_id"),
     )

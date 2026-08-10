@@ -94,6 +94,14 @@ class AccessPass(Base):
     eligible_pathway_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("pathways.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Series eligibility: gatherings whose ``series_id`` matches this
+    # are bookable using this pass. Introduced in migration 105 so
+    # series-attached PaymentOptions can grant scoped booking rights
+    # without piggy-backing on a Pathway as a gating token.
+    eligible_series_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("event_series.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
 
     # Pathway content link (when purchase also grants pathway content)
     grants_pathway_id: Mapped[str | None] = mapped_column(

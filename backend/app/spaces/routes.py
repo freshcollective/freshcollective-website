@@ -1512,26 +1512,81 @@ def book_event(
 
     # --- AccessPass credit check (Phase B) ---
     # Layered on top of the existing pathway access check.
-    # If the user has an AccessPass for this pathway: hard-enforce total credits and weekly cap.
-    # If no AccessPass exists (legacy/manual PathwayEntitlement): allow without credit tracking.
+    #
+    # Two eligibility mechanisms are honoured, keyed off the event's
+    # ``booking_access_type`` — NOT off the mere presence of a
+    # ``series_id``. A Series may exist purely for grouping /
+    # presentation of ``free`` or ``included_with_collective`` events;
+    # only ``included_with_series`` opts a Gathering in to term-pass
+    # enforcement.
+    #
+    #   1. ``included_with_pathway`` — legacy. An AccessPass with
+    #      ``eligible_pathway_id`` matching the event's
+    #      ``booking_required_pathway_id`` authorises booking.
+    #   2. ``included_with_series`` — new (migration 105). An
+    #      AccessPass with ``eligible_series_id`` matching the
+    #      event's ``series_id`` authorises booking. This is what a
+    #      term-pass buyer holds.
+    #
+    # Validity window: BOTH ends are enforced (``valid_from <= now``
+    # AND (``valid_until IS NULL OR valid_until > now``)). Without the
+    # ``valid_from`` check a future-term pass would be usable early —
+    # e.g. buying Term 4 during Term 3 would let the buyer immediately
+    # book Term 3 events using the Term 4 pass. That is the behaviour
+    # this branch prevents.
+    #
+    # ``included_with_series`` events with no matching pass are
+    # rejected here (no legacy lenient fallback): "the term hasn't
+    # started" and "I never bought a pass" are both correctly a
+    # booking denial. ``included_with_pathway`` events keep the
+    # legacy lenient fallback because a member may hold a manual
+    # PathwayEntitlement without a term pass.
+    #
     # Creators and moderators bypass all credit checks.
     access_pass_to_charge: AccessPass | None = None
+    event_series_id: str | None = getattr(event, 'series_id', None)
+    is_series_gated = event_access_type == 'included_with_series'
+    is_pathway_gated = event_access_type == 'included_with_pathway' and bool(required_pid)
 
-    if not is_privileged and event_access_type == 'included_with_pathway' and required_pid:
-        candidate_pass = (
-            db.query(AccessPass)
-            .filter(
-                AccessPass.user_id == current_user.id,
-                AccessPass.eligible_pathway_id == required_pid,
-                AccessPass.status == AccessPassStatus.active,
-                or_(
-                    AccessPass.valid_until.is_(None),
-                    AccessPass.valid_until > now,
+    credit_check_applies = not is_privileged and (is_pathway_gated or is_series_gated)
+
+    if credit_check_applies:
+        match_conditions = []
+        if is_pathway_gated:
+            match_conditions.append(AccessPass.eligible_pathway_id == required_pid)
+        if is_series_gated and event_series_id is not None:
+            match_conditions.append(AccessPass.eligible_series_id == event_series_id)
+
+        candidate_pass = None
+        if match_conditions:
+            candidate_pass = (
+                db.query(AccessPass)
+                .filter(
+                    AccessPass.user_id == current_user.id,
+                    AccessPass.status == AccessPassStatus.active,
+                    or_(*match_conditions),
+                    AccessPass.valid_from <= now,
+                    or_(
+                        AccessPass.valid_until.is_(None),
+                        AccessPass.valid_until > now,
+                    ),
+                )
+                .order_by(AccessPass.created_at.desc())
+                .first()
+            )
+
+        # A series-gated event with no matching pass is a hard 403 —
+        # no legacy manual-entitlement fallback exists for term-scoped
+        # bookings. A pathway-gated event keeps the fallback because a
+        # member may hold a manual PathwayEntitlement without a pass.
+        if candidate_pass is None and is_series_gated and not is_pathway_gated:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "This session is part of a term. You need an active term "
+                    "pass to book it (or the term may not have started yet)."
                 ),
             )
-            .order_by(AccessPass.created_at.desc())
-            .first()
-        )
 
         if candidate_pass is not None:
             # Hard enforce: total credits exhausted
