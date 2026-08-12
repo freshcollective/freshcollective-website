@@ -37,6 +37,10 @@ class PaymentTransactionType(str, enum.Enum):
     # buying the Collective. Named "gathering" (not "member") because non-members
     # can also purchase — Stage 1 audit § "Payment transaction type".
     gathering_ticket_purchase = "gathering_ticket_purchase"
+    # Gathering Series pass: pay-in-full for a bounded Series (e.g. EMBODY term).
+    # Distinct from Pathway/Collective purchase so the ledger reflects the
+    # commerce product actually sold.
+    member_series_pass_purchase = "member_series_pass_purchase"
     refund = "refund"
     adjustment = "adjustment"
 

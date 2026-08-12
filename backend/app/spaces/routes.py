@@ -61,7 +61,10 @@ from app.spaces.schemas import (
     PathwayWithSteps,
     PaymentOptionScheduleSummary,
     PaymentOptionSummary,
+    PublicOfferCreator,
     PublicOfferPage,
+    PublicPaymentOption,
+    PublicPaymentOptionSchedule,
     PublicSpaceCard,
     SaveNotesRequest,
     SaveNotesResponse,
@@ -1355,6 +1358,7 @@ def list_events(
     series_titles: dict[str, str] = {}
     series_slugs: dict[str, str] = {}
     series_covers: dict[str, str | None] = {}
+    series_offer_slugs: dict[str, str] = {}
     if series_ids:
         rows = db.query(
             _EventSeries.id, _EventSeries.title, _EventSeries.slug,
@@ -1363,6 +1367,25 @@ def list_events(
         series_titles = {sid: t for sid, t, _sl, _c in rows}
         series_slugs = {sid: sl for sid, _t, sl, _c in rows}
         series_covers = {sid: c for sid, _t, _sl, c in rows}
+        # Bulk-lookup the published Offer Page (if any) targeting each
+        # Series in the batch so member Gathering cards can eventually
+        # send a "Buy series pass" CTA to the right public URL without
+        # a per-event round-trip. Only ``published`` pages count — a
+        # draft/archived page must not leak into the member API.
+        offer_rows = (
+            db.query(OfferPage.target_id, OfferPage.slug)
+            .filter(
+                OfferPage.space_id == space.id,
+                OfferPage.target_kind == "event_series",
+                OfferPage.target_id.in_(series_ids),
+                OfferPage.status == "published",
+            )
+            .all()
+        )
+        # If a Series has multiple published Offer Pages (edge case),
+        # last write wins — the frontend only needs *a* slug. Ordering
+        # is intentionally unspecified.
+        series_offer_slugs = {sid: sl for sid, sl in offer_rows}
 
     # Bulk-check the viewer's active AccessPasses for these series so
     # the booking UI can distinguish "has pass → Reserve" from "no
@@ -1520,6 +1543,7 @@ def list_events(
             series_title=series_titles.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
             series_slug=series_slugs.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
             series_cover_image_url=series_covers.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
+            series_offer_page_slug=series_offer_slugs.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
             user_has_series_pass=(getattr(e, 'series_id', None) in user_series_pass_ids) if getattr(e, 'series_id', None) else False,
             is_public=e.is_public,
             thumbnail_url=e.thumbnail_url,
@@ -2275,6 +2299,17 @@ def get_event(
         # is not a concern for a per-Event detail page.
         "series_id": getattr(event, 'series_id', None),
         **(lambda t: {"series_title": t[0], "series_slug": t[1], "series_cover_image_url": t[2]})(_series_info_for(event, db)),
+        "series_offer_page_slug": (
+            (db.query(OfferPage.slug)
+                .filter(
+                    OfferPage.space_id == space.id,
+                    OfferPage.target_kind == "event_series",
+                    OfferPage.target_id == event.series_id,
+                    OfferPage.status == "published",
+                )
+                .scalar())
+            if getattr(event, 'series_id', None) else None
+        ),
         "user_has_series_pass": _viewer_has_series_pass(
             current_user, getattr(event, 'series_id', None), db, now,
         ),
@@ -3412,6 +3447,109 @@ def _viewer_owns_space(user: "User | None", space: Space, db: Session) -> bool:
     ).first() is not None
 
 
+def _build_series_payment_options(series_id: str, db: Session) -> list[PublicPaymentOption]:
+    """Return published PaymentOptions attached to a Series, each
+    with its published PaymentOptionSchedules nested. Order matches
+    the creator-configured ``position`` on each level."""
+    options = (
+        db.query(PaymentOption)
+        .filter(
+            PaymentOption.attaches_to_kind == "event_series",
+            PaymentOption.attaches_to_id == series_id,
+            PaymentOption.status == "published",
+        )
+        .order_by(PaymentOption.position, PaymentOption.created_at)
+        .all()
+    )
+    if not options:
+        return []
+    opt_ids = [o.id for o in options]
+    schedule_rows = (
+        db.query(PaymentOptionSchedule)
+        .filter(
+            PaymentOptionSchedule.payment_option_id.in_(opt_ids),
+            PaymentOptionSchedule.status == "published",
+        )
+        .order_by(PaymentOptionSchedule.position, PaymentOptionSchedule.created_at)
+        .all()
+    )
+    by_option: dict[str, list[PublicPaymentOptionSchedule]] = {}
+    for s in schedule_rows:
+        by_option.setdefault(s.payment_option_id, []).append(
+            PublicPaymentOptionSchedule(
+                id=s.id,
+                name=s.name,
+                description=s.description,
+                schedule_type=s.schedule_type,
+                total_amount_cents=s.total_amount_cents,
+                upfront_amount_cents=s.upfront_amount_cents,
+                installment_amount_cents=s.installment_amount_cents,
+                installment_count=s.installment_count,
+                interval=s.interval,
+                currency=s.currency,
+                buyer_note=s.buyer_note,
+            )
+        )
+    return [
+        PublicPaymentOption(
+            id=o.id,
+            name=o.name,
+            description=o.description,
+            payment_type=(
+                o.payment_type.value if hasattr(o.payment_type, "value")
+                else str(o.payment_type)
+            ),
+            sessions_per_week=o.sessions_per_week,
+            total_sessions=o.total_sessions,
+            price_per_session_cents=o.price_per_session_cents,
+            effective_price_cents=o.effective_price_cents,
+            currency=o.currency,
+            buyer_note=o.buyer_note,
+            schedules=by_option.get(o.id, []),
+        )
+        for o in options
+    ]
+
+
+def _build_offer_creator(space: Space, db: Session) -> "PublicOfferCreator | None":
+    """Resolve the personal Creator identity behind the Space.
+
+    Preference order:
+      1. Public ``CreatorProfile`` fields.
+      2. ``User.name`` for the Space's creator.
+      3. ``None`` — omit the "Meet your guide" section entirely.
+
+    Never falls back to ``Space.name`` / tagline / description /
+    logo. The Collective is not the Creator (e.g. Collective EMBODY,
+    Creator Lindsey). A future "About this Collective" section will
+    represent Collective identity separately.
+    """
+    if not space.creator_id:
+        return None
+    from app.models.platform import CreatorProfile
+    u_row = db.query(User.name).filter(User.id == space.creator_id).first()
+    user_name = (u_row[0] if u_row and u_row[0] else "").strip() or None
+    profile = (
+        db.query(CreatorProfile)
+        .filter(CreatorProfile.user_id == space.creator_id)
+        .first()
+    )
+    if profile and profile.is_public:
+        display = (profile.display_name or "").strip() or user_name
+        if not display:
+            return None
+        return PublicOfferCreator(
+            display_name=display,
+            tagline=profile.profile_tagline,
+            bio=profile.bio,
+            avatar_url=profile.avatar_url,
+            website_url=profile.website_url,
+        )
+    if not user_name:
+        return None
+    return PublicOfferCreator(display_name=user_name)
+
+
 def _build_target_snapshot(
     row: OfferPage, space: Space, viewer: "User | None", db: Session,
 ) -> tuple[OfferPageTargetSnapshot, bool]:
@@ -3469,8 +3607,90 @@ def _build_target_snapshot(
             ),
             has_access,
         )
-    # Future kinds slot in here. For now anything unknown returns
-    # an empty snapshot.
+    if row.target_kind == "event_series":
+        series = db.query(_EventSeriesModel).filter(
+            _EventSeriesModel.id == row.target_id,
+            _EventSeriesModel.space_id == space.id,
+        ).first()
+        if not series:
+            return (
+                OfferPageTargetSnapshot(
+                    kind="event_series",
+                    id=row.target_id,
+                    slug="",
+                    title="(Unavailable)",
+                ),
+                False,
+            )
+        now = datetime.utcnow()
+        has_access = _viewer_has_series_pass(viewer, series.id, db, now)
+        return (
+            OfferPageTargetSnapshot(
+                kind="event_series",
+                id=series.id,
+                slug=series.slug,
+                title=series.title,
+                description=series.description,
+                cover_image_url=series.cover_image_url,
+                # Series pricing lives on PaymentOptions — no single
+                # price / access_type / checkout_path applies here.
+                starts_at=series.starts_at,
+                ends_at=series.ends_at,
+                enter_path=f"/spaces/{space.slug}/gatherings",
+                payment_options=_build_series_payment_options(series.id, db),
+            ),
+            has_access,
+        )
+    if row.target_kind == "gathering":
+        event = db.query(Event).filter(
+            Event.id == row.target_id,
+            Event.space_id == space.id,
+        ).first()
+        if not event:
+            return (
+                OfferPageTargetSnapshot(
+                    kind="gathering",
+                    id=row.target_id,
+                    slug="",
+                    title="(Unavailable)",
+                ),
+                False,
+            )
+        has_access = False
+        if viewer is not None:
+            confirmed = (
+                db.query(EventBooking.id)
+                .filter(
+                    EventBooking.event_id == event.id,
+                    EventBooking.user_id == viewer.id,
+                    EventBooking.status == BookingStatus.confirmed,
+                )
+                .first()
+            )
+            has_access = confirmed is not None
+        access_type = getattr(event, "booking_access_type", None)
+        return (
+            OfferPageTargetSnapshot(
+                kind="gathering",
+                id=event.id,
+                # Events have no public slug — use id as the stable
+                # routing key so the frontend can build a link even
+                # when a public event URL isn't wired up yet.
+                slug=event.id,
+                title=event.title,
+                description=event.description,
+                cover_image_url=event.thumbnail_url,
+                access_type=access_type,
+                starts_at=event.starts_at,
+                ends_at=event.ends_at,
+                ticket_price_cents=getattr(event, "ticket_price_cents", None),
+                ticket_currency=getattr(event, "ticket_currency", None),
+                enter_path=f"/spaces/{space.slug}/events/{event.id}",
+            ),
+            has_access,
+        )
+    # Unknown kind — surface an empty snapshot so the renderer can
+    # show an "Unavailable" state without crashing.
     return (
         OfferPageTargetSnapshot(
             kind=row.target_kind,
@@ -3537,5 +3757,6 @@ def get_public_offer_page(
         status=row.status,
         sections_config=row.sections_config or {},
         target=target_snapshot,
+        creator=_build_offer_creator(space, db),
         user_has_target_access=has_access,
     )

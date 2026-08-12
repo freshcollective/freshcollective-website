@@ -24,9 +24,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.checkout.schemas import PathwayCheckoutRequest, PathwayCheckoutResponse
+from app.checkout.schemas import (
+    GatheringSeriesCheckoutRequest,
+    GatheringSeriesCheckoutResponse,
+    PathwayCheckoutRequest,
+    PathwayCheckoutResponse,
+)
 from app.core.config import settings
 from app.core.database import get_db
+from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.creator_billing import CreatorPlan, CreatorSubscription, CreatorSubscriptionStatus
 from app.models.payment import (
     PaymentProvider,
@@ -39,12 +45,14 @@ from app.models.payment_option import PaymentOption
 from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     EntitlementStatus,
+    EventSeries,
     Pathway,
     PathwayEntitlement,
     Space,
     SpaceMembership,
 )
 from app.models.user import User
+from sqlalchemy import or_
 
 logger = logging.getLogger(__name__)
 
@@ -363,3 +371,228 @@ def create_pathway_checkout_session(
     )
 
     return PathwayCheckoutResponse(checkout_url=session.url)
+
+
+@router.post("/gathering-series", response_model=GatheringSeriesCheckoutResponse)
+def create_gathering_series_checkout_session(
+    body: GatheringSeriesCheckoutRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> GatheringSeriesCheckoutResponse:
+    """Create a Stripe Checkout Session for a Gathering Series pass
+    (e.g. an EMBODY term). Pay-in-full only; recurring instalments
+    return 503 until Phase B lands.
+
+    The AccessPass is created by the ``checkout.session.completed``
+    webhook via the existing series-purchase branch — this endpoint
+    only stages the transaction and metadata Stripe needs.
+    """
+    if not settings.stripe_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe payments are not configured on this server.",
+        )
+
+    stripe.api_key = settings.stripe_secret_key
+
+    # --- Series validation --------------------------------------------------
+    series = db.query(EventSeries).filter(EventSeries.id == body.series_id).first()
+    if not series:
+        raise HTTPException(status_code=404, detail="Gathering Series not found.")
+    if series.status != "published":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Series is not available for purchase (status: {series.status}).",
+        )
+
+    # --- Payment option validation (must be attached to this series) --------
+    payment_option = (
+        db.query(PaymentOption)
+        .filter(
+            PaymentOption.id == body.payment_option_id,
+            PaymentOption.attaches_to_kind == "event_series",
+            PaymentOption.attaches_to_id == series.id,
+            PaymentOption.status == "published",
+        )
+        .first()
+    )
+    if not payment_option:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment option not found or not available for this Series.",
+        )
+
+    # --- Schedule validation ------------------------------------------------
+    payment_schedule = (
+        db.query(PaymentOptionSchedule)
+        .filter(
+            PaymentOptionSchedule.id == body.payment_option_schedule_id,
+            PaymentOptionSchedule.payment_option_id == payment_option.id,
+            PaymentOptionSchedule.status == "published",
+        )
+        .first()
+    )
+    if not payment_schedule:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment schedule not found or not available for this option.",
+        )
+    if payment_schedule.schedule_type == "recurring_installments":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Recurring instalment payment plans are not yet available for checkout. "
+                "Please choose 'Pay in full' or contact support."
+            ),
+        )
+    if payment_schedule.schedule_type != "pay_in_full":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Only pay-in-full schedules can be checked out via this endpoint."
+            ),
+        )
+    price_cents = payment_schedule.total_amount_cents
+    if not price_cents or price_cents <= 0:
+        raise HTTPException(status_code=400, detail="Schedule has no valid price.")
+
+    # --- Space --------------------------------------------------------------
+    space = db.query(Space).filter(Space.id == series.space_id).first()
+    if not space:
+        raise HTTPException(status_code=404, detail="Collective not found.")
+
+    # --- Duplicate access-pass guard ----------------------------------------
+    # A member who already holds an active in-window pass to this Series
+    # should not be able to buy another. Matches the pathway endpoint's
+    # 409 for duplicate entitlement.
+    now = datetime.utcnow()
+    existing_pass = (
+        db.query(AccessPass.id)
+        .filter(
+            AccessPass.user_id == current_user.id,
+            AccessPass.eligible_series_id == series.id,
+            AccessPass.status == AccessPassStatus.active,
+            AccessPass.valid_from <= now,
+            or_(
+                AccessPass.valid_until.is_(None),
+                AccessPass.valid_until > now,
+            ),
+        )
+        .first()
+    )
+    if existing_pass:
+        raise HTTPException(
+            status_code=409,
+            detail="You already have an active pass for this Series.",
+        )
+
+    # --- Fee resolution (mirrors pathway endpoint) --------------------------
+    is_platform_owned = space.creator_id is None
+    creator_id: str | None = space.creator_id
+    if is_platform_owned:
+        fee_bps = 0
+        creator_plan_id: str | None = None
+        creator_sub_id: str | None = None
+    else:
+        fee_bps, creator_plan_id, creator_sub_id = _resolve_fee_bps(creator_id, db)
+
+    gross = price_cents
+    currency = (
+        payment_schedule.currency
+        or payment_option.currency
+        or "AUD"
+    ).upper()
+    platform_fee = round(gross * fee_bps / 10000)
+    net_creator = gross - platform_fee
+
+    txn_id = str(uuid4())
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": currency.lower(),
+                        "product_data": {
+                            "name": f"{series.title} — {payment_option.name}",
+                            "description": f"{space.name} — Fresh Collective",
+                        },
+                        "unit_amount": gross,
+                    },
+                    "quantity": 1,
+                }
+            ],
+            # Note: no ``pathway_id`` in metadata — the webhook detects a
+            # series purchase by inspecting the option's ``attaches_to_kind``.
+            # Any grants_pathway_id entitlement is derived there.
+            metadata={
+                "transaction_id": txn_id,
+                "series_id": series.id,
+                "space_id": space.id,
+                "payer_user_id": current_user.id,
+                "creator_user_id": creator_id or "",
+                "platform_fee_bps": str(fee_bps),
+                "creator_plan_id": creator_plan_id or "",
+                "payment_option_id": payment_option.id,
+                "payment_option_schedule_id": payment_schedule.id,
+            },
+            payment_intent_data={
+                "metadata": {
+                    "transaction_id": txn_id,
+                    "series_id": series.id,
+                    "payer_user_id": current_user.id,
+                }
+            },
+            customer_email=current_user.email,
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+        )
+    except stripe.StripeError as exc:
+        logger.error(
+            "Stripe session creation failed for series=%s user=%s: %s",
+            series.id, current_user.id, exc,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to create checkout session. Please try again.",
+        )
+
+    txn = PaymentTransaction(
+        id=txn_id,
+        transaction_type=PaymentTransactionType.member_series_pass_purchase,
+        status=PaymentTransactionStatus.pending,
+        payment_provider=PaymentProvider.stripe,
+        payer_user_id=current_user.id,
+        creator_user_id=creator_id,
+        space_id=space.id,
+        # ``pathway_id`` on the ledger row: set only when the option
+        # explicitly grants a pathway on top of the Series pass. The
+        # webhook does the same derivation for the AccessPass and any
+        # PathwayEntitlement it creates.
+        pathway_id=payment_option.grants_pathway_id,
+        creator_plan_id=creator_plan_id,
+        creator_subscription_id=creator_sub_id,
+        currency=currency,
+        gross_amount_cents=gross,
+        platform_fee_basis_points=fee_bps,
+        platform_fee_cents=platform_fee,
+        net_creator_amount_cents=net_creator,
+        net_platform_amount_cents=platform_fee,
+        provider_checkout_session_id=session.id,
+        payment_option_id=payment_option.id,
+        payment_option_schedule_id=payment_schedule.id,
+        payout_status=PayoutStatus.not_applicable if is_platform_owned else PayoutStatus.pending,
+        stripe_mode=settings.stripe_mode,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(txn)
+    db.commit()
+
+    logger.info(
+        "Series checkout session created: txn=%s session=%s series=%s user=%s fee_bps=%s",
+        txn_id, session.id, series.id, current_user.id, fee_bps,
+    )
+
+    return GatheringSeriesCheckoutResponse(checkout_url=session.url)

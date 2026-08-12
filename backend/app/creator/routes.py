@@ -7399,10 +7399,10 @@ def _resolve_offer_target(
     """Validate an Offer Page target and return ``(kind, title)`` for
     the response snapshot.
 
-    For V1 the only valid kind is ``pathway`` and it must belong to
-    the same Collective as the Offer Page. This is where the
-    ``target_id`` string is checked; there is no FK constraint on
-    the column so future kinds can slot in without a migration.
+    Supported kinds: ``pathway``, ``event_series``, ``gathering``.
+    The target must belong to the same Collective as the Offer Page.
+    There is no FK constraint on the column so future kinds can slot
+    in without a migration.
     """
     if target_kind == "pathway":
         pathway = db.query(Pathway).filter(
@@ -7415,6 +7415,28 @@ def _resolve_offer_target(
                 detail="Target pathway not found in this Collective.",
             )
         return ("pathway", pathway.title)
+    if target_kind == "event_series":
+        series = db.query(EventSeries).filter(
+            EventSeries.id == target_id,
+            EventSeries.space_id == space.id,
+        ).first()
+        if not series:
+            raise HTTPException(
+                status_code=400,
+                detail="Target Gathering Series not found in this Collective.",
+            )
+        return ("event_series", series.title)
+    if target_kind == "gathering":
+        event = db.query(Event).filter(
+            Event.id == target_id,
+            Event.space_id == space.id,
+        ).first()
+        if not event:
+            raise HTTPException(
+                status_code=400,
+                detail="Target Gathering not found in this Collective.",
+            )
+        return ("gathering", event.title)
     raise HTTPException(
         status_code=400,
         detail=f"Unsupported target kind: {target_kind!r}.",
@@ -7428,6 +7450,12 @@ def _target_title(kind: str, target_id: str, db: Session) -> str | None:
     if kind == "pathway":
         p = db.query(Pathway).filter(Pathway.id == target_id).first()
         return p.title if p else None
+    if kind == "event_series":
+        s = db.query(EventSeries).filter(EventSeries.id == target_id).first()
+        return s.title if s else None
+    if kind == "gathering":
+        e = db.query(Event).filter(Event.id == target_id).first()
+        return e.title if e else None
     return None
 
 

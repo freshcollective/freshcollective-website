@@ -372,6 +372,11 @@ class EventSummary(BaseModel):
     # Cover art for the parent Series. Used as a hero-image
     # fallback when the Event itself has no ``thumbnail_url``.
     series_cover_image_url: str | None = None
+    # Slug of the *published* Offer Page whose ``target_kind='event_series'``
+    # points at this event's Series, if one exists. Null when the Series
+    # has no published Offer Page. Lets the member UI route a "Buy series
+    # pass" CTA to the right public page without a second round-trip.
+    series_offer_page_slug: str | None = None
     # ``True`` when the viewer holds a valid, in-window AccessPass
     # scoped to this Series. Lets the booking UI show the correct
     # state (Reserve vs Pass required) without a preemptive POST.
@@ -654,6 +659,58 @@ class NotificationPrefsUpdate(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class PublicPaymentOptionSchedule(BaseModel):
+    """A published PaymentOptionSchedule row exposed on the public
+    Offer Page. Frontend uses ``schedule_type`` to decide the CTA
+    label (Pay in full vs Weekly instalments) and which checkout
+    endpoint to call. Recurring instalments are exposed for display
+    but not yet purchasable — the checkout endpoint returns 503."""
+
+    id: str
+    name: str
+    description: str | None = None
+    schedule_type: str                       # 'pay_in_full' | 'recurring_installments' | 'manual'
+    total_amount_cents: int | None = None
+    upfront_amount_cents: int | None = None
+    installment_amount_cents: int | None = None
+    installment_count: int | None = None
+    interval: str | None = None
+    currency: str
+    buyer_note: str | None = None
+
+
+class PublicPaymentOption(BaseModel):
+    """A published PaymentOption attached to the Offer Page's target
+    (e.g. an EventSeries). Includes its published Schedules so the
+    public renderer can show tiered pricing (Awaken / Activate /
+    Empower) alongside each tier's payment methods."""
+
+    id: str
+    name: str
+    description: str | None = None
+    payment_type: str                        # 'free' | 'one_time' | 'term_pass' | 'subscription'
+    sessions_per_week: int | None = None
+    total_sessions: int | None = None
+    price_per_session_cents: int | None = None
+    effective_price_cents: int | None = None
+    currency: str
+    buyer_note: str | None = None
+    schedules: list[PublicPaymentOptionSchedule] = []
+
+
+class PublicOfferCreator(BaseModel):
+    """The real Creator profile behind the Space that owns this
+    Offer Page. Used by the "Meet your guide" section on the public
+    page. Falls back to bare user identity when the CreatorProfile
+    row is missing or ``is_public=False``."""
+
+    display_name: str | None = None
+    tagline: str | None = None
+    bio: str | None = None
+    avatar_url: str | None = None
+    website_url: str | None = None
+
+
 class OfferPageTargetSnapshot(BaseModel):
     """A small denormalised snapshot of the target so the public
     Offer Page can render pricing + CTA target without a second
@@ -662,24 +719,42 @@ class OfferPageTargetSnapshot(BaseModel):
     full target schema.
     """
 
-    kind: str                                 # 'pathway' in V1
+    kind: str                                 # 'pathway' | 'event_series' | 'gathering'
     id: str
     slug: str
     title: str
     description: str | None = None
     cover_image_url: str | None = None
     # Pricing (target-live — Offer Page does not override in V1).
+    # For ``event_series`` targets ``access_type`` / ``price_cents`` /
+    # ``billing_interval`` are None: pricing lives on the attached
+    # ``payment_options`` instead. For ``gathering`` targets they
+    # describe the standalone ticket where present.
     access_type: str | None = None
     price_cents: int | None = None
     currency: str | None = None
     billing_interval: str | None = None
     # CTA routing hint — the frontend uses this to build the button
-    # href without knowing per-target checkout paths itself.
+    # href without knowing per-target checkout paths itself. For
+    # ``event_series`` this stays None (checkout is driven by a
+    # PaymentOption + Schedule selection, not a single URL).
     checkout_path: str | None = None
-    # The pathway landing URL — used by the "You already have this"
+    # The target's landing URL — used by the "You already have this"
     # CTA state so a member with access is sent straight to the
     # content, not the checkout.
     enter_path: str | None = None
+    # Series/gathering window — populated for ``event_series`` and
+    # ``gathering`` targets, None for ``pathway``.
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    # Series-specific — the published PaymentOptions attached to this
+    # Series, each with its published Schedules nested. Empty list
+    # for other kinds.
+    payment_options: list[PublicPaymentOption] = []
+    # Gathering-specific — standalone ticket price for a paid single
+    # Gathering. None for other kinds and for free/included gatherings.
+    ticket_price_cents: int | None = None
+    ticket_currency: str | None = None
 
 
 class PublicOfferPage(BaseModel):
@@ -696,6 +771,13 @@ class PublicOfferPage(BaseModel):
     status: str
     sections_config: dict
     target: OfferPageTargetSnapshot
+    # Real Creator profile — used by the public "Meet your guide"
+    # section. ``None`` when no personal Creator identity is available
+    # (no CreatorProfile and no usable User.name). Never falls back
+    # to the Collective's name/tagline/description/logo — the
+    # Collective is not the Creator. A future "About this Collective"
+    # section will present that separately.
+    creator: PublicOfferCreator | None = None
     # ``true`` when the requesting member (or admin/creator) already
     # holds access to the target. The frontend swaps the primary CTA
     # from "Purchase" to "Continue" in this case.

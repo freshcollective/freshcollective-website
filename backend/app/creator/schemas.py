@@ -2101,7 +2101,7 @@ class AccessPassAdminOut(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-ALLOWED_OFFER_TARGET_KINDS: set[str] = {"pathway"}
+ALLOWED_OFFER_TARGET_KINDS: set[str] = {"pathway", "event_series", "gathering"}
 ALLOWED_OFFER_STATUSES: set[str] = {"draft", "published", "archived"}
 
 
