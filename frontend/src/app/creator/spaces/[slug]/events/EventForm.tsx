@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
-import type { CreatorEvent, CreatorPathway } from '@/types/platform'
+import type { CreatorEvent, CreatorGatheringSeriesSummary, CreatorPathway } from '@/types/platform'
 import { Switch } from '@/components/platform'
 import {
   GATHERING_TYPES,
@@ -98,10 +98,20 @@ export default function EventForm({
   spaceSlug,
   event,
   pathways = [],
+  series = [],
+  initialSeriesId = null,
 }: {
   spaceSlug: string
   event?: CreatorEvent
   pathways?: CreatorPathway[]
+  /** Gathering Series in the current Collective. Used for the
+   *  "Belongs to Series" picker and to enable the ``included_with_series``
+   *  access type when relevant. */
+  series?: CreatorGatheringSeriesSummary[]
+  /** Preselect a Series id on the new-event form. Set when the
+   *  Creator arrives via "New Gathering in Series" from the Series
+   *  editor (query param). */
+  initialSeriesId?: string | null
 }) {
   const router = useRouter()
   const isEdit = !!event
@@ -130,6 +140,13 @@ export default function EventForm({
   )
   const [bookingRequiredPathwayId, setBookingRequiredPathwayId] = useState<string>(
     event?.booking_required_pathway_id ?? ''
+  )
+  // Semantic Gathering Series membership. Empty string means "not in
+  // a Series". Attaching a Series here does NOT change the access
+  // type — a Series may contain free, collective-included, and
+  // series-pass Gatherings alongside each other; the Creator chooses.
+  const [seriesId, setSeriesId] = useState<string>(
+    event?.series_id ?? initialSeriesId ?? ''
   )
 
   // Booking
@@ -278,6 +295,29 @@ export default function EventForm({
         }
       }
       setTicketPriceError(null)
+
+      // Out-of-range Series membership — a finite Series may
+      // intentionally include intro/bonus/follow-up Gatherings, but
+      // the Creator should own that decision. Confirm before saving
+      // an Event whose start falls outside the chosen Series window.
+      if (seriesId && startsAt) {
+        const s = series.find((x) => x.id === seriesId)
+        if (s) {
+          const start = new Date(startsAt).getTime()
+          const winStart = new Date(s.starts_at).getTime()
+          const winEnd = s.ends_at ? new Date(s.ends_at).getTime() : null
+          const outOfRange = Number.isFinite(start) && Number.isFinite(winStart) && (
+            start < winStart || (winEnd != null && start > winEnd)
+          )
+          if (outOfRange) {
+            const ok = window.confirm(
+              `This Gathering falls outside the Series dates for "${s.title}". Add it anyway?`,
+            )
+            if (!ok) { setSaving(false); return }
+          }
+        }
+      }
+
       const basePayload = {
         title,
         description: description || null,
@@ -301,6 +341,9 @@ export default function EventForm({
         booking_access_type: accessType,
         booking_required_pathway_id:
           accessType === 'included_with_pathway' ? (bookingRequiredPathwayId || null) : null,
+        // Semantic Series membership. Empty string → null (not in a
+        // Series). No coupling with booking_access_type here.
+        series_id: seriesId || null,
         // Standalone paid Gathering: both fields null unless
         // access is paid_separately, so we never accidentally
         // persist stale ticket data on a free/included event.
@@ -715,8 +758,82 @@ export default function EventForm({
             </p>
           </div>
         )}
+        {/* Belongs to Series — always rendered so the concept is
+            discoverable whether or not a Series is currently
+            selected. Attaching to a Series does NOT change the
+            access type. Detaching, however, is blocked while access
+            is "Included with a Series pass" — an unresolvable
+            Series-pass gate is a broken state we would rather refuse
+            to create. Silent broadening of access is deliberately
+            avoided. */}
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <label
+            htmlFor="event-series"
+            className="mb-1 block text-[13px] font-semibold text-navy-900"
+          >
+            Belongs to Series
+          </label>
+          <p className="mb-2 text-[12px] text-slate-600">
+            Optional. Group this Gathering under a Series to organise
+            related sessions. This choice does not change access —
+            set that below.
+          </p>
+          {series.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[12.5px] text-slate-600">
+              No Gathering Series in this Collective yet.{' '}
+              <a
+                href="/creator-studio/gatherings"
+                className="font-medium text-teal-700 hover:underline"
+              >
+                Create one from Gatherings
+              </a>
+              , then come back here to attach this Gathering.
+            </p>
+          ) : (
+            <>
+              <select
+                id="event-series"
+                value={seriesId}
+                onChange={(e) => {
+                  const next = e.target.value
+                  if (!next && accessType === 'included_with_series') {
+                    // Refuse the change rather than silently broadening
+                    // access. The Creator must pick a different access
+                    // type below first.
+                    return
+                  }
+                  setSeriesId(next)
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
+              >
+                <option
+                  value=""
+                  disabled={accessType === 'included_with_series'}
+                >
+                  — Not in a Series —
+                </option>
+                {series.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+              {accessType === 'included_with_series' && seriesId && (
+                <p className="mt-2 text-[12px]" style={{ color: '#8a6a1f' }}>
+                  Access is set to <strong>Included with a Series pass</strong> —
+                  remove that below before detaching from the Series.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
         <div className="flex flex-col gap-2">
-          {ACCESS_TYPES.map((a) => (
+          {ACCESS_TYPES
+            // Only surface the Series-pass access option when this
+            // Gathering actually belongs to a Series. Prevents the
+            // Creator from choosing a gate that can never resolve
+            // because there's no series to check the pass against.
+            .filter((a) => a.value !== 'included_with_series' || !!seriesId)
+            .map((a) => (
             <label
               key={a.value}
               className={[
@@ -753,6 +870,13 @@ export default function EventForm({
                 {a.value === 'included_with_pathway' && (
                   <p className="mt-0.5 text-[12px] leading-relaxed text-black">
                     Only members enrolled in the linked Pathway may register.
+                  </p>
+                )}
+                {a.value === 'included_with_series' && (
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-black">
+                    Only members holding a valid pass for the selected
+                    Gathering Series may book. Weekly limits and total
+                    session credits from the pass are enforced.
                   </p>
                 )}
                 {a.value === 'paid_separately' && (

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getActiveCreatorSpace, getCreatorMedia, getCreatorPathway, getCreatorSections, getCreatorSpace, getCreatorSteps } from '@/lib/serverApi'
 import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorSpaceDetail, CreatorStep } from '@/types/platform'
+import CreatorBackLink from '@/components/creator/CreatorBackLink'
 import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
 import PathwayHeader from '../PathwayHeader'
 import PathwaySettingsClient from '../PathwaySettingsClient'
@@ -49,6 +50,7 @@ export default async function PathwaySettingsPage({ params }: Props) {
 
   return (
     <CreatorPageContainer>
+      <CreatorBackLink href="/creator-studio/pathways" label="Back to Pathways" />
       <PathwayHeader
         active="settings"
         spaceName={activeSpace.name}

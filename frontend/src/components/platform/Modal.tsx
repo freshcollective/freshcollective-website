@@ -20,7 +20,9 @@ interface ModalProps {
   title: string
   /** Optional icon rendered above the title. */
   icon?: ReactNode
-  size?: 'sm' | 'md'
+  /** ``sm`` (confirmations) · ``md`` (default) · ``lg`` (form-heavy
+   *  Creator Studio editors that need more horizontal room). */
+  size?: 'sm' | 'md' | 'lg'
   children?: ReactNode
   /** Action row content (buttons). Right-aligned. */
   actions?: ReactNode
@@ -48,7 +50,10 @@ export function Modal({
 
   if (!open) return null
 
-  const maxWidth = size === 'sm' ? 'max-w-sm' : 'max-w-md'
+  const maxWidth =
+    size === 'sm' ? 'max-w-sm'
+    : size === 'lg' ? 'max-w-2xl'
+    : 'max-w-md'
 
   return (
     <div
@@ -63,15 +68,26 @@ export function Modal({
         className="absolute inset-0 bg-black/40"
         style={{ animation: 'fc-fade-in 180ms ease-out' }}
       />
+      {/*
+        Height model. The card caps at the viewport with a small
+        gutter (32px), then lays out as a column so the body can
+        scroll independently while the header and footer remain
+        visible. ``100dvh`` preferred over ``100vh`` so mobile
+        browsers' shrinking address bars don't clip the footer.
+        Falls back to ``100vh`` in browsers that lack ``dvh``.
+      */}
       <div
         className={cn(
-          'relative w-full',
+          'relative flex w-full flex-col',
           maxWidth,
           'rounded-[var(--fc-radius-2xl)] bg-[color:var(--fc-surface-card)] shadow-[var(--fc-elev-5)]',
         )}
-        style={{ animation: 'fc-modal-in 180ms ease-out' }}
+        style={{
+          animation: 'fc-modal-in 180ms ease-out',
+          maxHeight: 'calc(100dvh - 2rem)',
+        }}
       >
-        <header className="flex items-start justify-between gap-3 px-6 pt-5">
+        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-[color:var(--fc-border-hairline)] px-6 pt-5 pb-4">
           <div className="flex items-start gap-3">
             {icon && (
               <span aria-hidden="true" className="mt-0.5 text-[color:var(--fc-accent-500)]">
@@ -93,10 +109,14 @@ export function Modal({
           </IconButton>
         </header>
 
-        {children && <div className="px-6 py-4">{children}</div>}
+        {children && (
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            {children}
+          </div>
+        )}
 
         {actions && (
-          <footer className="flex flex-wrap items-center justify-end gap-2 px-6 pb-5 pt-1">
+          <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-[color:var(--fc-border-hairline)] px-6 py-4">
             {actions}
           </footer>
         )}

@@ -288,6 +288,21 @@ export interface EventSummary {
   recurrence_label: string | null
   recurrence_index: number | null
   recurrence_total: number | null
+  /** Semantic Gathering Series membership (migration 105). Populated
+   *  by the backend when the Event belongs to a Series; ``series_title``
+   *  is a hydrated convenience so the ACCESS row can render "Included
+   *  with {series_title}" without a second fetch. */
+  series_id: string | null
+  series_title: string | null
+  series_slug?: string | null
+  /** Cover art for the parent Series. Used as a hero-image fallback
+   *  when the Event has no ``thumbnail_url``. */
+  series_cover_image_url?: string | null
+  /** True when the viewer holds a valid, in-window Series pass
+   *  scoped to this Event's series. Lets the booking UI show the
+   *  correct state (Reserve vs Pass required) without triggering a
+   *  speculative POST. */
+  user_has_series_pass?: boolean
   is_public: boolean
   thumbnail_url: string | null
   status: 'active' | 'cancelled' | 'archived'
@@ -768,6 +783,11 @@ export interface CreatorEvent {
   recurrence_label: string | null
   recurrence_index: number | null
   recurrence_total: number | null
+  /** Semantic Gathering Series membership (migration 105).
+   *  Distinct from ``recurrence_series_id`` above: a bulk-created
+   *  batch may set both; a hand-created event can be attached to a
+   *  Series independently. */
+  series_id: string | null
   created_at: string
   /** Gatherings 2.0 vocabulary — see `lib/gatheringTypes.ts`. */
   gathering_type: string
@@ -1434,4 +1454,100 @@ export interface ActivityOut {
 export interface ActivityListResponse {
   activities: ActivityOut[]
   next_before: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Gathering Series (Step 2 — Creator UI)
+// ---------------------------------------------------------------------------
+
+export type GatheringSeriesStatus = 'draft' | 'published' | 'archived'
+
+export interface CreatorGatheringSeriesSummary {
+  id: string
+  slug: string
+  title: string
+  starts_at: string
+  ends_at: string | null
+  status: GatheringSeriesStatus
+  cover_image_url: string | null
+  gathering_count: number
+  payment_option_count: number
+  updated_at: string
+}
+
+export interface CreatorGatheringSeries {
+  id: string
+  space_id: string
+  slug: string
+  title: string
+  description: string | null
+  starts_at: string
+  ends_at: string | null
+  status: GatheringSeriesStatus
+  cover_image_url: string | null
+  /** Set on first publish, never cleared. Frontend keys off this
+   *  to decide whether Delete (never published) or Archive is the
+   *  correct lifecycle action to expose. */
+  published_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** Polymorphic attachment now exposed by the PaymentOption
+ *  serialiser (post-migration-105). Frontend keys on
+ *  ``attaches_to_kind`` to decide which authoring surface a row
+ *  belongs to. */
+export type PaymentOptionAttachesToKind = 'pathway' | 'event_series'
+
+export interface CreatorSeriesPaymentOption {
+  id: string
+  space_id: string
+  pathway_id: string | null
+  attaches_to_kind: PaymentOptionAttachesToKind
+  attaches_to_id: string
+  grants_pathway_id: string | null
+  name: string
+  description: string | null
+  payment_type: 'free' | 'one_time' | 'term_pass' | 'subscription'
+  status: 'draft' | 'published' | 'archived'
+  term_start_date: string | null
+  term_end_date: string | null
+  sessions_per_week: number | null
+  total_sessions: number | null
+  price_per_session_cents: number | null
+  calculated_total_cents: number | null
+  override_total_cents: number | null
+  effective_price_cents: number | null
+  currency: string
+  buyer_note: string | null
+  internal_note: string | null
+  position: number
+  created_at: string
+  updated_at: string
+}
+
+/** Ways to pay for a single Payment Option — same access
+ *  entitlement, different Stripe cadence. Backend model:
+ *  ``PaymentOptionSchedule``. Creator-facing labels are handled in
+ *  the UI (schedule_type → "Pay in full" / "Weekly instalments"). */
+export interface CreatorPaymentOptionSchedule {
+  id: string
+  payment_option_id: string
+  name: string
+  description: string | null
+  schedule_type: 'pay_in_full' | 'recurring_installments' | 'manual'
+  status: 'draft' | 'published' | 'archived'
+  total_amount_cents: number | null
+  upfront_amount_cents: number | null
+  installment_amount_cents: number | null
+  installment_count: number | null
+  interval: string | null
+  stripe_interval: string | null
+  stripe_interval_count: number | null
+  currency: string
+  buyer_note: string | null
+  internal_note: string | null
+  position: number
+  created_at: string
+  updated_at: string
 }

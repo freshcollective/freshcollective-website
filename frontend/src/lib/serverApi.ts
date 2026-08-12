@@ -607,6 +607,56 @@ export const getCreatorOfferPage = cache(async (slug: string, offerSlug: string)
   return res.json()
 })
 
+// ── Gathering Series ───────────────────────────────────────────────
+
+export const getCreatorGatheringSeriesList = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/creator/spaces/${slug}/gathering-series`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getCreatorGatheringSeries = cache(
+  async (slug: string, seriesSlug: string) => {
+    const res = await fetchWithSession(
+      `/api/creator/spaces/${slug}/gathering-series/${seriesSlug}`,
+    )
+    if (!res.ok) return null
+    return res.json()
+  },
+)
+
+export const getCreatorSeriesGatherings = cache(
+  async (slug: string, seriesSlug: string) => {
+    const res = await fetchWithSession(
+      `/api/creator/spaces/${slug}/gathering-series/${seriesSlug}/gatherings`,
+    )
+    if (!res.ok) return []
+    return res.json()
+  },
+)
+
+export const getCreatorSeriesPaymentOptions = cache(
+  async (slug: string, seriesSlug: string) => {
+    const res = await fetchWithSession(
+      `/api/creator/spaces/${slug}/gathering-series/${seriesSlug}/payment-options`,
+    )
+    if (!res.ok) return []
+    return res.json()
+  },
+)
+
+/** Payment schedules for a given series-attached Payment Option.
+ *  Cached per (slug, seriesSlug, optionId) tuple during a request. */
+export const getCreatorSeriesOptionSchedules = cache(
+  async (slug: string, seriesSlug: string, optionId: string) => {
+    const res = await fetchWithSession(
+      `/api/creator/spaces/${slug}/gathering-series/${seriesSlug}/payment-options/${optionId}/schedules`,
+    )
+    if (!res.ok) return []
+    return res.json()
+  },
+)
+
 // getSpaceResources removed — member-facing Resources page retired.
 // Members access resources via Pathways (Guided or Knowledge Guide);
 // no aggregated list endpoint exists any more.

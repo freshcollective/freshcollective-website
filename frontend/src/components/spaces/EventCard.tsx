@@ -330,7 +330,16 @@ export default function EventCard({
             <span className="text-xs text-black">{event.booking_note}</span>
           ) : null}
 
-          {event.recurrence_series_id && event.can_book && onBookSeries && (
+          {/* Bulk "reserve every session" — only meaningful for
+              recurrence-tagged Gatherings that don't gate on a
+              Series pass. Series-pass events already enforce weekly
+              + total credit limits per-booking, and mixing "book all"
+              with credit maths silently would produce surprising
+              behaviour. Suppressed here to match the detail page. */}
+          {event.recurrence_series_id
+            && event.can_book
+            && event.booking_access_type !== 'included_with_series'
+            && onBookSeries && (
             <button
               onClick={onBookSeries}
               className="rounded-lg border border-teal-200 px-3 py-1.5 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-50"

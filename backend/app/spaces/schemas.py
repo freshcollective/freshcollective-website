@@ -360,6 +360,22 @@ class EventSummary(BaseModel):
     recurrence_label: str | None = None
     recurrence_index: int | None = None
     recurrence_total: int | None = None
+    # Semantic Gathering Series membership (migration 105). Distinct
+    # from the recurrence bulk-create tag above. Frontend uses these
+    # to render "Included with {series_title}" copy on the public
+    # Gathering detail when the access type is 'included_with_series'.
+    series_id: str | None = None
+    series_title: str | None = None
+    # Series slug so the client can eventually link to a Series
+    # page. Cheap to include today; no UI depends on it yet.
+    series_slug: str | None = None
+    # Cover art for the parent Series. Used as a hero-image
+    # fallback when the Event itself has no ``thumbnail_url``.
+    series_cover_image_url: str | None = None
+    # ``True`` when the viewer holds a valid, in-window AccessPass
+    # scoped to this Series. Lets the booking UI show the correct
+    # state (Reserve vs Pass required) without a preemptive POST.
+    user_has_series_pass: bool = False
     # Visibility
     is_public: bool = False
     # Thumbnail

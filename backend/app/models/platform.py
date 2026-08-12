@@ -959,6 +959,14 @@ class EventSeries(Base):
         String(20), nullable=False, default="draft", server_default="draft",
     )
     cover_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Set the first time the Series transitions to ``status='published'``;
+    # never cleared. Used to decide whether a hard-delete is safe: a
+    # Series that has never been public can be removed with attached
+    # events detached in-place; a once-published Series is archived
+    # instead so historical AccessPass rows keep a resolvable target.
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False

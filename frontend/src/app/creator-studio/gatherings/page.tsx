@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import { getActiveCreatorSpace, getCreatorEvents, getCreatorSpace } from '@/lib/serverApi'
-import type { CreatorEvent, CreatorSpaceDetail } from '@/types/platform'
+import { getActiveCreatorSpace, getCreatorEvents, getCreatorGatheringSeriesList, getCreatorSpace } from '@/lib/serverApi'
+import type { CreatorEvent, CreatorGatheringSeriesSummary, CreatorSpaceDetail } from '@/types/platform'
 import CreatorEventRow from '@/app/creator/spaces/[slug]/events/CreatorEventRow'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
+import GatheringSeriesBand from './GatheringSeriesBand'
 
 /**
  * Creator Studio → Gatherings.
@@ -18,13 +19,19 @@ export default async function GatheringsPage() {
 
   // Two scoped fetches: `upcoming` drives the list, `archive` is
   // only used to decide whether to expose the archive link.
-  const [upcoming, past, spaceDetail]: [CreatorEvent[], CreatorEvent[], CreatorSpaceDetail | null] = primarySpace
+  const [upcoming, past, spaceDetail, seriesList]: [
+    CreatorEvent[],
+    CreatorEvent[],
+    CreatorSpaceDetail | null,
+    CreatorGatheringSeriesSummary[],
+  ] = primarySpace
     ? await Promise.all([
         getCreatorEvents(primarySpace.slug, 'upcoming'),
         getCreatorEvents(primarySpace.slug, 'archive'),
         getCreatorSpace(primarySpace.slug) as Promise<CreatorSpaceDetail | null>,
+        getCreatorGatheringSeriesList(primarySpace.slug),
       ])
-    : [[], [], null]
+    : [[], [], null, []]
 
   const hasArchive = past.length > 0
   const now = Date.now()
@@ -86,26 +93,54 @@ export default async function GatheringsPage() {
         </div>
       )}
 
-      {/* Collective exists but no upcoming Gatherings */}
-      {primarySpace && upcoming.length === 0 && (
-        <div className="rounded-2xl border border-border bg-surface px-8 py-12 text-center">
-          <p className="mb-2 font-serif text-xl text-navy-800">
-            You haven&rsquo;t scheduled any upcoming Gatherings yet.
-          </p>
-          <p className="mx-auto max-w-md text-[14px] leading-relaxed text-black">
-            Create a Gathering to begin bringing people together.
-          </p>
-        </div>
+      {primarySpace && (
+        <GatheringSeriesBand spaceSlug={primarySpace.slug} series={seriesList} />
       )}
 
-      {/* Upcoming list — no additional client-side grouping */}
-      {primarySpace && upcoming.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {upcoming.map((event) => (
-            <CreatorEventRow key={event.id} event={event} slug={primarySpace.slug} />
-          ))}
-        </div>
-      )}
+      {/*
+        Standalone Gatherings only. Anything with a semantic
+        series_id belongs inside its Series editor; showing it here
+        as well was duplication (the EMBODY Term 3 Series had all
+        24 of its sessions repeated below the Series card). Backend
+        rows are untouched — this is purely a Creator Studio
+        presentation filter.
+      */}
+      {(() => {
+        const standalone = primarySpace ? upcoming.filter((e) => !e.series_id) : []
+        return (
+          <>
+            {primarySpace && (
+              <div className="mb-3 mt-2 flex items-baseline justify-between">
+                <h2 className="font-serif text-[16px] text-navy-900">
+                  Standalone Gatherings
+                </h2>
+                <span className="text-[12px] text-slate-500">
+                  Not part of a Gathering Series
+                </span>
+              </div>
+            )}
+            {primarySpace && standalone.length === 0 && (
+              <div className="rounded-2xl border border-border bg-surface px-8 py-10 text-center">
+                <p className="mb-1 font-serif text-lg text-navy-800">
+                  No standalone Gatherings.
+                </p>
+                <p className="mx-auto max-w-md text-[13.5px] leading-relaxed text-black">
+                  Any Gatherings you&rsquo;ve added to a Series live inside
+                  their Series editor above. Create a standalone
+                  Gathering &mdash; or add it to a Series &mdash; to see it here.
+                </p>
+              </div>
+            )}
+            {primarySpace && standalone.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {standalone.map((event) => (
+                  <CreatorEventRow key={event.id} event={event} slug={primarySpace.slug} />
+                ))}
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {/* Archive link — only when the archive has content */}
       {primarySpace && hasArchive && (

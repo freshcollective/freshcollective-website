@@ -94,6 +94,10 @@ from app.creator.schemas import (
     PathwayCreateRequest,
     PathwayResponse,
     PathwayUpdateRequest,
+    GatheringSeriesCreateRequest,
+    GatheringSeriesResponse,
+    GatheringSeriesSummary,
+    GatheringSeriesUpdateRequest,
     GenerateSchedulesRequest,
     PaymentOptionCreateRequest,
     PaymentOptionResponse,
@@ -101,6 +105,8 @@ from app.creator.schemas import (
     PaymentOptionScheduleResponse,
     PaymentOptionScheduleUpdateRequest,
     PaymentOptionUpdateRequest,
+    SeriesPaymentOptionCreateRequest,
+    SeriesPaymentOptionUpdateRequest,
     ResourceCreateRequest,
     ResourcePathwayInfo,
     ResourceResponse,
@@ -147,6 +153,7 @@ from app.models.platform import (
     Enrollment,
     Event,
     EventBooking,
+    EventSeries,
     LibraryFolder,
     ManualMember,
     OfferPage,
@@ -333,6 +340,69 @@ def _get_pathway(space: Space, pathway_slug: str, db: Session) -> Pathway:
     if not pathway:
         raise HTTPException(status_code=404, detail="Pathway not found.")
     return pathway
+
+
+def _get_gathering_series(space: Space, series_slug: str, db: Session) -> EventSeries:
+    series = (
+        db.query(EventSeries)
+        .filter(EventSeries.space_id == space.id, EventSeries.slug == series_slug)
+        .first()
+    )
+    if not series:
+        raise HTTPException(status_code=404, detail="Gathering Series not found.")
+    return series
+
+
+def _validate_series_id_for_space(
+    series_id: str | None, space: Space, db: Session,
+) -> str | None:
+    """Resolve an incoming Gathering Series id against the given
+    Space. Returns the id verbatim when it matches a series in this
+    space; returns None when the caller passed None; raises 400 when
+    the id references a series in a different space or doesn't exist.
+
+    Reused by event create + bulk create + update so the same
+    ownership rule applies wherever an Event can be attached to a
+    Series.
+    """
+    if series_id is None:
+        return None
+    series = (
+        db.query(EventSeries)
+        .filter(EventSeries.id == series_id, EventSeries.space_id == space.id)
+        .first()
+    )
+    if not series:
+        raise HTTPException(
+            status_code=400,
+            detail="Gathering Series not found in this Collective.",
+        )
+    return series.id
+
+
+def _enforce_series_pass_invariant(
+    resulting_access_type: str | None,
+    resulting_series_id: str | None,
+) -> None:
+    """Reject any Event state where ``booking_access_type`` is
+    ``'included_with_series'`` but ``series_id`` is null.
+
+    Called after resolving the FINAL post-update values so a caller
+    can, in a single PATCH, change the access type away from Series
+    pass AND clear the series id — that combination is fine because
+    the resulting access type is no longer ``included_with_series``.
+    The invariant only rejects the invalid pairing itself.
+    """
+    from app.services.gathering_types import normalise_access_type as _norm
+    if _norm(resulting_access_type) == "included_with_series" and not resulting_series_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "\"Included with a Series pass\" requires the Gathering to "
+                "belong to a Gathering Series. Either attach it to a Series "
+                "or change the access type."
+            ),
+        )
 
 
 def _unique_slug(base: str, existing: list[str]) -> str:
@@ -2721,6 +2791,7 @@ def _event_to_dict(
         "recurrence_label": event.recurrence_label,
         "recurrence_index": event.recurrence_index,
         "recurrence_total": event.recurrence_total,
+        "series_id": getattr(event, "series_id", None),
         "created_at": event.created_at,
         # Gatherings 2.0 vocabulary (see services/gathering_types.py).
         # `booking_access_type` is normalised on the way out so legacy
@@ -2804,6 +2875,15 @@ def create_event(
         body.booking_access_type, body.is_published,
         body.ticket_price_cents, body.ticket_currency,
     )
+    # Validate optional Series membership — must belong to the same
+    # Space. Rejects an id that references someone else's series or
+    # a mistyped id early rather than persisting a dangling FK.
+    resolved_series_id = _validate_series_id_for_space(body.series_id, space, db)
+    # Series-pass invariant: an event with access_type='included_with_series'
+    # must belong to a Series. Enforced here so the DB never carries an
+    # unresolvable Series-pass gate.
+    _enforce_series_pass_invariant(body.booking_access_type, resolved_series_id)
+
     event = Event(
         id=str(uuid4()),
         space_id=space.id,
@@ -2831,6 +2911,7 @@ def create_event(
         booking_required_pathway_id=body.booking_required_pathway_id,
         ticket_price_cents=ticket_price,
         ticket_currency=ticket_currency,
+        series_id=resolved_series_id,
     )
     db.add(event)
     db.flush()
@@ -2865,9 +2946,17 @@ def bulk_create_events(
 
     space = _get_managed_space(slug, current_user, db)
     rec = body.recurrence
-    series_id = str(uuid4())
+    # Recurrence tag — unique per bulk-create, marks "these rows
+    # were generated together". Distinct from the semantic
+    # ``series_id`` (below) which links to a first-class Series row.
+    recurrence_tag = str(uuid4())
     series_label = rec.series_label
     days_set = set(rec.days_of_week)
+    resolved_series_id = _validate_series_id_for_space(body.series_id, space, db)
+    # Same invariant as create_event — a bulk-created batch cannot
+    # land as ``included_with_series`` without a Series to check
+    # passes against. Fail loudly before any rows are generated.
+    _enforce_series_pass_invariant(body.booking_access_type, resolved_series_id)
 
     duration = None
     if body.ends_at:
@@ -2925,15 +3014,25 @@ def bulk_create_events(
             access_instructions=body.access_instructions,
             booking_access_type=body.booking_access_type,
             booking_required_pathway_id=body.booking_required_pathway_id,
-            recurrence_series_id=series_id,
+            recurrence_series_id=recurrence_tag,
             recurrence_label=series_label,
             recurrence_index=idx,
             recurrence_total=total,
+            series_id=resolved_series_id,
         )
         db.add(event)
 
     db.commit()
-    return BulkEventCreateResponse(created_count=total, series_id=series_id)
+    # Both names on the response point at the same value — the
+    # low-level recurrence UUID stamped on every generated row.
+    # ``recurrence_series_id`` is the canonical name; ``series_id``
+    # is the deprecated legacy alias kept for wire compat. See
+    # BulkEventCreateResponse docstring for the deprecation plan.
+    return BulkEventCreateResponse(
+        created_count=total,
+        recurrence_series_id=recurrence_tag,
+        series_id=recurrence_tag,
+    )
 
 
 @router.patch("/spaces/{slug}/events/{event_id}", response_model=EventResponse)
@@ -2998,6 +3097,23 @@ def update_event(
         val = getattr(body, field)
         if val is not None:
             setattr(event, field, val)
+
+    # ``series_id`` uses ``model_fields_set`` so an explicit ``null``
+    # detaches the Event from its Series, while omission leaves the
+    # attachment untouched. Any non-null value is validated as a
+    # Series in this Space before assignment.
+    if "series_id" in body.model_fields_set:
+        if body.series_id is None:
+            event.series_id = None
+        else:
+            event.series_id = _validate_series_id_for_space(body.series_id, space, db)
+
+    # Series-pass invariant on the RESULTING state. Both fields may
+    # have moved in this PATCH — checking the composed result lets a
+    # caller change the access type away from Series pass AND clear
+    # the series id in the same call. It rejects any combination
+    # that would leave the row with an unresolvable Series-pass gate.
+    _enforce_series_pass_invariant(event.booking_access_type, event.series_id)
 
     # After applying updates, validate the ticket configuration against
     # the RESULTING state (post-update). This is what the CHECK constraint
@@ -5740,6 +5856,12 @@ def _option_to_dict(opt: PaymentOption) -> dict:
         "id": opt.id,
         "space_id": opt.space_id,
         "pathway_id": opt.pathway_id,
+        # Polymorphic attachment introduced in migration 105. Frontend
+        # reads these to distinguish pathway-attached vs series-attached
+        # options; the pathway-scoped authoring UI just checks
+        # ``attaches_to_kind == 'pathway'`` and hides the switch.
+        "attaches_to_kind": opt.attaches_to_kind,
+        "attaches_to_id": opt.attaches_to_id,
         "grants_pathway_id": opt.grants_pathway_id,
         "name": opt.name,
         "description": opt.description,
@@ -7571,3 +7693,13 @@ def delete_offer_page(
         )
     db.delete(row)
     db.commit()
+
+
+
+# ---------------------------------------------------------------------------
+# Gathering Series routes (Step 2 — see _gathering_series_routes.py for
+# the CRUD + Payment Option surface). Imported for side effect: the
+# module registers its endpoints against the ``router`` above.
+# ---------------------------------------------------------------------------
+
+from app.creator import _gathering_series_routes as _gs_routes  # noqa: E402,F401

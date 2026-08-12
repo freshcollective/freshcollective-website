@@ -20,6 +20,18 @@ interface Props {
   recurrenceSeriesId?: string | null
   accessType?: 'all_members' | 'pathway_required'
   userHasPathwayAccess?: boolean
+  /** Full booking access-type string from the API response. Used to
+   *  branch the UI for ``included_with_series`` — the Series-pass
+   *  booking flow explains the pass requirement rather than exposing
+   *  a broken purchase link (Offer Page purchase surface is a
+   *  future milestone). */
+  bookingAccessType?: string
+  /** Optional Series title, when the Event belongs to one. Used in
+   *  the pass-required explainer copy. */
+  seriesTitle?: string | null
+  /** True when the viewer holds a valid pass for the Event's Series.
+   *  Lets us render the correct state without a speculative POST. */
+  userHasSeriesPass?: boolean
   isAuthenticated: boolean
   loginHref: string
 }
@@ -39,6 +51,9 @@ export default function GatheringBookingClient({
   recurrenceSeriesId,
   accessType = 'all_members',
   userHasPathwayAccess = true,
+  bookingAccessType,
+  seriesTitle,
+  userHasSeriesPass = false,
   isAuthenticated,
   loginHref,
 }: Props) {
@@ -129,6 +144,7 @@ export default function GatheringBookingClient({
   const isReserved = myBookingStatus === 'confirmed'
   const isFull = spotsRemaining !== null && spotsRemaining === 0 && !isReserved
   const needsPathwayAccess = accessType === 'pathway_required' && !userHasPathwayAccess
+  const isSeriesGated = bookingAccessType === 'included_with_series'
 
   return (
     <div>
@@ -196,7 +212,28 @@ export default function GatheringBookingClient({
         </button>
       )}
 
-      {!isPast && isAuthenticated && !needsPathwayAccess && (
+      {/* Series-pass access, no valid pass — explain what's needed.
+          Deliberately renders no purchase link; the Offer Page will
+          become the purchase surface in a later milestone. This
+          keeps the current state honest ("here's what you need")
+          without exposing a 404 route to a not-yet-built purchase
+          flow. */}
+      {!isPast && isAuthenticated && isSeriesGated && !isReserved && !userHasSeriesPass && (
+        <div
+          className="rounded-xl px-4 py-3"
+          style={{ background: 'rgba(214,177,63,0.08)', border: '1px solid rgba(214,177,63,0.30)' }}
+        >
+          <p className="text-[13.5px] font-semibold text-navy-900">
+            {seriesTitle ? `A ${seriesTitle} pass is required` : 'A Series pass is required'}
+          </p>
+          <p className="mt-1 text-[12.5px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.65)' }}>
+            This session is reserved with a valid pass for the
+            Gathering Series. Ways to join will be available shortly.
+          </p>
+        </div>
+      )}
+
+      {!isPast && isAuthenticated && !needsPathwayAccess && !(isSeriesGated && !userHasSeriesPass) && (
         <>
           {isReserved ? (
             <div className="space-y-2">
@@ -230,13 +267,13 @@ export default function GatheringBookingClient({
               >
                 {loading ? 'Reserving…' : 'Reserve your place'}
               </button>
-              {recurrenceSeriesId && !seriesResult && (
+              {recurrenceSeriesId && !seriesResult && !isSeriesGated && (
                 <button
                   onClick={handleBookSeries}
                   disabled={loading}
                   className="w-full rounded-xl border border-teal-200 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50"
                 >
-                  {loading ? 'Reserving…' : 'Reserve every Gathering in this series'}
+                  {loading ? 'Reserving\u2026' : 'Reserve every Gathering in this series'}
                 </button>
               )}
             </div>

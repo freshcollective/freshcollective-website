@@ -765,7 +765,29 @@ class RecurrenceRequest(BaseModel):
 
 
 class BulkEventCreateResponse(BaseModel):
+    """Response for POST /events/bulk.
+
+    Historically returned ``series_id`` which meant "the recurrence
+    UUID stamped on every row generated together" — NOT the semantic
+    Gathering Series introduced in migration 105. To avoid confusion
+    (an Event now has two very different id-shaped things called
+    "series"), the recurrence UUID is exposed under the clearer name
+    ``recurrence_series_id``. The legacy ``series_id`` field is kept
+    on the wire so existing frontend callers don't break, and returns
+    the same value; new callers should read ``recurrence_series_id``.
+
+    Deprecation: remove ``series_id`` once no consumer reads it. The
+    current bulk POST caller (``frontend/.../events/EventForm.tsx``)
+    ignores the field entirely, so removal is safe as soon as any
+    future consumer is confirmed to be on the new name.
+    """
+
     created_count: int
+    # New canonical name. Same value as ``series_id`` below.
+    recurrence_series_id: str
+    # Deprecated alias — historical field name. Kept only so callers
+    # that read it don't break silently. Will be removed once every
+    # consumer has migrated to ``recurrence_series_id``.
     series_id: str
 
 
@@ -807,6 +829,13 @@ class EventCreateRequest(BaseModel):
     # (recurring) creation this flag is ignored — the series shares
     # a single channel via the series-level flag if we add one later.
     create_channel: bool = True
+    # Optional semantic Gathering Series membership. Distinct from
+    # the low-level ``recurrence_series_id`` bulk-create tag: an
+    # Event can belong to a Series without being bulk-created, and a
+    # bulk-created batch can now be assigned to an existing Series
+    # instead of getting a fresh recurrence UUID with no semantic
+    # meaning. Nullable — an Event may live outside any Series.
+    series_id: str | None = None
 
     @field_validator("location_type")
     @classmethod
@@ -867,6 +896,11 @@ class EventUpdateRequest(BaseModel):
     # publish validation are enforced in the route handler.
     ticket_price_cents: int | None = None
     ticket_currency: str | None = None
+    # Attach / detach this Event from a Gathering Series. The handler
+    # uses ``model_fields_set`` to distinguish "field omitted" from
+    # "explicitly null" so a caller can detach an Event without
+    # accidentally clearing the field via a partial update elsewhere.
+    series_id: str | None = None
 
     @field_validator("location_type")
     @classmethod
@@ -932,6 +966,8 @@ class EventResponse(BaseModel):
     recurrence_label: str | None = None
     recurrence_index: int | None = None
     recurrence_total: int | None = None
+    # Semantic Gathering Series membership (see migration 105).
+    series_id: str | None = None
     gathering_type: str = "other"
     attendance_format: str = "online"
     venue_name: str | None = None
@@ -1890,6 +1926,10 @@ class PaymentOptionResponse(BaseModel):
     id: str
     space_id: str
     pathway_id: str | None
+    # Polymorphic attachment (migration 105). Frontend reads these to
+    # distinguish pathway-attached vs series-attached options.
+    attaches_to_kind: str
+    attaches_to_id: str
     grants_pathway_id: str | None
     name: str
     description: str | None
@@ -2296,3 +2336,219 @@ class OfferPageSummary(BaseModel):
     status: str
     slug_locked: bool = False
     updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Gathering Series (Step 2 — Creator UI groundwork over migration 105)
+#
+# The domain name is ``EventSeries``; the Creator-facing wording is
+# "Gathering Series" everywhere. These schemas keep the initial
+# creation modal lightweight — a title, an optional description, a
+# start date, an optional end date, an optional cover image. Detailed
+# editing happens on the Series editor page.
+# ---------------------------------------------------------------------------
+
+
+_VALID_GATHERING_SERIES_STATUSES = ("draft", "published", "archived")
+
+
+class GatheringSeriesCreateRequest(BaseModel):
+    title: str
+    description: str | None = None
+    starts_at: datetime
+    ends_at: datetime | None = None
+    cover_image_url: str | None = None
+    slug: str | None = None  # auto from title if omitted
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Title is required.")
+        if len(v) > 300:
+            raise ValueError("Title must be 300 characters or fewer.")
+        return v
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().lower()
+        if not v:
+            return None
+        if len(v) > 120:
+            raise ValueError("Slug must be 120 characters or fewer.")
+        if not re.match(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$", v):
+            raise ValueError(
+                "Slug must contain only lowercase letters, numbers and hyphens."
+            )
+        return v
+
+
+class GatheringSeriesUpdateRequest(BaseModel):
+    """PATCH — every field optional. ``ends_at`` uses
+    ``model_fields_set`` at the handler so a caller can explicitly
+    clear it (turning a finite Series ongoing) without accidentally
+    detaching it via a partial update."""
+
+    title: str | None = None
+    description: str | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    cover_image_url: str | None = None
+    status: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            raise ValueError("Title cannot be empty.")
+        if len(v) > 300:
+            raise ValueError("Title must be 300 characters or fewer.")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if v not in _VALID_GATHERING_SERIES_STATUSES:
+            raise ValueError(
+                f"Status must be one of: {', '.join(_VALID_GATHERING_SERIES_STATUSES)}."
+            )
+        return v
+
+
+class GatheringSeriesResponse(BaseModel):
+    """Full editor payload."""
+
+    model_config = {"from_attributes": True}
+
+    id: str
+    space_id: str
+    slug: str
+    title: str
+    description: str | None
+    starts_at: datetime
+    ends_at: datetime | None
+    status: str
+    cover_image_url: str | None
+    # Set on the first publish and never cleared. Frontend uses this
+    # to decide whether the Series can be hard-deleted (never
+    # published) or must be archived instead (has been public).
+    published_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class GatheringSeriesSummary(BaseModel):
+    """Row for the Gathering Series list — light shape."""
+
+    model_config = {"from_attributes": True}
+
+    id: str
+    slug: str
+    title: str
+    starts_at: datetime
+    ends_at: datetime | None
+    status: str
+    cover_image_url: str | None
+    # Populated by the route handler, not read from the ORM. Lets
+    # the list render "3 Gatherings · Term Awaken / Activate /
+    # Empower" without an N+1 fetch per row.
+    gathering_count: int = 0
+    payment_option_count: int = 0
+    published_at: datetime | None = None
+    updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Series-attached Payment Options
+#
+# Same shape as ``PaymentOptionCreateRequest`` above minus the field
+# names that only make sense for a pathway-attached option. The Creator
+# UI presents these under a Series editor; the route handler stamps
+# ``attaches_to_kind='event_series'`` + ``attaches_to_id=<series.id>``
+# so the model-layer polymorphism (migration 105) is populated
+# consistently.
+# ---------------------------------------------------------------------------
+
+
+class SeriesPaymentOptionCreateRequest(BaseModel):
+    name: str
+    description: str | None = None
+    payment_type: str = "term_pass"
+    status: str = "draft"
+    term_start_date: date | None = None
+    term_end_date: date | None = None
+    sessions_per_week: int | None = None
+    total_sessions: int | None = None
+    price_per_session_cents: int | None = None
+    calculated_total_cents: int | None = None
+    override_total_cents: int | None = None
+    currency: str = "AUD"
+    buyer_note: str | None = None
+    internal_note: str | None = None
+    # Optional included Pathway grant — same field as the pathway-
+    # attached authoring surface, kept identically named so the
+    # webhook branch already reads it correctly.
+    grants_pathway_id: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Name is required.")
+        return v
+
+    @field_validator("payment_type")
+    @classmethod
+    def _payment_type(cls, v: str) -> str:
+        if v not in _VALID_OPTION_TYPES:
+            raise ValueError(f"payment_type must be one of: {_VALID_OPTION_TYPES}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str) -> str:
+        if v not in _VALID_OPTION_STATUSES:
+            raise ValueError(f"status must be one of: {_VALID_OPTION_STATUSES}")
+        return v
+
+
+class SeriesPaymentOptionUpdateRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    payment_type: str | None = None
+    status: str | None = None
+    term_start_date: date | None = None
+    term_end_date: date | None = None
+    sessions_per_week: int | None = None
+    total_sessions: int | None = None
+    price_per_session_cents: int | None = None
+    calculated_total_cents: int | None = None
+    override_total_cents: int | None = None
+    currency: str | None = None
+    buyer_note: str | None = None
+    internal_note: str | None = None
+    grants_pathway_id: str | None = None
+
+    @field_validator("payment_type")
+    @classmethod
+    def _payment_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_OPTION_TYPES:
+            raise ValueError(f"payment_type must be one of: {_VALID_OPTION_TYPES}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str | None) -> str | None:
+        if v is not None and v not in _VALID_OPTION_STATUSES:
+            raise ValueError(f"status must be one of: {_VALID_OPTION_STATUSES}")
+        return v

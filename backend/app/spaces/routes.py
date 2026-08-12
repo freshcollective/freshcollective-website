@@ -85,8 +85,53 @@ from app.spaces.schemas import (
     AccessPassOut,
 )
 
+from app.models.platform import EventSeries as _EventSeriesModel  # noqa: E402
 from app.models.platform import PathwayStepManualRelease  # noqa: E402
 from app.services.notification_service import trigger_booking_confirmed, trigger_event_booking_creator  # noqa: E402
+
+
+def _series_info_for(event, db) -> tuple[str | None, str | None, str | None]:
+    """Return ``(title, slug, cover_image_url)`` for the Event's
+    semantic Series, or ``(None, None, None)`` when the event isn't
+    attached to any Series. Single row lookup — cheap on the detail
+    endpoint; the list endpoint bulk-fetches instead."""
+    sid = getattr(event, "series_id", None)
+    if not sid:
+        return None, None, None
+    row = (
+        db.query(_EventSeriesModel.title, _EventSeriesModel.slug, _EventSeriesModel.cover_image_url)
+        .filter(_EventSeriesModel.id == sid)
+        .first()
+    )
+    if row is None:
+        return None, None, None
+    return row[0], row[1], row[2]
+
+
+def _viewer_has_series_pass(user, series_id: str | None, db, now) -> bool:
+    """True when ``user`` holds a valid, in-window AccessPass scoped
+    to ``series_id``. Mirrors the booking-endpoint eligibility rule
+    so the UI can render Reserve vs Pass-required without a
+    speculative POST. Returns False for anonymous viewers or events
+    without a semantic series link."""
+    if user is None or not series_id:
+        return False
+    from app.models.access_pass import AccessPass, AccessPassStatus
+    hit = (
+        db.query(AccessPass.id)
+        .filter(
+            AccessPass.user_id == user.id,
+            AccessPass.eligible_series_id == series_id,
+            AccessPass.status == AccessPassStatus.active,
+            AccessPass.valid_from <= now,
+            or_(
+                AccessPass.valid_until.is_(None),
+                AccessPass.valid_until > now,
+            ),
+        )
+        .first()
+    )
+    return hit is not None
 
 
 def _emit_booking_confirmed(db, background_tasks, *, event, booker) -> None:
@@ -1301,6 +1346,47 @@ def list_events(
         rows = db.query(User.id, User.name).filter(User.id.in_(host_ids)).all()
         host_names = {uid: (name or '').strip() for uid, name in rows}
 
+    # Bulk-fetch Series titles for events with semantic series_id.
+    # One query on ids → dict lookup per row. Enables the member-side
+    # "Included with {series_title}" copy without an N+1 fetch.
+    from app.models.platform import EventSeries as _EventSeries
+    series_ids = {getattr(e, 'series_id', None) for e in events}
+    series_ids.discard(None)
+    series_titles: dict[str, str] = {}
+    series_slugs: dict[str, str] = {}
+    series_covers: dict[str, str | None] = {}
+    if series_ids:
+        rows = db.query(
+            _EventSeries.id, _EventSeries.title, _EventSeries.slug,
+            _EventSeries.cover_image_url,
+        ).filter(_EventSeries.id.in_(series_ids)).all()
+        series_titles = {sid: t for sid, t, _sl, _c in rows}
+        series_slugs = {sid: sl for sid, _t, sl, _c in rows}
+        series_covers = {sid: c for sid, _t, _sl, c in rows}
+
+    # Bulk-check the viewer's active AccessPasses for these series so
+    # the booking UI can distinguish "has pass → Reserve" from "no
+    # pass → explain requirement". Same window rule as the booking
+    # endpoint: status active AND valid_from <= now AND (valid_until
+    # NULL OR valid_until > now).
+    user_series_pass_ids: set[str] = set()
+    if current_user and series_ids:
+        pass_rows = (
+            db.query(AccessPass.eligible_series_id)
+            .filter(
+                AccessPass.user_id == current_user.id,
+                AccessPass.eligible_series_id.in_(series_ids),
+                AccessPass.status == AccessPassStatus.active,
+                AccessPass.valid_from <= now,
+                or_(
+                    AccessPass.valid_until.is_(None),
+                    AccessPass.valid_until > now,
+                ),
+            )
+            .all()
+        )
+        user_series_pass_ids = {r[0] for r in pass_rows if r[0]}
+
     # Bulk-check pathway entitlements for the current user.
     # Collect unique required pathway IDs from pathway-gated events.
     # Post-079 vocabulary uses 'included_with_pathway'; the
@@ -1372,7 +1458,8 @@ def list_events(
         # can render the correct "coming soon" / "invite required"
         # message instead of a booking button.
         access_supports_booking = event_access_type in (
-            'free', 'included_with_collective', 'included_with_pathway'
+            'free', 'included_with_collective', 'included_with_pathway',
+            'included_with_series',
         )
         # Credits remaining on the user's active AccessPass for this pathway (None = no pass or unlimited)
         pass_credits_remaining: int | None = (
@@ -1382,11 +1469,23 @@ def list_events(
         credits_exhausted = (
             pass_credits_remaining is not None and pass_credits_remaining <= 0
         )
+        # For ``included_with_series`` events, a valid Series pass is
+        # required. Without it the booking endpoint would 403 — so we
+        # mirror that here so the list and detail views agree on
+        # ``can_book`` (list previously said True for any member,
+        # producing a misleading "Reserve" CTA that the detail page
+        # correctly refused).
+        e_series_id = getattr(e, 'series_id', None)
+        has_required_series_pass = (
+            event_access_type != 'included_with_series'
+            or (e_series_id is not None and e_series_id in user_series_pass_ids)
+        )
         can_book = (
             e.requires_booking
             and is_member
             and access_supports_booking
             and has_pathway_access
+            and has_required_series_pass
             and not credits_exhausted
             and my_status != "confirmed"
             and not booking_closed
@@ -1417,6 +1516,11 @@ def list_events(
             recurrence_label=e.recurrence_label,
             recurrence_index=e.recurrence_index,
             recurrence_total=e.recurrence_total,
+            series_id=getattr(e, 'series_id', None),
+            series_title=series_titles.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
+            series_slug=series_slugs.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
+            series_cover_image_url=series_covers.get(getattr(e, 'series_id', None)) if getattr(e, 'series_id', None) else None,
+            user_has_series_pass=(getattr(e, 'series_id', None) in user_series_pass_ids) if getattr(e, 'series_id', None) else False,
             is_public=e.is_public,
             thumbnail_url=e.thumbnail_url,
             status=e.status if e.status else "active",
@@ -2097,8 +2201,24 @@ def get_event(
 
     # 'paid_separately' / 'invitation_only' access types don't yet
     # support in-app booking (ticket sales + invites are follow-ups).
+    # ``included_with_series`` DOES: the booking endpoint validates a
+    # matching AccessPass at commit time; here we let the request
+    # reach the endpoint so the client can render a Reserve CTA that
+    # will either succeed (pass holder) or fail with a clear
+    # "Series pass required" message rather than the CTA never
+    # rendering at all.
     access_supports_booking = event_access_type in (
-        'free', 'included_with_collective', 'included_with_pathway'
+        'free', 'included_with_collective', 'included_with_pathway',
+        'included_with_series',
+    )
+    # For ``included_with_series`` events a valid Series pass is
+    # required — surface that in ``can_book`` so the list and detail
+    # views agree. Without this the detail would show a "Reserve"
+    # CTA that the booking endpoint would reject.
+    event_series_id_for_pass = getattr(event, 'series_id', None)
+    has_required_series_pass = (
+        event_access_type != 'included_with_series'
+        or _viewer_has_series_pass(current_user, event_series_id_for_pass, db, now)
     )
     booking_open = (
         event.requires_booking
@@ -2107,6 +2227,7 @@ def get_event(
         and is_member
         and access_supports_booking
         and user_has_pathway_access
+        and has_required_series_pass
         and (event.booking_closes_at is None or event.booking_closes_at > now)
     )
     can_book = booking_open and my_booking_status != "confirmed" and (spots_remaining is None or spots_remaining > 0)
@@ -2149,6 +2270,14 @@ def get_event(
         "recurrence_label": event.recurrence_label,
         "recurrence_index": event.recurrence_index,
         "recurrence_total": event.recurrence_total,
+        # Semantic series membership + title lookup for the public
+        # "Included with {Series title}" copy. Single ID lookup; N+1
+        # is not a concern for a per-Event detail page.
+        "series_id": getattr(event, 'series_id', None),
+        **(lambda t: {"series_title": t[0], "series_slug": t[1], "series_cover_image_url": t[2]})(_series_info_for(event, db)),
+        "user_has_series_pass": _viewer_has_series_pass(
+            current_user, getattr(event, 'series_id', None), db, now,
+        ),
         "is_public": event.is_public,
         "thumbnail_url": event.thumbnail_url,
         "status": event_status,

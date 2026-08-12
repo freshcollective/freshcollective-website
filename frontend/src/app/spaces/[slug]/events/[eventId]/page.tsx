@@ -191,11 +191,14 @@ export default async function EventDetailPage({ params }: Props) {
           boxShadow: '0 4px 24px rgba(7,24,36,0.18), 0 1px 4px rgba(0,0,0,0.10)',
         }}
       >
-        {event.thumbnail_url && (
+        {/* Hero cover: the Gathering's own thumbnail wins; falls
+            back to the parent Series' cover so a bulk-created weekly
+            session inherits the term visual identity for free. */}
+        {(event.thumbnail_url || event.series_cover_image_url) && (
           <div className="relative h-52 w-full overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={event.thumbnail_url}
+              src={event.thumbnail_url ?? event.series_cover_image_url ?? ''}
               alt={event.title}
               className="h-full w-full object-cover"
             />
@@ -214,7 +217,7 @@ export default async function EventDetailPage({ params }: Props) {
             style={{ background: 'linear-gradient(90deg, #55D7D2 0%, transparent 100%)' }}
           />
 
-          {/* Chip row — type · state · optional countdown */}
+          {/* Chip row — type · Series membership · state · countdown */}
           <div className="mb-4 flex flex-wrap items-center gap-2">
             <span
               className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium"
@@ -222,6 +225,20 @@ export default async function EventDetailPage({ params }: Props) {
             >
               <span aria-hidden="true">{typeIcon}</span>{typeLabel}
             </span>
+            {event.series_title && (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium"
+                style={{
+                  background: 'rgba(85,215,210,0.14)',
+                  color: '#D9FFFD',
+                  border: '1px solid rgba(85,215,210,0.28)',
+                }}
+                title={`Part of ${event.series_title}`}
+              >
+                <span aria-hidden="true">◇</span>
+                Part of {event.series_title}
+              </span>
+            )}
             <span
               className={`inline-block rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide${state === 'live' ? ' animate-pulse' : ''}`}
               style={{ background: badge.bg, color: badge.color }}
@@ -309,13 +326,23 @@ export default async function EventDetailPage({ params }: Props) {
 
             <GlanceSection title="WHERE">
               <GlanceRow label="Format" value={locationLabel} />
-              {event.venue_name && (
-                <GlanceRow label="Venue" value={event.venue_name} />
+              {/* Physical venue rows — surfaced for in_person AND
+                  hybrid Gatherings. Purely-online Gatherings hide
+                  Venue / Address entirely. */}
+              {event.attendance_format !== 'online' && event.venue_name && (
+                <GlanceRow
+                  label={event.attendance_format === 'hybrid' ? 'Venue (in person)' : 'Location'}
+                  value={event.venue_name}
+                />
               )}
-              {event.venue_address && (
+              {event.attendance_format !== 'online' && event.venue_address && (
                 <GlanceRow label="Address" value={event.venue_address} />
               )}
-              {event.location_url && (
+              {/* Meeting link — only for online + hybrid formats. An
+                  in-person Gathering with a stray ``location_url``
+                  never surfaces the URL under the misleading
+                  "Meeting link" label. */}
+              {event.attendance_format !== 'in_person' && event.location_url && (
                 <GlanceRow
                   label="Meeting link"
                   value={
@@ -367,20 +394,34 @@ export default async function EventDetailPage({ params }: Props) {
             <GlanceSection title="ACCESS">
               <GlanceRow
                 label={
-                  access.value === 'paid_separately' && event.ticket_price_cents != null && event.ticket_currency
+                  // Series-pass label prefers the Series title when the
+                  // backend has hydrated it (public event payload adds
+                  // ``series_title`` for included_with_series events).
+                  access.value === 'included_with_series' && event.series_title
+                    ? `Included with ${event.series_title}`
+                  : access.value === 'paid_separately' && event.ticket_price_cents != null && event.ticket_currency
                     ? `${access.label} \u00b7 ${formatMoneyCents(event.ticket_price_cents, event.ticket_currency)}`
                     : access.label
                 }
                 value={
                   access.value === 'free'
                     ? 'No payment required. Visibility and membership rules apply separately.'
-                    : access.value === 'included_with_collective'
-                      ? 'Included with active Collective membership.'
-                      : access.value === 'included_with_pathway'
-                        ? 'Included for members enrolled in the linked Pathway.'
-                        : access.value === 'invitation_only'
-                          ? 'Members register only when a Creator adds them.'
-                          : 'Your ticket reserves one place and gives you access to this Gathering only.'
+                  : access.value === 'included_with_collective'
+                    ? 'Included with active Collective membership.'
+                  : access.value === 'included_with_pathway'
+                    ? 'Included for members enrolled in the linked Pathway.'
+                  : access.value === 'included_with_series'
+                    // Series-pass copy: reflect the actual model — a
+                    // Gathering Series pass reserves this session, not
+                    // a standalone ticket. Wording aligns with the
+                    // ``included_with_series`` access type introduced
+                    // in migration 105.
+                    ? (event.series_title
+                        ? `Reserve this session using your ${event.series_title} pass.`
+                        : 'Reserve this session using your Series pass.')
+                  : access.value === 'invitation_only'
+                    ? 'Members register only when a Creator adds them.'
+                  : 'Your ticket reserves one place and gives you access to this Gathering only.'
                 }
               />
             </GlanceSection>
@@ -448,7 +489,10 @@ export default async function EventDetailPage({ params }: Props) {
           {/* State-aware action buttons */}
           {state === 'upcoming' && (
             <div className="flex flex-wrap gap-3">
-              {event.location_url && (
+              {/* "Join now" is a meeting-link CTA — surface only for
+                  formats where the URL is a valid destination. An
+                  in-person Gathering never has a Join link. */}
+              {event.location_url && event.attendance_format !== 'in_person' && (
                 <a
                   href={event.location_url}
                   target="_blank"
@@ -487,7 +531,7 @@ export default async function EventDetailPage({ params }: Props) {
 
           {state === 'live' && (
             <div>
-              {event.location_url ? (
+              {event.location_url && event.attendance_format !== 'in_person' ? (
                 <a
                   href={event.location_url}
                   target="_blank"
@@ -497,6 +541,11 @@ export default async function EventDetailPage({ params }: Props) {
                 >
                   Join now →
                 </a>
+              ) : event.attendance_format === 'in_person' ? (
+                <p className="text-sm text-black">
+                  This Gathering is happening in person now
+                  {event.venue_name ? ` at ${event.venue_name}` : ''}.
+                </p>
               ) : (
                 <p className="text-sm text-black">Join link will be available shortly.</p>
               )}
@@ -572,6 +621,9 @@ export default async function EventDetailPage({ params }: Props) {
                 recurrenceSeriesId={event.recurrence_series_id}
                 accessType={event.booking_access_type as 'all_members' | 'pathway_required'}
                 userHasPathwayAccess={event.user_has_pathway_access}
+                bookingAccessType={event.booking_access_type}
+                seriesTitle={event.series_title}
+                userHasSeriesPass={event.user_has_series_pass ?? false}
                 isAuthenticated={isAuthenticated}
                 loginHref={loginHref}
               />

@@ -86,6 +86,7 @@ export type AccessTypeValue =
   | 'free'
   | 'included_with_collective'
   | 'included_with_pathway'
+  | 'included_with_series'
   | 'paid_separately'
   | 'invitation_only'
 
@@ -104,6 +105,12 @@ export const ACCESS_TYPES: readonly AccessType[] = [
   { value: 'free',                      label: 'Free',                                  short: 'Free',        bookable: true  },
   { value: 'included_with_collective',  label: 'Included with Collective membership',   short: 'Included',    bookable: true  },
   { value: 'included_with_pathway',     label: 'Included with a Pathway',               short: 'With Pathway',bookable: true  },
+  // Series-scoped access. Only meaningful when the Event belongs to
+  // a Gathering Series (see ``event.series_id``); the EventForm hides
+  // this option otherwise. Presence of ``series_id`` on the Event
+  // does NOT force this access type — a Series may contain free /
+  // collective-included Gatherings alongside pass-gated ones.
+  { value: 'included_with_series',      label: 'Included with a Series pass',           short: 'Series pass', bookable: true  },
   { value: 'paid_separately',           label: 'Paid separately',                       short: 'Ticketed',    bookable: false },
   { value: 'invitation_only',           label: 'Invitation only',                       short: 'Invite only', bookable: false },
 ] as const
