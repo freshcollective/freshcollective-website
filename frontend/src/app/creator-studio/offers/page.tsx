@@ -2,11 +2,15 @@ import Link from 'next/link'
 import {
   getActiveCreatorSpace,
   getCreatorBilling,
+  getCreatorEvents,
+  getCreatorGatheringSeriesList,
   getCreatorOfferPages,
   getCreatorPathways,
   getCreatorSpace,
 } from '@/lib/serverApi'
 import type {
+  CreatorEvent,
+  CreatorGatheringSeriesSummary,
   CreatorOfferPageSummary,
   CreatorPathway,
   CreatorSpaceDetail,
@@ -82,13 +86,21 @@ export default async function OffersIndexPage() {
     )
   }
 
-  const [offers, pathways, spaceDetail]: [
+  const [offers, pathways, series, upcomingEvents, spaceDetail]: [
     CreatorOfferPageSummary[],
     CreatorPathway[],
+    CreatorGatheringSeriesSummary[],
+    CreatorEvent[],
     CreatorSpaceDetail | null,
   ] = await Promise.all([
     _safe(getCreatorOfferPages(activeSpace.slug), 'getCreatorOfferPages', []),
     _safe(getCreatorPathways(activeSpace.slug), 'getCreatorPathways', []),
+    _safe(getCreatorGatheringSeriesList(activeSpace.slug), 'getCreatorGatheringSeriesList', []),
+    // Only upcoming events land in the New Offer Page picker — there's
+    // no product reason to create an Offer Page for a Gathering that
+    // has already happened. The archived scope stays available in the
+    // Creator Studio Gatherings page for reference.
+    _safe(getCreatorEvents(activeSpace.slug, 'upcoming'), 'getCreatorEvents', []),
     _safe(
       getCreatorSpace(activeSpace.slug) as Promise<CreatorSpaceDetail | null>,
       'getCreatorSpace', null,
@@ -109,6 +121,8 @@ export default async function OffersIndexPage() {
         spaceSlug={activeSpace.slug}
         initialOffers={offers}
         pathways={pathways}
+        series={series}
+        gatherings={upcomingEvents}
       />
     </div>
   )

@@ -7714,9 +7714,24 @@ def delete_offer_page(
         raise HTTPException(
             status_code=409,
             detail=(
-                "This Offer Page has been published — archive it instead "
-                "so previously shared links keep resolving to the same "
-                "record."
+                "This Offer Page has been published — archive it instead. "
+                "Archiving preserves the content and history in Creator "
+                "Studio while taking the page down for visitors."
+            ),
+        )
+    # Archived rows are intentionally read-only — the lifecycle
+    # promise is that archived data stays intact so it remains
+    # resolvable for historical references. Nothing in the current
+    # UI can reach this branch (a never-published row is
+    # deletable directly, so archiving it before deleting is a
+    # deliberate choice), but the guard keeps the invariant honest
+    # even against direct API calls.
+    if row.status == "archived":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This Offer Page is archived. Archived pages are kept "
+                "intact so historical references stay resolvable."
             ),
         )
     db.delete(row)

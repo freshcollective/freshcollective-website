@@ -9,12 +9,12 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { apiUrl } from '@/lib/api'
 import type {
   CreatorOfferPage,
-  CreatorPathway,
   OfferCreatorSection,
   OfferFaqItem,
   OfferFaqsSection,
   OfferInvitationSection,
   OfferPageStatus,
+  OfferPageTargetKind,
   OfferPracticalSection,
   OfferSectionsConfig,
   OfferWhatsIncludedSection,
@@ -51,7 +51,19 @@ import ImagePickerField from '@/components/creator/ImagePickerField'
 interface Props {
   spaceSlug: string
   initialOffer: CreatorOfferPage
-  pathways: CreatorPathway[]
+  /** Display title of the target (Pathway / Gathering Series /
+   *  Gathering) this Offer Page invites people into. ``null`` when
+   *  the target has since been deleted. Read-only in the editor. */
+  targetTitle: string | null
+}
+
+/** Creator-facing "kind of Offer Page" label rendered as the small
+ *  identity line above the target name. Never exposes `event_series`
+ *  as a string; never rendered as a tiny uppercase teal eyebrow. */
+const OFFER_KIND_LABEL: Record<OfferPageTargetKind, string> = {
+  pathway: 'Pathway Offer Page',
+  event_series: 'Gathering Series Offer Page',
+  gathering: 'Gathering Offer Page',
 }
 
 // ---------------------------------------------------------------------------
@@ -111,7 +123,7 @@ function normaliseSections(raw: unknown): OfferSectionsConfig {
 // Editor
 // ---------------------------------------------------------------------------
 
-export default function OfferPageEditor({ spaceSlug, initialOffer, pathways }: Props) {
+export default function OfferPageEditor({ spaceSlug, initialOffer, targetTitle }: Props) {
   const router = useRouter()
   const { show } = useToast()
 
@@ -192,6 +204,37 @@ export default function OfferPageEditor({ spaceSlug, initialOffer, pathways }: P
     }
   }
 
+  // ── Permanent delete — only reachable when the page has never
+  //    been published. Backend refuses the DELETE otherwise (409),
+  //    so the shortcut both mirrors and defers to that invariant. */
+  async function deleteOffer() {
+    // Cancel any pending autosave so a debounced PATCH doesn't race
+    // with the DELETE and briefly re-create the row's dirty state.
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
+    setStatusBusy(true)
+    try {
+      const res = await fetch(baseUrl, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok && res.status !== 204) {
+        const body = await res.json().catch(() => ({}))
+        show(
+          typeof body.detail === 'string' ? body.detail : 'Could not delete Offer Page.',
+          { tone: 'error' },
+        )
+        return
+      }
+      show('Offer Page deleted.', { tone: 'success' })
+      router.push('/creator-studio/offers')
+    } finally {
+      setStatusBusy(false)
+    }
+  }
+
   // ── Explicit publish / unpublish / archive ───────────────────────────
   async function changeStatus(next: OfferPageStatus, confirmMsg?: string) {
     if (confirmMsg && !window.confirm(confirmMsg)) return
@@ -228,10 +271,37 @@ export default function OfferPageEditor({ spaceSlug, initialOffer, pathways }: P
   }
 
   const publicUrl = `/spaces/${spaceSlug}/offers/${offer.slug}`
-  const targetPathway = pathways.find((p) => p.id === offer.target_id) ?? null
+  const offerKindLabel = OFFER_KIND_LABEL[offer.target_kind]
 
   return (
     <div className="pb-32">
+
+      {/* ── Offer Page identity band ── */}
+      {/* Two-line at-a-glance identity: kind of Offer Page + the
+          Pathway / Gathering Series / Gathering it presents. Read-
+          only on purpose — the target is chosen at create-time and
+          never silently swapped from underneath an existing page.
+          Left-hand teal accent gives the band real visual weight
+          without shouting; the target name sits in serif so a
+          Creator recognises "EMBODY Term 3 2026" the instant they
+          open the editor. */}
+      <div className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="flex">
+          <div
+            className="w-1.5 shrink-0"
+            aria-hidden="true"
+            style={{ background: 'linear-gradient(180deg, #38A09E 0%, #55B8B6 100%)' }}
+          />
+          <div className="flex-1 p-5 md:p-6">
+            <p className="text-[13.5px] font-semibold text-navy-900">
+              {offerKindLabel}
+            </p>
+            <p className="mt-1 font-serif text-[22px] leading-tight text-navy-900 md:text-[26px]">
+              {targetTitle ?? '(target no longer available)'}
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* ── Sticky publish bar ── */}
       <PublishBar
@@ -251,7 +321,10 @@ export default function OfferPageEditor({ spaceSlug, initialOffer, pathways }: P
         onUnpublish={() => changeStatus('draft')}
         onArchive={() => changeStatus(
           'archived',
-          'Archive this Offer Page? It will no longer appear as an active offer.',
+          'Archive this Offer Page?\n\n'
+          + 'It will no longer be publicly available, but its '
+          + 'content and history will be preserved. You can still '
+          + 'access it in Creator Studio.',
         )}
       />
 
@@ -300,19 +373,6 @@ export default function OfferPageEditor({ spaceSlug, initialOffer, pathways }: P
               onChange={markDirty(setHeroImageUrl)}
             />
           </FormField>
-
-          <div>
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Pathway
-            </p>
-            <p className="text-[14px] text-navy-900">
-              {targetPathway?.title ?? '(target no longer available)'}
-            </p>
-            <p className="mt-1 text-[12.5px] text-slate-500">
-              The pathway this Offer Page invites people into. The CTA on
-              the public page uses this pathway&rsquo;s existing checkout.
-            </p>
-          </div>
         </div>
       </Section>
 
@@ -422,7 +482,112 @@ export default function OfferPageEditor({ spaceSlug, initialOffer, pathways }: P
         }
       />
 
+      {/* ── Lifecycle / Danger Zone ── */}
+      {/* Restrained on purpose — sits at the very bottom, not
+          competing with the everyday save/publish actions above.
+          Rules mirror the backend invariant on `published_at`:
+            never-published draft → permanent Delete allowed
+            anything that has ever been public → Archive only
+            already archived → no destructive action; keep intact
+      */}
+      <OfferDangerZone
+        offer={offer}
+        busy={statusBusy}
+        onDelete={() =>
+          void (async () => {
+            if (
+              !window.confirm(
+                'Delete this Offer Page permanently? Its content will be removed and cannot be recovered.',
+              )
+            ) return
+            await deleteOffer()
+          })()
+        }
+        onArchive={() =>
+          changeStatus(
+            'archived',
+            'Archive this Offer Page?\n\n'
+            + 'It will no longer be publicly available, but its '
+            + 'content and history will be preserved. You can still '
+            + 'access it in Creator Studio.',
+          )
+        }
+      />
+
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Danger Zone — Delete (draft & never published) vs Archive (anything
+// that has ever been public) vs read-only state (already archived).
+// Deliberately quiet: this is a lifecycle control, not a primary
+// editor action.
+// ---------------------------------------------------------------------------
+
+function OfferDangerZone({
+  offer, busy, onDelete, onArchive,
+}: {
+  offer: CreatorOfferPage
+  busy: boolean
+  onDelete: () => void
+  onArchive: () => void
+}) {
+  const isArchived = offer.status === 'archived'
+  // ``slug_locked`` is the derived flag for "has ever been published".
+  // Prefer it over inspecting ``published_at`` directly so the client
+  // and backend agree on the same rule.
+  const hasEverBeenPublished = offer.slug_locked
+
+  return (
+    <section className="mt-10 rounded-2xl border border-slate-200 bg-white p-5 md:p-6">
+      <h2 className="text-[13px] font-semibold text-navy-900">Lifecycle</h2>
+      {!hasEverBeenPublished && !isArchived && (
+        <>
+          <p className="mt-1 max-w-lg text-[12.5px] text-black">
+            This Offer Page is still a draft and has never been
+            published. You can delete it permanently.
+          </p>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={busy}
+              className="rounded-lg border border-red-200 px-3 py-1.5 text-[13px] font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-50 disabled:opacity-50"
+            >
+              Delete Offer Page
+            </button>
+          </div>
+        </>
+      )}
+      {hasEverBeenPublished && !isArchived && (
+        <>
+          <p className="mt-1 max-w-lg text-[12.5px] text-black">
+            This Offer Page has been shared publicly. Archive takes
+            the page down for visitors while preserving its content
+            and history — you can still open it in Creator Studio.
+          </p>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={onArchive}
+              disabled={busy}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Archive Offer Page
+            </button>
+          </div>
+        </>
+      )}
+      {isArchived && (
+        <p className="mt-1 max-w-lg text-[12.5px] text-black">
+          This Offer Page is archived. Its content and history are
+          preserved here in Creator Studio, but the public page is
+          no longer available to visitors. Republish it above if
+          you want it live again.
+        </p>
+      )}
+    </section>
   )
 }
 

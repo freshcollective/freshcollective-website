@@ -3,11 +3,14 @@ import Link from 'next/link'
 import {
   getActiveCreatorSpace,
   getCreatorBilling,
+  getCreatorEvent,
+  getCreatorGatheringSeriesList,
   getCreatorOfferPage,
   getCreatorPathways,
   getCreatorSpace,
 } from '@/lib/serverApi'
 import type {
+  CreatorGatheringSeriesSummary,
   CreatorOfferPage,
   CreatorPathway,
   CreatorSpaceDetail,
@@ -76,36 +79,68 @@ export default async function OfferPageEditPage({ params }: Props) {
     )
   }
 
-  const [offer, pathways, spaceDetail]: [
-    CreatorOfferPage | null,
+  const offer = await _safe(
+    getCreatorOfferPage(activeSpace.slug, offerSlug) as Promise<CreatorOfferPage | null>,
+    'getCreatorOfferPage', null,
+  )
+
+  if (!offer) notFound()
+
+  // Fetch only the reference data the editor actually needs for this
+  // Offer Page's target kind. The editor no longer lets the Creator
+  // silently retarget an existing page to a completely different
+  // experience — the target panel is read-only — so we don't need to
+  // load every kind's list.
+  const [pathways, seriesList, event, spaceDetail]: [
     CreatorPathway[],
+    CreatorGatheringSeriesSummary[],
+    Awaited<ReturnType<typeof getCreatorEvent>> | null,
     CreatorSpaceDetail | null,
   ] = await Promise.all([
-    _safe(
-      getCreatorOfferPage(activeSpace.slug, offerSlug) as Promise<CreatorOfferPage | null>,
-      'getCreatorOfferPage', null,
-    ),
-    _safe(getCreatorPathways(activeSpace.slug), 'getCreatorPathways', []),
+    offer.target_kind === 'pathway'
+      ? _safe(getCreatorPathways(activeSpace.slug), 'getCreatorPathways', [])
+      : Promise.resolve([] as CreatorPathway[]),
+    offer.target_kind === 'event_series'
+      ? _safe(
+          getCreatorGatheringSeriesList(activeSpace.slug) as Promise<CreatorGatheringSeriesSummary[]>,
+          'getCreatorGatheringSeriesList', [] as CreatorGatheringSeriesSummary[],
+        )
+      : Promise.resolve([] as CreatorGatheringSeriesSummary[]),
+    offer.target_kind === 'gathering'
+      ? _safe(
+          getCreatorEvent(activeSpace.slug, offer.target_id) as Promise<
+            Awaited<ReturnType<typeof getCreatorEvent>> | null
+          >,
+          'getCreatorEvent', null,
+        )
+      : Promise.resolve(null),
     _safe(
       getCreatorSpace(activeSpace.slug) as Promise<CreatorSpaceDetail | null>,
       'getCreatorSpace', null,
     ),
   ])
 
-  if (!offer) notFound()
+  // Resolve the display title for the target — null when the target
+  // has been deleted since the Offer Page was created. Editor shows
+  // "(target no longer available)" in that case.
+  const targetTitle: string | null =
+    offer.target_kind === 'pathway'
+      ? pathways.find((p) => p.id === offer.target_id)?.title ?? null
+    : offer.target_kind === 'event_series'
+      ? seriesList.find((s) => s.id === offer.target_id)?.title ?? null
+    : offer.target_kind === 'gathering'
+      ? event?.title ?? null
+      : null
 
-  const targetPathway = pathways.find((p) => p.id === offer.target_id) ?? null
-
+  // Note: header meta intentionally omitted — the strong identity
+  // band inside <OfferPageEditor /> carries "{kind} Offer Page /
+  // {target name}", so echoing the same information in the header's
+  // small italic subtitle would only clutter the composition.
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
       <CollectiveArtworkHeader
         collectiveName={activeSpace.name}
         sectionTitle={offer.title}
-        meta={
-          targetPathway
-            ? `Offer Page · Pathway: ${targetPathway.title}`
-            : 'Offer Page'
-        }
         location={spaceDetail?.location ?? null}
         coverImageUrl={spaceDetail?.cover_image_url ?? null}
         backLink={{ href: '/creator-studio/offers', label: '← Offer Pages' }}
@@ -114,7 +149,7 @@ export default async function OfferPageEditPage({ params }: Props) {
       <OfferPageEditor
         spaceSlug={activeSpace.slug}
         initialOffer={offer}
-        pathways={pathways}
+        targetTitle={targetTitle}
       />
     </div>
   )

@@ -607,6 +607,17 @@ export const getCreatorOfferPage = cache(async (slug: string, offerSlug: string)
   return res.json()
 })
 
+/** Public Offer Page read. Returns null on 404 / network error.
+ *  Uses the session cookie so owners see their own drafts through the
+ *  public URL — the backend does the visibility check. */
+export const getPublicOfferPage = cache(
+  async (slug: string, offerSlug: string) => {
+    const res = await fetchWithSession(`/api/spaces/${slug}/offers/${offerSlug}`)
+    if (!res.ok) return null
+    return res.json()
+  },
+)
+
 // ── Gathering Series ───────────────────────────────────────────────
 
 export const getCreatorGatheringSeriesList = cache(async (slug: string) => {

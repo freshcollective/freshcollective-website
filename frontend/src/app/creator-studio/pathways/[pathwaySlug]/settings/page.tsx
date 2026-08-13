@@ -1,10 +1,10 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getActiveCreatorSpace, getCreatorMedia, getCreatorPathway, getCreatorSections, getCreatorSpace, getCreatorSteps } from '@/lib/serverApi'
-import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorSpaceDetail, CreatorStep } from '@/types/platform'
-import CreatorBackLink from '@/components/creator/CreatorBackLink'
+import { getActiveCreatorSpace, getCreatorBilling, getCreatorMedia, getCreatorOfferPages, getCreatorPathway, getCreatorSections, getCreatorSpace, getCreatorSteps } from '@/lib/serverApi'
+import type { CreatorMediaAsset, CreatorOfferPageSummary, CreatorPathway, CreatorSection, CreatorSpaceDetail, CreatorStep } from '@/types/platform'
 import CreatorPageContainer from '@/components/creator/CreatorPageContainer'
 import PathwayHeader from '../PathwayHeader'
+import PathwayOfferPagesShortcut from '../PathwayOfferPagesShortcut'
 import PathwaySettingsClient from '../PathwaySettingsClient'
 
 interface Props {
@@ -34,23 +34,38 @@ export default async function PathwaySettingsPage({ params }: Props) {
 
   // Settings does not use the steps list itself, but we still need to know
   // whether the Manual releases tab should be surfaced in the shared header.
-  const [pathway, steps, sections, mediaAssets, spaceDetail]: [
+  //
+  // ``offers`` + ``billing`` are best-effort — the shortcut degrades to
+  // its "no offers" or "not on your plan" state on failure rather than
+  // 500ing the whole settings page.
+  const [pathway, steps, sections, mediaAssets, spaceDetail, offers, billing]: [
     CreatorPathway | null, CreatorStep[], CreatorSection[], CreatorMediaAsset[], CreatorSpaceDetail | null,
+    CreatorOfferPageSummary[],
+    Awaited<ReturnType<typeof getCreatorBilling>>,
   ] = await Promise.all([
     getCreatorPathway(activeSpace.slug, pathwaySlug),
     getCreatorSteps(activeSpace.slug, pathwaySlug),
     getCreatorSections(activeSpace.slug, pathwaySlug),
     getCreatorMedia(activeSpace.slug),
     getCreatorSpace(activeSpace.slug) as Promise<CreatorSpaceDetail | null>,
+    getCreatorOfferPages(activeSpace.slug).catch(() => [] as CreatorOfferPageSummary[]),
+    getCreatorBilling().catch(() => null),
   ])
 
   if (!pathway) notFound()
 
   const hasManualStep = steps.some((s) => s.release_type === 'manual')
+  const paidOffersEnabled = !!(
+    billing?.is_platform_owner
+    || billing?.current_plan?.paid_offers_enabled
+  )
 
   return (
     <CreatorPageContainer>
-      <CreatorBackLink href="/creator-studio/pathways" label="Back to Pathways" />
+      {/* Note: no standalone back link here — PathwayHeader already
+          passes ``backLink`` to CollectiveArtworkHeader, so rendering
+          a second CreatorBackLink duplicated "← Back to Pathways" in
+          browser review. */}
       <PathwayHeader
         active="settings"
         spaceName={activeSpace.name}
@@ -61,6 +76,14 @@ export default async function PathwaySettingsPage({ params }: Props) {
         steps={steps}
         sections={sections}
       />
+      <div className="mb-6">
+        <PathwayOfferPagesShortcut
+          pathwayId={pathway.id}
+          pathwayTitle={pathway.title}
+          offers={offers}
+          paidOffersEnabled={paidOffersEnabled}
+        />
+      </div>
       <PathwaySettingsClient
         pathway={pathway}
         spaceSlug={activeSpace.slug}

@@ -606,6 +606,41 @@ class TestDelete:
             )
         assert exc.value.status_code == 409
 
+    def test_archived_never_published_still_not_deletable(
+        self, db, make_user, make_space,
+    ):
+        """Guard invariant: once a row is archived it stays intact,
+        even if it never actually went public. The Creator UI does
+        not expose this path — draft-never-published rows are
+        deletable directly — but the backend must refuse a direct
+        API call so historical references remain resolvable."""
+        creator = make_user(role="creator")
+        space = make_space(creator=creator)
+        pathway = _make_pathway(db, space)
+        db.commit()
+
+        created = create_offer_page(
+            slug=space.slug,
+            body=OfferPageCreateRequest(
+                title="stashed", target_kind="pathway",
+                target_id=pathway.id,
+            ),
+            db=db, current_user=creator,
+        )
+        # Archive without ever publishing → ``published_at`` stays
+        # null but ``status='archived'``.
+        update_offer_page(
+            slug=space.slug, offer_slug=created["slug"],
+            body=OfferPageUpdateRequest(status="archived"),
+            db=db, current_user=creator,
+        )
+        with pytest.raises(HTTPException) as exc:
+            delete_offer_page(
+                slug=space.slug, offer_slug=created["slug"],
+                db=db, current_user=creator,
+            )
+        assert exc.value.status_code == 409
+
 
 # ---------------------------------------------------------------------------
 # List

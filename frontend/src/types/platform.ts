@@ -298,6 +298,10 @@ export interface EventSummary {
   /** Cover art for the parent Series. Used as a hero-image fallback
    *  when the Event has no ``thumbnail_url``. */
   series_cover_image_url?: string | null
+  /** Slug of the *published* Offer Page targeting this Event's Series,
+   *  if one exists. Lets a "Buy series pass" CTA route to the right
+   *  public page without a second round-trip. */
+  series_offer_page_slug?: string | null
   /** True when the viewer holds a valid, in-window Series pass
    *  scoped to this Event's series. Lets the booking UI show the
    *  correct state (Reserve vs Pass required) without triggering a
@@ -1286,7 +1290,11 @@ export interface CreatorBillingResponse {
 // ---------------------------------------------------------------------------
 
 export type OfferPageStatus = 'draft' | 'published' | 'archived'
-export type OfferPageTargetKind = 'pathway'  // extendable in later milestones
+/** What an Offer Page invites people into. Values are the wire
+ *  contract with the backend; the UI never surfaces `event_series`
+ *  as a string — creator-facing labels are always
+ *  "Pathway" | "Gathering Series" | "Gathering". */
+export type OfferPageTargetKind = 'pathway' | 'event_series' | 'gathering'
 
 /** Restrained TipTap JSON. The Invitation editor exposes a small
  *  set of marks (bold, italic, links) + paragraphs + a single
@@ -1357,6 +1365,90 @@ export interface CreatorOfferPage {
   slug_locked: boolean
   created_at: string
   updated_at: string
+}
+
+/** Published PaymentOptionSchedule surfaced on the public Offer Page
+ *  for a Gathering Series target. */
+export interface PublicPaymentOptionSchedule {
+  id: string
+  name: string
+  description: string | null
+  schedule_type: string
+  total_amount_cents: number | null
+  upfront_amount_cents: number | null
+  installment_amount_cents: number | null
+  installment_count: number | null
+  interval: string | null
+  currency: string
+  buyer_note: string | null
+}
+
+/** Published PaymentOption + its published schedules — surfaced on
+ *  the public Offer Page for a Gathering Series target. */
+export interface PublicPaymentOption {
+  id: string
+  name: string
+  description: string | null
+  payment_type: string
+  sessions_per_week: number | null
+  total_sessions: number | null
+  price_per_session_cents: number | null
+  effective_price_cents: number | null
+  currency: string
+  buyer_note: string | null
+  schedules: PublicPaymentOptionSchedule[]
+}
+
+/** Real Creator identity behind the Space. `null` on `PublicOfferPage`
+ *  when no personal Creator info exists — never falls back to the
+ *  Collective name. */
+export interface PublicOfferCreator {
+  display_name: string | null
+  tagline: string | null
+  bio: string | null
+  avatar_url: string | null
+  website_url: string | null
+}
+
+/** Denormalised target snapshot returned by the public Offer Page read.
+ *  Everything the CTA needs to route + label without a second fetch. */
+export interface OfferPageTargetSnapshot {
+  kind: OfferPageTargetKind
+  id: string
+  slug: string
+  title: string
+  description: string | null
+  cover_image_url: string | null
+  access_type: string | null
+  price_cents: number | null
+  currency: string | null
+  billing_interval: string | null
+  checkout_path: string | null
+  enter_path: string | null
+  /** Series/gathering window; null for `pathway`. */
+  starts_at: string | null
+  ends_at: string | null
+  /** Series-only: published Payment Options + Schedules. */
+  payment_options: PublicPaymentOption[]
+  /** Gathering-only: standalone ticket price. */
+  ticket_price_cents: number | null
+  ticket_currency: string | null
+}
+
+/** Public shape returned by GET /api/spaces/{slug}/offers/{offer_slug}.
+ *  Only published pages are visible to non-owners; owners see drafts +
+ *  archived through the same URL (no separate preview mode). */
+export interface PublicOfferPage {
+  id: string
+  slug: string
+  title: string
+  promise: string | null
+  hero_image_url: string | null
+  status: OfferPageStatus
+  sections_config: Partial<OfferSectionsConfig> & Record<string, unknown>
+  target: OfferPageTargetSnapshot
+  creator: PublicOfferCreator | null
+  user_has_target_access: boolean
 }
 
 /** Index row — light shape for the Offer Pages list. */
@@ -1493,6 +1585,32 @@ export interface CreatorGatheringSeries {
   updated_at: string
 }
 
+/** Ways to pay for a single Payment Option — same access
+ *  entitlement, different Stripe cadence. Backend model:
+ *  ``PaymentOptionSchedule``. Creator-facing labels are handled in
+ *  the UI (schedule_type → "Pay in full" / "Weekly instalments"). */
+export interface CreatorPaymentOptionSchedule {
+  id: string
+  payment_option_id: string
+  name: string
+  description: string | null
+  schedule_type: 'pay_in_full' | 'recurring_installments' | 'manual'
+  status: 'draft' | 'published' | 'archived'
+  total_amount_cents: number | null
+  upfront_amount_cents: number | null
+  installment_amount_cents: number | null
+  installment_count: number | null
+  interval: string | null
+  stripe_interval: string | null
+  stripe_interval_count: number | null
+  currency: string
+  buyer_note: string | null
+  internal_note: string | null
+  position: number
+  created_at: string
+  updated_at: string
+}
+
 /** Polymorphic attachment now exposed by the PaymentOption
  *  serialiser (post-migration-105). Frontend keys on
  *  ``attaches_to_kind`` to decide which authoring surface a row
@@ -1518,32 +1636,6 @@ export interface CreatorSeriesPaymentOption {
   calculated_total_cents: number | null
   override_total_cents: number | null
   effective_price_cents: number | null
-  currency: string
-  buyer_note: string | null
-  internal_note: string | null
-  position: number
-  created_at: string
-  updated_at: string
-}
-
-/** Ways to pay for a single Payment Option — same access
- *  entitlement, different Stripe cadence. Backend model:
- *  ``PaymentOptionSchedule``. Creator-facing labels are handled in
- *  the UI (schedule_type → "Pay in full" / "Weekly instalments"). */
-export interface CreatorPaymentOptionSchedule {
-  id: string
-  payment_option_id: string
-  name: string
-  description: string | null
-  schedule_type: 'pay_in_full' | 'recurring_installments' | 'manual'
-  status: 'draft' | 'published' | 'archived'
-  total_amount_cents: number | null
-  upfront_amount_cents: number | null
-  installment_amount_cents: number | null
-  installment_count: number | null
-  interval: string | null
-  stripe_interval: string | null
-  stripe_interval_count: number | null
   currency: string
   buyer_note: string | null
   internal_note: string | null
