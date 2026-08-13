@@ -1,6 +1,10 @@
 import Link from 'next/link'
 import type { CreatorOfferPageSummary } from '@/types/platform'
 
+/** Kept in sync with the same flag in ``OfferPagesShortcut.tsx``.
+ *  See that file's comment for the re-enable checklist. */
+const OFFER_PAGES_PAUSED = true
+
 /**
  * Series-child Gathering → Offer Pages hint.
  *
@@ -41,6 +45,11 @@ interface Props {
 export default function SeriesChildOfferHint({
   seriesId, seriesTitle, seriesSlug, offers, paidOffersEnabled,
 }: Props) {
+  // Offer Pages are intentionally on hold. Delete this early
+  // return to re-enable — the implementation below is preserved
+  // as-is.
+  if (OFFER_PAGES_PAUSED) return null
+
   const seriesOffers = offers.filter(
     (o) => o.target_kind === 'event_series' && o.target_id === seriesId,
   )

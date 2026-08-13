@@ -46,6 +46,13 @@ interface NavItem {
    *  paid offers (Creator / Pro / Organisation / Platform Owner).
    *  Community-plan sidebar therefore doesn't include it at all. */
   requiresPaidOffers?: boolean
+  /** Feature intentionally on hold. Item still renders — visibly
+   *  muted with a "Coming later" suffix and non-navigable — so
+   *  Creators know the surface exists without being encouraged to
+   *  step into an unfinished feature. Existing direct URLs remain
+   *  functional (backend + routes are untouched); only Creator-
+   *  facing prompts are removed. */
+  paused?: boolean
 }
 
 /**
@@ -74,7 +81,12 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
     label: '📖 OFFERINGS',
     items: [
       { href: '/creator-studio/pathways',  label: 'Pathways',      activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/, requiresCollective: true },
-      { href: '/creator-studio/offers',    label: 'Offer Pages',   requiresCollective: true, requiresPaidOffers: true },
+      // Offer Pages are on hold. The entry stays visible (muted +
+      // non-navigable + "Coming later" suffix) so Creators know the
+      // surface exists without being invited into it. Data +
+      // backend endpoints + migrations are all preserved; direct
+      // URLs still resolve for development / recovery.
+      { href: '/creator-studio/offers',    label: 'Offer Pages',   requiresCollective: true, paused: true },
     ],
   },
   {
@@ -210,13 +222,35 @@ export default function CreatorStudioSidebar({
                 // entirely on plans that can't use them — dimming
                 // would still hint at a feature the plan doesn't
                 // include. If we ever want an "Upgrade" nudge, it
-                // belongs on My World, not here.
-                .filter(({ requiresPaidOffers }) =>
-                  !requiresPaidOffers || paidOffersEnabled,
+                // belongs on My World, not here. Paused items
+                // bypass this filter because they should be visible
+                // to everyone (regardless of plan) as "Coming later".
+                .filter(({ requiresPaidOffers, paused }) =>
+                  paused || !requiresPaidOffers || paidOffersEnabled,
                 )
-                .map(({ href, label: itemLabel, exact, activeOnPath, requiresCollective }) => {
-                const active = isActive(href, exact, activeOnPath)
+                .map(({ href, label: itemLabel, exact, activeOnPath, requiresCollective, paused }) => {
+                const active = !paused && isActive(href, exact, activeOnPath)
                 const dimmed = (requiresCollective ?? false) && !hasCollective
+                // Paused items render as a passive muted line — no
+                // Link, no navigation, "Coming later" suffix so the
+                // reason for the muted state is legible.
+                if (paused) {
+                  return (
+                    <li key={href}>
+                      <span
+                        className="flex items-center rounded-lg px-3 py-2 text-[13px] font-medium text-slate-400 cursor-default"
+                        style={{ border: '1px solid transparent' }}
+                        aria-disabled="true"
+                        title="This feature is on hold and will return in a future release."
+                      >
+                        <span>{itemLabel}</span>
+                        <span className="ml-2 text-[10.5px] uppercase tracking-wider text-slate-400">
+                          · Coming later
+                        </span>
+                      </span>
+                    </li>
+                  )
+                }
                 return (
                   <li key={href}>
                     <Link

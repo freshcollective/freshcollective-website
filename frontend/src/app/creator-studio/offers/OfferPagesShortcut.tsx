@@ -5,6 +5,13 @@ import type {
   OfferPageTargetKind,
 } from '@/types/platform'
 
+/** Set to ``false`` to re-enable Offer Page shortcuts across
+ *  Pathway, Gathering Series and Gathering editors. Re-enabling
+ *  should also update the sidebar's ``paused: true`` flag on the
+ *  Offer Pages nav item and the same ``OFFER_PAGES_PAUSED`` guard
+ *  in ``SeriesChildOfferHint.tsx``. */
+const OFFER_PAGES_PAUSED = true
+
 /**
  * Shared "Offer Pages" shortcut card.
  *
@@ -97,6 +104,15 @@ export default function OfferPagesShortcut({
   targetKind, targetId, targetTitle,
   offers, paidOffersEnabled, variant = 'default',
 }: Props) {
+  // Offer Pages are intentionally on hold — the Creator-facing
+  // shortcuts on Pathway, Gathering Series, and Gathering editors
+  // are hidden until the feature is re-enabled. Re-enable by
+  // deleting this early return. The full implementation below is
+  // preserved so re-enabling is a one-line revert; existing
+  // Offer Page data, direct URLs, and backend endpoints remain
+  // untouched for development / recovery.
+  if (OFFER_PAGES_PAUSED) return null
+
   const own = offers.filter(
     (o) => o.target_kind === targetKind && o.target_id === targetId,
   )
