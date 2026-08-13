@@ -60,6 +60,46 @@ class PaymentProvider(str, enum.Enum):
     stripe = "stripe"
 
 
+class PaymentFulfilmentStatus(str, enum.Enum):
+    """Orthogonal to ``PaymentTransactionStatus``.
+
+    ``PaymentTransactionStatus`` records the *payment lifecycle*
+    (pending → succeeded / failed / refunded …).
+    ``PaymentFulfilmentStatus`` records what happened to the
+    downstream access grants once the payment was known to
+    succeed. The two axes are deliberately separate: Stripe may
+    successfully collect money even when Fresh Collective cannot
+    (yet) fulfil the promised access — that state must not be
+    invisible.
+
+    States
+    ------
+    pending
+        No fulfilment attempt has committed yet. Applies to every
+        row while its payment is still pending, and to rows where
+        the previous webhook attempt raised (transaction rolled
+        back) so Stripe should retry.
+
+    applied
+        The shared fulfilment service ran to completion and
+        committed every entitlement / AccessPass / booking the
+        purchase promised. Terminal for the happy path.
+
+    blocked
+        Payment succeeded, but the shared fulfilment service
+        refused to write (e.g. a referenced Pathway or Series row
+        does not exist, or the resolver reported a fatal error).
+        Marked so operational tooling can surface it; the state is
+        recoverable — a subsequent webhook re-delivery (or a
+        manual replay after the underlying data is fixed) will
+        retry fulfilment.
+    """
+
+    pending = "pending"
+    applied = "applied"
+    blocked = "blocked"
+
+
 class PayoutStatus(str, enum.Enum):
     not_applicable = "not_applicable"  # creator subscription payments, failed/cancelled
     pending = "pending"                # succeeded member purchase, not yet paid out
@@ -117,6 +157,20 @@ class PaymentTransaction(Base):
         nullable=False,
         default=PaymentProvider.manual,
         server_default="manual",
+    )
+    # Fulfilment lifecycle — orthogonal to ``status`` above. See the
+    # ``PaymentFulfilmentStatus`` docstring for state semantics.
+    # Migration 111 adds the column and backfills every historical
+    # row to ``applied``; new rows default to ``pending``.
+    fulfilment_status: Mapped[PaymentFulfilmentStatus] = mapped_column(
+        SAEnum(
+            PaymentFulfilmentStatus,
+            name="payment_fulfilment_status_enum",
+            create_type=True,
+        ),
+        nullable=False,
+        default=PaymentFulfilmentStatus.pending,
+        server_default="pending",
     )
 
     # Parties

@@ -25,7 +25,6 @@ TODO (Phase 2+):
 import json
 import logging
 from datetime import datetime
-from uuid import uuid4
 
 import stripe
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -34,6 +33,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.payment import (
+    PaymentFulfilmentStatus,
     PaymentTransaction,
     PaymentTransactionStatus,
     PaymentTransactionType,
@@ -41,14 +41,11 @@ from app.models.payment import (
 )
 from app.models.payment_option import PaymentOption
 from app.models.payment_option_schedule import PaymentOptionSchedule
-from app.models.access_pass import AccessPass, AccessPassSource, AccessPassStatus, AccessPassType
-from app.models.platform import (
-    EntitlementSource,
-    EntitlementStatus,
-    EventSeries,
-    Pathway,
-    PathwayEntitlement,
-    SpaceMembership,
+from app.services.purchase_fulfilment import (
+    FulfilmentStatus,
+    apply_intent,
+    resolve_intent_from_legacy,
+    validate_intent,
 )
 
 logger = logging.getLogger(__name__)
@@ -444,10 +441,16 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
         )
         return
 
-    # --- Idempotency: already processed? ------------------------------------
-    if txn.status == PaymentTransactionStatus.succeeded:
+    # --- Idempotency: already applied? --------------------------------------
+    # A txn whose fulfilment already committed (``fulfilment_status
+    # == applied``) is a re-delivery we skip entirely. A txn whose
+    # payment succeeded but fulfilment is ``blocked`` (missing FK
+    # target, resolver fatal_error) is deliberately allowed to fall
+    # through — Stripe re-delivery is the natural retry once the
+    # underlying data is fixed.
+    if txn.fulfilment_status == PaymentFulfilmentStatus.applied:
         logger.info(
-            "checkout.session.completed: already processed session=%s txn=%s — skipping.",
+            "checkout.session.completed: already applied session=%s txn=%s — skipping.",
             session_id, txn.id,
         )
         return
@@ -499,278 +502,94 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
                 payment_option_id,
             )
 
-    # ── Series purchases: resolve the EventSeries and derive the term
-    #    window from it. AccessPass validity is scoped to the series;
-    #    any included Pathway entitlement gets its ``ends_at`` from
-    #    the series end but its ``starts_at`` stays at ``now`` so a
-    #    future-term buyer gets immediate access to included content
-    #    without waiting for the term to begin. This decoupling is
-    #    intentional — see clarification 1 in the Step 1 spec.
-    from datetime import datetime as _dt
-    series: EventSeries | None = None
-    if payment_option and payment_option.attaches_to_kind == "event_series":
-        series = (
-            db.query(EventSeries)
-            .filter(EventSeries.id == payment_option.attaches_to_id)
-            .first()
-        )
-        if not series:
-            logger.error(
-                "checkout.session.completed: series %s not found for option %s — aborting",
-                payment_option.attaches_to_id, payment_option.id,
-            )
-            return
-
-    # ── Entitlement target + window ─────────────────────────────────────
-    #
-    # Pathway-attached options: entitlement targets grants_pathway_id or
-    # falls back to pathway_id metadata (legacy behaviour). ``ends_at`` is
-    # driven by ``term_end_date`` for term_pass, else null.
-    #
-    # Series-attached options: entitlement is created only when the option
-    # explicitly sets ``grants_pathway_id``. Its ``starts_at`` is ``now``
-    # (immediate access), ``ends_at`` follows the precedence below.
-    #
-    # Window precedence for a series-attached term_pass:
-    #   1. ``series.ends_at`` if the series has a defined end.
-    #   2. ``payment_option.term_end_date`` otherwise (an ongoing series
-    #      can still sell a bounded pass — "10 sessions over 3 months").
-    #   3. NULL — a perpetual pass on an ongoing series. Legal in the
-    #      data model; a future creator UI will make this explicit.
-    entitlement_pathway_id: str | None
-    term_ends_at: _dt | None = None
-
-    def _po_term_end_dt() -> _dt | None:
-        if payment_option and payment_option.term_end_date:
-            opt_type = (
-                payment_option.payment_type.value
-                if hasattr(payment_option.payment_type, "value")
-                else str(payment_option.payment_type)
-            )
-            if opt_type == "term_pass":
-                return _dt.combine(payment_option.term_end_date, _dt.min.time())
-        return None
-
-    if series is not None:
-        entitlement_pathway_id = payment_option.grants_pathway_id if payment_option else None
-        term_ends_at = series.ends_at or _po_term_end_dt()
-    else:
-        entitlement_pathway_id = (
-            payment_option.grants_pathway_id
-            if payment_option and payment_option.grants_pathway_id
-            else pathway_id
-        )
-        term_ends_at = _po_term_end_dt()
-
-    # ── Create or reactivate PathwayEntitlement (when applicable) ───────
-    #
-    # ``ent`` is the PathwayEntitlement row id we then hang on the txn
-    # (for pathway-attached purchases) and on the AccessPass (for term
-    # passes that also grant pathway content). For a series purchase
-    # without ``grants_pathway_id`` there is no entitlement to create;
-    # the AccessPass alone represents what the buyer receives.
-    ent: PathwayEntitlement | None = None
-    if entitlement_pathway_id:
-        pathway = db.query(Pathway).filter(Pathway.id == entitlement_pathway_id).first()
-        if not pathway:
-            logger.error(
-                "checkout.session.completed: pathway %s not found — txn updated but no entitlement.",
-                entitlement_pathway_id,
-            )
-            db.commit()
-            return
-
-        existing_ent = (
-            db.query(PathwayEntitlement)
-            .filter(
-                PathwayEntitlement.user_id == payer_user_id,
-                PathwayEntitlement.pathway_id == entitlement_pathway_id,
-            )
-            .order_by(PathwayEntitlement.created_at.desc())
-            .first()
-        )
-
-        if existing_ent and existing_ent.status == EntitlementStatus.active:
-            # Already active (re-delivery) — update Stripe fields only.
-            # ``ends_at`` is deliberately NOT extended here: an in-flight
-            # term still has its own expiry; a follow-up purchase creates
-            # a fresh window through the reactivation branch below when
-            # the current one has ended.
-            existing_ent.stripe_checkout_session_id = session_id
-            existing_ent.stripe_payment_intent_id = payment_intent_id
-            existing_ent.updated_at = now
-            ent = existing_ent
-            logger.info(
-                "checkout.session.completed: entitlement already active user=%s pathway=%s",
-                payer_user_id, entitlement_pathway_id,
-            )
-        elif existing_ent:
-            # Reactivate a revoked/expired/cancelled entitlement with a
-            # fresh window. ``starts_at`` is ``now`` — for series-included
-            # pathway grants this means immediate access even when the
-            # series hasn't begun (per Step 1 clarification 1).
-            existing_ent.status = EntitlementStatus.active
-            existing_ent.source = EntitlementSource.one_time_purchase
-            existing_ent.stripe_checkout_session_id = session_id
-            existing_ent.stripe_payment_intent_id = payment_intent_id
-            existing_ent.revoked_by_user_id = None
-            existing_ent.revoked_at = None
-            existing_ent.starts_at = now
-            existing_ent.ends_at = term_ends_at
-            existing_ent.updated_at = now
-            ent = existing_ent
-            logger.info(
-                "checkout.session.completed: reactivated entitlement user=%s pathway=%s ends_at=%s",
-                payer_user_id, entitlement_pathway_id, term_ends_at,
-            )
-        else:
-            ent = PathwayEntitlement(
-                id=str(uuid4()),
-                user_id=payer_user_id,
-                space_id=space_id,
-                pathway_id=entitlement_pathway_id,
-                source=EntitlementSource.one_time_purchase,
-                status=EntitlementStatus.active,
-                starts_at=now,
-                ends_at=term_ends_at,
-                stripe_checkout_session_id=session_id,
-                stripe_payment_intent_id=payment_intent_id,
-                created_at=now,
-                updated_at=now,
-            )
-            db.add(ent)
-            db.flush()  # populate ent.id so we can reference it below
-            logger.info(
-                "checkout.session.completed: created entitlement %s user=%s pathway=%s ends_at=%s",
-                ent.id, payer_user_id, entitlement_pathway_id, term_ends_at,
-            )
-
-    if ent is not None:
-        txn.entitlement_id = ent.id
-
-    # --- Auto-join space as learner if not already a member -----------------
-    existing_membership = (
-        db.query(SpaceMembership)
-        .filter(
-            SpaceMembership.space_id == space_id,
-            SpaceMembership.user_id == payer_user_id,
-        )
-        .first()
+    # ── Delegate fulfilment to the shared service. B3 boundary:
+    #    the resolver still reads legacy PaymentOption fields; B4
+    #    will introduce a grants-based resolver. The atomicity
+    #    contract (resolve → validate → apply) is unchanged
+    #    across resolver swaps. ──
+    resolution = resolve_intent_from_legacy(
+        db,
+        payment_option=payment_option,
+        metadata_pathway_id=pathway_id or None,
+        now=now,
     )
-    if not existing_membership:
-        membership = SpaceMembership(
-            id=str(uuid4()),
+
+    # ── Resolver-side hard error (e.g. series-attached option
+    # pointing at a missing Series row). Payment succeeded, so the
+    # txn's status update commits — but we mark
+    # ``fulfilment_status='blocked'`` so operational tooling can
+    # surface the state and a subsequent Stripe re-delivery (after
+    # the data is fixed) can retry via the applied-vs-blocked
+    # idempotency check above. ──
+    if resolution.fatal_error:
+        txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        db.commit()
+        logger.error(
+            "checkout.session.completed: blocked session=%s txn=%s — %s",
+            session_id, txn.id, resolution.fatal_error,
+        )
+        return
+
+    # ── Pre-write validation. Every FK target the intent references
+    # is checked against the DB *before any writes happen*. A
+    # missing target means the whole bundle is blocked; the
+    # applier is never called with a bad intent. ──
+    validation = validate_intent(db, resolution.intent)
+    if not validation.ok:
+        txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+        db.commit()
+        logger.error(
+            "checkout.session.completed: blocked session=%s txn=%s — %s",
+            session_id, txn.id, "; ".join(validation.errors),
+        )
+        return
+
+    # ── Apply. All-or-nothing: any raise during apply propagates
+    # out (rolling back the whole in-memory session, including the
+    # txn.status='succeeded' update above); Stripe re-delivers on
+    # 5xx and we get another attempt. On success we set
+    # ``fulfilment_status='applied'`` and commit the whole bundle
+    # in one shot. ──
+    try:
+        result = apply_intent(
+            db,
+            intent=resolution.intent,
+            txn=txn,
+            payer_user_id=payer_user_id,
             space_id=space_id,
-            user_id=payer_user_id,
-            role="learner",
-            status="active",
-            source="purchase",
-            joined_at=now,
+            payment_option_id=payment_option.id if payment_option is not None else None,
+            payment_option_schedule_id=payment_option_schedule_id or None,
+            session_id=session_id,
+            payment_intent_id=payment_intent_id,
+            now=now,
         )
-        db.add(membership)
-        logger.info(
-            "checkout.session.completed: auto-joined user=%s as learner in space=%s",
-            payer_user_id, space_id,
+        txn.fulfilment_status = PaymentFulfilmentStatus.applied
+        db.commit()
+    except Exception:
+        # Unexpected DB error during apply → roll back the whole
+        # in-memory session (including the txn status/fulfilment
+        # updates) and re-raise. FastAPI returns 500; Stripe retries.
+        db.rollback()
+        logger.exception(
+            "checkout.session.completed: apply raised session=%s txn=%s — "
+            "rolling back for Stripe retry", session_id, txn.id,
         )
+        raise
 
-    # --- Create AccessPass for term_pass purchases (Phase B) ----------------
-    # Only create for payment types that require booking credit enforcement.
-    # Legacy one_time purchases (R.E.A.L. Journey) do NOT create AccessPass.
-    #
-    # Pathway-attached term_pass  → eligible_pathway_id set, series null,
-    #                               valid_from = term_start_date (or now).
-    # Series-attached  term_pass  → eligible_series_id set, pathway null,
-    #                               valid_from = series.starts_at,
-    #                               valid_until = series.ends_at.
-    #                               A future-term pass therefore has
-    #                               valid_from in the future — booking
-    #                               eligibility (spaces/routes.py) rejects
-    #                               it until the window opens.
-    if payment_option:
-        opt_type_val = (
-            payment_option.payment_type.value
-            if hasattr(payment_option.payment_type, "value")
-            else str(payment_option.payment_type)
-        )
-        if opt_type_val in ("term_pass",):
-            # Idempotency: skip if an AccessPass already exists for this transaction
-            existing_pass = (
-                db.query(AccessPass)
-                .filter(AccessPass.payment_transaction_id == txn.id)
-                .first()
-            )
-            if existing_pass is None:
-                if series is not None:
-                    valid_from_dt = series.starts_at
-                    # AccessPass valid_until precedence matches the
-                    # entitlement one — series end wins if set, else
-                    # the option's own term_end_date, else null.
-                    ap_valid_until = series.ends_at or (
-                        _dt.combine(payment_option.term_end_date, _dt.min.time())
-                        if payment_option.term_end_date else None
-                    )
-                    ap_eligible_series_id = series.id
-                    ap_eligible_pathway_id = None
-                else:
-                    valid_from_dt = (
-                        _dt.combine(payment_option.term_start_date, _dt.min.time())
-                        if payment_option.term_start_date
-                        else now
-                    )
-                    ap_valid_until = term_ends_at
-                    ap_eligible_series_id = None
-                    ap_eligible_pathway_id = entitlement_pathway_id
-
-                access_pass = AccessPass(
-                    id=str(uuid4()),
-                    user_id=payer_user_id,
-                    space_id=space_id,
-                    payment_transaction_id=txn.id,
-                    payment_option_id=payment_option.id,
-                    payment_option_schedule_id=payment_option_schedule_id or None,
-                    pass_type=AccessPassType.term_pass,
-                    status=AccessPassStatus.active,
-                    valid_from=valid_from_dt,
-                    valid_until=ap_valid_until,
-                    total_credits=payment_option.total_sessions,
-                    used_credits=0,
-                    credits_per_week=payment_option.sessions_per_week,
-                    eligible_pathway_id=ap_eligible_pathway_id,
-                    eligible_series_id=ap_eligible_series_id,
-                    grants_pathway_id=entitlement_pathway_id,
-                    pathway_entitlement_id=ent.id if ent is not None else None,
-                    source=AccessPassSource.one_time_purchase,
-                    created_at=now,
-                    updated_at=now,
-                )
-                db.add(access_pass)
-                logger.info(
-                    "checkout.session.completed: created AccessPass %s type=term_pass "
-                    "credits=%s credits_per_week=%s valid=%s→%s series=%s pathway=%s user=%s",
-                    access_pass.id,
-                    payment_option.total_sessions,
-                    payment_option.sessions_per_week,
-                    valid_from_dt,
-                    ap_valid_until,
-                    ap_eligible_series_id,
-                    ap_eligible_pathway_id,
-                    payer_user_id,
-                )
-            else:
-                logger.info(
-                    "checkout.session.completed: AccessPass already exists for txn=%s — skipping",
-                    txn.id,
-                )
-
-    db.commit()
-
+    # Singular ``entitlement`` field in the summary line is kept
+    # for log-scraping compatibility with the pre-B3 format.
+    # Multi-entitlement purchases log the id list.
+    ent_summary = (
+        result.entitlements[0].id if len(result.entitlements) == 1
+        else [e.id for e in result.entitlements] or None
+    )
     logger.info(
-        "checkout.session.completed: SUCCESS txn=%s entitlement=%s user=%s pathway=%s series=%s",
+        "checkout.session.completed: %s txn=%s entitlement=%s user=%s pathway=%s",
+        result.status.upper() if isinstance(result.status, str) else result.status,
         txn.id,
-        ent.id if ent is not None else None,
+        ent_summary,
         payer_user_id,
         pathway_id,
-        series.id if series is not None else None,
     )
 
 
