@@ -16,11 +16,15 @@ Design notes:
 
 import enum
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Date, DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.payment_option_grant import PaymentOptionGrant
 
 
 class PaymentOptionType(str, enum.Enum):
@@ -116,6 +120,20 @@ class PaymentOption(Base):
         nullable=False,
     )
 
+    # ── Collective-level grants layer (introduced in migration 108) ────
+    # A PaymentOption expresses WHAT the buyer receives via zero or
+    # more PaymentOptionGrant rows. Legacy attachment (``attaches_to_*``
+    # + ``grants_pathway_id`` + Series limit columns above) remain the
+    # source of truth during B1; the grants side is populated in a
+    # later backfill (B2). No behaviour reads from ``grants`` yet.
+    grants: Mapped[list["PaymentOptionGrant"]] = relationship(
+        "PaymentOptionGrant",
+        back_populates="payment_option",
+        cascade="all, delete-orphan",
+        order_by="PaymentOptionGrant.position,PaymentOptionGrant.created_at",
+        lazy="selectin",
+    )
+
     @property
     def effective_price_cents(self) -> int | None:
         """override_total_cents takes precedence over calculated_total_cents."""
@@ -128,3 +146,23 @@ class PaymentOption(Base):
         Index("ix_payment_options_pathway_id", "pathway_id"),
         Index("ix_payment_options_attaches_to", "attaches_to_kind", "attaches_to_id"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Runtime relationship-target registration.
+#
+# ``PaymentOption.grants`` refers to ``PaymentOptionGrant`` by string name.
+# SQLAlchemy resolves the string when a mapper is first configured (i.e. at
+# the first query against any mapped class), which requires
+# ``PaymentOptionGrant`` to have been imported by *some* module first.
+#
+# The FastAPI runtime does not otherwise import ``payment_option_grant``
+# (routes only use ``PaymentOption``), so without this line the mapper
+# configuration fails with "name 'PaymentOptionGrant' is not defined" on
+# the first real query — including the login endpoint's ``db.query(User)``.
+# Placing the import at the bottom of this file, after the class body,
+# guarantees that *any* module importing ``PaymentOption`` also registers
+# ``PaymentOptionGrant``, without introducing a circular import
+# (``payment_option_grant`` only touches ``PaymentOption`` under
+# ``TYPE_CHECKING``).
+from app.models import payment_option_grant  # noqa: E402,F401 — see docstring above

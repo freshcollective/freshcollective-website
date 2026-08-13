@@ -1,6 +1,6 @@
 import re
 from datetime import date, datetime
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 ALLOWED_THEMES: set[str] = {
     "Inner Work", "Wellbeing", "Creativity", "Leadership", "Reflection",
@@ -2061,6 +2061,110 @@ class GenerateSchedulesRequest(BaseModel):
     """
     weekly_installment_count: int = 10
     fortnightly_installment_count: int = 5
+
+
+# ---------------------------------------------------------------------------
+# Payment Option Grants — B1 foundation
+#
+# One-to-many "what this Option grants" layer introduced by
+# migration 108. Schemas below are for internal backend use during
+# B1 (constructing grants in tests, backfill helpers, future
+# Creator UI). No endpoint reads them yet; the wire contract for
+# Creator Studio's Payment Options CRUD is unchanged in B1.
+# ---------------------------------------------------------------------------
+
+
+_ALLOWED_GRANT_KINDS: set[str] = {"pathway", "event_series", "gathering"}
+
+
+class PaymentOptionGrantCreate(BaseModel):
+    """Shape used when constructing a grant on a PaymentOption.
+
+    Exactly one of ``pathway_id`` / ``series_id`` / ``event_id`` must
+    be set, matched to ``grant_kind``. Series-only fields
+    (``sessions_per_week`` / ``total_sessions`` / window overrides)
+    are permitted only when ``grant_kind='event_series'``. Both
+    invariants are also enforced by CHECK constraints in Postgres —
+    the validators here surface the same rule with a friendlier
+    error at the request boundary.
+    """
+
+    grant_kind: str
+    pathway_id: str | None = None
+    series_id: str | None = None
+    event_id: str | None = None
+    sessions_per_week: int | None = None
+    total_sessions: int | None = None
+    valid_from_override: datetime | None = None
+    valid_until_override: datetime | None = None
+    position: int = 0
+
+    @field_validator("grant_kind")
+    @classmethod
+    def _kind(cls, v: str) -> str:
+        if v not in _ALLOWED_GRANT_KINDS:
+            raise ValueError(
+                f"grant_kind must be one of: {', '.join(sorted(_ALLOWED_GRANT_KINDS))}."
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _target_matches_kind(self) -> "PaymentOptionGrantCreate":
+        # Exactly-one-target invariant.
+        targets = {
+            "pathway": self.pathway_id,
+            "event_series": self.series_id,
+            "gathering": self.event_id,
+        }
+        expected = targets[self.grant_kind]
+        others = [k for k, v in targets.items() if k != self.grant_kind and v is not None]
+        if expected is None:
+            raise ValueError(
+                f"grant_kind={self.grant_kind!r} requires the matching target id."
+            )
+        if others:
+            raise ValueError(
+                f"grant_kind={self.grant_kind!r} must not carry target ids for {others}."
+            )
+        # Series-only-fields invariant.
+        if self.grant_kind != "event_series" and (
+            self.sessions_per_week is not None
+            or self.total_sessions is not None
+            or self.valid_from_override is not None
+            or self.valid_until_override is not None
+        ):
+            raise ValueError(
+                "sessions_per_week / total_sessions / window overrides are only "
+                "valid on event_series grants."
+            )
+        # Basic sanity on the credit fields.
+        for name, val in (
+            ("sessions_per_week", self.sessions_per_week),
+            ("total_sessions", self.total_sessions),
+        ):
+            if val is not None and val <= 0:
+                raise ValueError(f"{name} must be positive when set.")
+        return self
+
+
+class PaymentOptionGrantResponse(BaseModel):
+    """Read shape mirroring the model row. Included for
+    B2 / test surfaces so callers can round-trip grants without
+    reaching for the ORM directly."""
+
+    id: str
+    payment_option_id: str
+    grant_kind: str
+    pathway_id: str | None = None
+    series_id: str | None = None
+    event_id: str | None = None
+    sessions_per_week: int | None = None
+    total_sessions: int | None = None
+    valid_from_override: datetime | None = None
+    valid_until_override: datetime | None = None
+    position: int
+    created_at: datetime
+    updated_at: datetime
 
 
 # ---------------------------------------------------------------------------

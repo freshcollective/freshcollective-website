@@ -16,6 +16,7 @@ import app.models.creator_billing  # noqa: F401 — registers creator plan/subsc
 import app.models.payment          # noqa: F401 — registers payment transaction ledger
 import app.models.payment_option   # noqa: F401 — registers payment options model
 import app.models.payment_option_schedule  # noqa: F401 — registers payment option schedules
+import app.models.payment_option_grant  # noqa: F401 — registers payment option grants (B1, migration 108)
 import app.models.access_pass      # noqa: F401 — registers access pass / booking credit model
 import app.models.notification     # noqa: F401 — registers notification model
 import app.models.activity         # noqa: F401 — registers activity engine model
