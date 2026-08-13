@@ -44,7 +44,7 @@ from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.services.purchase_fulfilment import (
     FulfilmentStatus,
     apply_intent,
-    resolve_intent_from_legacy,
+    resolve_intent_for_option,
     validate_intent,
 )
 
@@ -502,12 +502,13 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
                 payment_option_id,
             )
 
-    # ── Delegate fulfilment to the shared service. B3 boundary:
-    #    the resolver still reads legacy PaymentOption fields; B4
-    #    will introduce a grants-based resolver. The atomicity
-    #    contract (resolve → validate → apply) is unchanged
-    #    across resolver swaps. ──
-    resolution = resolve_intent_from_legacy(
+    # ── Delegate fulfilment to the shared service. B4A: source of
+    #    truth is now ``PaymentOption.grants`` when the option has
+    #    any grant rows; otherwise the legacy resolver runs (with a
+    #    structured warning) as transition-period compatibility.
+    #    The atomicity contract (resolve → validate → apply) is
+    #    the same regardless of which resolver picks the intent. ──
+    resolution = resolve_intent_for_option(
         db,
         payment_option=payment_option,
         metadata_pathway_id=pathway_id or None,

@@ -84,6 +84,11 @@ from app.models.access_pass import (
 )
 from app.models.payment import PaymentTransaction
 from app.models.payment_option import PaymentOption
+from app.models.payment_option_grant import (
+    GRANT_KIND_EVENT_SERIES,
+    GRANT_KIND_GATHERING,
+    GRANT_KIND_PATHWAY,
+)
 from app.models.platform import (
     EntitlementSource,
     EntitlementStatus,
@@ -107,16 +112,27 @@ logger = logging.getLogger(__name__)
 class EntitlementIntent:
     """A PathwayEntitlement to create or reactivate on purchase.
 
-    ``starts_at`` is intentionally not carried here: the webhook
-    has always set it to ``now`` at fulfilment time (including for
-    bundled Pathway grants attached to a future-term Series pass —
-    the "immediate access" rule). The applier does the same.
+    ``starts_at``
+        ``None`` (default) → the applier uses ``NOW()`` at
+        fulfilment time. This is the historical behaviour — the
+        pre-B3 webhook and the legacy resolver both always used
+        ``NOW()``, including for bundled Pathway grants attached
+        to a future-term Series pass (the "immediate access"
+        rule).
 
-    ``ends_at IS NULL`` means the entitlement is perpetual.
+        Non-``None`` → the applier uses this timestamp as the
+        entitlement's ``starts_at``. Enables PaymentOptionGrant
+        rows carrying ``valid_from_override`` to express delayed
+        activation.
+
+    ``ends_at``
+        ``None`` → the entitlement is perpetual (no ``ends_at``
+        stored). Non-``None`` → pins the end.
     """
 
     pathway_id: str
     ends_at: datetime | None
+    starts_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -414,6 +430,323 @@ def resolve_intent_from_legacy(
 
 
 # ---------------------------------------------------------------------------
+# Resolver — PaymentOptionGrant rows (B4A source of truth once cutover)
+# ---------------------------------------------------------------------------
+
+
+def resolve_intent_from_grants(
+    db: Session, *,
+    payment_option: PaymentOption,
+) -> FulfilmentResolution:
+    """Grant-first resolver.
+
+    Reads ``payment_option.grants`` exclusively. Never inspects
+    the legacy ``attaches_to_kind`` / ``attaches_to_id`` /
+    ``grants_pathway_id`` / ``sessions_per_week`` /
+    ``total_sessions`` / ``term_start_date`` / ``term_end_date``
+    fields — the B2 backfill has already represented every
+    legacy shape as explicit grant rows, so mixing sources would
+    double-grant access.
+
+    Grant handling:
+
+    * ``pathway`` grant → one ``EntitlementIntent``.
+        - ``starts_at`` = ``grant.valid_from_override``
+          (``None`` → applier uses ``NOW()``)
+        - ``ends_at``   = ``grant.valid_until_override``
+          (``None`` → perpetual)
+
+    * ``event_series`` grant → one ``AccessPassIntent``.
+        - ``valid_from``  = ``grant.valid_from_override``
+          if set, else ``series.starts_at``
+        - ``valid_until`` = ``grant.valid_until_override``
+          if set, else ``series.ends_at`` (``None`` → no end)
+        - ``total_credits``    = ``grant.total_sessions``
+        - ``credits_per_week`` = ``grant.sessions_per_week``
+        - ``eligible_series_id`` = ``grant.series_id``
+        - ``eligible_pathway_id`` = ``None``
+
+    * ``gathering`` grant → **not yet supported at runtime**.
+      The resolver returns a fatal error so the webhook marks
+      ``fulfilment_status='blocked'`` rather than silently
+      pretending the bundle was fulfilled. The existing paid-
+      Gathering ticket-hold flow in ``services/gathering_tickets.py``
+      remains authoritative for those purchases until a later
+      commit unifies them.
+
+    Legacy shadow field on ``AccessPassIntent.grants_pathway_id``:
+    populated when the option has exactly one Pathway grant, so
+    new AccessPass rows written via the grant path still carry
+    the same shadow value the legacy resolver used to write.
+    This maintains parity for legacy readers of that column
+    without letting the shadow influence what access is granted
+    — the bundled Pathway is expressed as its own
+    ``EntitlementIntent``.
+
+    Multi-experience purchases work uniformly: any number of
+    Pathway grants produce that many entitlements; any number
+    of Series grants produce that many independent AccessPasses.
+    """
+    grants = list(payment_option.grants)
+
+    # ── Unsupported: Gathering grants ─────────────────────────────
+    gathering_grants = [
+        g for g in grants if g.grant_kind == GRANT_KIND_GATHERING
+    ]
+    if gathering_grants:
+        return FulfilmentResolution(
+            fatal_error=(
+                f"PaymentOption {payment_option.id!r} carries "
+                f"{len(gathering_grants)} grant(s) of kind='gathering'; "
+                "standalone Gathering PaymentOption fulfilment is not "
+                "yet activated. The existing paid-Gathering ticket-hold "
+                "flow remains authoritative for those purchases."
+            ),
+        )
+
+    pathway_grants = [
+        g for g in grants if g.grant_kind == GRANT_KIND_PATHWAY
+    ]
+    series_grants = [
+        g for g in grants if g.grant_kind == GRANT_KIND_EVENT_SERIES
+    ]
+
+    # Batch-load Series rows for window derivation. Missing rows
+    # surface as ``None`` here; ``validate_intent`` catches them
+    # before any writes so the whole bundle blocks atomically.
+    series_by_id: dict[str, EventSeries] = {}
+    if series_grants:
+        series_ids = [g.series_id for g in series_grants if g.series_id]
+        if series_ids:
+            for s in (
+                db.query(EventSeries)
+                .filter(EventSeries.id.in_(series_ids))
+                .all()
+            ):
+                series_by_id[s.id] = s
+
+    # ── Entitlements — one per Pathway grant ──────────────────────
+    entitlements: list[EntitlementIntent] = []
+    for pg in pathway_grants:
+        entitlements.append(EntitlementIntent(
+            pathway_id=pg.pathway_id,
+            ends_at=pg.valid_until_override,
+            # ``None`` → applier uses ``NOW()`` (matches the pre-B3
+            # "immediate access" rule for bundled pathway grants,
+            # which is what every B2-backfilled grant produces).
+            starts_at=pg.valid_from_override,
+        ))
+
+    # Legacy shadow on Series AccessPass: only meaningful when the
+    # option has exactly one Pathway grant. Multi-Pathway options
+    # cannot honestly point a single shadow at "the" pathway.
+    shadow_grants_pathway_id: str | None = (
+        pathway_grants[0].pathway_id
+        if len(pathway_grants) == 1 else None
+    )
+
+    # ── AccessPasses — one per Series grant ───────────────────────
+    access_passes: list[AccessPassIntent] = []
+    for sg in series_grants:
+        series = series_by_id.get(sg.series_id or "")
+
+        # Fallback chain matches the grant semantics documented on
+        # the model:
+        #   valid_from  = grant.valid_from_override OR series.starts_at
+        #   valid_until = grant.valid_until_override OR series.ends_at
+        # If the Series row is missing here, ``validate_intent``
+        # will refuse the bundle. Use a placeholder for
+        # ``valid_from`` so the dataclass construction doesn't
+        # crash before validation gets to speak.
+        valid_from: datetime
+        if sg.valid_from_override is not None:
+            valid_from = sg.valid_from_override
+        elif series is not None:
+            valid_from = series.starts_at
+        else:
+            # Placeholder — validation will block on the missing
+            # Series before any writes reach this value.
+            valid_from = datetime.min
+
+        valid_until: datetime | None
+        if sg.valid_until_override is not None:
+            valid_until = sg.valid_until_override
+        elif series is not None:
+            valid_until = series.ends_at
+        else:
+            valid_until = None
+
+        access_passes.append(AccessPassIntent(
+            pass_type=AccessPassType.term_pass,
+            valid_from=valid_from,
+            valid_until=valid_until,
+            total_credits=sg.total_sessions,
+            credits_per_week=sg.sessions_per_week,
+            eligible_pathway_id=None,
+            eligible_series_id=sg.series_id,
+            grants_pathway_id=shadow_grants_pathway_id,
+        ))
+
+    return FulfilmentResolution(
+        intent=FulfilmentIntent(
+            entitlements=tuple(entitlements),
+            access_passes=tuple(access_passes),
+            bookings=(),
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Grant-readiness — dispatcher safety check
+# ---------------------------------------------------------------------------
+
+
+def option_grant_readiness(
+    payment_option: PaymentOption,
+) -> tuple[bool, str | None]:
+    """Return ``(is_ready, reason_if_not)`` for a PaymentOption's
+    grant-first fulfilment eligibility.
+
+    An option is "grant-ready" when the grant resolver's output
+    fully covers what the legacy resolver would produce. The
+    dispatcher uses this rule to avoid silently switching an
+    option to grants when the grant representation is incomplete
+    — which would mean the buyer loses access that the legacy
+    resolver would have granted.
+
+    Today the one known gap is **pathway-attached term_pass
+    options**: the legacy resolver produces an ``AccessPass``
+    with credits and window from
+    ``sessions_per_week`` / ``total_sessions`` /
+    ``term_start_date`` / ``term_end_date``; a Pathway grant has
+    no fields for those, so the grant-side output is missing the
+    AccessPass entirely.
+
+    (Series-attached term_pass options are fine — the Series
+    grant carries credits + window; the bundled Pathway grant
+    carries the entitlement window. B2's backfill verified
+    parity on those.)
+
+    Readiness is derived deterministically from the option's
+    shape, not from a manual flag. If a later migration
+    canonicalises a pathway-attached term_pass into (e.g.) a
+    Series-attached option or clears the Series-style fields, the
+    readiness check re-evaluates to True automatically.
+
+    The rule is intentionally conservative — "not ready" simply
+    routes to the legacy resolver, which is proven correct. It
+    is never a fulfilment failure.
+    """
+    kind = payment_option.attaches_to_kind
+    payment_type = _payment_type_str(payment_option)
+
+    if kind == "pathway" and payment_type == "term_pass":
+        # Pathway grants have no ``sessions_per_week`` /
+        # ``total_sessions`` / ``term_start_date`` fields — those
+        # are event_series-grant-only by design. If the legacy
+        # option carries any of them, the grant-side output would
+        # silently omit the AccessPass the buyer paid for.
+        unrepresentable = []
+        if payment_option.sessions_per_week is not None:
+            unrepresentable.append("sessions_per_week")
+        if payment_option.total_sessions is not None:
+            unrepresentable.append("total_sessions")
+        if payment_option.term_start_date is not None:
+            unrepresentable.append("term_start_date")
+        # ``term_end_date`` IS representable on the Pathway grant
+        # via ``valid_until_override``, so it does not by itself
+        # make the option unrepresentable. However, the legacy
+        # resolver's term_pass branch also emits an AccessPass
+        # even when only ``term_end_date`` is set (credits +
+        # credits_per_week both null). Any term_pass on a
+        # pathway-attached option therefore loses at least the
+        # AccessPass row if it goes through grants. Route to
+        # legacy unconditionally for pathway-attached term_pass.
+        if not unrepresentable:
+            unrepresentable.append("term_pass_semantics")
+        return False, (
+            f"pathway-attached term_pass option carries fields the "
+            f"grant representation does not yet cover: "
+            f"{', '.join(unrepresentable)}"
+        )
+
+    return True, None
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher — grants-first (when ready), else legacy fallback
+# ---------------------------------------------------------------------------
+
+
+def resolve_intent_for_option(
+    db: Session, *,
+    payment_option: PaymentOption | None,
+    metadata_pathway_id: str | None,
+    now: datetime,
+) -> FulfilmentResolution:
+    """Runtime resolver dispatch.
+
+    Rule (B4A):
+
+      * ``payment_option`` has grants AND is grant-ready
+        (:func:`option_grant_readiness` returns True) → grants
+        are authoritative; resolve exclusively from them.
+
+      * ``payment_option`` has grants but is NOT grant-ready →
+        legacy resolver + structured warning explaining the
+        specific representation gap. Emitted so the transition
+        can be tracked and completed; not a fulfilment failure.
+
+      * ``payment_option`` has no grants → legacy resolver +
+        structured warning naming the missing backfill.
+
+      * No ``payment_option`` at all → legacy resolver (option-less
+        R.E.A.L. Journey path). No warning; there's nothing to
+        backfill.
+
+    The dispatcher never mixes sources for the same purchase.
+    """
+    if payment_option is None:
+        return resolve_intent_from_legacy(
+            db, payment_option=None,
+            metadata_pathway_id=metadata_pathway_id, now=now,
+        )
+
+    has_grants = len(payment_option.grants) > 0
+
+    if has_grants:
+        ready, reason = option_grant_readiness(payment_option)
+        if ready:
+            return resolve_intent_from_grants(db, payment_option=payment_option)
+        # Grants exist but the option's legacy shape carries
+        # information the current grant model does not yet
+        # represent. Fall back to legacy so the buyer gets the
+        # full access they paid for.
+        logger.warning(
+            "purchase_fulfilment: PaymentOption %s has grants but is not "
+            "grant-ready — %s. Falling back to legacy resolver until the "
+            "grant model or this option's shape is updated so grants can "
+            "fully represent it.",
+            payment_option.id, reason,
+        )
+    else:
+        logger.warning(
+            "purchase_fulfilment: PaymentOption %s has no grants — "
+            "falling back to legacy resolver. This is a transition-"
+            "period compatibility path; the option should be "
+            "backfilled via app.commerce.backfill_grants.",
+            payment_option.id,
+        )
+
+    return resolve_intent_from_legacy(
+        db,
+        payment_option=payment_option,
+        metadata_pathway_id=metadata_pathway_id,
+        now=now,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Validator — pre-write check every FK target the intent references
 # ---------------------------------------------------------------------------
 
@@ -513,6 +846,11 @@ def _apply_entitlement(
         )
         return existing_ent
 
+    # ``intent.starts_at`` defaults to None (legacy resolver
+    # never sets it). Grant-based resolvers may carry a value
+    # from ``PaymentOptionGrant.valid_from_override``.
+    starts_at = intent.starts_at if intent.starts_at is not None else now
+
     if existing_ent:
         existing_ent.status = EntitlementStatus.active
         existing_ent.source = EntitlementSource.one_time_purchase
@@ -520,12 +858,12 @@ def _apply_entitlement(
         existing_ent.stripe_payment_intent_id = payment_intent_id
         existing_ent.revoked_by_user_id = None
         existing_ent.revoked_at = None
-        existing_ent.starts_at = now
+        existing_ent.starts_at = starts_at
         existing_ent.ends_at = intent.ends_at
         existing_ent.updated_at = now
         logger.info(
-            "purchase_fulfilment: reactivated entitlement user=%s pathway=%s ends_at=%s",
-            payer_user_id, intent.pathway_id, intent.ends_at,
+            "purchase_fulfilment: reactivated entitlement user=%s pathway=%s starts_at=%s ends_at=%s",
+            payer_user_id, intent.pathway_id, starts_at, intent.ends_at,
         )
         return existing_ent
 
@@ -536,7 +874,7 @@ def _apply_entitlement(
         pathway_id=intent.pathway_id,
         source=EntitlementSource.one_time_purchase,
         status=EntitlementStatus.active,
-        starts_at=now,
+        starts_at=starts_at,
         ends_at=intent.ends_at,
         stripe_checkout_session_id=session_id,
         stripe_payment_intent_id=payment_intent_id,
@@ -546,8 +884,8 @@ def _apply_entitlement(
     db.add(ent)
     db.flush()
     logger.info(
-        "purchase_fulfilment: created entitlement %s user=%s pathway=%s ends_at=%s",
-        ent.id, payer_user_id, intent.pathway_id, intent.ends_at,
+        "purchase_fulfilment: created entitlement %s user=%s pathway=%s starts_at=%s ends_at=%s",
+        ent.id, payer_user_id, intent.pathway_id, starts_at, intent.ends_at,
     )
     return ent
 
