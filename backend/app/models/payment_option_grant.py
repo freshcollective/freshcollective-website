@@ -103,11 +103,26 @@ class PaymentOptionGrant(Base):
     sessions_per_week: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_sessions: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # ── Series-only pass window overrides ──────────────────────────────
-    # When null, the AccessPass created at purchase inherits its
-    # window from the Series (``series.starts_at`` / ``series.ends_at``).
-    # When set, the grant's override wins — same precedence rule the
-    # webhook has always applied. Only allowed for event_series grants.
+    # ── Pass / entitlement window overrides ────────────────────────────
+    # Allowed on ``event_series`` and ``pathway`` grants. Forbidden on
+    # ``gathering`` grants (see migration 109) — a Gathering booking's
+    # window is the Event's own ``starts_at`` / ``ends_at``, so overrides
+    # would be ambiguous.
+    #
+    # For ``event_series`` grants, ``None`` means the AccessPass
+    # inherits its window from the Series row (``series.starts_at`` /
+    # ``series.ends_at``); a non-null override wins.
+    #
+    # For ``pathway`` grants, ``valid_from_override IS NULL`` means the
+    # PathwayEntitlement's ``starts_at`` is ``NOW()`` at fulfilment
+    # time — matching the current webhook, which grants pathway access
+    # immediately even for bundled-with-Series options. A non-null
+    # override pins ``starts_at`` to that timestamp.
+    # ``valid_until_override IS NULL`` means the entitlement is
+    # perpetual (no ``ends_at``); a non-null override pins the end.
+    # Bundled Pathway grants carry the effective term end here so
+    # fulfilment does not need to infer it from other grants on the
+    # same Option.
     valid_from_override: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True,
     )
@@ -147,15 +162,19 @@ class PaymentOptionGrant(Base):
             "  AND pathway_id IS NULL AND series_id IS NULL)",
             name="payment_option_grants_target_matches_kind",
         ),
-        # Series-only fields cannot be populated for pathway / gathering
-        # grants. Keeps grant rows honest about which kind they are.
+        # Credits are Series-only. Pathway / Gathering grants must
+        # never carry ``sessions_per_week`` or ``total_sessions``.
         CheckConstraint(
-            "(grant_kind = 'event_series') OR ("
-            "  sessions_per_week IS NULL "
-            "  AND total_sessions IS NULL "
-            "  AND valid_from_override IS NULL "
-            "  AND valid_until_override IS NULL)",
-            name="payment_option_grants_series_fields_only_for_series",
+            "(grant_kind = 'event_series')"
+            " OR (sessions_per_week IS NULL AND total_sessions IS NULL)",
+            name="payment_option_grants_credits_only_for_series",
+        ),
+        # Windows are allowed on Series and Pathway grants but not
+        # on Gathering grants (see column-level docstring above).
+        CheckConstraint(
+            "(grant_kind IN ('event_series', 'pathway'))"
+            " OR (valid_from_override IS NULL AND valid_until_override IS NULL)",
+            name="payment_option_grants_windows_not_on_gathering",
         ),
         # A single Option should not grant the same target twice —
         # deduplicated at the DB level rather than leaving it to

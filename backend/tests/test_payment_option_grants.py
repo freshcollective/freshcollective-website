@@ -331,15 +331,37 @@ class TestSeriesOnlyFieldsConstraint:
             db.commit()
         db.rollback()
 
-    def test_pathway_grant_rejects_window_override(self, db, make_space):
+    def test_pathway_grant_accepts_window_override(self, db, make_space):
+        """Migration 109 relaxed the constraint: Pathway grants may
+        carry ``valid_from_override`` / ``valid_until_override`` so
+        the backfill can encode the effective term end for bundled
+        Pathway grants without fulfilment having to guess."""
         space = make_space()
         option = _make_option(db, space)
         pathway = _make_pathway(db, space)
+        end = datetime.utcnow() + timedelta(days=30)
+        g = PaymentOptionGrant(
+            payment_option_id=option.id,
+            grant_kind="pathway",
+            pathway_id=pathway.id,
+            valid_until_override=end,
+        )
+        db.add(g)
+        db.commit()
+        db.refresh(g)
+        assert g.valid_until_override == end
+
+    def test_gathering_grant_rejects_window_override(self, db, make_space):
+        """Windows remain forbidden on Gathering grants — an Event's
+        own ``starts_at`` / ``ends_at`` already defines its window."""
+        space = make_space()
+        option = _make_option(db, space)
+        event = _make_event(db, space)
         with pytest.raises(IntegrityError):
             db.add(PaymentOptionGrant(
                 payment_option_id=option.id,
-                grant_kind="pathway",
-                pathway_id=pathway.id,
+                grant_kind="gathering",
+                event_id=event.id,
                 valid_until_override=datetime.utcnow() + timedelta(days=30),
             ))
             db.commit()
@@ -521,10 +543,22 @@ class TestPydanticValidator:
                 total_sessions=5,
             )
 
-    def test_pathway_kind_with_window_override_rejected(self):
+    def test_pathway_kind_accepts_window_override(self):
+        """Migration 109 relaxed the model — Pathway grants can
+        carry window overrides so bundled Pathway grants can encode
+        the effective term end."""
+        end = datetime.utcnow() + timedelta(days=30)
+        g = PaymentOptionGrantCreate(
+            grant_kind="pathway", pathway_id="pw_abc",
+            valid_until_override=end,
+        )
+        assert g.valid_until_override == end
+
+    def test_gathering_kind_with_window_override_rejected(self):
+        """Windows on Gathering grants stay forbidden."""
         with pytest.raises(ValueError):
             PaymentOptionGrantCreate(
-                grant_kind="pathway", pathway_id="pw_abc",
+                grant_kind="gathering", event_id="e_abc",
                 valid_until_override=datetime.utcnow(),
             )
 

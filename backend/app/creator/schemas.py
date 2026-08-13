@@ -2126,16 +2126,25 @@ class PaymentOptionGrantCreate(BaseModel):
             raise ValueError(
                 f"grant_kind={self.grant_kind!r} must not carry target ids for {others}."
             )
-        # Series-only-fields invariant.
+        # Credits (sessions_per_week / total_sessions) are Series-only.
         if self.grant_kind != "event_series" and (
             self.sessions_per_week is not None
             or self.total_sessions is not None
-            or self.valid_from_override is not None
+        ):
+            raise ValueError(
+                "sessions_per_week / total_sessions are only valid on "
+                "event_series grants."
+            )
+        # Windows are allowed on event_series + pathway grants, but not
+        # on gathering grants (a Gathering booking's window is the
+        # Event's own starts_at / ends_at).
+        if self.grant_kind == "gathering" and (
+            self.valid_from_override is not None
             or self.valid_until_override is not None
         ):
             raise ValueError(
-                "sessions_per_week / total_sessions / window overrides are only "
-                "valid on event_series grants."
+                "valid_from_override / valid_until_override are not "
+                "valid on gathering grants."
             )
         # Basic sanity on the credit fields.
         for name, val in (
