@@ -26,7 +26,10 @@ export default async function CollectiveRecentMomentsPanel({ spaceId, className 
 
   return (
     <div className={className}>
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-teal-700">
+      <p
+        className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em]"
+        style={{ color: 'var(--fc-accent, #0f766e)' }}
+      >
         Recent Moments
       </p>
 

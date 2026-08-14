@@ -66,7 +66,7 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
             <button
               onClick={onClose}
               className="mt-5 inline-flex rounded-xl px-6 py-2 text-[13px] font-semibold text-white"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
             >
               Done
             </button>
@@ -75,7 +75,7 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
           <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
             <div>
               <label htmlFor="inv-email" className="mb-1.5 block text-[13px] font-semibold text-navy-900">
-                Email address <span style={{ color: '#38A09E' }} aria-hidden="true">*</span>
+                Email address <span style={{ color: 'var(--fc-accent, #38A09E)' }} aria-hidden="true">*</span>
               </label>
               <input
                 id="inv-email"
@@ -84,7 +84,7 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@example.com"
                 required
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 focus:border-[color:var(--fc-accent,#38A09E)] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-ring,rgba(56,160,158,0.20))]"
               />
             </div>
             <div>
@@ -97,7 +97,7 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Their first name"
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 focus:border-[color:var(--fc-accent,#38A09E)] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-ring,rgba(56,160,158,0.20))]"
               />
             </div>
             <div>
@@ -110,7 +110,7 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
                 placeholder="Add a personal message to the invitation."
-                className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+                className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-[14px] text-navy-900 placeholder:text-slate-400 focus:border-[color:var(--fc-accent,#38A09E)] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-ring,rgba(56,160,158,0.20))]"
               />
             </div>
 
@@ -126,7 +126,7 @@ function InviteModal({ spaceSlug, onClose }: InviteModalProps) {
                 type="submit"
                 disabled={sending}
                 className="inline-flex items-center rounded-xl px-6 py-2.5 text-[14px] font-semibold text-white transition-all hover:opacity-90 disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
               >
                 {sending ? 'Sending…' : 'Send invitation'}
               </button>
@@ -175,12 +175,16 @@ export default function MembersView({ leaders, learners, spaceSlug, canInvite, s
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search members…"
-          className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[14px] text-navy-900 placeholder:text-slate-400 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-400/20"
+          className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[14px] text-navy-900 placeholder:text-slate-400 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-ring,rgba(56,160,158,0.20))]"
         />
         {canInvite && (
           <button
             onClick={() => setInviteOpen(true)}
-            className="shrink-0 rounded-xl border border-teal-200 bg-white px-4 py-2 text-[13px] font-medium text-teal-700 transition-colors hover:bg-teal-50"
+            className="shrink-0 rounded-xl border bg-white px-4 py-2 text-[13px] font-medium transition-colors hover:bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))]"
+            style={{
+              borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.30))',
+              color: 'var(--fc-accent, #0f766e)',
+            }}
           >
             + Invite member
           </button>
@@ -217,7 +221,10 @@ export default function MembersView({ leaders, learners, spaceSlug, canInvite, s
                   : 'Members'}
             </h2>
             {!showMemberDirectory && !canInvite ? (
-              <div className="rounded-2xl border border-teal-100 bg-white px-6 py-8 text-center">
+              <div
+                className="rounded-2xl border bg-white px-6 py-8 text-center"
+                style={{ borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.20))' }}
+              >
                 <p className="text-sm text-black">
                   {learnerCount !== undefined && learnerCount > 0
                     ? `${learnerCount} ${learnerCount === 1 ? 'person is' : 'people are'} in this collective.`
@@ -231,7 +238,10 @@ export default function MembersView({ leaders, learners, spaceSlug, canInvite, s
                 ))}
               </div>
             ) : !q ? (
-              <div className="rounded-2xl border border-teal-100 bg-white px-6 py-8 text-center">
+              <div
+                className="rounded-2xl border bg-white px-6 py-8 text-center"
+                style={{ borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.20))' }}
+              >
                 <p className="text-sm text-black">No members yet — be the first to join.</p>
               </div>
             ) : null}

@@ -49,7 +49,8 @@ function renderInline(nodes: RichTextNode[] | undefined, base: string): React.Re
             href={safeHref(mark.attrs?.href)}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-teal-700 underline underline-offset-2 hover:opacity-80"
+            className="underline underline-offset-2 hover:opacity-80"
+            style={{ color: 'var(--fc-accent, #0f766e)' }}
           >
             {el}
           </a>

@@ -77,12 +77,15 @@ function StepNavItem({
           className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
           style={
             isActive
-              ? { background: '#38A09E', color: '#ffffff' }
+              ? {
+                  background: 'var(--fc-accent, #38A09E)',
+                  color: 'var(--fc-accent-contrast, #ffffff)',
+                }
               : showCompletedTick
                 ? {
-                    background: 'rgba(56,160,158,0.14)',
-                    color: '#0f766e',
-                    border: '1px solid rgba(56,160,158,0.28)',
+                    background: 'var(--fc-accent-soft, rgba(56,160,158,0.14))',
+                    color: 'var(--fc-accent, #0f766e)',
+                    border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.28))',
                   }
                 : { background: 'rgba(12,24,38,0.05)', color: '#64748b' }
           }
@@ -98,7 +101,7 @@ function StepNavItem({
                 ? 'font-semibold text-navy-900'
                 : step.is_completed
                   ? 'text-black'
-                  : 'text-navy-900 group-hover:text-teal-700'
+                  : 'text-navy-900 group-hover:text-[color:var(--fc-accent,#0f766e)]'
             }`}
           >
             {step.title}
@@ -132,10 +135,13 @@ function ProgressBar({
         <span>{completedCount} of {totalCount} complete</span>
         <span>{progressPct}%</span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full"
+        style={{ background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))' }}
+      >
         <div
-          className="h-full rounded-full bg-teal-500 transition-all duration-500"
-          style={{ width: `${progressPct}%` }}
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${progressPct}%`, background: 'var(--fc-accent, #14b8a6)' }}
         />
       </div>
     </>
@@ -304,7 +310,10 @@ export default function PathwayStepNav({
           className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm"
         >
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-teal-600">
+            <p
+              className="text-[11px] font-semibold uppercase tracking-wider"
+              style={{ color: 'var(--fc-accent, #0d9488)' }}
+            >
               {pathwayTitle}
             </p>
             <p className="mt-0.5 text-[13px] font-medium text-navy-900">
@@ -352,7 +361,7 @@ export default function PathwayStepNav({
           <div className="border-b border-slate-100 px-4 py-4">
             <Link
               href={pathwayHref}
-              className="mb-3 inline-block text-[12px] font-medium text-black transition-colors hover:text-teal-600"
+              className="mb-3 inline-block text-[12px] font-medium text-black transition-colors hover:text-[color:var(--fc-accent,#0d9488)]"
             >
               ← {pathwayTitle}
             </Link>

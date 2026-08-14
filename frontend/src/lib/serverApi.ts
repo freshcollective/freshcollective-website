@@ -152,6 +152,63 @@ export const getSpacePathways = cache(async (slug: string) => {
   return res.json()
 })
 
+// ---------------------------------------------------------------------------
+// Member-facing Gathering Series (M1). Endpoints live in
+// backend/app/spaces/_series_member_routes.py.
+// ---------------------------------------------------------------------------
+
+export const getSpaceGatheringSeries = cache(async (slug: string) => {
+  const res = await fetchWithSession(`/api/spaces/${slug}/gathering-series`)
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getSpaceGatheringSeriesDetail = cache(async (
+  slug: string, seriesSlug: string,
+) => {
+  const res = await fetchWithSession(
+    `/api/spaces/${slug}/gathering-series/${seriesSlug}`,
+  )
+  if (!res.ok) return null
+  return res.json()
+})
+
+export const getSpaceGatheringSeriesAboutBlocks = cache(async (
+  slug: string, seriesSlug: string,
+) => {
+  const res = await fetchWithSession(
+    `/api/spaces/${slug}/gathering-series/${seriesSlug}/about-blocks`,
+  )
+  if (!res.ok) return []
+  return res.json()
+})
+
+export const getSpaceGatheringSeriesPaymentOptions = cache(async (
+  slug: string, seriesSlug: string,
+) => {
+  const res = await fetchWithSession(
+    `/api/spaces/${slug}/gathering-series/${seriesSlug}/payment-options`,
+  )
+  if (!res.ok) return []
+  return res.json()
+})
+
+/** Rich About blocks for an individual Gathering. Backed by the same
+ *  polymorphic ``pathway_about_blocks`` table (``owner_kind='event'``)
+ *  populated via the creator About tab. Visibility parity with the
+ *  Event detail endpoint: published + is_public OR paid_separately OR
+ *  member. Non-200 → empty array so the member page falls back to the
+ *  legacy short-description path. */
+export const getSpaceEventAboutBlocks = cache(async (
+  slug: string, eventId: string,
+) => {
+  const res = await fetchWithSession(
+    `/api/spaces/${slug}/events/${eventId}/about-blocks`,
+  )
+  if (!res.ok) return []
+  return res.json()
+})
+
 export const getPathway = cache(async (spaceSlug: string, pathwaySlug: string) => {
   const res = await fetchWithSession(`/api/spaces/${spaceSlug}/pathways/${pathwaySlug}`)
   if (!res.ok) return null

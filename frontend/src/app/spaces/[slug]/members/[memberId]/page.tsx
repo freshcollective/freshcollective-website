@@ -9,7 +9,7 @@ interface Props {
 }
 
 function roleBadge(role: string): { label: string; bg: string; color: string } {
-  if (role === 'creator')   return { label: 'Creator',   bg: 'rgba(56,160,158,0.10)',  color: '#0f766e' }
+  if (role === 'creator')   return { label: 'Creator',   bg: 'var(--fc-accent-soft, rgba(56,160,158,0.10))', color: 'var(--fc-accent, #0f766e)' }
   if (role === 'moderator') return { label: 'Moderator', bg: 'rgba(51,65,85,0.08)',    color: '#334155' }
   return                           { label: 'Member',    bg: 'rgba(148,163,184,0.10)', color: '#64748b' }
 }
@@ -41,7 +41,7 @@ export default async function MemberProfilePage({ params }: Props) {
       <div className="mb-6">
         <Link
           href={`/spaces/${slug}/members`}
-          className="text-sm text-black transition-colors hover:text-teal-600"
+          className="text-sm text-black transition-colors hover:text-[color:var(--fc-accent,#0d9488)]"
         >
           ← Back to members
         </Link>

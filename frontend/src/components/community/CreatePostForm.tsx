@@ -244,13 +244,13 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
     <form
       ref={rootRef as React.RefObject<HTMLFormElement>}
       onSubmit={handleSubmit}
-      className="rounded-xl border border-teal-200 bg-surface px-6 py-5"
+      className="rounded-xl border border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] bg-surface px-6 py-5"
     >
       <div className="mb-4 flex items-center justify-between">
         <select
           value={postType}
           onChange={(e) => setPostType(e.target.value)}
-          className="rounded-full border border-border bg-background px-3 py-1 text-xs text-black focus:border-teal-400 focus:outline-none"
+          className="rounded-full border border-border bg-background px-3 py-1 text-xs text-black focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none"
         >
           {POST_TYPE_OPTIONS.map((t) => (
             <option key={t.value} value={t.value}>{t.icon}  {t.label}</option>
@@ -270,7 +270,7 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder={postType === 'poll' ? 'Ask a question…' : 'Title (optional)'}
-        className="mb-3 w-full rounded-lg border border-border bg-surface px-4 py-2 text-sm text-navy-900 placeholder:text-slate-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+        className="mb-3 w-full rounded-lg border border-border bg-surface px-4 py-2 text-sm text-navy-900 placeholder:text-slate-300 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]"
       />
 
       <MentionTextarea
@@ -316,7 +316,7 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
             type="checkbox"
             checked={pinOnCreate}
             onChange={(e) => setPinOnCreate(e.target.checked)}
-            className="h-4 w-4 accent-teal-500"
+            className="h-4 w-4 accent-[color:var(--fc-accent,#38A09E)]"
           />
           Add to Start here
         </label>
@@ -334,7 +334,7 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
                 name="publish-mode"
                 checked={publishMode === 'now'}
                 onChange={() => setPublishMode('now')}
-                className="h-4 w-4 accent-teal-500"
+                className="h-4 w-4 accent-[color:var(--fc-accent,#38A09E)]"
               />
               Publish now
             </label>
@@ -348,7 +348,7 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
                 checked={publishMode === 'later'}
                 onChange={() => setPublishMode('later')}
                 disabled={isDraftCollective}
-                className="h-4 w-4 accent-teal-500"
+                className="h-4 w-4 accent-[color:var(--fc-accent,#38A09E)]"
               />
               Schedule for later
             </label>
@@ -370,7 +370,7 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
                   type="date"
                   value={scheduleDate}
                   onChange={(e) => setScheduleDate(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-navy-900 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]"
                 />
                 <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-black">
                   Time
@@ -379,7 +379,7 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
                   type="time"
                   value={scheduleTime}
                   onChange={(e) => setScheduleTime(e.target.value)}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-navy-900 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]"
                 />
                 <span
                   className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide"
@@ -414,7 +414,7 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || !!imagePreview}
-            className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-black transition-colors hover:border-teal-300 hover:text-teal-600 disabled:opacity-40"
+            className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-black transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))] hover:text-[color:var(--fc-accent,#0d9488)] disabled:opacity-40"
             title="Attach image"
           >
             <span>🖼</span>

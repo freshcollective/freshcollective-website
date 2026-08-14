@@ -219,7 +219,10 @@ export default function GatheringTicketPurchaseClient({
           This Gathering has been cancelled
         </p>
       ) : isConfirmed ? (
-        <p className="mb-4 text-[15px] font-semibold text-teal-700">
+        <p
+          className="mb-4 text-[15px] font-semibold"
+          style={{ color: 'var(--fc-accent, #0f766e)' }}
+        >
           You&rsquo;re in.
         </p>
       ) : isPast ? (
@@ -269,18 +272,34 @@ export default function GatheringTicketPurchaseClient({
       {returnState === 'success' && !isConfirmed && !pollTimeoutHit && (
         <div
           className="mb-3 rounded-xl px-4 py-3"
-          style={{ background: 'rgba(56,160,158,0.06)', border: '1px solid rgba(56,160,158,0.20)' }}
+          style={{
+            background: 'var(--fc-accent-tint, rgba(56,160,158,0.06))',
+            border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.20))',
+          }}
         >
-          <p className="text-sm font-semibold text-teal-800">
+          <p
+            className="text-sm font-semibold"
+            style={{ color: 'var(--fc-accent, #0f766e)' }}
+          >
             Confirming your ticket…
           </p>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-teal-700">
+          <p
+            className="mt-1 text-[12.5px] leading-relaxed"
+            style={{ color: 'var(--fc-accent, #0f766e)' }}
+          >
             Payment has been received. We&rsquo;re confirming your place now.
           </p>
           {pollingActive && (
             <div className="mt-2 flex items-center gap-2">
-              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" aria-hidden />
-              <span className="text-[11.5px] text-teal-700">Checking…</span>
+              <span
+                className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-t-transparent"
+                style={{ borderColor: 'var(--fc-accent, #38A09E)', borderTopColor: 'transparent' }}
+                aria-hidden
+              />
+              <span
+                className="text-[11.5px]"
+                style={{ color: 'var(--fc-accent, #0f766e)' }}
+              >Checking…</span>
             </div>
           )}
         </div>
@@ -320,10 +339,19 @@ export default function GatheringTicketPurchaseClient({
       {isConfirmed && (
         <div
           className="mb-3 rounded-xl px-4 py-3"
-          style={{ background: 'rgba(56,160,158,0.08)', border: '1px solid rgba(56,160,158,0.15)' }}
+          style={{
+            background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
+            border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.15))',
+          }}
         >
-          <p className="text-sm font-semibold text-teal-700">Ticket purchased</p>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-teal-800">
+          <p
+            className="text-sm font-semibold"
+            style={{ color: 'var(--fc-accent, #0f766e)' }}
+          >Ticket purchased</p>
+          <p
+            className="mt-1 text-[12.5px] leading-relaxed"
+            style={{ color: 'var(--fc-accent, #0f766e)' }}
+          >
             Your ticket is confirmed and your place has been reserved.
           </p>
         </div>
@@ -368,13 +396,17 @@ export default function GatheringTicketPurchaseClient({
           <Link
             href={loginHref}
             className="block w-full rounded-xl py-2.5 text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
           >
             Log in to buy your ticket
           </Link>
           <p className="text-center text-[12px] text-black">
             New to Fresh Collective?{' '}
-            <Link href={signupHref} className="font-medium text-teal-700 hover:underline">
+            <Link
+              href={signupHref}
+              className="font-medium hover:underline"
+              style={{ color: 'var(--fc-accent, #0f766e)' }}
+            >
               Join us
             </Link>
           </p>
@@ -388,7 +420,7 @@ export default function GatheringTicketPurchaseClient({
           onClick={handleBuy}
           disabled={opening}
           className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
         >
           {opening ? 'Opening checkout…' : (isPending ? 'Continue checkout' : 'Buy your ticket')}
         </button>

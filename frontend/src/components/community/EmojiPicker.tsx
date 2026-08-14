@@ -70,7 +70,7 @@ export default function EmojiPicker({ onSelect, variant = 'labeled', align = 'to
   const triggerClass =
     variant === 'compact'
       ? 'flex h-7 w-7 items-center justify-center rounded text-[15px] transition-colors hover:bg-slate-100'
-      : 'flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-black transition-colors hover:border-teal-300 hover:text-teal-600'
+      : 'flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-black transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))] hover:text-[color:var(--fc-accent,#0d9488)]'
 
   const panelPosClass = align === 'bottom' ? 'top-full mt-1' : 'bottom-full mb-1'
 
@@ -119,7 +119,7 @@ export default function EmojiPicker({ onSelect, variant = 'labeled', align = 'to
                       onSelect(e)
                       setOpen(false)
                     }}
-                    className="flex h-8 w-8 items-center justify-center rounded text-[18px] hover:bg-teal-50 transition-colors"
+                    className="flex h-8 w-8 items-center justify-center rounded text-[18px] hover:bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))] transition-colors"
                     title={e}
                   >
                     {e}

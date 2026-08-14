@@ -189,9 +189,14 @@ describe('darkenHex', () => {
 
 
 describe('contrastText', () => {
-  test('picks white on the deep seeded primaries', () => {
-    // All of these are the "strong emphasis" primary from a seeded FC palette.
+  test('picks white on every dark or medium seeded primary', () => {
+    // Includes the warm-medium primaries (Sunrise, Terracotta, Honey &
+    // Cream) that a pure-WCAG argmax picker would flip to charcoal.
+    // The panel design treats these as "dark/medium" surfaces that
+    // read best with white text — see the ``contrastText`` docstring
+    // in ``collectivePalette.ts`` for the calibration rationale.
     for (const bg of [
+      // Unambiguously dark primaries
       '#5C4A33',  // Earth & Moss
       '#3A6B7A',  // Ocean & Sand
       '#3F4A73',  // Midnight
@@ -200,18 +205,28 @@ describe('contrastText', () => {
       '#6E2B3A',  // Berry & Bark
       '#6B5C8C',  // Lavender & Dusk
       '#2C556E',  // Deep Ocean
+      // Warm-medium primaries — the class the M1 fix targets
+      '#D97A3F',  // Sunrise — warm orange
+      '#B85D3D',  // Terracotta & Fig — The Grove, motivating case
+      '#944D32',  // Autumn — rust brown
+      '#A64526',  // Ember & Clay — burnt orange
+      '#C89B4A',  // Honey & Cream — gold
+      '#B87A85',  // Rose & Sage — dusty rose
+      '#C67E4E',  // Desert Bloom — tan
+      '#DE6E5A',  // Coral & Reef — coral
     ]) {
       assert.equal(contrastText(bg), '#ffffff', `expected white on ${bg}`)
     }
   })
 
-  test('picks dark charcoal on light or warm-medium primaries', () => {
-    // Palettes whose primary reads light enough that black beats white.
+  test('picks dark charcoal on genuinely light backgrounds', () => {
+    // Only palettes whose primary is a pale wash, plus obviously light
+    // hexes like backgrounds and pure white. Threshold L > 0.42.
     for (const bg of [
-      '#D97A3F',  // Sunrise — warm orange
-      '#C89B4A',  // Honey & Cream
-      '#A0B4C4',  // Snow & Sky
-      '#ECEDEA',  // Mist & Stone background (edge case, very light)
+      '#A0B4C4',  // Snow & Sky — pale blue-grey primary
+      '#F5EFE3',  // Earth & Moss background
+      '#ECEDEA',  // Mist & Stone background
+      '#FFF5E6',  // Sunrise background
       '#FFFFFF',
     ]) {
       assert.equal(contrastText(bg), '#0f172a', `expected charcoal on ${bg}`)

@@ -165,7 +165,7 @@ export default function CreateCommentForm({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || !!imagePreview}
-            className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-black transition-colors hover:border-teal-300 hover:text-teal-600 disabled:opacity-40"
+            className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-black transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))] hover:text-[color:var(--fc-accent,#0d9488)] disabled:opacity-40"
             title="Attach image"
           >
             <span>🖼</span>

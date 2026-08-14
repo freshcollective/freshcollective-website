@@ -60,18 +60,22 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   if (pathway.user_has_access && locked) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
-        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-teal-600">
+        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-[color:var(--fc-accent,#0d9488)]">
           ← Back to pathway
         </Link>
         <div
           className="rounded-2xl border bg-white p-8 text-center"
-          style={{ borderColor: 'rgba(56,160,158,0.25)' }}
+          style={{ borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.25))' }}
         >
           <div
             className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full"
-            style={{ background: 'rgba(56,160,158,0.10)' }}
+            style={{ background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))' }}
           >
-            <svg className="h-7 w-7 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <svg
+              className="h-7 w-7"
+              style={{ color: 'var(--fc-accent, #0d9488)' }}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true"
+            >
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
@@ -140,7 +144,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   if (isComingSoon) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
-        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-teal-600">
+        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-[color:var(--fc-accent,#0d9488)]">
           ← Back to pathway
         </Link>
         <div
@@ -158,7 +162,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   if (cancelled) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
-        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-teal-600">
+        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-[color:var(--fc-accent,#0d9488)]">
           ← Back to pathway
         </Link>
         <div
@@ -184,7 +188,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   if (isSubscription) {
     return (
       <div className="mx-auto max-w-xl px-4 py-12 md:px-6">
-        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-teal-600">
+        <Link href={aboutHref} className="mb-6 block text-sm text-black hover:text-[color:var(--fc-accent,#0d9488)]">
           ← Back to pathway
         </Link>
         <div
@@ -205,7 +209,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
     <div className="mx-auto max-w-2xl px-4 py-10 md:px-6">
 
       {/* Back link */}
-      <Link href={aboutHref} className="mb-6 block text-sm text-slate-400 hover:text-teal-600">
+      <Link href={aboutHref} className="mb-6 block text-sm text-slate-400 hover:text-[color:var(--fc-accent,#0d9488)]">
         ← Back to pathway
       </Link>
 
@@ -374,7 +378,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
 
           <Link
             href={aboutHref}
-            className="block text-center text-[12px] text-black hover:text-teal-600 transition-colors"
+            className="block text-center text-[12px] text-black hover:text-[color:var(--fc-accent,#0d9488)] transition-colors"
           >
             ← View pathway details
           </Link>

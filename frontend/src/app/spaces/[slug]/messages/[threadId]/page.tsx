@@ -46,7 +46,10 @@ export default async function MessageThreadPage({ params }: Props) {
       <div className="mb-4 flex items-center gap-3">
         <div
           className="flex h-10 w-10 items-center justify-center rounded-full text-[12px] font-semibold"
-          style={{ background: 'rgba(56,160,158,0.13)', color: '#0f766e' }}
+          style={{
+            background: 'var(--fc-accent-soft, rgba(56,160,158,0.13))',
+            color: 'var(--fc-accent, #0f766e)',
+          }}
         >
           {otherName.split(' ').map((p: string) => p[0]).join('').toUpperCase().slice(0, 2)}
         </div>

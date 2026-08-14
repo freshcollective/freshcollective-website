@@ -14,10 +14,7 @@ import type {
   CreatorPathway,
 } from '@/types/platform'
 import CreatorBackLink from '@/components/creator/CreatorBackLink'
-import OfferPagesShortcut from '@/app/creator-studio/offers/OfferPagesShortcut'
-import SeriesChildOfferHint from '@/app/creator-studio/offers/SeriesChildOfferHint'
-import EventForm from '../EventForm'
-import EventManagePanel from './EventManagePanel'
+import EventEditorTabs from './EventEditorTabs'
 
 async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
   try {
@@ -81,49 +78,16 @@ export default async function EditEventPage({
         {/* Internal route stays /events; visible term is Gathering. */}
         <h1 className="font-serif text-2xl text-navy-900">Edit Gathering</h1>
       </div>
-      <EventForm spaceSlug={slug} event={event} pathways={pathways} series={series} />
 
-      {/* Offer Page shortcut for this Gathering.
-          Standalone Gathering  → normal 0 / 1 / many Create/Edit card.
-          Gathering in a Series → contextual card pointing to the
-          Series Offer Page (or to creating one), so a Creator with
-          a term like EMBODY doesn't end up making a separate Offer
-          Page for every session. Backend still supports
-          ``target_kind='gathering'`` for genuine one-offs. */}
-      <div className="mt-6">
-        {(() => {
-          const parentSeries = event.series_id
-            ? series.find((s) => s.id === event.series_id) ?? null
-            : null
-          if (parentSeries) {
-            return (
-              <SeriesChildOfferHint
-                seriesId={parentSeries.id}
-                seriesTitle={parentSeries.title}
-                seriesSlug={parentSeries.slug}
-                offers={offers}
-                paidOffersEnabled={paidOffersEnabled}
-              />
-            )
-          }
-          return (
-            <OfferPagesShortcut
-              targetKind="gathering"
-              targetId={event.id}
-              targetTitle={event.title}
-              offers={offers}
-              paidOffersEnabled={paidOffersEnabled}
-              variant="compact"
-            />
-          )
-        })()}
-      </div>
-
-      <EventManagePanel
-        event={event}
+      <EventEditorTabs
         spaceSlug={slug}
-        initialBookings={bookings}
+        event={event}
+        bookings={bookings}
         members={members}
+        pathways={pathways}
+        series={series}
+        offers={offers}
+        paidOffersEnabled={paidOffersEnabled}
       />
     </div>
   )

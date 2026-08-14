@@ -113,7 +113,7 @@ export default function KnowledgeGuideNav({
           const slug = e.target.value
           if (slug) router.push(`${basePath}?section=${encodeURIComponent(slug)}`)
         }}
-        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400"
+        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[14px] text-navy-900 outline-none transition-colors focus:border-[color:var(--fc-accent,#38A09E)]"
       >
         {chapters.map((c) => (
           <option key={c.slug} value={c.slug}>
@@ -145,12 +145,12 @@ export default function KnowledgeGuideNav({
                 href={`#step-${s.slug}`}
                 className={
                   activeStepSlug === s.slug
-                    ? 'block rounded-md px-3 py-1.5 text-[13.5px] font-semibold text-teal-700'
+                    ? 'block rounded-md px-3 py-1.5 text-[13.5px] font-semibold text-[color:var(--fc-accent,#0f766e)]'
                     : 'block rounded-md px-3 py-1.5 text-[13.5px] text-navy-800 hover:bg-slate-100'
                 }
                 style={
                   activeStepSlug === s.slug
-                    ? { background: 'rgba(56,160,158,0.10)' }
+                    ? { background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))' }
                     : undefined
                 }
               >
@@ -173,12 +173,12 @@ export default function KnowledgeGuideNav({
                     href={`${basePath}?section=${encodeURIComponent(chapter.slug)}`}
                     className={
                       isActive
-                        ? 'block rounded-md px-3 py-1.5 text-[13.5px] font-semibold text-teal-700'
+                        ? 'block rounded-md px-3 py-1.5 text-[13.5px] font-semibold text-[color:var(--fc-accent,#0f766e)]'
                         : 'block rounded-md px-3 py-1.5 text-[13.5px] font-semibold text-navy-900 hover:bg-slate-100'
                     }
                     style={
                       isActive
-                        ? { background: 'rgba(56,160,158,0.10)' }
+                        ? { background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))' }
                         : undefined
                     }
                   >
@@ -203,12 +203,12 @@ export default function KnowledgeGuideNav({
                           href={`${basePath}?section=${encodeURIComponent(chapter.slug)}#step-${s.slug}`}
                           className={
                             isCurrentStep
-                              ? 'block rounded-md px-3 py-1 text-[13px] font-medium text-teal-700'
+                              ? 'block rounded-md px-3 py-1 text-[13px] font-medium text-[color:var(--fc-accent,#0f766e)]'
                               : 'block rounded-md px-3 py-1 text-[13px] text-navy-700 hover:bg-slate-100 hover:text-navy-900'
                           }
                           style={
                             isCurrentStep
-                              ? { background: 'rgba(56,160,158,0.10)' }
+                              ? { background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))' }
                               : undefined
                           }
                         >

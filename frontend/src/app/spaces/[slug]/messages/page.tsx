@@ -75,7 +75,10 @@ export default async function MessagesPage({ params }: Props) {
               ].join(' ')}
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[12px] font-semibold"
-                style={{ background: 'rgba(56,160,158,0.13)', color: '#0f766e' }}>
+                style={{
+                  background: 'var(--fc-accent-soft, rgba(56,160,158,0.13))',
+                  color: 'var(--fc-accent, #0f766e)',
+                }}>
                 {initials(t.other_user_name)}
               </div>
               <div className="min-w-0 flex-1">

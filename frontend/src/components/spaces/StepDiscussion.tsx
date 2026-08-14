@@ -24,7 +24,11 @@ function Avatar({ author }: { author: StepComment['author'] }) {
     .join('')
   return (
     <div
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-teal-100 text-[11px] font-semibold text-teal-700"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+      style={{
+        background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+        color: 'var(--fc-accent, #0f766e)',
+      }}
       aria-hidden="true"
     >
       {initials}
@@ -122,7 +126,7 @@ export default function StepDiscussion({
             className={[
               'rounded-full px-4 py-1.5 text-xs font-semibold text-white transition-colors',
               body.trim() && !posting
-                ? 'bg-teal-600 hover:bg-teal-700 cursor-pointer'
+                ? 'bg-[color:var(--fc-accent,#0d9488)] hover:bg-[color:var(--fc-accent-hover,#0f766e)] cursor-pointer'
                 : 'bg-slate-200 text-slate-400 cursor-not-allowed',
             ].join(' ')}
           >

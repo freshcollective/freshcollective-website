@@ -50,8 +50,8 @@ export default function ReactionBar({ spaceSlug, postId, commentId, initialReact
           className={[
             'flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-sm transition-colors',
             r.reacted
-              ? 'border-teal-300 bg-teal-50 text-teal-700'
-              : 'border-slate-200 bg-white text-black hover:border-teal-200 hover:bg-teal-50',
+              ? 'border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))] bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))] text-[color:var(--fc-accent,#0f766e)]'
+              : 'border-slate-200 bg-white text-black hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] hover:bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))]',
           ].join(' ')}
         >
           <span>{r.emoji}</span>
@@ -62,7 +62,7 @@ export default function ReactionBar({ spaceSlug, postId, commentId, initialReact
       <div className="relative">
         <button
           onClick={() => setPickerOpen(o => !o)}
-          className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-black transition-colors hover:border-teal-200 hover:bg-teal-50 hover:text-teal-600"
+          className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-black transition-colors hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] hover:bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))] hover:text-[color:var(--fc-accent,#0d9488)]"
           title="Add reaction"
         >
           <span className="text-base leading-none">+</span>
@@ -74,8 +74,8 @@ export default function ReactionBar({ spaceSlug, postId, commentId, initialReact
                 key={e}
                 onClick={() => toggle(e)}
                 className={[
-                  'rounded-lg p-1.5 text-lg transition-colors hover:bg-teal-50',
-                  reactionMap.get(e)?.reacted ? 'bg-teal-50 ring-1 ring-teal-300' : '',
+                  'rounded-lg p-1.5 text-lg transition-colors hover:bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))]',
+                  reactionMap.get(e)?.reacted ? 'bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))] ring-1 ring-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))]' : '',
                 ].join(' ')}
                 title={e}
               >

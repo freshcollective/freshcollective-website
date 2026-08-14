@@ -815,6 +815,7 @@ class EventCreateRequest(BaseModel):
     attendance_format: str = "online"
     venue_name: str | None = None
     venue_address: str | None = None
+    venue_locality: str | None = None
     access_instructions: str | None = None
     booking_access_type: str = "included_with_collective"
     booking_required_pathway_id: str | None = None
@@ -889,6 +890,7 @@ class EventUpdateRequest(BaseModel):
     attendance_format: str | None = None
     venue_name: str | None = None
     venue_address: str | None = None
+    venue_locality: str | None = None
     access_instructions: str | None = None
     booking_access_type: str | None = None
     booking_required_pathway_id: str | None = None
@@ -972,6 +974,7 @@ class EventResponse(BaseModel):
     attendance_format: str = "online"
     venue_name: str | None = None
     venue_address: str | None = None
+    venue_locality: str | None = None
     access_instructions: str | None = None
     booking_access_type: str = "included_with_collective"
     booking_required_pathway_id: str | None = None

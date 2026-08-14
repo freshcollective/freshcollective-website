@@ -93,7 +93,7 @@ export default function PostCard({
   }
 
   return (
-    <div className="relative group rounded-2xl border border-border bg-white px-6 py-5 transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md">
+    <div className="relative group rounded-2xl border border-border bg-white px-6 py-5 transition-all hover:-translate-y-0.5 hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] hover:shadow-md">
       {/* Stretched link — disabled when there's an interactive surface
           (poll or inline edit) so clicks reach the intended target. */}
       {!interactive && (
@@ -138,13 +138,13 @@ export default function PostCard({
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               placeholder="Title (optional)"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]"
             />
             <textarea
               value={editBody}
               onChange={(e) => setEditBody(e.target.value)}
               rows={5}
-              className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] leading-relaxed text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+              className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] leading-relaxed text-navy-900 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]"
             />
             {saveError && <p className="text-[12px] text-red-500">{saveError}</p>}
             <div className="flex justify-end gap-2">
@@ -174,7 +174,7 @@ export default function PostCard({
         ) : (
           <>
             {post.title && (
-              <h3 className="mb-2 font-serif text-lg leading-snug text-navy-900 group-hover:text-teal-700 transition-colors">
+              <h3 className="mb-2 font-serif text-lg leading-snug text-navy-900 group-hover:text-[color:var(--fc-accent,#0f766e)] transition-colors">
                 {hasPoll ? post.title : (
                   <Link href={href} className="hover:underline">{post.title}</Link>
                 )}

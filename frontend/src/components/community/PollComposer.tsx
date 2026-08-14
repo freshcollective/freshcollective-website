@@ -69,7 +69,7 @@ export default function PollComposer({ value, onChange }: Props) {
               onChange={(e) => setOption(i, e.target.value)}
               placeholder={`Option ${i + 1}`}
               maxLength={300}
-              className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 placeholder:text-slate-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+              className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 placeholder:text-slate-300 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]"
             />
             {value.options.length > 2 && (
               <button
@@ -133,7 +133,7 @@ export default function PollComposer({ value, onChange }: Props) {
               ...value,
               closes_at: e.target.value ? new Date(e.target.value).toISOString() : null,
             })}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]"
           />
         </div>
       )}
@@ -150,7 +150,7 @@ function ToggleRow({
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-teal-500"
+        className="h-4 w-4 accent-[color:var(--fc-accent,#38A09E)]"
       />
       {label}
     </label>

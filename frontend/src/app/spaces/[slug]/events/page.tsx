@@ -1,8 +1,29 @@
 import Link from 'next/link'
-import { getSpace, getSpaceEvents, getSpaceMembers, getMySpaceAccess, getMyPasses } from '@/lib/serverApi'
-import GatheringsView from '@/components/spaces/GatheringsView'
+import {
+  getSpace,
+  getSpaceEvents,
+  getSpaceMembers,
+  getMySpaceAccess,
+  getMyPasses,
+  getSpaceGatheringSeries,
+} from '@/lib/serverApi'
+import MemberGatheringsGrid from '@/components/spaces/MemberGatheringsGrid'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
 import type { EventSummary, MemberProfile, SpaceResponse, SpaceAccessStatus, AccessPassSummary } from '@/types/platform'
+
+interface SeriesSummary {
+  id: string
+  slug: string
+  title: string
+  description: string | null
+  cover_image_url: string | null
+  starts_at: string
+  ends_at: string | null
+  total_gathering_count: number
+  upcoming_gathering_count: number
+  has_purchasable_options: boolean
+  access: { has_access: boolean; option_name: string | null }
+}
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -12,13 +33,17 @@ export default async function SpaceEventsPage({ params }: Props) {
   const { slug } = await params
 
   let passes: AccessPassSummary[] = []
-  const [space, events, pastEvents, members, access] = await Promise.all([
+  const [space, events, pastEvents, members, access, series] = await Promise.all([
     getSpace(slug),
     getSpaceEvents(slug, 'upcoming'),
     getSpaceEvents(slug, 'archive'),
     getSpaceMembers(slug),
     getMySpaceAccess(slug),
-  ]) as [SpaceResponse | null, EventSummary[], EventSummary[], MemberProfile[], SpaceAccessStatus | null]
+    getSpaceGatheringSeries(slug),
+  ]) as [
+    SpaceResponse | null, EventSummary[], EventSummary[], MemberProfile[],
+    SpaceAccessStatus | null, SeriesSummary[],
+  ]
 
   const hasArchive = pastEvents.length > 0
 
@@ -28,9 +53,14 @@ export default async function SpaceEventsPage({ params }: Props) {
   }
 
   const activePasses = passes.filter((p) => p.status === 'active' && p.pass_type === 'term_pass')
-  const isMember = access?.is_member ?? false
 
-  const timezone = space?.timezone ?? 'Australia/Melbourne'
+  // Standalone Gatherings only on the landing — Series children
+  // live inside their Series page per the U1 information model.
+  // (Backend already filters events cleanly; the client-side
+  // filter here is deliberate insurance against Series children
+  // ever slipping through the upcoming feed.)
+  const standaloneEvents = events.filter((e) => !e.series_id)
+
   const memberCount = members.filter((m) => m.space_role === 'learner').length
   const leaderCount = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
 
@@ -83,7 +113,10 @@ export default async function SpaceEventsPage({ params }: Props) {
             <div
               key={pass.id}
               className="mb-6 rounded-2xl border p-5"
-              style={{ borderColor: 'rgba(56,160,158,0.25)', background: 'rgba(56,160,158,0.04)' }}
+              style={{
+                borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.25))',
+                background: 'var(--fc-accent-tint, rgba(56,160,158,0.04))',
+              }}
             >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
@@ -97,7 +130,10 @@ export default async function SpaceEventsPage({ params }: Props) {
                 </div>
                 <span
                   className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-                  style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
+                  style={{
+                    background: 'var(--fc-accent-soft, rgba(56,160,158,0.12))',
+                    color: 'var(--fc-accent, #0f766e)',
+                  }}
                 >
                   Active
                 </span>
@@ -138,7 +174,7 @@ export default async function SpaceEventsPage({ params }: Props) {
                       All included sessions are booked for this term. Message Lindsey if you need help changing a session.
                     </p>
                   ) : (
-                    <p className="mt-2 text-[12px] leading-relaxed" style={{ color: 'rgba(56,160,158,0.80)' }}>
+                    <p className="mt-2 text-[12px] leading-relaxed text-slate-600">
                       Book sessions below, or message Lindsey and she can lock in your regular slot.
                     </p>
                   )}
@@ -148,8 +184,16 @@ export default async function SpaceEventsPage({ params }: Props) {
           )
         })}
 
-        {/* List / Calendar toggle + content */}
-        <GatheringsView events={events} spaceSlug={slug} timezone={timezone} isMember={isMember} />
+        {/* One card per Series + one card per standalone Gathering.
+            The former "GatheringsView" list/calendar toggle that
+            rendered every child Event as its own top-level card is
+            retired in favour of this Series-collapsed model — see
+            docs/product-brief.md and the U1 M1 spec. */}
+        <MemberGatheringsGrid
+          spaceSlug={slug}
+          series={series}
+          standaloneEvents={standaloneEvents}
+        />
 
         {hasArchive && (
           <div className="mt-8 flex justify-center">

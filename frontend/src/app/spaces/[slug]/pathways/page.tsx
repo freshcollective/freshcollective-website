@@ -61,7 +61,10 @@ export default async function SpacePathwaysPage({ params }: Props) {
         </div>
 
         {active.length === 0 && soon.length === 0 ? (
-          <div className="rounded-2xl border border-teal-100 bg-white px-7 py-12 text-center">
+          <div
+            className="rounded-2xl border bg-white px-7 py-12 text-center"
+            style={{ borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.20))' }}
+          >
             <p className="font-serif text-lg text-navy-800">No pathways yet.</p>
             <p className="mt-1.5 text-sm text-black">
               Pathways will appear here once they are published.

@@ -175,7 +175,7 @@ export default function ReportModal({ kind, targetId, onClose, onSubmitted }: Pr
                     className={[
                       'flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 transition-colors',
                       category === value
-                        ? 'border-teal-400 bg-teal-50/60'
+                        ? 'border-[color:var(--fc-accent,#38A09E)] bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))]'
                         : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
                     ].join(' ')}
                   >
@@ -185,7 +185,7 @@ export default function ReportModal({ kind, targetId, onClose, onSubmitted }: Pr
                       value={value}
                       checked={category === value}
                       onChange={() => setCategory(value)}
-                      className="mt-0.5 h-4 w-4 accent-teal-600"
+                      className="mt-0.5 h-4 w-4 accent-[color:var(--fc-accent,#0d9488)]"
                     />
                     <span className="text-[13.5px] text-navy-900">{cat_label}</span>
                   </label>
@@ -207,7 +207,7 @@ export default function ReportModal({ kind, targetId, onClose, onSubmitted }: Pr
                     ? 'Tell us what happened.'
                     : 'Add a short note to help the reviewer.'
                 }
-                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13.5px] leading-relaxed text-navy-900 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13.5px] leading-relaxed text-navy-900 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]"
               />
             </label>
 

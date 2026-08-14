@@ -9,7 +9,7 @@ function roleLabel(role: string): string {
 }
 
 function roleBadgeClass(role: string): string {
-  if (role === 'creator') return 'bg-teal-100 text-teal-700'
+  if (role === 'creator') return 'bg-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))] text-[color:var(--fc-accent,#0f766e)]'
   if (role === 'moderator') return 'bg-navy-100 text-navy-700'
   return 'bg-slate-100 text-slate-500'
 }
@@ -29,13 +29,13 @@ export default function MemberCard({ member, spaceSlug }: MemberCardProps) {
   return (
     <Link
       href={`/spaces/${spaceSlug}/members/${member.id}`}
-      className="group block rounded-2xl border border-border bg-white px-5 py-5 transition-all hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-sm"
+      className="group block rounded-2xl border border-border bg-white px-5 py-5 transition-all hover:-translate-y-0.5 hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] hover:shadow-sm"
     >
       <div className="flex items-start gap-4">
         <Avatar name={member.display_name} avatarUrl={member.avatar_url} size="md" />
         <div className="flex-1 min-w-0">
           <div className="mb-0.5 flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-navy-800 group-hover:text-teal-700 transition-colors">
+            <span className="text-sm font-medium text-navy-800 group-hover:text-[color:var(--fc-accent,#0f766e)] transition-colors">
               {member.display_name}
             </span>
             {member.space_role !== 'learner' && (

@@ -400,6 +400,9 @@ class EventSummary(BaseModel):
     gathering_type: str = "other"
     attendance_format: str = "online"
     venue_name: str | None = None
+    # Member-safe locality — same derivation rule as the detail
+    # endpoint (see ``_derive_venue_locality``); always exposed.
+    venue_locality: str | None = None
     # Human name of the Gathering's host (the User who created the row).
     # Kept as a plain string so the member-facing "Hosted by" line
     # doesn't need an extra profile round-trip.
@@ -425,6 +428,12 @@ class EventDetail(EventSummary):
     # these for non-attendees so the schema always includes them.
     venue_address: str | None = None
     access_instructions: str | None = None
+    # Member-safe locality (suburb + region) derived server-side from
+    # ``venue_address``. Always exposed — filters out street-address
+    # fragments so a public reader can see "South Croydon, VIC" while
+    # ``venue_address`` (the full street address) stays behind the
+    # attendee gate.
+    venue_locality: str | None = None
 
 
 class SeriesBookingResponse(BaseModel):
@@ -664,7 +673,15 @@ class PublicPaymentOptionSchedule(BaseModel):
     Offer Page. Frontend uses ``schedule_type`` to decide the CTA
     label (Pay in full vs Weekly instalments) and which checkout
     endpoint to call. Recurring instalments are exposed for display
-    but not yet purchasable — the checkout endpoint returns 503."""
+    but not yet purchasable — the checkout endpoint returns 503.
+
+    ``is_member_checkoutable`` is the single source of truth for the
+    member surface: True only when unified checkout can actually
+    complete this schedule end-to-end today (``schedule_type ==
+    'pay_in_full'``). Everything else (recurring_installments,
+    manual, draft) is False. The member frontend must not surface a
+    payment method the backend would refuse — this flag keeps the two
+    layers honest without the frontend re-encoding checkout policy."""
 
     id: str
     name: str
@@ -677,6 +694,7 @@ class PublicPaymentOptionSchedule(BaseModel):
     interval: str | None = None
     currency: str
     buyer_note: str | None = None
+    is_member_checkoutable: bool = False
 
 
 class PublicPaymentOption(BaseModel):

@@ -269,7 +269,7 @@ export default async function StepPage({ params }: Props) {
         <div className="mb-6">
           <Link
             href={pathwayHref}
-            className="font-serif text-[15px] text-navy-900 transition-colors hover:text-teal-700"
+            className="font-serif text-[15px] text-navy-900 transition-colors hover:text-[color:var(--fc-accent,#0f766e)]"
           >
             {overview.title}
           </Link>

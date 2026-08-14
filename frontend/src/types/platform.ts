@@ -321,6 +321,11 @@ export interface EventSummary {
   gathering_type: string
   attendance_format: 'online' | 'in_person' | 'hybrid'
   venue_name: string | null
+  /** Member-safe locality (suburb + region) derived server-side
+   *  from ``venue_address``; always exposed. Filters out street-
+   *  address fragments — see ``_derive_venue_locality`` on the
+   *  backend. */
+  venue_locality: string | null
   /** Display name of the Gathering's host (User who created the row). */
   host_name: string | null
   /** Public recording URL — surfaces the "Watch replay" CTA on

@@ -46,7 +46,7 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
           : 'Continue'
 
   const baseClass = 'group flex flex-col overflow-hidden rounded-2xl border border-border bg-white'
-  const hoverClass = 'shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-teal-200/60'
+  const hoverClass = 'shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.20))]'
   const cardClass = `${baseClass} ${isComingSoon ? 'opacity-75' : hoverClass}`
 
   const progressBar = !isComingSoon && !locked && pathway.step_count > 0 ? (
@@ -55,8 +55,14 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
         <span>{pathway.completed_count} of {pathway.step_count} steps</span>
         <span>{progressPct}%</span>
       </div>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-teal-100">
-        <div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${progressPct}%` }} />
+      <div
+        className="h-1.5 w-full overflow-hidden rounded-full"
+        style={{ background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))' }}
+      >
+        <div
+          className="h-full rounded-full transition-all"
+          style={{ width: `${progressPct}%`, background: 'var(--fc-accent, #14b8a6)' }}
+        />
       </div>
     </div>
   ) : null
@@ -111,7 +117,10 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
                 </span>
               )}
               <div className="ml-auto text-right">
-                <span className="block text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
+                <span
+                  className="block text-[13px] font-semibold transition-opacity group-hover:opacity-80"
+                  style={{ color: 'var(--fc-accent, #0f766e)' }}
+                >
                   Learn more →
                 </span>
                 <span className="block text-[10px] text-black mt-0.5">
@@ -152,7 +161,10 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
                 style={
                   badgeLabel === 'Free'
                     ? { background: 'rgba(16,185,129,0.10)', color: '#065F46' }
-                    : { background: 'rgba(56,160,158,0.10)', color: '#073B3A' }
+                    : {
+                        background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+                        color: 'var(--fc-accent, #0f766e)',
+                      }
                 }
               >
                 {badgeLabel}
@@ -161,13 +173,14 @@ export default function PathwayProgressCard({ pathway, spaceSlug }: Props) {
             <div className="ml-auto flex items-center gap-2">
               <Link
                 href={aboutHref}
-                className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-600"
+                className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-black transition-colors hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] hover:text-[color:var(--fc-accent,#0d9488)]"
               >
                 About
               </Link>
               <Link
                 href={overviewHref}
-                className="text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
+                className="text-[13px] font-semibold transition-opacity group-hover:opacity-80"
+                style={{ color: 'var(--fc-accent, #0f766e)' }}
               >
                 {ctaLabel} →
               </Link>

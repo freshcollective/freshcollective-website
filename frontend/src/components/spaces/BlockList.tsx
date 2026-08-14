@@ -201,7 +201,7 @@ export function renderBlocks(
               href={block.embed_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="group flex items-center gap-3 rounded-xl border border-border bg-white px-4 py-3 hover:border-teal-300"
+              className="group flex items-center gap-3 rounded-xl border border-border bg-white px-4 py-3 hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))]"
             >
               <span className="text-black">▶</span>
               <span className="text-[14px] font-medium text-navy-900 group-hover:underline">
@@ -239,7 +239,7 @@ export function renderBlocks(
         <a
           href={resolveUrl(block.media_asset.file_url)}
           download
-          className="group inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-3 text-[14px] font-medium text-navy-900 transition-colors hover:border-teal-300 hover:text-teal-700"
+          className="group inline-flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-3 text-[14px] font-medium text-navy-900 transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))] hover:text-[color:var(--fc-accent,#0f766e)]"
         >
           <span>↓</span>
           {block.label || block.media_asset.title}
@@ -255,7 +255,7 @@ export function renderBlocks(
           href={block.embed_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="group flex items-start justify-between gap-4 rounded-xl border border-border bg-white px-4 py-3 transition-colors hover:border-teal-300"
+          className="group flex items-start justify-between gap-4 rounded-xl border border-border bg-white px-4 py-3 transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))]"
         >
           <div>
             <p className="text-[14px] font-medium text-navy-900 group-hover:underline underline-offset-2">
@@ -454,17 +454,20 @@ export function renderBlocks(
           target={isFile ? undefined : '_blank'}
           rel={isFile ? undefined : 'noopener noreferrer'}
           download={downloadName}
-          className="group my-5 flex items-start gap-4 rounded-xl border border-border bg-white px-5 py-4 transition-colors hover:border-teal-300"
+          className="group my-5 flex items-start gap-4 rounded-xl border border-border bg-white px-5 py-4 transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))]"
         >
           <span
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[16px]"
-            style={{ background: 'rgba(56,160,158,0.08)', color: '#38A09E' }}
+            style={{
+              background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
+              color: 'var(--fc-accent, #0f766e)',
+            }}
           >
             ◰
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <p className="truncate text-[15px] font-semibold text-navy-900 group-hover:text-teal-700">{title}</p>
+              <p className="truncate text-[15px] font-semibold text-navy-900 group-hover:text-[color:var(--fc-accent,#0f766e)]">{title}</p>
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-500">
                 {cardTypeLabel}
               </span>
@@ -473,7 +476,7 @@ export function renderBlocks(
               <p className="mt-1 text-[13px] leading-relaxed text-black">{description}</p>
             )}
           </div>
-          <span className="shrink-0 self-center rounded-full border border-border bg-white px-3 py-1.5 text-[12px] font-medium text-black group-hover:border-teal-300 group-hover:text-teal-700">
+          <span className="shrink-0 self-center rounded-full border border-border bg-white px-3 py-1.5 text-[12px] font-medium text-black group-hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))] group-hover:text-[color:var(--fc-accent,#0f766e)]">
             {ctaLabel} {isFile ? '↓' : '↗'}
           </span>
         </a>,

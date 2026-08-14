@@ -93,7 +93,7 @@ export default function CommunitySearch({ spaceSlug, channelSlug }: Props) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search conversations…"
-          className="w-full rounded-full border border-border bg-white px-4 py-2 text-sm text-navy-900 placeholder:text-slate-400 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100"
+          className="w-full rounded-full border border-border bg-white px-4 py-2 text-sm text-navy-900 placeholder:text-slate-400 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]"
         />
       </div>
 
@@ -154,7 +154,7 @@ function SearchResult({ hit, spaceSlug, query }: { hit: SearchHit; spaceSlug: st
   return (
     <Link
       href={href}
-      className="block rounded-xl bg-white px-4 py-3 transition-colors hover:border-teal-300"
+      className="block rounded-xl bg-white px-4 py-3 transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))]"
       style={{ border: '1px solid rgba(12,24,38,0.08)' }}
     >
       <div className="mb-1 flex items-center gap-2">

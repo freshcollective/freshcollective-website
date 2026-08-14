@@ -41,7 +41,7 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
     : null
 
   const baseClass = 'group flex flex-col overflow-hidden rounded-2xl border border-border bg-white'
-  const hoverClass = 'shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-teal-200/60'
+  const hoverClass = 'shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.20))]'
   const cardClass = `${baseClass} ${isComingSoon ? 'opacity-75' : hoverClass}`
 
   const descriptionEl = pathway.description ? (
@@ -94,7 +94,10 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
                 {offerLabel && (
                   <span
                     className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-                    style={{ background: 'rgba(56,160,158,0.10)', color: '#073B3A' }}
+                    style={{
+                      background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+                      color: 'var(--fc-accent, #0f766e)',
+                    }}
                   >
                     {offerLabel}
                   </span>
@@ -112,7 +115,10 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
                 )}
               </div>
               <div className="ml-auto text-right">
-                <span className="block text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
+                <span
+                  className="block text-[13px] font-semibold transition-opacity group-hover:opacity-80"
+                  style={{ color: 'var(--fc-accent, #0f766e)' }}
+                >
                   Learn more →
                 </span>
                 {!isIncludedWithOffer && (
@@ -160,8 +166,14 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
                     badge.variant === 'free'
                       ? { background: 'rgba(16,185,129,0.10)', color: '#065F46' }
                       : badge.variant === 'included'
-                      ? { background: 'rgba(56,160,158,0.10)', color: '#073B3A' }
-                      : { background: 'rgba(56,160,158,0.12)', color: '#0f766e' }
+                      ? {
+                          background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+                          color: 'var(--fc-accent, #0f766e)',
+                        }
+                      : {
+                          background: 'var(--fc-accent-soft, rgba(56,160,158,0.12))',
+                          color: 'var(--fc-accent, #0f766e)',
+                        }
                   }
                 >
                   {badge.label}
@@ -175,7 +187,8 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
               {anonIncluded ? (
                 <Link
                   href="/login"
-                  className="text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
+                  className="text-[13px] font-semibold transition-opacity group-hover:opacity-80"
+                  style={{ color: 'var(--fc-accent, #0f766e)' }}
                 >
                   Join to begin →
                 </Link>
@@ -183,13 +196,14 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
                 <>
                   <Link
                     href={aboutHref}
-                    className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-600"
+                    className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-black transition-colors hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] hover:text-[color:var(--fc-accent,#0d9488)]"
                   >
                     About
                   </Link>
                   <Link
                     href={overviewHref}
-                    className="text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
+                    className="text-[13px] font-semibold transition-opacity group-hover:opacity-80"
+                    style={{ color: 'var(--fc-accent, #0f766e)' }}
                   >
                     Begin →
                   </Link>

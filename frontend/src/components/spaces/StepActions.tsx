@@ -79,7 +79,7 @@ export default function StepActions({
             </label>
             <p
               className="mt-1 text-[12px] font-medium uppercase tracking-[0.14em]"
-              style={{ color: '#0f766e' }}
+              style={{ color: 'var(--fc-accent, #0f766e)' }}
             >
               Private to you
             </p>
@@ -103,9 +103,8 @@ export default function StepActions({
             placeholder="Write as much or as little as feels right."
             className="w-full resize-none rounded-xl border bg-white px-5 py-4 text-[15px] leading-relaxed text-navy-900 placeholder:text-slate-300 transition-colors focus:outline-none focus:ring-2"
             style={{
-              borderColor: 'rgba(56,160,158,0.20)',
+              borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.20))',
               fontFamily: 'inherit',
-              // focus ring via inline style — Tailwind ring uses default teal
             }}
           />
           <div className="mt-3 flex items-center justify-between">
@@ -114,13 +113,16 @@ export default function StepActions({
               disabled={!notes.trim()}
               className="rounded-full px-4 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
               style={{
-                background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)',
               }}
             >
               Save reflection
             </button>
             {notesSaved && (
-              <span className="text-[12px]" style={{ color: '#0f766e' }}>
+              <span
+                className="text-[12px]"
+                style={{ color: 'var(--fc-accent, #0f766e)' }}
+              >
                 Saved.
               </span>
             )}
@@ -135,16 +137,20 @@ export default function StepActions({
             className={[
               'rounded-2xl border px-6 py-5 transition-all duration-500',
               justCompleted
-                ? 'border-teal-200 bg-teal-50/50'
+                ? 'border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))]'
                 : 'border-border bg-surface',
             ].join(' ')}
           >
             <div className="flex items-start gap-3.5">
               <div
                 className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-                style={{ background: 'rgba(56,160,158,0.16)' }}
+                style={{ background: 'var(--fc-accent-soft, rgba(56,160,158,0.16))' }}
               >
-                <span className="text-[14px]" style={{ color: '#0f766e' }} aria-hidden="true">✓</span>
+                <span
+                  className="text-[14px]"
+                  style={{ color: 'var(--fc-accent, #0f766e)' }}
+                  aria-hidden="true"
+                >✓</span>
               </div>
               <div>
                 <p className="font-serif text-[17px] leading-snug text-navy-900">

@@ -145,7 +145,7 @@ const MentionTextarea = forwardRef<MentionTextareaHandle, Props>(function Mentio
         rows={rows}
         placeholder={placeholder}
         aria-label={ariaLabel}
-        className={className ?? 'w-full resize-none rounded-lg border border-border bg-surface px-4 py-3 text-sm leading-relaxed text-navy-900 placeholder:text-slate-300 focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-100'}
+        className={className ?? 'w-full resize-none rounded-lg border border-border bg-surface px-4 py-3 text-sm leading-relaxed text-navy-900 placeholder:text-slate-300 focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none focus:ring-2 focus:ring-[color:var(--fc-accent-soft,rgba(56,160,158,0.10))]'}
       />
       {open && suggestions.length > 0 && (
         <div

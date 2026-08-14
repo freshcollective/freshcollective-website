@@ -1070,7 +1070,14 @@ class Event(Base):
         String(16), nullable=False, default="online", server_default="online"
     )
     venue_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Full private street address — attendee-gated on the API.
     venue_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Member-safe locality (suburb + region), always exposed. Explicit
+    # Creator-controlled field introduced in migration 114 to replace
+    # the prior derivation from ``venue_address`` (which wasn't robust
+    # enough as a privacy boundary). Kept short (160) because it's a
+    # locality label, not free-form copy.
+    venue_locality: Mapped[str | None] = mapped_column(String(160), nullable=True)
     access_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
     booking_access_type: Mapped[str] = mapped_column(
         String(32), nullable=False,

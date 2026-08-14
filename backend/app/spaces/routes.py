@@ -93,6 +93,24 @@ from app.models.platform import PathwayStepManualRelease  # noqa: E402
 from app.services.notification_service import trigger_booking_confirmed, trigger_event_booking_creator  # noqa: E402
 
 
+def _schedule_is_member_checkoutable(schedule) -> bool:
+    """Single source of truth for "can a member complete unified
+    checkout for this PaymentOptionSchedule today?"
+
+    Today that is ``schedule_type == 'pay_in_full'`` and
+    ``status == 'published'``. Recurring instalments live in the
+    schema but the unified ``POST /api/checkout`` still 503s them —
+    the member surface must never advertise a payment method the
+    backend would refuse. When the Commerce milestone lands and
+    ``recurring_installments`` becomes end-to-end supported this is
+    the only place to update. See the finite-instalment audit under
+    ``docs/`` / ``services/checkout_orchestration.py:241``.
+    """
+    if getattr(schedule, "status", None) != "published":
+        return False
+    return getattr(schedule, "schedule_type", None) == "pay_in_full"
+
+
 def _series_info_for(event, db) -> tuple[str | None, str | None, str | None]:
     """Return ``(title, slug, cover_image_url)`` for the Event's
     semantic Series, or ``(None, None, None)`` when the event isn't
@@ -1555,6 +1573,7 @@ def list_events(
             gathering_type=getattr(e, 'gathering_type', 'other') or 'other',
             attendance_format=getattr(e, 'attendance_format', 'online') or 'online',
             venue_name=getattr(e, 'venue_name', None),
+            venue_locality=getattr(e, 'venue_locality', None),
             host_name=host_names.get(e.created_by_id) or None,
             recording_url=e.recording_url,
             # Stage 4: standalone paid Gathering fields for the member LIST
@@ -2324,6 +2343,11 @@ def get_event(
         "attendance_format": getattr(event, 'attendance_format', 'online') or 'online',
         "venue_name": getattr(event, 'venue_name', None),
         "venue_address": getattr(event, 'venue_address', None) if show_sensitive else None,
+        # Member-safe locality (suburb + region). Explicit Creator-
+        # controlled column since migration 114 — always exposed.
+        # The full ``venue_address`` above stays behind the attendee
+        # gate; the two fields are independent.
+        "venue_locality": getattr(event, 'venue_locality', None),
         "access_instructions": getattr(event, 'access_instructions', None) if show_sensitive else None,
         "host_name": (
             (db.query(User.name).filter(User.id == event.created_by_id).scalar() or '').strip() or None
@@ -3488,6 +3512,7 @@ def _build_series_payment_options(series_id: str, db: Session) -> list[PublicPay
                 interval=s.interval,
                 currency=s.currency,
                 buyer_note=s.buyer_note,
+                is_member_checkoutable=_schedule_is_member_checkoutable(s),
             )
         )
     return [
@@ -3760,3 +3785,13 @@ def get_public_offer_page(
         creator=_build_offer_creator(space, db),
         user_has_target_access=has_access,
     )
+
+
+# ---------------------------------------------------------------------------
+# Member-facing Gathering Series endpoints (M1). Imported here for the
+# side effect of registering the endpoints on ``router`` — mirrors the
+# ``_gathering_series_routes`` / ``_space_payment_options_routes``
+# pattern used on the creator side.
+# ---------------------------------------------------------------------------
+
+from app.spaces import _series_member_routes as _series_member_routes  # noqa: E402,F401

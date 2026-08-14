@@ -170,10 +170,10 @@ export default function EventCard({
                 style={{
                   background: access.value === 'paid_separately' ? 'rgba(212,176,72,0.14)'
                     : access.value === 'invitation_only' ? 'rgba(126,66,145,0.14)'
-                    : 'rgba(56,160,158,0.10)',
+                    : 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
                   color: access.value === 'paid_separately' ? '#8A6A15'
                     : access.value === 'invitation_only' ? '#6B2C7A'
-                    : '#0f766e',
+                    : 'var(--fc-accent, #0f766e)',
                 }}
               >
                 {access.short}
@@ -202,13 +202,16 @@ export default function EventCard({
             <span className="text-xs text-black">{time}</span>
             {seriesLabel && (
               <span className="rounded-full px-2.5 py-0.5 text-xs font-medium"
-                style={{ background: 'rgba(56,160,158,0.07)', color: '#38A09E' }}>
+                style={{
+                  background: 'var(--fc-accent-tint, rgba(56,160,158,0.07))',
+                  color: 'var(--fc-accent, #0f766e)',
+                }}>
                 {seriesLabel}
               </span>
             )}
           </div>
 
-          <p className="font-medium text-navy-900 transition-colors group-hover:text-teal-700">
+          <p className="font-medium text-navy-900 transition-colors group-hover:text-[color:var(--fc-accent,#0f766e)]">
             {event.title}
           </p>
           {oneLine && (
@@ -235,7 +238,7 @@ export default function EventCard({
           )}
         </div>
 
-        <span className="shrink-0 self-center text-black transition-colors group-hover:text-teal-400">
+        <span className="shrink-0 self-center text-black transition-colors group-hover:text-[color:var(--fc-accent,#38A09E)]">
           →
         </span>
       </Link>
@@ -249,7 +252,7 @@ export default function EventCard({
               target="_blank"
               rel="noopener noreferrer"
               className="rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
             >
               Watch replay →
             </a>
@@ -271,7 +274,10 @@ export default function EventCard({
             <>
               <span
                 className="rounded-full px-2.5 py-0.5 text-xs font-semibold"
-                style={{ background: 'rgba(56,160,158,0.10)', color: '#38A09E' }}
+                style={{
+                  background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
+                  color: 'var(--fc-accent, #0f766e)',
+                }}
               >
                 You&rsquo;re in ✓
               </span>
@@ -298,7 +304,7 @@ export default function EventCard({
               <Link
                 href={`/spaces/${spaceSlug}/events/${event.id}`}
                 className="rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
               >
                 Buy your ticket
               </Link>
@@ -306,7 +312,8 @@ export default function EventCard({
           ) : !isMember ? (
             <Link
               href={`/spaces/${spaceSlug}/about`}
-              className="text-xs font-medium text-teal-600 hover:underline"
+              className="text-xs font-medium hover:underline"
+              style={{ color: 'var(--fc-accent, #0d9488)' }}
             >
               Join to reserve →
             </Link>
@@ -322,7 +329,7 @@ export default function EventCard({
             <button
               onClick={onBook}
               className="rounded-lg px-4 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+              style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
             >
               Reserve your place
             </button>
@@ -342,7 +349,11 @@ export default function EventCard({
             && onBookSeries && (
             <button
               onClick={onBookSeries}
-              className="rounded-lg border border-teal-200 px-3 py-1.5 text-xs font-medium text-teal-700 transition-colors hover:bg-teal-50"
+              className="rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))]"
+              style={{
+                borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.30))',
+                color: 'var(--fc-accent, #0f766e)',
+              }}
             >
               Reserve every Gathering in this series
             </button>

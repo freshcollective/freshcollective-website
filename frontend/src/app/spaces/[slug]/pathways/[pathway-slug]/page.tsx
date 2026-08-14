@@ -79,7 +79,9 @@ function StepRow({
       </div>
 
       {!locked && (
-        <span className="shrink-0 self-center text-black transition-colors group-hover:text-teal-500">
+        <span
+          className="shrink-0 self-center text-black transition-colors group-hover:text-[color:var(--fc-accent,#0d9488)]"
+        >
           →
         </span>
       )}
@@ -106,8 +108,8 @@ function StepRow({
       className={[
         'group flex items-start gap-4 rounded-2xl border px-5 py-4 transition-all hover:-translate-y-0.5 hover:shadow-sm',
         step.is_completed
-          ? 'border-teal-200 bg-teal-50/40 hover:border-teal-300'
-          : 'border-border bg-white hover:border-teal-200',
+          ? 'border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))] hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))]'
+          : 'border-border bg-white hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))]',
       ].join(' ')}
     >
       {inner}
@@ -126,11 +128,17 @@ function PassWidget({ pass, spaceSlug }: { pass: AccessPassSummary; spaceSlug: s
   return (
     <div
       className="mb-6 rounded-2xl border p-5"
-      style={{ borderColor: 'rgba(56,160,158,0.25)', background: 'rgba(56,160,158,0.04)' }}
+      style={{
+        borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.25))',
+        background: 'var(--fc-accent-tint, rgba(56,160,158,0.04))',
+      }}
     >
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <p className="text-[13px] font-semibold text-teal-700">
+          <p
+            className="text-[13px] font-semibold"
+            style={{ color: 'var(--fc-accent, #0f766e)' }}
+          >
             Your EMBODY pass — {pass.option_name ?? 'Term Pass'}
           </p>
           <p className="mt-0.5 text-[12px] text-black">
@@ -140,7 +148,10 @@ function PassWidget({ pass, spaceSlug }: { pass: AccessPassSummary; spaceSlug: s
         </div>
         <span
           className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
-          style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}
+          style={{
+            background: 'var(--fc-accent-soft, rgba(56,160,158,0.12))',
+            color: 'var(--fc-accent, #0f766e)',
+          }}
         >
           Active
         </span>
@@ -159,7 +170,10 @@ function PassWidget({ pass, spaceSlug }: { pass: AccessPassSummary; spaceSlug: s
             </div>
             <div className="flex items-center justify-between text-[12px]">
               <span className="text-black">Available to book</span>
-              <span className={`font-semibold ${remaining > 0 ? 'text-teal-700' : 'text-black'}`}>{remaining}</span>
+              <span
+                className="font-semibold"
+                style={{ color: remaining > 0 ? 'var(--fc-accent, #0f766e)' : '#000' }}
+              >{remaining}</span>
             </div>
           </div>
           <div
@@ -176,7 +190,7 @@ function PassWidget({ pass, spaceSlug }: { pass: AccessPassSummary; spaceSlug: s
               All included sessions are booked for this term. Message Lindsey if you need help changing a session.
             </p>
           ) : (
-            <p className="mt-2 text-[12px] leading-relaxed text-teal-600/80">
+            <p className="mt-2 text-[12px] leading-relaxed text-slate-600">
               Need help booking? Message Lindsey and she can book your regular sessions for you.
             </p>
           )}
@@ -203,12 +217,18 @@ function SuccessBanner({ pass, spaceSlug, pathwaySlug }: { pass: AccessPassSumma
   return (
     <div
       className="mb-6 rounded-2xl border p-6"
-      style={{ borderColor: 'rgba(56,160,158,0.30)', background: 'rgba(56,160,158,0.07)' }}
+      style={{
+        borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.30))',
+        background: 'var(--fc-accent-tint, rgba(56,160,158,0.07))',
+      }}
     >
       <div className="mb-3 flex items-center gap-3">
         <div
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px]"
-          style={{ background: 'rgba(56,160,158,0.15)', color: '#0f766e' }}
+          style={{
+            background: 'var(--fc-accent-soft, rgba(56,160,158,0.15))',
+            color: 'var(--fc-accent, #0f766e)',
+          }}
         >
           ✓
         </div>
@@ -233,7 +253,11 @@ function SuccessBanner({ pass, spaceSlug, pathwaySlug }: { pass: AccessPassSumma
         </Link>
         <Link
           href={`/spaces/${spaceSlug}/pathways/${pathwaySlug}/how-your-pass-works`}
-          className="inline-block rounded-xl border border-teal-200 bg-white px-4 py-2 text-[13px] font-medium text-teal-700 transition-colors hover:bg-teal-50"
+          className="inline-block rounded-xl border bg-white px-4 py-2 text-[13px] font-medium transition-colors hover:bg-[color:var(--fc-accent-tint,rgba(56,160,158,0.06))]"
+          style={{
+            borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.30))',
+            color: 'var(--fc-accent, #0f766e)',
+          }}
         >
           How your pass works
         </Link>
@@ -366,7 +390,7 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
       <div className="mb-6">
         <Link
           href={`/spaces/${slug}/pathways`}
-          className="text-sm text-black transition-colors hover:text-teal-600"
+          className="text-sm text-black transition-colors hover:text-[color:var(--fc-accent,#0d9488)]"
         >
           ← All Pathways
         </Link>
@@ -437,7 +461,10 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
       {/* ── Coming soon or accessible pathway view ── */}
       {isComingSoon ? (
         /* ── Coming soon view ── */
-        <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-black">
+        <div
+          className="rounded-2xl border bg-white p-6 text-sm text-black"
+          style={{ borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.20))' }}
+        >
           This pathway is coming soon.
         </div>
       ) : (
@@ -462,7 +489,10 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
           )}
 
 {pathway.steps.length === 0 ? (
-            <div className="rounded-2xl border border-teal-100 bg-white p-6 text-sm text-black">
+            <div
+          className="rounded-2xl border bg-white p-6 text-sm text-black"
+          style={{ borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.20))' }}
+        >
               Steps for this pathway are coming soon.
             </div>
           ) : pathway.sections.length > 0 ? (

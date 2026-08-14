@@ -316,13 +316,13 @@ function QueueRow({
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] focus:border-teal-400 focus:outline-none"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none"
             />
             <input
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] focus:border-teal-400 focus:outline-none"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] focus:border-[color:var(--fc-accent,#38A09E)] focus:outline-none"
             />
             <span
               className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide"

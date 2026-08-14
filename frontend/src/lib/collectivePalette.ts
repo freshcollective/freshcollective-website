@@ -192,11 +192,25 @@ function _parseHex(hex: string): { r: number; g: number; b: number } | null {
 
 
 /**
- * Pick the text colour that gives the higher WCAG contrast ratio against
- * a solid background hex — pure white ``#ffffff`` or near-black
- * ``#0f172a`` (slate-900). Used when rendering text on top of an
- * arbitrary Collective palette hex where we can't hand-pair fg/bg
- * ahead of time.
+ * Pick the text colour to render on top of a solid Collective palette
+ * hex — pure white ``#ffffff`` or near-black ``#0f172a`` (slate-900).
+ *
+ * Not a pure WCAG argmax picker. A pure argmax would flip warm-medium
+ * primaries like Terracotta (#B85D3D, L≈0.18) to *dark* text because
+ * black beats white by a hair on the 4.5:1 axis — but visually those
+ * surfaces read as "dark/medium warm" and are meant to carry white
+ * text in the Collective panel design. This picker uses a luminance
+ * threshold that keeps genuinely-light palettes (Snow & Sky #A0B4C4,
+ * pale accents, background hexes) picking dark text automatically,
+ * while every dark/medium primary — deep teal, navy, rust, autumn,
+ * berry, olive, etc. — picks white.
+ *
+ * Threshold ``0.42`` is calibrated against the 23 seeded palettes:
+ *   * All 22 palettes whose *primary* reads as dark or medium
+ *     (L < 0.42) pick white — including Terracotta, Sunrise, Autumn,
+ *     Ember & Clay, Honey & Cream, Rose & Sage, Desert Bloom.
+ *   * Only Snow & Sky primary (L≈0.44) picks dark, plus any
+ *     background hex or accent that is genuinely a light wash.
  *
  * Falls back to charcoal on unparseable input rather than throwing —
  * the caller is usually rendering a card and a slightly off colour is
@@ -204,14 +218,13 @@ function _parseHex(hex: string): { r: number; g: number; b: number } | null {
  */
 const CONTRAST_DARK  = '#0f172a'  // slate-900
 const CONTRAST_LIGHT = '#ffffff'
+const LIGHT_LUMINANCE_THRESHOLD = 0.42
 
 export function contrastText(bgHex: string): typeof CONTRAST_DARK | typeof CONTRAST_LIGHT {
   const parsed = _parseHex(bgHex)
   if (!parsed) return CONTRAST_DARK
   const bgL = _relativeLuminance(parsed.r, parsed.g, parsed.b)
-  const contrastWithWhite = (1.0 + 0.05) / (bgL + 0.05)
-  const contrastWithBlack = (bgL + 0.05) / 0.05
-  return contrastWithBlack >= contrastWithWhite ? CONTRAST_DARK : CONTRAST_LIGHT
+  return bgL > LIGHT_LUMINANCE_THRESHOLD ? CONTRAST_DARK : CONTRAST_LIGHT
 }
 
 

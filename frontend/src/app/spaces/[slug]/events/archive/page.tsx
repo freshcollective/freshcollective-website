@@ -32,7 +32,7 @@ export default async function SpaceEventsArchivePage({ params }: Props) {
       <div className="mb-6">
         <Link
           href={`/spaces/${slug}/events`}
-          className="text-sm text-black transition-colors hover:text-teal-600"
+          className="text-sm text-black transition-colors hover:text-[color:var(--fc-accent,#0d9488)]"
         >
           ← Upcoming Gatherings
         </Link>

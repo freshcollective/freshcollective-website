@@ -155,7 +155,12 @@ export default function GatheringBookingClient({
       {isPast ? (
         <p className="mb-4 text-[15px] font-semibold text-navy-900">This Gathering has ended</p>
       ) : isReserved ? (
-        <p className="mb-4 text-[15px] font-semibold text-teal-700">You&rsquo;ve reserved your place ✓</p>
+        <p
+          className="mb-4 text-[15px] font-semibold"
+          style={{ color: 'var(--fc-accent, #0f766e)' }}
+        >
+          You&rsquo;ve reserved your place ✓
+        </p>
       ) : isFull ? (
         <p className="mb-4 text-[15px] font-semibold text-black">All places taken</p>
       ) : (
@@ -183,8 +188,12 @@ export default function GatheringBookingClient({
 
       {seriesResult && (
         <div
-          className="mb-3 rounded-xl px-4 py-3 text-[12px] text-teal-800"
-          style={{ background: 'rgba(56,160,158,0.08)', border: '1px solid rgba(56,160,158,0.2)' }}
+          className="mb-3 rounded-xl px-4 py-3 text-[12px]"
+          style={{
+            background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
+            border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.2))',
+            color: 'var(--fc-accent, #0f766e)',
+          }}
         >
           Reserved a place in {seriesResult.booked} Gathering{seriesResult.booked !== 1 ? 's' : ''}.
           {seriesResult.skipped_full > 0 && ` ${seriesResult.skipped_full} full.`}
@@ -196,8 +205,11 @@ export default function GatheringBookingClient({
       {!isPast && !isAuthenticated && (
         <Link
           href={loginHref}
-          className="block w-full rounded-xl py-2.5 text-center text-sm font-semibold text-white transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+          className="block w-full rounded-xl py-2.5 text-center text-sm font-semibold transition-opacity hover:opacity-90"
+          style={{
+            background: 'var(--fc-accent, #38A09E)',
+            color: 'var(--fc-accent-contrast, #FFFFFF)',
+          }}
         >
           Sign in to reserve
         </Link>
@@ -239,10 +251,21 @@ export default function GatheringBookingClient({
             <div className="space-y-2">
               <div
                 className="rounded-xl px-4 py-3"
-                style={{ background: 'rgba(56,160,158,0.08)', border: '1px solid rgba(56,160,158,0.15)' }}
+                style={{
+                  background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
+                  border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.15))',
+                }}
               >
-                <p className="text-sm font-semibold text-teal-700">You&rsquo;re in.</p>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-teal-800">
+                <p
+                  className="text-sm font-semibold"
+                  style={{ color: 'var(--fc-accent, #0f766e)' }}
+                >
+                  You&rsquo;re in.
+                </p>
+                <p
+                  className="mt-1 text-[12.5px] leading-relaxed"
+                  style={{ color: 'var(--fc-accent, #0f766e)' }}
+                >
                   We&rsquo;ve saved your place and you&rsquo;ll find this Gathering
                   in your upcoming schedule.
                 </p>
@@ -262,8 +285,11 @@ export default function GatheringBookingClient({
               <button
                 onClick={handleBook}
                 disabled={loading}
-                className="w-full rounded-xl py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                className="w-full rounded-xl py-2.5 text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-50"
+                style={{
+                  background: 'var(--fc-accent, #38A09E)',
+                  color: 'var(--fc-accent-contrast, #FFFFFF)',
+                }}
               >
                 {loading ? 'Reserving…' : 'Reserve your place'}
               </button>
@@ -271,7 +297,12 @@ export default function GatheringBookingClient({
                 <button
                   onClick={handleBookSeries}
                   disabled={loading}
-                  className="w-full rounded-xl border border-teal-200 py-2 text-sm font-medium text-teal-700 transition-colors hover:bg-teal-50 disabled:opacity-50"
+                  className="w-full rounded-xl border py-2 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.24))',
+                    color: 'var(--fc-accent, #0f766e)',
+                    background: 'var(--fc-accent-tint, rgba(56,160,158,0.06))',
+                  }}
                 >
                   {loading ? 'Reserving\u2026' : 'Reserve every Gathering in this series'}
                 </button>

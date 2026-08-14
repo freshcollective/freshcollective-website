@@ -2906,6 +2906,7 @@ def create_event(
         attendance_format=body.attendance_format,
         venue_name=body.venue_name,
         venue_address=body.venue_address,
+        venue_locality=body.venue_locality,
         access_instructions=body.access_instructions,
         booking_access_type=body.booking_access_type,
         booking_required_pathway_id=body.booking_required_pathway_id,
@@ -3091,7 +3092,7 @@ def update_event(
                   "recording_url", "is_published", "is_public", "requires_booking", "capacity",
                   "booking_closes_at", "booking_note", "thumbnail_url",
                   "gathering_type", "attendance_format",
-                  "venue_name", "venue_address", "access_instructions",
+                  "venue_name", "venue_address", "venue_locality", "access_instructions",
                   "booking_access_type", "booking_required_pathway_id",
                   "ticket_price_cents", "ticket_currency"):
         val = getattr(body, field)
@@ -7925,3 +7926,12 @@ from app.creator import _gathering_series_routes as _gs_routes  # noqa: E402,F40
 # ---------------------------------------------------------------------------
 
 from app.creator import _space_payment_options_routes as _spo_routes  # noqa: E402,F401
+
+# ---------------------------------------------------------------------------
+# Event About Blocks (M1 refinement) — extends the polymorphic
+# ``pathway_about_blocks`` table with owner_kind='event' so
+# individual Gatherings get the same rich member-facing content
+# capability as Pathways + Series. Imported for side effect.
+# ---------------------------------------------------------------------------
+
+from app.creator import _event_about_routes as _event_about_routes  # noqa: E402,F401

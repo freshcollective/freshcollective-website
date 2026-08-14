@@ -67,7 +67,7 @@ export default function CollectiveSwitcher({
           }}
         >
           {/* Teal accent line */}
-          <div className="h-[3px] w-full" style={{ background: 'linear-gradient(90deg, #38A09E 0%, #55B8B6 60%, transparent 100%)' }} />
+          <div className="h-[3px] w-full" style={{ background: 'linear-gradient(90deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 60%, transparent 100%)' }} />
 
           {isAuthenticated ? (
             <>
@@ -84,18 +84,22 @@ export default function CollectiveSwitcher({
                   href={`/spaces/${currentSlug}`}
                   onClick={() => setOpen(false)}
                   className="flex items-center gap-2.5 rounded-lg px-2 py-2.5 transition-colors"
-                  style={{ background: 'rgba(56,160,158,0.07)' }}
+                  style={{ background: 'var(--fc-accent-tint, rgba(56,160,158,0.07))' }}
                 >
                   <span
                     className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                    style={{ background: '#38A09E' }}
+                    style={{ background: 'var(--fc-accent, #38A09E)' }}
                   >
                     {currentName.charAt(0).toUpperCase()}
                   </span>
                   <span className="flex-1 truncate text-[13px] font-semibold text-navy-900">
                     {currentName}
                   </span>
-                  <svg className="h-3.5 w-3.5 shrink-0 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                  <svg
+                    className="h-3.5 w-3.5 shrink-0"
+                    style={{ color: 'var(--fc-accent, #0d9488)' }}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"
+                  >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </Link>
@@ -167,7 +171,7 @@ export default function CollectiveSwitcher({
               >
                 <span
                   className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                  style={{ background: '#38A09E' }}
+                  style={{ background: 'var(--fc-accent, #38A09E)' }}
                 >
                   {currentName.charAt(0).toUpperCase()}
                 </span>
