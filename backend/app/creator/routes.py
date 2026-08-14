@@ -193,6 +193,9 @@ from app.services.button_validator import (
 from app.services.embed_validator import EmbedValidationError, extract_and_validate_embed_url
 from app.services.gathering_types import normalise_access_type
 from app.services.notification_service import trigger_new_step
+from app.services.schedule_validation import (
+    validate_recurring_installments_payload,
+)
 from app.spaces.schemas import SpaceSummary
 
 router = APIRouter(prefix="/api/creator", tags=["creator"])
@@ -6218,6 +6221,11 @@ def create_payment_option_schedule(
     pathway = _get_pathway(space, pathway_slug, db)
     _get_payment_option(option_id, pathway, db)  # validates ownership
 
+    # FIP1 — validate finite payment plans on create when they are
+    # being published. See _space_payment_options_routes for rationale.
+    if body.status == "published":
+        validate_recurring_installments_payload(body)
+
     max_pos = (
         db.query(PaymentOptionSchedule.position)
         .filter(PaymentOptionSchedule.payment_option_id == option_id)
@@ -6404,6 +6412,13 @@ def update_payment_option_schedule(
             sched.currency = val.upper()
         else:
             setattr(sched, field, val)
+
+    # FIP1 — validate the merged post-update state when the row is
+    # (now) published. Draft rows may remain incomplete so Creators
+    # can save-in-progress.
+    merged_status = updates.get("status", sched.status)
+    if merged_status == "published":
+        validate_recurring_installments_payload(sched)
 
     sched.updated_at = datetime.utcnow()
     db.commit()

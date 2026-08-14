@@ -2277,6 +2277,15 @@ class PathwayEntitlement(Base):
     stripe_payment_intent_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # TODO: Stripe Connect — populate when subscription entitlement is created
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Finite Payment Plan parent (FIP1, migration 116). Populated when
+    # this entitlement was granted by a plan-derived first payment;
+    # NULL for legacy pay-in-full / free / manual grants.
+    purchase_plan_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("purchase_plans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False

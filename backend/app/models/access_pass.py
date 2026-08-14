@@ -64,6 +64,17 @@ class AccessPass(Base):
     payment_option_schedule_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("payment_option_schedules.id", ondelete="SET NULL"), nullable=True
     )
+    # Finite Payment Plan parent (FIP1, migration 116). Populated when
+    # this pass was granted by a plan-derived first payment; NULL for
+    # legacy pay-in-full grants. Future revoke/reinstate on plan
+    # lifecycle changes will use this linkage, not
+    # ``payment_transaction_id`` (which points at only one of the N
+    # invoice transactions and would be lost on refund of that
+    # single instalment).
+    purchase_plan_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("purchase_plans.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
 
     # Classification
     pass_type: Mapped[AccessPassType] = mapped_column(

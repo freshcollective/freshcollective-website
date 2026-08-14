@@ -125,6 +125,9 @@ from app.models.platform import (
     SpaceMembership,
 )
 from app.models.user import User
+from app.services.schedule_validation import (
+    validate_recurring_installments_payload,
+)
 from app.services.checkout_orchestration import (
     check_option_fulfillable_or_raise,
     check_same_option_not_active,
@@ -772,6 +775,13 @@ def create_commerce_payment_option_schedule(
     space = _get_managed_space(slug, current_user, db)
     opt = _get_space_option(db, space, option_id)
 
+    # FIP1 — validate finite payment plans on create when they are
+    # being published. Draft rows may be incomplete so a Creator can
+    # save-in-progress. Members can't purchase either way while the
+    # 503 guard in checkout_orchestration remains active.
+    if body.status == "published":
+        validate_recurring_installments_payload(body)
+
     max_pos = (
         db.query(PaymentOptionSchedule.position)
         .filter(PaymentOptionSchedule.payment_option_id == opt.id)
@@ -839,6 +849,14 @@ def update_commerce_payment_option_schedule(
             sched.currency = val.upper()
         else:
             setattr(sched, field, val)
+
+    # FIP1 — validate the merged post-update state when the row is
+    # (now) recurring_installments AND (now) published. Editing an
+    # existing draft with incomplete fields is still permitted.
+    merged_status = updates.get("status", sched.status)
+    if merged_status == "published":
+        validate_recurring_installments_payload(sched)
+
     sched.updated_at = datetime.utcnow()
     opt.updated_at = sched.updated_at
     db.commit()

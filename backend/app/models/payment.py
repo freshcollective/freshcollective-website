@@ -266,6 +266,18 @@ class PaymentTransaction(Base):
         index=True,
     )
 
+    # Finite Payment Plan parent (FIP1, migration 116). Non-null on
+    # per-invoice PaymentTransaction rows written by the future
+    # ``invoice.payment_succeeded`` handler; NULL on legacy pay-in-
+    # full transactions. ``SET NULL`` on plan deletion so historical
+    # ledger rows are preserved.
+    purchase_plan_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("purchase_plans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # 'test' when created against sk_test_* Stripe keys, 'live' when against sk_live_*.
