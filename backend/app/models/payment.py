@@ -41,6 +41,16 @@ class PaymentTransactionType(str, enum.Enum):
     # Distinct from Pathway/Collective purchase so the ledger reflects the
     # commerce product actually sold.
     member_series_pass_purchase = "member_series_pass_purchase"
+    # Generic Payment Option purchase — used by the unified
+    # ``POST /api/checkout`` endpoint (B4B). A single PaymentOption
+    # can grant any combination of Pathways / Gathering Series /
+    # (eventually) Gatherings, so classifying the ledger row by
+    # "primary" grant would embed an incorrect assumption. The
+    # experiences actually granted live on the option's grants +
+    # the downstream AccessPass / PathwayEntitlement rows the
+    # webhook writes. Legacy compat wrappers keep their kind-
+    # specific transaction types.
+    member_payment_option_purchase = "member_payment_option_purchase"
     refund = "refund"
     adjustment = "adjustment"
 

@@ -387,18 +387,16 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     payment_option_id: str = metadata.get("payment_option_id", "")
     payment_option_schedule_id: str = metadata.get("payment_option_schedule_id", "")
 
-    # ``pathway_id`` in metadata is only required for pathway-attached
-    # options. For series-attached options the target is derived from
-    # ``payment_option.attaches_to_id`` (an EventSeries id) and no
-    # pathway metadata is expected on the Session.
-    _series_purchase = False
-    if payment_option_id:
-        _po_probe = db.query(PaymentOption).filter(PaymentOption.id == payment_option_id).first()
-        if _po_probe and _po_probe.attaches_to_kind == "event_series":
-            _series_purchase = True
-
+    # ``pathway_id`` in metadata is a *legacy* hint used by
+    # ``/api/checkout/pathway`` sessions. Only truly required for
+    # the option-less pre-PaymentOptions purchase path — with any
+    # ``payment_option_id`` on the Session the resolver derives
+    # everything it needs from the option's grants (or legacy
+    # shadow columns, when the option isn't grant-ready). The
+    # unified checkout endpoint (B4B) writes no ``pathway_id``
+    # metadata for option-based purchases.
     required_meta = [transaction_id, payer_user_id, space_id]
-    if not _series_purchase:
+    if not payment_option_id:
         required_meta.append(pathway_id)
     if not all(required_meta):
         logger.error(

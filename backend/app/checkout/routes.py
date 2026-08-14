@@ -1,26 +1,33 @@
-"""
-POST /api/checkout/pathway — create a Stripe Checkout Session for a paid pathway.
+"""Checkout endpoints.
 
-Flow:
-  1. Validate pathway exists, is active, is one_time, has a price.
-  2. Check the member does not already have an active entitlement.
-  3. Resolve the creator's platform fee rate from their active plan.
-  4. Pre-generate a transaction UUID.
-  5. Create the Stripe Checkout Session (no DB writes yet, so nothing to undo on failure).
-  6. Create the pending PaymentTransaction with provider_checkout_session_id already
-     set — single atomic commit.
-  7. Return the Stripe-hosted checkout_url for the frontend to redirect to.
+Three routes today, all built on top of the shared checkout
+orchestration in ``app/services/checkout_orchestration.py``:
 
-Access is NOT granted here — it is granted by the webhook handler when
-Stripe confirms the payment via checkout.session.completed.
+  * ``POST /api/checkout``               — unified, kind-agnostic (B4B).
+  * ``POST /api/checkout/pathway``        — legacy compat wrapper.
+  * ``POST /api/checkout/gathering-series`` — legacy compat wrapper.
+
+Everything that was inline in the pre-B4B endpoints — fee
+resolution, Stripe Checkout Session creation, PaymentTransaction
+row insertion, error handling — lives in the shared service now.
+Wrappers layer kind-specific extra validation on top (Pathway /
+Series existence + status checks; single-experience duplicate
+guards) and inject their legacy metadata (``pathway_id`` /
+``series_id``) so the webhook's older metadata expectations keep
+working for their in-flight sessions.
+
+Access is NOT granted here — it is granted by the webhook when
+Stripe confirms the payment via ``checkout.session.completed``.
+The one exception is the unified endpoint's free-option path,
+which bypasses Stripe and applies the option's grants directly
+through the hardened fulfilment service.
 """
 
 import logging
 from datetime import datetime
-from uuid import uuid4
 
-import stripe
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -29,47 +36,62 @@ from app.checkout.schemas import (
     GatheringSeriesCheckoutResponse,
     PathwayCheckoutRequest,
     PathwayCheckoutResponse,
+    UnifiedCheckoutRequest,
+    UnifiedCheckoutResponse,
 )
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.access_pass import AccessPass, AccessPassStatus
-from app.models.creator_billing import CreatorPlan, CreatorSubscription, CreatorSubscriptionStatus
-from app.models.payment import (
-    PaymentProvider,
-    PaymentTransaction,
-    PaymentTransactionStatus,
-    PaymentTransactionType,
-    PayoutStatus,
-)
+from app.models.payment import PaymentTransactionType
 from app.models.payment_option import PaymentOption
-from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     EntitlementStatus,
     EventSeries,
     Pathway,
     PathwayEntitlement,
-    Space,
-    SpaceMembership,
 )
 from app.models.user import User
-from sqlalchemy import or_
+from app.services.checkout_orchestration import (
+    _resolve_fee_bps_for_creator,
+    check_option_fulfillable_or_raise,
+    check_same_option_not_active,
+    orchestrate_free_checkout,
+    orchestrate_paid_checkout,
+    resolve_option_and_schedule,
+)
+
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/checkout", tags=["checkout"])
 
-# Default fee rate (Basic plan 8%) used when creator has no active subscription
-_DEFAULT_FEE_BPS = 800
+
+def _resolve_fee_bps(
+    creator_id: str | None, db: Session,
+) -> tuple[int, str | None, str | None]:
+    """Back-compat shim for pre-B4B callers (``spaces/routes.py``
+    for standalone-Gathering ticket fees, plus one route test).
+    The implementation lives in
+    ``app.services.checkout_orchestration._resolve_fee_bps_for_creator``.
+    """
+    if not creator_id:
+        # Platform-owned or missing creator → zero fee, no plan.
+        return 0, None, None
+    return _resolve_fee_bps_for_creator(creator_id, db)
+
+
+# ---------------------------------------------------------------------------
+# Status
+# ---------------------------------------------------------------------------
 
 
 @router.get("/status")
 def checkout_status(
     _: User = Depends(get_current_user),
 ) -> dict:
-    """
-    Return platform payment configuration status.
-    Used by Admin and Creator Studio to show accurate Stripe setup state.
-    """
+    """Return platform payment configuration status.
+    Used by Admin and Creator Studio to show accurate Stripe
+    setup state."""
     test_mode = bool(
         settings.stripe_secret_key
         and settings.stripe_secret_key.startswith("sk_test_")
@@ -80,44 +102,97 @@ def checkout_status(
     }
 
 
-def _resolve_fee_bps(creator_id: str | None, db: Session) -> tuple[int, str | None, str | None]:
-    """
-    Return (fee_bps, creator_plan_id, creator_subscription_id) for the creator.
+# ---------------------------------------------------------------------------
+# Unified checkout (B4B)
+# ---------------------------------------------------------------------------
 
-    Uses the creator's active CreatorSubscription → CreatorPlan.
-    Falls back to the cheapest active plan, then to the hardcoded default (800 = 8%).
-    """
-    if not creator_id:
-        return _DEFAULT_FEE_BPS, None, None
 
-    sub = (
-        db.query(CreatorSubscription)
-        .filter(
-            CreatorSubscription.user_id == creator_id,
-            CreatorSubscription.status.in_([
-                CreatorSubscriptionStatus.active,
-                CreatorSubscriptionStatus.trialing,
-            ]),
+@router.post("", response_model=UnifiedCheckoutResponse)
+def create_unified_checkout_session(
+    body: UnifiedCheckoutRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UnifiedCheckoutResponse:
+    """Kind-agnostic Payment Option checkout.
+
+    Request never names a Pathway / Series / Gathering. The
+    experiences purchased are derived at fulfilment time from
+    the option's grants. Frontend redirects the browser to the
+    returned ``checkout_url`` — a Stripe-hosted URL for paid
+    options, or the request's ``success_url`` for free options
+    (which are already fulfilled at return time).
+
+    Pre-checkout guards:
+      * Option / schedule must resolve, be published, and be
+        ``pay_in_full``.
+      * Options carrying Gathering grants are refused before
+        payment (the paid-Gathering ticket-hold flow is still
+        authoritative for those).
+      * Same-option duplicate guard — refuses when the buyer
+        already actively holds access from the same PaymentOption
+        (see ``check_same_option_not_active`` for the reliability
+        matrix). Different-option purchases (upgrades, sibling
+        tiers) are NOT blocked here; bundle-aware upgrade policy
+        is out of scope for B4B.
+
+    The legacy ``/api/checkout/pathway`` wrapper preserves its
+    own broader single-Pathway 409 (blocks any active
+    entitlement, regardless of option) for backwards compatibility
+    with the current member UI.
+    """
+    now = datetime.utcnow()
+
+    resolved = resolve_option_and_schedule(
+        db,
+        payment_option_id=body.payment_option_id,
+        payment_option_schedule_id=body.payment_option_schedule_id,
+    )
+    check_option_fulfillable_or_raise(resolved.payment_option)
+    check_same_option_not_active(
+        db, user=current_user,
+        payment_option=resolved.payment_option, now=now,
+    )
+
+    # ── Free path: skip Stripe, apply grants directly ─────────────
+    if resolved.price_cents == 0:
+        outcome = orchestrate_free_checkout(
+            db, resolved=resolved, payer=current_user, now=now,
+            txn_transaction_type_override=(
+                PaymentTransactionType.member_payment_option_purchase
+            ),
         )
-        .order_by(CreatorSubscription.created_at.desc())
-        .first()
-    )
-    if sub:
-        plan = db.query(CreatorPlan).filter(CreatorPlan.id == sub.creator_plan_id).first()
-        if plan:
-            return plan.transaction_fee_basis_points, plan.id, sub.id
+        return UnifiedCheckoutResponse(
+            checkout_url=body.success_url,
+            transaction_id=outcome.transaction.id,
+            free=True,
+        )
 
-    # Creator has no active plan — use the cheapest active plan's rate as fallback
-    fallback = (
-        db.query(CreatorPlan)
-        .filter(CreatorPlan.is_active.is_(True))
-        .order_by(CreatorPlan.monthly_price_cents)
-        .first()
+    # ── Paid path: Stripe Checkout Session ────────────────────────
+    txn, session = orchestrate_paid_checkout(
+        db,
+        resolved=resolved,
+        payer=current_user,
+        success_url=body.success_url,
+        cancel_url=body.cancel_url,
+        now=now,
+        txn_transaction_type_override=(
+            PaymentTransactionType.member_payment_option_purchase
+        ),
     )
-    if fallback:
-        return fallback.transaction_fee_basis_points, None, None
+    logger.info(
+        "Unified checkout: txn=%s session=%s option=%s user=%s",
+        txn.id, session.id, resolved.payment_option.id, current_user.id,
+    )
+    return UnifiedCheckoutResponse(
+        checkout_url=session.url,
+        transaction_id=txn.id,
+        free=False,
+    )
 
-    return _DEFAULT_FEE_BPS, None, None
+
+# ---------------------------------------------------------------------------
+# Legacy compat: POST /api/checkout/pathway
+# ---------------------------------------------------------------------------
 
 
 @router.post("/pathway", response_model=PathwayCheckoutResponse)
@@ -126,114 +201,34 @@ def create_pathway_checkout_session(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PathwayCheckoutResponse:
-    """
-    Create a Stripe Checkout Session for a one-time pathway purchase.
+    """Legacy pathway-purchase entry point.
 
-    Returns { checkout_url } for the frontend to redirect to.
+    Preserved during the transition for the current member UI.
+    Delegates the shared work to
+    ``app.services.checkout_orchestration``; the extra
+    Pathway-specific validation + single-Pathway duplicate guard
+    + legacy Stripe metadata (``pathway_id``) live here.
+
+    New integrations should call ``POST /api/checkout`` instead.
     Access is granted by the webhook after payment confirmation.
     """
-    if not settings.stripe_enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="Stripe payments are not configured on this server.",
-        )
+    now = datetime.utcnow()
 
-    stripe.api_key = settings.stripe_secret_key
-
-    # --- Pathway validation --------------------------------------------------
+    # ── Pathway must exist + be active ────────────────────────────
     pathway = db.query(Pathway).filter(Pathway.id == body.pathway_id).first()
     if not pathway:
         raise HTTPException(status_code=404, detail="Pathway not found.")
-
-    p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
+    p_status = (
+        pathway.status.value if hasattr(pathway.status, "value")
+        else str(pathway.status)
+    )
     if p_status != "active":
         raise HTTPException(
             status_code=400,
             detail=f"Pathway is not available for purchase (status: {p_status}).",
         )
 
-    pathway_pricing_mode = getattr(pathway, "pricing_mode", "legacy") or "legacy"
-
-    # --- Resolve price from payment option (if provided) or pathway -----------
-    payment_option: PaymentOption | None = None
-    payment_schedule: PaymentOptionSchedule | None = None
-
-    if body.payment_option_id:
-        payment_option = (
-            db.query(PaymentOption)
-            .filter(
-                PaymentOption.id == body.payment_option_id,
-                PaymentOption.pathway_id == pathway.id,
-                PaymentOption.status == "published",
-            )
-            .first()
-        )
-        if not payment_option:
-            raise HTTPException(
-                status_code=404,
-                detail="Payment option not found or not available for this pathway.",
-            )
-
-        # --- Resolve schedule (if provided) ------------------------------------
-        if body.payment_option_schedule_id:
-            payment_schedule = (
-                db.query(PaymentOptionSchedule)
-                .filter(
-                    PaymentOptionSchedule.id == body.payment_option_schedule_id,
-                    PaymentOptionSchedule.payment_option_id == payment_option.id,
-                    PaymentOptionSchedule.status == "published",
-                )
-                .first()
-            )
-            if not payment_schedule:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Payment schedule not found or not available for this option.",
-                )
-            if payment_schedule.schedule_type == "recurring_installments":
-                raise HTTPException(
-                    status_code=503,
-                    detail=(
-                        "Recurring instalment payment plans are not yet available for checkout. "
-                        "Please choose 'Pay in full' or contact support."
-                    ),
-                )
-            if payment_schedule.schedule_type == "pay_in_full":
-                price_cents = payment_schedule.total_amount_cents
-            else:
-                # manual or future types — fall back to option effective price
-                price_cents = payment_option.effective_price_cents
-        else:
-            price_cents = payment_option.effective_price_cents
-
-        if not price_cents or price_cents <= 0:
-            raise HTTPException(status_code=400, detail="Payment option has no valid price.")
-    elif pathway_pricing_mode == "payment_options":
-        raise HTTPException(
-            status_code=400,
-            detail="This pathway requires selecting a payment option. Please choose one and try again.",
-        )
-    else:
-        access_type = (
-            pathway.access_type.value
-            if hasattr(pathway.access_type, "value")
-            else str(pathway.access_type or "free")
-        )
-        if access_type != "one_time":
-            raise HTTPException(
-                status_code=400,
-                detail="Only one-time purchase pathways can be checked out via this endpoint.",
-            )
-        if not pathway.price_cents or pathway.price_cents <= 0:
-            raise HTTPException(status_code=400, detail="Pathway has no valid price.")
-        price_cents = pathway.price_cents
-
-    # --- Space ---------------------------------------------------------------
-    space = db.query(Space).filter(Space.id == pathway.space_id).first()
-    if not space:
-        raise HTTPException(status_code=404, detail="Collective not found.")
-
-    # --- Duplicate entitlement guard ----------------------------------------
+    # ── Duplicate-Pathway guard (legacy single-experience policy) ──
     existing = (
         db.query(PathwayEntitlement)
         .filter(
@@ -249,128 +244,217 @@ def create_pathway_checkout_session(
             detail="You already have access to this pathway.",
         )
 
-    # --- Resolve creator, platform-ownership, and fee rate -------------------
-    # Platform-owned spaces (creator_id IS NULL = Fresh Collective owns the space)
-    # pay zero platform fee — the money stays directly with FC. No payout is needed.
-    is_platform_owned = space.creator_id is None
-    creator_id: str | None = space.creator_id
+    # ── Two request shapes ────────────────────────────────────────
+    # (a) With PaymentOption + Schedule → resolve via shared service.
+    # (b) Legacy option-less shape → keep the pathway.price_cents
+    #     fast path so R.E.A.L. Journey and other pre-PaymentOptions
+    #     pathways still purchase.
+    if body.payment_option_id:
+        if not body.payment_option_schedule_id:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Payment schedule is required when a payment option "
+                    "is selected."
+                ),
+            )
 
-    if is_platform_owned:
-        # No external creator — skip membership lookup, apply zero fee
-        fee_bps = 0
-        creator_plan_id: str | None = None
-        creator_sub_id: str | None = None
-    else:
-        fee_bps, creator_plan_id, creator_sub_id = _resolve_fee_bps(creator_id, db)
+        # The shared resolver validates option status + schedule +
+        # price. For the legacy wrapper we ALSO require the option
+        # to be pathway-attached to this pathway.
+        pre_option = (
+            db.query(PaymentOption)
+            .filter(PaymentOption.id == body.payment_option_id)
+            .first()
+        )
+        if pre_option is None or pre_option.pathway_id != pathway.id:
+            raise HTTPException(
+                status_code=404,
+                detail="Payment option not found or not available for this pathway.",
+            )
 
-    # --- Fee calculation (all calculations done before any Stripe call) ------
-    gross = price_cents
-    currency = (
-        (payment_option.currency if payment_option else None)
-        or pathway.currency
-        or "AUD"
-    ).upper()
-    platform_fee = round(gross * fee_bps / 10000)
+        resolved = resolve_option_and_schedule(
+            db,
+            payment_option_id=body.payment_option_id,
+            payment_option_schedule_id=body.payment_option_schedule_id,
+        )
+        if resolved.price_cents <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Payment option has no valid price.",
+            )
+
+        # Legacy metadata continuity: include ``pathway_id`` on the
+        # Stripe Session + payment_intent, and populate
+        # ``PaymentTransaction.pathway_id`` for downstream reporting.
+        _txn, session = orchestrate_paid_checkout(
+            db,
+            resolved=resolved,
+            payer=current_user,
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+            now=now,
+            extra_metadata={"pathway_id": pathway.id},
+            extra_payment_intent_metadata={"pathway_id": pathway.id},
+            txn_pathway_id=pathway.id,
+            product_name=pathway.title,
+        )
+        return PathwayCheckoutResponse(checkout_url=session.url)
+
+    # ── Option-less legacy path (pathway.price_cents source) ──────
+    pathway_pricing_mode = getattr(pathway, "pricing_mode", "legacy") or "legacy"
+    if pathway_pricing_mode == "payment_options":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This pathway requires selecting a payment option. Please "
+                "choose one and try again."
+            ),
+        )
+    access_type = (
+        pathway.access_type.value if hasattr(pathway.access_type, "value")
+        else str(pathway.access_type or "free")
+    )
+    if access_type != "one_time":
+        raise HTTPException(
+            status_code=400,
+            detail="Only one-time purchase pathways can be checked out via this endpoint.",
+        )
+    if not pathway.price_cents or pathway.price_cents <= 0:
+        raise HTTPException(status_code=400, detail="Pathway has no valid price.")
+
+    session = _legacy_pathway_price_stripe_session(
+        db, pathway=pathway, payer=current_user,
+        success_url=body.success_url, cancel_url=body.cancel_url, now=now,
+    )
+    return PathwayCheckoutResponse(checkout_url=session.url)
+
+
+def _legacy_pathway_price_stripe_session(
+    db: Session, *, pathway: Pathway, payer: User,
+    success_url: str, cancel_url: str, now: datetime,
+):
+    """Option-less pathway-purchase path — reads price directly
+    from ``pathway.price_cents``. Preserved verbatim for the
+    R.E.A.L. Journey shape and other pre-PaymentOptions pathways
+    still in use. Not exported for reuse; the shared orchestration
+    is grants/option-based only."""
+    import stripe as _stripe
+    from uuid import uuid4 as _uuid4
+
+    from app.models.payment import (
+        PaymentProvider, PaymentTransaction, PaymentTransactionStatus,
+        PaymentTransactionType, PayoutStatus,
+    )
+    from app.services.checkout_orchestration import (
+        resolve_fee_context as _resolve_fee_context,
+    )
+    from app.models.platform import Space
+
+    if not settings.stripe_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe payments are not configured on this server.",
+        )
+    _stripe.api_key = settings.stripe_secret_key
+
+    space = db.query(Space).filter(Space.id == pathway.space_id).first()
+    if not space:
+        raise HTTPException(status_code=404, detail="Collective not found.")
+
+    fee_context = _resolve_fee_context(space, db)
+    gross = pathway.price_cents
+    currency = (pathway.currency or "AUD").upper()
+    platform_fee = round(gross * fee_context.fee_bps / 10000)
     net_creator = gross - platform_fee
+    txn_id = str(_uuid4())
 
-    # --- Pre-generate transaction ID -----------------------------------------
-    # We generate the ID here so it can be embedded in Stripe metadata before
-    # the DB row is created. This allows the webhook to find the transaction
-    # even if the DB commit races with the Stripe call.
-    txn_id = str(uuid4())
-
-    # --- Create Stripe Checkout Session (no DB writes yet) -------------------
-    # Creating the session before any DB writes means there is nothing to roll
-    # back if Stripe fails. If Stripe succeeds but the DB commit fails below,
-    # the session will exist in Stripe but have no corresponding record here —
-    # this is logged and the webhook will handle it gracefully by logging an
-    # error (no duplicate entitlements, no money moved until paid).
     try:
-        session = stripe.checkout.Session.create(
+        session = _stripe.checkout.Session.create(
             mode="payment",
-            line_items=[
-                {
-                    "price_data": {
-                        "currency": currency.lower(),
-                        "product_data": {
-                            "name": pathway.title,
-                            "description": f"{space.name} — Fresh Collective",
-                        },
-                        "unit_amount": gross,
+            line_items=[{
+                "price_data": {
+                    "currency": currency.lower(),
+                    "product_data": {
+                        "name": pathway.title,
+                        "description": f"{space.name} — Fresh Collective",
                     },
-                    "quantity": 1,
-                }
-            ],
-            # Metadata on the Checkout Session — used by checkout.session.completed
+                    "unit_amount": gross,
+                },
+                "quantity": 1,
+            }],
             metadata={
                 "transaction_id": txn_id,
                 "pathway_id": pathway.id,
                 "space_id": space.id,
-                "payer_user_id": current_user.id,
-                "creator_user_id": creator_id or "",
-                "platform_fee_bps": str(fee_bps),
-                "creator_plan_id": creator_plan_id or "",
-                "payment_option_id": payment_option.id if payment_option else "",
-                "payment_option_schedule_id": payment_schedule.id if payment_schedule else "",
+                "payer_user_id": payer.id,
+                "creator_user_id": fee_context.creator_id or "",
+                "platform_fee_bps": str(fee_context.fee_bps),
+                "creator_plan_id": fee_context.creator_plan_id or "",
+                "payment_option_id": "",
+                "payment_option_schedule_id": "",
             },
-            # Metadata mirrored onto the PaymentIntent — used by payment_intent.payment_failed
             payment_intent_data={
                 "metadata": {
                     "transaction_id": txn_id,
                     "pathway_id": pathway.id,
-                    "payer_user_id": current_user.id,
+                    "payer_user_id": payer.id,
                 }
             },
-            customer_email=current_user.email,
-            success_url=body.success_url,
-            cancel_url=body.cancel_url,
+            customer_email=payer.email,
+            success_url=success_url,
+            cancel_url=cancel_url,
         )
-    except stripe.StripeError as exc:
-        logger.error("Stripe session creation failed for pathway=%s user=%s: %s", pathway.id, current_user.id, exc)
+    except _stripe.StripeError as exc:
+        logger.error(
+            "Stripe session creation failed for pathway=%s user=%s: %s",
+            pathway.id, payer.id, exc,
+        )
         raise HTTPException(
             status_code=502,
             detail="Failed to create checkout session. Please try again.",
         )
 
-    # --- Create pending PaymentTransaction with session ID already set -------
-    # Single atomic commit: the transaction row is complete from the start.
-    # The unique index on provider_checkout_session_id prevents duplicates.
-    now = datetime.utcnow()
     txn = PaymentTransaction(
         id=txn_id,
         transaction_type=PaymentTransactionType.member_pathway_purchase,
         status=PaymentTransactionStatus.pending,
         payment_provider=PaymentProvider.stripe,
-        payer_user_id=current_user.id,
-        creator_user_id=creator_id,
+        payer_user_id=payer.id,
+        creator_user_id=fee_context.creator_id,
         space_id=space.id,
         pathway_id=pathway.id,
-        creator_plan_id=creator_plan_id,
-        creator_subscription_id=creator_sub_id,
+        creator_plan_id=fee_context.creator_plan_id,
+        creator_subscription_id=fee_context.creator_subscription_id,
         currency=currency,
         gross_amount_cents=gross,
-        platform_fee_basis_points=fee_bps,
+        platform_fee_basis_points=fee_context.fee_bps,
         platform_fee_cents=platform_fee,
         net_creator_amount_cents=net_creator,
         net_platform_amount_cents=platform_fee,
         provider_checkout_session_id=session.id,
-        payment_option_id=payment_option.id if payment_option else None,
-        payment_option_schedule_id=payment_schedule.id if payment_schedule else None,
-        # Platform-owned spaces keep 100% — no payout to an external creator
-        payout_status=PayoutStatus.not_applicable if is_platform_owned else PayoutStatus.pending,
+        payment_option_id=None,
+        payment_option_schedule_id=None,
+        payout_status=(
+            PayoutStatus.not_applicable if fee_context.is_platform_owned
+            else PayoutStatus.pending
+        ),
         stripe_mode=settings.stripe_mode,
         created_at=now,
         updated_at=now,
     )
     db.add(txn)
     db.commit()
-
     logger.info(
-        "Checkout session created: txn=%s session=%s pathway=%s user=%s fee_bps=%s",
-        txn_id, session.id, pathway.id, current_user.id, fee_bps,
+        "Legacy pathway checkout: txn=%s session=%s pathway=%s user=%s",
+        txn_id, session.id, pathway.id, payer.id,
     )
+    return session
 
-    return PathwayCheckoutResponse(checkout_url=session.url)
+
+# ---------------------------------------------------------------------------
+# Legacy compat: POST /api/checkout/gathering-series
+# ---------------------------------------------------------------------------
 
 
 @router.post("/gathering-series", response_model=GatheringSeriesCheckoutResponse)
@@ -379,23 +463,19 @@ def create_gathering_series_checkout_session(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> GatheringSeriesCheckoutResponse:
-    """Create a Stripe Checkout Session for a Gathering Series pass
-    (e.g. an EMBODY term). Pay-in-full only; recurring instalments
-    return 503 until Phase B lands.
+    """Legacy Gathering-Series-purchase entry point.
 
-    The AccessPass is created by the ``checkout.session.completed``
-    webhook via the existing series-purchase branch — this endpoint
-    only stages the transaction and metadata Stripe needs.
+    Preserved during the transition for the current member UI.
+    Extra kind-specific validation + duplicate-pass guard +
+    legacy ``series_id`` Stripe metadata live here; shared
+    plumbing delegates to
+    ``app.services.checkout_orchestration``.
+
+    New integrations should call ``POST /api/checkout`` instead.
     """
-    if not settings.stripe_enabled:
-        raise HTTPException(
-            status_code=503,
-            detail="Stripe payments are not configured on this server.",
-        )
+    now = datetime.utcnow()
 
-    stripe.api_key = settings.stripe_secret_key
-
-    # --- Series validation --------------------------------------------------
+    # ── Series validation ─────────────────────────────────────────
     series = db.query(EventSeries).filter(EventSeries.id == body.series_id).first()
     if not series:
         raise HTTPException(status_code=404, detail="Gathering Series not found.")
@@ -405,67 +485,23 @@ def create_gathering_series_checkout_session(
             detail=f"Series is not available for purchase (status: {series.status}).",
         )
 
-    # --- Payment option validation (must be attached to this series) --------
-    payment_option = (
+    # ── Option must be attached to this specific Series ───────────
+    pre_option = (
         db.query(PaymentOption)
-        .filter(
-            PaymentOption.id == body.payment_option_id,
-            PaymentOption.attaches_to_kind == "event_series",
-            PaymentOption.attaches_to_id == series.id,
-            PaymentOption.status == "published",
-        )
+        .filter(PaymentOption.id == body.payment_option_id)
         .first()
     )
-    if not payment_option:
+    if (
+        pre_option is None
+        or pre_option.attaches_to_kind != "event_series"
+        or pre_option.attaches_to_id != series.id
+    ):
         raise HTTPException(
             status_code=404,
             detail="Payment option not found or not available for this Series.",
         )
 
-    # --- Schedule validation ------------------------------------------------
-    payment_schedule = (
-        db.query(PaymentOptionSchedule)
-        .filter(
-            PaymentOptionSchedule.id == body.payment_option_schedule_id,
-            PaymentOptionSchedule.payment_option_id == payment_option.id,
-            PaymentOptionSchedule.status == "published",
-        )
-        .first()
-    )
-    if not payment_schedule:
-        raise HTTPException(
-            status_code=404,
-            detail="Payment schedule not found or not available for this option.",
-        )
-    if payment_schedule.schedule_type == "recurring_installments":
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Recurring instalment payment plans are not yet available for checkout. "
-                "Please choose 'Pay in full' or contact support."
-            ),
-        )
-    if payment_schedule.schedule_type != "pay_in_full":
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Only pay-in-full schedules can be checked out via this endpoint."
-            ),
-        )
-    price_cents = payment_schedule.total_amount_cents
-    if not price_cents or price_cents <= 0:
-        raise HTTPException(status_code=400, detail="Schedule has no valid price.")
-
-    # --- Space --------------------------------------------------------------
-    space = db.query(Space).filter(Space.id == series.space_id).first()
-    if not space:
-        raise HTTPException(status_code=404, detail="Collective not found.")
-
-    # --- Duplicate access-pass guard ----------------------------------------
-    # A member who already holds an active in-window pass to this Series
-    # should not be able to buy another. Matches the pathway endpoint's
-    # 409 for duplicate entitlement.
-    now = datetime.utcnow()
+    # ── Duplicate-pass guard (legacy single-Series policy) ────────
     existing_pass = (
         db.query(AccessPass.id)
         .filter(
@@ -486,113 +522,36 @@ def create_gathering_series_checkout_session(
             detail="You already have an active pass for this Series.",
         )
 
-    # --- Fee resolution (mirrors pathway endpoint) --------------------------
-    is_platform_owned = space.creator_id is None
-    creator_id: str | None = space.creator_id
-    if is_platform_owned:
-        fee_bps = 0
-        creator_plan_id: str | None = None
-        creator_sub_id: str | None = None
-    else:
-        fee_bps, creator_plan_id, creator_sub_id = _resolve_fee_bps(creator_id, db)
-
-    gross = price_cents
-    currency = (
-        payment_schedule.currency
-        or payment_option.currency
-        or "AUD"
-    ).upper()
-    platform_fee = round(gross * fee_bps / 10000)
-    net_creator = gross - platform_fee
-
-    txn_id = str(uuid4())
-
-    try:
-        session = stripe.checkout.Session.create(
-            mode="payment",
-            line_items=[
-                {
-                    "price_data": {
-                        "currency": currency.lower(),
-                        "product_data": {
-                            "name": f"{series.title} — {payment_option.name}",
-                            "description": f"{space.name} — Fresh Collective",
-                        },
-                        "unit_amount": gross,
-                    },
-                    "quantity": 1,
-                }
-            ],
-            # Note: no ``pathway_id`` in metadata — the webhook detects a
-            # series purchase by inspecting the option's ``attaches_to_kind``.
-            # Any grants_pathway_id entitlement is derived there.
-            metadata={
-                "transaction_id": txn_id,
-                "series_id": series.id,
-                "space_id": space.id,
-                "payer_user_id": current_user.id,
-                "creator_user_id": creator_id or "",
-                "platform_fee_bps": str(fee_bps),
-                "creator_plan_id": creator_plan_id or "",
-                "payment_option_id": payment_option.id,
-                "payment_option_schedule_id": payment_schedule.id,
-            },
-            payment_intent_data={
-                "metadata": {
-                    "transaction_id": txn_id,
-                    "series_id": series.id,
-                    "payer_user_id": current_user.id,
-                }
-            },
-            customer_email=current_user.email,
-            success_url=body.success_url,
-            cancel_url=body.cancel_url,
-        )
-    except stripe.StripeError as exc:
-        logger.error(
-            "Stripe session creation failed for series=%s user=%s: %s",
-            series.id, current_user.id, exc,
-        )
-        raise HTTPException(
-            status_code=502,
-            detail="Failed to create checkout session. Please try again.",
-        )
-
-    txn = PaymentTransaction(
-        id=txn_id,
-        transaction_type=PaymentTransactionType.member_series_pass_purchase,
-        status=PaymentTransactionStatus.pending,
-        payment_provider=PaymentProvider.stripe,
-        payer_user_id=current_user.id,
-        creator_user_id=creator_id,
-        space_id=space.id,
-        # ``pathway_id`` on the ledger row: set only when the option
-        # explicitly grants a pathway on top of the Series pass. The
-        # webhook does the same derivation for the AccessPass and any
-        # PathwayEntitlement it creates.
-        pathway_id=payment_option.grants_pathway_id,
-        creator_plan_id=creator_plan_id,
-        creator_subscription_id=creator_sub_id,
-        currency=currency,
-        gross_amount_cents=gross,
-        platform_fee_basis_points=fee_bps,
-        platform_fee_cents=platform_fee,
-        net_creator_amount_cents=net_creator,
-        net_platform_amount_cents=platform_fee,
-        provider_checkout_session_id=session.id,
-        payment_option_id=payment_option.id,
-        payment_option_schedule_id=payment_schedule.id,
-        payout_status=PayoutStatus.not_applicable if is_platform_owned else PayoutStatus.pending,
-        stripe_mode=settings.stripe_mode,
-        created_at=now,
-        updated_at=now,
+    resolved = resolve_option_and_schedule(
+        db,
+        payment_option_id=body.payment_option_id,
+        payment_option_schedule_id=body.payment_option_schedule_id,
     )
-    db.add(txn)
-    db.commit()
+    if resolved.price_cents <= 0:
+        raise HTTPException(status_code=400, detail="Schedule has no valid price.")
 
-    logger.info(
-        "Series checkout session created: txn=%s session=%s series=%s user=%s fee_bps=%s",
-        txn_id, session.id, series.id, current_user.id, fee_bps,
+    # Legacy metadata: include ``series_id`` on the Session +
+    # payment_intent so any downstream tooling that inspected it
+    # continues to see it. ``pathway_id`` is deliberately absent
+    # (matches the pre-B4B series endpoint).
+    _txn, session = orchestrate_paid_checkout(
+        db,
+        resolved=resolved,
+        payer=current_user,
+        success_url=body.success_url,
+        cancel_url=body.cancel_url,
+        now=now,
+        extra_metadata={"series_id": series.id},
+        extra_payment_intent_metadata={"series_id": series.id},
+        # ``PaymentTransaction.pathway_id`` legacy pointer: the
+        # pre-B4B series endpoint set this to the option's
+        # ``grants_pathway_id`` when set (bundled Pathway continuity).
+        # Preserve that.
+        txn_pathway_id=(
+            resolved.payment_option.grants_pathway_id
+            if resolved.payment_option.grants_pathway_id
+            else None
+        ),
+        product_name=f"{series.title} — {resolved.payment_option.name}",
     )
-
     return GatheringSeriesCheckoutResponse(checkout_url=session.url)
