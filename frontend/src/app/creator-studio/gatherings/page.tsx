@@ -1,10 +1,10 @@
 import Link from 'next/link'
 import { getActiveCreatorSpace, getCreatorEvents, getCreatorGatheringSeriesList, getCreatorSpace } from '@/lib/serverApi'
 import type { CreatorEvent, CreatorGatheringSeriesSummary, CreatorSpaceDetail } from '@/types/platform'
-import CreatorEventRow from '@/app/creator/spaces/[slug]/events/CreatorEventRow'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
 import GatheringSeriesBand from './GatheringSeriesBand'
+import StandaloneGatheringCard from './StandaloneGatheringCard'
 
 /**
  * Creator Studio → Gatherings.
@@ -132,9 +132,9 @@ export default async function GatheringsPage() {
               </div>
             )}
             {primarySpace && standalone.length > 0 && (
-              <div className="flex flex-col gap-3">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {standalone.map((event) => (
-                  <CreatorEventRow key={event.id} event={event} slug={primarySpace.slug} />
+                  <StandaloneGatheringCard key={event.id} event={event} slug={primarySpace.slug} />
                 ))}
               </div>
             )}

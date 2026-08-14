@@ -5243,7 +5243,12 @@ def create_about_block(
 
     block = PathwayAboutBlock(
         id=str(uuid4()),
+        # Populate both the legacy pointer AND the polymorphic
+        # owner fields (migration 113) so new rows stay coherent
+        # regardless of which reader queries them.
         pathway_id=pathway.id,
+        owner_kind="pathway",
+        owner_id=pathway.id,
         block_type=body.block_type,
         position=position,
         content=content,
@@ -5780,17 +5785,28 @@ def get_creator_payment_summary(
     processed.
     # TODO: deduct payout_status=paid rows once Stripe Connect is wired up.
     """
+    from app.models.payment import PaymentProvider as _PP
+
     _MEMBER_TYPES = [
         PaymentTransactionType.member_pathway_purchase,
         PaymentTransactionType.member_collective_purchase,
         PaymentTransactionType.member_pathway_subscription,
         PaymentTransactionType.member_collective_subscription,
+        # B4B unified checkout writes this type for every card
+        # purchase of a Payment Option.
+        PaymentTransactionType.member_payment_option_purchase,
+        PaymentTransactionType.member_series_pass_purchase,
     ]
     rows = (
         db.query(PaymentTransaction)
         .filter(
             PaymentTransaction.creator_user_id == current_user.id,
             PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TYPES]),
+            # Same rationale as ``list_creator_payments`` — Access-only
+            # audit anchors (Grant Access, legacy manual records) must
+            # not contribute to Gross Sales / Fees / Estimated Creator
+            # Earnings on the Payments received page.
+            PaymentTransaction.payment_provider == _PP.stripe,
         )
         .all()
     )
@@ -5818,22 +5834,97 @@ def list_creator_payments(
     current_user: User = Depends(get_creator_user),
     db: Session = Depends(get_db),
 ) -> list[CreatorPaymentTransactionOut]:
+    """Actual payments received by this creator.
+
+    Enriched with member, Collective and Payment Option snapshots so
+    the Payments page renders readable context rather than raw ID
+    slugs.
+
+    Excluded from this ledger:
+      * ``creator_subscription_payment`` — belongs on Billing.
+      * ``payment_provider = 'manual'`` — Access-only audit anchors
+        written by ``POST /commerce/manual-grant`` and by legacy
+        bank-transfer / cash records. Grant Access is an access
+        operation, not a payments workflow, so these must not
+        surface as "money received". The rows stay in the DB for
+        fulfilment idempotency + cancel-and-revoke traceability;
+        they're just filtered here. Historical local test records
+        (bank_transfer / cash) are covered by the same filter.
     """
-    Return member payment transactions for the current creator's spaces/pathways.
-    Creator subscription payments are excluded — those live on the Billing page.
-    Only returns rows where creator_user_id matches the current user.
-    """
+    from app.models.payment import PaymentProvider as _PP
+
     rows = (
         db.query(PaymentTransaction)
         .filter(
             PaymentTransaction.creator_user_id == current_user.id,
-            # Exclude creator-subscription payments from this view
-            PaymentTransaction.transaction_type != PaymentTransactionType.creator_subscription_payment,
+            PaymentTransaction.transaction_type
+            != PaymentTransactionType.creator_subscription_payment,
+            PaymentTransaction.payment_provider == _PP.stripe,
         )
         .order_by(PaymentTransaction.created_at.desc())
         .all()
     )
-    return [CreatorPaymentTransactionOut.model_validate(r) for r in rows]
+
+    # Batch-load related snapshots. Two-pass — collect ids first,
+    # then a single SELECT per kind — so a page of hundreds of rows
+    # stays at three extra queries total.
+    payer_ids = {r.payer_user_id for r in rows if r.payer_user_id}
+    space_ids = {r.space_id for r in rows if r.space_id}
+    option_ids = {r.payment_option_id for r in rows if r.payment_option_id}
+
+    users: dict[str, User] = (
+        {u.id: u for u in db.query(User).filter(User.id.in_(payer_ids)).all()}
+        if payer_ids else {}
+    )
+    spaces: dict[str, Space] = (
+        {s.id: s for s in db.query(Space).filter(Space.id.in_(space_ids)).all()}
+        if space_ids else {}
+    )
+    options: dict[str, PaymentOption] = (
+        {o.id: o for o in db.query(PaymentOption).filter(PaymentOption.id.in_(option_ids)).all()}
+        if option_ids else {}
+    )
+
+    out: list[CreatorPaymentTransactionOut] = []
+    for r in rows:
+        payer = users.get(r.payer_user_id) if r.payer_user_id else None
+        space = spaces.get(r.space_id) if r.space_id else None
+        option = options.get(r.payment_option_id) if r.payment_option_id else None
+        provider = (
+            r.payment_provider.value
+            if hasattr(r.payment_provider, "value")
+            else str(r.payment_provider) if r.payment_provider else None
+        )
+        out.append(CreatorPaymentTransactionOut(
+            id=r.id,
+            transaction_type=(
+                r.transaction_type.value
+                if hasattr(r.transaction_type, "value")
+                else str(r.transaction_type)
+            ),
+            status=(
+                r.status.value if hasattr(r.status, "value") else str(r.status)
+            ),
+            payment_provider=provider,
+            payer_user_id=r.payer_user_id,
+            payer_name=(payer.name if payer else None),
+            payer_email=(payer.email if payer else None),
+            space_id=r.space_id,
+            space_name=(space.name if space else None),
+            pathway_id=r.pathway_id,
+            payment_option_id=r.payment_option_id,
+            payment_option_name=(option.name if option else None),
+            payment_option_schedule_id=r.payment_option_schedule_id,
+            currency=r.currency,
+            gross_amount_cents=r.gross_amount_cents,
+            platform_fee_basis_points=r.platform_fee_basis_points,
+            platform_fee_cents=r.platform_fee_cents,
+            net_creator_amount_cents=r.net_creator_amount_cents,
+            notes=r.notes,
+            created_at=r.created_at,
+            updated_at=r.updated_at,
+        ))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -6352,9 +6443,29 @@ def list_space_passes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> list:
-    """List all AccessPasses for a space. Creator/admin only."""
+    """List all AccessPasses for a space. Creator/admin only.
+
+    Enriched (U1) with:
+      * ``payment_option_id`` + ``option_included_items`` — the human
+        list of what the option grants, so the ledger can show
+        "Awaken · EMBODY Term 3 2026 · The EMBODY Practice" without
+        a per-row fetch.
+      * ``access_source`` — how the access came into being
+        (purchase, complimentary, bank_transfer, cash, admin_grant).
+        Derived from the linking PaymentTransaction when present;
+        falls back to the AccessPass ``source`` field for legacy
+        rows with no linked transaction.
+    """
     from app.models.payment_option import PaymentOption as _PO
-    from app.models.platform import Pathway as _Pathway
+    from app.models.payment_option_grant import PaymentOptionGrant as _POG
+    from app.models.payment import (
+        PaymentTransaction as _PT,
+        PaymentProvider as _PP,
+    )
+    from app.models.platform import (
+        EventSeries as _ES,
+        Pathway as _Pathway,
+    )
     from app.models.user import User as _User
 
     space = _get_managed_space(slug, current_user, db)
@@ -6372,10 +6483,64 @@ def list_space_passes(
     user_ids = {ap.user_id for ap in passes}
     option_ids = {ap.payment_option_id for ap in passes if ap.payment_option_id}
     pathway_ids = {ap.eligible_pathway_id for ap in passes if ap.eligible_pathway_id}
+    txn_ids = {ap.payment_transaction_id for ap in passes if ap.payment_transaction_id}
 
     users = {u.id: u for u in db.query(_User).filter(_User.id.in_(user_ids)).all()} if user_ids else {}
     options = {o.id: o for o in db.query(_PO).filter(_PO.id.in_(option_ids)).all()} if option_ids else {}
     pathways = {p.id: p for p in db.query(_Pathway).filter(_Pathway.id.in_(pathway_ids)).all()} if pathway_ids else {}
+    txns = {t.id: t for t in db.query(_PT).filter(_PT.id.in_(txn_ids)).all()} if txn_ids else {}
+
+    # Included-items per Payment Option — batch-loaded so a page of
+    # dozens of passes only issues three extra SELECTs.
+    grants_by_option: dict[str, list[_POG]] = {}
+    if option_ids:
+        for g in db.query(_POG).filter(_POG.payment_option_id.in_(option_ids)).order_by(_POG.position, _POG.created_at).all():
+            grants_by_option.setdefault(g.payment_option_id, []).append(g)
+    grant_pathway_ids = {g.pathway_id for gs in grants_by_option.values() for g in gs if g.pathway_id}
+    grant_series_ids = {g.series_id for gs in grants_by_option.values() for g in gs if g.series_id}
+    grant_pathway_titles = (
+        {p.id: p.title for p in db.query(_Pathway.id, _Pathway.title).filter(_Pathway.id.in_(grant_pathway_ids)).all()}
+        if grant_pathway_ids else {}
+    )
+    grant_series_titles = (
+        {s.id: s.title for s in db.query(_ES.id, _ES.title).filter(_ES.id.in_(grant_series_ids)).all()}
+        if grant_series_ids else {}
+    )
+
+    def _included_items(option_id: str | None) -> list[str]:
+        if not option_id:
+            return []
+        items: list[str] = []
+        for g in grants_by_option.get(option_id, []):
+            if g.pathway_id:
+                items.append(grant_pathway_titles.get(g.pathway_id, "Pathway"))
+            elif g.series_id:
+                items.append(grant_series_titles.get(g.series_id, "Gathering Series"))
+        return items
+
+    def _access_source(ap: AccessPass) -> str:
+        # Prefer the linked PaymentTransaction: notes carry
+        # ``Manual grant — bank_transfer`` / ``complimentary`` etc
+        # for manual grants, otherwise stripe → "purchase".
+        txn = txns.get(ap.payment_transaction_id) if ap.payment_transaction_id else None
+        if txn is not None:
+            provider = (
+                txn.payment_provider.value
+                if hasattr(txn.payment_provider, "value") else str(txn.payment_provider)
+            )
+            if provider == _PP.stripe.value:
+                return "purchase"
+            # Manual-provider — read the notes prefix set by the
+            # manual-grant endpoint. Any old / unmarked manual
+            # transaction falls back to ``manual``.
+            note = (txn.notes or "").lower()
+            for kind in ("complimentary", "bank_transfer", "cash", "admin_grant"):
+                if kind in note:
+                    return kind
+            return "manual"
+        # Fallback: legacy grant with no linked transaction.
+        src = ap.source.value if hasattr(ap.source, "value") else str(ap.source or "")
+        return src or "manual"
 
     # Booking counts per pass
     from sqlalchemy import case, and_
@@ -6427,9 +6592,15 @@ def list_space_passes(
             remaining_credits=ap.remaining_credits,
             credits_per_week=ap.credits_per_week,
             eligible_pathway_id=ap.eligible_pathway_id,
+            eligible_series_id=ap.eligible_series_id,
             option_name=opt.name if opt else None,
             pathway_title=pathway.title if pathway else None,
+            payment_option_id=ap.payment_option_id,
+            option_included_items=_included_items(ap.payment_option_id),
+            access_source=_access_source(ap),
+            payment_transaction_id=ap.payment_transaction_id,
             created_at=ap.created_at,
+            user_id=ap.user_id,
             member_name=user.name if user else None,
             member_email=user.email if user else None,
             total_bookings=total_bookings_map.get(ap.id, 0),
@@ -7746,3 +7917,11 @@ def delete_offer_page(
 # ---------------------------------------------------------------------------
 
 from app.creator import _gathering_series_routes as _gs_routes  # noqa: E402,F401
+
+# ---------------------------------------------------------------------------
+# Central Payment Options routes (U1 — see _space_payment_options_routes.py
+# for the Collective-scoped, grants-first CRUD surface). Imported for
+# side effect: the module registers its endpoints against ``router``.
+# ---------------------------------------------------------------------------
+
+from app.creator import _space_payment_options_routes as _spo_routes  # noqa: E402,F401

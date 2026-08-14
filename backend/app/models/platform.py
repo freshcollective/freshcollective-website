@@ -2097,19 +2097,46 @@ class PathwayStepBlock(Base):
 
 class PathwayAboutBlock(Base):
     """
-    A single content block on a Pathway's About/preview page.
+    A single content block on an owner's About page.
 
-    Mirrors PathwayStepBlock column-for-column but is keyed to a pathway
-    rather than a step.  Same block types and rendering rules apply.
+    Historically Pathway-only (hence the table name), the block was
+    generalised in migration 113 so a Gathering Series can carry the
+    same rich About content — same block types, same renderer, same
+    editor primitives.
+
+    Ownership model
+    ---------------
+    * ``owner_kind`` + ``owner_id``  → the canonical owner reference
+      after migration 113. Values today: ``'pathway'`` or
+      ``'event_series'``. New owner kinds slot in without a further
+      migration.
+    * ``pathway_id`` (nullable) → legacy pointer, still populated for
+      pathway-owned rows so existing member-side / SQL readers keep
+      working. Series-owned rows carry ``pathway_id=NULL`` and
+      ``owner_kind='event_series'``.
+
+    Two indexes: the legacy pathway-only compound index for readers
+    that still filter on ``pathway_id`` alone, and the polymorphic
+    ``owner_kind, owner_id, position`` index for the new endpoints.
     """
 
     __tablename__ = "pathway_about_blocks"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    pathway_id: Mapped[str] = mapped_column(
+    # Polymorphic owner (migration 113). Both nullable at the model
+    # layer because legacy rows created before 113 haven't been
+    # backfilled *in memory* if the ORM loads them without a fresh
+    # DB read; the migration backfills the columns in-place so DB
+    # state is complete. New rows written by application code
+    # MUST populate both.
+    owner_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    owner_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Legacy Pathway pointer. Relaxed to nullable in migration 113
+    # so Series-owned rows can coexist here.
+    pathway_id: Mapped[str | None] = mapped_column(
         String,
         ForeignKey("pathways.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     block_type: Mapped[StepBlockType] = mapped_column(

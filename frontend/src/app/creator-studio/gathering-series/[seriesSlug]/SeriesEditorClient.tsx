@@ -21,20 +21,31 @@ import {
   useToast,
 } from '@/components/platform'
 import ImagePickerField from '@/components/creator/ImagePickerField'
+import AboutPageEditor from '@/app/creator-studio/pathways/[pathwaySlug]/AboutPageEditor'
+import type { PathwayAboutBlock, CreatorMediaAsset, CreatorResource } from '@/types/platform'
+import SeriesPaymentOptionsReference from './SeriesPaymentOptionsReference'
 
 /**
  * Series editor client.
  *
- * Three cards, in order:
- *   1. About this Series — title, description, dates, cover, status
- *   2. Gatherings in this Series — list + attach existing + create new
- *   3. Payment Options — list + editor modal
+ * Restructured into three first-class tabs (U1):
  *
- * State kept minimal: each card owns its slice, all mutations round-
- * trip through the creator API and reload the tree via
- * ``router.refresh()`` — a simple, boring pattern that keeps
- * multi-step edits (attach → view → detach) coherent without a
- * bespoke state store.
+ *   Gatherings  — the operational Series home (list, attach, create).
+ *   Settings    — title, dates, cover, status, Payment Options
+ *                 reference, lifecycle controls.
+ *   About       — the richer member-facing description content
+ *                 (deliberately restrained this iteration — a
+ *                 textarea rather than a full page builder).
+ *
+ * The legacy ``SeriesPaymentOptionsCard`` (nested Payment Option
+ * CRUD) is preserved in this file but no longer rendered — Payment
+ * Options moved to Creator Studio → Commerce → Payment Options.
+ * ``AboutSeriesCard`` retained without its description field; the
+ * description now belongs to the About tab.
+ *
+ * State kept minimal: each card owns its slice, all mutations
+ * round-trip through the creator API and reload via
+ * ``router.refresh()``.
  */
 
 interface Props {
@@ -128,33 +139,189 @@ async function friendlyApiError(
 // Root
 // ---------------------------------------------------------------------------
 
+type SeriesTab = 'gatherings' | 'settings' | 'about'
+
+/** Suppress "unused" warnings for legacy card retained during the
+ *  U1 transition — see file docstring. Keeping the code in place
+ *  makes rollback trivial and preserves any subtle behaviour we
+ *  might want to fold into the central editor later. */
+void SeriesPaymentOptionsCard
+// ``initialPaymentOptions`` and ``pathways`` are still fetched by
+// the server component for the legacy card; they're intentionally
+// unused by the tabbed shell.
+void ({} as unknown as Props)
+
 export default function SeriesEditorClient({
   spaceSlug, initialSeries, initialGatherings, initialPaymentOptions, pathways,
 }: Props) {
+  // Silence the linter for the legacy props (see notes above).
+  void initialPaymentOptions
+  void pathways
+
+  const [tab, setTab] = useState<SeriesTab>('gatherings')
+
   return (
     <div className="pb-24">
-      <AboutSeriesCard spaceSlug={spaceSlug} initial={initialSeries} />
-      <SeriesGatheringsCard
-        spaceSlug={spaceSlug}
-        seriesId={initialSeries.id}
-        seriesSlug={initialSeries.slug}
-        seriesTitle={initialSeries.title}
-        seriesStartsAt={initialSeries.starts_at}
-        seriesEndsAt={initialSeries.ends_at}
-        initialGatherings={initialGatherings}
-      />
-      <SeriesPaymentOptionsCard
-        spaceSlug={spaceSlug}
-        seriesSlug={initialSeries.slug}
-        seriesEnds={initialSeries.ends_at}
-        pathways={pathways}
-        initialOptions={initialPaymentOptions}
-      />
-      <SeriesDangerZone
-        spaceSlug={spaceSlug}
-        series={initialSeries}
-      />
+      <SeriesTabsBar tab={tab} onChange={setTab} />
+
+      {tab === 'gatherings' && (
+        <SeriesGatheringsCard
+          spaceSlug={spaceSlug}
+          seriesId={initialSeries.id}
+          seriesSlug={initialSeries.slug}
+          seriesTitle={initialSeries.title}
+          seriesStartsAt={initialSeries.starts_at}
+          seriesEndsAt={initialSeries.ends_at}
+          initialGatherings={initialGatherings}
+        />
+      )}
+
+      {tab === 'settings' && (
+        <>
+          <AboutSeriesCard spaceSlug={spaceSlug} initial={initialSeries} />
+          <SeriesPaymentOptionsReference
+            spaceSlug={spaceSlug}
+            seriesSlug={initialSeries.slug}
+          />
+          <SeriesDangerZone
+            spaceSlug={spaceSlug}
+            series={initialSeries}
+          />
+        </>
+      )}
+
+      {tab === 'about' && (
+        <SeriesAboutTab spaceSlug={spaceSlug} initial={initialSeries} />
+      )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Tab navigation
+// ---------------------------------------------------------------------------
+
+function SeriesTabsBar({
+  tab, onChange,
+}: {
+  tab: SeriesTab
+  onChange: (t: SeriesTab) => void
+}) {
+  const items: { key: SeriesTab; label: string }[] = [
+    { key: 'gatherings', label: 'Gatherings' },
+    { key: 'settings',   label: 'Settings' },
+    { key: 'about',      label: 'About' },
+  ]
+  return (
+    <div className="mb-6 flex gap-1 border-b border-slate-200">
+      {items.map((it) => {
+        const active = it.key === tab
+        return (
+          <button
+            key={it.key}
+            type="button"
+            onClick={() => onChange(it.key)}
+            className={`-mb-px inline-flex items-center border-b-2 px-4 py-2.5 text-[13px] font-semibold transition-colors ${
+              active
+                ? 'border-teal-500 text-teal-700'
+                : 'border-transparent text-slate-600 hover:text-slate-900'
+            }`}
+            aria-current={active ? 'page' : undefined}
+          >
+            {it.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// About tab — rich block-based member-facing content.
+//
+// Reuses the same ``AboutPageEditor`` primitives + ``BlockEditorShared``
+// components that back the Pathway About page. Persistence flows
+// through the Series-scoped ``/about-blocks`` endpoints (introduced
+// in this refinement pass) but writes to the same
+// ``pathway_about_blocks`` table via the polymorphic ``owner_kind``
+// / ``owner_id`` columns added in migration 113. Text, images,
+// callouts, links, buttons, columns, container palettes — the same
+// primitives available on Pathway About.
+//
+// The short ``EventSeries.description`` field remains an operational
+// short-summary (used on cards + summary rows), unchanged. It is not
+// replaced by the About blocks — they are two distinct surfaces.
+// ---------------------------------------------------------------------------
+
+interface SeriesAboutTabProps {
+  spaceSlug: string
+  initial: CreatorGatheringSeries
+}
+
+function SeriesAboutTab({ spaceSlug, initial }: SeriesAboutTabProps) {
+  const { show } = useToast()
+  const [blocks, setBlocks] = useState<PathwayAboutBlock[] | null>(null)
+  const [mediaAssets, setMediaAssets] = useState<CreatorMediaAsset[]>([])
+  const [resources, setResources] = useState<CreatorResource[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/gathering-series/${initial.slug}/about-blocks`),
+        { credentials: 'include' },
+      ).then((r) => r.ok ? r.json() as Promise<PathwayAboutBlock[]> : []),
+      fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/media`), { credentials: 'include' })
+        .then((r) => r.ok ? r.json() as Promise<CreatorMediaAsset[]> : []),
+      fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/resources`), { credentials: 'include' })
+        .then((r) => r.ok ? r.json() as Promise<CreatorResource[]> : []),
+    ])
+      .then(([b, m, r]) => {
+        if (cancelled) return
+        setBlocks(b)
+        setMediaAssets(m)
+        setResources(r)
+      })
+      .catch((e) => {
+        if (cancelled) return
+        setError(String(e?.message ?? e))
+        show('Couldn\u2019t load the About content.', { tone: 'error' })
+      })
+    return () => { cancelled = true }
+  }, [spaceSlug, initial.slug, show])
+
+  if (error && blocks === null) {
+    return (
+      <section className="mb-6 rounded-2xl border border-red-100 bg-red-50 p-6 text-[13px] text-red-800">
+        Couldn't load the About content: {error}
+      </section>
+    )
+  }
+  if (blocks === null) {
+    return (
+      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 text-[13px] text-slate-500">
+        Loading…
+      </section>
+    )
+  }
+
+  return (
+    <section className="mb-6">
+      <AboutPageEditor
+        spaceSlug={spaceSlug}
+        initialBlocks={blocks}
+        mediaAssets={mediaAssets}
+        resources={resources}
+        blocksApiUrl={apiUrl(
+          `/api/creator/spaces/${spaceSlug}/gathering-series/${initial.slug}/about-blocks`,
+        )}
+        headingTitle="About this Series"
+        headingBody="Build the page members see for this Gathering Series. The same block types as Pathway About — text, images, callouts, links, buttons, columns."
+        emptyStateHeading="No about content yet"
+        emptyStateBody="Add your first block to explain what this Series is about, who it is for, and what happens when someone joins."
+      />
+    </section>
   )
 }
 
@@ -316,7 +483,6 @@ function AboutSeriesCard({
   const router = useRouter()
   const { show } = useToast()
   const [title, setTitle] = useState(initial.title)
-  const [description, setDescription] = useState(initial.description ?? '')
   const [startsAt, setStartsAt] = useState(isoToDateInput(initial.starts_at))
   const [endsAt, setEndsAt] = useState(isoToDateInput(initial.ends_at))
   const [cover, setCover] = useState<string | null>(initial.cover_image_url)
@@ -356,7 +522,7 @@ function AboutSeriesCard({
     if (!title.trim() || !startsIso) return
     await save({
       title: title.trim(),
-      description: description.trim() || null,
+      // ``description`` is edited on the About tab now.
       starts_at: startsIso,
       // Explicit null when blank — turns a finite Series ongoing.
       // End dates are inclusive-of-day: 23:59:59 keeps a pass valid
@@ -375,9 +541,10 @@ function AboutSeriesCard({
     <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-6 md:p-8">
       <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="font-serif text-[18px] text-navy-900">About this Series</h2>
+          <h2 className="font-serif text-[18px] text-navy-900">Series settings</h2>
           <p className="mt-1 text-[13.5px] text-slate-600">
-            Title, description, dates, cover and status.
+            Title, dates, cover and status. The richer About content
+            has its own tab.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -395,9 +562,6 @@ function AboutSeriesCard({
       <div className="grid gap-5 md:grid-cols-2">
         <FormField label="Title">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={300} />
-        </FormField>
-        <FormField label="Description" helper="Optional. Short and human.">
-          <TextArea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={1000} />
         </FormField>
         <FormField label="Start date">
           <input

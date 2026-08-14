@@ -15,13 +15,36 @@ interface CreatorPathwayMin {
 
 interface Props {
   spaceSlug: string
-  pathway: CreatorPathwayMin
+  pathway?: CreatorPathwayMin
   initialBlocks: PathwayAboutBlock[]
   mediaAssets: CreatorMediaAsset[]
   resources?: CreatorResource[]
+  /** Override the About-blocks endpoint base. Defaults to the
+   *  Pathway endpoint for backwards compatibility. Series callers
+   *  pass their own base URL to write against
+   *  ``/gathering-series/{slug}/about-blocks`` — the same block
+   *  primitives (``BlockRow``, ``AddBlockPicker``) are reused
+   *  transparently because they only work with the block payload,
+   *  not the URL. */
+  blocksApiUrl?: string
+  /** Override the "Preview member view" link target. Optional. */
+  previewHref?: string
+  /** Section heading + subheading — overridable so a Series
+   *  caller can label it "Series About" without the "pathway"
+   *  wording. */
+  headingTitle?: string
+  headingBody?: string
+  /** Empty-state copy — overridable so a Series doesn't say
+   *  "this pathway" when it has no blocks. */
+  emptyStateHeading?: string
+  emptyStateBody?: string
 }
 
-export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, mediaAssets, resources = [] }: Props) {
+export default function AboutPageEditor({
+  spaceSlug, pathway, initialBlocks, mediaAssets, resources = [],
+  blocksApiUrl, previewHref, headingTitle, headingBody,
+  emptyStateHeading, emptyStateBody,
+}: Props) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [blocks, setBlocks] = useState<PathwayAboutBlock[]>(initialBlocks)
@@ -29,7 +52,13 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
   const [addError, setAddError] = useState<string | null>(null)
   const [newBlockId, setNewBlockId] = useState<string | null>(null)
 
-  const blocksUrl = apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/about-blocks`)
+  const blocksUrl = blocksApiUrl ?? apiUrl(
+    `/api/creator/spaces/${spaceSlug}/pathways/${pathway!.slug}/about-blocks`,
+  )
+  const memberPreviewHref = previewHref ?? (pathway
+    ? `/spaces/${spaceSlug}/pathways/${pathway.slug}/about`
+    : null
+  )
 
   async function addBlock(type: StepBlockType) {
     setAdding(true)
@@ -98,22 +127,26 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
       {/* Section heading — the shared PathwayHeader above already carries
           the back link, pathway title, and tab bar. */}
       <div className="mb-6">
-        <h2 className="text-[18px] font-semibold text-navy-900">Edit about page</h2>
+        <h2 className="text-[18px] font-semibold text-navy-900">
+          {headingTitle ?? 'Edit about page'}
+        </h2>
         <p className="mt-1 text-[14px] text-black">
-          Build the page people see before they start or unlock this pathway.
+          {headingBody ?? 'Build the page people see before they start or unlock this pathway.'}
         </p>
       </div>
 
-      {/* Member preview link */}
-      <div className="mb-6">
-        <Link
-          href={`/spaces/${spaceSlug}/pathways/${pathway.slug}/about`}
-          target="_blank"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-700"
-        >
-          Preview member view →
-        </Link>
-      </div>
+      {/* Member preview link (when a preview target exists) */}
+      {memberPreviewHref && (
+        <div className="mb-6">
+          <Link
+            href={memberPreviewHref}
+            target="_blank"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[12px] font-medium text-black transition-colors hover:border-teal-200 hover:text-teal-700"
+          >
+            Preview member view →
+          </Link>
+        </div>
+      )}
 
       {/* Content blocks card */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
@@ -124,9 +157,11 @@ export default function AboutPageEditor({ spaceSlug, pathway, initialBlocks, med
         <div className="space-y-3">
           {blocks.length === 0 && (
             <div className="rounded-xl border border-dashed border-slate-200 bg-white p-8 text-center">
-              <p className="mb-1 text-[15px] font-semibold text-navy-900">No about page content yet</p>
+              <p className="mb-1 text-[15px] font-semibold text-navy-900">
+                {emptyStateHeading ?? 'No about page content yet'}
+              </p>
               <p className="text-[13px] text-black">
-                Add your first block to explain what this pathway is about, who it is for, and what people will experience.
+                {emptyStateBody ?? 'Add your first block to explain what this pathway is about, who it is for, and what people will experience.'}
               </p>
             </div>
           )}

@@ -1497,12 +1497,18 @@ export interface AccessPassSummary {
   remaining_credits: number | null
   credits_per_week: number | null
   eligible_pathway_id: string | null
+  eligible_series_id: string | null
   option_name: string | null
   pathway_title: string | null
+  payment_option_id: string | null
+  option_included_items: string[]
+  access_source: string | null
+  payment_transaction_id: string | null
   created_at: string
 }
 
 export interface AccessPassAdminSummary extends AccessPassSummary {
+  user_id: string | null
   member_name: string | null
   member_email: string | null
   total_bookings: number

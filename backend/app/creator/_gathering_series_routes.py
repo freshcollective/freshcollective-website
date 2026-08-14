@@ -38,6 +38,7 @@ from app.creator.routes import (
     _event_to_dict,
     _get_gathering_series,
     _get_managed_space,
+    _normalise_button_fields,
     _option_to_dict,
     _schedule_to_dict,
     _unique_slug,
@@ -45,6 +46,10 @@ from app.creator.routes import (
     router,
 )
 from app.creator.schemas import (
+    AboutBlockCreateRequest,
+    AboutBlockReorderRequest,
+    AboutBlockResponse,
+    AboutBlockUpdateRequest,
     GatheringSeriesCreateRequest,
     GatheringSeriesResponse,
     GatheringSeriesSummary,
@@ -57,14 +62,28 @@ from app.creator.schemas import (
     SeriesPaymentOptionCreateRequest,
     SeriesPaymentOptionUpdateRequest,
 )
+from app.services.embed_validator import (
+    EmbedValidationError,
+    extract_and_validate_embed_url,
+)
 from app.models.payment_option_schedule import PaymentOptionSchedule
-from app.models.platform import Event, EventSeries
+from app.models.platform import (
+    CreatorMediaAsset,
+    Event,
+    EventSeries,
+    PathwayAboutBlock,
+    SpaceResource,
+    StepBlockType,
+)
 from app.models.payment_option import (
     PaymentOption,
     PaymentOptionStatus,
     PaymentOptionType,
 )
 from app.models.user import User
+
+from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
 
 # ---------------------------------------------------------------------------
@@ -910,4 +929,260 @@ def delete_series_option_schedule(
     # path so future consumers don't need special-case logic.
     sched.status = "archived"
     sched.updated_at = datetime.utcnow()
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Series About Blocks — mirrors the Pathway About Block endpoints
+#
+# Both surfaces write to the same ``pathway_about_blocks`` table via
+# the polymorphic ``owner_kind`` / ``owner_id`` columns introduced in
+# migration 113. Series rows carry ``owner_kind='event_series'`` and
+# leave the legacy ``pathway_id`` column NULL. All request/response
+# schemas + block-type validators + embed / button normalisation are
+# reused as-is from the pathway endpoints.
+# ---------------------------------------------------------------------------
+
+
+_SERIES_OWNER_KIND = "event_series"
+
+
+def _series_about_blocks_query(series: EventSeries, db: Session):
+    return (
+        db.query(PathwayAboutBlock)
+        .options(
+            selectinload(PathwayAboutBlock.media_asset),
+            selectinload(PathwayAboutBlock.resource),
+        )
+        .filter(
+            PathwayAboutBlock.owner_kind == _SERIES_OWNER_KIND,
+            PathwayAboutBlock.owner_id == series.id,
+        )
+        .order_by(PathwayAboutBlock.position)
+    )
+
+
+@router.get(
+    "/spaces/{slug}/gathering-series/{series_slug}/about-blocks",
+    response_model=list[AboutBlockResponse],
+)
+def list_series_about_blocks(
+    slug: str,
+    series_slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[PathwayAboutBlock]:
+    space = _get_managed_space(slug, current_user, db)
+    series = _get_gathering_series(space, series_slug, db)
+    return _series_about_blocks_query(series, db).all()
+
+
+@router.post(
+    "/spaces/{slug}/gathering-series/{series_slug}/about-blocks",
+    response_model=AboutBlockResponse,
+    status_code=201,
+)
+def create_series_about_block(
+    slug: str,
+    series_slug: str,
+    body: AboutBlockCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> PathwayAboutBlock:
+    space = _get_managed_space(slug, current_user, db)
+    series = _get_gathering_series(space, series_slug, db)
+
+    if body.media_asset_id:
+        asset = db.query(CreatorMediaAsset).filter(
+            CreatorMediaAsset.id == body.media_asset_id,
+            CreatorMediaAsset.space_id == space.id,
+        ).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Media asset not found in this space.")
+
+    if body.resource_id:
+        linked = db.query(SpaceResource).filter(
+            SpaceResource.id == body.resource_id,
+            SpaceResource.space_id == space.id,
+        ).first()
+        if not linked:
+            raise HTTPException(status_code=404, detail="Resource not found in this space.")
+
+    embed_url = body.embed_url
+    content = body.content
+    label = body.label
+    caption = body.caption
+    if body.block_type == "embed" and embed_url:
+        try:
+            embed_url = extract_and_validate_embed_url(embed_url)
+        except EmbedValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    elif body.block_type == "button":
+        normalised = _normalise_button_fields({
+            "embed_url": embed_url,
+            "label": label,
+            "caption": caption,
+            "content": content,
+        })
+        embed_url = normalised["embed_url"]
+        label = normalised["label"]
+        caption = normalised["caption"]
+        content = normalised["content"]
+
+    if body.position is not None:
+        position = body.position
+    else:
+        max_pos = (
+            db.query(func.max(PathwayAboutBlock.position))
+            .filter(
+                PathwayAboutBlock.owner_kind == _SERIES_OWNER_KIND,
+                PathwayAboutBlock.owner_id == series.id,
+            )
+            .scalar()
+        )
+        position = (max_pos or -1) + 1
+
+    block = PathwayAboutBlock(
+        id=str(uuid4()),
+        owner_kind=_SERIES_OWNER_KIND,
+        owner_id=series.id,
+        pathway_id=None,   # Series-owned rows leave the legacy FK NULL.
+        block_type=body.block_type,
+        position=position,
+        content=content,
+        label=label,
+        caption=caption,
+        embed_url=embed_url,
+        media_asset_id=body.media_asset_id,
+        resource_id=body.resource_id,
+        container_style=body.container_style,
+    )
+    db.add(block)
+    db.commit()
+    db.refresh(block)
+    db.refresh(block, ["media_asset", "resource"])
+    return block
+
+
+# IMPORTANT: /about-blocks/reorder must be registered BEFORE /about-blocks/{block_id}
+@router.patch(
+    "/spaces/{slug}/gathering-series/{series_slug}/about-blocks/reorder",
+    response_model=list[AboutBlockResponse],
+)
+def reorder_series_about_blocks(
+    slug: str,
+    series_slug: str,
+    body: AboutBlockReorderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> list[PathwayAboutBlock]:
+    space = _get_managed_space(slug, current_user, db)
+    series = _get_gathering_series(space, series_slug, db)
+
+    blocks = {
+        b.id: b
+        for b in db.query(PathwayAboutBlock)
+        .filter(
+            PathwayAboutBlock.owner_kind == _SERIES_OWNER_KIND,
+            PathwayAboutBlock.owner_id == series.id,
+        )
+        .all()
+    }
+    for pos, block_id in enumerate(body.ids):
+        if block_id in blocks:
+            blocks[block_id].position = pos
+    db.commit()
+
+    return _series_about_blocks_query(series, db).all()
+
+
+@router.patch(
+    "/spaces/{slug}/gathering-series/{series_slug}/about-blocks/{block_id}",
+    response_model=AboutBlockResponse,
+)
+def update_series_about_block(
+    slug: str,
+    series_slug: str,
+    block_id: str,
+    body: AboutBlockUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> PathwayAboutBlock:
+    space = _get_managed_space(slug, current_user, db)
+    series = _get_gathering_series(space, series_slug, db)
+
+    block = (
+        db.query(PathwayAboutBlock)
+        .filter(
+            PathwayAboutBlock.id == block_id,
+            PathwayAboutBlock.owner_kind == _SERIES_OWNER_KIND,
+            PathwayAboutBlock.owner_id == series.id,
+        )
+        .first()
+    )
+    if not block:
+        raise HTTPException(status_code=404, detail="About block not found.")
+
+    if body.media_asset_id is not None:
+        asset = db.query(CreatorMediaAsset).filter(
+            CreatorMediaAsset.id == body.media_asset_id,
+            CreatorMediaAsset.space_id == space.id,
+        ).first()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Media asset not found in this space.")
+
+    if body.resource_id is not None:
+        linked = db.query(SpaceResource).filter(
+            SpaceResource.id == body.resource_id,
+            SpaceResource.space_id == space.id,
+        ).first()
+        if not linked:
+            raise HTTPException(status_code=404, detail="Resource not found in this space.")
+
+    patch = body.model_dump(exclude_unset=True)
+
+    if block.block_type == StepBlockType.embed and patch.get("embed_url"):
+        try:
+            patch["embed_url"] = extract_and_validate_embed_url(patch["embed_url"])
+        except EmbedValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    if block.block_type == StepBlockType.button:
+        _normalise_button_fields(patch)
+
+    for field, value in patch.items():
+        setattr(block, field, value)
+
+    db.commit()
+    db.refresh(block)
+    db.refresh(block, ["media_asset", "resource"])
+    return block
+
+
+@router.delete(
+    "/spaces/{slug}/gathering-series/{series_slug}/about-blocks/{block_id}",
+    status_code=204,
+)
+def delete_series_about_block(
+    slug: str,
+    series_slug: str,
+    block_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    space = _get_managed_space(slug, current_user, db)
+    series = _get_gathering_series(space, series_slug, db)
+
+    block = (
+        db.query(PathwayAboutBlock)
+        .filter(
+            PathwayAboutBlock.id == block_id,
+            PathwayAboutBlock.owner_kind == _SERIES_OWNER_KIND,
+            PathwayAboutBlock.owner_id == series.id,
+        )
+        .first()
+    )
+    if not block:
+        raise HTTPException(status_code=404, detail="About block not found.")
+
+    db.delete(block)
     db.commit()

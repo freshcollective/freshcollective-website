@@ -78,30 +78,50 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
+    // OFFERINGS collects the things a Creator makes available to
+    // members. Pathways + Gatherings today; later this group may
+    // grow to include a Marketplace-style category (Products /
+    // Digital Products) for downloadable resources — the label
+    // and grouping are chosen to stay honest about that future
+    // extensibility without pre-empting it in the UI.
     label: '📖 OFFERINGS',
     items: [
-      { href: '/creator-studio/pathways',  label: 'Pathways',      activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/, requiresCollective: true },
-      // Offer Pages are on hold. The entry stays visible (muted +
-      // non-navigable + "Coming later" suffix) so Creators know the
-      // surface exists without being invited into it. Data +
-      // backend endpoints + migrations are all preserved; direct
-      // URLs still resolve for development / recovery.
-      { href: '/creator-studio/offers',    label: 'Offer Pages',   requiresCollective: true, paused: true },
+      { href: '/creator-studio/pathways',   label: 'Pathways',   activeOnPath: /^\/creator\/spaces\/[^/]+\/pathways/, requiresCollective: true },
+      { href: '/creator-studio/gatherings', label: 'Gatherings', activeOnPath: /^\/creator\/spaces\/[^/]+\/events/,    requiresCollective: true },
     ],
   },
   {
+    // COMMUNITY is now activity-only: conversations + people. The
+    // scheduled Gatherings surface moved to Offerings alongside
+    // Pathways because a Gathering is something the Creator offers.
     label: '🤝 COMMUNITY',
     items: [
-      { href: '/creator-studio/community',  label: 'Conversations', activeOnPath: /^\/creator\/spaces\/[^/]+\/community/, requiresCollective: true },
-      { href: '/creator-studio/gatherings', label: 'Gatherings',    activeOnPath: /^\/creator\/spaces\/[^/]+\/events/,    requiresCollective: true },
-      { href: '/creator-studio/people',     label: 'People',        requiresCollective: true },
-      { href: '/creator-studio/passes',     label: 'Memberships',   requiresCollective: true },
+      { href: '/creator-studio/community', label: 'Conversations', activeOnPath: /^\/creator\/spaces\/[^/]+\/community/, requiresCollective: true },
+      { href: '/creator-studio/people',    label: 'People',        requiresCollective: true },
     ],
   },
   {
     label: '💰 COMMERCE',
     items: [
-      { href: '/creator-studio/payments', label: 'Payments' },
+      // Central Payment Options — the active commerce authoring
+      // surface. Collective-scoped; supersedes the older nested
+      // Pathway / Series Payment Option CRUD (which is now a
+      // reference-only view inside those editors).
+      { href: '/creator-studio/payment-options', label: 'Payment Options', requiresCollective: true },
+      // Payments received — transaction history + money in. Named
+      // "Payments received" (not just "Payments") to distinguish
+      // from "Payment Options" (what Creators offer) and avoid
+      // "Payment" doubling up on both sides of the sidebar.
+      { href: '/creator-studio/payments',        label: 'Payments received' },
+      // Access — renamed from "Memberships". Route is /access;
+      // /passes redirects here for backwards compatibility.
+      { href: '/creator-studio/access',          label: 'Access',          requiresCollective: true },
+      // Offer Pages remain on hold. Muted + non-navigable + "Coming
+      // later" suffix so Creators know the surface exists without
+      // being invited into it. Data + backend endpoints + migrations
+      // are all preserved; direct URLs still resolve for
+      // development / recovery.
+      { href: '/creator-studio/offers',          label: 'Offer Pages',     requiresCollective: true, paused: true },
     ],
   },
 ]

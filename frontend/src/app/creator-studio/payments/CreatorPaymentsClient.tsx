@@ -19,10 +19,15 @@ interface CreatorPaymentTransaction {
   id: string
   transaction_type: string
   status: string
+  payment_provider: string | null
   payer_user_id: string | null
+  payer_name: string | null
+  payer_email: string | null
   space_id: string | null
+  space_name: string | null
   pathway_id: string | null
   payment_option_id: string | null
+  payment_option_name: string | null
   payment_option_schedule_id: string | null
   currency: string
   gross_amount_cents: number
@@ -31,6 +36,12 @@ interface CreatorPaymentTransaction {
   net_creator_amount_cents: number | null
   notes: string | null
   created_at: string
+}
+
+function providerLabel(row: CreatorPaymentTransaction): string {
+  if (row.payment_provider === 'manual') return 'Manual'
+  if (row.payment_provider === 'stripe') return row.status === 'succeeded' ? 'Card' : 'Card (pending)'
+  return row.payment_provider ?? '—'
 }
 
 function fmt(cents: number, currency: string) {
@@ -93,28 +104,10 @@ function SummaryCard({
   )
 }
 
-const PRICING_OPTIONS = [
-  {
-    title: 'Free collective',
-    description: 'Members join at no cost. Great for community-led collectives.',
-  },
-  {
-    title: 'Paid collective',
-    description: 'Charge a one-time or recurring fee for full Collective access.',
-  },
-  {
-    title: 'Paid pathway',
-    description: 'Offer individual pathways for purchase within a free or paid Collective.',
-  },
-  {
-    title: 'Paid gathering',
-    description: 'Sell tickets or charge for individual live events.',
-  },
-  {
-    title: 'Included with membership',
-    description: 'Bundle Collective access into a platform-wide membership subscription.',
-  },
-]
+// (Removed the outdated ``PRICING_OPTIONS`` card grid — the "Coming
+//  soon" pricing marketing block predates Commerce → Payment Options.
+//  The Payments page is now transaction-led; how members can pay is
+//  authored in ``/creator-studio/payment-options``.)
 
 export default function CreatorPaymentsClient({
   feeBasisPoints,
@@ -165,14 +158,14 @@ export default function CreatorPaymentsClient({
       {headerCollectiveName ? (
         <CollectiveArtworkHeader
           collectiveName={headerCollectiveName}
-          sectionTitle="Payments"
-          meta="Member purchases, fees and estimated payouts across your collectives."
+          sectionTitle="Payments received"
+          meta="Real payment activity — money in from member purchases, with fees and estimated payouts across your collectives."
           location={headerLocation}
           coverImageUrl={headerCoverImageUrl}
         />
       ) : (
         <div className="mb-6">
-          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Payments</h1>
+          <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Payments received</h1>
         </div>
       )}
 
@@ -192,7 +185,7 @@ export default function CreatorPaymentsClient({
             <div className="flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="text-[14px] font-semibold" style={{ color: '#0F766E' }}>
-                  Paid pathway checkout is available
+                  Payments are live
                 </p>
                 {stripeTestMode && (
                   <span
@@ -204,8 +197,9 @@ export default function CreatorPaymentsClient({
                 )}
               </div>
               <p className="mt-1 text-[13px] leading-relaxed" style={{ color: '#0F766E' }}>
-                Payments are processed through Fresh Collective during this phase. Members can
-                purchase paid pathways now. You do not need to connect your own Stripe account.
+                Purchases are processed through Fresh Collective during this phase — you do
+                not need to connect your own Stripe account. Configure what members can buy in{' '}
+                <strong>Commerce → Payment Options</strong>.
               </p>
             </div>
           </div>
@@ -227,8 +221,9 @@ export default function CreatorPaymentsClient({
                 Payments are not configured yet
               </p>
               <p className="mt-1 text-[13px] leading-relaxed" style={{ color: '#78350F' }}>
-                The Fresh Collective platform Stripe account has not been set up. Members cannot
-                purchase paid pathways until this is resolved. Contact Fresh Collective support.
+                The Fresh Collective platform Stripe account has not been set up.
+                Members cannot make purchases until this is resolved. Contact Fresh
+                Collective support.
               </p>
             </div>
           </div>
@@ -291,46 +286,13 @@ export default function CreatorPaymentsClient({
         )}
       </div>
 
-      {/* Access and pricing options */}
-      <div className="mb-8">
-        <div className="mb-3 flex items-baseline gap-2">
-          <h2 className="text-[15px] font-semibold text-[#0F172A]">Access and pricing options</h2>
-          <span
-            className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-            style={{ background: '#E2E8F0', color: '#64748B' }}
-          >
-            Coming soon
-          </span>
-        </div>
-        <p className="mb-4 text-[13px]" style={{ color: '#000000' }}>
-          Choose how members access your collective. Pricing configuration will be available in a
-          future update.
-        </p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {PRICING_OPTIONS.map((opt) => (
-            <div
-              key={opt.title}
-              className="rounded-xl p-4 opacity-60"
-              style={{ background: '#F8FAFC', border: '1px dashed #CBD5E1' }}
-            >
-              <p className="text-[13px] font-semibold text-[#0F172A]">{opt.title}</p>
-              <p className="mt-1 text-[12px] leading-relaxed text-black">{opt.description}</p>
-              <p className="mt-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: '#000000' }}>
-                Coming soon
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div className="mb-6" style={{ borderTop: '1px solid #E2E8F0' }} />
-
       {/* Transaction history heading */}
       <div className="mb-4">
         <h2 className="text-[15px] font-semibold text-[#0F172A]">Transaction history</h2>
         <p className="mt-0.5 text-[13px]" style={{ color: '#000000' }}>
-          Payments recorded when member purchases are processed through Stripe.
+          Actual payments processed through Fresh Collective. Complimentary
+          and manual access grants live on <strong>Access</strong> and are not
+          shown here.
         </p>
       </div>
 
@@ -340,7 +302,7 @@ export default function CreatorPaymentsClient({
           style={{ background: '#FFFBEB', border: '1px solid #FDE68A' }}
         >
           <span className="font-semibold" style={{ color: '#92400E' }}>Test mode — sandbox data only.</span>
-          <span style={{ color: '#78350F' }}>These transactions were made using Stripe test cards and are not real payments.</span>
+          <span style={{ color: '#78350F' }}>Any card transactions here were made with Stripe test cards and did not move real money.</span>
         </div>
       )}
 
@@ -436,9 +398,10 @@ export default function CreatorPaymentsClient({
               className="rounded-2xl p-10 text-center"
               style={{ background: '#FFFFFF', border: '1px solid #E2E8F0' }}
             >
-              <p className="text-[15px] font-medium text-[#0F172A]">No member payments yet.</p>
+              <p className="text-[15px] font-medium text-[#0F172A]">No payments yet.</p>
               <p className="mt-2 text-[13px] text-black">
-                When members purchase paid pathways, transactions will appear here.
+                When a member purchases a Payment Option through Fresh
+                Collective, the payment appears here.
               </p>
             </div>
           ) : (
@@ -448,8 +411,8 @@ export default function CreatorPaymentsClient({
                 <table className="w-full text-left">
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                      {['Date', 'Member / Payer', 'Collective / Pathway', 'Gross Sale', 'FC Fee', 'Est. Creator Amount', 'Status'].map((h) => (
-                        <th key={h} className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">
+                      {['Date', 'Member', 'Collective', 'Purchase', 'Source', 'Gross', 'FC Fee', 'Est. Creator', 'Status'].map((h) => (
+                        <th key={h} className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">
                           {h}
                         </th>
                       ))}
@@ -459,42 +422,38 @@ export default function CreatorPaymentsClient({
                     {rows.map((row, i) => (
                       <tr
                         key={row.id}
-                        className={row.status !== 'succeeded' ? 'opacity-50' : undefined}
+                        className={row.status !== 'succeeded' ? 'opacity-60' : undefined}
                         style={{ borderBottom: i < rows.length - 1 ? '1px solid #F1F5F9' : undefined }}
                       >
-                        <td className="px-4 py-3 text-[12px] text-black whitespace-nowrap">
-                          {fmtDate(row.created_at)}
-                        </td>
-                        <td className="px-4 py-3 text-[12px] text-black font-mono">
-                          {row.payer_user_id ? row.payer_user_id.slice(0, 8) + '…' : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-[12px] text-black">
-                          {row.space_id || row.pathway_id
-                            ? [row.space_id?.slice(0, 6), row.pathway_id?.slice(0, 6)].filter(Boolean).join(' / ')
-                            : '—'}
-                          {row.payment_option_id && (
-                            <span className="ml-1 rounded-full bg-teal-50 border border-teal-200 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">
-                              opt:{row.payment_option_id.slice(0, 6)}
-                            </span>
-                          )}
-                          {row.payment_option_schedule_id && (
-                            <span className="ml-1 rounded-full bg-purple-50 border border-purple-200 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700">
-                              sched:{row.payment_option_schedule_id.slice(0, 6)}
-                            </span>
+                        <td className="px-3 py-3 text-[12px] text-black whitespace-nowrap">{fmtDate(row.created_at)}</td>
+                        <td className="px-3 py-3 text-[12px] text-navy-900">
+                          {row.payer_name || row.payer_email || (
+                            <span className="italic text-slate-400">Unknown</span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-[12px] font-semibold text-[#0F172A] whitespace-nowrap">
+                        <td className="px-3 py-3 text-[12px] text-black">
+                          {row.space_name || <span className="italic text-slate-400">—</span>}
+                        </td>
+                        <td className="px-3 py-3 text-[12px] text-navy-900">
+                          {row.payment_option_name || (
+                            // Legacy transactions without a Payment Option — render the
+                            // transaction type as a fallback so old rows still read.
+                            <span className="text-slate-500">{labelType(row.transaction_type)}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-[12px] text-slate-600 whitespace-nowrap">
+                          {providerLabel(row)}
+                        </td>
+                        <td className="px-3 py-3 text-[12px] font-semibold text-[#0F172A] whitespace-nowrap">
                           {fmt(row.gross_amount_cents, row.currency)}
                         </td>
-                        <td className="px-4 py-3 text-[12px] text-black whitespace-nowrap">
+                        <td className="px-3 py-3 text-[12px] text-black whitespace-nowrap">
                           {fmt(row.platform_fee_cents, row.currency)}
                         </td>
-                        <td className="px-4 py-3 text-[12px] font-semibold whitespace-nowrap" style={{ color: '#38A09E' }}>
-                          {row.net_creator_amount_cents != null
-                            ? fmt(row.net_creator_amount_cents, row.currency)
-                            : '—'}
+                        <td className="px-3 py-3 text-[12px] font-semibold whitespace-nowrap" style={{ color: '#38A09E' }}>
+                          {row.net_creator_amount_cents != null ? fmt(row.net_creator_amount_cents, row.currency) : '—'}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           <StatusBadge status={row.status} />
                         </td>
                       </tr>
@@ -506,11 +465,15 @@ export default function CreatorPaymentsClient({
               {/* Mobile cards */}
               <div className="divide-y divide-[#F1F5F9] lg:hidden">
                 {rows.map((row) => (
-                  <div key={row.id} className={`p-4${row.status !== 'succeeded' ? ' opacity-50' : ''}`}>
+                  <div key={row.id} className={`p-4${row.status !== 'succeeded' ? ' opacity-60' : ''}`}>
                     <div className="mb-2 flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-[13px] font-medium text-[#0F172A]">{labelType(row.transaction_type)}</p>
-                        <p className="text-[11px] text-black">{fmtDate(row.created_at)}</p>
+                        <p className="text-[13px] font-medium text-[#0F172A]">
+                          {row.payment_option_name ?? labelType(row.transaction_type)}
+                        </p>
+                        <p className="text-[11px] text-black">
+                          {row.payer_name || row.payer_email || 'Unknown member'} · {fmtDate(row.created_at)} · {providerLabel(row)}
+                        </p>
                       </div>
                       <StatusBadge status={row.status} />
                     </div>

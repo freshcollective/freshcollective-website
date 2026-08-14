@@ -6,6 +6,7 @@ import type { CreatorMediaAsset, CreatorPathway } from '@/types/platform'
 import ImagePickerField from '@/components/creator/ImagePickerField'
 import { apiUrl } from '@/lib/api'
 import { formatDisplayDate } from '@/lib/dateTime'
+import PathwayPaymentOptionsReference from './PathwayPaymentOptionsReference'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -17,10 +18,33 @@ const PRICING_MODE_PAYMENT_OPTIONS_VALUE = 'payment_options'
 // AccessPricingSection
 // ---------------------------------------------------------------------------
 
+/**
+ * Non-commerce access controls only.
+ *
+ * Paid access (one-off, subscription, "included with a paid offer",
+ * multiple payment options, unlock-option checkboxes) moved to
+ * Commerce → Payment Options in U1. The Pathway editor now exposes
+ * only the two access modes that have no commercial semantics —
+ * ``free`` and ``included`` — and shows an explanatory band when
+ * the row's stored ``access_type`` / ``pricing_mode`` is a legacy
+ * paid value, so the Creator understands why the paid choice they
+ * remember isn't listed anymore.
+ *
+ * The legacy state / setter props are preserved so the parent
+ * form can still round-trip the row through PATCH without a data
+ * migration. This surface never writes a paid access_type or the
+ * payment_options pricing mode; those combinations are managed
+ * through the Payment Option editor and its grants.
+ */
 function AccessPricingSection({
   accessType, setAccessType, pricingMode, setPricingMode,
-  priceDollars, setPriceDollars, currency, setCurrency, priceError,
-  spaceSlug, unlockOptionIds, setUnlockOptionIds,
+  // Legacy commerce props — preserved for compatibility with the
+  // parent form; unused by the simplified UI. See docstring.
+  priceDollars: _priceDollars, setPriceDollars: _setPriceDollars,
+  currency: _currency, setCurrency: _setCurrency,
+  priceError: _priceError,
+  spaceSlug: _spaceSlug,
+  unlockOptionIds: _unlockOptionIds, setUnlockOptionIds: _setUnlockOptionIds,
 }: {
   accessType: string
   setAccessType: (v: string) => void
@@ -35,59 +59,53 @@ function AccessPricingSection({
   unlockOptionIds: string[]
   setUnlockOptionIds: (ids: string[]) => void
 }) {
-  const [spaceOptions, setSpaceOptions] = useState<{ id: string; name: string; payment_type: string }[]>([])
+  // Legacy paid states that pre-date Commerce → Payment Options.
+  // We render them read-only so the Creator understands why the
+  // choice they remember isn't shown — but they can switch back to
+  // ``free`` / ``included`` to opt out.
+  const isPaymentOptionsMode = pricingMode === PRICING_MODE_PAYMENT_OPTIONS_VALUE
+  const legacyPaid = isPaymentOptionsMode
+    || accessType === 'one_time'
+    || accessType === 'subscription'
+    || accessType === 'included_with_offer'
 
-  useEffect(() => {
-    if (accessType !== 'included_with_offer') return
-    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/payment-options`), { credentials: 'include' })
-      .then(r => r.ok ? r.json() : [])
-      .then(setSpaceOptions)
-      .catch(() => {})
-  }, [accessType, spaceSlug])
-
-  const isPaymentOptions = pricingMode === PRICING_MODE_PAYMENT_OPTIONS_VALUE
-  const showSinglePrice = (accessType === 'one_time' || accessType === 'subscription') && !isPaymentOptions
-
-  const ALL_CHOICES: { value: string; label: string; description: string; isPaymentOptions?: boolean }[] = [
-    { value: 'free', label: 'Free', description: 'Anyone with access to the collective can begin this pathway.' },
-    { value: 'included', label: 'Included in collective access', description: 'Available to members who already have access to this collective.' },
-    { value: 'included_with_offer', label: 'Included with a paid offer', description: 'Automatically unlocked for members who hold a specific active offer or pass.' },
-    { value: 'one_time', label: 'One-off payment — single price', description: 'People pay a single fixed price to access this pathway.' },
-    { value: 'subscription', label: 'Monthly subscription', description: 'People pay monthly for ongoing access to this pathway.' },
-    {
-      value: PRICING_MODE_PAYMENT_OPTIONS_VALUE,
-      label: 'Multiple payment options',
-      description: 'Members choose from several payment or membership options. Manage these in the Payment Options section below.',
-      isPaymentOptions: true,
-    },
+  // Both choices are non-commercial and give *members* the same
+  // access. They diverge on *public visibility*:
+  //   free     — the Pathway is publicly discoverable (unauth
+  //              visitors see it and can preview the About page).
+  //   included — the Pathway is member-only (unauth visitors see
+  //              a "Join to begin" prompt and are redirected to
+  //              login; the card is hidden from public lists).
+  // Confirmed via backend access resolver in
+  // ``spaces/routes.py:599-730`` — keep both to preserve that
+  // deliberate distinction.
+  const CHOICES: { value: string; label: string; description: string }[] = [
+    { value: 'free',     label: 'Public',      description: 'Anyone can find and preview this Pathway on your Collective\u2019s public pages. Members can begin it immediately.' },
+    { value: 'included', label: 'Members only', description: 'Only signed-in members of this Collective can see or begin this Pathway. Non-members are prompted to join.' },
   ]
 
   function handleChoiceClick(value: string) {
-    if (value === PRICING_MODE_PAYMENT_OPTIONS_VALUE) {
-      setPricingMode('payment_options')
-      setAccessType('one_time') // entitlement access type stays one_time
-    } else {
-      setPricingMode('legacy')
-      setAccessType(value)
-    }
+    setPricingMode('legacy')
+    setAccessType(value)
   }
-
-  function toggleUnlockOption(id: string) {
-    setUnlockOptionIds(
-      unlockOptionIds.includes(id)
-        ? unlockOptionIds.filter(x => x !== id)
-        : [...unlockOptionIds, id]
-    )
-  }
-
-  const selectedChoiceValue = isPaymentOptions ? PRICING_MODE_PAYMENT_OPTIONS_VALUE : accessType
 
   return (
     <div>
-      <label className="mb-2 block text-[12px] font-semibold text-black">Access and pricing</label>
+      <label className="mb-2 block text-[12px] font-semibold text-black">Access</label>
+
+      {legacyPaid && (
+        <div className="mb-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3 text-[12px] leading-relaxed text-teal-900">
+          <strong>Paid access is now managed in Commerce → Payment Options.</strong>{' '}
+          This Pathway is currently configured with a legacy paid access mode. The
+          Payment Options that include this Pathway are shown below. To take
+          this Pathway off paid access, choose <em>Free</em> or <em>Included in
+          collective access</em>.
+        </div>
+      )}
+
       <div className="space-y-2">
-        {ALL_CHOICES.map((opt) => {
-          const selected = selectedChoiceValue === opt.value
+        {CHOICES.map((opt) => {
+          const selected = !legacyPaid && accessType === opt.value
           return (
             <button
               key={opt.value}
@@ -114,74 +132,6 @@ function AccessPricingSection({
           )
         })}
       </div>
-
-      {accessType === 'included_with_offer' && (
-        <div className="mt-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3">
-          <p className="mb-2 text-[12px] font-semibold text-teal-800">Unlock this pathway when a member has access to:</p>
-          {spaceOptions.length === 0 ? (
-            <p className="text-[12px] text-black">No published payment options found for this collective. Create and publish offers in the Payment Options section of other pathways first.</p>
-          ) : (
-            <div className="space-y-1.5">
-              {spaceOptions.map(opt => (
-                <label key={opt.id} className="flex cursor-pointer items-center gap-2.5">
-                  <input
-                    type="checkbox"
-                    checked={unlockOptionIds.includes(opt.id)}
-                    onChange={() => toggleUnlockOption(opt.id)}
-                    className="h-4 w-4 rounded border-slate-300 accent-teal-600"
-                  />
-                  <span className="text-[13px] text-navy-900">{opt.name}</span>
-                  <span className="text-[11px] text-black">({opt.payment_type.replace('_', ' ')})</span>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {isPaymentOptions && (
-        <div className="mt-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3 text-[12px] text-teal-800">
-          Pricing is controlled by the Payment Options section below. The single-price field is not used.
-        </div>
-      )}
-
-      {showSinglePrice && (
-        <div className="mt-3 flex gap-3">
-          <div className="flex-1">
-            <label className="mb-1 block text-[12px] font-semibold text-black">
-              {accessType === 'subscription' ? 'Monthly price' : 'Price'}
-            </label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[14px] text-black">$</span>
-              <input
-                type="number" min="0" step="0.01" value={priceDollars}
-                onChange={(e) => setPriceDollars(e.target.value)} placeholder="0.00"
-                className={`w-full rounded-lg border py-2 pl-7 pr-3 text-[14px] text-navy-900 outline-none transition-colors focus:border-teal-400 ${priceError ? 'border-red-300' : 'border-slate-200'}`}
-              />
-            </div>
-            {priceError && <p className="mt-1 text-[12px] text-red-600">{priceError}</p>}
-          </div>
-          <div className="w-28">
-            <label className="mb-1 block text-[12px] font-semibold text-black">Currency</label>
-            <select
-              value={currency} onChange={(e) => setCurrency(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[14px] text-navy-900 outline-none focus:border-teal-400"
-            >
-              <option value="AUD">AUD</option>
-              <option value="USD">USD</option>
-              <option value="GBP">GBP</option>
-              <option value="EUR">EUR</option>
-              <option value="NZD">NZD</option>
-            </select>
-          </div>
-        </div>
-      )}
-
-      {showSinglePrice && (
-        <p className="mt-2 text-[11px] text-black">
-          Pricing is saved for configuration. Payment processing will be connected when Stripe is set up.
-        </p>
-      )}
     </div>
   )
 }
@@ -1432,8 +1382,15 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
 
       </div>
 
-      {/* ── 3. Payment options — full width. ── */}
-      <PaymentOptionsSection spaceSlug={spaceSlug} pathwaySlug={pathway.slug} />
+      {/* ── 3. Payment options — reference block (U1).
+             Payment Option CRUD moved to Creator Studio →
+             Commerce → Payment Options. This section reads back
+             the Options that grant access to this Pathway so the
+             Creator can navigate to them without re-authoring here.
+             Legacy PaymentOptionsSection / PaymentSchedulesSection
+             functions above are retained during the transition
+             but no longer rendered. ── */}
+      <PathwayPaymentOptionsReference spaceSlug={spaceSlug} pathwaySlug={pathway.slug} />
 
     </div>
   )

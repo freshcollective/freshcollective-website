@@ -1557,7 +1557,12 @@ class StepBlockReorderRequest(BaseModel):
 class AboutBlockResponse(BaseModel):
     model_config = {"from_attributes": True}
     id: str
-    pathway_id: str
+    # ``pathway_id`` is nullable since migration 113 — Series-owned
+    # rows carry NULL here and use the polymorphic ``owner_kind`` /
+    # ``owner_id`` columns below to identify their owner.
+    pathway_id: str | None = None
+    owner_kind: str | None = None
+    owner_id: str | None = None
     block_type: str
     position: int
     content: str | None
@@ -1823,11 +1828,25 @@ class CreatorPaymentTransactionOut(BaseModel):
     id: str
     transaction_type: str
     status: str
+    # Human-readable provider label — populated from the model row's
+    # ``payment_provider`` enum. Frontend uses this to distinguish
+    # Stripe purchases from manual (bank transfer / cash /
+    # complimentary) records without having to guess.
+    payment_provider: str | None = None
 
     payer_user_id: str | None
+    # Denormalised member snapshot so the transactions list can show
+    # names + emails without a per-row lookup. Populated by the
+    # endpoint from the joined User row when present.
+    payer_name: str | None = None
+    payer_email: str | None = None
+
     space_id: str | None
+    space_name: str | None = None
+
     pathway_id: str | None
     payment_option_id: str | None = None
+    payment_option_name: str | None = None
     payment_option_schedule_id: str | None = None
 
     currency: str
@@ -2193,10 +2212,28 @@ class AccessPassAdminOut(BaseModel):
     remaining_credits: int | None = None
     credits_per_week: int | None = None
     eligible_pathway_id: str | None = None
+    eligible_series_id: str | None = None
+    # Legacy pointers, kept for backwards compat with existing readers.
     option_name: str | None = None
     pathway_title: str | None = None
+    # ── Central Payment Option context (U1) ─────────────────────
+    payment_option_id: str | None = None
+    # Titles of all the experiences the Payment Option includes,
+    # in display order — so the UI can print e.g.
+    # "EMBODY Term 3 2026 · The EMBODY Practice" without a
+    # per-row fetch of the grants list.
+    option_included_items: list[str] = []
+    # Where this access came from, in creator language:
+    # ``purchase`` | ``complimentary`` | ``bank_transfer`` |
+    # ``cash`` | ``admin_grant`` | ``manual`` (legacy fallback).
+    access_source: str | None = None
+    # The linked ledger row — populated so the Access UI can offer
+    # a Correct action on manual grants (populated for manual-
+    # grant rows; may also be present on Stripe-created rows).
+    payment_transaction_id: str | None = None
     created_at: datetime
     # Member info
+    user_id: str | None = None
     member_name: str | None = None
     member_email: str | None = None
     # Booking stats

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { apiUrl } from '@/lib/api'
+import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import type {
   CreatorGatheringSeriesSummary,
   GatheringSeriesStatus,
@@ -90,41 +90,102 @@ export default function GatheringSeriesBand({ spaceSlug, series }: Props) {
           </p>
         </div>
       ) : (
-        <ul className="grid gap-2">
-          {series.map((s) => (
-            <li key={s.id}>
-              <Link
-                href={`/creator-studio/gathering-series/${s.slug}`}
-                className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-teal-300"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-[15px] font-semibold text-navy-900">
-                      {s.title}
-                    </p>
-                    <span
-                      className="shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider"
-                      style={statusStyle(s.status)}
+        // Card grid — Pathway-sibling visual language. Each Series
+        // renders as a self-contained card (rounded-2xl, hover
+        // shadow lift, cover band on top for visual anchor, footer
+        // with status pill + metadata). Deliberately does NOT
+        // borrow Pathway-specific metadata (step count, price, etc.);
+        // Series metadata (dates, gathering count, PO count) is what
+        // sits in the footer.
+        <ul className="grid gap-4 sm:grid-cols-2">
+          {series.map((s) => {
+            const cover = resolveMediaUrl(s.cover_image_url ?? undefined)
+            const dateSummary = seriesDateSummary(s.starts_at, s.ends_at)
+            return (
+              <li key={s.id}>
+                <Link
+                  href={`/creator-studio/gathering-series/${s.slug}`}
+                  className="group flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-sm transition-all hover:-translate-y-1 hover:border-teal-200/60 hover:shadow-lg"
+                >
+                  {/*
+                    Cover band. Uses the Series's own cover image
+                    when one is set; falls back to a soft gradient
+                    when the Series has no cover. Date range sits
+                    as an overlay pill so it stays legible over any
+                    photograph.
+                  */}
+                  {cover ? (
+                    <div className="relative h-32 w-full overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={cover}
+                        alt=""
+                        className="h-full w-full object-cover"
+                      />
+                      {/* Bottom-to-top gradient for legibility of the overlay pill. */}
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0"
+                        style={{
+                          background:
+                            'linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.10) 45%, rgba(0,0,0,0) 100%)',
+                        }}
+                      />
+                      <span
+                        className="absolute bottom-3 left-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-white"
+                        style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(2px)' }}
+                      >
+                        {dateSummary}
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      className="relative h-24 w-full"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(56,160,158,0.14) 0%, rgba(85,184,182,0.08) 100%)',
+                      }}
                     >
-                      {STATUS_LABEL[s.status]}
-                    </span>
+                      <div className="absolute inset-0 flex items-end p-4">
+                        <p
+                          className="text-[11.5px] font-semibold uppercase tracking-wider"
+                          style={{ color: '#0f766e' }}
+                        >
+                          {dateSummary}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-1 flex-col p-4">
+                    <div className="mb-3 flex items-start justify-between gap-2">
+                      <h3 className="font-serif text-[16px] leading-snug text-navy-900">
+                        {s.title}
+                      </h3>
+                      <span
+                        className="shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider"
+                        style={statusStyle(s.status)}
+                      >
+                        {STATUS_LABEL[s.status]}
+                      </span>
+                    </div>
+                    <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">
+                      <span className="text-[11.5px]" style={{ color: 'rgba(12,24,38,0.55)' }}>
+                        {s.gathering_count} Gathering{s.gathering_count === 1 ? '' : 's'}
+                        {s.payment_option_count > 0 && (
+                          <> · {s.payment_option_count} Payment Option{s.payment_option_count === 1 ? '' : 's'}</>
+                        )}
+                      </span>
+                      <span
+                        className="text-[13px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800"
+                      >
+                        Open →
+                      </span>
+                    </div>
                   </div>
-                  <p className="mt-1 text-[12.5px]" style={{ color: 'rgba(12,24,38,0.65)' }}>
-                    {seriesDateSummary(s.starts_at, s.ends_at)}
-                  </p>
-                  <p className="mt-1 text-[11.5px]" style={{ color: 'rgba(12,24,38,0.50)' }}>
-                    {s.gathering_count} Gathering{s.gathering_count === 1 ? '' : 's'}
-                    {s.payment_option_count > 0 && (
-                      <> · {s.payment_option_count} Payment Option{s.payment_option_count === 1 ? '' : 's'}</>
-                    )}
-                  </p>
-                </div>
-                <span aria-hidden="true" className="mt-1 text-[13px]" style={{ color: 'rgba(12,24,38,0.35)' }}>
-                  →
-                </span>
-              </Link>
-            </li>
-          ))}
+                </Link>
+              </li>
+            )
+          })}
         </ul>
       )}
 
