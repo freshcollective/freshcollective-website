@@ -23,6 +23,8 @@ from fastapi import HTTPException
 
 from app.services.schedule_validation import (
     ScheduleValidationError,
+    apply_recurring_derivations,
+    derive_stripe_cadence,
     validate_recurring_installments_payload,
     validate_recurring_installments_row,
 )
@@ -222,3 +224,142 @@ class TestOrmRowEntryPoint:
         row = _payload(installment_count=0)
         with pytest.raises(ScheduleValidationError):
             validate_recurring_installments_row(row)
+
+
+# ---------------------------------------------------------------------------
+# derive_stripe_cadence
+# ---------------------------------------------------------------------------
+
+
+class TestDeriveStripeCadence:
+    def test_semantic_keys_map_to_stripe_pair(self):
+        assert derive_stripe_cadence("week") == ("week", 1)
+        assert derive_stripe_cadence("weekly") == ("week", 1)
+        assert derive_stripe_cadence("fortnight") == ("week", 2)
+        assert derive_stripe_cadence("fortnightly") == ("week", 2)
+        assert derive_stripe_cadence("biweekly") == ("week", 2)
+        assert derive_stripe_cadence("month") == ("month", 1)
+        assert derive_stripe_cadence("monthly") == ("month", 1)
+
+    def test_case_insensitive_and_trimmed(self):
+        assert derive_stripe_cadence("  Weekly  ") == ("week", 1)
+        assert derive_stripe_cadence("FORTNIGHTLY") == ("week", 2)
+
+    def test_unknown_returns_none(self):
+        assert derive_stripe_cadence("daily") is None
+        assert derive_stripe_cadence("") is None
+        assert derive_stripe_cadence(None) is None
+
+
+# ---------------------------------------------------------------------------
+# apply_recurring_derivations — Creator payload normalisation
+# ---------------------------------------------------------------------------
+
+
+class TestApplyRecurringDerivations:
+    """Reproduces the browser-flagged bug ($20/week × 3) and asserts the
+    normalisation the backend now applies on save."""
+
+    def test_creator_payload_20_weekly_x3_derives_stripe_cadence_and_total(self):
+        """The exact failing browser payload — UI sends ``interval='week'``
+        but no Stripe pair and no total. After derivation, the row has
+        everything the FIP1 validator needs on publish."""
+        payload = SimpleNamespace(
+            schedule_type="recurring_installments",
+            status="published",
+            installment_amount_cents=2000,
+            installment_count=3,
+            interval="week",
+            stripe_interval=None,
+            stripe_interval_count=None,
+            total_amount_cents=None,
+            currency="AUD",
+        )
+        apply_recurring_derivations(payload)
+        assert payload.stripe_interval == "week"
+        assert payload.stripe_interval_count == 1
+        assert payload.total_amount_cents == 6000  # $60 = $20 × 3
+        # Publish-time validation now passes.
+        validate_recurring_installments_payload(payload)
+
+    def test_fortnightly_maps_to_week_x2(self):
+        payload = _payload(
+            interval="fortnight",
+            stripe_interval=None,
+            stripe_interval_count=None,
+            total_amount_cents=None,
+            installment_amount_cents=8000,
+            installment_count=5,
+        )
+        apply_recurring_derivations(payload)
+        assert payload.stripe_interval == "week"
+        assert payload.stripe_interval_count == 2
+        assert payload.total_amount_cents == 40000  # $400 = $80 × 5
+
+    def test_monthly_maps_to_month_x1(self):
+        payload = _payload(
+            interval="monthly",
+            stripe_interval=None,
+            stripe_interval_count=None,
+            total_amount_cents=None,
+            installment_amount_cents=10000,
+            installment_count=6,
+        )
+        apply_recurring_derivations(payload)
+        assert payload.stripe_interval == "month"
+        assert payload.stripe_interval_count == 1
+        assert payload.total_amount_cents == 60000
+
+    def test_pay_in_full_payload_is_untouched(self):
+        payload = SimpleNamespace(
+            schedule_type="pay_in_full",
+            installment_amount_cents=None,
+            installment_count=None,
+            interval=None,
+            stripe_interval=None,
+            stripe_interval_count=None,
+            total_amount_cents=20000,
+            currency="AUD",
+        )
+        apply_recurring_derivations(payload)
+        assert payload.stripe_interval is None
+        assert payload.stripe_interval_count is None
+        assert payload.total_amount_cents == 20000
+
+    def test_explicit_stripe_pair_is_preserved(self):
+        payload = _payload(
+            interval="week",
+            stripe_interval="month",  # deliberately conflicting
+            stripe_interval_count=1,
+            total_amount_cents=20000,
+        )
+        apply_recurring_derivations(payload)
+        # Do not override what the caller explicitly sent.
+        assert payload.stripe_interval == "month"
+        assert payload.stripe_interval_count == 1
+
+    def test_explicit_total_is_preserved(self):
+        payload = _payload(
+            installment_amount_cents=2000,
+            installment_count=3,
+            total_amount_cents=5999,  # deliberately wrong; caller wins
+        )
+        apply_recurring_derivations(payload)
+        assert payload.total_amount_cents == 5999
+        # Downstream strict validator will still catch this mismatch.
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException):
+            validate_recurring_installments_payload(payload)
+
+    def test_unknown_interval_leaves_stripe_fields_null(self):
+        payload = _payload(
+            interval="daily",
+            stripe_interval=None,
+            stripe_interval_count=None,
+            total_amount_cents=None,
+        )
+        apply_recurring_derivations(payload)
+        assert payload.stripe_interval is None
+        assert payload.stripe_interval_count is None
+        # total still derived because amount+count are present.
+        assert payload.total_amount_cents == 20000  # $20 × 10 default

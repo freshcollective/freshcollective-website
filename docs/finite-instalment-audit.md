@@ -278,7 +278,10 @@ Minimum viable finite-instalment support:
 4. Checkout path for `recurring_installments`:
    - Use `mode='setup'` Checkout to collect payment method + create Customer.
    - On `setup_intent.succeeded`, create SubscriptionSchedule with
-     `end_behavior='cancel'` and phase length `installment_count`.
+     `end_behavior='cancel'` and a single phase whose
+     `duration = {interval, interval_count}` covers the finite plan
+     (Stripe removed `phases[].iterations`; the current supported
+     field is `duration`, encoding the same idea).
    - Create the AccessPass immediately (option A above) with a
      conditional-active status.
 5. Remove the 503 guard in

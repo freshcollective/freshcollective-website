@@ -126,6 +126,7 @@ from app.models.platform import (
 )
 from app.models.user import User
 from app.services.schedule_validation import (
+    apply_recurring_derivations,
     validate_recurring_installments_payload,
 )
 from app.services.checkout_orchestration import (
@@ -775,6 +776,13 @@ def create_commerce_payment_option_schedule(
     space = _get_managed_space(slug, current_user, db)
     opt = _get_space_option(db, space, option_id)
 
+    # FIP2 — derive Stripe cadence + total_amount_cents from the
+    # Creator's semantic payload (interval='week'/'fortnight'/'month'
+    # plus per-payment amount × count). Keeps the two source-of-truth
+    # cadence columns consistent and lets the strict-equality total
+    # check in the validator find a total to compare.
+    apply_recurring_derivations(body)
+
     # FIP1 — validate finite payment plans on create when they are
     # being published. Draft rows may be incomplete so a Creator can
     # save-in-progress. Members can't purchase either way while the
@@ -849,6 +857,12 @@ def update_commerce_payment_option_schedule(
             sched.currency = val.upper()
         else:
             setattr(sched, field, val)
+
+    # FIP2 — derive Stripe cadence + total from the merged row so
+    # a Creator patch that only changes ``interval`` (or only bumps
+    # the per-payment amount) still keeps the two Stripe-facing
+    # columns and the stored total in sync.
+    apply_recurring_derivations(sched)
 
     # FIP1 — validate the merged post-update state when the row is
     # (now) recurring_installments AND (now) published. Editing an
@@ -1031,18 +1045,33 @@ def list_grantable_experiences(
 ) -> list[dict]:
     """Every Pathway / Series / Gathering in this Collective that
     the Creator could add as a grant target on a Payment Option.
-    Editor picker uses this to populate its dropdowns."""
+    Editor picker uses this to populate its dropdowns.
+
+    Visibility rule — mirror Creator Studio's own lifecycle
+    predicate: hide ``archived`` rows across all three kinds.
+    Archived rows are hidden from the Pathways management surface
+    (``frontend/src/app/creator-studio/pathways/PathwaysClient.tsx``
+    line ``visiblePathways = pathways.filter(p.status !== 'archived')``)
+    and must not be selectable as new grant targets — otherwise a
+    Creator can bundle a Pathway that no longer exists in their own
+    admin view, and a would-be member purchase silently promises
+    access to something they can't open.
+
+    Draft + Coming Soon + Active remain selectable — a Creator
+    legitimately wants to pre-bundle a Coming Soon Pathway into a
+    Payment Option that pre-sells access.
+    """
     space = _get_managed_space(slug, current_user, db)
 
     pathways = (
         db.query(Pathway.id, Pathway.title, Pathway.slug, Pathway.status)
-        .filter(Pathway.space_id == space.id)
+        .filter(Pathway.space_id == space.id, Pathway.status != "archived")
         .order_by(Pathway.title)
         .all()
     )
     seriess = (
         db.query(EventSeries.id, EventSeries.title, EventSeries.slug, EventSeries.status)
-        .filter(EventSeries.space_id == space.id)
+        .filter(EventSeries.space_id == space.id, EventSeries.status != "archived")
         .order_by(EventSeries.title)
         .all()
     )
@@ -1051,10 +1080,15 @@ def list_grantable_experiences(
     # its Series grant, so listing it here would let a Creator author
     # an overlapping/contradictory grant and would clutter the picker
     # for Collectives with many Series-attached Gatherings (e.g.
-    # EMBODY has ~50 Series children).
+    # EMBODY has ~50 Series children). Also skip cancelled Events —
+    # they're the Event-lifecycle equivalent of archived.
     events = (
         db.query(Event.id, Event.title, Event.status, Event.starts_at)
-        .filter(Event.space_id == space.id, Event.series_id.is_(None))
+        .filter(
+            Event.space_id == space.id,
+            Event.series_id.is_(None),
+            Event.status != "cancelled",
+        )
         .order_by(Event.starts_at, Event.title)
         .all()
     )

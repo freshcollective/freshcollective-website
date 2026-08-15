@@ -32,8 +32,11 @@ export default async function SpaceCommunityPage({ params, searchParams }: Props
 
   const posts: PostSummary[] = await getCommunityFeed(slug, activeSlug)
 
-  const memberCount = members.filter((m) => m.space_role === 'learner').length
-  const leaderCount = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
+  // Authoritative counts — the members list is privacy-filtered for
+  // learner-role viewers (see spaces.get_space + members.list_members).
+  // Sidebar must NOT derive counts from that filtered list.
+  const memberCount = space?.learner_count ?? 0
+  const leaderCount = space?.leader_count ?? 0
 
   const canModerate = !!(me && (
     me.role === 'admin' ||

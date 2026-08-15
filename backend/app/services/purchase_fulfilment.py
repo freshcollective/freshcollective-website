@@ -817,6 +817,7 @@ def _apply_entitlement(
     session_id: str | None,
     payment_intent_id: str | None,
     now: datetime,
+    purchase_plan_id: str | None = None,
 ) -> PathwayEntitlement:
     """Create or reactivate the target PathwayEntitlement. Assumes
     the target Pathway row exists — validation should have caught
@@ -839,6 +840,8 @@ def _apply_entitlement(
         # ``ends_at`` is deliberately NOT extended here.
         existing_ent.stripe_checkout_session_id = session_id
         existing_ent.stripe_payment_intent_id = payment_intent_id
+        if purchase_plan_id and existing_ent.purchase_plan_id is None:
+            existing_ent.purchase_plan_id = purchase_plan_id
         existing_ent.updated_at = now
         logger.info(
             "purchase_fulfilment: entitlement already active user=%s pathway=%s",
@@ -860,6 +863,8 @@ def _apply_entitlement(
         existing_ent.revoked_at = None
         existing_ent.starts_at = starts_at
         existing_ent.ends_at = intent.ends_at
+        if purchase_plan_id and existing_ent.purchase_plan_id is None:
+            existing_ent.purchase_plan_id = purchase_plan_id
         existing_ent.updated_at = now
         logger.info(
             "purchase_fulfilment: reactivated entitlement user=%s pathway=%s starts_at=%s ends_at=%s",
@@ -878,6 +883,7 @@ def _apply_entitlement(
         ends_at=intent.ends_at,
         stripe_checkout_session_id=session_id,
         stripe_payment_intent_id=payment_intent_id,
+        purchase_plan_id=purchase_plan_id,
         created_at=now,
         updated_at=now,
     )
@@ -935,6 +941,7 @@ def _apply_access_pass(
     payment_option_schedule_id: str | None,
     entitlement_for_shadow: PathwayEntitlement | None,
     now: datetime,
+    purchase_plan_id: str | None = None,
 ) -> AccessPass:
     """Create (or return the existing) AccessPass for this
     ``(payment_transaction_id, eligible_series_id, eligible_pathway_id)``
@@ -950,6 +957,8 @@ def _apply_access_pass(
         .first()
     )
     if existing is not None:
+        if purchase_plan_id and existing.purchase_plan_id is None:
+            existing.purchase_plan_id = purchase_plan_id
         logger.info(
             "purchase_fulfilment: AccessPass already exists for txn=%s series=%s pathway=%s — skipping",
             txn.id, intent.eligible_series_id, intent.eligible_pathway_id,
@@ -963,6 +972,7 @@ def _apply_access_pass(
         payment_transaction_id=txn.id,
         payment_option_id=payment_option_id,
         payment_option_schedule_id=payment_option_schedule_id or None,
+        purchase_plan_id=purchase_plan_id,
         pass_type=intent.pass_type,
         status=AccessPassStatus.active,
         valid_from=intent.valid_from,
@@ -1025,6 +1035,7 @@ def apply_intent(
     session_id: str | None,
     payment_intent_id: str | None,
     now: datetime,
+    purchase_plan_id: str | None = None,
 ) -> FulfilmentResult:
     """Apply a FulfilmentIntent to the DB atomically.
 
@@ -1054,6 +1065,13 @@ def apply_intent(
     ``payment_option_id`` is required only for populating the
     AccessPass row's FK back to the option; when the intent has no
     ``access_passes``, it may be ``None``.
+
+    ``purchase_plan_id`` — for FIP2 finite-plan first-invoice
+    fulfilment. Populated onto every created ``PathwayEntitlement``
+    and ``AccessPass`` so future plan-lifecycle events (revoke on
+    cancellation, reinstate after grace, etc.) can find the access
+    they need to touch via ``WHERE purchase_plan_id = X``. NULL for
+    legacy pay-in-full / free / manual grants.
     """
     result = FulfilmentResult(status=FulfilmentStatus.APPLIED)
 
@@ -1067,6 +1085,7 @@ def apply_intent(
             session_id=session_id,
             payment_intent_id=payment_intent_id,
             now=now,
+            purchase_plan_id=purchase_plan_id,
         )
         result.entitlements.append(ent)
 
@@ -1105,6 +1124,7 @@ def apply_intent(
             payment_option_schedule_id=payment_option_schedule_id,
             entitlement_for_shadow=shadow_ent,
             now=now,
+            purchase_plan_id=purchase_plan_id,
         )
         result.access_passes.append(ap)
 
@@ -1117,3 +1137,103 @@ def apply_intent(
         )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# FIP2 — intent snapshotting for finite plans
+# ---------------------------------------------------------------------------
+#
+# A finite payment plan may sit in ``pending_setup`` for days between
+# plan creation and first-invoice success. A Creator editing the
+# Payment Option's grants in that window must not silently alter
+# what an already-agreed plan grants. The plan therefore carries a
+# JSON snapshot of the ``FulfilmentIntent`` resolved at plan
+# creation. First-invoice fulfilment hydrates the intent from the
+# snapshot (not from current DB), validates FK targets still exist,
+# then applies.
+#
+# If the snapshot references a Pathway / Series row the Creator has
+# deleted since plan creation, ``validate_intent()`` catches it and
+# the caller marks the txn ``fulfilment_status='blocked'`` — the
+# member has paid but access cannot be applied, and operator
+# intervention is required. This matches the pay-in-full "blocked"
+# semantics; do not conflate blocked-fulfilment with plan failure.
+
+
+def serialise_intent(intent: FulfilmentIntent) -> dict:
+    """JSON-safe dict for ``PurchasePlan.snapshot_grants_json``."""
+    def _iso(dt: datetime | None) -> str | None:
+        return dt.isoformat() if dt is not None else None
+
+    return {
+        "version": 1,
+        "entitlements": [
+            {
+                "pathway_id": e.pathway_id,
+                "starts_at": _iso(e.starts_at),
+                "ends_at": _iso(e.ends_at),
+            }
+            for e in intent.entitlements
+        ],
+        "access_passes": [
+            {
+                "pass_type": (
+                    ap.pass_type.value
+                    if hasattr(ap.pass_type, "value") else str(ap.pass_type)
+                ),
+                "valid_from": _iso(ap.valid_from),
+                "valid_until": _iso(ap.valid_until),
+                "total_credits": ap.total_credits,
+                "credits_per_week": ap.credits_per_week,
+                "eligible_pathway_id": ap.eligible_pathway_id,
+                "eligible_series_id": ap.eligible_series_id,
+                "grants_pathway_id": ap.grants_pathway_id,
+            }
+            for ap in intent.access_passes
+        ],
+        "bookings": [
+            {"event_id": b.event_id} for b in intent.bookings
+        ],
+    }
+
+
+def deserialise_intent(payload: dict) -> FulfilmentIntent:
+    """Inverse of :func:`serialise_intent`. Raises on unknown version."""
+    if not isinstance(payload, dict):
+        raise ValueError("snapshot_grants_json must be a dict")
+    version = payload.get("version")
+    if version != 1:
+        raise ValueError(
+            f"Unsupported snapshot_grants_json version: {version!r}"
+        )
+
+    def _dt(s: str | None) -> datetime | None:
+        return datetime.fromisoformat(s) if s else None
+
+    return FulfilmentIntent(
+        entitlements=tuple(
+            EntitlementIntent(
+                pathway_id=e["pathway_id"],
+                starts_at=_dt(e.get("starts_at")),
+                ends_at=_dt(e.get("ends_at")),
+            )
+            for e in payload.get("entitlements", [])
+        ),
+        access_passes=tuple(
+            AccessPassIntent(
+                pass_type=AccessPassType(ap["pass_type"]),
+                valid_from=_dt(ap["valid_from"]),
+                valid_until=_dt(ap.get("valid_until")),
+                total_credits=ap.get("total_credits"),
+                credits_per_week=ap.get("credits_per_week"),
+                eligible_pathway_id=ap.get("eligible_pathway_id"),
+                eligible_series_id=ap.get("eligible_series_id"),
+                grants_pathway_id=ap.get("grants_pathway_id"),
+            )
+            for ap in payload.get("access_passes", [])
+        ),
+        bookings=tuple(
+            BookingIntent(event_id=b["event_id"])
+            for b in payload.get("bookings", [])
+        ),
+    )

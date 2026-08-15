@@ -51,6 +51,7 @@ from app.models.platform import (
     PathwayEntitlement,
 )
 from app.models.user import User
+from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.services.checkout_orchestration import (
     _resolve_fee_bps_for_creator,
     check_option_fulfillable_or_raise,
@@ -58,6 +59,10 @@ from app.services.checkout_orchestration import (
     orchestrate_free_checkout,
     orchestrate_paid_checkout,
     resolve_option_and_schedule,
+)
+from app.services.finite_plan_orchestration import (
+    resolve_option_and_schedule_for_plan,
+    start_finite_plan_setup,
 )
 
 
@@ -141,6 +146,58 @@ def create_unified_checkout_session(
     with the current member UI.
     """
     now = datetime.utcnow()
+
+    # ── Dispatch on schedule type ─────────────────────────────────
+    # A quick per-schedule peek so we can route to the right resolver.
+    # The full resolver in each branch re-loads and validates
+    # everything (ownership, publish status, etc.). This peek only
+    # exists so the finite-plan (recurring_installments) path does
+    # not fall through the pay-in-full resolver's 503 guard, and so
+    # pay-in-full callers don't accidentally hit the finite-plan
+    # resolver's plan-specific validation.
+    schedule_type_row = (
+        db.query(PaymentOptionSchedule.schedule_type)
+        .filter(PaymentOptionSchedule.id == body.payment_option_schedule_id)
+        .first()
+    )
+    if schedule_type_row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment schedule not found or not available for this option.",
+        )
+    is_recurring = (schedule_type_row[0] == "recurring_installments")
+
+    if is_recurring:
+        # FIP2 — finite payment plan path. Setup Session collects
+        # payment method; SubscriptionSchedule is created in the
+        # webhook once setup completes.
+        recurring_resolved = resolve_option_and_schedule_for_plan(
+            db,
+            payment_option_id=body.payment_option_id,
+            payment_option_schedule_id=body.payment_option_schedule_id,
+        )
+        check_option_fulfillable_or_raise(recurring_resolved.payment_option)
+        check_same_option_not_active(
+            db, user=current_user,
+            payment_option=recurring_resolved.payment_option, now=now,
+        )
+        outcome = start_finite_plan_setup(
+            db,
+            resolved=recurring_resolved,
+            payer=current_user,
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+            now=now,
+        )
+        logger.info(
+            "FIP2 finite-plan start: plan=%s session=%s user=%s",
+            outcome.plan.id, outcome.session.id, current_user.id,
+        )
+        return UnifiedCheckoutResponse(
+            checkout_url=outcome.checkout_url,
+            transaction_id=outcome.plan.id,
+            free=False,
+        )
 
     resolved = resolve_option_and_schedule(
         db,

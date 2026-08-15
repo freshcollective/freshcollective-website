@@ -38,7 +38,7 @@ from uuid import uuid4
 
 import stripe
 from fastapi import HTTPException
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -447,6 +447,33 @@ def check_same_option_not_active(
                 "You already have active access from this Payment "
                 "Option. If you need to change your plan, contact "
                 "support."
+            ),
+        )
+
+    # Rule D — active finite-plan agreement. Blocks a second start
+    # of the same Payment Option while the previous plan is still
+    # "active-ish" (pending_setup / active / payment_problem). Does
+    # NOT block completed / cancelled / failed plans, so a legitimate
+    # future-term repurchase or retry after abandonment is allowed.
+    # Applies to BOTH pay-in-full and finite-plan checkout callers so
+    # a member on an active $20/week × 10 plan cannot separately buy
+    # the $200 once schedule of the same option.
+    active_plan = db.execute(
+        text(
+            "SELECT id FROM purchase_plans "
+            "WHERE member_user_id = :uid "
+            "AND payment_option_id = :oid "
+            "AND status IN ('pending_setup', 'active', 'payment_problem') "
+            "LIMIT 1"
+        ),
+        {"uid": user.id, "oid": payment_option.id},
+    ).first()
+    if active_plan is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "You already have a payment plan in progress for this "
+                "Payment Option. Contact support if you need to change it."
             ),
         )
 

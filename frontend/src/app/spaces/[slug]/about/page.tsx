@@ -25,9 +25,16 @@ export default async function SpaceAboutPage({ params }: Props) {
 
   if (!space) notFound()
 
-  const learnerCount   = members.filter((m) => m.space_role === 'learner').length
-  const leaderCount    = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
-  const memberCount    = members.length
+  // Authoritative aggregate counts come from the space detail endpoint.
+  // The /api/spaces/{slug}/members list is privacy-filtered for
+  // learner-role viewers (hides learners when show_member_directory=False),
+  // so members.filter(...).length would silently render "0 members" in the
+  // stats row and sidebar for every ordinary member. Identity-display uses
+  // (spaceCreators, avatarMembers) may still be derived from the visible
+  // list — those intentionally only show people the viewer is allowed to see.
+  const learnerCount   = space.learner_count ?? 0
+  const leaderCount    = space.leader_count ?? 0
+  const memberCount    = learnerCount + leaderCount
   const pathwayCount   = space.pathways?.length ?? 0
   const gatheringCount = events.length
   const spaceCreators  = members.filter((m) => m.space_role === 'creator')

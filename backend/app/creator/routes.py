@@ -194,6 +194,7 @@ from app.services.embed_validator import EmbedValidationError, extract_and_valid
 from app.services.gathering_types import normalise_access_type
 from app.services.notification_service import trigger_new_step
 from app.services.schedule_validation import (
+    apply_recurring_derivations,
     validate_recurring_installments_payload,
 )
 from app.spaces.schemas import SpaceSummary
@@ -6221,6 +6222,10 @@ def create_payment_option_schedule(
     pathway = _get_pathway(space, pathway_slug, db)
     _get_payment_option(option_id, pathway, db)  # validates ownership
 
+    # FIP2 — derive Stripe cadence + total from Creator payload
+    # (see services/schedule_validation.py::apply_recurring_derivations).
+    apply_recurring_derivations(body)
+
     # FIP1 — validate finite payment plans on create when they are
     # being published. See _space_payment_options_routes for rationale.
     if body.status == "published":
@@ -6412,6 +6417,9 @@ def update_payment_option_schedule(
             sched.currency = val.upper()
         else:
             setattr(sched, field, val)
+
+    # FIP2 — derive Stripe cadence + total from the merged row.
+    apply_recurring_derivations(sched)
 
     # FIP1 — validate the merged post-update state when the row is
     # (now) published. Draft rows may remain incomplete so Creators

@@ -20,8 +20,15 @@ export default async function SpacePathwaysPage({ params }: Props) {
   const active = pathways.filter((p) => p.status === 'active')
   const soon = pathways.filter((p) => p.status === 'coming_soon')
 
-  const memberCount = members.filter((m) => m.space_role === 'learner').length
-  const leaderCount = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
+  // Authoritative counts from the space detail endpoint. The
+  // /api/spaces/{slug}/members list is privacy-filtered for
+  // learner-role viewers (hides learners when
+  // show_member_directory=False), so ``members.filter(...).length``
+  // would silently render "0 members" in the sidebar for every
+  // learner. Sidebar/stats must consume space.learner_count /
+  // space.leader_count instead.
+  const memberCount = space?.learner_count ?? 0
+  const leaderCount = space?.leader_count ?? 0
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">

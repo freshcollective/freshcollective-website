@@ -71,8 +71,16 @@ class SpaceResponse(BaseModel):
     guidance_links_title: str | None = None
     guidance_links_body: str | None = None
     show_member_directory: bool = False
-    # Count of active learner members — injected by the get_space route, not from ORM
+    # Authoritative aggregate counts — injected by the get_space
+    # route, sourced from a DB aggregate on ``space_memberships``.
+    # Frontend sidebar/stats surfaces MUST consume these fields
+    # rather than deriving counts from the privacy-filtered
+    # ``/api/spaces/{slug}/members`` list; that list hides learner
+    # rows from ordinary members when ``show_member_directory=False``
+    # and would silently render an incorrect "0 members" in the
+    # shared Collective sidebar for every learner-role viewer.
     learner_count: int = 0
+    leader_count: int = 0
     # Atlas v1.2 identity fields — Location provides artwork, Colour Palette
     # drives the collective's visual interface, atmosphere + identity + welcome
     # personalise the experience. All nullable while existing collectives

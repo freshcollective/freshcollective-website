@@ -269,7 +269,18 @@ class TestUnifiedShapeValidation:
             _call_unified(db, buyer, option=opt, schedule=sched)
         assert e.value.status_code == 400
 
-    def test_recurring_instalments_returns_503(self, db, make_space, make_user, stripe_configured):
+    def test_recurring_instalments_invalid_schedule_returns_422(
+        self, db, make_space, make_user, stripe_configured,
+    ):
+        """FIP2 removed the blanket 503 for recurring_installments.
+
+        A recurring schedule missing cadence fields
+        (``stripe_interval`` / ``stripe_interval_count``) now fails
+        finite-plan validation with 422 instead of the pre-FIP2 503.
+        A validly-shaped recurring schedule reaches the FIP2 setup
+        path; that happy path is covered by
+        ``tests/test_finite_plan_start.py``.
+        """
         from fastapi import HTTPException
         space = make_space()
         buyer = make_user()
@@ -280,7 +291,10 @@ class TestUnifiedShapeValidation:
         )
         with pytest.raises(HTTPException) as e:
             _call_unified(db, buyer, option=opt, schedule=sched)
-        assert e.value.status_code == 503
+        assert e.value.status_code == 422
+        detail = e.value.detail
+        assert isinstance(detail, dict)
+        assert "stripe_interval" in " ".join(detail.get("errors", []))
 
     def test_manual_schedule_returns_400(self, db, make_space, make_user, stripe_configured):
         from fastapi import HTTPException

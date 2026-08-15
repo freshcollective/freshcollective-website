@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import {
+  extractApiErrorFromResponse,
+  extractApiErrorMessage,
+} from '@/lib/apiError'
 import type { PaymentOptionRow } from '../PaymentOptionsIndexClient'
 import ExperiencePickerModal, { type Experience } from './ExperiencePickerModal'
 
@@ -58,14 +62,19 @@ export default function PaymentOptionEditorClient({
           { credentials: 'include' },
         ),
       ])
-      if (!optRes.ok) throw new Error(`Loading option: ${optRes.status}`)
+      if (!optRes.ok) {
+        setError(await extractApiErrorFromResponse(optRes, {
+          fallback: `Couldn't load this Payment Option (${optRes.status}).`,
+        }))
+        return
+      }
       const opt = await optRes.json() as PaymentOptionRow
       setOption(opt)
       if (expRes.ok) {
         setExperiences((await expRes.json()) as GrantableExperience[])
       }
     } catch (err) {
-      setError(String((err as Error)?.message ?? err))
+      setError(extractApiErrorMessage(err))
     }
   }, [spaceSlug, optionId])
 
@@ -81,13 +90,15 @@ export default function PaymentOptionEditorClient({
         ...init,
       })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body?.detail ?? `${res.status} ${res.statusText}`)
+        setError(await extractApiErrorFromResponse(res, {
+          fallback: `Save failed (${res.status}). Please try again.`,
+        }))
+        return null
       }
       if (res.status === 204) return null
       return await res.json() as T
     } catch (err) {
-      setError(String((err as Error)?.message ?? err))
+      setError(extractApiErrorMessage(err))
       return null
     } finally {
       setBusy(false)
@@ -253,11 +264,12 @@ function PurchasabilityBanner({ option }: { option: PaymentOptionRow }) {
   }
   if (option.purchasability === 'configured_not_yet_checkoutable') {
     return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">
-        <strong>Configured — checkout coming later.</strong>{' '}
-        Only finite instalment / subscription payment methods are set up. The
-        unified member checkout doesn't run those yet. Add a "Single payment"
-        method to make this option purchasable now.
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] text-slate-700">
+        <strong>Configured — payment plan ready.</strong>{' '}
+        This Payment Option has a published payment plan and included
+        experiences. Member checkout for payment plans is being enabled —
+        members won&rsquo;t see it until then. Add a &ldquo;Single payment&rdquo;
+        method if you want the option purchasable in the meantime.
       </div>
     )
   }
@@ -337,9 +349,16 @@ function BasicsSection({
         onChange={(e) => { setStatus(e.target.value as PaymentOptionRow['status']); setDirty(true) }}
         className="mt-1.5 rounded-md border border-slate-300 px-3 py-2 text-[14px] focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
       >
-        <option value="draft">Draft — only you can see it</option>
-        <option value="published">Published — available to members</option>
-        <option value="archived">Archived — hidden</option>
+        {/* Publication state only. Actual member purchasability is
+            surfaced by the ``PurchasabilityBanner`` above, which is
+            the correct place to reflect payment-plan checkout gating
+            and other readiness conditions. Labelling Published here
+            with "available to members" would be false while a Payment
+            Option's only published method is a finite payment plan
+            (member payment-plan checkout is still gated). */}
+        <option value="draft">Draft</option>
+        <option value="published">Published</option>
+        <option value="archived">Archived</option>
       </select>
 
       <div className="mt-5 flex items-center gap-3">
@@ -540,9 +559,10 @@ function PaymentMethodsSection({
     <section className="rounded-xl border border-slate-200 bg-white p-6">
       <h2 className="font-serif text-xl text-navy-900">How members can pay</h2>
       <p className="mt-1 text-[13px] text-slate-600">
-        Set one or more payment methods for this option. Only "Single payment"
-        methods can be checked out through the member flow today — instalments
-        and subscriptions can be authored but are marked <em>coming later</em>.
+        Set one or more payment methods for this option. Single payment is
+        available to members now. Payment-plan checkout is being enabled —
+        you can configure and publish a payment plan today, and members will
+        see it once payment-plan checkout is switched on.
       </p>
 
       {option.schedules.length > 0 ? (
@@ -617,23 +637,43 @@ function ScheduleRow({
       ? `${schedule.installment_amount_cents != null ? formatMoney(schedule.installment_amount_cents, currency) : '—'}/${schedule.interval ?? 'week'} × ${schedule.installment_count ?? '—'}`
       : 'Manual arrangement'
 
-  const disabledNonPayFullNote = schedule.status === 'published'
-    && schedule.schedule_type !== 'pay_in_full'
+  // Show the "platform member checkout not enabled yet" note for
+  // *published* payment plans while FIP3 is still in progress. This
+  // is deliberately about platform checkout readiness, NOT Creator
+  // publishing state — a Creator's Published finite plan is a real,
+  // durable configuration decision that will simply become
+  // purchasable when FIP3 wires member checkout.
+  const showMemberCheckoutPendingNote =
+    schedule.status === 'published'
+    && schedule.schedule_type === 'recurring_installments'
+
+  const statusBadgeStyle = status === 'published'
+    ? { bg: 'rgb(219 234 254)', color: 'rgb(30 64 175)', label: 'Published' }
+    : status === 'archived'
+      ? { bg: 'rgb(226 232 240)', color: 'rgb(71 85 105)', label: 'Archived' }
+      : { bg: 'rgb(254 243 199)', color: 'rgb(146 64 14)', label: 'Draft' }
 
   return (
-    <li className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+    <li className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      {/* ── Header — payment-method identity + status at the top ── */}
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-[10.5px] font-semibold uppercase tracking-wider text-teal-700">
-            {typeLabel}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-600">
+              {typeLabel}
+            </span>
+            <span
+              className="rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider"
+              style={{
+                background: statusBadgeStyle.bg,
+                color: statusBadgeStyle.color,
+              }}
+            >
+              {statusBadgeStyle.label}
+            </span>
           </div>
-          <div className="mt-0.5 text-[15px] font-medium text-navy-900">{summary}</div>
+          <div className="mt-1 text-[15px] font-medium text-navy-900">{summary}</div>
           <div className="mt-0.5 text-[12px] text-slate-500">{schedule.name}</div>
-          {disabledNonPayFullNote && (
-            <div className="mt-1.5 text-[11.5px] text-amber-700">
-              Checkout for this schedule type is coming later.
-            </div>
-          )}
         </div>
         <button
           type="button"
@@ -645,26 +685,80 @@ function ScheduleRow({
         </button>
       </div>
 
+      {/* ── Availability — separated block so the publishing decision
+          gets its own visual weight, not lost among the pricing fields. */}
+      <fieldset className="mt-4 rounded-md border border-slate-200 bg-slate-50/70 p-3">
+        <legend className="px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+          Availability
+        </legend>
+        <div className="flex flex-wrap items-start gap-3">
+          <div
+            role="radiogroup"
+            aria-label="Payment method availability"
+            className="inline-flex overflow-hidden rounded-md border border-slate-300 bg-white"
+          >
+            {(['draft', 'published'] as const).map((opt) => {
+              const active = status === opt
+              return (
+                <button
+                  key={opt}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => {
+                    if (status !== opt) { setStatus(opt); setDirty(true) }
+                  }}
+                  className={[
+                    'px-3 py-1.5 text-[12px] font-semibold transition-colors',
+                    active
+                      ? 'bg-navy-900 text-white'
+                      : 'bg-white text-slate-700 hover:bg-slate-100',
+                  ].join(' ')}
+                >
+                  {opt === 'draft' ? 'Draft' : 'Published'}
+                </button>
+              )
+            })}
+          </div>
+          <p className="min-w-[220px] flex-1 text-[12px] leading-relaxed text-slate-600">
+            {status === 'published'
+              ? 'This payment method is ready to be offered to members when checkout supports it.'
+              : status === 'archived'
+                ? 'This payment method is archived and not shown to members.'
+                : 'Only you can see this payment method. Members cannot choose it yet.'}
+          </p>
+        </div>
+        {status === 'archived' && (
+          <p className="mt-2 text-[11.5px] text-slate-500">
+            You can bring it back by switching to Draft.
+          </p>
+        )}
+      </fieldset>
+
+      {showMemberCheckoutPendingNote && (
+        <div
+          className="mt-3 rounded-md border px-3 py-2 text-[12px] leading-relaxed"
+          style={{
+            background: 'rgb(255 251 235)',
+            borderColor: 'rgb(253 230 138)',
+            color: 'rgb(120 53 15)',
+          }}
+        >
+          <strong className="font-semibold">Payment plans are being enabled for member checkout.</strong>{' '}
+          You can configure and publish this plan now; members won&rsquo;t see it
+          until payment-plan checkout is switched on.
+        </div>
+      )}
+
+      {/* ── Pricing fields — no longer contain the Status control. ── */}
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label className="block">
+        <label className="block sm:col-span-3">
           <span className="text-[11.5px] font-medium text-slate-700">Label</span>
           <input
             type="text" value={name}
             onChange={(e) => { setName(e.target.value); setDirty(true) }}
             className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-[13px]"
           />
-        </label>
-        <label className="block">
-          <span className="text-[11.5px] font-medium text-slate-700">Status</span>
-          <select
-            value={status}
-            onChange={(e) => { setStatus(e.target.value as Schedule['status']); setDirty(true) }}
-            className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-[13px]"
-          >
-            <option value="draft">{statusLabel.draft}</option>
-            <option value="published">{statusLabel.published}</option>
-            <option value="archived">{statusLabel.archived}</option>
-          </select>
         </label>
         {schedule.schedule_type === 'pay_in_full' && (
           <label className="block">
@@ -701,7 +795,7 @@ function ScheduleRow({
             <label className="block">
               <span className="text-[11.5px] font-medium text-slate-700">Number of payments</span>
               <input
-                type="number" min={1} value={count}
+                type="number" min={2} value={count}
                 onChange={(e) => { setCount(e.target.value); setDirty(true) }}
                 className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-1.5 text-[13px]"
               />

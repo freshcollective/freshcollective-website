@@ -61,8 +61,11 @@ export default async function SpaceEventsPage({ params }: Props) {
   // ever slipping through the upcoming feed.)
   const standaloneEvents = events.filter((e) => !e.series_id)
 
-  const memberCount = members.filter((m) => m.space_role === 'learner').length
-  const leaderCount = members.filter((m) => m.space_role === 'creator' || m.space_role === 'moderator').length
+  // Authoritative counts — the members list is privacy-filtered for
+  // learner-role viewers (see spaces.get_space + members.list_members).
+  // Sidebar must NOT derive counts from that filtered list.
+  const memberCount = space?.learner_count ?? 0
+  const leaderCount = space?.leader_count ?? 0
 
   return (
     <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">

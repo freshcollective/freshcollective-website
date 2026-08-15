@@ -47,6 +47,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -209,6 +210,20 @@ class PurchasePlan(Base):
     provider_payment_method_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     provider_subscription_schedule_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     provider_subscription_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Stripe Product + Price created for this plan (FIP2, migration 118).
+    # One per plan — Product is a light-weight parent for the Price,
+    # which carries the ``recurring={interval,interval_count}`` and
+    # ``unit_amount`` derived from the schedule snapshot. Both are
+    # referenced by the SubscriptionSchedule phase.
+    stripe_product_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    stripe_price_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # Grants snapshot (FIP2, migration 118). JSON-serialised
+    # ``FulfilmentIntent`` captured at plan creation. Prevents a
+    # later Creator edit to the Payment Option's grants from
+    # silently changing what an in-flight plan grants at first-
+    # invoice fulfilment. Nullable so pre-FIP2 rows read cleanly.
+    snapshot_grants_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Sandbox vs. live — parallels ``PaymentTransaction.stripe_mode``.
     stripe_mode: Mapped[str] = mapped_column(

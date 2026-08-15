@@ -46,6 +46,95 @@ ALLOWED_CADENCES: tuple[tuple[str, int], ...] = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Creator payload normalisation
+# ---------------------------------------------------------------------------
+#
+# The Creator UI sends a semantic cadence key on ``interval``:
+# ``week`` / ``fortnight`` / ``month``. The Stripe API uses a
+# two-field cadence: ``stripe_interval`` (``week`` / ``month``) +
+# ``stripe_interval_count`` (an integer multiplier). Derive the
+# Stripe pair from the semantic key here so the two source-of-truth
+# columns on ``PaymentOptionSchedule`` stay consistent + the FIP1
+# strict validator has the values it requires on publish.
+#
+# Also derive ``total_amount_cents`` from ``amount × count`` when
+# the Creator UI didn't send it — Creators think in "per-payment
+# × number-of-payments", not totals. The stored total makes
+# reporting + the strict-equality validator work without further
+# UI changes.
+
+_CADENCE_KEY_TO_STRIPE: dict[str, tuple[str, int]] = {
+    "week": ("week", 1),
+    "weekly": ("week", 1),
+    "fortnight": ("week", 2),
+    "fortnightly": ("week", 2),
+    "biweekly": ("week", 2),
+    "month": ("month", 1),
+    "monthly": ("month", 1),
+}
+
+
+def derive_stripe_cadence(interval_key: str | None) -> tuple[str, int] | None:
+    """Map a Creator-friendly cadence key to Stripe's (interval, count).
+
+    Returns None on unknown / empty input so the caller can leave
+    the fields NULL for the validator to reject with a clear
+    message rather than guessing. The Creator UI's dropdown emits
+    values in this table; other clients that already send the
+    Stripe pair directly should bypass this helper.
+    """
+    if not interval_key:
+        return None
+    return _CADENCE_KEY_TO_STRIPE.get(interval_key.strip().lower())
+
+
+def apply_recurring_derivations(target: Any) -> None:
+    """Fill in Stripe cadence + total from Creator-supplied fields.
+
+    Mutates ``target`` in place. Safe to call for any payload:
+
+    * ``schedule_type != 'recurring_installments'`` → no-op.
+    * ``stripe_interval`` / ``stripe_interval_count`` already set →
+      preserved (respects a caller that sends both explicitly).
+    * ``total_amount_cents`` already set → preserved (respects a
+      caller that supplied an explicit total).
+
+    Works on Pydantic models (via ``setattr``) and SQLAlchemy ORM
+    rows alike. Only sets fields that already exist on the target
+    — a defensive ``hasattr`` check keeps this helper safe against
+    unrelated update payloads (partial patches).
+    """
+    def _get(name: str) -> Any:
+        return getattr(target, name, None)
+
+    def _set_if_writable(name: str, value: Any) -> None:
+        if hasattr(target, name):
+            setattr(target, name, value)
+
+    if _get("schedule_type") != "recurring_installments":
+        return
+
+    # ── Cadence derivation ────────────────────────────────────────
+    stripe_interval = _get("stripe_interval")
+    stripe_interval_count = _get("stripe_interval_count")
+    if not stripe_interval or not stripe_interval_count:
+        pair = derive_stripe_cadence(_get("interval"))
+        if pair is not None:
+            si, sic = pair
+            if not stripe_interval:
+                _set_if_writable("stripe_interval", si)
+            if not stripe_interval_count:
+                _set_if_writable("stripe_interval_count", sic)
+
+    # ── Total derivation ──────────────────────────────────────────
+    if _get("total_amount_cents") is None:
+        amt = _get("installment_amount_cents")
+        cnt = _get("installment_count")
+        if amt is not None and cnt is not None and amt > 0 and cnt > 0:
+            _set_if_writable("total_amount_cents", amt * cnt)
+
+
 class ScheduleValidationError(ValueError):
     """Raised by :func:`validate_recurring_installments_row` on invalid input."""
 

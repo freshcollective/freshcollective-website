@@ -140,7 +140,13 @@ refund + Stripe Dashboard action, mirrored into our DB by the
 ### 5. Stripe provider contract
 
 **Object:** `stripe.SubscriptionSchedule` with:
-- One `phase`, length = `installments_expected`
+- One `phase` whose `duration = {interval, interval_count}` covers
+  the finite plan: `interval` matches the recurring Price cadence
+  unit, `interval_count` = Price cadence multiplier ×
+  `installments_expected` (e.g. weekly × 3 → duration week × 3;
+  fortnightly × 5 → duration week × 10; monthly × 6 → duration
+  month × 6). Stripe removed `phases[].iterations`; the current
+  supported field is `duration`.
 - `end_behavior='cancel'`
 - Anchored to a `Price` with `recurring={interval, interval_count}`
   derived from the schedule's `stripe_interval` / `stripe_interval_count`
@@ -152,7 +158,8 @@ refund + Stripe Dashboard action, mirrored into our DB by the
 3. On `checkout.session.completed` (mode=setup), retrieve the
    attached `PaymentMethod`, set it as the Customer's default.
 4. Server-side, create the `SubscriptionSchedule` with the correct
-   `Price` and phase length. Persist `subscription_schedule.id`.
+   `Price` and a single phase whose `duration` covers the finite
+   plan (see the object shape above). Persist `subscription_schedule.id`.
 5. When Stripe advances the schedule and fires the first invoice,
    `invoice.payment_succeeded` transitions the plan `pending_setup
    → active` and grants access.

@@ -277,6 +277,14 @@ class PaymentTransaction(Base):
         nullable=True,
         index=True,
     )
+    # 1-based ordinal for per-invoice transactions belonging to a
+    # plan (FIP2, migration 118). Populated by the
+    # ``invoice.payment_succeeded`` handler as ``plan.installments_paid
+    # + 1``. Enables reporting to say "Payment 3 of 10" without
+    # relying on created_at ordering. NULL on pay-in-full rows.
+    installment_number: Mapped[int | None] = mapped_column(
+        Integer, nullable=True,
+    )
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 

@@ -75,10 +75,17 @@ export default async function SpaceMembersPage({ params }: Props) {
 
         {/* ── Right: banner + stats + Important panel ── */}
         <div className="lg:sticky lg:top-6">
+          {/* Sidebar counts come from ``space.learner_count`` /
+              ``space.leader_count`` — authoritative aggregates. The
+              ``learners`` / ``leaders`` lists above are privacy-
+              filtered for learner-role viewers (hide learners when
+              ``show_member_directory=False``), so their ``.length``
+              would silently render "0 members" for ordinary members
+              on this same page. */}
           <CollectiveSidebarPanel
             space={space}
-            memberCount={learners.length}
-            leaderCount={leaders.length}
+            memberCount={space?.learner_count ?? 0}
+            leaderCount={space?.leader_count ?? 0}
           />
         </div>
 

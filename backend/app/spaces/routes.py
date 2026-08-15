@@ -825,12 +825,28 @@ def get_space(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
     if not space.is_public and current_user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
+    # Authoritative aggregate counts. These MUST be sourced from a
+    # DB aggregate, never from a privacy-filtered directory list on
+    # the frontend — otherwise ordinary-member sidebars silently
+    # show 0 members whenever the Space has ``show_member_directory=False``
+    # (the ``/api/spaces/{slug}/members`` endpoint hides learner
+    # rows from learner-role callers in that case). Sidebar / stats
+    # UI must consume these fields, not compute ``members.length``.
     learner_count = (
         db.query(func.count(SpaceMembership.id))
         .filter(
             SpaceMembership.space_id == space.id,
             SpaceMembership.status == SpaceMembershipStatus.active,
             SpaceMembership.role == SpaceRole.learner,
+        )
+        .scalar()
+    ) or 0
+    leader_count = (
+        db.query(func.count(SpaceMembership.id))
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+            SpaceMembership.role.in_((SpaceRole.creator, SpaceRole.moderator)),
         )
         .scalar()
     ) or 0
@@ -868,6 +884,7 @@ def get_space(
     resp = SpaceResponse.model_validate(space)
     return resp.model_copy(update={
         "learner_count": learner_count,
+        "leader_count": leader_count,
         "location": location_dict,
         "colour_palette": palette_dict,
         "colour_palette_key": space.colour_story_key,

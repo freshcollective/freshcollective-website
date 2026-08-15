@@ -93,12 +93,37 @@ async def stripe_webhook(
     # (StripeObject does not expose a .get() method in newer stripe-python versions)
     event_object: dict = json.loads(str(event["data"]["object"]))
 
+    # ``event`` is a Stripe SDK ``StripeObject`` (from
+    # ``stripe.Webhook.construct_event``). StripeObject supports
+    # dict-style subscript access (``event["type"]``) but does NOT
+    # expose ``.get()``. Every field read below therefore uses ``[]``
+    # — the same access pattern the outer dispatcher already uses
+    # for ``event["type"]`` / ``event["id"]``. ``livemode`` is a
+    # required top-level field on every Stripe event per the API
+    # contract, so subscript access is safe without a default.
+    event_livemode = bool(event["livemode"])
+
     if event_type == "checkout.session.completed":
-        _handle_checkout_completed(event_object, db)
+        _handle_checkout_completed(
+            event_object, db,
+            event_livemode=event_livemode,
+        )
     elif event_type == "checkout.session.expired":
         _handle_checkout_expired(event_object, db)
     elif event_type == "payment_intent.payment_failed":
         _handle_payment_failed(event_object, db)
+    elif event_type == "invoice.payment_succeeded":
+        # FIP2 — first-invoice fulfilment for finite payment plans.
+        # Later-invoice reconciliation (2..N) is deferred to FIP3;
+        # the handler treats non-first invoices as a safe skip.
+        from app.webhooks.finite_plan_handlers import (
+            handle_invoice_payment_succeeded,
+        )
+        handle_invoice_payment_succeeded(
+            event_object, db,
+            provider_event_id=event["id"],
+            event_livemode=event_livemode,
+        )
     else:
         logger.debug("Unhandled Stripe event type: %s", event_type)
 
@@ -348,12 +373,20 @@ def _handle_gathering_ticket_completed(
 # Event handlers
 # ---------------------------------------------------------------------------
 
-def _handle_checkout_completed(session: dict, db: Session) -> None:
+def _handle_checkout_completed(
+    session: dict, db: Session, *, event_livemode: bool = False,
+) -> None:
     """
     checkout.session.completed — payment confirmed by Stripe.
 
     Idempotency: rows are locked with SELECT FOR UPDATE before mutation.
     Re-delivered events that arrive after status==succeeded are skipped cleanly.
+
+    ``event_livemode`` is threaded down to the FIP2 finite-plan setup
+    handler so it can reject a mode-mismatched event before touching
+    the plan (test event on a live plan or vice versa). The pay-in-
+    full path does not currently mode-check, matching pre-FIP2
+    behaviour.
     """
     session_id: str = session.get("id", "")
     payment_status: str = session.get("payment_status", "")
@@ -370,6 +403,27 @@ def _handle_checkout_completed(session: dict, db: Session) -> None:
     # ---------------------------------------------------------------
     if metadata.get("purchase_type") == "standalone_gathering":
         _handle_gathering_ticket_completed(session, db, metadata)
+        return
+
+    # ---------------------------------------------------------------
+    # FIP2 — finite payment plan setup completion. Session was
+    # created via ``services/finite_plan_orchestration.py`` with
+    # ``mode='setup'`` and metadata carrying ``purchase_plan_id``.
+    # Handler creates the Stripe SubscriptionSchedule + persists
+    # provider ids on the plan; DOES NOT grant access. Access is
+    # granted by the FIRST ``invoice.payment_succeeded`` event.
+    # ---------------------------------------------------------------
+    if metadata.get("purchase_type") == "finite_plan_setup":
+        from app.webhooks.finite_plan_handlers import (
+            handle_finite_plan_setup_completed,
+        )
+        # ``event_livemode`` came in from the top-level dispatcher —
+        # the finite-plan handler enforces plan.stripe_mode alignment
+        # before persisting any Stripe provider ids.
+        handle_finite_plan_setup_completed(
+            session, db, metadata,
+            event_livemode=event_livemode,
+        )
         return
 
     # ---------------------------------------------------------------

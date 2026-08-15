@@ -171,29 +171,56 @@ export default function ExperiencePickerModal({
             {KIND_ORDER.map((kind) => {
               const items = grouped[kind]
               if (items.length === 0) return null
+              // Standalone Gathering grants are structurally
+              // unsupported by finite Payment Option checkout today
+              // (checkout_orchestration refuses them via
+              // ``check_option_fulfillable_or_raise``). Keep the
+              // section visible for roadmap clarity but disable
+              // Add so a Creator can't author a grant fulfilment
+              // would immediately reject. Historical Gathering
+              // grants on existing Payment Options are untouched.
+              const kindUnsupported = kind === 'gathering'
               return (
                 <section key={kind}>
                   <div className="mb-2 flex items-center gap-2">
                     <h3 className="text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
                       {KIND_LABEL[kind]}
                     </h3>
-                    {kind === 'gathering' && (
-                      <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700 ring-1 ring-amber-200">
-                        Coming later
+                    {kindUnsupported && (
+                      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-600 ring-1 ring-slate-200">
+                        Not yet available for Payment Options
                       </span>
                     )}
                   </div>
+                  {kindUnsupported && (
+                    <p className="mb-2 text-[11.5px] leading-relaxed text-slate-500">
+                      Standalone Gatherings can&rsquo;t be bundled into a Payment
+                      Option yet — use a Gathering Series if you need to grant
+                      Gathering access. This section will re-open once payment-option
+                      Gathering fulfilment is enabled.
+                    </p>
+                  )}
                   <ul className="space-y-1">
                     {items.map((e) => {
                       const already = alreadyGrantedIds.has(e.id)
+                      const disabled = already || submitting || kindUnsupported
                       return (
                         <li key={e.id}>
                           <button
                             type="button"
-                            disabled={already || submitting}
-                            onClick={() => pickExperience(e)}
+                            disabled={disabled}
+                            onClick={() => {
+                              if (kindUnsupported) return
+                              pickExperience(e)
+                            }}
+                            aria-disabled={disabled}
+                            title={
+                              kindUnsupported
+                                ? 'Not yet available for Payment Options'
+                                : undefined
+                            }
                             className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
-                              already
+                              disabled
                                 ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
                                 : 'border-slate-200 bg-white hover:border-teal-300 hover:bg-teal-50/40'
                             }`}
@@ -211,6 +238,10 @@ export default function ExperiencePickerModal({
                             {already ? (
                               <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
                                 Already added
+                              </span>
+                            ) : kindUnsupported ? (
+                              <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+                                Not available
                               </span>
                             ) : (
                               <span className="shrink-0 rounded-full bg-teal-50 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-teal-700">

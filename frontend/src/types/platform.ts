@@ -52,7 +52,12 @@ export interface SpaceResponse {
   guidance_links_title: string | null
   guidance_links_body: string | null
   show_member_directory: boolean
+  /** Authoritative counts injected by the ``get_space`` endpoint. Use
+   *  these for sidebar/stats displays — do NOT derive counts from
+   *  the ``/api/spaces/{slug}/members`` list, which is privacy-
+   *  filtered for learner-role viewers. */
   learner_count: number
+  leader_count: number
   /** Atlas v1.2 — the collective's assigned Location (hydrated by the
    *  space detail endpoint). Consumers prefer the thumbnail for cards
    *  and the hero for large previews. */
