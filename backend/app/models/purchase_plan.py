@@ -101,6 +101,12 @@ class PurchasePlanStatus(str, enum.Enum):
     completed = "completed"
     cancelled = "cancelled"
     failed = "failed"
+    # FIP3: grace expired without recovery. Access owned exclusively
+    # by this plan is suspended; access with other active sources is
+    # preserved (see services.access_grant_records). Re-entry to
+    # ``active`` is possible if Stripe collects the outstanding
+    # invoice while the SubscriptionSchedule is still provider-live.
+    suspended = "suspended"
 
 
 class PurchasePlan(Base):
@@ -241,6 +247,39 @@ class PurchasePlan(Base):
         DateTime(timezone=False), nullable=True,
     )
     cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    # FIP3 — grace / suspension state (migration 119).
+    #
+    # ``payment_problem_started_at`` opens on the first
+    # ``invoice.payment_failed`` for the currently-unresolved
+    # failure and is cleared only on recovery. Re-delivery of the
+    # SAME failure event MUST NOT reset it.
+    #
+    # ``grace_expires_at`` is set to
+    # ``payment_problem_started_at + 7 days`` at problem open and
+    # is NEVER extended by later re-deliveries of the same failure
+    # (idempotency: preserve the original deadline).
+    #
+    # ``last_failed_invoice_id`` identifies the invoice whose
+    # failure opened the current window. Cleared on recovery.
+    #
+    # ``suspended_at`` records the transition into ``suspended``
+    # (grace expired). ``reinstated_at`` records the most recent
+    # ``suspended → active`` (recovery after suspension).
+    payment_problem_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    grace_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    last_failed_invoice_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True,
+    )
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    reinstated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True,
     )
     cancelled_by_user_id: Mapped[str | None] = mapped_column(

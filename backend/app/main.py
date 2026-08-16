@@ -9,6 +9,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.services.scheduled_publisher import start_publisher, stop_publisher
+from app.services.finite_plan_reconciler import (
+    start_reconciler as start_finite_plan_reconciler,
+    stop_reconciler as stop_finite_plan_reconciler,
+)
 
 from app.auth.routes import router as auth_router
 from app.notifications.routes import router as notifications_router
@@ -65,9 +69,15 @@ async def lifespan(_: FastAPI):
     # Background loop for the scheduled community-post publisher. See
     # app/services/scheduled_publisher.py for the idempotency contract.
     start_publisher()
+    # FIP3 — grace-expiry sweeper for finite payment plans. Same
+    # in-process asyncio pattern as the publisher; the sweep itself
+    # is idempotent and safe under duplicate execution. See
+    # app/services/finite_plan_reconciler.py.
+    start_finite_plan_reconciler()
     try:
         yield
     finally:
+        await stop_finite_plan_reconciler()
         await stop_publisher()
 
 

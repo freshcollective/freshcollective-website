@@ -334,11 +334,14 @@ class TestModeAndStatusGuards:
         ).scalar_one()
         assert count == 0
 
-    def test_active_plan_receives_later_invoice_as_skip(
+    def test_active_plan_receives_later_invoice_records_second_txn(
         self, db, primed_plan,
     ):
-        """FIP2 scope guard: later invoices on an already-active
-        plan are FIP3's job — they must skip cleanly, not corrupt."""
+        """FIP3: later invoices on an already-active plan are
+        processed by the same handler — instalment number
+        increments, a second PaymentTransaction is recorded, and
+        the snapshot grants are NOT re-applied (access already
+        exists from first-invoice fulfilment)."""
         s = primed_plan
         s.plan.status = PurchasePlanStatus.active
         s.plan.installments_paid = 1
@@ -357,7 +360,7 @@ class TestModeAndStatusGuards:
         )
 
         db.refresh(s.plan)
-        assert s.plan.installments_paid == 1
+        assert s.plan.installments_paid == 2
         count = db.execute(
             text(
                 "SELECT COUNT(*) FROM payment_transactions "
@@ -365,7 +368,7 @@ class TestModeAndStatusGuards:
             ),
             {"p": s.plan.id},
         ).scalar_one()
-        assert count == 0
+        assert count == 1  # one FIP3 later-instalment txn
 
     def test_no_matching_subscription_is_skipped(self, db, primed_plan):
         """An invoice for a subscription we don't own (test-mode

@@ -328,3 +328,45 @@ def retrieve_subscription_schedule(schedule_id: str) -> Any:
     """
     _bind_key()
     return stripe.SubscriptionSchedule.retrieve(schedule_id)
+
+
+# ---------------------------------------------------------------------------
+# FIP3 hardening — invoice inventory for the finite-end reconciler
+# ---------------------------------------------------------------------------
+
+
+def list_invoices_for_subscription(
+    subscription_id: str, *, limit: int = 100,
+) -> list[dict]:
+    """Return every invoice Stripe has for the given Subscription.
+
+    Called from the finite-end reconciler
+    (``services.finite_plan_end_reconciliation``) to answer the
+    order-independence question: "is Stripe hiding a paid invoice
+    we haven't yet seen a webhook for?".
+
+    Uses cursor pagination via ``auto_paging_iter`` under the hood
+    (falls back to a manual loop if unavailable) so a plan with
+    many retries still returns the full inventory. Each element is
+    a plain dict — ``StripeObject.to_dict()`` — so the caller
+    doesn't need to know about ``StripeObject`` quirks.
+
+    Only invoices Stripe still knows about are returned. Deleted
+    Stripe test-mode invoices vanish, which is fine — the caller
+    treats "no record" the same as "not paid".
+    """
+    _bind_key()
+    invoices: list[dict] = []
+    try:
+        iterator = stripe.Invoice.list(
+            subscription=subscription_id, limit=limit,
+        ).auto_paging_iter()
+        for inv in iterator:
+            invoices.append(inv.to_dict())
+    except AttributeError:  # pragma: no cover — very old SDKs
+        page = stripe.Invoice.list(
+            subscription=subscription_id, limit=limit,
+        )
+        for inv in page.data:
+            invoices.append(inv.to_dict() if hasattr(inv, "to_dict") else dict(inv))
+    return invoices

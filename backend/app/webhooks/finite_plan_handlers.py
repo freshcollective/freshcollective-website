@@ -60,7 +60,7 @@ from app.services.purchase_fulfilment import (
     deserialise_intent,
     validate_intent,
 )
-from app.services import stripe_finite_plan
+from app.services import finite_plan_lifecycle, stripe_finite_plan
 from app.services.webhook_idempotency import (
     SkipWebhookEvent,
     process_webhook_event,
@@ -349,31 +349,58 @@ def _do_invoice_succeeded(
             f"livemode mismatch (event={event_livemode}, plan.stripe_mode={plan.stripe_mode})"
         )
 
-    # FIP2 scope guard: only the first invoice is handled here.
-    # A later invoice for an already-active plan is deferred to FIP3.
-    if plan.status == PurchasePlanStatus.active:
-        logger.info(
-            "FIP2 invoice: plan %s already active — later-instalment "
-            "reconciliation deferred to FIP3 (invoice=%s)",
-            plan.id, invoice_id,
-        )
-        raise SkipWebhookEvent(
-            f"plan already active; later-instalment reconciliation is FIP3 scope"
-        )
-    if plan.status != PurchasePlanStatus.pending_setup:
-        # ``failed`` / ``cancelled`` / ``completed`` — no-op.
-        logger.warning(
-            "FIP2 invoice: plan %s in unexpected status=%s for first-invoice "
-            "handling — skipping (invoice=%s)",
-            plan.id, plan.status, invoice_id,
-        )
-        raise SkipWebhookEvent(
-            f"plan status={plan.status} unexpected for first-invoice handling"
-        )
-
     if invoice.get("status") != "paid":
         raise SkipWebhookEvent(
             f"invoice {invoice_id} status={invoice.get('status')} != paid"
+        )
+
+    # ── FIP3 later-instalment path ─────────────────────────────────
+    # Plans already past the first invoice go through the lifecycle
+    # service, which records the per-invoice PaymentTransaction with
+    # the correct installment_number, may transition the plan
+    # (payment_problem/suspended → active on recovery, active →
+    # completed on final instalment), and reinstates access when
+    # coming back from suspended. Access is NOT re-applied — the
+    # snapshot was already applied at first-invoice fulfilment.
+    #
+    # ``failed`` is included so a late final-payment reconciliation
+    # (out-of-order subscription.deleted → invoice.payment_succeeded)
+    # can lift the plan back to ``completed`` / ``active`` and
+    # restore any access we suspended incorrectly. See §1 of the
+    # FIP3 hardening brief.
+    if plan.status in (
+        PurchasePlanStatus.active,
+        PurchasePlanStatus.payment_problem,
+        PurchasePlanStatus.suspended,
+        PurchasePlanStatus.failed,
+    ):
+        amount_paid = invoice.get("amount_paid")
+        invoice_currency = (invoice.get("currency") or "").upper()
+        charge_id = invoice.get("charge")
+        payment_intent_id = invoice.get("payment_intent")
+        finite_plan_lifecycle.record_later_successful_instalment(
+            db,
+            plan=plan,
+            invoice_id=invoice_id,
+            invoice_amount_cents=int(amount_paid or 0),
+            invoice_currency=invoice_currency,
+            subscription_id=subscription_id,
+            charge_id=charge_id,
+            payment_intent_id=payment_intent_id,
+            now=datetime.utcnow(),
+        )
+        db.commit()
+        return
+
+    if plan.status != PurchasePlanStatus.pending_setup:
+        # ``cancelled`` / ``completed`` — terminal-and-authoritative;
+        # a late invoice event is a no-op.
+        logger.warning(
+            "FIP invoice: plan %s in terminal status=%s — skipping (invoice=%s)",
+            plan.id, plan.status, invoice_id,
+        )
+        raise SkipWebhookEvent(
+            f"plan status={plan.status} terminal; invoice ignored"
         )
 
     # Idempotency: existing PaymentTransaction row for this invoice
@@ -525,6 +552,174 @@ def _do_invoice_succeeded(
 # ---------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# FIP3 — invoice.payment_failed
+# ---------------------------------------------------------------------------
+
+
+def handle_invoice_payment_failed(
+    invoice: dict, db: Session, *,
+    provider_event_id: str, event_livemode: bool,
+) -> None:
+    """``invoice.payment_failed`` handler for finite payment plans."""
+    def _handler() -> None:
+        _do_invoice_failed(
+            db, invoice=invoice, event_livemode=event_livemode,
+        )
+
+    process_webhook_event(
+        db,
+        provider="stripe",
+        provider_event_id=provider_event_id,
+        event_type="invoice.payment_failed",
+        handler=_handler,
+    )
+
+
+def _do_invoice_failed(
+    db: Session, *, invoice: dict, event_livemode: bool,
+) -> None:
+    invoice_id = _sfield(invoice, "id", default="")
+    subscription_id = _extract_subscription_id(invoice)
+    if not subscription_id:
+        raise SkipWebhookEvent(
+            f"invoice {invoice_id} has no subscription — not a plan invoice"
+        )
+
+    plan = _find_plan_by_subscription(db, subscription_id)
+    if plan is None:
+        raise SkipWebhookEvent(
+            f"no PurchasePlan for subscription {subscription_id}"
+        )
+
+    plan_livemode = (plan.stripe_mode == "live")
+    if event_livemode != plan_livemode:
+        raise SkipWebhookEvent(
+            f"livemode mismatch (event={event_livemode}, plan.stripe_mode={plan.stripe_mode})"
+        )
+
+    finite_plan_lifecycle.handle_invoice_failed_for_plan(
+        db,
+        plan=plan,
+        invoice_id=invoice_id,
+        failed_at=datetime.utcnow(),
+    )
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# FIP3 — customer.subscription.deleted
+# ---------------------------------------------------------------------------
+
+
+def handle_subscription_deleted(
+    subscription: dict, db: Session, *,
+    provider_event_id: str, event_livemode: bool,
+) -> None:
+    """``customer.subscription.deleted`` — reconcile plan state.
+
+    Distinguishes normal finite end (installments_paid == expected →
+    completed) from abnormal end (paid < expected → failed + access
+    suspended, source-aware).
+    """
+    def _handler() -> None:
+        _do_subscription_deleted(
+            db, subscription=subscription, event_livemode=event_livemode,
+        )
+
+    process_webhook_event(
+        db,
+        provider="stripe",
+        provider_event_id=provider_event_id,
+        event_type="customer.subscription.deleted",
+        handler=_handler,
+    )
+
+
+def _do_subscription_deleted(
+    db: Session, *, subscription: dict, event_livemode: bool,
+) -> None:
+    subscription_id = _sfield(subscription, "id", default="")
+    if not subscription_id:
+        raise SkipWebhookEvent("subscription payload missing id")
+
+    plan = _find_plan_by_subscription(db, subscription_id)
+    if plan is None:
+        # Not ours — Creator subscriptions or unrelated test noise.
+        raise SkipWebhookEvent(
+            f"no PurchasePlan for subscription {subscription_id}"
+        )
+
+    plan_livemode = (plan.stripe_mode == "live")
+    if event_livemode != plan_livemode:
+        raise SkipWebhookEvent(
+            f"livemode mismatch (event={event_livemode}, plan.stripe_mode={plan.stripe_mode})"
+        )
+
+    finite_plan_lifecycle.handle_subscription_deleted_for_plan(
+        db, plan=plan, now=datetime.utcnow(),
+    )
+    db.commit()
+
+
+# ---------------------------------------------------------------------------
+# FIP3 — subscription_schedule.completed
+# ---------------------------------------------------------------------------
+
+
+def handle_schedule_completed(
+    schedule: dict, db: Session, *,
+    provider_event_id: str, event_livemode: bool,
+) -> None:
+    """``subscription_schedule.completed`` — belt-and-braces confirmation
+    that the finite plan reached its natural end. Complements
+    ``customer.subscription.deleted``; whichever arrives first
+    performs the transition, the other is a no-op.
+    """
+    def _handler() -> None:
+        _do_schedule_completed(
+            db, schedule=schedule, event_livemode=event_livemode,
+        )
+
+    process_webhook_event(
+        db,
+        provider="stripe",
+        provider_event_id=provider_event_id,
+        event_type="subscription_schedule.completed",
+        handler=_handler,
+    )
+
+
+def _do_schedule_completed(
+    db: Session, *, schedule: dict, event_livemode: bool,
+) -> None:
+    schedule_id = _sfield(schedule, "id", default="")
+    if not schedule_id:
+        raise SkipWebhookEvent("schedule payload missing id")
+
+    plan = (
+        db.query(PurchasePlan)
+        .filter(PurchasePlan.provider_subscription_schedule_id == schedule_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if plan is None:
+        raise SkipWebhookEvent(
+            f"no PurchasePlan for subscription_schedule {schedule_id}"
+        )
+
+    plan_livemode = (plan.stripe_mode == "live")
+    if event_livemode != plan_livemode:
+        raise SkipWebhookEvent(
+            f"livemode mismatch (event={event_livemode}, plan.stripe_mode={plan.stripe_mode})"
+        )
+
+    finite_plan_lifecycle.handle_schedule_completed_for_plan(
+        db, plan=plan, now=datetime.utcnow(),
+    )
+    db.commit()
 
 
 def _load_plan_locked(db: Session, plan_id: str) -> PurchasePlan | None:

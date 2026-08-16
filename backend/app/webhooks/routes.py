@@ -114,12 +114,49 @@ async def stripe_webhook(
         _handle_payment_failed(event_object, db)
     elif event_type == "invoice.payment_succeeded":
         # FIP2 — first-invoice fulfilment for finite payment plans.
-        # Later-invoice reconciliation (2..N) is deferred to FIP3;
-        # the handler treats non-first invoices as a safe skip.
+        # FIP3 — later-instalment recording, recovery from
+        # payment_problem, completion transition; all inside the
+        # same handler which dispatches on plan.status.
         from app.webhooks.finite_plan_handlers import (
             handle_invoice_payment_succeeded,
         )
         handle_invoice_payment_succeeded(
+            event_object, db,
+            provider_event_id=event["id"],
+            event_livemode=event_livemode,
+        )
+    elif event_type == "invoice.payment_failed":
+        # FIP3 — later-instalment failure opens the 7-day grace
+        # window. Payment_intent-level failures on the pay-in-full
+        # path continue to be handled by the legacy
+        # ``payment_intent.payment_failed`` branch above.
+        from app.webhooks.finite_plan_handlers import (
+            handle_invoice_payment_failed,
+        )
+        handle_invoice_payment_failed(
+            event_object, db,
+            provider_event_id=event["id"],
+            event_livemode=event_livemode,
+        )
+    elif event_type == "customer.subscription.deleted":
+        # FIP3 — reconcile plan state with Stripe subscription end.
+        # Distinguishes normal finite end (installments_paid ==
+        # expected → completed) from abnormal end (paid < expected
+        # → failed + suspend access, source-aware).
+        from app.webhooks.finite_plan_handlers import (
+            handle_subscription_deleted,
+        )
+        handle_subscription_deleted(
+            event_object, db,
+            provider_event_id=event["id"],
+            event_livemode=event_livemode,
+        )
+    elif event_type == "subscription_schedule.completed":
+        # FIP3 — belt-and-braces companion to subscription.deleted.
+        from app.webhooks.finite_plan_handlers import (
+            handle_schedule_completed,
+        )
+        handle_schedule_completed(
             event_object, db,
             provider_event_id=event["id"],
             event_livemode=event_livemode,

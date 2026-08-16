@@ -156,6 +156,10 @@ class EntitlementStatus(str, enum.Enum):
     expired = "expired"
     cancelled = "cancelled"
     pending = "pending"
+    # FIP3: plan-derived entitlement paused by plan suspension.
+    # Distinct from ``revoked`` (permanent) so the reinstatement
+    # path can restore access without minting a new row.
+    suspended = "suspended"
 
 
 class EventLocationType(str, enum.Enum):

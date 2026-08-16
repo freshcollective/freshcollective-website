@@ -230,6 +230,7 @@ def start_finite_plan_setup(
     success_url: str,
     cancel_url: str,
     now: datetime,
+    override_customer_id: str | None = None,
 ) -> FinitePlanStartOutcome:
     """Snapshot the plan + open a Stripe setup Session.
 
@@ -320,9 +321,19 @@ def start_finite_plan_setup(
     db.refresh(plan)
 
     # ── Stripe Session ────────────────────────────────────────────
-    reuse_customer_id = stripe_finite_plan.find_reusable_customer_id(
-        db, payer.id,
-    )
+    # ``override_customer_id`` is an OPERATOR-ONLY escape hatch used
+    # by FIP3 test-clock harnesses (``scripts/fip3_test_acceleration.py``)
+    # so a Customer that was created against a Stripe Test Clock —
+    # which Stripe requires at Customer-creation time — can enter
+    # the normal setup Session flow. NEVER pass this from an HTTP
+    # request context; there is no public code path that forwards
+    # it. When not provided, the normal reuse lookup runs.
+    if override_customer_id is not None:
+        reuse_customer_id = override_customer_id
+    else:
+        reuse_customer_id = stripe_finite_plan.find_reusable_customer_id(
+            db, payer.id,
+        )
     try:
         session = stripe_finite_plan.create_setup_session(
             plan=plan,

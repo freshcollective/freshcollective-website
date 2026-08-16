@@ -98,6 +98,7 @@ from app.models.platform import (
     PathwayEntitlement,
     SpaceMembership,
 )
+from app.services import access_grant_records as _agr
 
 
 logger = logging.getLogger(__name__)
@@ -856,7 +857,14 @@ def _apply_entitlement(
 
     if existing_ent:
         existing_ent.status = EntitlementStatus.active
-        existing_ent.source = EntitlementSource.one_time_purchase
+        # FIP3 hardening — do NOT overwrite ``source`` on
+        # reactivation. Overwriting destroys the historical
+        # provenance of manual/admin/subscription grants that
+        # predated a plan-driven reactivation, which is exactly
+        # the signal source-aware suspension relies on. The FIP3
+        # grants log carries the new source explicitly; the row's
+        # ``source`` column stays authoritative for "how did this
+        # entitlement first come into existence".
         existing_ent.stripe_checkout_session_id = session_id
         existing_ent.stripe_payment_intent_id = payment_intent_id
         existing_ent.revoked_by_user_id = None
@@ -867,8 +875,10 @@ def _apply_entitlement(
             existing_ent.purchase_plan_id = purchase_plan_id
         existing_ent.updated_at = now
         logger.info(
-            "purchase_fulfilment: reactivated entitlement user=%s pathway=%s starts_at=%s ends_at=%s",
+            "purchase_fulfilment: reactivated entitlement user=%s pathway=%s "
+            "starts_at=%s ends_at=%s (source preserved=%s)",
             payer_user_id, intent.pathway_id, starts_at, intent.ends_at,
+            existing_ent.source,
         )
         return existing_ent
 
@@ -1088,6 +1098,23 @@ def apply_intent(
             purchase_plan_id=purchase_plan_id,
         )
         result.entitlements.append(ent)
+        # FIP3 grants log — one row per (user, target, source).
+        # Idempotent on the natural key so replay does not
+        # duplicate. Written even on reactivation of an existing
+        # entitlement so overlap queries stay honest.
+        source_type = (
+            _agr.SOURCE_PLAN_PAYMENT if purchase_plan_id
+            else _agr.SOURCE_PAY_IN_FULL
+        )
+        _agr.record_pathway_grant(
+            db,
+            user_id=payer_user_id,
+            pathway_id=ent_intent.pathway_id,
+            source_type=source_type,
+            source_purchase_plan_id=purchase_plan_id,
+            source_payment_transaction_id=txn.id if txn is not None else None,
+            granted_at=now,
+        )
 
     _link_singular_entitlement(txn, result.entitlements)
 
@@ -1127,6 +1154,33 @@ def apply_intent(
             purchase_plan_id=purchase_plan_id,
         )
         result.access_passes.append(ap)
+        # FIP3 grants log — record each granted access target
+        # (series and, when the pass has a bundled pathway link, the
+        # shadow pathway too).
+        source_type = (
+            _agr.SOURCE_PLAN_PAYMENT if purchase_plan_id
+            else _agr.SOURCE_PAY_IN_FULL
+        )
+        if ap_intent.eligible_series_id:
+            _agr.record_series_grant(
+                db,
+                user_id=payer_user_id,
+                series_id=ap_intent.eligible_series_id,
+                source_type=source_type,
+                source_purchase_plan_id=purchase_plan_id,
+                source_payment_transaction_id=txn.id if txn is not None else None,
+                granted_at=now,
+            )
+        if ap_intent.eligible_pathway_id:
+            _agr.record_pathway_grant(
+                db,
+                user_id=payer_user_id,
+                pathway_id=ap_intent.eligible_pathway_id,
+                source_type=source_type,
+                source_purchase_plan_id=purchase_plan_id,
+                source_payment_transaction_id=txn.id if txn is not None else None,
+                granted_at=now,
+            )
 
     # ── Bookings (reserved for future standalone-Gathering path) ──
     if intent.bookings:  # pragma: no cover — resolver doesn't produce these yet
