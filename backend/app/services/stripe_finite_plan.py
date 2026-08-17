@@ -331,6 +331,223 @@ def retrieve_subscription_schedule(schedule_id: str) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# FIP4A — immediate first-invoice finalise + pay
+# ---------------------------------------------------------------------------
+
+
+def finalize_and_pay_first_invoice(
+    *, plan: PurchasePlan, subscription_id: str,
+) -> tuple[str, str]:
+    """Finalise + pay the initial ``subscription_create`` invoice
+    for a freshly-created SubscriptionSchedule.
+
+    Returns ``(invoice_id, final_status)`` where ``final_status`` is
+    the Stripe invoice status after the pay attempt — usually
+    ``paid`` on success. Non-``paid`` values (``open``, still-open
+    after a ``requires_action`` payment intent, etc.) are the
+    caller's signal that the initial collection did NOT immediately
+    succeed and the setup handler should terminate the plan.
+
+    Preconditions the CALLER must have already checked:
+      * plan.status == pending_setup
+      * plan.stripe_mode matches the current API key mode
+
+    Guards enforced here:
+      * refuses if the subscription's ``latest_invoice`` is missing
+      * refuses if invoice ``billing_reason != 'subscription_create'``
+      * skips (returns the current status) if invoice is already
+        past ``draft`` (someone else already progressed it)
+
+    Idempotency: both Stripe calls carry per-plan versioned keys.
+    A lease-triggered replay of the setup handler will re-send the
+    same key; Stripe returns the cached result — no double-charge.
+
+    Exception discipline:
+      * ``stripe.CardError`` propagates — caller decides whether to
+        rethrow (letting the webhook retry) or catch and terminate.
+        For a card decline we specifically catch and terminate;
+        for a truly transient issue the caller lets Stripe redeliver.
+      * All other Stripe errors propagate to the caller.
+    """
+    _bind_key()
+    sub = stripe.Subscription.retrieve(subscription_id)
+    latest_invoice_id = (
+        sub["latest_invoice"] if isinstance(sub, dict)
+        else getattr(sub, "latest_invoice", None)
+    )
+    if not latest_invoice_id:
+        raise RuntimeError(
+            f"finalize_and_pay_first_invoice: subscription {subscription_id} "
+            f"has no latest_invoice (plan={plan.id})"
+        )
+
+    invoice = stripe.Invoice.retrieve(latest_invoice_id)
+    inv_status = invoice["status"] if isinstance(invoice, dict) else getattr(invoice, "status", None)
+    billing_reason = (
+        invoice["billing_reason"] if isinstance(invoice, dict)
+        else getattr(invoice, "billing_reason", None)
+    )
+    inv_subscription = (
+        invoice["subscription"] if isinstance(invoice, dict)
+        else getattr(invoice, "subscription", None)
+    )
+    if inv_subscription and inv_subscription != subscription_id:
+        raise RuntimeError(
+            f"finalize_and_pay_first_invoice: invoice {latest_invoice_id} "
+            f"subscription={inv_subscription!r} != expected {subscription_id!r}"
+        )
+    if billing_reason != "subscription_create":
+        raise RuntimeError(
+            f"finalize_and_pay_first_invoice: invoice {latest_invoice_id} "
+            f"billing_reason={billing_reason!r} != 'subscription_create'"
+        )
+    if inv_status not in ("draft", "open"):
+        # Already progressed — nothing for us to do. Return the
+        # observed status so the caller sees the outcome.
+        logger.info(
+            "FIP4A first-invoice accel: invoice %s already status=%s — skipping "
+            "finalize/pay (plan=%s)",
+            latest_invoice_id, inv_status, plan.id,
+        )
+        return latest_invoice_id, inv_status or ""
+
+    if inv_status == "draft":
+        stripe.Invoice.finalize_invoice(
+            latest_invoice_id,
+            auto_advance=False,
+            idempotency_key=_idem(plan.id, "finalize_first_invoice"),
+        )
+
+    # Pay the (now-open) invoice. The card decline case propagates
+    # ``stripe.CardError``; caller decides what to do with it.
+    #
+    # State-based race recovery for ``stripe.InvalidRequestError``:
+    # Stripe's own auto-progression can pay the invoice between our
+    # retrieve and our pay call — the balance-satisfied case where
+    # Stripe pays a $0-due invoice as soon as it exists is one real
+    # trigger. When this happens ``Invoice.pay`` raises. We do NOT
+    # match on the error message text (Stripe wording is not a
+    # contract). Instead we refetch and validate state: if the same
+    # invoice is now ``paid`` and still belongs to the same
+    # subscription + ``subscription_create`` reason, the pay step
+    # succeeded via Stripe's own progression — treat as success.
+    try:
+        paid = stripe.Invoice.pay(
+            latest_invoice_id,
+            idempotency_key=_idem(plan.id, "pay_first_invoice"),
+        )
+    except stripe.InvalidRequestError as exc:
+        refetched = stripe.Invoice.retrieve(latest_invoice_id)
+        ref_status = (
+            refetched["status"] if isinstance(refetched, dict)
+            else getattr(refetched, "status", None)
+        )
+        ref_sub = (
+            refetched["subscription"] if isinstance(refetched, dict)
+            else getattr(refetched, "subscription", None)
+        )
+        ref_reason = (
+            refetched["billing_reason"] if isinstance(refetched, dict)
+            else getattr(refetched, "billing_reason", None)
+        )
+        if (ref_status == "paid"
+                and ref_sub == subscription_id
+                and ref_reason == "subscription_create"):
+            logger.info(
+                "FIP4A first-invoice accel: benign race — invoice %s already "
+                "paid by Stripe (plan=%s). Original error: %s",
+                latest_invoice_id, plan.id, exc,
+            )
+            return latest_invoice_id, "paid"
+        # Genuine InvalidRequestError — re-raise so the webhook
+        # lease/retry can recover or the operator can inspect.
+        raise
+    paid_status = paid["status"] if isinstance(paid, dict) else getattr(paid, "status", None)
+    logger.info(
+        "FIP4A first-invoice accel: plan=%s invoice=%s → status=%s",
+        plan.id, latest_invoice_id, paid_status,
+    )
+    return latest_invoice_id, paid_status or ""
+
+
+# ---------------------------------------------------------------------------
+# FIP4A — terminate an abandoned finite-plan Subscription/Schedule
+# ---------------------------------------------------------------------------
+
+
+def cancel_finite_subscription_schedule(*, plan: PurchasePlan) -> None:
+    """Cancel the SubscriptionSchedule tied to a PurchasePlan so its
+    underlying Subscription terminates and no future automatic
+    charges can occur.
+
+    Used by the FIP4A first-payment-failed path when the initial
+    invoice cannot be collected. Also usable for one-off operator
+    cleanup of abandoned test-mode plans.
+
+    **Semantics** for first-payment-failure cleanup:
+
+      * ``invoice_now=False`` — do NOT emit a final proration
+        invoice; the member never earned access, so any residual
+        billing would be inappropriate.
+      * ``prorate=False`` — do NOT apply any proration credit.
+      * ``cancel`` (vs. ``release``) — cancel cascades to the
+        underlying Subscription so no future scheduled invoices
+        can fire. ``release`` would detach the schedule and let
+        the subscription continue autonomously — exactly what we
+        must avoid.
+
+    **Idempotency** — if the schedule is already ``canceled`` or
+    ``completed``, this is a no-op (fetch + short-circuit). If the
+    schedule is not found on Stripe (``InvalidRequestError``),
+    treated as already-terminated: no exception. Any other Stripe
+    error propagates so the caller can decide whether the
+    surrounding local transition should proceed or be deferred
+    until provider cleanup succeeds.
+    """
+    _bind_key()
+    schedule_id = plan.provider_subscription_schedule_id
+    if not schedule_id:
+        logger.info(
+            "FIP4A cancel: plan=%s has no SubscriptionSchedule id; nothing to cancel",
+            plan.id,
+        )
+        return
+    try:
+        current = stripe.SubscriptionSchedule.retrieve(schedule_id)
+    except stripe.InvalidRequestError as exc:
+        # Not found → treat as already-terminated. Any other
+        # InvalidRequestError shape would still be an API-level
+        # signal we can't recover from, but retrieve failures with
+        # "No such subscription_schedule" are the specific case we
+        # want to allow through.
+        logger.warning(
+            "FIP4A cancel: schedule %s not found on Stripe (plan=%s): %s",
+            schedule_id, plan.id, exc,
+        )
+        return
+    status = (
+        current["status"] if isinstance(current, dict)
+        else getattr(current, "status", None)
+    )
+    if status in ("canceled", "completed"):
+        logger.info(
+            "FIP4A cancel: schedule %s already status=%s (plan=%s); no-op",
+            schedule_id, status, plan.id,
+        )
+        return
+    stripe.SubscriptionSchedule.cancel(
+        schedule_id,
+        invoice_now=False,
+        prorate=False,
+    )
+    logger.info(
+        "FIP4A cancel: SubscriptionSchedule %s cancelled with "
+        "invoice_now=False prorate=False (plan=%s)",
+        schedule_id, plan.id,
+    )
+
+
+# ---------------------------------------------------------------------------
 # FIP3 hardening — invoice inventory for the finite-end reconciler
 # ---------------------------------------------------------------------------
 

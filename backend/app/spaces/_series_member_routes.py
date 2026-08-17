@@ -452,7 +452,7 @@ def _member_purchasable_options_for_series(
         # published schedules are recurring-instalment-only stay
         # hidden until the Commerce milestone flips the helper.
         pubs = scheds_by_opt.get(opt.id, [])
-        if not any(_schedule_is_member_checkoutable(s) for s in pubs):
+        if not any(_schedule_is_member_checkoutable(s, opt) for s in pubs):
             continue
         # The Series-grant carries the allowance we display.
         series_grant = next(
@@ -796,9 +796,14 @@ def list_member_series_payment_options(
                     total_amount_cents=s.total_amount_cents or 0,
                     installment_amount_cents=s.installment_amount_cents,
                     installment_count=s.installment_count,
-                    interval=s.interval,
+                    # Prefer human ``interval`` when set; fall back to
+                    # ``stripe_interval`` so the frontend's
+                    # ``humanCadence`` helper produces "weekly" /
+                    # "fortnightly" / "monthly" rather than the generic
+                    # "recurring" fallback.
+                    interval=s.interval or s.stripe_interval,
                     currency=s.currency or "AUD",
-                    is_member_checkoutable=_schedule_is_member_checkoutable(s),
+                    is_member_checkoutable=_schedule_is_member_checkoutable(s, po.option),
                 )
                 for s in po.schedules
             ],

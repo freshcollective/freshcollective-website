@@ -5,6 +5,11 @@ import {
   rgbaFromHex,
   type CollectivePaletteMeta,
 } from '@/lib/collectivePalette'
+import {
+  scheduleKindLabel,
+  scheduleShortDescription,
+  scheduleTotalLine,
+} from '@/lib/paymentPlan'
 
 /**
  * Sidebar for the member Series page — either the member's
@@ -293,34 +298,30 @@ function ScheduleChoice({
   const primary = paletteHex('primary', palette) ?? '#0f766e'
   const line = rgbaFromHex(primary, 0.16)
 
-  const priceLine = schedule.schedule_type === 'recurring_installments'
-    && schedule.installment_amount_cents != null
-    && schedule.installment_count != null
-    ? `${formatMoney(schedule.installment_amount_cents, schedule.currency)} ${
-        schedule.interval ?? 'week'
-      }ly × ${schedule.installment_count}`
-    : formatMoney(schedule.total_amount_cents, schedule.currency)
-
-  const priceQualifier = schedule.schedule_type === 'recurring_installments'
-    ? null
-    : 'once'
-
-  const ctaLabel = schedule.schedule_type === 'recurring_installments'
-    ? `Join ${optionName} · plan`
-    : `Join with ${optionName}`
+  const kindLabel = scheduleKindLabel(schedule)
+  const shortDesc = scheduleShortDescription(schedule)
+  const totalLine = scheduleTotalLine(schedule)
+  const ctaLabel =
+    schedule.schedule_type === 'recurring_installments'
+      ? `Start payment plan · ${optionName}`
+      : `Join with ${optionName}`
 
   return (
     <div style={withDivider ? { borderTop: `1px solid ${line}`, paddingTop: 12 } : undefined}>
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <span className="text-[12px] font-medium text-navy-900">
-          {schedule.name || (schedule.schedule_type === 'recurring_installments' ? 'Payment plan' : 'Pay in full')}
-        </span>
-        <span className="shrink-0 text-[13px] font-semibold text-navy-900">
-          {priceLine}
-          {priceQualifier && (
-            <span className="ml-1 text-[11px] font-normal text-slate-500">{priceQualifier}</span>
-          )}
-        </span>
+      <div className="mb-2">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-[12px] font-medium text-navy-900">
+            {kindLabel}
+          </span>
+          <span className="shrink-0 text-[13px] font-semibold text-navy-900">
+            {shortDesc}
+          </span>
+        </div>
+        {totalLine && (
+          <p className="mt-0.5 text-right text-[11px] text-slate-500">
+            {totalLine}
+          </p>
+        )}
       </div>
       <SeriesPurchaseButton
         spaceSlug={spaceSlug}

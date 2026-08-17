@@ -93,22 +93,113 @@ from app.models.platform import PathwayStepManualRelease  # noqa: E402
 from app.services.notification_service import trigger_booking_confirmed, trigger_event_booking_creator  # noqa: E402
 
 
-def _schedule_is_member_checkoutable(schedule) -> bool:
+def _option_supports_finite_member_checkout(option) -> bool:
+    """FIP4A — is this PaymentOption's grant bundle fulfillable by
+    the current finite-plan checkout path?
+
+    Currently supported grant kinds inside a finite-plan bundle:
+      * ``pathway``
+      * ``event_series``
+    Unsupported:
+      * ``gathering`` — standalone-Gathering PaymentOption
+        fulfilment is not yet activated in the shared
+        ``apply_intent`` path (see
+        ``services/purchase_fulfilment.py::resolve_intent_from_grants``).
+        A member selecting such a plan would 4xx at
+        ``/api/checkout`` — a member-visible dead-end. Hide it.
+
+    Legacy pre-grants options (no ``PaymentOptionGrant`` rows) are
+    treated as supported: the legacy resolver handles Pathway /
+    Series attachments without needing grant rows. A pathway- or
+    series-attached option with no grants still fulfills cleanly.
+
+    Called from :func:`_schedule_is_member_checkoutable` for
+    ``recurring_installments`` only. Pay-in-full has never been
+    gated on grant-kind because its resolver is broader; leaving
+    that unchanged.
+    """
+    from app.models.payment_option_grant import GRANT_KIND_GATHERING
+    grants = list(getattr(option, "grants", []) or [])
+    if not grants:
+        return True
+    for g in grants:
+        if getattr(g, "grant_kind", None) == GRANT_KIND_GATHERING:
+            return False
+    return True
+
+
+def _schedule_is_member_checkoutable(schedule, option=None) -> bool:
     """Single source of truth for "can a member complete unified
     checkout for this PaymentOptionSchedule today?"
 
-    Today that is ``schedule_type == 'pay_in_full'`` and
-    ``status == 'published'``. Recurring instalments live in the
-    schema but the unified ``POST /api/checkout`` still 503s them —
-    the member surface must never advertise a payment method the
-    backend would refuse. When the Commerce milestone lands and
-    ``recurring_installments`` becomes end-to-end supported this is
-    the only place to update. See the finite-instalment audit under
-    ``docs/`` / ``services/checkout_orchestration.py:241``.
+    Pay-in-full (``schedule_type == 'pay_in_full'`` +
+    ``status == 'published'``) is always checkoutable — that path
+    is proven and always live.
+
+    Recurring instalments (``schedule_type == 'recurring_installments'``)
+    are checkoutable when ALL of:
+
+      * ``status == 'published'``
+      * ``settings.finite_plan_member_checkout_enabled`` is True
+        (production-safety gate; see ``core/config.py``)
+      * the schedule row passes
+        ``validate_recurring_installments_row`` (structurally
+        valid — amount, count, cadence, currency, total-vs-per-
+        instalment consistency; see
+        ``services/schedule_validation.py``)
+      * the PaymentOption's grant bundle is fulfillable by the
+        current finite-plan path
+        (:func:`_option_supports_finite_member_checkout`). ``option``
+        must be passed when the schedule is a finite plan; a caller
+        that omits it will fail-closed and the schedule will hide.
+        This lets FIP4A refuse to surface a Payment Option that
+        would 4xx at ``/api/checkout`` — no member-visible dead
+        ends.
+
+    Not checked here (evaluated later, at the unified
+    ``POST /api/checkout`` boundary):
+
+      * Member eligibility (auth, no active plan for the same
+        Option) — enforced by ``check_no_active_plan`` inside
+        ``/api/checkout``. A per-viewer flag isn't returned on the
+        list serialiser because the flag is per-Option-and-user;
+        we don't want to leak a "you already have this" hint via
+        the public shape.
+
+    The member surface must never advertise a payment method the
+    backend would refuse. This helper is called at the boundary
+    between "backend authoritative" and "frontend renders" — the
+    frontend consumes the returned flag and never re-decides.
     """
     if getattr(schedule, "status", None) != "published":
         return False
-    return getattr(schedule, "schedule_type", None) == "pay_in_full"
+    schedule_type = getattr(schedule, "schedule_type", None)
+    if schedule_type == "pay_in_full":
+        return True
+    if schedule_type == "recurring_installments":
+        from app.core.config import settings
+        if not settings.finite_plan_member_checkout_enabled:
+            return False
+        # Structural validation — same rules FIP2 uses at plan
+        # creation. Reuse the row validator so a schedule that
+        # would 422 at checkout never shows on the member surface.
+        from app.services.schedule_validation import (
+            ScheduleValidationError,
+            validate_recurring_installments_row,
+        )
+        try:
+            validate_recurring_installments_row(schedule)
+        except ScheduleValidationError:
+            return False
+        # Fail-closed on grant-bundle: if the caller didn't pass
+        # the option, we cannot verify grant support and MUST NOT
+        # advertise a plan that could 4xx at checkout.
+        if option is None:
+            return False
+        if not _option_supports_finite_member_checkout(option):
+            return False
+        return True
+    return False
 
 
 def _series_info_for(event, db) -> tuple[str | None, str | None, str | None]:
@@ -2730,10 +2821,20 @@ def get_pathway_overview(
                     total_amount_cents=s.total_amount_cents,
                     installment_amount_cents=s.installment_amount_cents,
                     installment_count=s.installment_count,
-                    interval=s.interval,
+                    # Prefer the creator-authored human ``interval``
+                    # ('weekly' / 'fortnightly' / 'monthly'); fall back
+                    # to the Stripe-compatible ``stripe_interval``
+                    # ('week' / 'month') when the human field wasn't
+                    # populated (older rows / operator-created test
+                    # data). The frontend humanises either shape via
+                    # ``lib/paymentPlan.humanCadence`` so members never
+                    # see the generic "recurring" fallback when we
+                    # actually know the cadence.
+                    interval=s.interval or s.stripe_interval,
                     currency=s.currency,
                     buyer_note=s.buyer_note,
                     position=s.position,
+                    is_member_checkoutable=_schedule_is_member_checkoutable(s, opt),
                 )
                 for s in schedules_by_opt.get(opt.id, [])
             ],
@@ -3514,6 +3615,7 @@ def _build_series_payment_options(series_id: str, db: Session) -> list[PublicPay
         .order_by(PaymentOptionSchedule.position, PaymentOptionSchedule.created_at)
         .all()
     )
+    options_by_id = {o.id: o for o in options}
     by_option: dict[str, list[PublicPaymentOptionSchedule]] = {}
     for s in schedule_rows:
         by_option.setdefault(s.payment_option_id, []).append(
@@ -3526,10 +3628,13 @@ def _build_series_payment_options(series_id: str, db: Session) -> list[PublicPay
                 upfront_amount_cents=s.upfront_amount_cents,
                 installment_amount_cents=s.installment_amount_cents,
                 installment_count=s.installment_count,
-                interval=s.interval,
+                # See the pathway serializer's ``interval`` comment.
+                interval=s.interval or s.stripe_interval,
                 currency=s.currency,
                 buyer_note=s.buyer_note,
-                is_member_checkoutable=_schedule_is_member_checkoutable(s),
+                is_member_checkoutable=_schedule_is_member_checkoutable(
+                    s, options_by_id.get(s.payment_option_id),
+                ),
             )
         )
     return [

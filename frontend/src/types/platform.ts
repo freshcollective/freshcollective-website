@@ -168,6 +168,11 @@ export interface PaymentOptionScheduleSummary {
   currency: string
   buyer_note: string | null
   position: number
+  /** Backend-authoritative flag from
+   *  ``_schedule_is_member_checkoutable``. When ``false`` the
+   *  member surface must hide the schedule. Never re-derived on
+   *  the frontend. */
+  is_member_checkoutable: boolean
 }
 
 export interface PaymentOptionSummary {
@@ -1391,6 +1396,9 @@ export interface PublicPaymentOptionSchedule {
   interval: string | null
   currency: string
   buyer_note: string | null
+  /** Backend-authoritative — see
+   *  ``PaymentOptionScheduleSummary.is_member_checkoutable``. */
+  is_member_checkoutable: boolean
 }
 
 /** Published PaymentOption + its published schedules — surfaced on

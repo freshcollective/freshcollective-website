@@ -131,6 +131,7 @@ def record_later_successful_instalment(
     charge_id: str | None,
     payment_intent_id: str | None,
     now: datetime,
+    audit_note: str | None = None,
 ) -> LaterInstalmentOutcome:
     """Record a successful non-first instalment for an already-activated plan.
 
@@ -152,6 +153,21 @@ def record_later_successful_instalment(
       ``plan.installments_paid + 1`` — deterministic when the
       caller holds the lock, safe under replay because a
       duplicate delivery finds the txn already exists and skips.
+
+    ``invoice_amount_cents`` is the CONTRACTUAL invoice total
+    (``invoice.total``), not ``invoice.amount_paid``. A legitimately
+    paid invoice may be satisfied wholly or partly via a Stripe
+    customer balance credit; the contractual amount is what the
+    member's instalment obligation was and what FC's fee snapshot +
+    Creator revenue are calculated against. See
+    ``docs/finite-payment-plans-lifecycle.md`` and the accounting
+    audit in the FIP4A brief.
+
+    ``audit_note``, when supplied, is stored on the created/upgraded
+    PaymentTransaction. Used to record balance-satisfaction
+    evidence (invoice_total vs provider_amount_paid + Stripe
+    starting/ending balance) so operators / FIP4C reconciliation
+    can audit later without re-fetching Stripe.
     * On final instalment (``installments_paid == installments_expected``)
       the plan transitions to ``completed`` in the same commit.
     * On recovery from ``payment_problem`` or ``suspended`` the
@@ -229,7 +245,7 @@ def record_later_successful_instalment(
         # original ``id``, the fk linkage to ``purchase_plan_id``, and
         # the invoice's natural-key uniqueness. Only the final-
         # outcome fields (status, fee math, provider payment ids,
-        # installment_number, payout_status, timestamps) change.
+        # installment_number, payout_status, timestamps, notes) change.
         txn = existing_txn
         txn.status = PaymentTransactionStatus.succeeded
         txn.fulfilment_status = PaymentFulfilmentStatus.applied
@@ -242,6 +258,8 @@ def record_later_successful_instalment(
         txn.provider_payment_intent_id = payment_intent_id
         txn.installment_number = installment_number
         txn.payout_status = PayoutStatus.pending
+        if audit_note:
+            txn.notes = audit_note
         txn.updated_at = now
         logger.info(
             "FIP3 later-instalment: recovered failed txn %s "
@@ -275,6 +293,7 @@ def record_later_successful_instalment(
             installment_number=installment_number,
             stripe_mode=plan.stripe_mode,
             payout_status=PayoutStatus.pending,
+            notes=audit_note,
             created_at=now,
             updated_at=now,
         )
@@ -447,11 +466,45 @@ def handle_invoice_failed_for_plan(
         db.add(txn)
         db.flush()
 
+    if plan.status == PurchasePlanStatus.pending_setup:
+        # FIP4A — first-invoice failure semantics. A member who has
+        # not yet earned access should NOT get the 7-day grace
+        # window (that policy is for members with live access).
+        # We use PROVIDER-FIRST termination: cancel the Stripe
+        # SubscriptionSchedule BEFORE marking the plan ``failed``
+        # so Rule D never unblocks while the abandoned Stripe
+        # schedule could still bill autonomously. A transient
+        # provider error propagates and lets Stripe redeliver
+        # the invoice.payment_failed event.
+        #
+        # This is the exact same helper the setup-handler's
+        # synchronous CardError path uses — one implementation,
+        # both entry points.
+        from app.webhooks.finite_plan_handlers import (
+            _terminate_plan_on_first_payment_failure,
+        )
+        _terminate_plan_on_first_payment_failure(
+            db, plan=plan,
+            reason="first_payment_failed",
+            note=f"invoice {invoice_id} failed while plan was pending_setup",
+        )
+        logger.warning(
+            "FIP4A first-invoice fail (async): plan=%s → failed on invoice=%s; "
+            "provider schedule cancelled, no access granted, Rule D unblocked",
+            plan.id, invoice_id,
+        )
+        return FailureOutcome(
+            plan_id=plan.id,
+            invoice_id=invoice_id,
+            transitioned_to=PurchasePlanStatus.failed.value,
+            grace_expires_at=None,
+            reason="first_payment_failed; no grace window applies",
+        )
+
     if plan.status in (
         PurchasePlanStatus.completed,
         PurchasePlanStatus.cancelled,
         PurchasePlanStatus.failed,
-        PurchasePlanStatus.pending_setup,
     ):
         logger.warning(
             "FIP3 invoice_failed: plan %s in status=%s — recording ledger row only",
@@ -817,11 +870,16 @@ def handle_subscription_deleted_for_plan(
     prev = plan.status
 
     if plan.status in (PurchasePlanStatus.cancelled,
-                       PurchasePlanStatus.completed):
-        # Already terminal — a subsequent reconciliation on
-        # ``completed`` may still upgrade a ``failed`` back if we
-        # missed events, but ``completed`` / ``cancelled`` are
-        # end-states.
+                       PurchasePlanStatus.completed,
+                       PurchasePlanStatus.failed):
+        # Already terminal. A subscription.deleted event on a
+        # ``failed`` plan is EXPECTED (the FIP4A first-payment
+        # failure path calls schedule.cancel, which cascades to a
+        # subscription.deleted webhook). Suppress the reconciler
+        # path so it can't accidentally re-run the abnormal-end
+        # transition and revoke access — a first-payment failure
+        # never had any access to revoke, but ``completed`` and
+        # ``cancelled`` similarly must stay put.
         logger.info(
             "FIP3 subscription_deleted: plan=%s already terminal (%s); no-op",
             plan.id, plan.status.value,

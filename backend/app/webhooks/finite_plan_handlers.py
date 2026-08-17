@@ -104,6 +104,33 @@ def _sfield(obj: Any, *path: str, default: Any = None) -> Any:
     return cur
 
 
+def _compose_balance_settlement_note(
+    invoice: Any, *, invoice_total: int, provider_amount_paid: int,
+) -> str | None:
+    """Return an audit note for the PaymentTransaction row when the
+    invoice was satisfied wholly or partly via Stripe customer
+    balance credit (i.e. ``amount_paid < total``). Returns ``None``
+    for normal card-funded invoices — those rows carry no note.
+
+    The note is intentionally precise (cents, both balance
+    boundaries) so a FIP4C payouts reconciliation can migrate the
+    signal into a proper ``provider_amount_paid`` column later
+    without needing a Stripe refetch. Format is stable and
+    machine-parseable enough for a future migration to structure.
+    """
+    if provider_amount_paid >= invoice_total:
+        return None
+    starting_balance = _sfield(invoice, "starting_balance")
+    ending_balance = _sfield(invoice, "ending_balance")
+    return (
+        f"Invoice satisfied partly/fully via Stripe customer balance. "
+        f"invoice_total={invoice_total}c; "
+        f"provider_amount_paid={provider_amount_paid}c; "
+        f"starting_balance={starting_balance}c; "
+        f"ending_balance={ending_balance}c."
+    )
+
+
 def _extract_subscription_id(invoice: Any) -> str | None:
     """Return the Subscription id linked to a Stripe Invoice payload.
 
@@ -291,6 +318,194 @@ def _do_setup_completed(
         plan.provider_subscription_schedule_id, plan.provider_subscription_id,
     )
 
+    # ── FIP4A — immediate first-invoice collection ─────────────────
+    # Stripe's default `next_payment_attempt` for a
+    # `subscription_create` invoice is ~1 hour after creation. That
+    # leaves the member staring at "we're confirming your first
+    # payment" for up to an hour. We finalise + pay the invoice
+    # server-side right now so the normal
+    # ``invoice.payment_succeeded`` webhook can activate access
+    # in seconds, not minutes.
+    #
+    # Access is STILL granted only by that webhook — this call
+    # doesn't touch the plan status, doesn't create the
+    # PaymentTransaction, doesn't apply grants. All of that flows
+    # through the existing ``_do_invoice_succeeded`` handler.
+    #
+    # Exception discipline is the key correctness detail. A
+    # blanket ``except Exception: raise`` would treat a legitimate
+    # card decline the same as a transient network blip and
+    # cause the webhook (via the FIP1 lease) to endlessly redeliver.
+    # We split:
+    #
+    #   * stripe.CardError → catch. Cancel the SubscriptionSchedule
+    #     so Stripe stops charging, mark plan ``failed`` with
+    #     ``cancelled_reason='first_payment_failed'``, log for
+    #     operator visibility. Rule D unblocks; the member can
+    #     retry with a different card on the same PaymentOption.
+    #     Stripe will separately fire ``invoice.payment_failed``;
+    #     the lifecycle handler's pending_setup branch is a no-op
+    #     because the row is already ``failed``.
+    #
+    #   * Non-"paid" invoice status after Invoice.pay (e.g.
+    #     `requires_action` from a 3DS card) → treat as effective
+    #     failure. Same terminal handling as CardError. FIP4B may
+    #     later introduce a proper authentication-required repair
+    #     UX; for FIP4A we do the safe thing and terminate.
+    #
+    #   * Any other stripe.StripeError (rate limit, API 5xx,
+    #     network) → rethrow. The webhook lease + Stripe redelivery
+    #     retry.
+    #
+    # The plan-status guard at the top of _do_setup_completed
+    # (checks plan.status == pending_setup) prevents a redelivery
+    # from re-attempting the collection after the plan has been
+    # activated or terminated by an earlier delivery.
+    subscription_id = plan.provider_subscription_id
+    if subscription_id is None:
+        # Extremely rare — the SubscriptionSchedule.create response
+        # sometimes lacks the subscription id. Refetch.
+        sched = stripe_finite_plan.retrieve_subscription_schedule(
+            plan.provider_subscription_schedule_id,
+        )
+        subscription_id = (
+            sched["subscription"] if isinstance(sched, dict)
+            else getattr(sched, "subscription", None)
+        )
+        if subscription_id:
+            plan.provider_subscription_id = subscription_id
+            db.commit()
+
+    if subscription_id is None:
+        logger.warning(
+            "FIP4A first-invoice accel: plan=%s has no subscription id after "
+            "schedule create — cannot accelerate; falling back to Stripe's "
+            "1-hour attempt", plan.id,
+        )
+        return
+
+    try:
+        invoice_id, final_status = stripe_finite_plan.finalize_and_pay_first_invoice(
+            plan=plan, subscription_id=subscription_id,
+        )
+    except stripe.CardError as exc:
+        # Legitimate card decline on the initial invoice.
+        logger.warning(
+            "FIP4A first-invoice accel: card declined on plan=%s subscription=%s: %s",
+            plan.id, subscription_id, exc,
+        )
+        _terminate_plan_on_first_payment_failure(
+            db, plan=plan,
+            reason="first_payment_failed",
+            note=f"card declined: {(exc.user_message or str(exc))[:200]}",
+        )
+        return
+    except stripe.StripeError:
+        # Transient / API-level error. Let the webhook redelivery
+        # + FIP1 lease retry — plan stays pending_setup for the
+        # next attempt.
+        raise
+
+    if final_status != "paid":
+        # Non-paid outcomes (e.g. requires_action from a 3DS card,
+        # unexpected open status) — treat as effective first-payment
+        # failure so the member is not left in indefinite pending_setup.
+        logger.warning(
+            "FIP4A first-invoice accel: plan=%s invoice=%s did not reach 'paid' "
+            "(status=%s) — terminating as first_payment_failed",
+            plan.id, invoice_id, final_status,
+        )
+        _terminate_plan_on_first_payment_failure(
+            db, plan=plan,
+            reason="first_payment_failed",
+            note=f"initial invoice status={final_status!r} after Invoice.pay",
+        )
+        return
+
+    # Success — Stripe just fired invoice.payment_succeeded (or is
+    # about to). That webhook activates the plan via the existing
+    # _do_invoice_succeeded handler; nothing more to do here.
+    logger.info(
+        "FIP4A first-invoice accel: plan=%s invoice=%s paid — "
+        "awaiting invoice.payment_succeeded webhook for activation",
+        plan.id, invoice_id,
+    )
+
+
+def _terminate_plan_on_first_payment_failure(
+    db: Session, *,
+    plan: PurchasePlan,
+    reason: str,
+    note: str | None,
+) -> None:
+    """First-payment-failure cleanup — PROVIDER-FIRST semantics.
+
+    The local ``PurchasePlan`` does NOT transition to ``failed``
+    until Stripe confirms the ``SubscriptionSchedule`` is
+    cancelled (or already terminal). Reason: Rule D allows a
+    replacement plan the moment the current one is out of the
+    ``pending_setup`` / ``active`` / ``payment_problem`` set.
+    Marking the local plan ``failed`` while the provider schedule
+    is still live risks the member having two billable Stripe
+    plans running simultaneously — one abandoned, one live.
+
+    Sequence:
+
+      1. Best-effort call ``cancel_finite_subscription_schedule``
+         with ``invoice_now=False, prorate=False``.
+      2. On success (or "already canceled/completed/not-found"):
+         mark the plan ``failed`` locally and commit.
+      3. On a transient ``stripe.StripeError``: leave the plan in
+         its current state (``pending_setup``) and re-raise. The
+         webhook lease + Stripe redelivery will re-run the whole
+         setup handler; the top-of-handler status guard lets it
+         through because the plan is still ``pending_setup``; the
+         idempotency-keyed ``Invoice.pay`` returns Stripe's cached
+         card-decline; we re-enter this helper and retry the
+         cancel. Eventually succeeds (or a human intervenes).
+
+    Idempotency at the entry:
+
+      * If plan is already ``failed`` (an earlier delivery of this
+        webhook already terminated it), still make a best-effort
+        cancel call — the provider cancel is itself idempotent
+        (no-op if already canceled). A transient Stripe error here
+        is logged but not re-raised; the plan is already terminal
+        and Rule D already unblocked, so there is no additional
+        risk to defer.
+    """
+    if plan.status == PurchasePlanStatus.failed:
+        try:
+            stripe_finite_plan.cancel_finite_subscription_schedule(plan=plan)
+        except stripe.StripeError as exc:
+            logger.warning(
+                "FIP4A terminate: stripe cancel raised on already-failed plan=%s: %s",
+                plan.id, exc,
+            )
+        return
+
+    # PROVIDER FIRST — a transient Stripe error here MUST propagate.
+    # Do not mark ``failed`` unless we know the provider plan is
+    # dead. The caller (setup handler / invoice_failed handler) sees
+    # the exception, the FIP1 lease drops back to ``failed`` marker,
+    # Stripe redelivery re-runs the whole webhook, we retry cancel.
+    stripe_finite_plan.cancel_finite_subscription_schedule(plan=plan)
+
+    # Only after Stripe confirms termination do we transition
+    # locally and unblock Rule D.
+    now = datetime.utcnow()
+    plan.status = PurchasePlanStatus.failed
+    plan.cancelled_at = plan.cancelled_at or now
+    plan.cancelled_reason = reason
+    if note:
+        plan.cancelled_reason = f"{reason}: {note}"[:250]
+    plan.updated_at = now
+    db.commit()
+    logger.info(
+        "FIP4A terminate: plan=%s → failed after provider cleanup confirmed "
+        "(reason=%s)", plan.id, plan.cancelled_reason,
+    )
+
 
 # ---------------------------------------------------------------------------
 # First invoice — grant access, activate plan
@@ -354,6 +569,25 @@ def _do_invoice_succeeded(
             f"invoice {invoice_id} status={invoice.get('status')} != paid"
         )
 
+    # FIP4A — accounting: gross_amount_cents uses ``invoice.total``
+    # (the contractual invoice amount) NOT ``invoice.amount_paid``
+    # (the fresh card charge). A legitimately paid invoice may be
+    # satisfied wholly or partly via Stripe customer balance credit;
+    # the member's instalment obligation is the contractual amount,
+    # and that's what the fee snapshot + Creator revenue calc off.
+    # If ``amount_paid < total`` (balance-satisfied), we compose an
+    # audit note so the PaymentTransaction row carries the
+    # settlement evidence for later reconciliation / FIP4C payouts.
+    invoice_total = int(invoice.get("total") or 0)
+    provider_amount_paid = int(invoice.get("amount_paid") or 0)
+    invoice_currency = (invoice.get("currency") or "").upper()
+    charge_id = invoice.get("charge")
+    payment_intent_id = invoice.get("payment_intent")
+    audit_note = _compose_balance_settlement_note(
+        invoice, invoice_total=invoice_total,
+        provider_amount_paid=provider_amount_paid,
+    )
+
     # ── FIP3 later-instalment path ─────────────────────────────────
     # Plans already past the first invoice go through the lifecycle
     # service, which records the per-invoice PaymentTransaction with
@@ -374,20 +608,17 @@ def _do_invoice_succeeded(
         PurchasePlanStatus.suspended,
         PurchasePlanStatus.failed,
     ):
-        amount_paid = invoice.get("amount_paid")
-        invoice_currency = (invoice.get("currency") or "").upper()
-        charge_id = invoice.get("charge")
-        payment_intent_id = invoice.get("payment_intent")
         finite_plan_lifecycle.record_later_successful_instalment(
             db,
             plan=plan,
             invoice_id=invoice_id,
-            invoice_amount_cents=int(amount_paid or 0),
+            invoice_amount_cents=invoice_total,
             invoice_currency=invoice_currency,
             subscription_id=subscription_id,
             charge_id=charge_id,
             payment_intent_id=payment_intent_id,
             now=datetime.utcnow(),
+            audit_note=audit_note,
         )
         db.commit()
         return
@@ -420,16 +651,19 @@ def _do_invoice_succeeded(
         )
         return
 
-    # Sanity — expected amount + currency.
-    amount_paid = invoice.get("amount_paid")
-    invoice_currency = (invoice.get("currency") or "").upper()
-    if amount_paid != plan.installment_amount_cents:
+    # Sanity — expected amount + currency. FIP4A: the CONTRACTUAL
+    # amount (``invoice.total``) is the fulfilment gate, not the
+    # freshly-collected card charge (``invoice.amount_paid``). A
+    # legitimately paid invoice may be satisfied wholly or partly
+    # via a Stripe customer balance credit; the member's obligation
+    # is the contractual amount.
+    if invoice_total != plan.installment_amount_cents:
         logger.error(
-            "FIP2 invoice: amount mismatch invoice=%s got=%s expected=%s plan=%s",
-            invoice_id, amount_paid, plan.installment_amount_cents, plan.id,
+            "FIP2 invoice: total mismatch invoice=%s total=%s expected=%s plan=%s",
+            invoice_id, invoice_total, plan.installment_amount_cents, plan.id,
         )
         raise RuntimeError(
-            f"invoice amount {amount_paid} != plan instalment "
+            f"invoice total {invoice_total} != plan instalment "
             f"{plan.installment_amount_cents}"
         )
     if invoice_currency != plan.currency:
@@ -439,12 +673,9 @@ def _do_invoice_succeeded(
 
     # ── Create PaymentTransaction (instalment #1) ──────────────────
     now = datetime.utcnow()
-    gross = amount_paid
+    gross = invoice_total  # contractual (FIP4A rule); NOT amount_paid
     platform_fee = round(gross * plan.platform_fee_basis_points / 10000)
     net_creator = gross - platform_fee
-
-    charge_id = invoice.get("charge")
-    payment_intent_id = invoice.get("payment_intent")
 
     txn = PaymentTransaction(
         id=str(uuid.uuid4()),
@@ -472,6 +703,7 @@ def _do_invoice_succeeded(
         installment_number=plan.installments_paid + 1,
         stripe_mode=plan.stripe_mode,
         payout_status=PayoutStatus.pending,
+        notes=audit_note,
         created_at=now,
         updated_at=now,
     )

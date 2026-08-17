@@ -37,6 +37,26 @@ class Settings(BaseSettings):
     # docs/dev-testing-safety.md and the Stage 1 audit for details.
     standalone_gathering_sales_enabled: bool = False
 
+    # FIP4A — public member checkout for finite payment plans
+    # (``PaymentOptionSchedule.schedule_type='recurring_installments'``).
+    # Hard-off by default. When True, member surfaces (Pathway detail
+    # checkout, Series ways-to-join) present published recurring
+    # schedules alongside pay-in-full choices and the unified
+    # /api/checkout endpoint opens the existing FIP2 setup flow.
+    #
+    # Backend remains authoritative: the flag is consumed by
+    # ``_schedule_is_member_checkoutable`` in ``spaces/routes.py`` and
+    # surfaces to the frontend as the per-schedule
+    # ``is_member_checkoutable`` field. The frontend never
+    # independently decides checkoutability from an env var.
+    #
+    # Production-readiness prerequisites (before flipping to True in
+    # live) are recorded in
+    # ``docs/finite-payment-plans-stripe-config.md`` §5–§6:
+    # external grace-expiry scheduler in place, Dashboard retry
+    # setting confirmed "Leave the subscription past due".
+    finite_plan_member_checkout_enabled: bool = False
+
     # Stripe Checkout Session lifetime for standalone Gathering tickets, in
     # minutes. Stripe supports 30–1440 minutes; we default to the platform
     # minimum so abandoned holds free up capacity quickly. Any change must

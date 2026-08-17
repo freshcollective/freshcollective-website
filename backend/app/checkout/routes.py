@@ -330,6 +330,73 @@ def create_pathway_checkout_session(
                 detail="Payment option not found or not available for this pathway.",
             )
 
+        # ── FIP4A — finite payment plan branch ────────────────────
+        # Peek at schedule_type so recurring_installments routes to
+        # the FIP2 setup path instead of the pay-in-full resolver's
+        # 503 guard. Mirrors the branching in the unified
+        # ``/api/checkout`` endpoint. The public-safety gate
+        # (``FINITE_PLAN_MEMBER_CHECKOUT_ENABLED``) is consulted
+        # authoritatively via ``_schedule_is_member_checkoutable``
+        # applied to the row we peeked at — same rule the
+        # frontend consumed to decide whether to show the choice.
+        schedule_type_row = (
+            db.query(PaymentOptionSchedule.schedule_type)
+            .filter(PaymentOptionSchedule.id == body.payment_option_schedule_id)
+            .first()
+        )
+        if schedule_type_row is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Payment schedule not found or not available for this option.",
+            )
+        is_recurring = (schedule_type_row[0] == "recurring_installments")
+
+        if is_recurring:
+            # Verify eligibility using the SAME helper that decides
+            # what the member surface advertises. If the flag is OFF,
+            # or the schedule is draft / invalid / bundled with an
+            # unsupported grant, refuse cleanly. The 503 message
+            # matches the unified path so error copy stays
+            # consistent.
+            from app.spaces.routes import _schedule_is_member_checkoutable
+            full_schedule = (
+                db.query(PaymentOptionSchedule)
+                .filter(PaymentOptionSchedule.id == body.payment_option_schedule_id)
+                .first()
+            )
+            if not _schedule_is_member_checkoutable(full_schedule, pre_option):
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "This payment plan is not available for member "
+                        "checkout right now."
+                    ),
+                )
+
+            recurring_resolved = resolve_option_and_schedule_for_plan(
+                db,
+                payment_option_id=body.payment_option_id,
+                payment_option_schedule_id=body.payment_option_schedule_id,
+            )
+            check_option_fulfillable_or_raise(recurring_resolved.payment_option)
+            check_same_option_not_active(
+                db, user=current_user,
+                payment_option=recurring_resolved.payment_option, now=now,
+            )
+            outcome = start_finite_plan_setup(
+                db,
+                resolved=recurring_resolved,
+                payer=current_user,
+                success_url=body.success_url,
+                cancel_url=body.cancel_url,
+                now=now,
+            )
+            logger.info(
+                "FIP4A pathway finite-plan start: plan=%s session=%s user=%s pathway=%s",
+                outcome.plan.id, outcome.session.id, current_user.id, pathway.id,
+            )
+            return PathwayCheckoutResponse(checkout_url=outcome.checkout_url)
+
         resolved = resolve_option_and_schedule(
             db,
             payment_option_id=body.payment_option_id,

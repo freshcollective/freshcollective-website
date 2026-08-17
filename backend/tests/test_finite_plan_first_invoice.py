@@ -148,10 +148,15 @@ def primed_plan(db, make_user, make_space):
 
 
 def _invoice(*, invoice_id, subscription_id, amount, currency="aud", status="paid"):
+    # FIP4A: handler now gates on ``invoice.total`` (contractual)
+    # AND records ``amount_paid`` for audit-note purposes. Existing
+    # test fixtures represent a normal card-funded invoice, so
+    # total and amount_paid are equal.
     return {
         "id": invoice_id,
         "subscription": subscription_id,
         "amount_paid": amount,
+        "total": amount,
         "currency": currency,
         "status": status,
         "charge": f"ch_test_{uuid.uuid4().hex[:8]}",

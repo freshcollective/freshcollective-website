@@ -373,6 +373,112 @@ def _existing_plan(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# FIP4A — first-invoice acceleration for normal (non-clock) member checkout
+# ---------------------------------------------------------------------------
+
+
+def _activate_first_invoice(args: argparse.Namespace) -> int:
+    """Local-only helper: finalize + pay the draft first invoice on
+    a PurchasePlan that came through the NORMAL member ``/api/checkout``
+    flow (i.e. the Customer is NOT attached to a Stripe Test Clock).
+
+    Stripe schedules the first invoice for a subscription-create
+    invoice ~1 hour after subscription creation. Without a test
+    clock we can't advance the clock; without an operator helper
+    the FIP4A browser tester would sit around waiting an hour.
+
+    This subcommand does exactly the same thing the Test Clock
+    would have done via ``next_payment_attempt``:
+
+      1. Locate the plan in the FC DB.
+      2. Verify ``plan.stripe_mode == 'test'`` — refuses to touch
+         a live plan unless ``--i-know-this-is-live`` was passed.
+      3. Refuse if the plan's Customer IS attached to a test
+         clock — advance the clock instead.
+      4. Retrieve the plan's Subscription and locate its
+         ``latest_invoice``.
+      5. Verify the invoice belongs to the plan's subscription
+         and is currently ``draft`` with ``billing_reason=subscription_create``.
+         Any other state is a refusal (won't touch an ``open`` /
+         ``paid`` / ``uncollectible`` invoice).
+      6. ``stripe.Invoice.finalize_invoice`` + ``stripe.Invoice.pay``
+         via Stripe's official API. Uses the Customer's default PM
+         (the one saved during setup).
+      7. Return. The normal ``invoice.payment_succeeded`` webhook
+         then flows into the existing FIP2 first-invoice handler
+         and activates the plan.
+
+    No public HTTP endpoint. No mutation of production semantics.
+    """
+    db = SessionLocal()
+    try:
+        plan = db.query(PurchasePlan).filter(PurchasePlan.id == args.plan_id).one_or_none()
+        if plan is None:
+            raise SystemExit(f"plan {args.plan_id!r} not found")
+        if plan.stripe_mode != "test":
+            raise SystemExit(
+                f"plan {plan.id} is stripe_mode={plan.stripe_mode!r}; "
+                f"refuse to accelerate a non-test plan"
+            )
+        if plan.provider_subscription_id is None:
+            raise SystemExit(
+                f"plan {plan.id} has no provider_subscription_id — "
+                f"setup Session may not have completed yet"
+            )
+        subscription_id = plan.provider_subscription_id
+        customer_id = plan.provider_customer_id
+    finally:
+        db.close()
+
+    # Refuse if the Customer is on a clock — that path uses
+    # ``advance-to-payment`` instead, which is the honest simulation.
+    if customer_id:
+        cust = stripe.Customer.retrieve(customer_id)
+        if cust.get("test_clock") if isinstance(cust, dict) else getattr(cust, "test_clock", None):
+            raise SystemExit(
+                f"customer {customer_id} IS attached to a Test Clock; "
+                f"use `advance-to-payment` to move time instead"
+            )
+
+    sub = stripe.Subscription.retrieve(subscription_id)
+    latest_invoice_id = (
+        sub["latest_invoice"] if isinstance(sub, dict) else getattr(sub, "latest_invoice", None)
+    )
+    if not latest_invoice_id:
+        raise SystemExit(f"subscription {subscription_id} has no latest_invoice")
+
+    invoice = stripe.Invoice.retrieve(latest_invoice_id)
+    inv_status = invoice["status"] if isinstance(invoice, dict) else getattr(invoice, "status", None)
+    billing_reason = (
+        invoice["billing_reason"] if isinstance(invoice, dict) else getattr(invoice, "billing_reason", None)
+    )
+
+    if billing_reason != "subscription_create":
+        raise SystemExit(
+            f"invoice {latest_invoice_id} billing_reason={billing_reason!r} — "
+            f"this helper only accelerates the initial subscription_create invoice"
+        )
+    if inv_status != "draft":
+        raise SystemExit(
+            f"invoice {latest_invoice_id} is status={inv_status!r} — refuse "
+            f"to re-drive an invoice not in ``draft`` state"
+        )
+
+    logger.info(
+        "FIP4A first-invoice accel: plan=%s subscription=%s invoice=%s (draft) — "
+        "finalizing + paying via Stripe API",
+        plan.id, subscription_id, latest_invoice_id,
+    )
+    stripe.Invoice.finalize_invoice(latest_invoice_id, auto_advance=False)
+    paid = stripe.Invoice.pay(latest_invoice_id)
+    paid_status = paid["status"] if isinstance(paid, dict) else getattr(paid, "status", None)
+    logger.info("FIP4A first-invoice accel: invoice %s → %s", latest_invoice_id, paid_status)
+    print(f"invoice {latest_invoice_id} → status={paid_status}. "
+          f"Expect invoice.payment_succeeded webhook + FC plan activation.")
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
 
@@ -555,6 +661,18 @@ def main() -> int:
     p_leg.add_argument("--plan-id", required=True)
     p_leg.add_argument("--scenario", required=True)
 
+    # FIP4A — non-clock first-invoice accel.
+    p_afi = sub.add_parser(
+        "activate-first-invoice",
+        help=(
+            "Finalize + pay the draft first invoice on a plan whose "
+            "Customer is NOT attached to a Test Clock (i.e. the plan "
+            "came through the normal member /api/checkout flow). "
+            "Test-mode only; no public HTTP surface."
+        ),
+    )
+    p_afi.add_argument("--plan-id", required=True)
+
     args = parser.parse_args()
     _bind_stripe_key(allow_live=args.i_know_this_is_live)
 
@@ -570,6 +688,8 @@ def main() -> int:
         return _advance_to_payment(args)
     if args.cmd == "existing-plan":
         return _existing_plan(args)
+    if args.cmd == "activate-first-invoice":
+        return _activate_first_invoice(args)
     raise SystemExit(f"unknown command: {args.cmd}")
 
 

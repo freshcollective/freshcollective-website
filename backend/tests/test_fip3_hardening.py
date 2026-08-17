@@ -239,6 +239,7 @@ def _stripe_invoice(*, invoice_id: str, amount: int = 2000,
         "id": invoice_id,
         "amount_paid": amount if status == "paid" else 0,
         "amount_due": amount,
+        "total": amount,   # FIP4A: contractual amount is authoritative
         "currency": "aud",
         "status": status,
         "charge": f"ch_test_{uuid.uuid4().hex[:8]}",
@@ -274,7 +275,7 @@ class TestOrderIndependentFiniteEnd:
             invoice={
                 "id": final_inv_id,
                 "subscription": s.subscription_id,
-                "amount_paid": 2000, "currency": "aud", "status": "paid",
+                "amount_paid": 2000, "total": 2000, "currency": "aud", "status": "paid",
                 "charge": f"ch_{uuid.uuid4().hex[:8]}",
                 "payment_intent": f"pi_{uuid.uuid4().hex[:8]}",
             },
@@ -390,7 +391,7 @@ class TestOrderIndependentFiniteEnd:
             invoice={
                 "id": late_inv_id,
                 "subscription": s.subscription_id,
-                "amount_paid": 2000, "currency": "aud", "status": "paid",
+                "amount_paid": 2000, "total": 2000, "currency": "aud", "status": "paid",
                 "charge": f"ch_{uuid.uuid4().hex[:8]}",
                 "payment_intent": f"pi_{uuid.uuid4().hex[:8]}",
             },

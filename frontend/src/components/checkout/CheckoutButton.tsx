@@ -11,6 +11,12 @@ interface CheckoutButtonProps {
   paymentOptionScheduleId?: string | null
   label?: string
   isAuthenticated?: boolean
+  /** When true, the Stripe success redirect lands on the truthful
+   *  ``/checkout/success`` page instead of the pathway checkout page.
+   *  Set this for finite payment plans — the pathway page's success
+   *  branch says "Payment received", which is a lie during a
+   *  ``mode=setup`` Checkout Session. */
+  useFinitePlanSuccessPage?: boolean
 }
 
 export function CheckoutButton({
@@ -19,6 +25,7 @@ export function CheckoutButton({
   paymentOptionScheduleId,
   label = 'Unlock pathway',
   isAuthenticated = true,
+  useFinitePlanSuccessPage = false,
 }: CheckoutButtonProps) {
   const pathname = usePathname()
   const [loading, setLoading] = useState(false)
@@ -52,7 +59,14 @@ export function CheckoutButton({
     try {
       const base = window.location.origin + window.location.pathname
       // {CHECKOUT_SESSION_ID} is a Stripe template variable — replaced at redirect time
-      const successUrl = `${base}?success=true&session_id={CHECKOUT_SESSION_ID}`
+      const successUrl = useFinitePlanSuccessPage
+        // FIP4A — finite-plan setup Sessions land on the truthful
+        // /checkout/success page. That page's copy explicitly
+        // waits for the first invoice.payment_succeeded webhook
+        // before claiming access, matching the actual state at
+        // the moment of Stripe redirect.
+        ? `${window.location.origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}`
+        : `${base}?success=true&session_id={CHECKOUT_SESSION_ID}`
       const cancelUrl = `${base}?cancelled=true`
 
       const res = await fetch(apiUrl('/api/checkout/pathway'), {

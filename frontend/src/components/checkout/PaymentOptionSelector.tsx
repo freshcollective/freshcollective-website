@@ -4,45 +4,37 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { CheckoutButton } from './CheckoutButton'
-import type { PaymentOptionSummary, PaymentOptionScheduleSummary } from '@/types/platform'
+import type {
+  PaymentOptionSummary,
+  PaymentOptionScheduleSummary,
+} from '@/types/platform'
+import {
+  cadenceAdjective,
+  formatMoney,
+  scheduleCtaLabel,
+  scheduleDisclosureCopy,
+  scheduleKindLabel,
+  scheduleShortDescription,
+  scheduleTotalLine,
+} from '@/lib/paymentPlan'
 
-function formatPrice(cents: number, currency: string): string {
-  const amount = cents / 100
-  const symbol = currency.toUpperCase() === 'AUD' ? '$' : currency
-  return `${symbol}${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)}`
-}
-
-function formatScheduleLabel(s: PaymentOptionScheduleSummary): string {
-  if (s.schedule_type === 'pay_in_full' && s.total_amount_cents != null) {
-    return formatPrice(s.total_amount_cents, s.currency)
-  }
-  if (s.schedule_type === 'recurring_installments') {
-    const count = s.installment_count
-    const amount = s.installment_amount_cents != null
-      ? formatPrice(s.installment_amount_cents, s.currency)
-      : '—'
-    const intervalLabel =
-      s.interval === 'fortnight' ? 'fortnightly'
-      : s.interval === 'week' ? 'weekly'
-      : (s.interval ?? '')
-    return count ? `${count} × ${amount} ${intervalLabel}` : `${amount} ${intervalLabel}`
-  }
-  return s.name
-}
-
-function scheduleCheckoutLabel(s: PaymentOptionScheduleSummary): string {
-  if (s.schedule_type === 'pay_in_full' && s.total_amount_cents != null) {
-    return `Pay ${formatPrice(s.total_amount_cents, s.currency)} AUD`
-  }
-  if (s.schedule_type === 'recurring_installments') {
-    const intervalLabel =
-      s.interval === 'fortnight' ? 'fortnightly'
-      : s.interval === 'week' ? 'weekly'
-      : 'recurring'
-    return `Start ${intervalLabel} payments`
-  }
-  return 'Unlock pathway'
-}
+/**
+ * FIP4A — member-facing payment option + schedule selector.
+ *
+ * Renders the published Payment Options on a Pathway (or other
+ * grant target) and lets the member choose:
+ *
+ *   1. which Payment Option they want (only surfaced if it has at
+ *      least one member-checkoutable schedule)
+ *   2. within that Option, which payment schedule — "Pay in full"
+ *      vs "Payment plan" (finite instalments)
+ *
+ * The `is_member_checkoutable` flag on each schedule is the
+ * single source of truth — the backend decides, the frontend never
+ * re-derives. Recurring instalment schedules only appear as
+ * choosable once the backend gate is on (see
+ * `FINITE_PLAN_MEMBER_CHECKOUT_ENABLED` in the config doc).
+ */
 
 function AnonCheckoutCTAs({
   pathname,
@@ -55,7 +47,8 @@ function AnonCheckoutCTAs({
 }) {
   const params = new URLSearchParams()
   if (selectedOptionId) params.set('payment_option_id', selectedOptionId)
-  if (effectiveScheduleId) params.set('payment_option_schedule_id', effectiveScheduleId)
+  if (effectiveScheduleId)
+    params.set('payment_option_schedule_id', effectiveScheduleId)
   const qs = params.toString()
   const checkoutUrl = pathname + (qs ? `?${qs}` : '')
   const encodedNext = encodeURIComponent(checkoutUrl)
@@ -76,7 +69,8 @@ function AnonCheckoutCTAs({
         Already have an account? Log in
       </Link>
       <p className="pt-1 text-center text-[11px] leading-relaxed text-black">
-        Create a free account so we can save your access and connect your payment to your profile.
+        Create a free account so we can save your access and connect your
+        payment to your profile.
       </p>
     </div>
   )
@@ -98,153 +92,191 @@ export function PaymentOptionSelector({
   initialScheduleId,
 }: Props) {
   const pathname = usePathname()
-  const [selectedOptionId, setSelectedOptionId] = useState<string>(
-    initialOptionId ?? options[0]?.id ?? ''
-  )
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(
-    initialScheduleId ?? null
+
+  // Only surface options with at least one member-checkoutable
+  // schedule — matches the SidebarWaysToJoin filter on the Series
+  // side so members see the same choices in both places.
+  const purchasableOptions = options.filter((o) =>
+    o.schedules.some((s) => s.is_member_checkoutable),
   )
 
-  const selectedOption = options.find(o => o.id === selectedOptionId)
-  const publishedSchedules = selectedOption?.schedules ?? []
-  const hasSchedules = publishedSchedules.length > 0
+  const [selectedOptionId, setSelectedOptionId] = useState<string>(
+    initialOptionId ?? purchasableOptions[0]?.id ?? options[0]?.id ?? '',
+  )
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(
+    initialScheduleId ?? null,
+  )
+
+  const selectedOption = options.find((o) => o.id === selectedOptionId)
+  const checkoutableSchedules: PaymentOptionScheduleSummary[] = (
+    selectedOption?.schedules ?? []
+  ).filter((s) => s.is_member_checkoutable)
+  const hasSchedules = checkoutableSchedules.length > 0
 
   function handleOptionSelect(id: string) {
     setSelectedOptionId(id)
     setSelectedScheduleId(null)
   }
 
-  // Default to first schedule when none explicitly chosen
+  // Default to first checkoutable schedule when none explicitly chosen.
   const effectiveScheduleId = hasSchedules
-    ? (selectedScheduleId ?? publishedSchedules[0]?.id ?? null)
+    ? selectedScheduleId ?? checkoutableSchedules[0]?.id ?? null
     : null
   const selectedSchedule = effectiveScheduleId
-    ? (publishedSchedules.find(s => s.id === effectiveScheduleId) ?? null)
+    ? checkoutableSchedules.find((s) => s.id === effectiveScheduleId) ?? null
     : null
 
-  const ctaLabel = (() => {
-    if (selectedSchedule) return scheduleCheckoutLabel(selectedSchedule)
-    if (selectedOption?.effective_price_cents != null) {
-      return `Pay ${formatPrice(selectedOption.effective_price_cents, selectedOption.currency)} AUD`
-    }
-    return 'Unlock pathway'
-  })()
+  const ctaLabel = selectedSchedule
+    ? scheduleCtaLabel(selectedSchedule)
+    : 'Continue to checkout'
 
-  const summaryPrice = (() => {
-    if (selectedSchedule?.schedule_type === 'pay_in_full' && selectedSchedule.total_amount_cents != null) {
-      return formatPrice(selectedSchedule.total_amount_cents, selectedSchedule.currency)
-    }
-    if (selectedOption?.effective_price_cents != null) {
-      return formatPrice(selectedOption.effective_price_cents, selectedOption.currency)
-    }
-    return '—'
-  })()
+  const disclosure = selectedSchedule
+    ? scheduleDisclosureCopy(selectedSchedule)
+    : null
+
+  // Empty state — creator hasn't published anything checkoutable yet.
+  if (purchasableOptions.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-5 py-6 text-center">
+        <p className="text-[13px] font-medium text-navy-900">
+          Ways to join are coming soon.
+        </p>
+        <p className="mt-1 text-[12px] leading-relaxed text-slate-600">
+          The Creator hasn&rsquo;t published a payment option yet.
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
-
-      {/* Step 1: Choose payment option */}
-      <div className="space-y-3">
-        {options.map(opt => {
-          const price = opt.effective_price_cents != null
-            ? formatPrice(opt.effective_price_cents, opt.currency)
-            : null
-          const isSelected = opt.id === selectedOptionId
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => handleOptionSelect(opt.id)}
-              className="w-full rounded-xl border-2 bg-white p-4 text-left transition-colors"
-              style={{
-                borderColor: isSelected ? '#38A09E' : '#E2E8F0',
-                background: isSelected ? 'rgba(56,160,158,0.04)' : '#FFFFFF',
-              }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-semibold text-navy-900 text-[14px]">{opt.name}</p>
-                  {opt.description && (
-                    <p className="mt-0.5 text-[13px] text-black">{opt.description}</p>
-                  )}
-                  {opt.buyer_note && (
-                    <p className="mt-1 text-[12px] text-teal-700">{opt.buyer_note}</p>
-                  )}
-                  {opt.payment_type === 'term_pass' && opt.term_end_date && (
-                    <p className="mt-1 text-[12px] text-black">
-                      Access until {new Date(opt.term_end_date).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
+      {/* Step 1: Choose payment option (only shown if >1) */}
+      {purchasableOptions.length > 1 && (
+        <div className="space-y-3">
+          {purchasableOptions.map((opt) => {
+            const price =
+              opt.effective_price_cents != null
+                ? formatMoney(opt.effective_price_cents, opt.currency)
+                : null
+            const isSelected = opt.id === selectedOptionId
+            const checkoutableForOpt = opt.schedules.filter(
+              (s) => s.is_member_checkoutable,
+            )
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => handleOptionSelect(opt.id)}
+                className="w-full rounded-xl border-2 bg-white p-4 text-left transition-colors"
+                style={{
+                  borderColor: isSelected ? '#38A09E' : '#E2E8F0',
+                  background: isSelected
+                    ? 'rgba(56,160,158,0.04)'
+                    : '#FFFFFF',
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[14px] font-semibold text-navy-900">
+                      {opt.name}
                     </p>
-                  )}
-                  {opt.sessions_per_week != null && opt.total_sessions != null && (
-                    <p className="mt-1 text-[12px] text-black">
-                      {opt.sessions_per_week} session{opt.sessions_per_week !== 1 ? 's' : ''} per week · {opt.total_sessions} sessions included
-                    </p>
-                  )}
-                </div>
-                <div className="shrink-0 text-right">
-                  {price && (
-                    <p className="font-bold text-navy-900 text-[16px]">{price}</p>
-                  )}
-                  {opt.schedules.length > 1 && (
-                    <p className="mt-0.5 text-[11px] text-black">{opt.schedules.length} payment options</p>
-                  )}
-                  <div
-                    className="mt-1 ml-auto h-4 w-4 rounded-full border-2 flex items-center justify-center"
-                    style={{ borderColor: isSelected ? '#38A09E' : '#CBD5E1' }}
-                  >
-                    {isSelected && (
-                      <div className="h-2 w-2 rounded-full" style={{ background: '#38A09E' }} />
+                    {opt.description && (
+                      <p className="mt-0.5 text-[13px] text-black">
+                        {opt.description}
+                      </p>
+                    )}
+                    {opt.buyer_note && (
+                      <p className="mt-1 text-[12px] text-teal-700">
+                        {opt.buyer_note}
+                      </p>
                     )}
                   </div>
+                  <div className="shrink-0 text-right">
+                    {price && (
+                      <p className="text-[16px] font-bold text-navy-900">
+                        {price}
+                      </p>
+                    )}
+                    {checkoutableForOpt.length > 1 && (
+                      <p className="mt-0.5 text-[11px] text-black">
+                        {checkoutableForOpt.length} ways to pay
+                      </p>
+                    )}
+                    <div
+                      className="mt-1 ml-auto flex h-4 w-4 items-center justify-center rounded-full border-2"
+                      style={{
+                        borderColor: isSelected ? '#38A09E' : '#CBD5E1',
+                      }}
+                    >
+                      {isSelected && (
+                        <div
+                          className="h-2 w-2 rounded-full"
+                          style={{ background: '#38A09E' }}
+                        />
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </button>
-          )
-        })}
-      </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
-      {/* Step 2: Choose payment schedule (shown when the selected option has published schedules) */}
-      {hasSchedules && (
+      {/* Step 2: Choose how to pay (only shown if >1 checkoutable
+          schedule under the selected Option). */}
+      {hasSchedules && checkoutableSchedules.length > 1 && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
           <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-black">
-            Payment schedule
+            Choose how you&rsquo;d like to pay
           </p>
           <div className="space-y-2">
-            {publishedSchedules.map(s => {
+            {checkoutableSchedules.map((s) => {
               const isSelSched = s.id === effectiveScheduleId
-              const isRecurring = s.schedule_type === 'recurring_installments'
               return (
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => { if (!isRecurring) setSelectedScheduleId(s.id) }}
-                  disabled={isRecurring}
-                  className="w-full rounded-lg border-2 bg-white px-4 py-3 text-left transition-colors disabled:opacity-50"
+                  onClick={() => setSelectedScheduleId(s.id)}
+                  className="w-full rounded-lg border-2 bg-white px-4 py-3 text-left transition-colors"
                   style={{
-                    borderColor: isSelSched && !isRecurring ? '#38A09E' : '#E2E8F0',
-                    background: isSelSched && !isRecurring ? 'rgba(56,160,158,0.04)' : '#FFFFFF',
+                    borderColor: isSelSched ? '#38A09E' : '#E2E8F0',
+                    background: isSelSched
+                      ? 'rgba(56,160,158,0.04)'
+                      : '#FFFFFF',
                   }}
                 >
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-[13px] font-semibold text-navy-900">{s.name}</p>
-                      {s.buyer_note && (
-                        <p className="mt-0.5 text-[11px] text-black">{s.buyer_note}</p>
+                      <p className="text-[13px] font-semibold text-navy-900">
+                        {scheduleKindLabel(s)}
+                      </p>
+                      <p className="mt-0.5 text-[12px] text-black">
+                        {scheduleShortDescription(s)}
+                      </p>
+                      {scheduleTotalLine(s) && (
+                        <p className="mt-0.5 text-[11px] text-slate-600">
+                          {scheduleTotalLine(s)}
+                        </p>
                       )}
-                      {isRecurring && (
-                        <p className="mt-0.5 text-[11px] text-amber-600">Coming soon — not yet available</p>
+                      {s.buyer_note && (
+                        <p className="mt-1 text-[11px] text-teal-700">
+                          {s.buyer_note}
+                        </p>
                       )}
                     </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-[13px] font-bold text-navy-900">{formatScheduleLabel(s)}</p>
-                      <div
-                        className="mt-1 ml-auto h-4 w-4 rounded-full border-2 flex items-center justify-center"
-                        style={{ borderColor: isSelSched && !isRecurring ? '#38A09E' : '#CBD5E1' }}
-                      >
-                        {isSelSched && !isRecurring && (
-                          <div className="h-2 w-2 rounded-full" style={{ background: '#38A09E' }} />
-                        )}
-                      </div>
+                    <div
+                      className="mt-1 ml-auto flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2"
+                      style={{
+                        borderColor: isSelSched ? '#38A09E' : '#CBD5E1',
+                      }}
+                    >
+                      {isSelSched && (
+                        <div
+                          className="h-2 w-2 rounded-full"
+                          style={{ background: '#38A09E' }}
+                        />
+                      )}
                     </div>
                   </div>
                 </button>
@@ -255,23 +287,40 @@ export function PaymentOptionSelector({
       )}
 
       {/* Payment summary */}
-      {selectedOption && (
-        <div className="rounded-xl border border-border bg-white p-4 space-y-2">
-          <div className="flex items-center justify-between text-[14px]">
+      {selectedOption && selectedSchedule && (
+        <div
+          className="space-y-2 rounded-xl border border-border bg-white p-4"
+        >
+          <div className="flex items-baseline justify-between gap-3 text-[14px]">
             <span className="text-black">{selectedOption.name}</span>
-            <span className="font-semibold text-navy-900">{summaryPrice}</span>
+            <span className="font-semibold text-navy-900">
+              {scheduleShortDescription(selectedSchedule)}
+            </span>
           </div>
-          {selectedSchedule && selectedSchedule.schedule_type !== 'pay_in_full' && selectedSchedule.installment_count && (
-            <div className="flex items-center justify-between text-[12px] text-black">
-              <span>{selectedSchedule.name}</span>
+          {scheduleTotalLine(selectedSchedule) && (
+            <div
+              className="flex items-baseline justify-between gap-3 border-t pt-2 text-[13px]"
+              style={{ borderColor: '#E2E8F0' }}
+            >
+              <span className="text-navy-900">Total commitment</span>
+              <span className="font-semibold text-navy-900">
+                {scheduleTotalLine(selectedSchedule)}
+              </span>
             </div>
           )}
-          <div className="flex items-center justify-between border-t pt-2 font-semibold text-[14px]" style={{ borderColor: '#E2E8F0' }}>
-            <span className="text-navy-900">Total</span>
-            <span className="text-navy-900">{summaryPrice}</span>
-          </div>
         </div>
       )}
+
+      {/* Pre-checkout disclosure — makes the commitment explicit
+          BEFORE the Stripe redirect. Stripe's server-generated
+          setup-page disclosure is the final one; this is our
+          own truthful summary on the FC side. */}
+      {selectedSchedule?.schedule_type === 'recurring_installments' &&
+        disclosure && (
+          <p className="text-[12px] leading-relaxed text-slate-600">
+            {disclosure}
+          </p>
+        )}
 
       {isAuthenticated ? (
         <>
@@ -280,9 +329,13 @@ export function PaymentOptionSelector({
             paymentOptionId={selectedOptionId || null}
             paymentOptionScheduleId={effectiveScheduleId}
             label={ctaLabel}
+            useFinitePlanSuccessPage={
+              selectedSchedule?.schedule_type === 'recurring_installments'
+            }
           />
           <p className="text-center text-[11px] leading-relaxed text-black">
-            Secure checkout via Stripe. You&apos;ll be redirected to complete payment.
+            Secure checkout via Stripe. You&rsquo;ll be redirected to complete
+            payment.
           </p>
         </>
       ) : (

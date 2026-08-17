@@ -151,6 +151,16 @@ class TestSetupCompletionHappyPath:
                 "app.webhooks.finite_plan_handlers.stripe_finite_plan.create_finite_subscription_schedule",
                 return_value=("sub_sched_test", subscription_id),
             ) as make_schedule,
+            # FIP4A — the setup handler now immediately finalises +
+            # pays the initial invoice server-side. These FIP2 tests
+            # mock the immediate-pay helper so they can focus on the
+            # setup-completion shape they were designed to verify.
+            # Dedicated FIP4A coverage lives in
+            # ``tests/test_fip4a_first_payment.py``.
+            patch(
+                "app.webhooks.finite_plan_handlers.stripe_finite_plan.finalize_and_pay_first_invoice",
+                return_value=("in_test_first", "paid"),
+            ),
         ):
             handle_finite_plan_setup_completed(
                 {"id": s.session_id},
@@ -210,6 +220,10 @@ class TestSetupCompletionReplay:
                 "app.webhooks.finite_plan_handlers.stripe_finite_plan.create_finite_subscription_schedule",
                 return_value=("sub_sched_x", "sub_x"),
             ) as make_schedule,
+            patch(
+                "app.webhooks.finite_plan_handlers.stripe_finite_plan.finalize_and_pay_first_invoice",
+                return_value=("in_test_first", "paid"),
+            ),
         ):
             handle_finite_plan_setup_completed(
                 {"id": s.session_id}, db,
@@ -278,6 +292,10 @@ class TestCadenceParameters:
              patch(
                  "app.webhooks.finite_plan_handlers.stripe_finite_plan.retrieve_completed_setup_session",
                  return_value=completed,
+             ), \
+             patch(
+                 "app.webhooks.finite_plan_handlers.stripe_finite_plan.finalize_and_pay_first_invoice",
+                 return_value=("in_test_first", "paid"),
              ):
             create_sched.return_value = SimpleNamespace(
                 id=f"sub_sched_{label}", subscription="sub_x",
@@ -340,6 +358,10 @@ class TestCadenceParameters:
              patch(
                  "app.webhooks.finite_plan_handlers.stripe_finite_plan.retrieve_completed_setup_session",
                  return_value=completed,
+             ), \
+             patch(
+                 "app.webhooks.finite_plan_handlers.stripe_finite_plan.finalize_and_pay_first_invoice",
+                 return_value=("in_test_first", "paid"),
              ):
             handle_finite_plan_setup_completed(
                 {"id": s.session_id}, db,

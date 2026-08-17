@@ -206,7 +206,13 @@ class SectionWithSteps(BaseModel):
 
 
 class PaymentOptionScheduleSummary(BaseModel):
-    """Member-facing payment schedule — internal_note excluded."""
+    """Member-facing payment schedule — internal_note excluded.
+
+    ``is_member_checkoutable`` is the single source of truth for
+    the member surface: the backend decides, the frontend never
+    re-derives. See ``spaces.routes._schedule_is_member_checkoutable``
+    for the rule set.
+    """
 
     id: str
     name: str
@@ -220,6 +226,7 @@ class PaymentOptionScheduleSummary(BaseModel):
     currency: str
     buyer_note: str | None = None
     position: int
+    is_member_checkoutable: bool = False
 
 
 class PaymentOptionSummary(BaseModel):
