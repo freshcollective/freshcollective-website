@@ -1,5 +1,7 @@
 /**
  * FIP4B1 — member payment-plan recovery banner.
+ * FIP4B2 — real "Update payment details" CTA wired through to the
+ * shared repair endpoint.
  *
  * Renders TWO calm, non-alarming states:
  *
@@ -13,10 +15,10 @@
  *   paused. Shows a firmer but still non-punitive recovery message
  *   and directs the member to update payment details.
  *
- * The actual "update payment details" action is FIP4B2. This
- * component renders a placeholder disabled button for local dev
- * review — no broken action is ever exposed. When FIP4B2 lands,
- * swap the placeholder for the real repair-flow CTA.
+ * The interactive CTA is delegated to `RepairPaymentCta` (client
+ * component) so this banner stays server-rendered — palette
+ * derivation, copy composition, and layout all happen at request
+ * time. Only the button + POST + redirect needs a client boundary.
  *
  * Copy is intentionally warm and calm — no red banners, no scary
  * language. This is a member who almost certainly wants to fix
@@ -25,6 +27,7 @@
 
 import type { MemberPlanState } from '@/types/platform'
 import { planRecoveryCopy } from '@/lib/planRecoveryCopy'
+import { RepairPaymentCta } from './RepairPaymentCta'
 
 interface Props {
   state: MemberPlanState
@@ -44,13 +47,6 @@ export function PlanRecoveryBanner({ state, timezone }: Props) {
   const palette = isSuspended
     ? { bg: 'rgba(180, 83, 9, 0.06)', border: 'rgba(180, 83, 9, 0.24)', accent: '#B45309' }
     : { bg: 'rgba(212, 176, 72, 0.10)', border: 'rgba(212, 176, 72, 0.30)', accent: '#8A6A15' }
-
-  // The FIP4B2 repair Checkout Session doesn't exist yet — a
-  // non-functional CTA must never reach production. Render the
-  // disabled placeholder only in development/test so local review
-  // can still preview it; in production, fall back to a plain
-  // text line so the banner still tells the member what's coming.
-  const showPlaceholderCta = process.env.NODE_ENV !== 'production'
 
   return (
     <div
@@ -73,24 +69,7 @@ export function PlanRecoveryBanner({ state, timezone }: Props) {
       <p className="mt-1 text-[11px] text-slate-500">
         {copy.progress}
       </p>
-      {showPlaceholderCta ? (
-        <button
-          type="button"
-          disabled={copy.ctaDisabled}
-          className="mt-3 inline-flex items-center rounded-full px-4 py-2 text-[12px] font-semibold text-white opacity-70 cursor-not-allowed"
-          style={{
-            background: palette.accent,
-          }}
-          aria-disabled={copy.ctaDisabled ? 'true' : 'false'}
-          title="Coming soon in the next milestone (dev-only placeholder)"
-        >
-          {copy.cta}
-        </button>
-      ) : (
-        <p className="mt-3 text-[12px] font-medium text-slate-500">
-          Update payment details — coming soon.
-        </p>
-      )}
+      <RepairPaymentCta planId={state.id} accent={palette.accent} />
     </div>
   )
 }

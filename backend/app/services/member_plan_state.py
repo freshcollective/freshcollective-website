@@ -138,6 +138,7 @@ def build_member_plan_state(db: Session, plan: PurchasePlan):
         .first()
     )
     return MemberPlanState(
+        id=plan.id,
         status=plan.status.value,
         payment_option_name=po.name if po else None,
         installments_paid=plan.installments_paid,

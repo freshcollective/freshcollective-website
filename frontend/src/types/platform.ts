@@ -200,6 +200,11 @@ export interface PaymentOptionSummary {
  *  member's attention (payment_problem / suspended). Absent for
  *  active/completed plans, non-holders, and anonymous viewers. */
 export interface MemberPlanState {
+  /** PurchasePlan id. Passed to POST /api/finite-plan/repair-session
+   *  to start the FIP4B2 repair Checkout Session. The backend
+   *  re-validates ownership + recoverable status; the id is only a
+   *  hint from the client, never an authority. */
+  id: string
   status: 'payment_problem' | 'suspended'
   payment_option_name: string | null
   installments_paid: number

@@ -38,7 +38,6 @@ describe('planRecoveryCopy — payment_problem', () => {
     assert.ok(c.body.includes('before then'))
     assert.ok(c.body.includes('August'))
     assert.equal(c.progress, '1 of 3 paid')
-    assert.equal(c.ctaDisabled, true)
   })
 
   test('formats grace date in Collective timezone', () => {
@@ -81,7 +80,6 @@ describe('planRecoveryCopy — suspended', () => {
     assert.ok(c.body.includes('paused'))
     assert.ok(c.body.includes('restore access'))
     assert.equal(c.progress, '1 of 3 paid')
-    assert.equal(c.ctaDisabled, true)
   })
 
   test('does not mention a date clause (no grace to warn about)', () => {

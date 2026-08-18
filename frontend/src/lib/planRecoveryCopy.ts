@@ -13,8 +13,6 @@ export interface PlanRecoveryCopy {
   headline: string
   body: string
   progress: string
-  cta: string
-  ctaDisabled: boolean
 }
 
 function formatGraceDate(
@@ -50,8 +48,6 @@ export function planRecoveryCopy(
       headline: 'Your payment plan needs attention',
       body: `Your access to ${planName} is paused because we couldn\u2019t process your latest payment. Update your payment details to restore access.`,
       progress,
-      cta: 'Update payment details — coming next',
-      ctaDisabled: true,
     }
   }
   const graceDate = formatGraceDate(state.grace_expires_at, timezone)
@@ -62,7 +58,5 @@ export function planRecoveryCopy(
     headline: 'Your payment needs attention',
     body,
     progress,
-    cta: 'Update payment details — coming next',
-    ctaDisabled: true,
   }
 }

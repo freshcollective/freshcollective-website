@@ -60,7 +60,11 @@ from app.services.purchase_fulfilment import (
     deserialise_intent,
     validate_intent,
 )
-from app.services import finite_plan_lifecycle, stripe_finite_plan
+from app.services import (
+    finite_plan_lifecycle,
+    finite_plan_repair,
+    stripe_finite_plan,
+)
 from app.services.webhook_idempotency import (
     SkipWebhookEvent,
     process_webhook_event,
@@ -504,6 +508,210 @@ def _terminate_plan_on_first_payment_failure(
     logger.info(
         "FIP4A terminate: plan=%s → failed after provider cleanup confirmed "
         "(reason=%s)", plan.id, plan.cancelled_reason,
+    )
+
+
+# ---------------------------------------------------------------------------
+# FIP4B2 — repair setup Session completion
+# ---------------------------------------------------------------------------
+
+
+_REPAIR_RECOVERABLE = (
+    PurchasePlanStatus.payment_problem,
+    PurchasePlanStatus.suspended,
+)
+
+
+def handle_finite_plan_repair_completed(
+    session: dict, db: Session, metadata: dict,
+    *,
+    event_livemode: bool,
+) -> None:
+    """``checkout.session.completed`` handler for FIP4B2 repair Sessions.
+
+    Wrapped in :func:`process_webhook_event` for durable idempotency
+    keyed on the Stripe Session id. The handler itself is
+    idempotent: it revalidates plan state, re-fetches the PM
+    surfaces before retrying, and Stripe.Invoice.pay carries a
+    per-invoice idempotency key so a replay cannot double-charge.
+    """
+    session_id: str = session.get("id", "")
+    plan_id: str = metadata.get("purchase_plan_id", "")
+
+    def _handler() -> None:
+        _do_repair_completed(
+            db,
+            session=session,
+            plan_id=plan_id,
+            payer_user_id=metadata.get("payer_user_id", ""),
+            event_livemode=event_livemode,
+        )
+
+    process_webhook_event(
+        db,
+        provider="stripe",
+        provider_event_id=f"repair_session:{session_id}",
+        event_type="checkout.session.completed:finite_plan_repair",
+        handler=_handler,
+    )
+
+
+def _do_repair_completed(
+    db: Session,
+    *,
+    session: dict,
+    plan_id: str,
+    payer_user_id: str,
+    event_livemode: bool,
+) -> None:
+    if not plan_id:
+        logger.error(
+            "FIP4B2 repair: missing purchase_plan_id in metadata "
+            "(session=%s)", session.get("id"),
+        )
+        raise SkipWebhookEvent("missing purchase_plan_id")
+
+    plan = _load_plan_locked(db, plan_id)
+    if plan is None:
+        logger.error(
+            "FIP4B2 repair: PurchasePlan %s not found (session=%s)",
+            plan_id, session.get("id"),
+        )
+        raise SkipWebhookEvent(f"plan {plan_id} not found")
+
+    # Ownership re-check — never trust the metadata alone. The
+    # metadata was written server-side when the endpoint opened the
+    # Session, but replay after a data migration / operator reassign
+    # could see it drift. If they no longer match, refuse.
+    if payer_user_id and plan.member_user_id != payer_user_id:
+        logger.error(
+            "FIP4B2 repair: metadata payer_user_id=%s does not match "
+            "plan.member_user_id=%s (plan=%s) — refusing",
+            payer_user_id, plan.member_user_id, plan.id,
+        )
+        raise SkipWebhookEvent("payer_user_id mismatch")
+
+    # Mode boundary — same rule as the setup handler.
+    plan_livemode = (plan.stripe_mode == "live")
+    if event_livemode != plan_livemode:
+        logger.warning(
+            "FIP4B2 repair: livemode mismatch event=%s plan=%s (plan.id=%s)",
+            event_livemode, plan.stripe_mode, plan.id,
+        )
+        raise SkipWebhookEvent(
+            f"livemode mismatch (event={event_livemode}, "
+            f"plan.stripe_mode={plan.stripe_mode})"
+        )
+
+    # Recoverability re-check — if the plan is no longer in a
+    # recoverable state (e.g. an out-of-order invoice.payment_succeeded
+    # already fired for a different retry attempt and lifted it back
+    # to ``active``), skip. Nothing to repair.
+    if plan.status not in _REPAIR_RECOVERABLE:
+        logger.info(
+            "FIP4B2 repair: plan %s in status=%s — not recoverable; skipping "
+            "(session=%s)",
+            plan.id, plan.status.value, session.get("id"),
+        )
+        raise SkipWebhookEvent(
+            f"plan {plan.id} status={plan.status.value} — not recoverable"
+        )
+
+    # Retrieve the fully-hydrated Session so we can read setup_intent
+    # → payment_method. Customer was pre-bound on Session creation.
+    stripe_session = finite_plan_repair.retrieve_completed_repair_session(
+        session.get("id", "")
+    )
+    setup_intent = getattr(stripe_session, "setup_intent", None)
+    if setup_intent is None:
+        raise RuntimeError(
+            "FIP4B2 repair: no setup_intent on completed Session "
+            f"(plan={plan.id})"
+        )
+    new_pm = getattr(setup_intent, "payment_method", None)
+    if not new_pm:
+        raise RuntimeError(
+            f"FIP4B2 repair: setup_intent has no payment_method (plan={plan.id})"
+        )
+
+    # Verify the Session's Customer is still the plan's Customer.
+    # A Session opened by our route is always bound to
+    # plan.provider_customer_id (see finite_plan_repair.create_repair_setup_session),
+    # so any mismatch is either a manual test-mode Session or
+    # corrupted metadata — refuse.
+    session_customer = getattr(stripe_session, "customer", None)
+    if session_customer is not None and not isinstance(session_customer, str):
+        session_customer = getattr(session_customer, "id", None)
+    if session_customer and session_customer != plan.provider_customer_id:
+        logger.error(
+            "FIP4B2 repair: Session customer=%s != plan customer=%s "
+            "(plan=%s session=%s)",
+            session_customer, plan.provider_customer_id, plan.id,
+            session.get("id"),
+        )
+        raise SkipWebhookEvent("session customer does not match plan customer")
+
+    # Persist the new PM id on the plan BEFORE swapping surfaces, so
+    # a mid-way crash leaves the domain state consistent with what
+    # Stripe about to do.
+    prior_pm = plan.provider_payment_method_id
+    plan.provider_payment_method_id = new_pm
+    plan.updated_at = datetime.utcnow()
+    db.commit()
+
+    # Swap on all three surfaces. Aborts (raises PaymentMethodSwapError)
+    # if any surface can't be verified. If the swap fails, leave the
+    # plan in its current state — a future repair attempt can try
+    # again. Do NOT proceed to Invoice.pay against ambiguous state.
+    try:
+        finite_plan_repair.swap_default_payment_method_all_surfaces(
+            plan=plan, new_payment_method_id=new_pm,
+        )
+    except finite_plan_repair.PaymentMethodSwapError as exc:
+        # Roll the PM pointer back so the plan still reflects the
+        # last confirmed provider state (whatever Stripe actually
+        # has). Log loudly; the member can try again.
+        logger.error(
+            "FIP4B2 repair: PM swap failed on plan=%s new_pm=%s — reverting "
+            "local pointer to %s. Error: %s",
+            plan.id, new_pm, prior_pm, exc,
+        )
+        plan.provider_payment_method_id = prior_pm
+        plan.updated_at = datetime.utcnow()
+        db.commit()
+        raise SkipWebhookEvent(
+            f"PM swap failed on plan {plan.id}: {exc}"
+        )
+
+    # Retry the overdue invoice. Card decline is a legitimate
+    # commerce outcome; leave the plan alone (existing
+    # invoice.payment_failed already keeps it in payment_problem /
+    # suspended). Success delegates to invoice.payment_succeeded
+    # via the normal FIP3 pipeline — nothing further to do here.
+    try:
+        invoice_id, status = finite_plan_repair.retry_overdue_invoice(plan=plan)
+    except finite_plan_repair.RepairInvoiceNotRetryable as exc:
+        logger.warning(
+            "FIP4B2 repair: overdue invoice not retryable on plan=%s: %s. "
+            "PM swap already succeeded; Stripe's Smart Retries can still "
+            "recover the plan.",
+            plan.id, exc,
+        )
+        return
+
+    if status == "declined":
+        logger.info(
+            "FIP4B2 repair: card declined on plan=%s invoice=%s — plan "
+            "remains recoverable, member can try again.",
+            plan.id, invoice_id,
+        )
+        return
+
+    logger.info(
+        "FIP4B2 repair: plan=%s invoice=%s → status=%s. "
+        "Awaiting invoice.payment_succeeded webhook for plan transition + "
+        "access reinstatement.",
+        plan.id, invoice_id, status,
     )
 
 

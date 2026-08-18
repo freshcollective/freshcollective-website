@@ -464,6 +464,29 @@ def _handle_checkout_completed(
         return
 
     # ---------------------------------------------------------------
+    # FIP4B2 — finite payment plan REPAIR setup completion. Session
+    # was created via ``services/finite_plan_repair.create_repair_setup_session``
+    # (invoked by ``POST /api/finite-plan/repair-session``) with
+    # ``mode='setup'`` bound to the plan's existing Customer and
+    # metadata carrying ``purchase_plan_id`` + ``payer_user_id``.
+    # Handler swaps the default PaymentMethod on the Customer +
+    # SubscriptionSchedule + Subscription (all three surfaces),
+    # then retries the plan's overdue invoice. Does NOT create a
+    # new SubscriptionSchedule, does NOT create a new PurchasePlan,
+    # does NOT grant access. Access changes flow through the
+    # existing FIP3 ``invoice.payment_succeeded`` pipeline.
+    # ---------------------------------------------------------------
+    if metadata.get("purchase_type") == "finite_plan_repair":
+        from app.webhooks.finite_plan_handlers import (
+            handle_finite_plan_repair_completed,
+        )
+        handle_finite_plan_repair_completed(
+            session, db, metadata,
+            event_livemode=event_livemode,
+        )
+        return
+
+    # ---------------------------------------------------------------
     # PurchaseIntent-backed sessions (Stage 3+). The presence of
     # ``purchase_intent_id`` in metadata means the Session was
     # created via ``app.purchases.checkout``; dispatch to the

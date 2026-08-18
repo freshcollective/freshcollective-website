@@ -9,6 +9,7 @@ import StepActions from '@/components/spaces/StepActions'
 import StepDiscussion from '@/components/spaces/StepDiscussion'
 import { renderBlocks } from '@/components/spaces/BlockList'
 import PathwayStepNav from '@/components/spaces/PathwayStepNav'
+import { PlanRecoveryNoticeCompact } from '@/components/commerce/PlanRecoveryNoticeCompact'
 import type { PathwayWithSteps, StepDetail, StepSummary, StepResource, StepBlock, StepComment } from '@/types/platform'
 
 interface Props {
@@ -160,7 +161,7 @@ export default async function StepPage({ params }: Props) {
     StepResource[],
     StepBlock[],
     StepComment[],
-    { colour_palette?: CollectivePaletteMeta | null } | null,
+    { colour_palette?: CollectivePaletteMeta | null; timezone?: string | null } | null,
   ] = await Promise.all([
     getStep(slug, pathwaySlug, stepSlug),
     getPathwayOverview(slug, pathwaySlug),
@@ -304,6 +305,21 @@ export default async function StepPage({ params }: Props) {
 
       {/* ── Right: step content ── */}
       <div className="min-w-0 flex-1">
+
+        {/* FIP4B2 — compact plan-recovery notice for members who came
+            in via Begin/Continue and bypassed the About page banner.
+            Same MemberPlanState + RepairPaymentCta; deliberately
+            short so it doesn't overwhelm the reading experience.
+            The full banner still lives on the About page. In practice
+            only payment_problem (grace) reaches this render — a
+            suspended member has entitlement=suspended and gets 404
+            from getStep() upstream. */}
+        {overview?.member_plan_state && (
+          <PlanRecoveryNoticeCompact
+            state={overview.member_plan_state}
+            timezone={space?.timezone ?? null}
+          />
+        )}
 
         {/* Progress strip — shown on mobile only; desktop sidebar handles it */}
         <div className="mb-6 lg:hidden">

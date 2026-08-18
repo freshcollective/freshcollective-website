@@ -214,11 +214,19 @@ class MemberPlanState(BaseModel):
     AND the plan is in ``payment_problem`` or ``suspended``.
 
     Deliberately narrow — the frontend needs only what the recovery
-    banner + Rule-D-aware CTA suppression require. No provider ids
-    (Stripe internals), no per-invoice ledger detail, no per-viewer
-    flags beyond the plan itself. Repair actions land in FIP4B2.
+    banner + Rule-D-aware CTA suppression + FIP4B2 repair CTA
+    require. No provider ids (Stripe internals), no per-invoice
+    ledger detail, no per-viewer flags beyond the plan itself.
+
+    ``id`` is the ``PurchasePlan.id`` — the frontend passes it to
+    ``POST /api/finite-plan/repair-session`` to start the FIP4B2
+    repair Checkout Session. The backend re-loads the plan under
+    that endpoint and re-validates member ownership before doing
+    anything with it, so exposing the id here is only a hint, not
+    an authority.
     """
 
+    id: str
     status: str  # 'payment_problem' | 'suspended'
     payment_option_name: str | None = None
     installments_paid: int
