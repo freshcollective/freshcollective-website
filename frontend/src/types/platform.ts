@@ -195,6 +195,20 @@ export interface PaymentOptionSummary {
   schedules: PaymentOptionScheduleSummary[]
 }
 
+/** FIP4B1 — the viewer's own finite-plan agreement over this
+ *  Pathway / Series, populated only when the plan needs the
+ *  member's attention (payment_problem / suspended). Absent for
+ *  active/completed plans, non-holders, and anonymous viewers. */
+export interface MemberPlanState {
+  status: 'payment_problem' | 'suspended'
+  payment_option_name: string | null
+  installments_paid: number
+  installments_expected: number
+  grace_expires_at: string | null
+  suspended_at: string | null
+  recovery_required: boolean
+}
+
 export interface PathwayWithSteps {
   id: string
   slug: string
@@ -218,6 +232,9 @@ export interface PathwayWithSteps {
   pathway_type?: 'guided_experience' | 'knowledge_guide'
   user_has_access: boolean
   payment_options: PaymentOptionSummary[]
+  /** FIP4B1 — surfaces the plan-recovery banner and suppresses
+   *  standard purchase CTAs when present. */
+  member_plan_state?: MemberPlanState | null
 }
 
 /** Knowledge Guide continuous-document payload — returned by

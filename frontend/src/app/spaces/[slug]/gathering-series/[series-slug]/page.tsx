@@ -11,6 +11,7 @@ import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import SeriesSchedule from './SeriesSchedule'
 import { SidebarWaysToJoin, SidebarYourAccess } from './SeriesSidebar'
+import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import type { PathwayAboutBlock } from '@/types/platform'
 
 /**
@@ -77,6 +78,7 @@ interface SeriesDetail {
   access: AccessSummary
   upcoming_gatherings: SeriesGatheringSummary[]
   past_gatherings: SeriesGatheringSummary[]
+  member_plan_state?: import('@/types/platform').MemberPlanState | null
 }
 
 interface PaymentOptionScheduleOut {
@@ -120,7 +122,7 @@ export default async function MemberGatheringSeriesPage({ params }: Props) {
     SeriesDetail | null,
     PathwayAboutBlock[],
     PaymentOptionOut[],
-    { colour_palette?: CollectivePaletteMeta | null } | null,
+    { colour_palette?: CollectivePaletteMeta | null; timezone?: string | null } | null,
   ] = await Promise.all([
     getSpaceGatheringSeriesDetail(slug, seriesSlug),
     getSpaceGatheringSeriesAboutBlocks(slug, seriesSlug),
@@ -232,10 +234,29 @@ export default async function MemberGatheringSeriesPage({ params }: Props) {
         </section>
 
         {/* Sidebar — sits between About and Schedule on mobile;
-            sticky right-rail on desktop spanning both rows. */}
+            sticky right-rail on desktop spanning both rows.
+
+            FIP4B1 — the plan-recovery banner takes precedence over
+            the standard ways-to-join CTA when the viewer already
+            has a payment_problem/suspended plan for this Series
+            (Rule D would refuse a duplicate purchase). For
+            payment_problem, access is still live during grace so
+            the access summary renders alongside the banner. */}
         <aside className="lg:col-start-2 lg:row-start-1 lg:row-end-3 lg:sticky lg:top-6 lg:self-start">
+          {detail.member_plan_state && (
+            <div className="mb-4">
+              <PlanRecoveryBanner
+                state={detail.member_plan_state}
+                timezone={space?.timezone ?? null}
+              />
+            </div>
+          )}
           {hasAccess ? (
             <SidebarYourAccess access={detail.access} palette={collectivePalette} />
+          ) : detail.member_plan_state ? (
+            /* Suspended member — banner already tells them what to
+               do; do not add a fresh ways-to-join CTA. */
+            null
           ) : (
             <SidebarWaysToJoin
               spaceSlug={slug}

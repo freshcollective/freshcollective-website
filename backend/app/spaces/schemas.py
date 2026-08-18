@@ -205,6 +205,29 @@ class SectionWithSteps(BaseModel):
     banner_image_url: str | None = None
 
 
+class MemberPlanState(BaseModel):
+    """FIP4B1 — member-facing snapshot of a finite payment plan that
+    requires the member's attention.
+
+    Populated onto Pathway / Series responses only when the viewer
+    has a PurchasePlan whose Payment Option grants that resource
+    AND the plan is in ``payment_problem`` or ``suspended``.
+
+    Deliberately narrow — the frontend needs only what the recovery
+    banner + Rule-D-aware CTA suppression require. No provider ids
+    (Stripe internals), no per-invoice ledger detail, no per-viewer
+    flags beyond the plan itself. Repair actions land in FIP4B2.
+    """
+
+    status: str  # 'payment_problem' | 'suspended'
+    payment_option_name: str | None = None
+    installments_paid: int
+    installments_expected: int
+    grace_expires_at: datetime | None = None
+    suspended_at: datetime | None = None
+    recovery_required: bool = True
+
+
 class PaymentOptionScheduleSummary(BaseModel):
     """Member-facing payment schedule — internal_note excluded.
 
@@ -275,6 +298,12 @@ class PathwayWithSteps(BaseModel):
     pathway_type: str = 'guided_experience'
     user_has_access: bool = False
     payment_options: list[PaymentOptionSummary] = []
+    # FIP4B1 — non-null when the viewer has a finite payment plan
+    # granting this pathway that needs their attention
+    # (``payment_problem`` or ``suspended``). Frontend uses this to
+    # render the recovery banner AND to suppress the standard
+    # purchase CTAs (Rule D reality — no duplicate plan possible).
+    member_plan_state: MemberPlanState | None = None
 
 
 # ── Knowledge Guide continuous view ──────────────────────────────────

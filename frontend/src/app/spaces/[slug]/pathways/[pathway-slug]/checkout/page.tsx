@@ -6,6 +6,7 @@ import { resolveMediaUrl } from '@/lib/api'
 import { isPathwayLocked, formatPathwayPrice } from '@/lib/pathwayAccess'
 import { CheckoutButton } from '@/components/checkout/CheckoutButton'
 import { PaymentOptionSelector } from '@/components/checkout/PaymentOptionSelector'
+import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import type { PathwayWithSteps } from '@/types/platform'
 
 interface Props {
@@ -317,6 +318,18 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
 
         {/* Right: payment summary card */}
         <div className="flex flex-col gap-4">
+          {/* FIP4B1 — plan-recovery banner takes over the CTA
+              column for members with a payment_problem/suspended
+              plan. Rule D would refuse a duplicate purchase, so
+              the standard "Choose your option" flow is suppressed
+              until the member repairs their existing plan. */}
+          {pathway.member_plan_state && (
+            <PlanRecoveryBanner
+              state={pathway.member_plan_state}
+              timezone={space.timezone ?? null}
+            />
+          )}
+          {!pathway.member_plan_state && (
           <div
             className="rounded-2xl bg-white p-6"
             style={{ border: '1px solid #E2E8F0' }}
@@ -375,6 +388,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
               </>
             )}
           </div>
+          )}
 
           <Link
             href={aboutHref}

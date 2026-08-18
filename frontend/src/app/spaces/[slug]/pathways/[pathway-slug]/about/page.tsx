@@ -7,7 +7,8 @@ import { getPathwayCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl, apiUrl } from '@/lib/api'
 import { isPathwayLocked, formatPathwayPrice, unlockCtaLabel } from '@/lib/pathwayAccess'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
-import type { PathwayWithSteps, PathwayAboutBlock, PaymentOptionSummary } from '@/types/platform'
+import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
+import type { PathwayWithSteps, PathwayAboutBlock, PaymentOptionSummary, SpaceResponse } from '@/types/platform'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string }>
@@ -21,7 +22,7 @@ export default async function PathwayAboutPage({ params }: Props) {
   const [pathway, aboutBlocks, space]: [
     PathwayWithSteps | null,
     PathwayAboutBlock[],
-    { colour_palette?: CollectivePaletteMeta | null } | null,
+    (SpaceResponse & { colour_palette?: CollectivePaletteMeta | null }) | null,
   ] = await Promise.all([
     getPathwayOverview(slug, pathwaySlug),
     getPathwayAboutBlocks(slug, pathwaySlug),
@@ -163,7 +164,22 @@ export default async function PathwayAboutPage({ params }: Props) {
         {/* ── Right sidebar ── */}
         <div className="flex flex-col gap-4 lg:sticky lg:top-6 lg:self-start">
 
-          {/* CTA card */}
+          {/* FIP4B1 — plan-recovery banner. Rendered whenever the
+              viewer has a payment_problem/suspended plan for this
+              pathway, ABOVE the CTA card. Also drives suppression
+              of the standard "Unlock" CTA below (Rule D reality —
+              the member can't buy a duplicate plan). */}
+          {pathway.member_plan_state && (
+            <PlanRecoveryBanner
+              state={pathway.member_plan_state}
+              timezone={space?.timezone ?? null}
+            />
+          )}
+
+          {/* CTA card — suppressed for suspended plans; a
+              payment_problem member still sees their normal
+              "Continue" flow because access is live during grace. */}
+          {pathway.member_plan_state?.status !== 'suspended' && (
           <div className="rounded-2xl border border-border bg-white p-6">
             <div className="mb-4 space-y-2">
               {/* Access badge */}
@@ -265,6 +281,7 @@ export default async function PathwayAboutPage({ params }: Props) {
               View all steps →
             </Link>
           </div>
+          )}
 
           {/* Access type label */}
           {!locked && !isComingSoon && (

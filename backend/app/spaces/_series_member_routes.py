@@ -84,6 +84,7 @@ from app.models.platform import (
 from sqlalchemy.orm import selectinload as _selectinload  # noqa: E402
 from app.models.user import User
 from app.spaces.routes import router, _schedule_is_member_checkoutable
+from app.spaces.schemas import MemberPlanState
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +214,10 @@ class SeriesDetail(SeriesSummary):
     payload stays composable."""
     upcoming_gatherings: list[SeriesGatheringSummary] = []
     past_gatherings: list[SeriesGatheringSummary] = []
+    # FIP4B1 — non-null when the viewer has a finite payment plan
+    # granting this series that needs their attention. Same shape +
+    # semantics as ``PathwayWithSteps.member_plan_state``.
+    member_plan_state: "MemberPlanState | None" = None
 
 
 class MemberPaymentOptionScheduleOut(BaseModel):
@@ -684,6 +689,21 @@ def get_member_gathering_series(
         _member_purchasable_options_for_series(series, space, db)
     )
 
+    # FIP4B1 — surface plan-recovery state so the ways-to-join
+    # sidebar shows the recovery banner instead of standard purchase
+    # CTAs when the viewer already has a troubled plan for this
+    # series.
+    plan_state = None
+    if current_user is not None:
+        from app.services.member_plan_state import (
+            build_member_plan_state, find_recovery_plan_for_series,
+        )
+        recovery_plan = find_recovery_plan_for_series(
+            db, user=current_user, series_id=series.id,
+        )
+        if recovery_plan is not None:
+            plan_state = build_member_plan_state(db, recovery_plan)
+
     return SeriesDetail(
         id=series.id,
         slug=series.slug,
@@ -698,6 +718,7 @@ def get_member_gathering_series(
         access=access,
         upcoming_gatherings=upcoming,
         past_gatherings=past,
+        member_plan_state=plan_state,
     )
 
 

@@ -2864,7 +2864,23 @@ def get_pathway_overview(
         ),
         user_has_access=user_has_access,
         payment_options=option_summaries,
+        member_plan_state=_pathway_member_plan_state(current_user, pathway.id, db),
     )
+
+
+def _pathway_member_plan_state(current_user, pathway_id: str, db):
+    """FIP4B1 — surface a payment-plan recovery banner state on the
+    pathway detail response when the current viewer holds a finite
+    plan for this pathway that needs their attention."""
+    if current_user is None:
+        return None
+    from app.services.member_plan_state import (
+        build_member_plan_state, find_recovery_plan_for_pathway,
+    )
+    plan = find_recovery_plan_for_pathway(db, user=current_user, pathway_id=pathway_id)
+    if plan is None:
+        return None
+    return build_member_plan_state(db, plan)
 
 
 # ---------------------------------------------------------------------------
