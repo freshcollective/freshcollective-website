@@ -2,7 +2,9 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import LogoutButton from '@/components/layout/LogoutButton'
+import { apiUrl } from '@/lib/api'
 
 /**
  * Creator Studio Sidebar — navigation only.
@@ -53,6 +55,9 @@ interface NavItem {
    *  functional (backend + routes are untouched); only Creator-
    *  facing prompts are removed. */
   paused?: boolean
+  /** Optional badge feed — see ``sidebarBadges`` in the component.
+   *  Currently only ``payment_plans_attention`` (FIP4C) is defined. */
+  badge?: 'payment_plans_attention'
 }
 
 /**
@@ -113,6 +118,14 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
       // from "Payment Options" (what Creators offer) and avoid
       // "Payment" doubling up on both sides of the sidebar.
       { href: '/creator-studio/payments',        label: 'Payments received' },
+      // Payment Plans (FIP4C) — plan-level view of member finite-
+      // instalment agreements. Sits next to Payments received so the
+      // two concepts (ledger vs. agreement) live side-by-side in
+      // Commerce without blurring. Renders a small numeric badge when
+      // any authorised-scope plans are in payment_problem / suspended
+      // so creators learn about attention states without having to
+      // visit the page first.
+      { href: '/creator-studio/payment-plans',   label: 'Payment Plans', badge: 'payment_plans_attention' as const },
       // Access — renamed from "Memberships". Route is /access;
       // /passes redirects here for backwards compatibility.
       { href: '/creator-studio/access',          label: 'Access',          requiresCollective: true },
@@ -146,6 +159,31 @@ export default function CreatorStudioSidebar({
   user, hasCollective, paidOffersEnabled = false,
 }: Props) {
   const pathname = usePathname()
+
+  // FIP4C — sidebar badges. One-shot fetch on mount + a lightweight
+  // re-fetch when the tab regains focus so returning from Stripe
+  // Checkout / member repair updates the count without a full
+  // navigation. Deliberately no polling / websocket — the count is a
+  // convenience indicator, not a live dashboard.
+  const [attentionCount, setAttentionCount] = useState<number>(0)
+  useEffect(() => {
+    const load = () => {
+      fetch(apiUrl('/api/creator/payment-plans/attention-count'), {
+        credentials: 'include',
+      })
+        .then((r) => (r.ok ? r.json() as Promise<{ count: number }> : null))
+        .then((body) => { if (body) setAttentionCount(body.count) })
+        .catch(() => { /* non-fatal — badge just stays hidden */ })
+    }
+    load()
+    const onVis = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
+
+  const sidebarBadges: Record<NonNullable<NavItem['badge']>, number> = {
+    payment_plans_attention: attentionCount,
+  }
 
   function isActive(href: string, exact?: boolean, activeOnPath?: RegExp) {
     if (exact) return pathname === href
@@ -248,9 +286,10 @@ export default function CreatorStudioSidebar({
                 .filter(({ requiresPaidOffers, paused }) =>
                   paused || !requiresPaidOffers || paidOffersEnabled,
                 )
-                .map(({ href, label: itemLabel, exact, activeOnPath, requiresCollective, paused }) => {
+                .map(({ href, label: itemLabel, exact, activeOnPath, requiresCollective, paused, badge }) => {
                 const active = !paused && isActive(href, exact, activeOnPath)
                 const dimmed = (requiresCollective ?? false) && !hasCollective
+                const badgeCount = badge ? sidebarBadges[badge] : 0
                 // Paused items render as a passive muted line — no
                 // Link, no navigation, "Coming later" suffix so the
                 // reason for the muted state is legible.
@@ -275,7 +314,7 @@ export default function CreatorStudioSidebar({
                   <li key={href}>
                     <Link
                       href={dimmed ? '/creator-studio/create' : href}
-                      className={`flex items-center rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
+                      className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${
                         active
                           ? 'bg-teal-50 text-teal-700'
                           : dimmed
@@ -289,7 +328,20 @@ export default function CreatorStudioSidebar({
                       aria-current={active ? 'page' : undefined}
                       aria-disabled={dimmed}
                     >
-                      {itemLabel}
+                      <span>{itemLabel}</span>
+                      {badgeCount > 0 && (
+                        <span
+                          aria-label={`${badgeCount} need${badgeCount === 1 ? 's' : ''} attention`}
+                          className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10.5px] font-semibold"
+                          style={{
+                            background: 'rgba(180, 83, 9, 0.14)',
+                            color: '#8A6A15',
+                            border: '1px solid rgba(180, 83, 9, 0.28)',
+                          }}
+                        >
+                          {badgeCount}
+                        </span>
+                      )}
                     </Link>
                   </li>
                 )

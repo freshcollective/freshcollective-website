@@ -13,7 +13,7 @@ import re
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
 from sqlalchemy import false as sa_false, func, text
 from sqlalchemy.orm import Session, selectinload
@@ -50,8 +50,10 @@ from app.creator.schemas import (
     CreatorMemberItem,
     CreatorPaymentSetup,
     CreatorPaymentSummary,
+    CreatorPaymentPlansAttentionCount,
     CreatorPaymentTransactionOut,
     CreatorPlanOut,
+    CreatorPurchasePlanSummary,
     CreatorSubscriptionOut,
     CreatorUsage,
     EntitlementOut,
@@ -5925,9 +5927,327 @@ def list_creator_payments(
             platform_fee_basis_points=r.platform_fee_basis_points,
             platform_fee_cents=r.platform_fee_cents,
             net_creator_amount_cents=r.net_creator_amount_cents,
+            # FIP4C — plan context. NULL on pay-in-full rows.
+            purchase_plan_id=r.purchase_plan_id,
+            installment_number=r.installment_number,
             notes=r.notes,
             created_at=r.created_at,
             updated_at=r.updated_at,
+        ))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# FIP4C — Creator visibility of finite payment plans
+# ---------------------------------------------------------------------------
+
+
+def _resolve_managed_space_ids(current_user: User, db: Session) -> set[str]:
+    """Set-union rule used by Creator Studio surfaces that ARE
+    intentionally shared with moderators (community management,
+    content authoring, member management). Owned Spaces ∪ Spaces
+    where the caller has an active creator/moderator SpaceMembership.
+    Archived Spaces are still included: a historical record on an
+    archived Collective is legitimate.
+
+    Financial / billing surfaces MUST NOT use this helper — see
+    :func:`_resolve_owned_space_ids` and the permissions matrix
+    (``docs/permissions-matrix.md``): moderators "do not inherit
+    billing privileges".
+    """
+    owned_ids: set[str] = {
+        row[0]
+        for row in db.query(Space.id).filter(Space.creator_id == current_user.id).all()
+    }
+    member_ids: set[str] = {
+        row[0]
+        for row in db.query(SpaceMembership.space_id)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.role.in_(["creator", "moderator"]),
+            SpaceMembership.status == "active",
+        )
+        .all()
+    }
+    return owned_ids | member_ids
+
+
+def _resolve_owned_space_ids(current_user: User, db: Session) -> set[str]:
+    """FIP4C — owner-only scope for Creator Studio financial surfaces.
+
+    Returns the set of Space ids where the caller is the
+    authoritative Collective owner (``Space.creator_id == user.id``).
+    Deliberately EXCLUDES moderators: per
+    ``docs/permissions-matrix.md`` moderators help manage the
+    collective (moderating content, welcoming members) but "do not
+    own the collective and do not inherit billing privileges".
+
+    Every financial-visibility endpoint in Creator Studio should
+    resolve its authorised scope through this helper so:
+
+      * a user who owns Collective A and moderates Collective B
+        sees Payment Plans / attention counts for A only;
+      * a moderator with no ownership sees nothing;
+      * the existing ``creator_user_id``-scoped Payments received
+        pattern (see :func:`list_creator_payments`) and this helper
+        express the same product rule two different ways — one on
+        the ``PaymentTransaction`` row's creator column, one on the
+        ``Space.creator_id`` column.
+
+    Non-financial creator surfaces (community, offerings, member
+    management) continue to use :func:`_resolve_managed_space_ids`;
+    those endpoints are intentionally shared with moderators and are
+    unchanged.
+    """
+    return {
+        row[0]
+        for row in db.query(Space.id).filter(Space.creator_id == current_user.id).all()
+    }
+
+
+@router.get(
+    "/payment-plans/attention-count",
+    response_model=CreatorPaymentPlansAttentionCount,
+)
+def get_creator_payment_plans_attention_count(
+    current_user: User = Depends(get_creator_user),
+    db: Session = Depends(get_db),
+) -> CreatorPaymentPlansAttentionCount:
+    """FIP4C — small aggregate for the Creator Studio sidebar badge.
+
+    Scope: PurchasePlans in Collectives the caller **owns** (i.e.
+    ``Space.creator_id == user.id``). Moderators are deliberately
+    excluded per the permissions matrix — Payment Plans is a
+    financial-visibility surface, and moderators "do not inherit
+    billing privileges". A user who owns Collective A and
+    moderates Collective B receives counts for A only.
+
+    Returns just the ``payment_problem`` + ``suspended`` counts
+    (the two attention-worthy states — the FIP4B1 recovery banner
+    surfaces exactly these to members) so the sidebar can render
+    a numeric badge without pulling any plan bodies. Never leaks
+    counts across unauthorised Collectives; a caller with zero
+    owned Spaces receives ``0`` for every count.
+    """
+    from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
+
+    managed = _resolve_owned_space_ids(current_user, db)
+    if not managed:
+        return CreatorPaymentPlansAttentionCount(
+            count=0, payment_problem_count=0, suspended_count=0,
+        )
+
+    rows = (
+        db.query(PurchasePlan.status, func.count(PurchasePlan.id))
+        .filter(
+            PurchasePlan.space_id.in_(managed),
+            PurchasePlan.status.in_((
+                PurchasePlanStatus.payment_problem,
+                PurchasePlanStatus.suspended,
+            )),
+        )
+        .group_by(PurchasePlan.status)
+        .all()
+    )
+    pp = 0
+    sp = 0
+    for status_val, count in rows:
+        val = status_val.value if hasattr(status_val, "value") else str(status_val)
+        if val == "payment_problem":
+            pp = int(count)
+        elif val == "suspended":
+            sp = int(count)
+    return CreatorPaymentPlansAttentionCount(
+        count=pp + sp,
+        payment_problem_count=pp,
+        suspended_count=sp,
+    )
+
+
+@router.get("/payment-plans", response_model=list[CreatorPurchasePlanSummary])
+def list_creator_payment_plans(
+    status: list[str] | None = Query(default=None),
+    payment_option_id: str | None = Query(default=None),
+    member_search: str | None = Query(default=None),
+    current_user: User = Depends(get_creator_user),
+    db: Session = Depends(get_db),
+) -> list[CreatorPurchasePlanSummary]:
+    """FIP4C — list the finite PurchasePlans the caller can see.
+
+    Ownership: only plans belonging to Collectives the caller
+    **owns** (i.e. ``Space.creator_id == user.id``). Moderators
+    are deliberately excluded — per the permissions matrix
+    (``docs/permissions-matrix.md``) moderators help manage the
+    collective (moderation, community, content) but "do not
+    inherit billing privileges". A user who owns Collective A and
+    moderates Collective B sees plans for A only.
+
+    Cross-Collective enumeration is impossible — a caller who
+    passes ``payment_option_id`` for an option in a space they
+    don't own still receives an empty list (the space-id filter
+    runs BEFORE the option filter).
+
+    Filters (spec §9 — lightweight):
+      * ``status`` — repeated query param, e.g.
+        ``?status=active&status=payment_problem``. If omitted, the
+        default view hides transient (``pending_setup``) and
+        terminal (``failed``, ``cancelled``) states so creators
+        aren't drowned by first-payment-failure noise. All statuses
+        remain reachable by explicit filter.
+      * ``payment_option_id`` — narrow to one option.
+      * ``member_search`` — case-insensitive contains match on the
+        member's email or display name.
+
+    Contractual accounting (spec §5):
+      * ``total_amount_cents`` — from
+        ``PurchasePlan.total_expected_cents`` (snapshotted at plan
+        creation from ``installment_amount_cents * installments_expected``).
+      * ``paid_amount_cents`` — SUM of ``gross_amount_cents`` from
+        this plan's succeeded PaymentTransaction rows. Matches the
+        FIP4A rule that ``gross_amount_cents`` is the CONTRACTUAL
+        instalment amount even when Stripe customer-balance credit
+        contributed to settlement.
+      * ``remaining_amount_cents`` = ``total`` − ``paid``.
+      * The UI labels this as "Paid to date", never "Cash received"
+        — the contractual-vs-cash distinction is called out in the
+        FIP4B1 accounting notes and remains truthful without
+        expanding scope into a full cash-settlement model.
+
+    No provider identifiers are ever included in the response —
+    ``provider_customer_id``, ``provider_subscription_id``,
+    ``provider_subscription_schedule_id``,
+    ``provider_payment_method_id``, ``last_failed_invoice_id``, and
+    every Stripe id are all deliberately behind the schema boundary.
+    """
+    from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
+
+    managed_space_ids = _resolve_owned_space_ids(current_user, db)
+    if not managed_space_ids:
+        return []
+
+    # ── Status filter. Default hides pending_setup / failed /
+    # ── cancelled — legitimate but rarely useful in the plan-level
+    # ── view — while leaving them reachable via explicit filter.
+    ALL_STATUSES = {s.value for s in PurchasePlanStatus}
+    if status:
+        # Silently drop unknown status strings rather than 400 — the
+        # frontend controls the pill set and an unknown value is a
+        # stale-page symptom, not a caller error.
+        requested = {s for s in status if s in ALL_STATUSES}
+        if not requested:
+            return []
+    else:
+        requested = ALL_STATUSES - {"pending_setup", "failed", "cancelled"}
+
+    q = (
+        db.query(PurchasePlan)
+        .filter(
+            PurchasePlan.space_id.in_(managed_space_ids),
+            PurchasePlan.status.in_([PurchasePlanStatus(s) for s in requested]),
+        )
+    )
+    if payment_option_id:
+        q = q.filter(PurchasePlan.payment_option_id == payment_option_id)
+
+    # Order: payment-troubled plans first (payment_problem / suspended
+    # are the creator's actionable subset), then active, then the
+    # rest — with newest-first within each bucket via created_at.
+    _STATUS_RANK = {
+        "suspended": 0,
+        "payment_problem": 1,
+        "active": 2,
+        "completed": 3,
+        "pending_setup": 4,
+        "failed": 5,
+        "cancelled": 6,
+    }
+    plans = q.all()
+    plans.sort(key=lambda p: (
+        _STATUS_RANK.get(p.status.value, 99),
+        -(p.created_at.timestamp() if p.created_at else 0),
+    ))
+
+    if not plans:
+        return []
+
+    # Batch-load member / space / option snapshots — three extra
+    # SELECTs regardless of page size. Same shape as list_creator_payments.
+    member_id_set = {p.member_user_id for p in plans}
+    space_id_set = {p.space_id for p in plans}
+    option_id_set = {p.payment_option_id for p in plans}
+
+    users: dict[str, User] = {
+        u.id: u for u in db.query(User).filter(User.id.in_(member_id_set)).all()
+    }
+    spaces: dict[str, Space] = {
+        s.id: s for s in db.query(Space).filter(Space.id.in_(space_id_set)).all()
+    }
+    options: dict[str, PaymentOption] = {
+        o.id: o for o in db.query(PaymentOption).filter(PaymentOption.id.in_(option_id_set)).all()
+    }
+
+    # Paid-to-date per plan — one grouped query rather than N per plan.
+    from app.models.payment import PaymentTransaction as _PT, PaymentTransactionStatus as _PTS
+    plan_ids = [p.id for p in plans]
+    paid_rows = (
+        db.query(_PT.purchase_plan_id, func.coalesce(func.sum(_PT.gross_amount_cents), 0))
+        .filter(
+            _PT.purchase_plan_id.in_(plan_ids),
+            _PT.status == _PTS.succeeded,
+        )
+        .group_by(_PT.purchase_plan_id)
+        .all()
+    )
+    paid_by_plan: dict[str, int] = {row[0]: int(row[1]) for row in paid_rows}
+
+    # Optional member_search — post-filter, after the batch-load, so
+    # the sort order + member counts stay simple. Contains-match on
+    # the joined User's name OR email, case-insensitive.
+    if member_search:
+        needle = member_search.strip().lower()
+        if needle:
+            def _match(plan: PurchasePlan) -> bool:
+                u = users.get(plan.member_user_id)
+                if u is None:
+                    return False
+                hay_name = (u.name or "").lower()
+                hay_email = (u.email or "").lower()
+                return needle in hay_name or needle in hay_email
+            plans = [p for p in plans if _match(p)]
+
+    out: list[CreatorPurchasePlanSummary] = []
+    for p in plans:
+        u = users.get(p.member_user_id)
+        sp = spaces.get(p.space_id)
+        opt = options.get(p.payment_option_id)
+        paid = paid_by_plan.get(p.id, 0)
+        total = int(p.total_expected_cents)
+        remaining = max(total - paid, 0)
+        out.append(CreatorPurchasePlanSummary(
+            id=p.id,
+            status=p.status.value,
+            member_user_id=p.member_user_id,
+            member_name=(u.name if u else None),
+            member_email=(u.email if u else None),
+            space_id=p.space_id,
+            space_name=(sp.name if sp else None),
+            payment_option_id=p.payment_option_id,
+            payment_option_name=(opt.name if opt else None),
+            payment_option_schedule_id=p.payment_option_schedule_id,
+            installments_paid=p.installments_paid,
+            installments_expected=p.installments_expected,
+            currency=p.currency,
+            total_amount_cents=total,
+            paid_amount_cents=paid,
+            remaining_amount_cents=remaining,
+            created_at=p.created_at,
+            activated_at=p.activated_at,
+            payment_problem_started_at=p.payment_problem_started_at,
+            grace_expires_at=p.grace_expires_at,
+            suspended_at=p.suspended_at,
+            reinstated_at=p.reinstated_at,
+            completed_at=p.completed_at,
+            cancelled_at=p.cancelled_at,
         ))
     return out
 
@@ -6158,7 +6478,29 @@ def _get_payment_option_schedule(
     return sched
 
 
-def _schedule_to_dict(s: PaymentOptionSchedule) -> dict:
+def _schedule_to_dict(s: PaymentOptionSchedule, option=None) -> dict:
+    """Serialise a schedule for the Creator API.
+
+    ``option`` — the parent PaymentOption. When the caller has it in
+    scope (e.g. the Commerce Payment Options list serialiser),
+    passing it saves a lookup. When omitted we fall back to the
+    schedule's own SQLAlchemy session to re-fetch it — recurring
+    plan checkoutability depends on the option's grant bundle, so a
+    NULL option would fail-closed and the UI would show
+    ``is_member_checkoutable=False`` even after the platform gate
+    is enabled. Best-effort lookup keeps every schedule endpoint
+    truthful without forcing every caller to remember to pass it.
+    """
+    from app.spaces.routes import _schedule_is_member_checkoutable
+    if option is None:
+        from sqlalchemy.orm.session import object_session
+        db = object_session(s)
+        if db is not None:
+            option = (
+                db.query(PaymentOption)
+                .filter(PaymentOption.id == s.payment_option_id)
+                .first()
+            )
     return {
         "id": s.id,
         "payment_option_id": s.payment_option_id,
@@ -6177,6 +6519,8 @@ def _schedule_to_dict(s: PaymentOptionSchedule) -> dict:
         "buyer_note": s.buyer_note,
         "internal_note": s.internal_note,
         "position": s.position,
+        # FIP4C — see PaymentOptionScheduleResponse docstring.
+        "is_member_checkoutable": _schedule_is_member_checkoutable(s, option),
         "created_at": s.created_at,
         "updated_at": s.updated_at,
     }

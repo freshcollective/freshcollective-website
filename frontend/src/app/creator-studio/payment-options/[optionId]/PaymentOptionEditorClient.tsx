@@ -637,15 +637,27 @@ function ScheduleRow({
       ? `${schedule.installment_amount_cents != null ? formatMoney(schedule.installment_amount_cents, currency) : '—'}/${schedule.interval ?? 'week'} × ${schedule.installment_count ?? '—'}`
       : 'Manual arrangement'
 
-  // Show the "platform member checkout not enabled yet" note for
-  // *published* payment plans while FIP3 is still in progress. This
-  // is deliberately about platform checkout readiness, NOT Creator
-  // publishing state — a Creator's Published finite plan is a real,
-  // durable configuration decision that will simply become
-  // purchasable when FIP3 wires member checkout.
-  const showMemberCheckoutPendingNote =
+  // FIP4C — Payment plan checkout availability note.
+  //
+  // Two truthful branches, driven by the backend-authoritative
+  // ``is_member_checkoutable`` flag on the schedule:
+  //
+  //   * Published finite plan + is_member_checkoutable=false →
+  //     platform gate is off; show the "not currently enabled" note
+  //     so the creator knows why the plan isn't reaching members.
+  //   * Published finite plan + is_member_checkoutable=true → the
+  //     plan IS available; show a positive confirmation note.
+  //
+  // Draft plans or non-finite schedules render neither note — the
+  // status/purchasability panels above already tell that story.
+  const isPublishedFinitePlan =
     schedule.status === 'published'
     && schedule.schedule_type === 'recurring_installments'
+  const finiteCheckoutEnabled = Boolean(schedule.is_member_checkoutable)
+  const showMemberCheckoutPendingNote =
+    isPublishedFinitePlan && !finiteCheckoutEnabled
+  const showMemberCheckoutLiveNote =
+    isPublishedFinitePlan && finiteCheckoutEnabled
 
   const statusBadgeStyle = status === 'published'
     ? { bg: 'rgb(219 234 254)', color: 'rgb(30 64 175)', label: 'Published' }
@@ -744,9 +756,24 @@ function ScheduleRow({
             color: 'rgb(120 53 15)',
           }}
         >
-          <strong className="font-semibold">Payment plans are being enabled for member checkout.</strong>{' '}
-          You can configure and publish this plan now; members won&rsquo;t see it
-          until payment-plan checkout is switched on.
+          <strong className="font-semibold">Payment plan checkout is not currently enabled for members.</strong>{' '}
+          You can configure and publish this plan now; it will become
+          available to members the moment payment-plan checkout is switched
+          on at the platform level.
+        </div>
+      )}
+      {showMemberCheckoutLiveNote && (
+        <div
+          className="mt-3 rounded-md border px-3 py-2 text-[12px] leading-relaxed"
+          style={{
+            background: 'rgb(240 253 250)',
+            borderColor: 'rgb(153 246 228)',
+            color: 'rgb(19 78 74)',
+          }}
+        >
+          <strong className="font-semibold">Available to members.</strong>{' '}
+          This payment plan appears on the member checkout wherever the
+          parent Payment Option is otherwise checkoutable.
         </div>
       )}
 

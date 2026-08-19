@@ -1858,9 +1858,100 @@ class CreatorPaymentTransactionOut(BaseModel):
     platform_fee_cents: int
     net_creator_amount_cents: int | None
 
+    # FIP4C — plan context for finite-payment-plan instalment rows.
+    # Pay-in-full transactions leave both fields NULL; instalment
+    # rows carry the parent PurchasePlan id + the 1-based ordinal
+    # so the Payments received UI can render a compact
+    # "Payment plan · Instalment 2 of 6" badge without exposing any
+    # provider ids. Deliberately no provider-id leaks (subscription,
+    # invoice, payment_intent, customer) — those live on the model
+    # row but stay behind the schema boundary.
+    purchase_plan_id: str | None = None
+    installment_number: int | None = None
+
     notes: str | None
     created_at: datetime
     updated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# FIP4C — Creator visibility of finite payment plans
+# ---------------------------------------------------------------------------
+
+
+class CreatorPurchasePlanSummary(BaseModel):
+    """FIP4C — one row per PurchasePlan a creator can see.
+
+    Deliberately narrow: answers only the two questions creators
+    care about in a plan-level view — "what agreement is this
+    member in?" and "how far through it are they?". Excludes every
+    provider identifier (Stripe customer / subscription / schedule
+    / invoice / payment_method) — those are internals of the FIP2 /
+    FIP3 / FIP4B pipelines and do not belong on the creator surface.
+
+    ``paid_amount_cents`` is the contractual sum of the plan's
+    succeeded PaymentTransaction rows' ``gross_amount_cents`` —
+    matching the FIP4A accounting rule that gross_amount is the
+    contractual instalment amount even when Stripe customer-balance
+    credit contributed to settlement. The UI labels this as
+    "Paid to date" (not "Cash received"); a genuine
+    cash-settlement view would require a separate accounting model
+    and is intentionally out of scope for FIP4C.
+
+    ``remaining_amount_cents`` = ``total_amount_cents - paid_amount_cents``.
+    """
+
+    model_config = {"from_attributes": True}
+
+    id: str
+    status: str
+    # Denormalised member + option snapshots. Same batch-load pattern
+    # as CreatorPaymentTransactionOut so a page of many plans stays at
+    # a small constant number of queries.
+    member_user_id: str
+    member_name: str | None = None
+    member_email: str | None = None
+    space_id: str
+    space_name: str | None = None
+    payment_option_id: str
+    payment_option_name: str | None = None
+    payment_option_schedule_id: str | None = None
+
+    # Progress
+    installments_paid: int
+    installments_expected: int
+
+    # Money — see class docstring for the "paid_amount" accounting rule.
+    currency: str
+    total_amount_cents: int
+    paid_amount_cents: int
+    remaining_amount_cents: int
+
+    # Timestamps — every "when did X happen?" answerable by the
+    # summary. All optional so pending_setup / freshly-active plans
+    # render cleanly.
+    created_at: datetime
+    activated_at: datetime | None = None
+    payment_problem_started_at: datetime | None = None
+    grace_expires_at: datetime | None = None
+    suspended_at: datetime | None = None
+    reinstated_at: datetime | None = None
+    completed_at: datetime | None = None
+    cancelled_at: datetime | None = None
+
+
+class CreatorPaymentPlansAttentionCount(BaseModel):
+    """FIP4C — small aggregate for the "needs attention" indicator.
+
+    Cheap enough for the sidebar to fetch on mount and re-poll on
+    focus without any of the summary bodies. Scoped to the caller's
+    managed spaces (same set-union rule as the plans list). Never
+    leaks counts across unauthorised Collectives.
+    """
+
+    count: int
+    payment_problem_count: int
+    suspended_count: int
 
 
 # ---------------------------------------------------------------------------
@@ -2069,6 +2160,17 @@ class PaymentOptionScheduleResponse(BaseModel):
     buyer_note: str | None
     internal_note: str | None
     position: int
+    # FIP4C — surfaces the SAME authoritative "can members
+    # actually check out through this schedule right now?" flag
+    # already exposed on member-facing responses. Consulted by the
+    # Creator Studio Payment Options UI so the "checkout coming
+    # later" / "payment plans are being enabled" placeholder copy
+    # can render truthfully in both feature-gate states.
+    # Populated by the endpoints via
+    # ``spaces.routes._schedule_is_member_checkoutable``; defaults
+    # to False so any endpoint that hasn't been updated yet
+    # fails-closed rather than lying to the UI.
+    is_member_checkoutable: bool = False
     created_at: datetime
     updated_at: datetime
 

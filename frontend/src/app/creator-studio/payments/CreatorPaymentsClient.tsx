@@ -34,8 +34,29 @@ interface CreatorPaymentTransaction {
   platform_fee_basis_points: number
   platform_fee_cents: number
   net_creator_amount_cents: number | null
+  /** FIP4C — plan context. Populated on finite-plan instalment rows;
+   *  NULL on pay-in-full rows. Used to render a compact
+   *  "Payment plan · Instalment 2 of 6" badge without exposing any
+   *  Stripe / provider ids. Each instalment row stays its own ledger
+   *  entry — no aggregation, no fake combined transaction. */
+  purchase_plan_id: string | null
+  installment_number: number | null
   notes: string | null
   created_at: string
+}
+
+function PlanContextBadge({ row }: { row: CreatorPaymentTransaction }) {
+  if (!row.purchase_plan_id) return null
+  const inst = row.installment_number
+  return (
+    <span
+      className="ml-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium text-slate-600"
+      style={{ borderColor: '#E2E8F0', background: '#F8FAFC' }}
+      title="This payment belongs to a finite payment plan agreement."
+    >
+      Payment plan{inst != null ? ` · Instalment ${inst}` : ''}
+    </span>
+  )
 }
 
 function providerLabel(row: CreatorPaymentTransaction): string {
@@ -435,11 +456,14 @@ export default function CreatorPaymentsClient({
                           {row.space_name || <span className="italic text-slate-400">—</span>}
                         </td>
                         <td className="px-3 py-3 text-[12px] text-navy-900">
-                          {row.payment_option_name || (
-                            // Legacy transactions without a Payment Option — render the
-                            // transaction type as a fallback so old rows still read.
-                            <span className="text-slate-500">{labelType(row.transaction_type)}</span>
-                          )}
+                          <span className="align-middle">
+                            {row.payment_option_name || (
+                              // Legacy transactions without a Payment Option — render the
+                              // transaction type as a fallback so old rows still read.
+                              <span className="text-slate-500">{labelType(row.transaction_type)}</span>
+                            )}
+                          </span>
+                          <PlanContextBadge row={row} />
                         </td>
                         <td className="px-3 py-3 text-[12px] text-slate-600 whitespace-nowrap">
                           {providerLabel(row)}
@@ -470,6 +494,7 @@ export default function CreatorPaymentsClient({
                       <div>
                         <p className="text-[13px] font-medium text-[#0F172A]">
                           {row.payment_option_name ?? labelType(row.transaction_type)}
+                          <PlanContextBadge row={row} />
                         </p>
                         <p className="text-[11px] text-black">
                           {row.payer_name || row.payer_email || 'Unknown member'} · {fmtDate(row.created_at)} · {providerLabel(row)}

@@ -46,6 +46,14 @@ interface Schedule {
   installment_count: number | null
   interval: string | null
   currency: string
+  /** FIP4C — mirrors the backend-authoritative "can members
+   *  actually check out through this schedule right now?" flag.
+   *  Driven by ``spaces.routes._schedule_is_member_checkoutable``
+   *  and reflects both the platform-level
+   *  ``FINITE_PLAN_MEMBER_CHECKOUT_ENABLED`` gate and per-option
+   *  eligibility. UI consumers use this to render truthful copy in
+   *  both gate positions. */
+  is_member_checkoutable?: boolean
 }
 
 export interface PaymentOptionRow {
@@ -99,9 +107,17 @@ function purchasabilityBadge(row: PaymentOptionRow) {
     )
   }
   if (row.purchasability === 'configured_not_yet_checkoutable') {
+    // FIP4C — this state now fires almost exclusively for finite
+    // payment plans while the platform-level
+    // ``FINITE_PLAN_MEMBER_CHECKOUT_ENABLED`` gate is off. Old copy
+    // ("checkout coming later") implied unfinished platform work,
+    // which is no longer true — FIP4A/FIP4B shipped. The truthful
+    // reading is "you're done authoring; the platform gate for this
+    // payment method is currently off". When the gate is on, the
+    // option graduates to ``ready`` and this badge doesn't render.
     return (
       <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200">
-        Configured — checkout coming later
+        Configured — checkout not enabled
       </span>
     )
   }

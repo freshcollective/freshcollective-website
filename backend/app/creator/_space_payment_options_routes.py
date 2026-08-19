@@ -214,13 +214,19 @@ def _derive_purchasability(opt: PaymentOption) -> tuple[str, list[str]]:
     States
     ------
     ready
-        At least one ``published`` ``pay_in_full`` schedule + at
-        least one grant. Unified checkout accepts this today.
+        Any published schedule the unified checkout will actually
+        run today: pay_in_full (always), OR recurring_installments
+        when the platform-level
+        ``settings.finite_plan_member_checkout_enabled`` gate is on
+        AND the option's grant bundle is fulfillable by the finite
+        pipeline. In both cases at least one grant must also exist.
     configured_not_yet_checkoutable
-        The option has published schedules, but all of them are
-        types the unified checkout does not yet execute (finite
-        instalments, subscription, manual). Author work is done;
-        the *runtime* isn't there yet.
+        The option has published schedules, but none of them is
+        currently checkoutable — typically because every published
+        schedule is a recurring_installments plan while the
+        platform gate is still off. The author's work is done; the
+        member surface will light up automatically the moment the
+        gate flips on.
     needs_attention
         Missing prerequisites — no grants, or no published schedule
         at all. Options in this state must not look "publishable"
@@ -230,6 +236,17 @@ def _derive_purchasability(opt: PaymentOption) -> tuple[str, list[str]]:
     draft
         Status is draft AND doesn't otherwise land in
         ``needs_attention``.
+
+    Feature-gate awareness (FIP4C)
+    ------------------------------
+    The rollout copy previously said "checkout coming later" for
+    every recurring_installments schedule — accurate before FIP4A
+    landed, misleading now that FIP4A/FIP4B are complete and the
+    only remaining gate is a platform setting that defaults OFF.
+    This helper now consults the SAME authoritative predicate
+    (:func:`app.spaces.routes._schedule_is_member_checkoutable`)
+    the member-facing endpoints use, so the state + note it
+    returns stays truthful in both gate positions.
     """
     if opt.status == "archived" or (
         hasattr(opt.status, "value") and opt.status.value == "archived"
@@ -254,14 +271,34 @@ def _derive_purchasability(opt: PaymentOption) -> tuple[str, list[str]]:
             return "draft", notes
         return "needs_attention", notes
 
-    # There is at least one published schedule + grants. Is there a
-    # ``pay_in_full`` published schedule (the only kind unified
-    # checkout executes today)?
+    # Consult the same helper the member surface uses so this stays
+    # in lock-step with checkout behaviour. Recurring_installments
+    # schedules only report checkoutable when the platform gate is
+    # ON AND the grant bundle is fulfillable — both facts are
+    # already encoded there.
+    from app.spaces.routes import _schedule_is_member_checkoutable
     for s in published_scheds:
-        if s.schedule_type == "pay_in_full":
+        if _schedule_is_member_checkoutable(s, opt):
             return "ready", []
 
-    notes.append("Only finite instalment / subscription schedules configured — checkout coming later.")
+    # Nothing published is checkoutable right now. Distinguish "the
+    # feature is gated off" (the common case now that FIP4A/FIP4B
+    # are done) from other non-checkoutable states so the UI copy
+    # stays honest about *why* it isn't live.
+    only_recurring = all(
+        s.schedule_type == "recurring_installments" for s in published_scheds
+    )
+    if only_recurring:
+        notes.append(
+            "Payment plan checkout is not currently enabled for members "
+            "at the platform level. This option will become purchasable "
+            "the moment payment-plan checkout is switched on."
+        )
+    else:
+        notes.append(
+            "The published payment methods on this option are not yet "
+            "supported by the member checkout."
+        )
     return "configured_not_yet_checkoutable", notes
 
 
@@ -354,7 +391,7 @@ def _serialise_option(db: Session, space: Space, opt: PaymentOption) -> dict:
 
     base = _option_to_dict(opt)
     grants_payload = _enrich_grants(db, space, list(opt.grants))
-    schedules_payload = [_schedule_to_dict(s) for s in schedules]
+    schedules_payload = [_schedule_to_dict(s, opt) for s in schedules]
     state, notes = _derive_purchasability(opt)
     return {
         **base,
