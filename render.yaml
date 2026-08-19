@@ -1,0 +1,104 @@
+# render.yaml — Fresh Collective backend + finite-plan grace reconciler.
+#
+# Scope
+# -----
+# Declares the backend web service (FastAPI) and the FIP3 grace-expiry
+# reconciler cron job. Deliberately NOT a full-repo Blueprint — the
+# Next.js frontend under ``frontend/`` is intentionally excluded so
+# whichever host it eventually lands on (Render / Vercel / other) can
+# be added later without conflicting with this file's declared services.
+#
+# Why the cron exists alongside the in-process reconciler
+# -------------------------------------------------------
+# ``backend/app/services/finite_plan_reconciler.py`` runs a
+# 5-minute in-process sweep from FastAPI's lifespan. That's belt.
+# This cron is braces: an independent scheduler that keeps grace-expiry
+# transitions honest when the web dyno restarts, deploys, or sleeps.
+# Both triggers are idempotent (row-locked + status re-check under
+# lock in ``sweep_expired_grace_plans``); running the same expired
+# plan twice is safe.
+#
+# See docs/finite-payment-plans-stripe-config.md for the operator
+# requirements this Blueprint satisfies.
+
+services:
+  # ─────────────────────────────────────────────────────────────────
+  # Backend web service — FastAPI
+  # ─────────────────────────────────────────────────────────────────
+  # Backend uses pip + requirements.txt (no pyproject.toml, no uv,
+  # no Poetry). Render's default Python buildpack runs pip install
+  # against requirements.txt at buildCommand and puts uvicorn on
+  # $PATH, so no ``.venv/bin/*`` prefix is used or needed.
+  #
+  # rootDir: backend so every command is backend-relative and doesn't
+  # trip over the legacy Next.js scaffold that still lives at repo
+  # root (the active frontend is at frontend/, not /).
+  - type: web
+    name: fc-api
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Render injects $PORT; bind 0.0.0.0 for public traffic.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      # Committed, safe defaults ------------------------------------
+      - key: APP_ENV
+        value: production
+      # Public member finite-plan checkout stays HARD-OFF by default.
+      # Flip to "true" in the Render Dashboard only after the
+      # hosted smoke sequence in
+      # docs/finite-payment-plans-stripe-config.md §6 passes.
+      - key: FINITE_PLAN_MEMBER_CHECKOUT_ENABLED
+        value: "false"
+
+      # Secrets / environment-specific — set in Render Dashboard ----
+      # sync: false makes Render prompt on first Blueprint sync and
+      # NEVER commits the value back to the file. See the "Manual
+      # Render Dashboard values" section in the deploy report.
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      # Absolute base URL of the public frontend. Used to build
+      # Stripe success / cancel return URLs; falls back to
+      # FRONTEND_ORIGIN if unset.
+      - key: PUBLIC_APP_URL
+        sync: false
+      # Used for CORS + as the fallback for PUBLIC_APP_URL.
+      - key: FRONTEND_ORIGIN
+        sync: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # FIP3 grace-expiry reconciler — independent cron
+  # ─────────────────────────────────────────────────────────────────
+  # Runs every 15 minutes. Cadence is a reliability decision, not a
+  # timing one — the sweep uses ``grace_expires_at <= now`` so a
+  # 3-hour-late run still catches everything correctly. The cron is
+  # a safety net for the in-process reconciler, not its replacement.
+  #
+  # The script is standalone-safe as of the registry-priming import
+  # added on 2026-08-19 (see the script's header comment).
+  #
+  # Does NOT need Stripe credentials — the sweep is DB-only. But it
+  # imports app.main to load the full SQLAlchemy model registry,
+  # which pulls in ``settings = Settings()`` at module load; that
+  # requires DATABASE_URL and JWT_SECRET to be present (both have
+  # no dataclass defaults in ``app.core.config.Settings``). Every
+  # other setting has a safe default.
+  - type: cron
+    name: fc-fip3-grace-reconciler
+    env: python
+    rootDir: backend
+    schedule: "*/15 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/fip3_reconcile_grace.py
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false

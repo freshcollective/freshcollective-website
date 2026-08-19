@@ -33,6 +33,14 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
 # ruff: noqa: E402
+# Force full model registry load so SQLAlchemy can resolve string-referenced
+# relationships when this script runs standalone outside the FastAPI process.
+# Without this, importing PurchasePlan alone leaves adjacent mappers
+# (e.g. SpaceMembership → User) unresolved and the first db.query raises
+# InvalidRequestError. Importing app.main is a side-effect import — it does
+# NOT start uvicorn or the lifespan background loops (those only run when
+# an ASGI server invokes the app), and does NOT mutate reconciliation logic.
+import app.main  # noqa: F401
 from app.core.database import SessionLocal
 from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
 from app.services.finite_plan_lifecycle import sweep_expired_grace_plans
