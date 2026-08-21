@@ -31,6 +31,7 @@ from app.comms.templates.registry import (
 # Concrete template modules — imports register them.
 from app.comms.templates import account         # noqa: F401
 from app.comms.templates import community       # noqa: F401
+from app.comms.templates import diagnostics     # noqa: F401
 from app.comms.templates import gatherings      # noqa: F401
 from app.comms.templates import messages        # noqa: F401
 from app.comms.templates import pathways        # noqa: F401

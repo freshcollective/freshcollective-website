@@ -100,14 +100,29 @@ logger = logging.getLogger(__name__)
 def _payload_from_intent(intent: CommunicationIntent) -> RenderedPayload:
     """Rebuild the RenderedPayload that was stored on the intent at
     creation time.
+
+    ``metadata["idempotency_key"]`` is always set to ``intent.id`` on
+    the way to the provider. Providers that support a network-level
+    idempotency key (Resend does, via SendOptions) use it as an
+    additional retry-safety layer for the *same intent* only —
+    protecting the narrow window described in the worker's
+    "ambiguous dispatching intents" note. It is not a business-event
+    dedupe: separate intents get separate keys and legitimately
+    produce separate sends. Durable duplicate protection lives at
+    the DB layer (event dedupe_key + intent uniqueness on
+    event × recipient × channel). Any pre-existing ``idempotency_key``
+    inside the intent's stored metadata wins so a caller who
+    deliberately supplies one is not overridden.
     """
+    metadata: dict = dict(intent.payload_metadata or {})
+    metadata.setdefault("idempotency_key", intent.id)
     return RenderedPayload(
         to=intent.recipient_address,
         subject=intent.payload_subject,
         body_html=intent.payload_body_html,
         body_text=intent.payload_body_text,
         reply_to=None,  # M4 doesn't persist reply_to on intents
-        metadata=dict(intent.payload_metadata or {}),
+        metadata=metadata,
     )
 
 
@@ -262,3 +277,86 @@ def dispatch_due_from_pool(*, limit: int = 50) -> list[str]:
         return dispatch_due(db, limit=limit)
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Single-intent dispatch — controlled, out-of-queue path.
+#
+# Intentionally NOT a general "hand-dispatch any stuck intent" helper.
+# The only sanctioned callers are:
+#
+#   * The R1 dev-only test-send endpoint that just created a fresh
+#     intent it needs to force through the provider for a provider-
+#     path proof (see /api/internal/comms/dev-test-send).
+#   * Future test/diagnostic tooling that owns the intent's lifecycle
+#     from creation.
+#
+# Callers must have just created the intent themselves. This function
+# does NOT reconcile the "ambiguous dispatching" case documented in
+# the module-level docstring — do not use it to recover intents that
+# have already been claimed by the worker.
+# ---------------------------------------------------------------------------
+
+
+def dispatch_specific_intent(db: Session, intent_id: str) -> ProviderResult:
+    """Force a single freshly-created intent through the provider.
+
+    Transitions ``queued`` → ``dispatching`` → ``sent | failed`` on
+    the target intent only. Never touches other queued intents (no
+    queue drain, no batch claim). Returns the ProviderResult from the
+    single ``send()`` attempt so the caller can surface it directly
+    to the operator triggering the test.
+
+    Raises ``ValueError`` if the intent does not exist or is not in a
+    dispatchable state.
+    """
+    intent = db.get(CommunicationIntent, intent_id)
+    if intent is None:
+        raise ValueError(f"Intent {intent_id!r} not found.")
+    if intent.state != "queued":
+        raise ValueError(
+            f"Intent {intent_id!r} is in state {intent.state!r}; "
+            f"only queued intents may be dispatched by this helper."
+        )
+
+    # Claim: queued → dispatching. Commit so a subsequent crash leaves
+    # the intent visibly claimed rather than double-processable.
+    from app.comms.intents import STATE_DISPATCHING, mark_intent_state
+    mark_intent_state(db, intent, STATE_DISPATCHING)
+    db.commit()
+
+    # Dispatch. `_dispatch_one` transitions dispatching → sent | failed
+    # and records a delivery row. It never raises.
+    payload = _payload_from_intent(intent)
+    _dispatch_one(db, intent)
+    db.commit()
+
+    # Reload the latest delivery + return synthesised ProviderResult
+    # so the caller can inspect the outcome without another query.
+    latest = (
+        db.query(CommunicationIntent).filter(
+            CommunicationIntent.id == intent_id
+        ).one()
+    )
+    del payload  # silence unused local — kept above for clarity
+    from app.comms.models import CommunicationDelivery
+    d = (
+        db.query(CommunicationDelivery)
+        .filter(CommunicationDelivery.intent_id == intent_id)
+        .order_by(CommunicationDelivery.attempt_number.desc())
+        .first()
+    )
+    if d is None:
+        # Should not happen — _dispatch_one always records a row.
+        return ProviderResult(
+            accepted=False,
+            error_class="NoDeliveryRecorded",
+            error_detail=f"Intent {intent_id!r} ended in state {latest.state!r} "
+                          "but no delivery row was written.",
+        )
+    return ProviderResult(
+        accepted=(d.status == "accepted"),
+        provider_message_id=d.provider_message_id,
+        error_class=d.error_class,
+        error_detail=d.error_detail,
+    )

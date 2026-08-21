@@ -90,6 +90,15 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
 
     # Moderation / safety
     EventDefinition("moderation.action.applied",          TOPIC_MODERATION,         PRIORITY_IMMEDIATE),
+
+    # ── Diagnostics ─────────────────────────────────────────────────
+    # Provider-path proof event. Emitted only by the dev-only
+    # test-send endpoint (see /api/internal/comms/dev-test-send).
+    # Reuses TOPIC_ACCOUNT so no new topic migration is needed —
+    # the event is scoped by its dotted key, not by topic. Priority
+    # is immediate so the diagnostic intent runs through the same
+    # code path a real transactional email would.
+    EventDefinition("diagnostics.provider_probe",         TOPIC_ACCOUNT,            PRIORITY_IMMEDIATE),
 )
 
 

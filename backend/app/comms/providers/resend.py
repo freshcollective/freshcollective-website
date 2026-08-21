@@ -120,10 +120,31 @@ class ResendProvider:
         if effective_reply_to:
             request["reply_to"] = effective_reply_to
 
+        # Extract an idempotency key from payload.metadata. The
+        # dispatch worker sets this to the intent id so a re-invocation
+        # of the *same intent* (e.g. after a partial crash) cannot
+        # cause Resend to accept a second copy of the same message.
+        #
+        # This header protects retries of the same intent only. Every
+        # separate intent gets a new key by design, so two independent
+        # emits legitimately produce two emails — that is not a bug.
+        # Durable business-event deduplication lives at the database
+        # layer via the CommunicationEvent (dedupe_key) and
+        # CommunicationIntent (event × recipient × channel) natural
+        # keys; Resend's own key retention is only 24 hours and is not
+        # the authoritative dedupe surface.
+        options: dict = {}
+        idem_key = payload.metadata.get("idempotency_key") if payload.metadata else None
+        if isinstance(idem_key, str) and idem_key:
+            options["idempotency_key"] = idem_key
+
         try:
             import resend  # type: ignore[import-untyped]
             resend.api_key = settings.resend_api_key
-            result = resend.Emails.send(request)
+            if options:
+                result = resend.Emails.send(request, options)  # type: ignore[arg-type]
+            else:
+                result = resend.Emails.send(request)
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "Failed to send email to %s (subject: %s)",

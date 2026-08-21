@@ -20,6 +20,9 @@ Internal
 --------
   * ``POST /api/internal/comms/dispatch-due`` — protected by
     X-Internal-Token; runs one worker cycle (M4)
+  * ``POST /api/internal/comms/dev-test-send`` — R1 dev-only. Fires
+    one diagnostic email through the full event → resolver → template
+    → intent → provider path. Fail-closed in production.
 """
 
 from __future__ import annotations
@@ -94,10 +97,11 @@ from app.comms.schemas import (
 )
 from app.comms.shadow import compute_parity_report, reconcile_shadow
 from app.comms.webhooks import get_webhook_provider, receive
-from app.comms.worker import dispatch_due
+from app.comms.worker import dispatch_due, dispatch_specific_intent
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import User
+from pydantic import BaseModel, EmailStr
 
 
 router = APIRouter(prefix="/api/admin/comms", tags=["admin", "comms"])
@@ -818,6 +822,202 @@ def reconcile_shadow_endpoint(
         count=len(result.compared_event_ids),
         skipped_no_comparator=result.skipped_no_comparator,
         duplicate_skipped=result.duplicate_skipped,
+    )
+
+
+# ---------------------------------------------------------------------------
+# R1 dev-only provider-path proof
+# ---------------------------------------------------------------------------
+#
+# Fires exactly one diagnostic email through the full comms pipeline:
+#
+#   emit(diagnostics.provider_probe)
+#       └─→ ProviderProbeResolver              (single ResolvedRecipient)
+#           └─→ ProviderProbeEmailTemplate      (subject + html + text)
+#               └─→ create_intent(delivery_mode='live')
+#                   └─→ dispatch_specific_intent   (queued → dispatching → sent)
+#                       └─→ ResendProvider.send    (Resend API)
+#
+# Fail-closed guards, in order:
+#   1. Refuses to run in APP_ENV=production.
+#   2. Requires X-Internal-Token to match JWT_SECRET (matches the
+#      other internal endpoints in this file).
+#   3. Requires an existing User row for ``to_email``. The intent
+#      needs a real user_id for ResolvedRecipient — using a real row
+#      also makes the diagnostic behave more like a production send.
+#
+# Deliberately does NOT trigger any legacy email path. Deliberately
+# does NOT drain the queue — it dispatches only the fresh intent it
+# just created.
+
+
+class DevTestSendRequest(BaseModel):
+    to_email: EmailStr
+    note: str | None = None
+
+
+class DevTestSendResponse(BaseModel):
+    event_id: str
+    intent_id: str
+    accepted: bool
+    provider_message_id: str | None = None
+    error_class: str | None = None
+    error_detail: str | None = None
+    from_address: str | None = None
+    subject: str
+
+
+@internal_router.post(
+    "/dev-test-send",
+    response_model=DevTestSendResponse,
+    summary="R1 — send one diagnostic email through the comms pipeline (dev only).",
+)
+def dev_test_send_endpoint(
+    body: DevTestSendRequest,
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+    db: Session = Depends(get_db),
+) -> DevTestSendResponse:
+    # 1. Fail closed in production.
+    if settings.is_production:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "dev-test-send is disabled in production. This endpoint "
+                "exists only for the R1 provider-path proof."
+            ),
+        )
+
+    # 2. Match the internal-token pattern used by /dispatch-due and
+    #    /reconcile-shadow above.
+    if not x_internal_token or x_internal_token != settings.jwt_secret:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid X-Internal-Token.",
+        )
+
+    # 3. The intent needs a real user_id. Look up the target user.
+    target_email = str(body.to_email).lower().strip()
+    user = (
+        db.query(User)
+        .filter(func.lower(User.email) == target_email)
+        .first()
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No user found with email {target_email!r}. Create the "
+                "user in the local DB first so the diagnostic has a "
+                "real recipient to attach to."
+            ),
+        )
+
+    # ---- Full pipeline (event → resolver → template → intent → send) ----
+
+    # Import locally to avoid pulling routing side-effects at module load.
+    from app.comms.categories import (
+        CHANNEL_EMAIL_TRANSACTIONAL,
+        SOURCE_FRESH_COLLECTIVE,
+    )
+    from app.comms.events import emit
+    from app.comms.intents import (
+        DELIVERY_MODE_LIVE,
+        create_intent,
+    )
+    from app.comms.registry import get_event_definition
+    from app.comms.routing.resolver import get_resolver_for
+    from app.comms.templates.registry import get_template_for
+
+    triggered_at_iso = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    event = emit(
+        db,
+        event_type="diagnostics.provider_probe",
+        source_type=SOURCE_FRESH_COLLECTIVE,
+        actor_user_id=user.id,
+        subject_type="user",
+        subject_id=user.id,
+        payload={
+            "recipient_email": target_email,
+            "note": body.note or "",
+            "triggered_at_iso": triggered_at_iso,
+        },
+    )
+    if event is None:
+        # emit() returns None only for a dedupe collision, and we do
+        # not pass a dedupe_key, so this should be impossible. Surface
+        # loudly if it ever happens.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="emit() returned None unexpectedly.",
+        )
+
+    resolver = get_resolver_for("diagnostics.provider_probe")
+    if resolver is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="No resolver registered for diagnostics.provider_probe.",
+        )
+    recipients = resolver.resolve(db, event)
+    if not recipients:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Resolver produced no recipients for the diagnostic event.",
+        )
+    recipient = recipients[0]
+
+    template = get_template_for(
+        "diagnostics.provider_probe", CHANNEL_EMAIL_TRANSACTIONAL,
+    )
+    if template is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "No template registered for (diagnostics.provider_probe, "
+                "email_transactional)."
+            ),
+        )
+    rendered = template.render(db, event, recipient)
+
+    definition = get_event_definition("diagnostics.provider_probe")
+    assert definition is not None  # event_type is validated by emit()
+
+    intent = create_intent(
+        db,
+        event_id=event.id,
+        recipient_user_id=recipient.user_id,
+        recipient_address=(
+            recipient.recipient_address_override or ""
+        ),
+        source_type=SOURCE_FRESH_COLLECTIVE,
+        source_id=None,
+        category_key=event.category_key,
+        topic_key=event.topic_key,
+        channel=CHANNEL_EMAIL_TRANSACTIONAL,
+        priority=definition.default_priority,
+        provider_key="resend",
+        template_key=template.key,
+        template_version=template.version,
+        human_reason=recipient.human_reason,
+        payload_subject=rendered.subject,
+        payload_body_html=rendered.body_html,
+        payload_body_text=rendered.body_text,
+        payload_metadata=dict(rendered.metadata or {}),
+        delivery_mode=DELIVERY_MODE_LIVE,
+    )
+    db.commit()
+
+    # Dispatch only this intent — never touches other queued intents.
+    result = dispatch_specific_intent(db, intent.id)
+
+    return DevTestSendResponse(
+        event_id=event.id,
+        intent_id=intent.id,
+        accepted=result.accepted,
+        provider_message_id=result.provider_message_id,
+        error_class=result.error_class,
+        error_detail=result.error_detail,
+        from_address=settings.email_from,
+        subject=rendered.subject,
     )
 
 
