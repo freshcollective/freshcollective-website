@@ -34,11 +34,13 @@ async function getCurrentUser(): Promise<MeResponse | null> {
 // Peer destinations that live in the centre nav. Order is
 // significant: it matches the pillar order defined in
 // docs/foundations/discovery-connection-belonging-v1.1.md.
-// "Your World" only appears for signed-in visitors; the other three
-// are visible to everyone once the flag is on.
-function peerNavItems(user: MeResponse | null, discoveryOn: boolean): Array<{ href: string; label: string }> {
+// The centre nav is the marketing surface — it lists the public
+// discovery pillars only. "Your World" is deliberately NOT here for
+// either logged-out OR logged-in visitors; it is an authenticated
+// utility, surfaced on the right-side auth cluster instead so it
+// reads as an account destination, not a marketing concept.
+function peerNavItems(discoveryOn: boolean): Array<{ href: string; label: string }> {
   const items: Array<{ href: string; label: string }> = []
-  if (user && discoveryOn) items.push({ href: '/dashboard', label: 'Your World' })
   items.push({ href: '/spaces', label: 'Explore Collectives' })
   if (discoveryOn) {
     items.push({ href: '/discover-places', label: 'Discover Places' })
@@ -50,11 +52,12 @@ function peerNavItems(user: MeResponse | null, discoveryOn: boolean): Array<{ hr
 export default async function PublicHeader({ overlay = false }: { overlay?: boolean }) {
   const user = await getCurrentUser()
   const discoveryOn = isDiscoveryPillarEnabled()
-  const centreNav   = peerNavItems(user, discoveryOn)
-  // "Your World" only remains as a right-side auth-cluster shortcut
-  // while Discovery is off; once the pillar is on it lives in the
-  // centre nav as a peer destination.
-  const showYourWorldOnRight = !discoveryOn && !!user
+  const centreNav   = peerNavItems(discoveryOn)
+  // "Your World" is the authenticated account entry point — always
+  // available to signed-in visitors on the right-side auth cluster,
+  // regardless of whether the Discovery pillar is on. Signed-out
+  // visitors never see it.
+  const showYourWorldOnRight = !!user
 
   if (overlay) {
     return (

@@ -281,6 +281,67 @@ PLATFORM_ARTWORK_KEYS: dict[str, dict[str, str]] = {
             "Collective. Grounded, considered, plain."
         ),
     },
+    # ─── Homepage — Product Screenshots ─────────────────────────────
+    # Deliberately kept distinct from the atmospheric homepage_* keys
+    # above. These are real captures of the product UI, used to prove
+    # the guided creator ritual and the World Builders Collective
+    # exist. Each has an honest "Product screenshot pending" placeholder
+    # on the homepage when empty — never a stock/atmospheric fallback.
+    "homepage_onboarding_begin_shaping": {
+        "title": "Homepage — Onboarding: Begin shaping",
+        "description": (
+            "Product screenshot of the first Build Your Collective step "
+            "(\u201cLet\u2019s begin shaping your collective.\u201d). Used "
+            "as tile 1 of the onboarding walkthrough on the public homepage."
+        ),
+    },
+    "homepage_onboarding_shape_the_feeling": {
+        "title": "Homepage — Onboarding: Shape the feeling",
+        "description": (
+            "Product screenshot of the Atmosphere step (\u201cHow do you "
+            "want people to feel?\u201d). Used as tile 2 of the "
+            "onboarding walkthrough on the public homepage — the moment "
+            "creators think about the feeling of the place, not its "
+            "features."
+        ),
+    },
+    "homepage_onboarding_choose_island": {
+        "title": "Homepage — Onboarding: Choose your island",
+        "description": (
+            "Product screenshot of the Location step (\u201cChoose your "
+            "island\u201d). Used as tile 3 of the onboarding walkthrough "
+            "on the public homepage."
+        ),
+    },
+    "homepage_onboarding_practical_settings": {
+        "title": "Homepage — Onboarding: The practical things",
+        "description": (
+            "Product screenshot of the Practical Details step (\u201cNow "
+            "for the practical things.\u201d). Used as tile 4 of the "
+            "onboarding walkthrough on the public homepage."
+        ),
+    },
+    "homepage_world_builders": {
+        "title": "Homepage — World Builders",
+        "description": (
+            "Product screenshot of the World Builders Collective. Used "
+            "in the \u201cYou don\u2019t build yours alone\u201d section "
+            "on the public homepage. Capture something that reads clearly "
+            "as a working Collective, not an empty one."
+        ),
+    },
+    "homepage_friction_conversation": {
+        "title": "Homepage — Friction section image",
+        "description": (
+            "Editorial image beside the \u201cMaybe you\u2019ve done this "
+            "before\u201d section on the public homepage. Should show "
+            "genuine human connection or conversation \u2014 a circle, a "
+            "shared moment, people talking. NOT an interface screenshot, "
+            "NOT an atmospheric landscape. The friction copy runs beside "
+            "it; the image is the emotional anchor for the "
+            "\u2018familiarity is what makes people open up\u2019 idea."
+        ),
+    },
 }
 
 

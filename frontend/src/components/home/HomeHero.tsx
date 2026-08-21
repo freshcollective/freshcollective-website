@@ -1,86 +1,105 @@
-import Link from 'next/link'
+import Image from 'next/image'
 import Container from '@/components/layout/Container'
+import { HeroPrimaryCta, HeroSecondaryCta } from '@/components/marketing/heroCtaButtons'
 
 export default function HomeHero() {
   return (
     <section
       className="relative flex overflow-hidden"
-      style={{ background: '#071014', minHeight: 'clamp(480px, 70vh, 700px)' }}
+      style={{ background: '#0F1B18', minHeight: 'clamp(480px, 70vh, 700px)' }}
     >
 
-      {/* ── Video layer ──────────────────────────────────────────────────────── */}
-      <video
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="none"
+      {/* ── Illustration layer ──────────────────────────────────────────────
+          Warm golden-hour outdoor gathering. Next Image serves the WebP
+          with automatic responsive sizing; `priority` because this is
+          above-the-fold on every visit. object-position keeps the
+          foreground groups + hand-lettered sign visible when the frame
+          crops for portrait viewports. */}
+      <Image
+        src="/home/hero-community.webp"
+        alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover"
+        fill
+        priority
+        sizes="100vw"
         style={{
-          opacity: 0.88,
-          filter: 'saturate(0.72) brightness(0.82) contrast(1.08)',
+          objectFit: 'cover',
+          objectPosition: '50% 40%',
         }}
-      >
-        <source src="/videos/hero-waves.mp4" type="video/mp4" />
-      </video>
+      />
 
-      {/* ── Cinematic overlay — heavier at bottom for text legibility ────────── */}
+      {/* ── Readability treatment ───────────────────────────────────────────
+          Two purposes:
+            1. Give the headline (left half of the hero) a clear dark
+               ground without darkening the whole illustration.
+            2. Keep the golden-hour warmth on the right side of the
+               frame — where the landscape and painting figures sit —
+               so the image stays rich rather than muddy.
+          Horizontal gradient (heavier left) does the primary
+          readability work; a light bottom gradient tucks the CTA row
+          under a soft floor. Deliberately no saturate() / contrast()
+          filters — the illustration was authored with the intended
+          look and we don't second-guess it. */}
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
           background:
-            'linear-gradient(to bottom, rgba(7,16,20,0.42) 0%, rgba(7,16,20,0.18) 40%, rgba(7,16,20,0.44) 80%, rgba(7,16,20,0.68) 100%)',
+            'linear-gradient(100deg, rgba(7,20,24,0.72) 0%, rgba(7,20,24,0.55) 28%, rgba(7,20,24,0.22) 55%, rgba(7,20,24,0.08) 78%, rgba(7,20,24,0.04) 100%)',
         }}
       />
-
-      {/* ── Subtle atmospheric teal tint ─────────────────────────────────────── */}
       <div
         className="pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
           background:
-            'radial-gradient(ellipse 90% 70% at 60% 30%, rgba(38,110,108,0.14) 0%, transparent 65%)',
+            'linear-gradient(to bottom, transparent 60%, rgba(7,20,24,0.28) 100%)',
         }}
       />
 
-      {/* ── Grain overlay ───────────────────────────────────────────────────── */}
-      <div
-        className="pointer-events-none absolute inset-0"
-        aria-hidden="true"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='300' height='300' filter='url(%23n)' opacity='0.028'/></svg>")`,
-        }}
-      />
-
-      {/* ── Content ─────────────────────────────────────────────────────────── */}
+      {/* ── Content ─────────────────────────────────────────────────────── */}
       <div className="relative z-10 w-full" style={{ paddingTop: 'clamp(5rem, 14vw, 10rem)', paddingBottom: 'clamp(3.5rem, 8vw, 6rem)' }}>
       <Container>
-        <div className="max-w-[680px]">
+        <div className="max-w-[640px]">
 
-          <h1
-            className="mb-6"
+          {/* Lead-in — deliberately small (~45% of the main line's
+              size at the desktop max) and faded, so the visitor's eye
+              reads it as a set-up rather than as competing claim. Not
+              an eyebrow: still sentence case, still the display sans,
+              just quiet. */}
+          <p
+            className="mb-4"
             style={{
-              fontSize: 'clamp(2.375rem, 6vw, 5.5rem)',
-              lineHeight: '1.05',
-              letterSpacing: '-0.04em',
-              fontWeight: 660,
-              color: '#ffffff',
+              fontSize: 'clamp(1.0625rem, 2.6vw, 2.375rem)',
+              lineHeight: '1.15',
+              letterSpacing: '-0.015em',
+              fontWeight: 500,
+              color: '#FFFFFF',
+              opacity: 0.55,
             }}
           >
-            <span className="block">Human connection</span>
+            Most platforms optimise for engagement...
+          </p>
+
+          {/* Main claim — unmistakably the largest thing on the page.
+              "belonging." carries the sanctioned warm gold; everything
+              else stays full-strength white in the same display sans. */}
+          <h1
+            className="mb-8"
+            style={{
+              fontSize: 'clamp(2.75rem, 7.4vw, 6.25rem)',
+              lineHeight: '1.02',
+              letterSpacing: '-0.04em',
+              fontWeight: 660,
+              color: '#FFFFFF',
+            }}
+          >
+            <span className="inline sm:block">We optimise for</span>{' '}
             <span
-              className="block"
-              style={{
-                backgroundImage: 'linear-gradient(100deg, #42C7C6 0%, #7FDAD9 28%, #D8F5F2 55%, #FFFFFF 78%, #FFFFFF 100%)',
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                color: 'transparent',
-              }}
+              className="inline sm:block"
+              style={{ color: '#EDBE5D' }}
             >
-              <span className="block">is our greatest</span>
-              <span className="block">advantage.</span>
+              belonging.
             </span>
           </h1>
 
@@ -94,33 +113,15 @@ export default function HomeHero() {
               letterSpacing: '-0.01em',
             }}
           >
-            Fresh Collective is a home for many Collectives, where
-            people can learn, lead, connect and grow together. There
-            are Collectives you can join, or you can build your own.
+            Fresh Collective gives creators a beautiful place to bring
+            people together — through pathways, gatherings, conversation
+            and shared experiences. Build a Collective that feels like
+            yours.
           </p>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <Link
-              href="/spaces"
-              className="inline-flex w-full items-center justify-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90 sm:w-auto"
-              style={{
-                background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
-                boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
-              }}
-            >
-              Explore Collectives
-            </Link>
-            <Link
-              href="/for-creators"
-              className="inline-flex w-full items-center justify-center rounded-xl px-7 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px bg-white hover:bg-[#F6F6F6] sm:w-auto"
-              style={{
-                border: '1px solid rgba(255,255,255,0.12)',
-                color: '#0F172A',
-                boxShadow: '0 4px 24px rgba(0,0,0,0.30)',
-              }}
-            >
-              Create a Collective
-            </Link>
+            <HeroPrimaryCta href="/for-creators">Create a Collective</HeroPrimaryCta>
+            <HeroSecondaryCta href="/spaces">Explore Collectives</HeroSecondaryCta>
           </div>
 
         </div>

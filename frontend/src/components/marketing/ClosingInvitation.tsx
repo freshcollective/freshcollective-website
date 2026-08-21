@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Container from '@/components/layout/Container'
+import { HeroPrimaryCta, HeroSecondaryCta } from './heroCtaButtons'
 
 /**
  * Shared closing-invitation card used by the homepage and /for-creators.
@@ -23,10 +24,12 @@ interface CTALink {
 }
 
 interface Props {
-  /** Heading lines. Each string is rendered as its own visible line
-   *  via a `<span className="block">`. Pass one string for a single
-   *  line or two for a two-line heading. */
-  headingLines: readonly string[]
+  /** Heading lines. Each entry is rendered as its own visible line
+   *  via a `<span className="block">`. Pass one entry for a single
+   *  line or two for a two-line heading. Entries may be plain strings
+   *  or JSX nodes — passing a JSX span lets callers style a line
+   *  differently (e.g. smaller / quieter secondary line). */
+  headingLines: readonly React.ReactNode[]
   /** Short italic body sentence beneath the heading. */
   body: string
   primaryCta: CTALink
@@ -112,53 +115,38 @@ export default function ClosingInvitation({
               {body}
             </p>
             <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-              <Link
-                href={primaryCta.href}
-                className={
-                  isHero
-                    ? 'inline-flex w-full items-center justify-center rounded-xl px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:-translate-y-px hover:opacity-90 sm:w-auto'
-                    : 'inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 sm:w-auto'
-                }
-                style={
-                  isHero
-                    ? {
-                        background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
-                        boxShadow: '0 2px 20px rgba(56,160,158,0.40)',
-                      }
-                    : {
-                        background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
-                        letterSpacing: '0.04em',
-                        boxShadow: '0 6px 24px rgba(56, 160, 158, 0.35)',
-                      }
-                }
-              >
-                {primaryCta.label}
-              </Link>
-              {secondaryCta && (
+              {isHero ? (
+                <HeroPrimaryCta href={primaryCta.href}>{primaryCta.label}</HeroPrimaryCta>
+              ) : (
                 <Link
-                  href={secondaryCta.href}
-                  className={
-                    isHero
-                      ? 'inline-flex w-full items-center justify-center rounded-xl px-7 py-3.5 text-[15px] font-semibold transition-all hover:-translate-y-px bg-white hover:bg-[#F6F6F6] sm:w-auto'
-                      : 'inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold transition-colors sm:w-auto'
-                  }
-                  style={
-                    isHero
-                      ? {
-                          border: '1px solid rgba(255,255,255,0.12)',
-                          color: '#0F172A',
-                          boxShadow: '0 4px 24px rgba(0,0,0,0.30)',
-                        }
-                      : {
-                          background: 'transparent',
-                          border: '1px solid rgba(255, 255, 255, 0.22)',
-                          color: '#FFFFFF',
-                          letterSpacing: '0.04em',
-                        }
-                  }
+                  href={primaryCta.href}
+                  className="inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 sm:w-auto"
+                  style={{
+                    background: `linear-gradient(135deg, ${TEAL} 0%, #55B8B6 100%)`,
+                    letterSpacing: '0.04em',
+                    boxShadow: '0 6px 24px rgba(56, 160, 158, 0.35)',
+                  }}
                 >
-                  {secondaryCta.label}
+                  {primaryCta.label}
                 </Link>
+              )}
+              {secondaryCta && (
+                isHero ? (
+                  <HeroSecondaryCta href={secondaryCta.href}>{secondaryCta.label}</HeroSecondaryCta>
+                ) : (
+                  <Link
+                    href={secondaryCta.href}
+                    className="inline-flex w-full items-center justify-center rounded-full px-7 py-3 text-[14px] font-semibold transition-colors sm:w-auto"
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid rgba(255, 255, 255, 0.22)',
+                      color: '#FFFFFF',
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    {secondaryCta.label}
+                  </Link>
+                )
               )}
             </div>
           </div>

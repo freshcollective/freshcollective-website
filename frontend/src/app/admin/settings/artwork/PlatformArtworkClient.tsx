@@ -166,6 +166,40 @@ const DISPLAY_BY_KEY: Record<string, SlotDisplay> = {
     guidance: 'Wide landscape · recommended 16:9 · minimum width 1600px · JPG, PNG or WebP. Grounded, considered, plain.',
     placeholderBody: 'Hero image for the Practical Details step of Build Your Collective.',
   },
+  // ── Homepage — Product Screenshots (real UI captures, not atmosphere) ─
+  // Per-slot aspects match the natural aspect of the intended source
+  // screen so preview + homepage render feel identical. Capture at
+  // desktop width so type stays legible after downscaling.
+  homepage_onboarding_begin_shaping: {
+    aspectRatio: '1 / 1',
+    guidance: 'Product screenshot · natural roughly square · minimum width 1000px · JPG, PNG or WebP. Capture at desktop size so type stays legible.',
+    placeholderBody: 'Homepage use: onboarding walkthrough tile 1 — the “Let’s begin shaping your collective.” step.',
+  },
+  homepage_onboarding_shape_the_feeling: {
+    aspectRatio: '6 / 5',
+    guidance: 'Product screenshot · comfortable 6:5 landscape · minimum width 1000px · JPG, PNG or WebP. Capture at desktop size so type stays legible.',
+    placeholderBody: 'Homepage use: onboarding walkthrough tile 2 — the atmosphere / “how do you want people to feel?” step.',
+  },
+  homepage_onboarding_choose_island: {
+    aspectRatio: '2 / 3',
+    guidance: 'Product screenshot · portrait 2:3 · minimum width 1000px · JPG, PNG or WebP. Tall scroll captures render top-aligned so the heading + first few island options are visible.',
+    placeholderBody: 'Homepage use: onboarding walkthrough tile 3 — the location / “Choose your island” step.',
+  },
+  homepage_onboarding_practical_settings: {
+    aspectRatio: '2 / 3',
+    guidance: 'Product screenshot · portrait 2:3 · minimum width 1000px · JPG, PNG or WebP. Rendered top-aligned so the first few fields are visible.',
+    placeholderBody: 'Homepage use: onboarding walkthrough tile 4 — the “Now for the practical things.” step.',
+  },
+  homepage_world_builders: {
+    aspectRatio: '16 / 10',
+    guidance: 'Product screenshot · recommended 16:10 · minimum width 1600px · JPG, PNG or WebP. Capture the Collective looking alive — real posts, real people, not an empty shell.',
+    placeholderBody: 'Homepage use: the “You don’t build yours alone” section — proof that the Collective every creator joins is a working one.',
+  },
+  homepage_friction_conversation: {
+    aspectRatio: '4 / 5',
+    guidance: 'Editorial photograph · recommended 4:5 portrait · minimum width 1200px · JPG, PNG or WebP. Genuine human connection or conversation — a circle, a shared moment, people talking. Not an interface, not a landscape.',
+    placeholderBody: 'Homepage use: the “Maybe you’ve done this before…” friction section — the emotional anchor beside the copy about people opening up when something already feels familiar.',
+  },
 }
 const DEFAULT_DISPLAY: SlotDisplay = {
   aspectRatio: '3 / 2',
@@ -245,6 +279,19 @@ const GROUPS: Group[] = [
       'creator_ritual_identity',
       'creator_ritual_welcome_message',
       'creator_ritual_practical',
+    ],
+  },
+  {
+    key: 'homepage_product_screenshots',
+    label: 'Homepage — Product Screenshots',
+    description: 'Real captures of the product UI, shown on the public homepage as proof that the guided creator ritual and the World Builders Collective exist. Deliberately separate from the atmospheric Public Homepage slots above — each of these tiles shows honest “Product screenshot pending” placeholder copy on the homepage when empty (never a stock/atmospheric fallback).',
+    keys: [
+      'homepage_onboarding_begin_shaping',
+      'homepage_onboarding_shape_the_feeling',
+      'homepage_onboarding_choose_island',
+      'homepage_onboarding_practical_settings',
+      'homepage_world_builders',
+      'homepage_friction_conversation',
     ],
   },
   {

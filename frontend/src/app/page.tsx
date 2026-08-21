@@ -3,6 +3,11 @@ import Link from 'next/link'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import HomeHero from '@/components/home/HomeHero'
+import HomeWhatThisIs from '@/components/home/HomeWhatThisIs'
+import HomeFriction from '@/components/home/HomeFriction'
+import HomeOnboardingWalkthrough from '@/components/home/HomeOnboardingWalkthrough'
+import HomeWorldBuilders from '@/components/home/HomeWorldBuilders'
+import HomePricing from '@/components/home/HomePricing'
 import ArtworkFeatureComposition from '@/components/marketing/ArtworkFeatureComposition'
 import ClosingInvitation from '@/components/marketing/ClosingInvitation'
 import { atmosphereBackground, atmosphereForSlug } from '@/lib/placeAtmosphere'
@@ -49,6 +54,10 @@ const NAVY = '#0C1826'
 const INK_BODY = 'rgba(12, 24, 38, 0.80)'
 const INK_SOFT = 'rgba(12, 24, 38, 0.66)'
 const HAIRLINE = 'rgba(12, 24, 38, 0.10)'
+// Warm gold — used for a single accent word in headings that live on
+// a light ground. On dark grounds the brighter `#EDBE5D` variant is
+// used instead (in HomeHero and HomeWhatThisIs).
+const WARM_GOLD = '#D4B048'
 
 
 
@@ -66,89 +75,54 @@ export default async function HomePage() {
   const artwork = await getPublicPlatformArtwork().catch(() => [] as PublicPlatformArtwork[])
   const artFor = buildArtLookup(artwork)
 
+  // Pre-resolve the four onboarding URLs into a plain object so the
+  // interactive (client) walkthrough component doesn't need to receive
+  // the server-only `artFor` function across the boundary.
+  const onboardingScreenshotUrls: Record<string, string | null> = {
+    homepage_onboarding_begin_shaping:       artFor('homepage_onboarding_begin_shaping'),
+    homepage_onboarding_shape_the_feeling:   artFor('homepage_onboarding_shape_the_feeling'),
+    homepage_onboarding_choose_island:       artFor('homepage_onboarding_choose_island'),
+    homepage_onboarding_practical_settings:  artFor('homepage_onboarding_practical_settings'),
+  }
+
   return (
     <SiteShell heroHeader>
       <HomeHero />
-      <Belief />
+      <HomeWhatThisIs />
+      <HomeFriction imageSrc={artFor('homepage_friction_conversation')} />
       <ExploreSection artFor={artFor} />
       <InsideCollectiveSection artFor={artFor} />
       <CreatorSection artUrl={artFor('homepage_creator_studio')} />
+      <HomeOnboardingWalkthrough screenshotUrls={onboardingScreenshotUrls} />
+      <HomeWorldBuilders artFor={artFor} />
+      <HomePricing artFor={artFor} />
       <ClosingInvitation
-        headingLines={['Find your Collective.', 'Or create one.']}
+        headingLines={[
+          'Create your Collective.',
+          // Secondary line — same family, ~72% of the primary size so
+          // it clearly still belongs to the headline but sits quieter
+          // beneath the creator-first primary line. ClosingInvitation
+          // already wraps each entry in a `<span className="block">`,
+          // so this inner span only styles size/tone.
+          <span
+            key="secondary"
+            style={{
+              fontSize: '0.72em',
+              opacity: 0.85,
+              marginTop: '0.35em',
+              display: 'inline-block',
+            }}
+          >
+            Or find one to join.
+          </span>,
+        ]}
         body="Every meaningful community begins with someone deciding to bring people together."
-        primaryCta={{ label: 'Explore Collectives', href: '/spaces' }}
-        secondaryCta={{ label: 'Create a Collective', href: '/for-creators' }}
+        primaryCta={{ label: 'Create a Collective', href: '/for-creators' }}
+        secondaryCta={{ label: 'Explore Collectives', href: '/spaces' }}
         artUrl={artFor('homepage_closing_invitation')}
         buttonVariant="hero"
       />
     </SiteShell>
-  )
-}
-
-
-// ═══════════════════════════════════════════════════════════════════
-// BELIEF — the philosophy beat that immediately follows the hero.
-//
-// Focal point is the headline. Second sentence carries the teal→navy
-// gradient. Body copy and "Come and see" sit as secondary detail.
-// ═══════════════════════════════════════════════════════════════════
-
-function Belief() {
-  return (
-    <section
-      className="pt-20 pb-14 sm:pt-28 sm:pb-16"
-      style={{ background: '#FFFFFF' }}
-    >
-      <Container>
-        <div className="mx-auto max-w-[860px] text-center">
-
-          <h2
-            className="mx-auto font-serif leading-[1.08] text-navy-900"
-            style={{
-              fontSize: 'clamp(2.125rem, 5.4vw, 3.75rem)',
-              letterSpacing: '-0.03em',
-              color: NAVY,
-              maxWidth: '780px',
-            }}
-          >
-            <span className="block">Most platforms optimise for engagement.</span>
-            <span
-              className="mt-2 block"
-              style={{
-                backgroundImage: `linear-gradient(100deg, ${TEAL} 0%, ${TEAL_DEEP} 55%, ${NAVY} 100%)`,
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                color: 'transparent',
-              }}
-            >
-              We optimise for belonging.
-            </span>
-          </h2>
-
-          <p
-            className="mx-auto mt-10 max-w-[620px] text-[16px] italic leading-relaxed"
-            style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
-          >
-            Meaningful communities grow when people feel welcomed,
-            supported and able to contribute. Every part of Fresh
-            Collective has been built to encourage connection — to
-            create more human moments, rather than simply more
-            consumption.
-          </p>
-          <p
-            className="mx-auto mt-5 max-w-[620px] text-[16px] italic leading-relaxed"
-            style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
-          >
-            People grow through what they do together — the
-            conversations they have, the sessions they show up for,
-            the small contributions that help someone else along.
-            A membership that leaves a mark isn&rsquo;t measured in
-            what you consumed; it&rsquo;s measured in what you took
-            part in.
-          </p>
-        </div>
-      </Container>
-    </section>
   )
 }
 
@@ -160,11 +134,22 @@ function Belief() {
 // ═══════════════════════════════════════════════════════════════════
 
 function SectionOpening({
-  title, body, className,
+  title, body, className, titleColor, bodyColor,
 }: {
-  title: string
+  /** Accepts a plain string for simple headings, or a JSX node for
+   *  headings that split colour across words (e.g. navy + a single
+   *  teal accent word). Colour is applied per-span in the JSX. */
+  title: React.ReactNode
   body?: string
   className?: string
+  /** Default fallback colour applied via `color:` on the h2. When the
+   *  title itself is a JSX node with per-span colours, its spans win
+   *  by cascade. Kept for backwards compatibility with the previous
+   *  single-colour headings. Defaults to navy (readable on white). */
+  titleColor?: string
+  /** Body copy colour override for sections rendered on a dark
+   *  background. Defaults to the soft navy ink that reads on white. */
+  bodyColor?: string
 }) {
   return (
     <div className={`mx-auto max-w-[680px] text-center ${className ?? ''}`}>
@@ -173,7 +158,7 @@ function SectionOpening({
         style={{
           fontSize: 'clamp(1.875rem, 4.4vw, 2.75rem)',
           letterSpacing: '-0.03em',
-          color: NAVY,
+          color: titleColor ?? NAVY,
         }}
       >
         {title}
@@ -181,7 +166,7 @@ function SectionOpening({
       {body && (
         <p
           className="mx-auto mt-5 max-w-[560px] text-[15.5px] italic leading-relaxed"
-          style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
+          style={{ color: bodyColor ?? INK_SOFT, fontFamily: 'Georgia, serif' }}
         >
           {body}
         </p>
@@ -195,13 +180,14 @@ function SectionOpening({
 // EXPLORE THE WORLD — heading + three discovery cards.
 // ═══════════════════════════════════════════════════════════════════
 
+// Informational only — cards on this section do not link anywhere.
+// Homepage visitors may not yet have member access; sending them into
+// authenticated discovery surfaces from marketing is the wrong door.
 interface DiscoveryEntry {
   artKey: string
   atmosphereSlug: string
   title: string
   body: string
-  href: string
-  cta: string
   alt: string
 }
 
@@ -211,8 +197,6 @@ const DISCOVERY_ENTRIES: DiscoveryEntry[] = [
     atmosphereSlug: 'homepage-explore-collectives',
     title: 'Explore Collectives',
     body: 'Find Collectives shaped around what you care about — the ideas, practices and journeys that match your interests, needs or direction.',
-    href: '/spaces',
-    cta: 'Explore Collectives',
     alt: 'Fresh Collective — Explore Collectives',
   },
   {
@@ -220,29 +204,31 @@ const DISCOVERY_ENTRIES: DiscoveryEntry[] = [
     atmosphereSlug: 'homepage-discover-places',
     title: 'Discover Places',
     body: 'See where Collectives are gathering across cities, regions and other real-world places.',
-    href: '/discover-places',
-    cta: 'Discover Places',
     alt: 'Fresh Collective — Discover Places',
   },
   {
     artKey: 'homepage_ways_to_connect',
     atmosphereSlug: 'homepage-ways-to-connect',
     title: 'Ways to Connect',
-    body: 'Meet people through the meaningful things you already share — the Collectives you belong to, the Pathways you walk, the Places you gather in.',
-    href: '/ways-to-connect',
-    cta: 'See how it works',
+    body: 'People participate more when connection starts from something already shared — a Pathway you both walked, a Gathering you both attended, a Place you both know — rather than a blank community feed.',
     alt: 'Fresh Collective — Ways to Connect',
   },
 ]
 
 function ExploreSection({ artFor }: { artFor: (key: string) => string | null }) {
   return (
-    <section className="py-16 sm:py-20" style={{ background: '#FFFFFF' }}>
+    <section className="py-14 md:py-16" style={{ background: '#FFFFFF' }}>
       <Container>
         <SectionOpening
-          title="Explore the world."
-          body="Fresh Collective gives you different ways to discover where you might belong. Explore Collectives by name, theme or the experiences they offer. Discover communities gathering in your local area. Or meet people whose Pathways, Gatherings and interests already cross with your own."
-          className="mb-10 sm:mb-14"
+          title={
+            <>
+              There is a{' '}
+              <span style={{ color: WARM_GOLD }}>whole world</span> for
+              exploring.
+            </>
+          }
+          body="On most platforms, everyone who finds you got there because you sent them. Fresh Collective is different: your Collective sits inside a wider world people can explore once they&rsquo;re here."
+          className="mb-10 sm:mb-12"
         />
         <div className="grid gap-6 md:grid-cols-3">
           {DISCOVERY_ENTRIES.map((entry) => (
@@ -265,9 +251,12 @@ function DiscoveryCard({
   artUrl: string | null
 }) {
   return (
-    <Link
-      href={entry.href}
-      className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-shadow hover:shadow-[0_10px_28px_rgba(12,24,38,0.06)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
+    <article
+      className="flex flex-col overflow-hidden rounded-2xl bg-white"
+      style={{
+        border: `1px solid ${HAIRLINE}`,
+        boxShadow: '0 10px 28px rgba(12, 24, 38, 0.06), 0 1px 3px rgba(12, 24, 38, 0.04)',
+      }}
     >
       <div
         className="relative w-full overflow-hidden"
@@ -278,7 +267,7 @@ function DiscoveryCard({
           <img
             src={artUrl}
             alt={entry.alt}
-            className="absolute inset-0 h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-[1.02]"
+            className="absolute inset-0 h-full w-full object-cover object-center"
           />
         ) : (
           <div
@@ -303,14 +292,8 @@ function DiscoveryCard({
         >
           {entry.body}
         </p>
-        <p
-          className="mt-auto pt-6 text-[13px] font-semibold transition-transform group-hover:translate-x-0.5"
-          style={{ color: TEAL_DEEP }}
-        >
-          {entry.cta} →
-        </p>
       </div>
-    </Link>
+    </article>
   )
 }
 
@@ -377,15 +360,20 @@ function InsideCollectiveSection({ artFor }: { artFor: (key: string) => string |
   ]
 
   return (
-    <section className="py-24 sm:py-32" style={{ background: '#FFFFFF' }}>
+    <section className="py-14 md:py-18" style={{ background: '#FFFFFF' }}>
       <Container>
         <SectionOpening
-          title="Life inside a Collective."
-          body="Every Collective holds different experiences, including — Pathways to walk, Gatherings to attend, Conversations to connect, and Resources to return to. Together they shape the daily rhythm of belonging."
-          className="mb-20 sm:mb-28"
+          title={
+            <>
+              Life inside a{' '}
+              <span style={{ color: TEAL_DEEP }}>Collective.</span>
+            </>
+          }
+          body="Your Collective can hold different experiences — Pathways for members to walk, Gatherings to attend, Conversations to continue and Resources to return to. Together, they give your people reasons to stay connected between the moments you lead."
+          className="mb-12 md:mb-14"
         />
 
-        <div className="mx-auto flex max-w-[1160px] flex-col gap-20 md:gap-28">
+        <div className="mx-auto flex max-w-[1160px] flex-col gap-16 md:gap-20">
           {features.map((feature, i) => (
             <FeatureRow
               key={feature.title}
@@ -453,52 +441,47 @@ function FeatureRow({
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// CREATOR SECTION — heading, wide anchor image, outcomes, CTA.
+// CREATOR SECTION — opens the deep navy creator-building chapter.
 //
-// When homepage_creator_studio artwork is uploaded, that's the anchor.
-// Otherwise fall back to a polished Creator Studio interface mockup
-// (not a plain atmospheric gradient — this section deserves a real
-// interface moment).
+// The navy background continues seamlessly into the onboarding
+// showcase directly below, so the two sections read as one deliberate
+// dark chapter about creating your Collective. The parchment island
+// artwork sits prominently on the navy with an editorial drop shadow
+// rather than the previous white-page border. The old four outcome
+// blurbs beneath the artwork are removed — the onboarding walkthrough
+// that immediately follows explains the setup journey in more concrete
+// detail, so they were repeating themselves here.
 // ═══════════════════════════════════════════════════════════════════
 
-function CreatorSection({ artUrl }: { artUrl: string | null }) {
-  const outcomes = [
-    {
-      title: 'Design your place.',
-      body: 'Choose the atmosphere, the palette, the voice — the feeling people get when they visit your Collective.',
-    },
-    {
-      title: 'Build Pathways.',
-      body: 'Guide members through your programs, courses and memberships.',
-    },
-    {
-      title: 'Host Gatherings.',
-      body: 'Set live moments — circles, workshops, retreats, video calls, movement sessions and more — and welcome people in for that human connection.',
-    },
-    {
-      title: 'Grow your community.',
-      body: 'Watch your Collective blossom as people return, participate, contribute and stay.',
-    },
-  ]
+const OFF_WHITE_ON_NAVY = 'rgba(247, 244, 238, 0.80)'
 
+function CreatorSection({ artUrl }: { artUrl: string | null }) {
   return (
-    <section className="py-16 sm:py-20" style={{ background: '#FFFFFF' }}>
+    <section
+      className="pt-14 pb-10 md:pt-16 md:pb-12"
+      style={{ background: NAVY }}
+    >
       <Container>
         <SectionOpening
           title="Build a place of your own."
           body="Every meaningful community begins with someone deciding to bring people together. Fresh Collective gives you the tools to start building a Collective people want to return to."
           className="mb-10 sm:mb-12"
+          titleColor="#FFFFFF"
+          bodyColor={OFF_WHITE_ON_NAVY}
         />
 
         {/* Anchor — managed artwork if present, otherwise a polished
-            Creator Studio interface mockup. */}
+            Creator Studio interface mockup. The card keeps a white
+            surface (parchment / mockup live on light ground); shadow
+            switched to an editorial dark-drop so the artwork lifts
+            cleanly off the navy chapter. */}
         <div className="mx-auto max-w-[1080px]">
           <div
             className="relative w-full overflow-hidden rounded-3xl bg-white"
             style={{
               aspectRatio: artUrl ? '16 / 9' : undefined,
-              border: '1px solid rgba(12, 24, 38, 0.08)',
-              boxShadow: '0 1px 3px rgba(12, 24, 38, 0.04)',
+              boxShadow:
+                '0 24px 60px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.18)',
             }}
           >
             {artUrl ? (
@@ -511,38 +494,6 @@ function CreatorSection({ artUrl }: { artUrl: string | null }) {
             ) : (
               <CreatorStudioMockup />
             )}
-          </div>
-        </div>
-
-        {/* Outcomes */}
-        <div className="mx-auto mt-12 max-w-[880px] sm:mt-14">
-          <ul className="grid gap-x-14 gap-y-8 sm:grid-cols-2">
-            {outcomes.map((o) => (
-              <li key={o.title}>
-                <h4
-                  className="font-serif text-[20px] leading-tight"
-                  style={{ color: NAVY, letterSpacing: '-0.01em' }}
-                >
-                  {o.title}
-                </h4>
-                <p
-                  className="mt-2 text-[14.5px] leading-relaxed"
-                  style={{ color: INK_BODY, fontFamily: 'Georgia, serif' }}
-                >
-                  {o.body}
-                </p>
-              </li>
-            ))}
-          </ul>
-
-          <div className="mt-10 text-center">
-            <Link
-              href="/for-creators"
-              className="text-[14px] font-semibold transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 rounded"
-              style={{ color: TEAL_DEEP }}
-            >
-              See what else is available to creators →
-            </Link>
           </div>
         </div>
       </Container>

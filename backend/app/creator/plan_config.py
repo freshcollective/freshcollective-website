@@ -8,7 +8,7 @@ etc.) live here so the app has one place to look up "what does this plan
 allow?".
 
 Plan slugs used across the platform:
-    community    Free  — non-commercial, one approved collective, up to 100 members
+    community    Free  — non-commercial, one collective, up to 100 members
     creator      $19   — commercial, one collective, up to 500 members
     pro          $79   — commercial, up to 5 collectives, pooled member allowance TBD
     organisation Talk to us — not a self-service plan; flagged as a lead pathway
@@ -140,16 +140,21 @@ COMMUNITY = PlanCapability(
     resources_enabled=True,
     automations_enabled=False,
     commercial_use=False,
-    approval_required=True,
+    # Product rule (2026-08-21): Community is self-serve and does not
+    # require manual admin approval. Historically the flag was set True
+    # but nothing in the codebase gated on it — it was only surfaced
+    # for display. The flip is a semantic correction, not a policy
+    # change to enforcement.
+    approval_required=False,
     is_self_service=True,
     is_purchasable=True,
     transaction_fee_basis_points=None,  # N/A — no paid offers on Community
     storage_allowance_mb=None,  # TBD — surfaced as "To be defined" in UI
     card_headline=(
-        "One approved, non-commercial collective for up to 100 members."
+        "One non-commercial collective for up to 100 members."
     ),
     card_features=(
-        "One approved active collective",
+        "One active collective",
         "Up to 100 members",
         "One Creator",
         "Community Location choices",

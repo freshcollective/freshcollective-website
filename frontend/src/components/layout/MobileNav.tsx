@@ -16,10 +16,11 @@ interface Props {
 
 // Peer destinations for the mobile drawer. Order matches the pillar
 // order in docs/foundations/discovery-connection-belonging-v1.1.md.
-// "Your World" only appears for signed-in visitors.
-function peerNavItems(isLoggedIn: boolean, discoveryOn: boolean): Array<{ href: string; label: string }> {
+// The peer nav is the marketing surface; "Your World" is kept out of
+// it deliberately (authenticated utility, surfaced separately below
+// as an account destination for signed-in visitors).
+function peerNavItems(discoveryOn: boolean): Array<{ href: string; label: string }> {
   const items: Array<{ href: string; label: string }> = []
-  if (isLoggedIn && discoveryOn) items.push({ href: '/dashboard', label: 'Your World' })
   items.push({ href: '/spaces', label: 'Explore Collectives' })
   if (discoveryOn) {
     items.push({ href: '/discover-places', label: 'Discover Places' })
@@ -97,7 +98,7 @@ export default function MobileNav({ isLoggedIn, discoveryOn, dark }: Props) {
             style={{ background: '#0C1826', borderBottom: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 16px 48px rgba(0,0,0,0.50)' }}>
 
             <nav className="mb-5 space-y-0.5">
-              {peerNavItems(isLoggedIn, discoveryOn).map(({ href, label }) => (
+              {peerNavItems(discoveryOn).map(({ href, label }) => (
                 <Link
                   key={href}
                   href={href}
@@ -107,12 +108,12 @@ export default function MobileNav({ isLoggedIn, discoveryOn, dark }: Props) {
                   {label}
                 </Link>
               ))}
-              {/* Keep Your World reachable in mobile drawer while
-                  Discovery is off — this mirrors the desktop
-                  right-side shortcut so signed-in visitors don't lose
-                  the direct link. Once discoveryOn=true, Your World
-                  is the first peer nav item above. */}
-              {isLoggedIn && !discoveryOn && (
+              {/* "Your World" — authenticated utility, mirrored from
+                  the desktop right-side auth cluster so signed-in
+                  visitors on mobile can still reach their account
+                  destination without it being taught as a marketing
+                  peer of the discovery pillars above. */}
+              {isLoggedIn && (
                 <Link
                   href="/dashboard"
                   className="flex items-center rounded-xl px-4 py-3.5 text-[16px] font-medium transition-colors"
