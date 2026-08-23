@@ -1,8 +1,7 @@
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
-import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
+import { requireAuthenticatedUser } from '@/lib/requireAuthenticatedUser'
 import {
-  getMe,
   getCreatorSpaces,
   getCreatorSpace,
   getCreatorBilling,
@@ -16,15 +15,16 @@ import type { CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
 export const metadata = { title: 'Creator Studio — Fresh Collective' }
 
 export default async function CreatorStudioLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies()
-  const token = cookieStore.get(SESSION_COOKIE)?.value
-  const authenticated = token ? await verifySessionToken(token) : false
-  if (!authenticated) redirect('/login')
-
-  const profile = await getMe()
-  if (!profile || !['creator', 'admin'].includes(profile.role)) {
+  // Shared guard: a null user (deleted / rolled-back account) redirects
+  // to /login with ``next`` preserved. A wrong role (authenticated
+  // member) then falls through to /dashboard — preserving the previous
+  // "non-creator lands on Your World" behaviour.
+  const profile = await requireAuthenticatedUser()
+  if (!['creator', 'admin'].includes(profile.role)) {
     redirect('/dashboard')
   }
+
+  const cookieStore = await cookies()
 
   const spaces: SpaceSummary[] = await getCreatorSpaces()
   const activeSlug = cookieStore.get(ACTIVE_SPACE_COOKIE)?.value

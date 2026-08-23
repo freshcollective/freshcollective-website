@@ -1,6 +1,4 @@
-import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
-import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
+import { requireAuthenticatedUser } from '@/lib/requireAuthenticatedUser'
 
 /**
  * `/build-your-collective` — the guided creator ritual (Atlas v1.2).
@@ -14,10 +12,6 @@ import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
 export default async function BuildYourCollectiveLayout({
   children,
 }: { children: React.ReactNode }) {
-  const cookieStore = await cookies()
-  const token = cookieStore.get(SESSION_COOKIE)?.value
-  const authenticated = token ? await verifySessionToken(token) : false
-  if (!authenticated) redirect('/login')
-
+  await requireAuthenticatedUser()
   return <>{children}</>
 }

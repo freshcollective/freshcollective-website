@@ -1,33 +1,6 @@
-import { redirect } from 'next/navigation'
-import { cookies, headers } from 'next/headers'
-import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
-import { apiUrl } from '@/lib/api'
+import { headers } from 'next/headers'
+import { requireAuthenticatedUser } from '@/lib/requireAuthenticatedUser'
 import AdminShell from '@/components/admin/AdminShell'
-
-interface User {
-  id: string
-  email: string
-  name: string | null
-  role: string
-}
-
-async function getAdminUser(): Promise<User | null> {
-  const cookieStore = await cookies()
-  const session = cookieStore.get(SESSION_COOKIE)
-  if (!session) return null
-  const valid = await verifySessionToken(session.value)
-  if (!valid) return null
-  try {
-    const res = await fetch(apiUrl('/api/auth/me'), {
-      headers: { Cookie: `${SESSION_COOKIE}=${session.value}` },
-      cache: 'no-store',
-    })
-    if (!res.ok) return null
-    return res.json()
-  } catch {
-    return null
-  }
-}
 
 export default async function AdminLayout({
   children,
@@ -49,11 +22,11 @@ export default async function AdminLayout({
     return children
   }
 
-  const user = await getAdminUser()
-
-  if (!user) {
-    redirect(`/admin/login?next=${encodeURIComponent(pathname)}`)
-  }
+  // Shared guard, but with the admin door. A stale-but-signed session
+  // (JWT valid, User row gone) now bounces to /admin/login?next=…
+  // instead of falling through to the "Access denied" screen with an
+  // effectively-null user.
+  const user = await requireAuthenticatedUser({ loginPath: '/admin/login' })
 
   if (user.role !== 'admin') {
     return (

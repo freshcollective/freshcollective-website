@@ -1,10 +1,9 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
-import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
-import { getMe, getPublicPlatformArtwork, buildPlatformArtLookup } from '@/lib/serverApi'
+import { requireAuthenticatedUser } from '@/lib/requireAuthenticatedUser'
+import { getPublicPlatformArtwork, buildPlatformArtLookup } from '@/lib/serverApi'
 import CreatorOnboardingCTA from '@/components/onboarding/CreatorOnboardingCTA'
 import OnboardingHero from '@/components/onboarding/OnboardingHero'
 
@@ -41,15 +40,10 @@ const INK_BODY = 'rgba(12, 24, 38, 0.80)'
 const INK_SOFT = 'rgba(12, 24, 38, 0.66)'
 
 export default async function CreatorOnboardingPage() {
-  const cookieStore = await cookies()
-  const token = cookieStore.get(SESSION_COOKIE)?.value
-  const authenticated = token ? await verifySessionToken(token) : false
-  if (!authenticated) {
-    redirect('/login?next=/creator-onboarding')
-  }
-
-  const profile = await getMe().catch(() => null)
-  if (!profile) redirect('/login?next=/creator-onboarding')
+  // Shared guard — mirrors the pattern used by every protected
+  // layout. Handles missing cookie, invalid signature, and stale
+  // signature-for-gone-user in one call; ``next`` is preserved.
+  const profile = await requireAuthenticatedUser({ fallbackNext: '/creator-onboarding' })
 
   // Non-Creators have nothing to onboard into. Rather than 403 them,
   // send them somewhere sensible — this route is only reachable

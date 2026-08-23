@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { getMe, getPublicPlatformArtwork, buildPlatformArtLookup } from '@/lib/serverApi'
+import { getPublicPlatformArtwork, buildPlatformArtLookup } from '@/lib/serverApi'
+import { requireAuthenticatedUser } from '@/lib/requireAuthenticatedUser'
 import OnboardingFlow from './OnboardingFlow'
 
 interface Props {
@@ -7,8 +8,11 @@ interface Props {
 }
 
 export default async function OnboardingPage({ searchParams }: Props) {
-  const [profile, artwork, params] = await Promise.all([
-    getMe(),
+  // Shared guard closes the "valid JWT + gone User row" gap that lets
+  // a stale session render the onboarding UI with an empty name.
+  const profile = await requireAuthenticatedUser({ fallbackNext: '/onboarding' })
+
+  const [artwork, params] = await Promise.all([
     getPublicPlatformArtwork(),
     searchParams,
   ])
@@ -16,11 +20,11 @@ export default async function OnboardingPage({ searchParams }: Props) {
   // Already onboarded — skip to dashboard, unless the member is
   // intentionally revisiting the introduction (from Settings → Profile).
   const isRevisit = params.revisit === '1'
-  if (profile?.has_completed_onboarding && !isRevisit) {
+  if (profile.has_completed_onboarding && !isRevisit) {
     redirect('/dashboard')
   }
 
-  const firstName = profile?.name?.split(' ')[0] ?? null
+  const firstName = profile.name?.split(' ')[0] ?? null
   const artFor = buildPlatformArtLookup(artwork)
 
   return (

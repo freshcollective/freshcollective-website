@@ -1,7 +1,14 @@
 import SettingsNav from '@/components/settings/SettingsNav'
 import WorldShell from '@/components/layout/WorldShell'
+import { requireAuthenticatedUser } from '@/lib/requireAuthenticatedUser'
 
-export default function SettingsLayout({ children }: { children: React.ReactNode }) {
+export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
+  // Previously relied on the proxy middleware alone (see
+  // ``src/proxy.ts``) — but middleware only verifies the JWT signature
+  // and cannot tell whether the User row still exists. The shared
+  // guard closes that gap for /settings the same way it does for
+  // /dashboard.
+  await requireAuthenticatedUser()
   return (
     <WorldShell>
       <div className="min-h-screen bg-white">
