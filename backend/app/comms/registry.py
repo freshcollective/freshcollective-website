@@ -61,6 +61,15 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     EventDefinition("collective.membership.joined",       TOPIC_COLLECTIVE_UPDATES, PRIORITY_SILENT),
     EventDefinition("collective.membership.left",         TOPIC_COLLECTIVE_UPDATES, PRIORITY_SILENT),
     EventDefinition("collective.membership.role_changed", TOPIC_COLLECTIVE_UPDATES, PRIORITY_SILENT),
+    # A creator has sent an invitation email to a prospective member.
+    # Fires when the operator clicks "Send" on a draft invitation in
+    # Creator Studio (POST /api/creator/spaces/{slug}/invitations/{id}/send).
+    # Registered under TOPIC_ACCOUNT (not COLLECTIVE_UPDATES) because
+    # this is an entry/account transactional email whose delivery must
+    # not be preference-gated by the *inviter's* CATEGORY_COMMUNITY
+    # preferences (the invitee is external and typically has no user
+    # record yet). CATEGORY_ACCOUNT is preference-locked-immediate.
+    EventDefinition("collective.invitation.sent",         TOPIC_ACCOUNT,            PRIORITY_IMMEDIATE),
 
     # Community
     EventDefinition("community.post.published",           TOPIC_CONVERSATIONS,      PRIORITY_IMMEDIATE),

@@ -102,8 +102,24 @@ def _route_event_bg(event_id: str, delivery_mode: str) -> None:
     """Background wrapper — opens its own session. Never raises;
     logs any failure so a broken shadow path can't crash the
     scheduling site.
+
+    R2A extension (2026-08-23) — when the event routes in ``live``
+    mode, this function ALSO dispatches every intent it just created
+    inline, before the session closes. That replaces the previous
+    "scheduler required" assumption: for the R2A-migrated topics
+    (security, gatherings, conversations, collective_updates) each
+    emit → intent → provider round-trip completes as part of the
+    request that produced the event.
+
+    Why not a global scheduler: R2A avoids introducing a background
+    drain loop. Only the intents this call just created are
+    dispatched; historical / other-source intents remain in whatever
+    state they were in. This scopes the failure surface to the
+    calling request and keeps R2A's dispatch decisions synchronous
+    with the domain code that triggered them.
     """
     from app.comms.routing import route_event  # local import — avoids cycle at package load
+    from app.comms.intents import DELIVERY_MODE_LIVE
     db = SessionLocal()
     try:
         event = db.get(CommunicationEvent, event_id)
@@ -113,7 +129,7 @@ def _route_event_bg(event_id: str, delivery_mode: str) -> None:
             )
             return
         try:
-            route_event(db, event, delivery_mode=delivery_mode)
+            result = route_event(db, event, delivery_mode=delivery_mode)
             db.commit()
         except Exception:
             logger.exception(
@@ -121,6 +137,34 @@ def _route_event_bg(event_id: str, delivery_mode: str) -> None:
                 event_id, delivery_mode,
             )
             db.rollback()
+            return
+
+        # Inline dispatch for live intents this call just created.
+        # Shadow mode intents are never dispatched (structural
+        # guarantee via ``delivery_mode='live'`` filter in
+        # ``claim_next_batch``); we skip the loop entirely to make
+        # the intent explicit at this layer too.
+        if delivery_mode != DELIVERY_MODE_LIVE:
+            return
+        if not result.intent_ids:
+            return
+        from app.comms.worker import dispatch_specific_intent  # local — cycle guard
+        for intent_id in result.intent_ids:
+            try:
+                dispatch_specific_intent(db, intent_id)
+            except Exception:
+                # ``dispatch_specific_intent`` already records a failed
+                # delivery row and marks the intent failed for the
+                # normal provider-failure path; any exception here is
+                # a defensive belt-and-braces catch so one bad intent
+                # doesn't skip the rest. Deliberately no ``rollback``:
+                # a rollback would invalidate the ORM identity map
+                # and expire the CommunicationEvent + earlier intents,
+                # which subsequent iterations still need to reference.
+                logger.exception(
+                    "comms rollout: dispatch failed for intent %s "
+                    "(event=%s)", intent_id, event_id,
+                )
     finally:
         db.close()
 

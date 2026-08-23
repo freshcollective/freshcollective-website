@@ -119,7 +119,25 @@ class Settings(BaseSettings):
     #                       UTC days of 100% shadow parity per the
     #                       admin parity report before promotion.
     comms_shadow: bool = False
-    comms_live_topics: str = ""
+    # R2A cutover (2026-08-23) — the four flows migrated in that
+    # milestone are always live. Every emit for these topics routes
+    # through the Communications Layer; the legacy trigger paths
+    # for the same events no-op via ``is_event_live()`` guards.
+    #
+    # Any deployment that must keep a topic on the legacy path
+    # (e.g. a rollback) can override this env var to omit that
+    # topic. Adding a topic here is a code change, deliberately —
+    # topic promotion should always ride a PR.
+    #
+    # Topic keys:
+    #   * security      — account.password_reset_requested
+    #   * account       — collective.invitation.sent  (invite emails
+    #                     ride the same preference-locked account
+    #                     category as password reset)
+    #   * gatherings    — gathering.booking.confirmed
+    #   * conversations — community.post.published,
+    #                     community.comment.created
+    comms_live_topics: str = "security,account,gatherings,conversations"
     # Minimum age (seconds) an event must reach before the shadow
     # reconciler will attempt to compare it. Gives both the legacy
     # BackgroundTasks trigger and the shadow routing task time to

@@ -59,3 +59,48 @@ class NewPostResolver:
                 )
             )
         return out
+
+
+@resolver_for("community.comment.created")
+class CommentCreatedResolver:
+    """R2A — single-recipient resolver: only the post author is
+    notified (the comment reply is theirs to read).
+
+    Self-notification defence in depth: even though the community
+    routes emit site already skips the event when the commenter is
+    the post author (see the ``if post.author_id != current_user.id``
+    guard in ``community/routes.py``), the resolver still filters
+    ``event.actor_user_id == payload.post_author_id`` so a future
+    emit site — or a test harness — cannot accidentally cause a
+    self-notification. Matches ``NewPostResolver``'s "skip the
+    author" pattern.
+    """
+
+    event_type = "community.comment.created"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        payload = event.payload or {}
+        author_id = payload.get("post_author_id")
+        if not isinstance(author_id, str) or not author_id:
+            return []
+        # Defence in depth: never notify the commenter about their
+        # own comment.
+        if event.actor_user_id and event.actor_user_id == author_id:
+            return []
+        return [
+            ResolvedRecipient(
+                user_id=author_id,
+                role_in_event="post_author",
+                human_reason="Someone replied to a conversation you started.",
+                template_context={
+                    "commenter_name": payload.get("commenter_name") or "Someone",
+                    "post_title":     payload.get("post_title") or "your post",
+                    "view_url":       payload.get("view_url") or "",
+                    "post_id":        payload.get("post_id"),
+                    "comment_id":     payload.get("comment_id"),
+                    "space_id":       (event.context or {}).get("space_id"),
+                },
+            ),
+        ]

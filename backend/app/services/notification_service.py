@@ -160,7 +160,17 @@ def send_notification(
 # ---------------------------------------------------------------------------
 
 def trigger_comment_reply(post_id: str, comment_id: str, commenter_id: str) -> None:
-    """Notify the post author when someone comments (unless the commenter is the author)."""
+    """Notify the post author when someone comments (unless the commenter is the author).
+
+    R2A cutover: when ``community.comment.created`` is live in
+    ``COMMS_LIVE_TOPICS`` (via its topic ``conversations``), the
+    routing pipeline owns delivery of BOTH the in-app row and the
+    email — the InAppProvider writes the notifications row and the
+    Resend provider sends the email. This function then no-ops so
+    the two paths never both create an in-app row / send an email.
+    """
+    if _rollout_is_live("community.comment.created"):
+        return
     db = SessionLocal()
     try:
         post = db.query(CommunityPost).filter(CommunityPost.id == post_id).first()

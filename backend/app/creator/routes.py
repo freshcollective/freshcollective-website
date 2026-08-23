@@ -1553,19 +1553,19 @@ def delete_invitation(
 def send_invitation(
     slug: str,
     invitation_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_creator_user),
 ) -> InvitationResponse:
     """Mark a draft invitation as sent and dispatch the invitation email.
 
-    Delivery is best-effort: ``sent_at`` records the operator's intent
-    and is set even if the transactional email step logs an error, so
-    an operator can always re-send from the same UI once delivery is
-    fixed. See ``email_service.py`` for the missing-key / missing-from
-    behaviour.
+    R2A: delivery now flows through the Communications Layer
+    (event → resolver → template → intent → provider). Delivery is
+    still best-effort — ``sent_at`` records the operator's intent
+    and is set even if the transactional email step logs an error,
+    so an operator can always re-send from the same UI once delivery
+    is fixed.
     """
-    from app.services.email_service import email_service
-    from app.services.email_templates import invitation_email
     from app.core.config import settings as _settings
 
     space = _get_managed_space(slug, current_user, db)
@@ -1584,15 +1584,34 @@ def send_invitation(
 
     accept_url = f"{_settings.frontend_origin.rstrip('/')}/invites/{invitation.token}"
     inviter_name = current_user.name or current_user.email
-    subject, html = invitation_email(
-        inviter_name=inviter_name,
-        collective_name=space.name,
-        accept_url=accept_url,
-    )
-    email_service.send(to=invitation.email, subject=subject, html_body=html)
 
+    # Communications Layer emit — the Resend send happens inside
+    # `_route_event_bg`'s inline dispatch (see rollout.py). Delivery
+    # failure is captured on the intent's delivery row and never
+    # rolls back the invitation's ``sent_at`` update below.
+    from app.comms import Source, emit as comms_emit
+    from app.comms.rollout import schedule_routing_if_needed
+
+    ev = comms_emit(
+        db,
+        event_type="collective.invitation.sent",
+        source_type=Source.CREATOR,
+        source_id=current_user.id,
+        actor_user_id=current_user.id,
+        subject_type="invitation",
+        subject_id=invitation.id,
+        context={"space_id": space.id, "collective_name": space.name},
+        payload={
+            "recipient_email": invitation.email,
+            "inviter_name":    inviter_name,
+            "collective_name": space.name,
+            "accept_url":      accept_url,
+        },
+    )
     invitation.sent_at = datetime.utcnow()
     db.commit()
+    schedule_routing_if_needed(background_tasks, ev, "collective.invitation.sent")
+
     db.refresh(invitation)
     return _invitation_response(invitation, db)
 

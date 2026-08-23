@@ -77,6 +77,46 @@ from app.services.channel_permissions import (
 router = APIRouter(prefix="/api/spaces", tags=["community"])
 
 
+def _emit_comment_created(db, background_tasks, *, post, comment, commenter, space) -> None:
+    """R2A helper — emit ``community.comment.created`` and schedule
+    the routing pipeline. The event's payload carries the post
+    author id (the sole recipient the resolver returns) plus the
+    view URL and commenter name so the template can render without
+    re-querying the DB.
+    """
+    from app.comms import Source, emit as comms_emit
+    from app.comms.rollout import schedule_routing_if_needed
+    from app.core.config import settings as _settings
+
+    post_title = getattr(post, "title", None) or "your post"
+    commenter_name = getattr(commenter, "name", None) or "Someone"
+    view_url = (
+        f"{_settings.frontend_origin.rstrip('/')}/spaces/{space.slug}/community/{post.id}"
+        if space else ""
+    )
+
+    ev = comms_emit(
+        db,
+        event_type="community.comment.created",
+        source_type=Source.CREATOR,
+        source_id=commenter.id,
+        actor_user_id=commenter.id,
+        subject_type="post_comment",
+        subject_id=comment.id,
+        context={"space_id": space.id if space else None},
+        payload={
+            "post_id":         post.id,
+            "post_author_id":  post.author_id,
+            "post_title":      post_title,
+            "comment_id":      comment.id,
+            "commenter_name":  commenter_name,
+            "view_url":        view_url,
+        },
+    )
+    db.commit()
+    schedule_routing_if_needed(background_tasks, ev, "community.comment.created")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -676,6 +716,18 @@ def create_comment(
         background_tasks.add_task(
             trigger_comment_reply, post.id, comment.id, current_user.id,
         )
+        # R2A: emit the comms event alongside the legacy in-app
+        # notification trigger. The trigger continues to create the
+        # in-app notification row; its email-send step is guarded by
+        # `_rollout_is_live("community.comment.created")` and no-ops
+        # once the topic is live. Comms handles the email through the
+        # routing pipeline instead.
+        if post.author_id != current_user.id:
+            _emit_comment_created(
+                db, background_tasks,
+                post=post, comment=comment, commenter=current_user,
+                space=space,
+            )
     for uid in mentioned:
         background_tasks.add_task(
             trigger_mention, post.id, comment.id, current_user.id, uid,

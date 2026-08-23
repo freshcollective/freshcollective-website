@@ -8,8 +8,6 @@ from sqlalchemy.orm import Session
 
 from app.auth import service
 from app.auth.dependencies import SESSION_COOKIE, get_current_user
-from app.services.email_service import email_service
-from app.services.email_templates import password_reset_email
 from app.auth.schemas import (
     ChangePasswordRequest,
     CompleteOnboardingRequest,
@@ -330,11 +328,12 @@ async def forgot_password(
             logger.warning("PASSWORD RESET LINK (development):")
             logger.warning(reset_url)
             logger.warning("========================================\n")
-        # Communications Layer (M5c) — emit alongside the legacy email
-        # send. Live cutover swaps the legacy send for the routing
-        # pipeline's live intent.
+        # R2A: delivery flows exclusively through the Communications
+        # Layer. Emit the event; ``_route_event_bg`` (via
+        # ``schedule_routing_if_needed``) creates the intent and
+        # dispatches it inline through the Resend provider.
         from app.comms import Source, emit as comms_emit
-        from app.comms.rollout import is_event_live, schedule_routing_if_needed
+        from app.comms.rollout import schedule_routing_if_needed
         # Look up the user id from email — needed so the resolver can
         # target the account owner. Missing user is fine (the email
         # gate above already gates on token existence).
@@ -353,9 +352,6 @@ async def forgot_password(
             ev,
             "account.password_reset_requested",
         )
-        if not is_event_live("account.password_reset_requested"):
-            subject, html = password_reset_email(reset_url=reset_url)
-            email_service.send(to=payload.email, subject=subject, html_body=html)
 
     # Response copy stays deliberately vague so this endpoint doesn't
     # leak whether an address is registered.

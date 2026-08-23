@@ -31,6 +31,7 @@ from app.comms.categories import (
     CATEGORY_PLATFORM_UPDATES,
     CHANNEL_EMAIL_MARKETING,
     CHANNEL_EMAIL_TRANSACTIONAL,
+    CHANNEL_IN_APP,
     PRIORITY_IMMEDIATE,
     PRIORITY_SILENT,
 )
@@ -86,15 +87,45 @@ class DecisionOutcome:
     detail: dict[str, Any] = field(default_factory=dict)
 
 
-def _resolve_address(recipient: ResolvedRecipient, db: Session) -> str | None:
-    """Recipient address for the payload. Uses the resolver's override
-    when supplied; otherwise looks up ``users.email``.
+def _resolve_address(
+    recipient: ResolvedRecipient,
+    channel: str,
+    db: Session,
+) -> str | None:
+    """Recipient address for the payload — channel-aware.
+
+    The ``communication_intents.recipient_address`` column is a
+    generic string; its meaning depends on the channel:
+
+    * ``email_transactional`` / ``email_marketing`` → ``user.email``.
+      The ResendProvider hands the value to the ``to:`` header.
+    * ``in_app`` → ``user.id``. The InAppProvider passes it as
+      ``recipient_id`` to ``create_notification``, which FK-references
+      ``users.id``; supplying an email here fails at insert time
+      (integrity error) so silent regressions get surfaced loudly.
+    * Other channels (push, webhook_outbound) are not yet routed by
+      any live topic; their address-resolution rules should be added
+      alongside their first live emit.
+
+    ``recipient.recipient_address_override`` still wins unconditionally
+    — it exists for external-recipient flows (e.g. invitations to
+    prospective members without a User row) where the resolver
+    already knows the correct channel-appropriate value. Callers that
+    set an override for a channel it doesn't fit are responsible for
+    the mismatch.
     """
     if recipient.recipient_address_override:
         return recipient.recipient_address_override
+
     from app.models.user import User  # local import — avoid heavy import at module load
     user = db.get(User, recipient.user_id)
-    if user is None or not user.email:
+    if user is None:
+        return None
+
+    if channel == CHANNEL_IN_APP:
+        return user.id
+    # Email channels — the current default.
+    if not user.email:
         return None
     return user.email
 
@@ -153,7 +184,7 @@ def process_one(
     now: datetime | None = None,
 ) -> DecisionOutcome:
     category = event.category_key
-    address = _resolve_address(recipient, db)
+    address = _resolve_address(recipient, channel, db)
 
     # ── 1. Effective preference ──────────────────────────────────────
     try:

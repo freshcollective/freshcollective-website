@@ -6,6 +6,7 @@ registry via each submodule's decorator side effects.
 
 # noqa: F401 imports — side-effect registration only.
 from app.comms.routing.resolvers import account       # noqa: F401
+from app.comms.routing.resolvers import collective    # noqa: F401
 from app.comms.routing.resolvers import community     # noqa: F401
 from app.comms.routing.resolvers import diagnostics   # noqa: F401
 from app.comms.routing.resolvers import gatherings    # noqa: F401
