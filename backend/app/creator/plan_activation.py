@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -50,6 +50,9 @@ from app.models.creator_billing import (
 )
 from app.models.user import User
 from app.services.notification_service import create_notification
+
+if TYPE_CHECKING:
+    from app.comms.models import CommunicationEvent
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +117,12 @@ class ActivationResult:
     subscription: CreatorSubscription
     was_reactivated: bool
     was_noop: bool
+    # R2B — populated when this call produced a genuine activation
+    # transition (``was_noop=False``) and the ``creator.plan_activated``
+    # event was emitted. Callers commit and then pass this to
+    # ``schedule_routing_if_needed`` so routing runs against a committed
+    # event. Remains ``None`` on the idempotent no-op path.
+    activation_event: "CommunicationEvent | None" = None
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +175,7 @@ def activate_creator_plan(
                 subscription=existing_active,
                 was_reactivated=False,
                 was_noop=True,
+                activation_event=None,
             )
         raise ActivationConflictError(
             f"User already has an active subscription for plan "
@@ -210,10 +220,25 @@ def activate_creator_plan(
         )
 
     db.flush()
+
+    # ── R2B — emit creator.plan_activated (transactional lifecycle) ──
+    # Only reached on genuine inactive→active transitions (the no-op
+    # branch returned earlier). Emit failure is logged but never blocks
+    # the activation itself.
+    activation_event = _emit_plan_activated_event(
+        db,
+        user=user,
+        subscription=subscription,
+        plan=plan,
+        starts_at=starts_at,
+        was_reactivated=was_reactivated,
+    )
+
     return ActivationResult(
         subscription=subscription,
         was_reactivated=was_reactivated,
         was_noop=False,
+        activation_event=activation_event,
     )
 
 
@@ -349,3 +374,106 @@ def _notify_creator(
         message=message,
         url=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# R2B — creator.plan_activated emit
+# ---------------------------------------------------------------------------
+
+
+def _emit_plan_activated_event(
+    db: Session,
+    *,
+    user: User,
+    subscription: CreatorSubscription,
+    plan: CreatorPlan,
+    starts_at: datetime,
+    was_reactivated: bool,
+) -> "CommunicationEvent | None":
+    """Emit the ``creator.plan_activated`` communication event.
+
+    Dedupe key is ``creator-plan-activated:{subscription.id}:{starts_at}``.
+    ``subscription.starts_at`` is reset only when
+    ``_create_or_reactivate`` writes a new activation window, so this
+    key uniquely identifies a genuine activation episode:
+
+    * initial activation → new key
+    * Stripe/webhook replay of same activation → already-active no-op
+      returns before this function is called
+    * ordinary continuous renewal → this function isn't invoked
+      (renewals don't call ``activate_creator_plan``)
+    * cancellation → later reactivation → fresh ``starts_at`` → new key
+
+    Returns the event on success, or ``None`` if the emit deduped or
+    a soft failure was swallowed. Never raises — comms failure must
+    not block a paid activation from persisting.
+    """
+    # Local imports keep the plan_activation module free of comms
+    # dependencies at collection time (mirrors the pattern in
+    # rollout.py).
+    from app.comms import Source, emit as comms_emit
+    from app.core.config import settings
+
+    first_name = ""
+    if user.name:
+        first_name = user.name.strip().split(" ", 1)[0]
+
+    # State-aware destination — matches the Stripe-paid claim's
+    # ``purchases/routes.py::_resolve_next_url`` so a fresh Creator
+    # lands on the short welcome page (which leads into Build Your
+    # Collective) and an already-onboarded Creator opens Creator
+    # Studio directly. Sourced from the persisted
+    # ``user.creator_onboarded_at`` — not from ``was_reactivated``,
+    # which measures Stripe lifecycle, not onboarding progress. A
+    # revoked-then-regranted Creator who had previously completed the
+    # welcome still gets the "Open Creator Studio" variant; a
+    # never-onboarded first-time Creator (via either manual grant or
+    # Stripe) gets the "Set up your Collective" variant.
+    is_fresh_creator = user.creator_onboarded_at is None
+    origin = settings.frontend_origin.rstrip("/")
+    next_url = (
+        f"{origin}/creator-onboarding"
+        if is_fresh_creator
+        else f"{origin}/creator-studio"
+    )
+    # No dedupe_key on the emit itself. Duplicate suppression is
+    # provided by ``activate_creator_plan``'s idempotent no-op branch:
+    # a replay against an already-active subscription returns
+    # ``was_noop=True`` and this helper is never invoked. Using an
+    # ``emit()`` dedupe_key would additionally force ``begin_nested``
+    # here, which conflicts with sessions that just ran an interior
+    # ``db.commit()`` earlier in the same request (e.g. the in-app
+    # notification write inside ``_notify_creator``).
+    try:
+        event = comms_emit(
+            db,
+            event_type="creator.plan_activated",
+            source_type=Source.FRESH_COLLECTIVE,
+            actor_user_id=user.id,
+            subject_type="creator_subscription",
+            subject_id=subscription.id,
+            context={
+                "plan_slug":            plan.slug,
+                "source":               subscription.source,
+                # Persisted purely for observability — reconstructing
+                # "which activation episode did this fire for" from
+                # the event alone would otherwise require joining
+                # against ``creator_subscriptions``.
+                "activation_starts_at": starts_at.isoformat(),
+            },
+            payload={
+                "first_name":       first_name,
+                "plan_name":        plan.name,
+                "was_reactivated":  was_reactivated,
+                "is_fresh_creator": is_fresh_creator,
+                "next_url":         next_url,
+            },
+        )
+    except Exception:  # pragma: no cover — logged, not raised
+        logger.exception(
+            "creator plan activation: creator.plan_activated emit "
+            "failed for user=%s plan=%s subscription=%s",
+            user.id, plan.slug, subscription.id,
+        )
+        return None
+    return event

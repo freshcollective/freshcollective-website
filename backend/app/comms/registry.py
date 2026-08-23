@@ -29,7 +29,6 @@ from app.comms.categories import (
     TOPIC_PATHWAYS,
     TOPIC_PURCHASES,
     TOPIC_SECURITY,
-    TOPIC_SUBSCRIPTIONS,
     TOPIC_TO_CATEGORY,
 )
 
@@ -54,6 +53,12 @@ class EventDefinition:
 _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # Account & security
     EventDefinition("account.created",                    TOPIC_ACCOUNT,   PRIORITY_SILENT),
+    # Fires once per new signup, after the User row is committed. Only
+    # emit site: ``auth/routes.py::signup`` (and the same helper reused
+    # by ``purchases/routes.py::claim_with_signup``). Preference-locked
+    # by CATEGORY_ACCOUNT — the inbox greeting is transactional, not
+    # something a first-time user can (or should) have suppressed.
+    EventDefinition("account.welcome_after_signup",       TOPIC_ACCOUNT,   PRIORITY_IMMEDIATE),
     EventDefinition("account.password_reset_requested",   TOPIC_SECURITY,  PRIORITY_IMMEDIATE),
     EventDefinition("account.password_reset_completed",   TOPIC_SECURITY,  PRIORITY_IMMEDIATE),
 
@@ -92,7 +97,15 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
 
     # Purchases & subscriptions
     EventDefinition("purchase.completed",                 TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
-    EventDefinition("subscription.creator_plan_activated", TOPIC_SUBSCRIPTIONS,     PRIORITY_IMMEDIATE),
+    # Creator platform-plan activation (Fresh Collective Creator /
+    # Creator Portfolio tiers). Registered under TOPIC_ACCOUNT rather
+    # than TOPIC_SUBSCRIPTIONS because this is a transactional
+    # lifecycle email that must not be preference-gated — CATEGORY_ACCOUNT
+    # is default-enabled + locked-immediate, matching invitation and
+    # welcome semantics. Emitted from ``creator/plan_activation.py``
+    # for genuine inactive→active transitions only (the idempotent
+    # no-op path returns ``was_noop=True`` and the emit site skips).
+    EventDefinition("creator.plan_activated",             TOPIC_ACCOUNT,            PRIORITY_IMMEDIATE),
 
     # Creator updates (broadcasts internally, "Updates" to members)
     EventDefinition("creator.update.sent",                TOPIC_CREATOR_BROADCASTS, PRIORITY_IMMEDIATE),

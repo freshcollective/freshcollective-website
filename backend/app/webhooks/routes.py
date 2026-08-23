@@ -280,7 +280,7 @@ def _handle_purchase_intent_completed(
             db.commit()
             return
         try:
-            claim_intent(db, intent, user)
+            claim_result = claim_intent(db, intent, user)
         except ClaimError as exc:
             # Deliberate: activation failure must NOT swallow the
             # paid status. Roll back this delivery's writes so Stripe
@@ -298,12 +298,24 @@ def _handle_purchase_intent_completed(
             "purchase_intent webhook: intent %s marked paid; awaiting "
             "visitor claim (no payer_user_id).", intent.id,
         )
+        claim_result = None
 
     # Persist everything: the mark-paid transition and, when the payer
     # was known, the full activation (subscription + role + WB + audit
     # + consumption). Without this commit the SQLAlchemy session
     # rolls back on request end and none of the above survives.
     db.commit()
+
+    # R2B: route creator.plan_activated (if the auto-claim produced
+    # one) AFTER commit so ``_route_event_bg``'s fresh session sees
+    # the committed event. No BackgroundTasks in the webhook path —
+    # schedule sync; ``_route_event_bg`` runs inline before returning
+    # to Stripe, which mirrors the R2A pattern for forgot-password.
+    if claim_result is not None and claim_result.activation_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, claim_result.activation_event, "creator.plan_activated",
+        )
 
 
 # ---------------------------------------------------------------------------

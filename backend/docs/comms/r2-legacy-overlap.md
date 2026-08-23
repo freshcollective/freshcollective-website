@@ -6,8 +6,17 @@ topics are live via the config default (`security`, `account`,
 `gatherings`, `conversations`). Legacy guards on the migrated
 triggers no-op when live.
 
+**R2B status (2026-08-23):** two launch-critical lifecycle emails
+added on the comms layer with no legacy counterpart —
+`account.welcome_after_signup` and `creator.plan_activated`. Both
+registered under `TOPIC_ACCOUNT` (already live). Full details in
+the "R2B" section below.
+
 The remaining legacy callers listed at the bottom of this document
-still need R2B before `services/email_service.py` can be retired.
+still need R2C before `services/email_service.py` can be retired.
+R2B (2026-08-23) shipped the two new launch-critical lifecycle
+emails — `account.welcome_after_signup` and
+`creator.plan_activated` — without touching the legacy shim.
 
 Original context (kept for R2B): documents every product event
 where **enabling the new comms dispatcher would produce a duplicate
@@ -137,7 +146,97 @@ Full backend regression: 1695/1695 pass (R1's 1689 + 6 new R2A).
 
 ---
 
-## R2B — legacy code still active (not yet safe to retire the shim)
+## R2B — launch-critical account emails (2026-08-23)
+
+Two new comms events added and wired end-to-end. Neither replaces a
+legacy send site — R2B **adds** transactional lifecycle emails that
+had no legacy counterpart. Registered under `TOPIC_ACCOUNT`
+(default-enabled + locked-immediate) so the send is never gated by
+recipient preferences.
+
+### Events
+
+| Event | Topic | Emitted from | Recipient | Idempotency contract |
+|---|---|---|---|---|
+| `account.welcome_after_signup` | `TOPIC_ACCOUNT` | `auth/service.py::emit_welcome_after_signup` (called by `auth/routes.py::signup` and `purchases/routes.py::claim_with_signup`) | The just-created User | Guarded by the email-uniqueness constraint on `users.email` — a second `create_user` for the same email raises before a second welcome can be emitted. No `dedupe_key` on the emit itself. |
+| `creator.plan_activated` | `TOPIC_ACCOUNT` | `creator/plan_activation.py::_emit_plan_activated_event`, invoked from `activate_creator_plan` on the non-noop path only | The creator whose plan just went inactive→active | Guarded by `ActivationResult.was_noop`: an already-active-on-same-plan replay short-circuits before this helper runs. No `dedupe_key` on the emit itself. |
+
+### Registration decisions
+
+- `creator.plan_activated` is registered under `TOPIC_ACCOUNT`, not
+  `TOPIC_SUBSCRIPTIONS`. Same reasoning as the R2A invitation
+  registration: this is a transactional lifecycle email that must not
+  be preference-gated. `TOPIC_SUBSCRIPTIONS` was not added to
+  `COMMS_LIVE_TOPICS`.
+- The unused `subscription.creator_plan_activated` registration
+  (never emitted; never had a resolver or template) was deleted at
+  the same time to avoid two events for the same concept.
+
+### Dedupe strategy
+
+Neither event uses `emit()`'s `dedupe_key`. In both cases the caller
+already provides a single-genuine-occurrence guarantee:
+
+- `create_user` fails on the `users.email` uniqueness constraint, so
+  a duplicate welcome would require a database-level violation
+  first.
+- `activate_creator_plan` returns `was_noop=True` on the idempotent
+  branch and the emit is skipped; only a genuine inactive→active
+  transition reaches the emit call.
+
+The `dedupe_key` path in `emit()` uses `db.begin_nested()`, which
+conflicts with sessions that have just executed an interior
+`db.commit()` (e.g. `create_user`, `_notify_creator`). Skipping it
+avoids that friction without losing the "exactly once per activation
+episode" contract, which is already guaranteed upstream.
+
+### `apply_intent()` audit (R2B decision 4)
+
+`services/purchase_fulfilment.py::apply_intent` handles
+`PathwayEntitlement`, `AccessPass`, and Space membership rows — it
+does not touch `CreatorSubscription` or `CreatorPlan`. The
+`creator_plan_id` column on `PaymentTransaction`
+(`webhooks/finite_plan_handlers.py:897`) is a reporting FK on the
+payment row and does not activate a Fresh Collective Creator plan.
+
+**Conclusion:** the FIP finite-plan/apply_intent path is unrelated to
+Creator platform-plan activation. Not in R2B scope; not deferred to
+R3 for `creator.plan_activated` — no work needed there.
+
+### Return-value change
+
+`purchases/claim.py::claim_intent` now returns
+`ClaimResult(intent, activation_event)` instead of `PurchaseIntent`.
+All three callers (`purchases/routes.py::claim_purchase`,
+`claim_with_signup`, `webhooks/routes.py::_handle_creator_subscription_paid`)
+capture the result so they can call `schedule_routing_if_needed`
+after committing. Historical callers that discarded the return value
+(and the direct-call route tests) required no logic changes.
+
+### Tests
+
+`backend/tests/test_r2b_welcome_and_plan_activated.py` — 9 focused
+tests, all passing:
+
+- `test_welcome_after_signup_emits_and_dispatches_via_resend`
+- `test_welcome_after_signup_in_app_recipient_is_user_id`
+- `test_signup_prevents_duplicate_welcome_via_user_uniqueness`
+- `test_creator_plan_activated_emits_and_dispatches_on_stripe_activation`
+- `test_creator_plan_activated_idempotent_noop_skips_emit`
+- `test_creator_plan_activated_reactivation_produces_new_event`
+- `test_creator_plan_activated_admin_manual_grant_emits`
+- `test_creator_plan_activated_uses_canonical_plan_name`
+- `test_creator_plan_activation_provider_failure_does_not_undo_activation`
+
+Full backend regression: 1709 passing.
+
+---
+
+## R2C — legacy code still active (not yet safe to retire the shim)
+
+*(Previously scoped as "R2B — leftover legacy". Renamed to R2C
+after R2B was re-defined as the welcome + creator-activation
+launch emails above.)*
 
 `services/email_service.py` and `services/email_templates.py` cannot
 be retired yet because the following callers still send via the
@@ -167,10 +266,10 @@ legacy email:**
   imports `email_templates` directly; not production. R2B can
   update or delete this script.
 
-Until R2B migrates these five triggers + two admin paths + the
+Until R2C migrates these five triggers + two admin paths + the
 render-samples script, the legacy shim stays. Any future PR that
 adds a new legacy `email_service.send(...)` call must also add its
-R2B migration in the same PR — the pattern is documented at the
+R2C migration in the same PR — the pattern is documented at the
 top of this file.
 
 **Templates still referenced from non-legacy paths:** none — every
@@ -182,5 +281,5 @@ top of this file.
 The R2A migrations keep the guarded legacy code paths in
 `notification_service.py` (early-returns) so a config override that
 removes a topic from `COMMS_LIVE_TOPICS` restores legacy behaviour
-end-to-end. R2B can delete those guarded fallbacks once the four
+end-to-end. R2C can delete those guarded fallbacks once the four
 R2A topics are proven in production for at least one week.

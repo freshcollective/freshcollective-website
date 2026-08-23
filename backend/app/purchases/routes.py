@@ -49,7 +49,7 @@ import logging
 from typing import Literal, Optional
 
 import stripe
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -124,6 +124,28 @@ class CheckoutSessionCreatedResponse(BaseModel):
     )
     purchase_intent_id: str
     provider_checkout_session_id: str
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _schedule_activation_event_routing(
+    background_tasks: BackgroundTasks,
+    activation_event,
+) -> None:
+    """Wire the routing background task for a ``creator.plan_activated``
+    event produced by ``claim_intent``. ``activation_event`` is ``None``
+    when the claim was an idempotent replay (already-active on same
+    plan) — nothing to route in that case.
+    """
+    if activation_event is None:
+        return
+    from app.comms.rollout import schedule_routing_if_needed
+    schedule_routing_if_needed(
+        background_tasks, activation_event, "creator.plan_activated",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -404,6 +426,7 @@ def get_purchase_by_token(
 @router.post("/claim", response_model=ClaimResponse)
 def claim_purchase(
     body: ClaimTokenBody,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ClaimResponse:
@@ -432,7 +455,7 @@ def claim_purchase(
         )
 
     try:
-        claim_intent(db, intent, current_user)
+        claim_result = claim_intent(db, intent, current_user)
     except IntentNotPaidError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except IntentAlreadyConsumedByOtherUserError as exc:
@@ -449,6 +472,7 @@ def claim_purchase(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     db.commit()
+    _schedule_activation_event_routing(background_tasks, claim_result.activation_event)
     return ClaimResponse(
         purchase_intent_id=intent.id,
         status=intent.status.value,
@@ -460,6 +484,7 @@ def claim_purchase(
 def claim_with_signup(
     body: ClaimWithSignupBody,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
 ) -> ClaimResponse:
@@ -526,12 +551,20 @@ def claim_with_signup(
             ),
         )
 
-    # Create the account. `create_user` flushes but does not commit,
-    # so activation failure below still rolls the row back.
+    # `create_user` commits the account. Any activation failure below
+    # therefore leaves the User row in place — that's pre-existing
+    # behaviour, not introduced by R2B.
     new_user = auth_service.create_user(db, body.name, email, body.password)
 
+    # Welcome email fires against the just-committed User row. Distinct
+    # from the plan-activation email below — one greets the account,
+    # the other greets the Creator plan.
+    auth_service.emit_welcome_after_signup(
+        db, new_user, background_tasks=background_tasks,
+    )
+
     try:
-        claim_intent(db, intent, new_user)
+        claim_result = claim_intent(db, intent, new_user)
     except (
         IntentNotPaidError,
         IntentAlreadyConsumedByOtherUserError,
@@ -540,10 +573,12 @@ def claim_with_signup(
         ActivationConflictError,
         CreatorPlanActivationError,
     ) as exc:
-        db.rollback()  # atomic: user row is also removed
+        db.rollback()  # rolls back the claim work; the User row from
+        # ``create_user`` stayed committed (its own transaction).
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     db.commit()
+    _schedule_activation_event_routing(background_tasks, claim_result.activation_event)
 
     # Open a session for the freshly-created account.
     token = auth_service.create_session_token(new_user)

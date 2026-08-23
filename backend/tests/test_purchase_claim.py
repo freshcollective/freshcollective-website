@@ -16,7 +16,16 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
+
+
+def _bg() -> BackgroundTasks:
+    """Fresh BackgroundTasks — routes take one so R2B's
+    ``schedule_routing_if_needed`` has somewhere to add its task.
+    Direct-call unit tests do not exercise the background queue; the
+    task is queued into a throwaway list that this test does not run.
+    """
+    return BackgroundTasks()
 
 from app.creator.plan_activation import ActivationSource, activate_creator_plan
 from app.models.creator_billing import CreatorPlan
@@ -284,7 +293,8 @@ class TestClaimEndpoint:
             db, plan_slug="creator", claim_email=user.email,
         )
         result = claim_purchase(
-            ClaimTokenBody(token=raw), db=db, current_user=user,
+            ClaimTokenBody(token=raw), background_tasks=_bg(),
+            db=db, current_user=user,
         )
         assert result.status == "consumed"
         assert result.next_url == "/creator-onboarding"
@@ -297,7 +307,8 @@ class TestClaimEndpoint:
         )
         with pytest.raises(HTTPException) as exc:
             claim_purchase(
-                ClaimTokenBody(token=raw), db=db, current_user=user,
+                ClaimTokenBody(token=raw), background_tasks=_bg(),
+            db=db, current_user=user,
             )
         assert exc.value.status_code == 403
 
@@ -312,7 +323,8 @@ class TestClaimEndpoint:
         db.flush()
         with pytest.raises(HTTPException) as exc:
             claim_purchase(
-                ClaimTokenBody(token=raw), db=db, current_user=user,
+                ClaimTokenBody(token=raw), background_tasks=_bg(),
+            db=db, current_user=user,
             )
         assert exc.value.status_code == 410
 
@@ -330,7 +342,8 @@ class TestClaimEndpoint:
             db, plan_slug="creator", claim_email=user.email,
         )
         result = claim_purchase(
-            ClaimTokenBody(token=raw), db=db, current_user=user,
+            ClaimTokenBody(token=raw), background_tasks=_bg(),
+            db=db, current_user=user,
         )
         assert result.next_url == "/creator-studio"
 
@@ -342,12 +355,14 @@ class TestClaimEndpoint:
             db, plan_slug="creator", claim_email=user.email,
         )
         first = claim_purchase(
-            ClaimTokenBody(token=raw), db=db, current_user=user,
+            ClaimTokenBody(token=raw), background_tasks=_bg(),
+            db=db, current_user=user,
         )
         assert first.status == "consumed"
         # Second call should be a no-op success (same user, same intent).
         second = claim_purchase(
-            ClaimTokenBody(token=raw), db=db, current_user=user,
+            ClaimTokenBody(token=raw), background_tasks=_bg(),
+            db=db, current_user=user,
         )
         assert second.status == "consumed"
         assert second.purchase_intent_id == first.purchase_intent_id
@@ -357,6 +372,7 @@ class TestClaimEndpoint:
         with pytest.raises(HTTPException) as exc:
             claim_purchase(
                 ClaimTokenBody(token=generate_claim_token()),
+                background_tasks=_bg(),
                 db=db, current_user=user,
             )
         assert exc.value.status_code == 404
@@ -385,7 +401,8 @@ class TestClaimWithSignupEndpoint:
             ClaimWithSignupBody(
                 token=raw, name="New Creator", password="hunter22ok",
             ),
-            response=response, db=db, current_user=None,
+            response=response, background_tasks=_bg(),
+            db=db, current_user=None,
         )
         assert result.status == "consumed"
         assert result.next_url == "/creator-onboarding"
@@ -411,7 +428,8 @@ class TestClaimWithSignupEndpoint:
                 ClaimWithSignupBody(
                     token=raw, name="Someone", password="hunter22ok",
                 ),
-                response=self._fake_response(), db=db, current_user=signed_in,
+                response=self._fake_response(), background_tasks=_bg(),
+                db=db, current_user=signed_in,
             )
         assert exc.value.status_code == 409
 
@@ -427,7 +445,8 @@ class TestClaimWithSignupEndpoint:
                 ClaimWithSignupBody(
                     token=raw, name="Someone", password="hunter22ok",
                 ),
-                response=self._fake_response(), db=db, current_user=None,
+                response=self._fake_response(), background_tasks=_bg(),
+                db=db, current_user=None,
             )
         assert exc.value.status_code == 409
 
@@ -442,7 +461,8 @@ class TestClaimWithSignupEndpoint:
                 ClaimWithSignupBody(
                     token=raw, name="Someone", password="hunter22ok",
                 ),
-                response=self._fake_response(), db=db, current_user=None,
+                response=self._fake_response(), background_tasks=_bg(),
+                db=db, current_user=None,
             )
         assert exc.value.status_code == 410
 
@@ -457,6 +477,7 @@ class TestClaimWithSignupEndpoint:
                 ClaimWithSignupBody(
                     token=raw, name="Someone", password="hunter22ok",
                 ),
-                response=self._fake_response(), db=db, current_user=None,
+                response=self._fake_response(), background_tasks=_bg(),
+                db=db, current_user=None,
             )
         assert exc.value.status_code == 409

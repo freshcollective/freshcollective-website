@@ -420,6 +420,17 @@ def grant_creator_plan_access(
     db.refresh(result.subscription)
     sub = result.subscription
 
+    # R2B — route the creator.plan_activated event (already emitted +
+    # committed above). ``result.activation_event`` is ``None`` when
+    # the grant was an idempotent no-op — nothing to route. Sync
+    # scheduling (background_tasks=None) mirrors the webhook path:
+    # admin actions are low-frequency, so inline dispatch is fine.
+    if result.activation_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, result.activation_event, "creator.plan_activated",
+        )
+
     return GrantPlanAccessResult(
         subscription_id=sub.id,
         source=sub.source,

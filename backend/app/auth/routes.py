@@ -1,7 +1,7 @@
 import logging
 import os
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, Response, UploadFile, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
@@ -83,6 +83,7 @@ async def signup(
     request: Request,
     payload: SignupRequest,
     response: Response,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> UserResponse:
     existing = service.get_user_by_email(db, payload.email)
@@ -92,6 +93,9 @@ async def signup(
             detail="An account with those details already exists. Try logging in instead.",
         )
     user = service.create_user(db, payload.name, payload.email, payload.password)
+    service.emit_welcome_after_signup(
+        db, user, background_tasks=background_tasks,
+    )
     token = service.create_session_token(user)
     set_session_cookie(response, token)
     return UserResponse.model_validate(user)

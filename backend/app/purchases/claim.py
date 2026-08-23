@@ -31,7 +31,9 @@ Public API:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
 
@@ -46,6 +48,9 @@ from app.models.purchase_intent import (
 )
 from app.models.user import User
 from app.purchases.service import hash_claim_token
+
+if TYPE_CHECKING:
+    from app.comms.models import CommunicationEvent
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +130,22 @@ def fetch_intent_by_raw_token(
 # ---------------------------------------------------------------------------
 
 
-def claim_intent(db: Session, intent: PurchaseIntent, user: User) -> PurchaseIntent:
+@dataclass(frozen=True)
+class ClaimResult:
+    """Return shape for :func:`claim_intent`.
+
+    ``intent`` is the (now-consumed) PurchaseIntent. ``activation_event``
+    is populated when the claim produced a genuine
+    ``creator.plan_activated`` event that the caller should route
+    after committing — ``None`` when the claim was an idempotent
+    replay against a subscription that was already active, or when
+    the intent kind doesn't map to a plan activation.
+    """
+    intent: PurchaseIntent
+    activation_event: "CommunicationEvent | None" = None
+
+
+def claim_intent(db: Session, intent: PurchaseIntent, user: User) -> ClaimResult:
     """Activate the intent for the supplied user. Idempotent.
 
     Pre-conditions:
@@ -138,11 +158,16 @@ def claim_intent(db: Session, intent: PurchaseIntent, user: User) -> PurchaseInt
     ``consumed_at`` and ``consumed_by_user_id`` set.
 
     Does *not* commit — the caller owns the transaction boundary.
+
+    R2B: returns :class:`ClaimResult` so the caller can schedule
+    routing of the comms event after committing. Historical callers
+    that ignored the return value continue to work — the intent
+    still transitions atomically.
     """
     # ── Idempotency ───────────────────────────────────────────────
     if intent.status == PurchaseIntentStatus.consumed:
         if intent.consumed_by_user_id == user.id:
-            return intent  # no-op
+            return ClaimResult(intent=intent)  # no-op
         raise IntentAlreadyConsumedByOtherUserError(
             f"Intent {intent.id} has already been claimed by another account."
         )
@@ -164,13 +189,14 @@ def claim_intent(db: Session, intent: PurchaseIntent, user: User) -> PurchaseInt
             )
 
     # ── Dispatch to per-kind domain service ───────────────────────
+    activation_event = None
     if intent.kind == PurchaseIntentKind.creator_subscription:
         if not intent.plan_slug:
             raise UnsupportedIntentKindError(
                 f"Intent {intent.id} kind='creator_subscription' but has "
                 "no plan_slug — cannot activate."
             )
-        activate_creator_plan(
+        activation_result = activate_creator_plan(
             db,
             user,
             intent.plan_slug,
@@ -180,6 +206,7 @@ def claim_intent(db: Session, intent: PurchaseIntent, user: User) -> PurchaseInt
                 stripe_customer_id=intent.provider_customer_id,
             ),
         )
+        activation_event = activation_result.activation_event
     else:
         # Stage 3 wires only creator_subscription. Others raise so
         # webhook/route callers can return a clear error instead of
@@ -198,7 +225,7 @@ def claim_intent(db: Session, intent: PurchaseIntent, user: User) -> PurchaseInt
         "PurchaseIntent claimed intent=%s kind=%s user=%s",
         intent.id, intent.kind.value, user.id,
     )
-    return intent
+    return ClaimResult(intent=intent, activation_event=activation_event)
 
 
 # ---------------------------------------------------------------------------
