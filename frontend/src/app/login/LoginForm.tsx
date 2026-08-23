@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import AuthCard from '@/components/layout/AuthCard'
 import Button from '@/components/ui/Button'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
@@ -62,69 +63,32 @@ export default function LoginForm({
 
   const signupHref = nextUrl ? `/signup?next=${encodeURIComponent(nextUrl)}` : '/signup'
 
+  // The heading + subtitle differ depending on whether the visitor
+  // arrived from a purchase flow. AuthCard's ``title`` / ``subtitle``
+  // props take React nodes so the pathway/gathering context can still
+  // render inline emphasis on the title's second line.
+  let title: React.ReactNode = 'Welcome back'
+  let subtitle: React.ReactNode = 'Your world is ready when you are.'
+  if (checkoutContext?.kind === 'pathway') {
+    title = 'Log in to continue'
+    subtitle = (
+      <>
+        Continuing with{' '}
+        <span className="font-medium text-navy-900">{checkoutContext.pathwayTitle}</span>.
+      </>
+    )
+  } else if (checkoutContext?.kind === 'gathering') {
+    title = 'Log in to buy your ticket'
+    subtitle = (
+      <>
+        For{' '}
+        <span className="font-medium text-navy-900">{checkoutContext.gatheringTitle}</span>.
+      </>
+    )
+  }
+
   return (
-    <div
-      className="w-full max-w-[440px] rounded-2xl bg-white p-8 md:p-10"
-      style={{
-        boxShadow: '0 24px 60px rgba(5, 11, 20, 0.35), 0 2px 8px rgba(5, 11, 20, 0.20)',
-      }}
-    >
-      {/* Brand mark — full wordmark, centered and given room to breathe.
-          Larger and deliberately placed rather than a tiny floating icon. */}
-      <div className="mb-7 flex justify-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/fresh-collective-logo-navy-gold-white.png"
-          alt="Fresh Collective"
-          style={{ height: '44px', width: 'auto' }}
-        />
-      </div>
-
-      <div className="mb-7 text-center">
-        {checkoutContext?.kind === 'pathway' ? (
-          <>
-            <h1 className="mb-2 font-serif text-[26px] leading-tight text-navy-900">
-              Log in to continue
-            </h1>
-            <p className="text-sm text-[#5A6B7D]">
-              Continuing with{' '}
-              <span className="font-medium text-navy-900">{checkoutContext.pathwayTitle}</span>.
-            </p>
-          </>
-        ) : checkoutContext?.kind === 'gathering' ? (
-          <>
-            <h1 className="mb-2 font-serif text-[26px] leading-tight text-navy-900">
-              Log in to buy your ticket
-            </h1>
-            <p className="text-sm text-[#5A6B7D]">
-              For{' '}
-              <span className="font-medium text-navy-900">{checkoutContext.gatheringTitle}</span>.
-            </p>
-          </>
-        ) : (
-          <>
-            <h1 className="mb-2 font-serif text-[26px] leading-tight text-navy-900">
-              Welcome back
-            </h1>
-            <p
-              className="text-[14px] italic leading-relaxed"
-              style={{ color: '#5A6B7D', fontFamily: 'Georgia, serif' }}
-            >
-              Your world is ready when you are.
-            </p>
-          </>
-        )}
-      </div>
-
-      {error && (
-        <div
-          role="alert"
-          className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-        >
-          {error}
-        </div>
-      )}
-
+    <AuthCard title={title} subtitle={subtitle} error={error}>
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-navy-900">
@@ -186,6 +150,6 @@ export default function LoginForm({
           Join us
         </Link>
       </p>
-    </div>
+    </AuthCard>
   )
 }

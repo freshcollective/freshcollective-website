@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation'
-import SiteShell from '@/components/layout/SiteShell'
-import Container from '@/components/layout/Container'
+import AuthPageShell, { AuthTitleAccent } from '@/components/layout/AuthPageShell'
 import ResetPasswordForm from './ResetPasswordForm'
 
 export default async function ResetPasswordPage({
@@ -16,18 +15,17 @@ export default async function ResetPasswordPage({
   }
 
   return (
-    <SiteShell>
-      <section className="relative flex min-h-[80vh] items-center overflow-hidden py-20">
-        <div className="absolute inset-0 flex" aria-hidden="true">
-          <div className="w-1/2 bg-ivory" />
-          <div className="w-1/2 bg-navy-950" />
-        </div>
-        <Container className="relative z-10">
-          <div className="flex items-center justify-center">
-            <ResetPasswordForm token={token} />
-          </div>
-        </Container>
-      </section>
-    </SiteShell>
+    <AuthPageShell
+      welcomeTitle={
+        <>
+          <AuthTitleAccent>Set a new password</AuthTitleAccent>
+          <br />
+          and you’re back in.
+        </>
+      }
+      welcomeSubtitle="Almost there. Choose a new password and we’ll return you to your world."
+    >
+      <ResetPasswordForm token={token} />
+    </AuthPageShell>
   )
 }

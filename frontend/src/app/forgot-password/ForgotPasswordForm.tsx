@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import AuthCard from '@/components/layout/AuthCard'
 import Button from '@/components/ui/Button'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
 
@@ -41,22 +42,12 @@ export default function ForgotPasswordForm() {
   }
 
   return (
-    <div
-      className="w-full max-w-sm rounded-xl border border-border bg-surface p-8 md:p-10"
-      style={{ boxShadow: 'var(--fc-shadow-md)' }}
+    <AuthCard
+      title="Reset your password"
+      subtitle="Enter your email and we’ll send you a link to set a new one."
+      error={error}
+      footerLink={success ? undefined : { href: '/login', label: 'Back to log in' }}
     >
-      <div className="mb-8">
-        <div className="mb-4 h-px w-6 bg-gold-500" />
-        <h1 className="mb-2 font-serif text-3xl text-navy-900">Reset your password.</h1>
-        <p className="text-sm text-[#718096]">Enter your email and we&apos;ll send you a reset link.</p>
-      </div>
-
-      {error && (
-        <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
       {success ? (
         <div className="space-y-4">
           <div className="rounded-lg border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-800">
@@ -96,14 +87,8 @@ export default function ForgotPasswordForm() {
               'Send reset link'
             )}
           </Button>
-
-          <p className="text-center text-sm text-[#718096]">
-            <Link href="/login" className="text-teal-600 underline-offset-4 transition-colors hover:text-teal-700 hover:underline">
-              Back to log in
-            </Link>
-          </p>
         </form>
       )}
-    </div>
+    </AuthCard>
   )
 }

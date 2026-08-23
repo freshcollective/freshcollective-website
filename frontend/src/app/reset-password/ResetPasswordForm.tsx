@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import AuthCard from '@/components/layout/AuthCard'
 import Button from '@/components/ui/Button'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
@@ -50,28 +51,29 @@ export default function ResetPasswordForm({ token }: { token: string }) {
     }
   }
 
-  return (
-    <div
-      className="w-full max-w-sm rounded-xl border border-border bg-surface p-8 md:p-10"
-      style={{ boxShadow: 'var(--fc-shadow-md)' }}
-    >
-      <div className="mb-8">
-        <div className="mb-4 h-px w-6 bg-gold-500" />
-        <h1 className="mb-2 font-serif text-3xl text-navy-900">Set new password.</h1>
-        <p className="text-sm text-[#718096]">Choose a new password for your account.</p>
-      </div>
-
-      {error && (
-        <div role="alert" className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}{' '}
-          {error.includes('invalid or has expired') && (
-            <Link href="/forgot-password" className="font-medium underline underline-offset-2">
-              Request a new link
-            </Link>
-          )}
-        </div>
+  // Error banner includes an inline "request a new link" prompt only when
+  // the backend told us the token is invalid/expired. AuthCard's ``error``
+  // prop takes a React node so we can embed that link here.
+  const errorNode = error && (
+    <>
+      {error}
+      {error.includes('invalid or has expired') && (
+        <>
+          {' '}
+          <Link href="/forgot-password" className="font-medium underline underline-offset-2">
+            Request a new link
+          </Link>
+        </>
       )}
+    </>
+  )
 
+  return (
+    <AuthCard
+      title="Set a new password"
+      subtitle="Almost there — choose a new password and you’ll be back in."
+      error={errorNode}
+    >
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-navy-900">
@@ -114,6 +116,6 @@ export default function ResetPasswordForm({ token }: { token: string }) {
           )}
         </Button>
       </form>
-    </div>
+    </AuthCard>
   )
 }
