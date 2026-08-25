@@ -171,18 +171,23 @@ describe('decide — signed-out user', () => {
 })
 
 
-describe('decide — signed-in user', () => {
-  test('/login → redirect to /dashboard', () => {
-    assert.deepEqual(decide('/login', true), { action: 'redirect', to: '/dashboard' })
+describe('decide — signed-in user (JWT signature valid)', () => {
+  // The middleware only ever knows "does this JWT have a valid signature."
+  // It cannot verify the user still exists — that's an authoritative DB
+  // check that lives in the auth pages (getMe()) and protected layouts
+  // (requireAuthenticatedUser). So a signature-valid JWT is NEVER
+  // sufficient to bounce a caller away from an auth route: the auth
+  // pages do that themselves using authoritative state.
+
+  test('/login → allow (page handles "already signed in → forward" via getMe)', () => {
+    assert.deepEqual(decide('/login', true), { action: 'next' })
   })
 
-  test('/signup → redirect to /dashboard', () => {
-    assert.deepEqual(decide('/signup', true), { action: 'redirect', to: '/dashboard' })
+  test('/signup → allow (page handles "already signed in → forward" via getMe)', () => {
+    assert.deepEqual(decide('/signup', true), { action: 'next' })
   })
 
   test('/admin/login → allow (page handles admin vs non-admin routing)', () => {
-    // Middleware cannot tell admin from non-admin (DB role check lives
-    // in the layout / API). Let the page's own guard route accordingly.
     assert.deepEqual(decide('/admin/login', true), { action: 'next' })
   })
 
@@ -222,6 +227,42 @@ describe('no redirect loops', () => {
     assert.equal(first.to, '/login')
     const second = decide(first.to, false)
     assert.deepEqual(second, { action: 'next' })
+  })
+
+  // The stale-but-signed-JWT loop that broke Firefox after a DB rollback.
+  //
+  // Before the fix, middleware treated JWT-signature-valid as
+  // "authenticated" and bounced /login → /dashboard. But the dashboard
+  // layout's authoritative getMe() check would then bounce back to
+  // /login. Firefox stopped the ping-pong with "The page isn't
+  // redirecting properly."
+  //
+  // The invariant these tests protect: with a valid-signature JWT for a
+  // user that no longer exists, the middleware NEVER redirects an auth
+  // route. The auth page itself calls getMe(), sees null, and renders.
+
+  test('stale signed JWT: /dashboard is still redirected once to /login', () => {
+    // Middleware happily believes the JWT (signature is real). The layout
+    // guard is what catches the missing user; middleware's job here is
+    // just not to interfere with an unauth'd protected route redirect.
+    // Simulated with authenticated=true because the JWT signature IS
+    // valid — the caller doesn't yet know the user was deleted.
+    assert.deepEqual(decide('/dashboard', true), { action: 'next' })
+    // The layout will then redirect to /login?next=/dashboard.
+    // Feed that back through the middleware — it must not bounce back.
+    assert.deepEqual(decide('/login', true), { action: 'next' })
+    // And /signup must also remain reachable for the same session.
+    assert.deepEqual(decide('/signup', true), { action: 'next' })
+  })
+
+  test('stale signed JWT: no auth route redirects to /dashboard under any circumstance', () => {
+    // The exact branch that used to produce the loop. This regression
+    // guard makes sure nobody re-adds a JWT-sig-only "authenticated →
+    // /dashboard" shortcut to the middleware.
+    for (const authRoute of ['/login', '/signup', '/forgot-password', '/reset-password', '/admin/login']) {
+      const d = decide(authRoute, true)
+      assert.equal(d.action, 'next', `${authRoute} must render, not redirect`)
+    }
   })
 })
 

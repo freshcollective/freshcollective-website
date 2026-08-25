@@ -127,24 +127,24 @@ export type ProxyDecision =
 
 export function decide(pathname: string, authenticated: boolean): ProxyDecision {
   const protectedRoute = isProtectedRoute(pathname)
-  const authRoute = isAuthRoute(pathname)
-
-  if (!protectedRoute && !authRoute) return { action: 'next' }
 
   if (protectedRoute && !authenticated) {
     const to = loginPathFor(pathname)
     return { action: 'redirect', to, next: safeNextFor(to, pathname) }
   }
 
-  if (authRoute && authenticated) {
-    // ``/admin/login`` handles signed-in callers itself: admins are
-    // forwarded to ``/admin`` by the page's own guard; non-admins see a
-    // clear "administrators only" message from the form. Letting the
-    // page render avoids a middleware→layout→middleware loop for the
-    // non-admin case.
-    if (normalize(pathname) === '/admin/login') return { action: 'next' }
-    return { action: 'redirect', to: '/dashboard' }
-  }
-
+  // Auth routes (``/login``, ``/signup``, ``/admin/login``, …) are ALWAYS
+  // allowed through. The "already-signed-in → forward" redirect was
+  // previously done here on the strength of a valid JWT signature alone,
+  // which is unsafe: a JWT signed for a user that no longer exists (test
+  // rollback, deleted account) would be bounced to ``/dashboard``, where
+  // the layout's authoritative ``requireAuthenticatedUser`` check fails
+  // and sends the caller back to ``/login`` — a loop the browser stops
+  // with "The page isn't redirecting properly."
+  //
+  // Instead, the auth pages themselves call ``getMe()`` (authoritative)
+  // and forward only when a live user actually exists. ``/admin/login``
+  // has done this since it shipped; ``/login`` and ``/signup`` now do
+  // the same.
   return { action: 'next' }
 }

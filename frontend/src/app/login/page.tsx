@@ -1,6 +1,8 @@
+import { redirect } from 'next/navigation'
+
 import AuthPageShell, { AuthTitleAccent } from '@/components/layout/AuthPageShell'
 import LoginForm from './LoginForm'
-import { getPathwayOverview, getSpaceEvent } from '@/lib/serverApi'
+import { getMe, getPathwayOverview, getSpaceEvent } from '@/lib/serverApi'
 import type { PathwayWithSteps, EventDetail } from '@/types/platform'
 
 /**
@@ -62,6 +64,17 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>
 }) {
   const { next } = await searchParams
+
+  // Authoritative "already signed in → forward" check. The middleware
+  // deliberately does NOT do this on the strength of a valid JWT
+  // signature alone (see ``src/proxyRouting.ts::decide``): a stale
+  // JWT for a user that no longer exists would loop back through here
+  // when the target page's guard rejected them. ``getMe()`` returns
+  // ``null`` on any auth failure (401 / deleted user / backend down),
+  // so a stale session simply renders the login form.
+  const me = await getMe().catch(() => null)
+  if (me) redirect(next && next.startsWith('/') ? next : '/dashboard')
+
   const checkoutContext = await getCheckoutContext(next)
 
   return (

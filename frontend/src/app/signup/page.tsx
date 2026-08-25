@@ -1,6 +1,8 @@
+import { redirect } from 'next/navigation'
+
 import AuthPageShell, { AuthTitleAccent } from '@/components/layout/AuthPageShell'
 import SignupForm from './SignupForm'
-import { getPathwayOverview, getSpaceEvent } from '@/lib/serverApi'
+import { getMe, getPathwayOverview, getSpaceEvent } from '@/lib/serverApi'
 import type { PathwayWithSteps, EventDetail } from '@/types/platform'
 
 interface Props {
@@ -100,6 +102,14 @@ async function getCheckoutContext(next?: string): Promise<CheckoutContext | null
  */
 export default async function SignUpPage({ searchParams }: Props) {
   const { next } = await searchParams
+
+  // Authoritative "already signed in → forward" check. See the matching
+  // comment in ``src/app/login/page.tsx`` — signature-only middleware
+  // cannot safely do this without producing a redirect loop for stale
+  // sessions, so the auth pages own the check via ``getMe()``.
+  const me = await getMe().catch(() => null)
+  if (me) redirect(next && next.startsWith('/') ? next : '/dashboard')
+
   const checkoutContext = await getCheckoutContext(next)
 
   return (
