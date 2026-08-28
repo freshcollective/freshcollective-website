@@ -133,11 +133,17 @@ class Settings(BaseSettings):
     #   * security      — account.password_reset_requested
     #   * account       — collective.invitation.sent  (invite emails
     #                     ride the same preference-locked account
-    #                     category as password reset)
+    #                     category as password reset),
+    #                     account.welcome_after_signup,
+    #                     creator.plan_activated
     #   * gatherings    — gathering.booking.confirmed
     #   * conversations — community.post.published,
     #                     community.comment.created
-    comms_live_topics: str = "security,account,gatherings,conversations"
+    #   * purchases     — purchase.completed, payment.instalment_failed,
+    #                     access.suspended, payment.recovered,
+    #                     purchase.plan_completed (all R3 events;
+    #                     category is default-enabled + locked)
+    comms_live_topics: str = "security,account,gatherings,conversations,purchases"
     # Minimum age (seconds) an event must reach before the shadow
     # reconciler will attempt to compare it. Gives both the legacy
     # BackgroundTasks trigger and the shadow routing task time to

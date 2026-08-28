@@ -95,8 +95,36 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     EventDefinition("pathway.step_added",                 TOPIC_PATHWAYS,           PRIORITY_IMMEDIATE),
     EventDefinition("pathway.enrolment.completed",        TOPIC_PATHWAYS,           PRIORITY_IMMEDIATE),
 
-    # Purchases & subscriptions
+    # Purchases & subscriptions — member-facing money/access lifecycle.
+    # ``purchase.completed`` covers both a successful single payment and
+    # the successful FIRST payment of a finite Payment Plan; the template
+    # branches on ``payment_mode`` in the payload. Later successful
+    # instalments do NOT re-fire this event.
     EventDefinition("purchase.completed",                 TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
+    # Fires on the ``active → payment_problem`` transition inside
+    # ``finite_plan_lifecycle.handle_invoice_failed_for_plan``. The grace
+    # window opens atomically with the failure, so there is intentionally
+    # NO separate "grace_started" event — payload carries
+    # ``grace_expires_at`` for the copy. Replays and cascading same-grace
+    # failures do not re-fire (guarded by the domain transition itself).
+    EventDefinition("payment.instalment_failed",          TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
+    # Fires on the ``payment_problem → suspended`` transition inside
+    # ``finite_plan_lifecycle._suspend_plan_and_access`` (invoked by the
+    # reconciler when grace elapses). One event per genuine suspension.
+    EventDefinition("access.suspended",                   TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
+    # Fires on ``{payment_problem, suspended} → active`` inside
+    # ``finite_plan_lifecycle.record_later_successful_instalment`` when
+    # a non-final instalment lands. Payload carries ``was_suspended`` so
+    # the template distinguishes "access remains active" (grace recovery)
+    # from "access is active again" (post-suspension recovery). Suppressed
+    # when the recovery happens on the final instalment — the completion
+    # email covers that member moment instead.
+    EventDefinition("payment.recovered",                  TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
+    # Fires when ``installments_paid >= installments_expected`` and the
+    # plan transitions to ``completed`` inside
+    # ``finite_plan_lifecycle.record_later_successful_instalment``. One
+    # event per plan for its whole lifetime.
+    EventDefinition("purchase.plan_completed",            TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
     # Creator platform-plan activation (Fresh Collective Creator /
     # Creator Portfolio tiers). Registered under TOPIC_ACCOUNT rather
     # than TOPIC_SUBSCRIPTIONS because this is a transactional

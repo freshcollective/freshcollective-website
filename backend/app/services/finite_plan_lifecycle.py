@@ -62,6 +62,7 @@ from app.models.platform import (
     PathwayEntitlement,
 )
 from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
+from app.models.user import User
 from app.services import access_grant_records as _agr
 
 
@@ -88,6 +89,13 @@ class LaterInstalmentOutcome:
     installments_expected: int
     transaction_id: str | None
     transitioned_to: str | None  # PurchasePlanStatus value or None if no change
+    # R3 — populated when this transition produced a member-facing
+    # comms event. Caller commits and then schedules routing (see the
+    # webhook wrapper in ``webhooks/finite_plan_handlers.py``).
+    # ``event`` is at most one of ``payment.recovered`` /
+    # ``purchase.plan_completed`` — never both (completion supersedes
+    # recovery when the final instalment lands from suspended/problem).
+    comms_event: object | None = None
 
 
 @dataclass
@@ -97,6 +105,10 @@ class FailureOutcome:
     transitioned_to: str | None
     grace_expires_at: datetime | None
     reason: str | None = None
+    # R3 — populated when the transition genuinely opened the grace
+    # window (``active → payment_problem``). Never set on replays or
+    # cascading same-grace failures.
+    comms_event: object | None = None
 
 
 @dataclass
@@ -106,6 +118,9 @@ class SuspensionOutcome:
     suspended_access_pass_ids: list[str]
     preserved_entitlement_ids: list[str]
     preserved_access_pass_ids: list[str]
+    # R3 — populated when the transition genuinely happened
+    # (``payment_problem → suspended``).
+    comms_event: object | None = None
 
 
 @dataclass
@@ -352,6 +367,37 @@ def record_later_successful_instalment(
         invoice_id, txn.id, transitioned_to,
     )
 
+    # R3 — emit member-facing comms for the transition, if any. Only
+    # one event fires per call:
+    #   * completion (final instalment) — supersedes recovery, since
+    #     the "your plan is complete" message is the more meaningful
+    #     member moment when a final instalment recovers a suspended
+    #     plan.
+    #   * recovery — fires only on a NON-final instalment landing
+    #     from ``payment_problem`` or ``suspended``.
+    # No event fires for the ordinary ``active → active`` path.
+    comms_event = None
+    from app.services import purchase_lifecycle_emit as _r3
+    from app.models.payment_option import PaymentOption
+    payment_option = (
+        db.query(PaymentOption).filter(PaymentOption.id == plan.payment_option_id).first()
+        if plan.payment_option_id else None
+    )
+    member = db.query(User).filter(User.id == plan.member_user_id).first()
+    if member is not None:
+        if is_final:
+            comms_event = _r3.emit_plan_completed(
+                db, user=member, plan=plan, payment_option=payment_option,
+            )
+        elif prev_status in (PurchasePlanStatus.payment_problem, PurchasePlanStatus.suspended):
+            comms_event = _r3.emit_payment_recovered(
+                db, user=member, plan=plan, payment_option=payment_option,
+                was_suspended=(prev_status == PurchasePlanStatus.suspended),
+            )
+        # ``prev_status == failed`` → out-of-order recovery from an
+        # abnormal end. No R3 email; the abnormal end already had
+        # (or will get) its own operator-facing handling.
+
     return LaterInstalmentOutcome(
         plan_id=plan.id,
         installment_number=installment_number,
@@ -359,6 +405,7 @@ def record_later_successful_instalment(
         installments_expected=plan.installments_expected,
         transaction_id=txn.id,
         transitioned_to=transitioned_to,
+        comms_event=comms_event,
     )
 
 
@@ -567,11 +614,31 @@ def handle_invoice_failed_for_plan(
         "grace_expires_at=%s, invoice=%s",
         plan.id, plan.grace_expires_at, invoice_id,
     )
+
+    # R3 — emit ``payment.instalment_failed`` for the member. Only
+    # reached on the genuine ``active → payment_problem`` transition;
+    # the earlier idempotent replay + cascading-failure branches all
+    # returned before this point, so no duplicate email is possible
+    # for the same grace episode.
+    from app.services import purchase_lifecycle_emit as _r3
+    from app.models.payment_option import PaymentOption
+    payment_option = (
+        db.query(PaymentOption).filter(PaymentOption.id == plan.payment_option_id).first()
+        if plan.payment_option_id else None
+    )
+    member = db.query(User).filter(User.id == plan.member_user_id).first()
+    comms_event = None
+    if member is not None:
+        comms_event = _r3.emit_instalment_failed(
+            db, user=member, plan=plan, payment_option=payment_option,
+        )
+
     return FailureOutcome(
         plan_id=plan.id,
         invoice_id=invoice_id,
         transitioned_to=PurchasePlanStatus.payment_problem.value,
         grace_expires_at=plan.grace_expires_at,
+        comms_event=comms_event,
     )
 
 
@@ -627,6 +694,14 @@ def sweep_expired_grace_plans(
         outcome = _suspend_plan_and_access(db, plan=plan, now=now)
         outcomes.append(outcome)
         db.commit()
+        # R3 — schedule routing for ``access.suspended`` after commit.
+        # The reconciler runs outside a request context (background
+        # loop / operator script), so sync dispatch is correct.
+        if outcome.comms_event is not None:
+            from app.comms.rollout import schedule_routing_if_needed
+            schedule_routing_if_needed(
+                None, outcome.comms_event, "access.suspended",
+            )
 
     return outcomes
 
@@ -677,6 +752,23 @@ def _suspend_plan_and_access(
         len(outcome.suspended_access_pass_ids),
         len(outcome.preserved_access_pass_ids),
     )
+
+    # R3 — emit ``access.suspended`` for the member. This helper is
+    # only reached when the plan transitioned from
+    # ``payment_problem → suspended`` (the reconciler + operator
+    # entry points both check ``plan.status == payment_problem`` under
+    # a row lock before calling us). No emit on replays.
+    from app.services import purchase_lifecycle_emit as _r3
+    from app.models.payment_option import PaymentOption
+    payment_option = (
+        db.query(PaymentOption).filter(PaymentOption.id == plan.payment_option_id).first()
+        if plan.payment_option_id else None
+    )
+    member = db.query(User).filter(User.id == plan.member_user_id).first()
+    if member is not None:
+        outcome.comms_event = _r3.emit_access_suspended(
+            db, user=member, plan=plan, payment_option=payment_option,
+        )
     return outcome
 
 

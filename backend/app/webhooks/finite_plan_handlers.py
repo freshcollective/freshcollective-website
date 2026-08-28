@@ -816,7 +816,7 @@ def _do_invoice_succeeded(
         PurchasePlanStatus.suspended,
         PurchasePlanStatus.failed,
     ):
-        finite_plan_lifecycle.record_later_successful_instalment(
+        later_outcome = finite_plan_lifecycle.record_later_successful_instalment(
             db,
             plan=plan,
             invoice_id=invoice_id,
@@ -829,6 +829,15 @@ def _do_invoice_succeeded(
             audit_note=audit_note,
         )
         db.commit()
+        # R3 — schedule routing for the recovery / completion event
+        # (if the lifecycle transition produced one) after commit. No
+        # BackgroundTasks in webhook context → sync dispatch, matching
+        # the R2A/R2B pattern for webhook-originated events.
+        if later_outcome.comms_event is not None:
+            from app.comms.rollout import schedule_routing_if_needed
+            schedule_routing_if_needed(
+                None, later_outcome.comms_event, later_outcome.comms_event.event_type,
+            )
         return
 
     if plan.status != PurchasePlanStatus.pending_setup:
@@ -979,6 +988,31 @@ def _do_invoice_succeeded(
     plan.installments_paid = 1
     plan.activated_at = now
     plan.updated_at = now
+
+    # R3 — emit ``purchase.completed`` (payment_mode='plan') for the
+    # FIP first-instalment confirmation. Only reached on the genuine
+    # ``pending_setup → active`` transition; the pending_setup guard
+    # + provider_invoice_id uniqueness above short-circuit replays
+    # before this point, so no duplicate email is possible for the
+    # same first-instalment success.
+    comms_event = None
+    from app.services import purchase_lifecycle_emit as _r3
+    from app.models.payment_option import PaymentOption
+    from app.models.user import User as _User
+    payment_option = (
+        db.query(PaymentOption).filter(PaymentOption.id == plan.payment_option_id).first()
+        if plan.payment_option_id else None
+    )
+    member = db.query(_User).filter(_User.id == plan.member_user_id).first()
+    if member is not None:
+        comms_event = _r3.emit_purchase_completed(
+            db, user=member, payment_option=payment_option,
+            payment_mode="plan",
+            amount_cents=plan.installment_amount_cents,
+            currency=plan.currency,
+            plan=plan,
+        )
+
     db.commit()
 
     logger.info(
@@ -987,6 +1021,10 @@ def _do_invoice_succeeded(
         plan.id, txn.id, invoice_id,
         len(result.entitlements), len(result.access_passes),
     )
+
+    if comms_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(None, comms_event, "purchase.completed")
 
 
 # ---------------------------------------------------------------------------
@@ -1040,13 +1078,21 @@ def _do_invoice_failed(
             f"livemode mismatch (event={event_livemode}, plan.stripe_mode={plan.stripe_mode})"
         )
 
-    finite_plan_lifecycle.handle_invoice_failed_for_plan(
+    failure_outcome = finite_plan_lifecycle.handle_invoice_failed_for_plan(
         db,
         plan=plan,
         invoice_id=invoice_id,
         failed_at=datetime.utcnow(),
     )
     db.commit()
+    # R3 — schedule routing for ``payment.instalment_failed`` (if the
+    # transition genuinely opened the grace window). Sync dispatch —
+    # webhook context has no BackgroundTasks.
+    if failure_outcome.comms_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, failure_outcome.comms_event, "payment.instalment_failed",
+        )
 
 
 # ---------------------------------------------------------------------------

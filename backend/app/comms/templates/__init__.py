@@ -36,6 +36,7 @@ from app.comms.templates import diagnostics     # noqa: F401
 from app.comms.templates import gatherings      # noqa: F401
 from app.comms.templates import messages        # noqa: F401
 from app.comms.templates import pathways        # noqa: F401
+from app.comms.templates import purchases       # noqa: F401
 
 
 __all__ = [

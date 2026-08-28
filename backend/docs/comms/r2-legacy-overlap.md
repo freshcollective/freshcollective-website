@@ -12,6 +12,13 @@ added on the comms layer with no legacy counterpart —
 registered under `TOPIC_ACCOUNT` (already live). Full details in
 the "R2B" section below.
 
+**R3 status (2026-08-23):** five member-facing money/access
+lifecycle emails added — `purchase.completed` (single OR FIP first),
+`payment.instalment_failed`, `access.suspended`, `payment.recovered`,
+`purchase.plan_completed`. All under `TOPIC_PURCHASES`
+(default-enabled + locked; added to `COMMS_LIVE_TOPICS` default).
+No legacy overlap. Full details in the "R3" section below.
+
 The remaining legacy callers listed at the bottom of this document
 still need R2C before `services/email_service.py` can be retired.
 R2B (2026-08-23) shipped the two new launch-critical lifecycle
@@ -229,6 +236,72 @@ tests, all passing:
 - `test_creator_plan_activation_provider_failure_does_not_undo_activation`
 
 Full backend regression: 1709 passing.
+
+---
+
+## R3 — commerce + FIP lifecycle emails (2026-08-23)
+
+Five member-facing emails driven by domain state transitions in
+`services/finite_plan_lifecycle.py` and the checkout webhook
+handler. No legacy shim to guard — none of these events had a
+previous email path.
+
+### Events
+
+| Event | Emit site | Transition | Idempotency signal |
+|---|---|---|---|
+| `purchase.completed` | `webhooks/routes.py::_handle_checkout_completed` (single) + `webhooks/finite_plan_handlers.py::_do_invoice_succeeded` (FIP first) | `PaymentTransaction.fulfilment_status: pending → applied` (single) / `PurchasePlan.status: pending_setup → active` (FIP first) | `txn.fulfilment_status == applied` early-return + FIP first-invoice uniqueness check |
+| `payment.instalment_failed` | `services/finite_plan_lifecycle.py::handle_invoice_failed_for_plan` | `PurchasePlan.status: active → payment_problem` (grace opens atomically) | Only reached on the genuine transition; replays + cascading same-grace failures short-circuit and return `comms_event=None` |
+| `access.suspended` | `services/finite_plan_lifecycle.py::_suspend_plan_and_access` (invoked by `sweep_expired_grace_plans` under row lock) | `PurchasePlan.status: payment_problem → suspended` | Reconciler re-checks status under lock before calling the transition; genuine transition once per suspension |
+| `payment.recovered` | `services/finite_plan_lifecycle.py::record_later_successful_instalment` (non-final path) | `{payment_problem, suspended} → active` | Suppressed when the recovery lands on the final instalment — completion supersedes recovery; suppressed for `active → active` (no transition) |
+| `purchase.plan_completed` | `services/finite_plan_lifecycle.py::record_later_successful_instalment` (final path) | `* → completed` (`installments_paid >= installments_expected`) | `plan.completed_at` set once; terminal state |
+
+### Copy rules (enforced by templates)
+
+Member-facing only. Tests assert the absence of Stripe terminology
+(`invoice`, `SubscriptionSchedule`, `PaymentIntent`, retry vocabulary).
+Completion wording never promises lifetime/perpetual access.
+
+### Destinations (R3 A4 + A5)
+
+Both member and repair destinations deep-link to the affected
+experience — the same URL — because that experience's
+`PlanRecoveryBanner`/`RepairPaymentCta` already knows how to
+initiate the authenticated repair flow (see
+`frontend/src/components/commerce/`). Falls back to `/dashboard`
+when the option grants nothing with a single honest primary
+destination.
+
+### Channel behaviour
+
+All five events dispatch on both `email_transactional` and `in_app`
+(CATEGORY_PURCHASES is default-enabled + locked in both channels
+per migration 097).
+
+### Failure safety
+
+Every emit is wrapped in `_safe_emit` (see
+`services/purchase_lifecycle_emit.py`). A comms failure logs and
+returns `None`; the domain transition is never blocked. Product
+lifecycle is authoritative; comms is downstream.
+
+### Tests
+
+`backend/tests/test_r3_commerce_lifecycle.py` — 11 focused tests:
+
+- `TestInstalmentFailed::test_failure_transition_emits_and_dispatches`
+- `TestInstalmentFailed::test_replay_of_same_failed_invoice_does_not_re_emit`
+- `TestInstalmentFailed::test_cascading_failure_on_different_invoice_does_not_re_emit`
+- `TestAccessSuspended::test_suspension_transition_emits_and_dispatches`
+- `TestPaymentRecovered::test_recovery_during_grace_emits_not_was_suspended`
+- `TestPaymentRecovered::test_recovery_after_suspension_emits_was_suspended`
+- `TestPlanCompleted::test_final_instalment_emits_plan_completed_not_recovery`
+- `TestPlanCompleted::test_final_instalment_recovering_from_suspended_still_completes`
+- `TestNoPurchaseCompletedOnLaterInstalment::test_later_instalment_success_produces_no_purchase_completed`
+- `TestPurchaseCompletedTemplateBranches::test_single_payment_variant`
+- `TestPurchaseCompletedTemplateBranches::test_plan_variant_shows_progress_and_first_payment_wording`
+
+Full backend regression: 1724/1724 pass (was 1713 pre-R3; +11 new).
 
 ---
 

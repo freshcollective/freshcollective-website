@@ -12,3 +12,4 @@ from app.comms.routing.resolvers import diagnostics   # noqa: F401
 from app.comms.routing.resolvers import gatherings    # noqa: F401
 from app.comms.routing.resolvers import messages      # noqa: F401
 from app.comms.routing.resolvers import pathways      # noqa: F401
+from app.comms.routing.resolvers import purchases     # noqa: F401

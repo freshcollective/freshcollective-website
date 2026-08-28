@@ -689,6 +689,25 @@ def _handle_checkout_completed(
             now=now,
         )
         txn.fulfilment_status = PaymentFulfilmentStatus.applied
+        # R3 — emit ``purchase.completed`` (payment_mode='single')
+        # after apply_intent succeeds and before commit, so the event
+        # rolls back atomically if commit fails. Idempotency: the
+        # ``fulfilment_status == applied`` short-circuit at the top of
+        # this handler prevents this path from running twice for the
+        # same checkout session, so no duplicate email is possible on
+        # webhook replay. Skipped when we don't have a member (rare
+        # legacy path).
+        from app.services import purchase_lifecycle_emit as _r3
+        from app.models.user import User as _User
+        _member = db.query(_User).filter(_User.id == payer_user_id).first()
+        purchase_completed_event = None
+        if _member is not None:
+            purchase_completed_event = _r3.emit_purchase_completed(
+                db, user=_member, payment_option=payment_option,
+                payment_mode="single",
+                amount_cents=txn.gross_amount_cents,
+                currency=txn.currency,
+            )
         db.commit()
     except Exception:
         # Unexpected DB error during apply → roll back the whole
@@ -700,6 +719,12 @@ def _handle_checkout_completed(
             "rolling back for Stripe retry", session_id, txn.id,
         )
         raise
+
+    if purchase_completed_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, purchase_completed_event, "purchase.completed",
+        )
 
     # Singular ``entitlement`` field in the summary line is kept
     # for log-scraping compatibility with the pre-B3 format.
