@@ -1,12 +1,16 @@
-# render.yaml — Fresh Collective backend + finite-plan grace reconciler.
+# render.yaml — Fresh Collective four-resource Blueprint.
 #
 # Scope
 # -----
-# Declares the backend web service (FastAPI) and the FIP3 grace-expiry
-# reconciler cron job. Deliberately NOT a full-repo Blueprint — the
-# Next.js frontend under ``frontend/`` is intentionally excluded so
-# whichever host it eventually lands on (Render / Vercel / other) can
-# be added later without conflicting with this file's declared services.
+# Declares the full production topology on Render:
+#   1. fc-web  — Next.js frontend (public web service)
+#   2. fc-api  — FastAPI backend (public web service)
+#   3. fc-fip3-grace-reconciler — FIP3 grace-expiry cron
+#   4. fc-db   — managed Postgres
+#
+# All regional resources are pinned to Singapore. The runtime keys use
+# the current `runtime:` field (Render deprecated `env:` in favour of
+# `runtime:` — see https://render.com/docs/blueprint-spec).
 #
 # Why the cron exists alongside the in-process reconciler
 # -------------------------------------------------------
@@ -20,10 +24,97 @@
 #
 # See docs/finite-payment-plans-stripe-config.md for the operator
 # requirements this Blueprint satisfies.
+#
+# Ephemeral uploads warning
+# -------------------------
+# fc-api writes uploaded assets to ``backend/uploads/`` on the local
+# filesystem, which is EPHEMERAL on Render (wiped on every deploy /
+# restart / instance move). This is acceptable ONLY for the initial
+# technical smoke test after first Blueprint apply. Persistent object
+# storage (S3 / Supabase Storage / R2) is required before any external
+# creator uploads real content.
+#
+# First-production migrations remain manual — this file intentionally
+# does NOT declare a preDeployCommand for ``alembic upgrade head``.
+
+databases:
+  # ─────────────────────────────────────────────────────────────────
+  # Managed Postgres — fc-db
+  # ─────────────────────────────────────────────────────────────────
+  # Plan slug uses Render's current compute-notation format
+  # (Nc-Ng); ``0.5c-1g`` is the canonical Blueprint ID for the
+  # 0.5 CPU / 1 GB Postgres tier (equivalent to the legacy alias
+  # ``basic-1gb``) — smallest paid plan, ~100 max connections.
+  # Adequate for smoke + early access; resize via Render Dashboard
+  # when needed.
+  # ipAllowList: [] means "no public IPs allowed" — Postgres is
+  # only reachable from services inside the same Render region via
+  # the internal connection string.
+  #
+  # First-production migration
+  # --------------------------
+  # Migrations are run MANUALLY from fc-api's Render shell (this
+  # Blueprint intentionally does NOT declare a preDeployCommand):
+  #   1. After first fc-api deploy exposes shell access.
+  #   2. Run ``alembic upgrade head`` using the internally-injected
+  #      DATABASE_URL.
+  # Backend boots on empty DB: /health has no DB dependency;
+  # lifespan background tasks (reconciler + publisher) use
+  # asyncio.create_task so exceptions log non-fatally; alembic is
+  # installed via requirements.txt (``alembic>=1.14.0``).
+  # fc-db remains externally closed (ipAllowList: []); no
+  # operator-IP allowlisting required.
+  - name: fc-db
+    plan: 0.5c-1g
+    region: singapore
+    postgresMajorVersion: "18"
+    ipAllowList: []
 
 services:
   # ─────────────────────────────────────────────────────────────────
-  # Backend web service — FastAPI
+  # Frontend web service — fc-web (Next.js)
+  # ─────────────────────────────────────────────────────────────────
+  # Next.js production build; ``npm start`` serves the built app on
+  # Render's injected $PORT. Node pin is via the NODE_VERSION env
+  # var (Render's Blueprint-native mechanism — no .nvmrc needed).
+  #
+  # NEXT_PUBLIC_API_URL bootstrap
+  # -----------------------------
+  # NEXT_PUBLIC_* values are baked into the client bundle at
+  # ``npm run build`` time, so they must be resolvable BEFORE the
+  # first build. Render's Blueprint ``fromService.envVarKey``
+  # mechanism copies fc-api's ``RENDER_EXTERNAL_URL`` (the full
+  # public HTTPS URL, e.g. ``https://fc-api.onrender.com``) into
+  # fc-web's build-time NEXT_PUBLIC_API_URL, so no dashboard
+  # placeholder step is needed — the cross-service wiring
+  # auto-resolves on Blueprint sync.
+  - type: web
+    name: fc-web
+    runtime: node
+    region: singapore
+    branch: main
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "24.15.0"
+      - key: NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED
+        value: "false"
+      # Auto-wired from fc-api's RENDER_EXTERNAL_URL via Render's
+      # Blueprint fromService.envVarKey mechanism (see block
+      # comment above) — full public HTTPS URL is baked into the
+      # client bundle at build time, no dashboard step required.
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: fc-api
+          envVarKey: RENDER_EXTERNAL_URL
+
+  # ─────────────────────────────────────────────────────────────────
+  # Backend web service — fc-api (FastAPI)
   # ─────────────────────────────────────────────────────────────────
   # Backend uses pip + requirements.txt (no pyproject.toml, no uv,
   # no Poetry). Render's default Python buildpack runs pip install
@@ -35,12 +126,15 @@ services:
   # root (the active frontend is at frontend/, not /).
   - type: web
     name: fc-api
-    env: python
+    runtime: python
+    region: singapore
+    branch: main
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     # Render injects $PORT; bind 0.0.0.0 for public traffic.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
+    autoDeployTrigger: commit
     envVars:
       # Committed, safe defaults ------------------------------------
       - key: APP_ENV
@@ -51,27 +145,71 @@ services:
       # docs/finite-payment-plans-stripe-config.md §6 passes.
       - key: FINITE_PLAN_MEMBER_CHECKOUT_ENABLED
         value: "false"
+      - key: DISCOVERY_PILLAR_ENABLED
+        value: "false"
+      - key: COMMUNITY_CARE_ENABLED
+        value: "false"
+
+      # Managed Postgres wire-up ------------------------------------
+      # Uses Render's fromDatabase cross-reference so the connection
+      # string is injected automatically on every deploy — no manual
+      # dashboard edit, and the value rotates cleanly if the DB is
+      # recreated.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fc-db
+          property: connectionString
 
       # Secrets / environment-specific — set in Render Dashboard ----
       # sync: false makes Render prompt on first Blueprint sync and
-      # NEVER commits the value back to the file. See the "Manual
-      # Render Dashboard values" section in the deploy report.
-      - key: DATABASE_URL
-        sync: false
+      # NEVER commits the value back to the file.
       - key: JWT_SECRET
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
+      # STRIPE_WEBHOOK_SECRET
+      # ---------------------
+      # Set AFTER fc-api has a public HTTPS URL and a Render-hosted
+      # Stripe test webhook is created pointing at
+      # {fc-api-url}/api/webhooks/stripe. Do NOT reuse the local
+      # Stripe CLI whsec — that secret only signs events that the
+      # local CLI forwards.
+      #
+      # Missing value is safe at boot: settings.stripe_webhook_secret
+      # defaults to None (see backend/app/core/config.py), the app
+      # starts cleanly, and the /api/webhooks/stripe endpoint
+      # rejects unsigned/unverifiable requests with HTTP 400 via
+      # stripe.Webhook.construct_event (SignatureVerificationError).
+      #
+      # RESEND_WEBHOOK_SECRET intentionally omitted at launch. Add
+      # after fc-api HTTPS URL exists and the Resend webhook is
+      # configured at {fc-api-url}/api/webhooks/comms/resend
+      # (R4 already handles missing-secret cleanly: startup warning,
+      # non-fatal, endpoint rejects with 401).
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
-      # Absolute base URL of the public frontend. Used to build
-      # Stripe success / cancel return URLs; falls back to
-      # FRONTEND_ORIGIN if unset.
-      - key: PUBLIC_APP_URL
+      - key: RESEND_API_KEY
         sync: false
-      # Used for CORS + as the fallback for PUBLIC_APP_URL.
+      - key: EMAIL_FROM
+        sync: false
+      - key: PLATFORM_OWNER_EMAIL
+        sync: false
+      - key: STRIPE_PRICE_ID_CREATOR
+        sync: false
+      - key: STRIPE_PRICE_ID_PRO
+        sync: false
+      # Auto-wired from fc-web's RENDER_EXTERNAL_URL via Render's
+      # Blueprint fromService.envVarKey mechanism — the full
+      # public HTTPS URL is injected at deploy time, so no
+      # dashboard placeholder step is needed. Used for CORS and
+      # as the fallback for PUBLIC_APP_URL (which is intentionally
+      # not declared here — the code falls back to FRONTEND_ORIGIN
+      # when PUBLIC_APP_URL is unset).
       - key: FRONTEND_ORIGIN
-        sync: false
+        fromService:
+          type: web
+          name: fc-web
+          envVarKey: RENDER_EXTERNAL_URL
 
   # ─────────────────────────────────────────────────────────────────
   # FIP3 grace-expiry reconciler — independent cron
@@ -84,21 +222,25 @@ services:
   # The script is standalone-safe as of the registry-priming import
   # added on 2026-08-19 (see the script's header comment).
   #
-  # Does NOT need Stripe credentials — the sweep is DB-only. But it
-  # imports app.main to load the full SQLAlchemy model registry,
-  # which pulls in ``settings = Settings()`` at module load; that
-  # requires DATABASE_URL and JWT_SECRET to be present (both have
-  # no dataclass defaults in ``app.core.config.Settings``). Every
-  # other setting has a safe default.
+  # Does NOT need Stripe / Resend credentials — the sweep is DB-only.
+  # But it imports app.main to load the full SQLAlchemy model
+  # registry, which pulls in ``settings = Settings()`` at module
+  # load; that requires DATABASE_URL and JWT_SECRET to be present
+  # (both have no dataclass defaults in ``app.core.config.Settings``).
+  # Every other setting has a safe default.
   - type: cron
     name: fc-fip3-grace-reconciler
-    env: python
+    runtime: python
+    region: singapore
+    branch: main
     rootDir: backend
     schedule: "*/15 * * * *"
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/fip3_reconcile_grace.py
     envVars:
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: fc-db
+          property: connectionString
       - key: JWT_SECRET
         sync: false
