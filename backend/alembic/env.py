@@ -25,6 +25,7 @@ import app.models.purchase_intent  # noqa: F401 — registers PurchaseIntent (St
 import app.models.purchase_plan    # noqa: F401 — registers PurchasePlan (FIP1 finite payment plan foundation)
 import app.models.webhook_event    # noqa: F401 — registers WebhookEvent (FIP1 provider webhook idempotency)
 import app.models.community_care    # noqa: F401 — registers CommunityCare models (User FKs reference these)
+import app.models.access_grant_record  # noqa: F401 — registers AccessGrantRecord (FIP3 grant log, migration 119)
 import app.comms.models             # noqa: F401 — registers Communications Layer models (Milestone 1)
 
 config = context.config
