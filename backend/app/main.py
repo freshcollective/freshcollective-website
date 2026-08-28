@@ -75,6 +75,17 @@ async def lifespan(_: FastAPI):
     # is idempotent and safe under duplicate execution. See
     # app/services/finite_plan_reconciler.py.
     start_finite_plan_reconciler()
+    # Comms M6 — surface a config gap that would otherwise fail silently
+    # until the first real webhook fired. Outbound email still works
+    # without this secret; delivery/bounce/complaint webhooks do not.
+    # Never fatal — local dev without a Resend account is legitimate.
+    if settings.resend_api_key and not settings.resend_webhook_secret:
+        logger.warning(
+            "Resend outbound sending is configured (RESEND_API_KEY set) "
+            "but RESEND_WEBHOOK_SECRET is unset — outbound email still "
+            "works, but delivery-status webhooks cannot be verified and "
+            "will be rejected with HTTP 401."
+        )
     try:
         yield
     finally:

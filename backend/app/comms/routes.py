@@ -1077,14 +1077,38 @@ def shadow_parity(
 # One route per provider, keyed by ``provider_key`` in the path. The
 # provider must be a registered :class:`WebhookProvider`; if not, we
 # return 404 rather than 200 so misconfigured provider webhooks fail
-# visibly. Signature verification happens inside ``receive()``; the
-# response is always 200 once the raw payload has been recorded to
-# the ledger, even when the signature fails — the ledger row captures
-# the failure so tampering attempts are auditable rather than lost.
+# visibly.
+#
+# R4 (2026-08-26) — strict rejection semantics:
+#   * missing/malformed Svix headers → 400 (no audit row)
+#   * bad signature                  → 401 (no audit row)
+#   * malformed JSON body            → 400 (no audit row)
+#   * unknown provider_key           → 404
+#   * verified + parseable + in-scope event → 200 (audit row persisted;
+#     mapping applied; delivery + intent + suppression mutated as needed)
+#   * verified event whose event_type is out of R4 scope
+#     (opened/clicked/sent/unsubscribed/other) → 200 (INFO logged;
+#     no audit row, no side effect)
+#   * verified event with unknown provider_message_id → 200 (audit row
+#     persisted with process_error set; no delivery mutation)
+#
+# The audit ledger is TRUSTED history — untrusted payloads never land
+# in it. Rejections are logged (structured, without raw body).
 # ---------------------------------------------------------------------------
 
 
 webhook_router = APIRouter(prefix="/api/webhooks/comms", tags=["webhooks", "comms"])
+
+
+# R4 — mapping of the receiver's rejection reason to an HTTP status
+# code. 400 covers "the request itself is malformed" (missing headers
+# or unparseable body); 401 covers "the request is well-formed but
+# the signature doesn't verify against the configured secret".
+_REJECTED_REASON_STATUS = {
+    "missing_signature_headers": status.HTTP_400_BAD_REQUEST,
+    "malformed_payload": status.HTTP_400_BAD_REQUEST,
+    "invalid_signature": status.HTTP_401_UNAUTHORIZED,
+}
 
 
 @webhook_router.post(
@@ -1109,6 +1133,11 @@ async def receive_webhook(
         headers=dict(request.headers),
         raw_body=raw_body,
     )
+    if outcome.rejected_reason in _REJECTED_REASON_STATUS:
+        raise HTTPException(
+            status_code=_REJECTED_REASON_STATUS[outcome.rejected_reason],
+            detail={"error": outcome.rejected_reason},
+        )
     return WebhookReceiveResponse(
         provider_key=outcome.provider_key,
         signature_verified=outcome.signature_verified,

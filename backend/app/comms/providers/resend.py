@@ -196,6 +196,39 @@ class ResendProvider:
         from app.comms.webhooks import verify_svix_signature  # local — circular guard
         return verify_svix_signature(headers, raw_body, secret=secret)
 
+    def check_webhook(
+        self, headers: Mapping[str, str], raw_body: bytes,
+    ) -> str:
+        """R4 — return one of ``SIG_OK`` / ``SIG_MISSING_HEADERS`` /
+        ``SIG_INVALID`` so the receiver route can pick the right HTTP
+        4xx status (400 vs 401) when the payload is refused.
+
+        Header presence is checked first (even when the secret is
+        absent) so a caller missing ``svix-*`` headers always gets
+        the "fix your request" 400 response instead of the misleading
+        401 they'd see if the operator hadn't provisioned the secret
+        yet. When the secret is unset but headers ARE present we
+        return ``SIG_INVALID`` — the caller signed correctly, we just
+        can't verify.
+        """
+        from app.comms.webhooks import (  # local — circular guard
+            SIG_INVALID, SIG_MISSING_HEADERS, _header,
+            check_svix_signature,
+        )
+        # Header presence check mirrors check_svix_signature's own
+        # guard so behaviour is identical regardless of secret state.
+        for hname in ("svix-id", "svix-timestamp", "svix-signature"):
+            if not _header(headers, hname):
+                return SIG_MISSING_HEADERS
+        secret = settings.resend_webhook_secret
+        if not secret:
+            logger.warning(
+                "ResendProvider.check_webhook: RESEND_WEBHOOK_SECRET "
+                "is not set — rejecting inbound webhook."
+            )
+            return SIG_INVALID
+        return check_svix_signature(headers, raw_body, secret=secret)
+
     def parse_webhook(
         self, headers: Mapping[str, str], raw_body: bytes,
     ):
