@@ -78,16 +78,25 @@ services:
   # Render's injected $PORT. Node pin is via the NODE_VERSION env
   # var (Render's Blueprint-native mechanism — no .nvmrc needed).
   #
-  # NEXT_PUBLIC_API_URL bootstrap
-  # -----------------------------
-  # NEXT_PUBLIC_* values are baked into the client bundle at
-  # ``npm run build`` time, so they must be resolvable BEFORE the
-  # first build. Render's Blueprint ``fromService.envVarKey``
-  # mechanism copies fc-api's ``RENDER_EXTERNAL_URL`` (the full
-  # public HTTPS URL, e.g. ``https://fc-api.onrender.com``) into
-  # fc-web's build-time NEXT_PUBLIC_API_URL, so no dashboard
-  # placeholder step is needed — the cross-service wiring
-  # auto-resolves on Blueprint sync.
+  # Backend URL wiring (SEC-002)
+  # ----------------------------
+  # ``API_INTERNAL_URL`` is the server-side target for the Next.js proxy
+  # handler at ``src/app/api/[...path]/route.ts`` and for the server
+  # helpers in ``src/lib/serverApi.ts``. It is NEVER exposed to the
+  # browser: application API calls originate same-origin against
+  # ``fc-web`` and are forwarded server-side to this URL. Auto-wired
+  # from fc-api's ``RENDER_EXTERNAL_URL`` via Render's Blueprint
+  # ``fromService.envVarKey`` mechanism so no dashboard step is needed.
+  #
+  # ``NEXT_PUBLIC_API_URL`` is separately baked into the client bundle
+  # for media URLs only (``<img src>`` against ``/api/uploads/…``). It
+  # holds the same public backend host but is a different variable, so
+  # the least-privilege split between "browser knows the media host"
+  # and "server knows the API host" stays explicit.
+  #
+  # NOTE: no ``AUTH_SECRET`` is declared here. fc-web deliberately does
+  # not receive the JWT signing key — the backend is the sole
+  # authority for session verification via ``/api/auth/me``.
   - type: web
     name: fc-web
     runtime: node
@@ -103,10 +112,13 @@ services:
         value: "24.15.0"
       - key: NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED
         value: "false"
-      # Auto-wired from fc-api's RENDER_EXTERNAL_URL via Render's
-      # Blueprint fromService.envVarKey mechanism (see block
-      # comment above) — full public HTTPS URL is baked into the
-      # client bundle at build time, no dashboard step required.
+      # Server-side proxy target — not exposed to the browser.
+      - key: API_INTERNAL_URL
+        fromService:
+          type: web
+          name: fc-api
+          envVarKey: RENDER_EXTERNAL_URL
+      # Media / <img src> only — public host baked into the client bundle.
       - key: NEXT_PUBLIC_API_URL
         fromService:
           type: web

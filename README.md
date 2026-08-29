@@ -75,11 +75,21 @@ yarn dev
 **frontend/.env**
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8000
-AUTH_SECRET=same-value-as-backend-jwt-secret
+API_INTERNAL_URL=http://localhost:8000
 ```
 
-> **Important:** `AUTH_SECRET` (frontend) and `JWT_SECRET` (backend) must be the **same value**.
-> The frontend only uses `AUTH_SECRET` server-side for route protection — it is never sent to the browser.
+> **Authentication transport (SEC-002).** Browsers talk to Next.js
+> same-origin (`/api/*`); Next.js proxies to FastAPI server-to-server.
+> That's why the frontend needs two backend URLs:
+>
+> - `API_INTERNAL_URL` — server-side proxy target (never sent to the browser).
+> - `NEXT_PUBLIC_API_URL` — public host used only for `<img src>` on
+>   uploaded media; application API calls do NOT use it.
+>
+> The frontend does **not** hold the JWT signing key. The backend's
+> `JWT_SECRET` is the sole authority; Next.js middleware performs a
+> cookie-presence routing check only, and the authoritative session
+> check is `/api/auth/me` on the backend.
 
 ---
 
@@ -190,8 +200,9 @@ alembic downgrade -1
 | Item | Action required |
 |------|----------------|
 | Database | Update `DATABASE_URL` to point to managed PostgreSQL |
-| `JWT_SECRET` | Generate a new secret — never reuse dev secrets |
-| `AUTH_SECRET` | Same value as `JWT_SECRET` |
+| `JWT_SECRET` | Generate a new secret — never reuse dev secrets. Set on backend only; the frontend never receives it. |
+| `API_INTERNAL_URL` (frontend) | Auto-wired on Render from fc-api's `RENDER_EXTERNAL_URL`; server-side only. |
+| `NEXT_PUBLIC_API_URL` (frontend) | Public backend host; used by the browser for `<img src>` on uploaded media only. |
 | `FRONTEND_ORIGIN` | Set to your production domain |
 | `APP_ENV` | Set to `production` to enable Secure cookies (requires HTTPS) |
 | Email | Implement email sending in `backend/app/auth/routes.py` |

@@ -1,10 +1,10 @@
 /**
  * Unit tests for the pure auth-decision function.
  *
- * The runtime wrapper `requireAuthenticatedUser` collects three inputs
- * (cookie present, JWT signature valid, live user profile) and passes
- * them to `resolveAuthAction`. All the branching lives in the pure
- * function so this test file can exercise every path without mocking
+ * The runtime wrapper `requireAuthenticatedUser` collects two inputs
+ * (cookie present, live user profile from the backend) and passes them
+ * to `resolveAuthAction`. All the branching lives in the pure function
+ * so this test file can exercise every path without mocking
  * `next/headers` or `next/navigation`.
  *
  * Run with the built-in Node test runner:
@@ -35,10 +35,10 @@ const FAKE_USER: UserProfile = {
 }
 
 
-describe('resolveAuthAction — the four failure modes all redirect', () => {
+describe('resolveAuthAction — the failure modes all redirect', () => {
   test('no cookie → redirect with next preserved', () => {
     const out = resolveAuthAction({
-      hasToken: false, signatureValid: false, user: null,
+      hasToken: false, user: null,
       pathname: '/dashboard', loginPath: '/login',
     })
     assert.deepEqual(out, {
@@ -47,24 +47,14 @@ describe('resolveAuthAction — the four failure modes all redirect', () => {
     })
   })
 
-  test('cookie present but JWT signature invalid → redirect with next preserved', () => {
+  test('cookie present but backend returned no user → redirect', () => {
+    // Covers the whole "cookie exists but is not usable" family under
+    // one branch: forged cookie, expired signature, deleted user, or
+    // suspended account all surface as ``user === null`` from the
+    // backend's authoritative ``/api/auth/me``. The middleware alone
+    // cannot catch this; the guard must.
     const out = resolveAuthAction({
-      hasToken: true, signatureValid: false, user: null,
-      pathname: '/dashboard', loginPath: '/login',
-    })
-    assert.deepEqual(out, {
-      action: 'redirect',
-      to: '/login?next=%2Fdashboard',
-    })
-  })
-
-  test('valid JWT signature but backend returned no user (the R2B bug) → redirect', () => {
-    // This is the exact case that produced "Welcome back, friend." —
-    // signature was signed with AUTH_SECRET and unexpired, but the
-    // user row it points to no longer exists (deleted / test rollback).
-    // The middleware alone cannot catch this; the guard must.
-    const out = resolveAuthAction({
-      hasToken: true, signatureValid: true, user: null,
+      hasToken: true, user: null,
       pathname: '/dashboard', loginPath: '/login',
     })
     assert.deepEqual(out, {
@@ -75,7 +65,7 @@ describe('resolveAuthAction — the four failure modes all redirect', () => {
 
   test('valid session + live user → render (never redirect)', () => {
     const out = resolveAuthAction({
-      hasToken: true, signatureValid: true, user: FAKE_USER,
+      hasToken: true, user: FAKE_USER,
       pathname: '/dashboard', loginPath: '/login',
     })
     assert.deepEqual(out, { action: 'render', user: FAKE_USER })
@@ -99,7 +89,7 @@ describe('resolveAuthAction — next parameter is preserved across every protect
   ]) {
     test(`redirects preserve next=${pathname}`, () => {
       const out = resolveAuthAction({
-        hasToken: false, signatureValid: false, user: null,
+        hasToken: false, user: null,
         pathname, loginPath: '/login',
       })
       assert.equal(out.action, 'redirect')
@@ -113,7 +103,7 @@ describe('resolveAuthAction — next parameter is preserved across every protect
 
   test('pathnames with query-shaped characters are encoded', () => {
     const out = resolveAuthAction({
-      hasToken: false, signatureValid: false, user: null,
+      hasToken: false, user: null,
       pathname: '/spaces/foo/pathways/bar/steps/1',
       loginPath: '/login',
     })
@@ -128,7 +118,7 @@ describe('resolveAuthAction — next parameter is preserved across every protect
 describe('resolveAuthAction — admin login door is honoured for /admin/* paths', () => {
   test('admin path with no cookie → /admin/login?next=/admin/…', () => {
     const out = resolveAuthAction({
-      hasToken: false, signatureValid: false, user: null,
+      hasToken: false, user: null,
       pathname: '/admin/users/abc',
       loginPath: '/admin/login',
     })
@@ -138,12 +128,11 @@ describe('resolveAuthAction — admin login door is honoured for /admin/* paths'
     })
   })
 
-  test('admin path with stale-user-JWT → /admin/login?next=/admin/…', () => {
-    // The R2B bug repeated on /admin — a stale valid JWT for a deleted
-    // admin cannot be allowed to render admin chrome. Layout must
-    // bounce through /admin/login, not through /login.
+  test('admin path with stale cookie / no live user → /admin/login?next=/admin/…', () => {
+    // A stale cookie for a deleted admin must not render admin chrome.
+    // The layout bounces through /admin/login, not through /login.
     const out = resolveAuthAction({
-      hasToken: true, signatureValid: true, user: null,
+      hasToken: true, user: null,
       pathname: '/admin/dashboard',
       loginPath: '/admin/login',
     })
@@ -160,7 +149,7 @@ describe('resolveAuthAction — happy path returns the user for every role', () 
     test(`role=${role} is returned unchanged (role-based gating is a layer above)`, () => {
       const user = { ...FAKE_USER, role }
       const out = resolveAuthAction({
-        hasToken: true, signatureValid: true, user,
+        hasToken: true, user,
         pathname: '/dashboard', loginPath: '/login',
       })
       assert.deepEqual(out, { action: 'render', user })

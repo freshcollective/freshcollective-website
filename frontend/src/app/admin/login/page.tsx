@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { apiUrl } from '@/lib/api'
-import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
+import { SESSION_COOKIE } from '@/lib/session'
 import AdminLoginForm from './AdminLoginForm'
 
 export const metadata = { title: 'Sign in — World Management' }
@@ -23,27 +23,26 @@ export default async function AdminLoginPage({
 }) {
   const { next } = await searchParams
 
-  // Auto-forward already-signed-in admins.
+  // Auto-forward already-signed-in admins. Ask the backend directly
+  // via /api/auth/me — fc-web no longer verifies JWT signatures
+  // locally (SEC-002). Any failure just falls through to the form.
   const cookieStore = await cookies()
   const session = cookieStore.get(SESSION_COOKIE)
   if (session) {
-    const valid = await verifySessionToken(session.value)
-    if (valid) {
-      try {
-        const res = await fetch(apiUrl('/api/auth/me'), {
-          headers: { Cookie: `${SESSION_COOKIE}=${session.value}` },
-          cache: 'no-store',
-        })
-        if (res.ok) {
-          const me = await res.json().catch(() => null)
-          if (me?.role === 'admin') {
-            const dest = next && next.startsWith('/admin') ? next : '/admin'
-            redirect(dest)
-          }
+    try {
+      const res = await fetch(apiUrl('/api/auth/me'), {
+        headers: { Cookie: `${SESSION_COOKIE}=${session.value}` },
+        cache: 'no-store',
+      })
+      if (res.ok) {
+        const me = await res.json().catch(() => null)
+        if (me?.role === 'admin') {
+          const dest = next && next.startsWith('/admin') ? next : '/admin'
+          redirect(dest)
         }
-      } catch {
-        // Ignore — fall through to the login form.
       }
+    } catch {
+      // Ignore — fall through to the login form.
     }
   }
 

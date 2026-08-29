@@ -1,12 +1,17 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { verifySessionToken, SESSION_COOKIE } from '@/lib/session'
+import { SESSION_COOKIE } from '@/lib/session'
 import { ACTIVE_SPACE_COOKIE } from '@/lib/activeSpaceCookie'
 import { decide, extractCreatorSpaceSlug } from '@/proxyRouting'
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const token = request.cookies.get(SESSION_COOKIE)?.value
-  const authenticated = token ? await verifySessionToken(token) : false
+  // Presence-only auth check (SEC-002). The authoritative session check
+  // lives in ``requireAuthenticatedUser`` on the backend side via
+  // ``/api/auth/me``; the middleware only needs to know whether a
+  // session cookie is present so it can route unauthenticated visitors
+  // to the correct login door. This removes the dependency on the JWT
+  // signing secret from fc-web.
+  const authenticated = !!request.cookies.get(SESSION_COOKIE)?.value
 
   const decision = decide(pathname, authenticated)
   if (decision.action === 'next') {

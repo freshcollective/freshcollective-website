@@ -7,8 +7,10 @@
  * — which cannot resolve ``next/headers`` / ``next/navigation``.
  *
  * The runtime wrapper is in ``requireAuthenticatedUser.ts``. It
- * collects the three inputs (cookie present, JWT signature valid,
- * live user profile) and feeds them here.
+ * collects two inputs (cookie present, live user profile from the
+ * backend) and feeds them here. The backend's ``/api/auth/me`` is
+ * the authoritative session check; fc-web no longer verifies JWT
+ * signatures locally (SEC-002 least-privilege change).
  */
 
 import type { UserProfile } from '@/types/platform'
@@ -19,7 +21,6 @@ export type AuthAction =
 
 export function resolveAuthAction(input: {
   hasToken: boolean
-  signatureValid: boolean
   user: UserProfile | null
   pathname: string
   loginPath: string
@@ -32,7 +33,6 @@ export function resolveAuthAction(input: {
   })
 
   if (!input.hasToken) return failedRedirect()
-  if (!input.signatureValid) return failedRedirect()
   if (!input.user) return failedRedirect()
   return { action: 'render', user: input.user }
 }

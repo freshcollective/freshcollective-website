@@ -1,10 +1,14 @@
 /**
  * Admin sales pipeline API client.
- * All calls include credentials so the fc_session cookie is forwarded.
- * Money is stored/sent as integer cents; use formatCents() for display.
+ *
+ * All calls run in the browser and go through the same-origin Next.js
+ * proxy (``apiUrl(path)`` returns the path unchanged client-side).
+ * The ``fc_session`` cookie flies with the request automatically because
+ * it lives on the fc-web origin — see SEC-002. Money is stored/sent as
+ * integer cents; use formatCents() for display.
  */
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
+import { apiUrl } from './api'
 
 // ── Enum types ────────────────────────────────────────────────────────────────
 
@@ -298,7 +302,7 @@ export class AdminApiError extends Error {
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
 async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(apiUrl(path), {
     ...init,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },

@@ -2,28 +2,16 @@
  * `requireAuthenticatedUser` — the single server-side auth guard used by
  * every protected layout / server page.
  *
- * The Next.js middleware in ``src/proxy.ts`` performs a cheap check:
- * it verifies the JWT's signature and expiry via ``verifySessionToken``.
- * That is fast and cache-friendly, but it does not know whether the
- * user row referenced by the token still exists — a rolled-back test
- * account, a deleted user, or a revoked session all leave a valid
- * signature behind.
+ * The middleware in ``src/proxy.ts`` performs cookie-presence routing
+ * only (SEC-002 least-privilege change — fc-web no longer holds the
+ * JWT signing key). This helper is the authoritative check: it asks the
+ * backend for the live user via ``getMe()`` (``/api/auth/me``), and if
+ * that returns null it redirects to the login door with the requested
+ * URL preserved in ``next``.
  *
- * Without a per-page guard, such a stale-but-signed cookie sails past
- * the middleware and lands on a protected page whose ``getMe()`` returns
- * ``null``. The page then renders with fallback strings ("friend") and
- * empty data — a jarring, half-authenticated UX.
- *
- * This helper closes that gap in exactly one place. Each protected
- * server layout calls ``requireAuthenticatedUser()`` at the top; on
- * any failure it issues a ``redirect(...)`` so the page never renders
- * with a null user. The returned ``UserProfile`` can be threaded into
- * the layout's shell (e.g. Creator Studio uses the role for gating).
- *
- * The ``next`` query parameter preserves the requested URL so the
- * user lands where they intended after logging in. It is read from
- * the ``x-pathname`` request header the proxy middleware sets on
- * every request (see ``src/proxy.ts::proxy``).
+ * That means a stale, forged, or otherwise unusable cookie will sail
+ * past the middleware and be caught here — the backend is the sole
+ * authority for whether a session is real.
  *
  * The pure decision function ``resolveAuthAction`` is exported so
  * unit tests can cover every branch without needing to mock
@@ -35,7 +23,7 @@ import { redirect } from 'next/navigation'
 
 import { resolveAuthAction } from './resolveAuthAction'
 import { getMe } from './serverApi'
-import { SESSION_COOKIE, verifySessionToken } from './session'
+import { SESSION_COOKIE } from './session'
 import type { UserProfile } from '@/types/platform'
 
 // Re-export for callers that already import from this module.
@@ -83,12 +71,14 @@ export async function requireAuthenticatedUser(
   const cookieStore = await cookies()
   const token = cookieStore.get(SESSION_COOKIE)?.value
   const hasToken = !!token
-  const signatureValid = hasToken ? await verifySessionToken(token as string) : false
-  const user = signatureValid ? await _loadUser() : null
+  // No local signature check — the backend is authoritative. If the
+  // cookie is missing or the backend rejects it, ``_loadUser`` returns
+  // null and the decision function issues a redirect.
+  const user = hasToken ? await _loadUser() : null
   const pathname = await _currentPathname(fallbackNext)
 
   const decision = resolveAuthAction({
-    hasToken, signatureValid, user, pathname, loginPath,
+    hasToken, user, pathname, loginPath,
   })
 
   if (decision.action === 'redirect') {
