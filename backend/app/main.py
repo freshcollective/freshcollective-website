@@ -93,12 +93,17 @@ async def lifespan(_: FastAPI):
         await stop_publisher()
 
 
+# SEC-003 — disable interactive API docs and the OpenAPI schema in
+# production so unauthenticated visitors cannot enumerate the admin,
+# internal, and webhook routes. Local development keeps them enabled
+# so /docs remains the day-to-day API reference for the team.
 app = FastAPI(
     title="Fresh Collective API",
     description="Member platform backend",
     version="0.1.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if settings.is_production else "/docs",
+    redoc_url=None if settings.is_production else "/redoc",
+    openapi_url=None if settings.is_production else "/openapi.json",
     lifespan=lifespan,
 )
 
