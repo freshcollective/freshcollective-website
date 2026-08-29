@@ -108,13 +108,57 @@ def create_session_token(user: User) -> str:
     return create_access_token({"sub": user.id, "email": user.email, "role": user.role})
 
 
+_PASSWORD_RESET_COOLDOWN_SECONDS = 60
+
+
 def create_password_reset_token(db: Session, email: str) -> str | None:
     """
     Returns the raw token (for the reset URL) if the user exists, else None.
     Caller must not reveal whether a user exists.
+
+    SEC-006 Phase A — DB-backed per-account cooldown. If this user
+    already had a reset row created within the previous
+    ``_PASSWORD_RESET_COOLDOWN_SECONDS`` window, we return ``None``
+    without creating a new token or triggering a new email dispatch.
+    The route already returns the same generic 200 response for both
+    the "user missing" and "no token issued" branches, so this
+    silently suppresses the second (and later) requests without
+    revealing to the caller either the account's existence or the
+    throttle's activation. Anti-enumeration is preserved end-to-end.
+
+    Concurrency: the check is a plain SELECT with no representing
+    database uniqueness constraint on the cooldown window itself, so
+    two truly simultaneous callers can both pass the check and each
+    replace the previous token + dispatch an email. The window is
+    tiny (< a few milliseconds) and the worst-case outcome is one
+    additional email + one additional token, still bounded to the
+    same 1 unused token per user via the invalidate-and-replace step
+    below. This is by design: introducing a row lock, table-level
+    uniqueness partial index, or Redis for a 60-second best-effort
+    cooldown is disproportionate to the residual risk. Fixing
+    SEC-010 (real client IP) and later adding an IP throttle on
+    ``/reset-password`` (SEC-006 Phase B) will squeeze the practical
+    race window further.
     """
     user = get_user_by_email(db, email)
     if not user:
+        return None
+
+    cooldown_cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(
+        seconds=_PASSWORD_RESET_COOLDOWN_SECONDS
+    )
+    recent = (
+        db.query(PasswordReset.id)
+        .filter(
+            PasswordReset.user_id == user.id,
+            PasswordReset.created_at > cooldown_cutoff,
+        )
+        .first()
+    )
+    if recent is not None:
+        # Silent no-op: no new token, no new email. Existing unused
+        # token (if any) is left in place so the previous reset link
+        # remains usable until it expires or is consumed.
         return None
 
     # Invalidate any existing unused tokens for this user
