@@ -9,12 +9,15 @@ Add admin-facing features here:
   etc.
 """
 
+import logging
 from datetime import datetime
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.admin import service
 from app.creator.plan_activation import ActivationSource, activate_creator_plan
@@ -98,6 +101,42 @@ from app.models.platform import (
 from app.models.user import User
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+# ---------------------------------------------------------------------------
+# TEMPORARY (SEC-010 diagnostic) — REMOVE AFTER USE
+#
+# Server-side observability of trusted-proxy header shapes reaching
+# this container. Deliberately logs only a small, non-sensitive set of
+# transport headers (no Cookie, no Authorization, no bodies, no PII).
+# Response body is a fixed ``{"ok": true}`` so the endpoint itself
+# never leaks the observed values to the caller.
+#
+# Gated by ``get_admin_user`` — an unauthenticated caller cannot fire
+# it, so no anonymous internet traffic reaches the log line.
+#
+# The two commits landing this endpoint + removing it are labelled
+# ``diagnostic: …`` so they are trivially identifiable in the log.
+# ---------------------------------------------------------------------------
+@router.get("/_diagnostic/proxy-headers", include_in_schema=False)
+async def _sec010_proxy_headers_diagnostic(
+    request: Request,
+    _: User = Depends(get_admin_user),
+) -> dict:
+    client_host = request.client.host if request.client else None
+    logger.warning(
+        "SEC-010-DIAG path=%s client_host=%r xff=%r cf_connecting_ip=%r "
+        "x_real_ip=%r forwarded=%r via=%r cf_ray=%r",
+        request.url.path,
+        client_host,
+        request.headers.get("x-forwarded-for"),
+        request.headers.get("cf-connecting-ip"),
+        request.headers.get("x-real-ip"),
+        request.headers.get("forwarded"),
+        request.headers.get("via"),
+        request.headers.get("cf-ray"),
+    )
+    return {"ok": True}
 
 
 @router.get("/users")
