@@ -39,6 +39,7 @@ from app.models.platform import (
 )
 from app.models.user import User
 from app.community.mentions import sanitize_mentions
+from app.community.sanitize import sanitize_post_body
 from app.community.schemas import (
     ALLOWED_REACTION_EMOJIS,
     CastVoteRequest,
@@ -550,7 +551,10 @@ def create_community_post(
         author_id=current_user.id,
         post_type=_resolve_post_type(post_type_str),
         title=body.title or None,
-        body=body.body.strip(),
+        # SEC-001 — sanitise at the write boundary so every render
+        # surface (including dangerouslySetInnerHTML sinks) can trust
+        # what it reads back.
+        body=sanitize_post_body(body.body.strip()),
         image_url=body.image_url or None,
         mentioned_user_ids=mentioned,
         is_pinned=is_pinned,

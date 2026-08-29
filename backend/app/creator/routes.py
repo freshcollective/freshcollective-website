@@ -19,6 +19,7 @@ from sqlalchemy import false as sa_false, func, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.dependencies import get_creator_user
+from app.community.sanitize import sanitize_post_body
 from app.community_care.shared import (
     has_active_creator_restriction,
     is_space_closed,
@@ -3973,7 +3974,8 @@ def update_post(
     if body.title is not None:
         post.title = body.title or None
     if body.body is not None:
-        post.body = body.body
+        # SEC-001 — sanitise on edit for the same reason as create.
+        post.body = sanitize_post_body(body.body)
     if body.is_pinned is not None:
         post.is_pinned = body.is_pinned
     if "image_url" in body.model_fields_set:

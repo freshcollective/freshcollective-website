@@ -13,6 +13,10 @@ python-dotenv>=1.0.0
 stripe>=10.0.0
 resend>=2.0.0
 Pillow>=10.3.0
+# HTML sanitiser used at the community-post write boundary (SEC-001).
+# Ammonia (Rust) bindings — fast, single install, ships prebuilt
+# manylinux wheels for both aarch64 and x86_64.
+nh3>=0.2.14
 # Server-side HTTP client for the location autocomplete proxy
 # (backend/app/services/location_providers/nominatim.py). Async so
 # it composes with FastAPI without blocking the event loop.
