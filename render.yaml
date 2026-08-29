@@ -78,21 +78,30 @@ services:
   # Render's injected $PORT. Node pin is via the NODE_VERSION env
   # var (Render's Blueprint-native mechanism — no .nvmrc needed).
   #
-  # Backend URL wiring (SEC-002)
-  # ----------------------------
+  # Backend URL wiring (SEC-002, SEC-010 Step 1)
+  # --------------------------------------------
   # ``API_INTERNAL_URL`` is the server-side target for the Next.js proxy
   # handler at ``src/app/api/[...path]/route.ts`` and for the server
   # helpers in ``src/lib/serverApi.ts``. It is NEVER exposed to the
   # browser: application API calls originate same-origin against
-  # ``fc-web`` and are forwarded server-side to this URL. Auto-wired
-  # from fc-api's ``RENDER_EXTERNAL_URL`` via Render's Blueprint
-  # ``fromService.envVarKey`` mechanism so no dashboard step is needed.
+  # ``fc-web`` and are forwarded server-side to this URL.
+  #
+  # SEC-010 Step 1 — pulled via ``fromService.property: hostport``, which
+  # returns fc-api's Render *private* ``<hostname>:<port>`` reachable
+  # only from services in this same Render account/region. Traffic
+  # therefore never traverses Cloudflare or the public load balancer,
+  # so the browser IP loss observed at the public hop (SEC-010
+  # investigation) is architecturally avoided. ``resolveInternalApiBase``
+  # in ``frontend/src/lib/api.ts`` prepends ``http://`` when the value
+  # is a bare host:port (Render private) and leaves full URLs alone
+  # (local dev). No scheme change required to the env var itself.
   #
   # ``NEXT_PUBLIC_API_URL`` is separately baked into the client bundle
   # for media URLs only (``<img src>`` against ``/api/uploads/…``). It
-  # holds the same public backend host but is a different variable, so
+  # still points at the *public* HTTPS host because browsers cannot
+  # reach the private one. Keeping the two variables distinct preserves
   # the least-privilege split between "browser knows the media host"
-  # and "server knows the API host" stays explicit.
+  # and "server knows the API host".
   #
   # NOTE: no ``AUTH_SECRET`` is declared here. fc-web deliberately does
   # not receive the JWT signing key — the backend is the sole
@@ -113,11 +122,14 @@ services:
       - key: NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED
         value: "false"
       # Server-side proxy target — not exposed to the browser.
+      # SEC-010 Step 1: routes BFF traffic over Render's private
+      # per-account network. ``hostport`` yields ``<host>:<port>``;
+      # ``resolveInternalApiBase`` in the frontend prepends ``http://``.
       - key: API_INTERNAL_URL
         fromService:
           type: web
           name: fc-api
-          envVarKey: RENDER_EXTERNAL_URL
+          property: hostport
       # Media / <img src> only — public host baked into the client bundle.
       - key: NEXT_PUBLIC_API_URL
         fromService:

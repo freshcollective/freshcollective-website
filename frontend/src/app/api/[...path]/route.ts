@@ -30,10 +30,11 @@
 
 import { NextRequest } from 'next/server'
 
+import { resolveInternalApiBase } from '@/lib/api'
+
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const BACKEND_URL = process.env.API_INTERNAL_URL
 const REQUEST_TIMEOUT_MS = 30_000
 
 // Path segments (after ``/api/``) that this proxy refuses to forward.
@@ -85,14 +86,18 @@ async function proxy(
     return jsonResponse(404, { detail: 'Not found.' })
   }
 
-  if (!BACKEND_URL) {
+  if (!process.env.API_INTERNAL_URL) {
     return jsonResponse(500, {
       detail: 'API_INTERNAL_URL is not configured on this server.',
     })
   }
 
   const search = new URL(request.url).search
-  const targetUrl = `${BACKEND_URL.replace(/\/$/, '')}/api/${joined}${search}`
+  // ``resolveInternalApiBase`` (see ``@/lib/api``) accepts either a
+  // full ``http[s]://…`` URL (local dev, historical) or a bare
+  // ``hostname[:port]`` (Render private-networking ``hostport`` shape,
+  // SEC-010 Step 1). It normalises both to a valid absolute base.
+  const targetUrl = `${resolveInternalApiBase()}/api/${joined}${search}`
 
   const outboundHeaders = new Headers()
   request.headers.forEach((value, name) => {

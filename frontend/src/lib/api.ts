@@ -26,6 +26,29 @@ function stripTrailingSlash(url: string): string {
 }
 
 /**
+ * Resolve the server-side backend base URL.
+ *
+ * Accepts two shapes from ``API_INTERNAL_URL`` so the same code path
+ * works in every environment (SEC-010 Step 1):
+ *
+ *   * ``http://…`` or ``https://…`` — used as-is. This covers local
+ *     dev (``http://localhost:8000`` in ``.env``) and any future
+ *     environment that wants an explicit scheme.
+ *   * bare ``hostname[:port]`` — treated as an internal HTTP endpoint
+ *     and ``http://`` is prepended. This is the shape Render's
+ *     ``fromService.property: hostport`` returns for private
+ *     service-to-service networking, where TLS is unnecessary because
+ *     the traffic never leaves Render's per-account internal network.
+ *
+ * Trailing slashes are stripped so path concatenation is safe.
+ */
+export function resolveInternalApiBase(): string {
+  const raw = process.env.API_INTERNAL_URL ?? 'http://localhost:8000'
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`
+  return stripTrailingSlash(withScheme)
+}
+
+/**
  * Build a URL for an application API call.
  *
  * In the browser this returns the path unchanged (``/api/…``) so the
@@ -38,8 +61,7 @@ export function apiUrl(path: string): string {
   if (typeof window !== 'undefined') {
     return path
   }
-  const base = process.env.API_INTERNAL_URL ?? 'http://localhost:8000'
-  return `${stripTrailingSlash(base)}${path}`
+  return `${resolveInternalApiBase()}${path}`
 }
 
 /**
