@@ -17,6 +17,12 @@ ENV/
 .env
 .env.local
 .env.production
+# Backup/rotation variants written by editors and ad-hoc scripts
+# (e.g. .env.bak, .env.bak.1786789292, .env.local.bak). One
+# unfortunate `git add -A` would otherwise stage a full secret set.
+.env.bak
+.env.bak.*
+.env.*.bak
 
 # IDE
 .vscode/
