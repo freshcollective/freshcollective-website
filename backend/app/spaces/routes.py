@@ -553,6 +553,62 @@ def _get_space_visible_to(slug: str, db: Session, current_user: "User | None") -
     return space
 
 
+def _get_member_space(slug: str, current_user: "User", db: Session) -> Space:
+    """Space lookup that requires the caller to have a qualifying
+    relationship with the Space. Used by endpoints that return
+    space-scoped data which a non-member has no legitimate business
+    seeing (SEC-004: ``list_pathways_progress`` was previously readable
+    by any authenticated caller, leaking draft/archived pathways and
+    letting strangers enumerate private link-only Collectives).
+
+    Qualifying relationships (mirrors the existing authorisation model
+    used by ``_check_pathway_access`` and ``_compute_pathway_access`` —
+    do NOT diverge, or the two boundaries will drift):
+
+      * ``current_user.role`` is ``"admin"`` or ``"creator"``.
+        This matches the surrounding code: platform-role Creators
+        bypass per-Space membership everywhere in this file (see
+        ``_check_pathway_access`` line 795 and ``_compute_pathway_access``
+        line 709). Reported to the operator during the SEC-004 fix so
+        the implication is visible; not narrowed here to avoid drift
+        between this helper and the rest of the module.
+      * The caller owns the Space (``space.creator_id == user.id``).
+      * The caller has an active ``SpaceMembership`` — any role
+        (``learner``, ``moderator``, ``creator``).
+
+    Non-members receive **404 Not Found**, not 403. Matches the privacy
+    stance of ``_get_space_visible_to``: refusing to acknowledge a
+    Space's existence to callers who cannot see it (relevant for
+    private / link-only Collectives such as World Builders).
+    """
+    space = db.query(Space).filter(Space.slug == slug).first()
+    if space is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+
+    # Platform-role admins and creators — matches the existing model.
+    if current_user.role in ("admin", "creator"):
+        return space
+
+    # Space owner.
+    if space.creator_id == current_user.id:
+        return space
+
+    # Active membership (any role).
+    membership = (
+        db.query(SpaceMembership.id)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == "active",
+        )
+        .first()
+    )
+    if membership is not None:
+        return space
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
+
+
 def _get_pathway_or_404(space_id: str, pathway_slug: str, db: Session) -> Pathway:
     pathway = (
         db.query(Pathway)
@@ -1310,14 +1366,37 @@ def list_pathways_progress(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[PathwayProgress]:
-    """All pathways for a space, each annotated with this user's completion stats."""
-    space = _get_space_or_404(slug, db)
-    pathways = (
-        db.query(Pathway)
-        .filter(Pathway.space_id == space.id)
-        .order_by(Pathway.position)
-        .all()
+    """All pathways for a space, each annotated with this user's
+    completion stats.
+
+    SEC-004: authorisation gate matches ``list_pathways`` — the caller
+    must have a qualifying relationship with the Space (member,
+    manager, owner, or platform admin/creator role), and non-managers
+    see only pathways with ``status in ('active', 'coming_soon')``.
+    Draft / archived pathways remain visible only to managers, mirroring
+    the visibility rule enforced in ``list_pathways`` above.
+    """
+    space = _get_member_space(slug, current_user, db)
+
+    # Manager detection matches ``list_pathways`` line 1236 onwards so
+    # the two endpoints keep the same visibility semantics.
+    is_creator_or_admin = current_user.role in ("creator", "admin")
+    space_role = (
+        db.query(SpaceMembership.role)
+        .filter(
+            SpaceMembership.user_id == current_user.id,
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.role.in_(["creator", "moderator"]),
+            SpaceMembership.status == "active",
+        )
+        .first()
     )
+    is_space_manager = bool(space_role) or space.creator_id == current_user.id
+
+    query = db.query(Pathway).filter(Pathway.space_id == space.id)
+    if not (is_creator_or_admin or is_space_manager):
+        query = query.filter(Pathway.status.in_(["active", "coming_soon"]))
+    pathways = query.order_by(Pathway.position).all()
     pathway_ids = [p.id for p in pathways]
     if not pathway_ids:
         return []
