@@ -88,6 +88,22 @@ class Settings(BaseSettings):
     # role in the DB and render as their own badge, not Owner.
     platform_owner_email: str | None = None
 
+    # SEC-010 Step 2 — shared authentication credential for the BFF's
+    # X-Fc-Client-IP claim. When set on both fc-web and fc-api (same
+    # value, entered via each service's Render Environment page), the
+    # BFF forwards ``X-Fc-Bff-Auth: <secret>`` + ``X-Fc-Client-IP: <ip>``
+    # on outbound calls; fc-api's rate-limit key function trusts the
+    # forwarded client IP only after ``secrets.compare_digest`` verifies
+    # the credential. When None (local dev, or unset in production for
+    # any reason), the authenticated branch is skipped entirely and
+    # every request is treated as public-path traffic — the header is
+    # silently ignored, never trusted.
+    #
+    # Rotation: generate a new value, paste on fc-api, paste on fc-web.
+    # Sequential restarts create a ~90-second window where limiter
+    # accuracy briefly degrades but no security regression occurs.
+    internal_bff_secret: str | None = None
+
     # Platform timezone — the local frame Fresh Collective operates in.
     # All period boundaries (month, financial year) are anchored here
     # rather than at UTC midnight, so "This month" and "This FY" mean

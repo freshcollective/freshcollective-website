@@ -31,6 +31,7 @@
 import { NextRequest } from 'next/server'
 
 import { resolveInternalApiBase } from '@/lib/api'
+import { applyBffAuthHeaders } from '@/lib/bffAuth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -107,6 +108,15 @@ async function proxy(
   })
   const cookieHeader = request.headers.get('cookie')
   if (cookieHeader) outboundHeaders.set('cookie', cookieHeader)
+
+  // SEC-010 Step 2 — BFF-authenticated client-IP claim. See
+  // ``bff-auth.ts`` for the security invariants and the tests that
+  // lock them in.
+  applyBffAuthHeaders(
+    outboundHeaders,
+    request.headers.get('cf-connecting-ip'),
+    process.env.INTERNAL_BFF_SECRET,
+  )
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)

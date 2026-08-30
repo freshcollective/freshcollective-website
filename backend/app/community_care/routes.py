@@ -34,10 +34,10 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_creator_user, get_current_user
+from app.core.rate_limit import client_ip_for_rate_limit
 from app.community_care.schemas import (
     CreatorSupportAcknowledgement,
     CreatorSupportRequest,
@@ -65,10 +65,12 @@ from app.models.user import User
 
 router = APIRouter(prefix="/api/community-care", tags=["community-care"])
 
-# IP-based rate limiter — matches the pattern used across the rest of
-# the API. Intake volume is low; these ceilings exist to keep abuse
-# visible in logs, not to block honest members.
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiter — key function lives in ``app.core.rate_limit`` and
+# handles both BFF-authenticated identity claims (per browser client IP)
+# and public-path Cloudflare-derived identity. Intake volume is low;
+# these ceilings exist to keep abuse visible in logs, not to block
+# honest members.
+limiter = Limiter(key_func=client_ip_for_rate_limit)
 
 
 # ---------------------------------------------------------------------------

@@ -3,8 +3,9 @@ import os
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, Response, UploadFile, status
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
+
+from app.core.rate_limit import client_ip_for_rate_limit
 
 from app.auth import service
 from app.auth.dependencies import SESSION_COOKIE, get_current_user
@@ -26,7 +27,7 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=client_ip_for_rate_limit)
 
 COOKIE_MAX_AGE = 7 * 24 * 60 * 60  # 7 days
 

@@ -136,6 +136,15 @@ services:
           type: web
           name: fc-api
           envVarKey: RENDER_EXTERNAL_URL
+      # SEC-010 Step 2 — shared credential authenticating the BFF's
+      # ``X-Fc-Client-IP`` claim to fc-api. Must be the SAME value on
+      # both fc-web and fc-api. ``sync: false`` = Render prompts on
+      # first sync and never commits the value back to git. Enter via
+      # each service's Environment page. Rotation = paste new value on
+      # both services; a ~90-second restart window briefly degrades
+      # limiter accuracy but no security regression.
+      - key: INTERNAL_BFF_SECRET
+        sync: false
 
   # ─────────────────────────────────────────────────────────────────
   # Backend web service — fc-api (FastAPI)
@@ -221,6 +230,10 @@ services:
       - key: STRIPE_PRICE_ID_CREATOR
         sync: false
       - key: STRIPE_PRICE_ID_PRO
+        sync: false
+      # SEC-010 Step 2 — must match fc-web's INTERNAL_BFF_SECRET exactly.
+      # See the comment on fc-web's declaration for rotation guidance.
+      - key: INTERNAL_BFF_SECRET
         sync: false
       # Auto-wired from fc-web's RENDER_EXTERNAL_URL via Render's
       # Blueprint fromService.envVarKey mechanism — the full

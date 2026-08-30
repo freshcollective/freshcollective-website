@@ -6,7 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+
+from app.core.rate_limit import client_ip_for_rate_limit
 
 from app.services.scheduled_publisher import start_publisher, stop_publisher
 from app.services.finite_plan_reconciler import (
@@ -63,7 +64,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Rate limiter (in-memory; swap for Redis-backed in production)
 # ---------------------------------------------------------------------------
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=client_ip_for_rate_limit)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
