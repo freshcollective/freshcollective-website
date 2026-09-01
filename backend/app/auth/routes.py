@@ -369,11 +369,20 @@ async def forgot_password(
 
 
 @router.post("/reset-password")
+@limiter.limit("5/minute")
 async def reset_password(
+    request: Request,
     payload: ResetPasswordRequest,
     response: Response,
     db: Session = Depends(get_db),
 ) -> UserResponse:
+    # SEC-006 Phase B — per-client IP throttle on the consume endpoint.
+    # Uses the SEC-010 ``client_ip_for_rate_limit`` key function
+    # configured on this router's Limiter, so BFF-mediated callers
+    # are keyed on the authenticated browser IP claim rather than
+    # fc-web's egress. Anti-enumeration and single-use / expiry /
+    # invalidation semantics inside ``consume_password_reset_token``
+    # are unchanged.
     user = service.consume_password_reset_token(db, payload.token, payload.password)
     if not user:
         raise HTTPException(
