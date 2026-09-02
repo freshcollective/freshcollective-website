@@ -34,6 +34,7 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_admin_user, get_current_user
+from app.core.internal_auth import verify_internal_token
 from app.comms.categories import (
     ALL_CATEGORIES,
     ALL_CHANNELS,
@@ -774,10 +775,12 @@ def dispatch_due_endpoint(
     db: Session = Depends(get_db),
 ) -> DispatchResultResponse:
     """Cron-callable endpoint. Requires ``X-Internal-Token`` matching
-    ``JWT_SECRET`` (same protection scheme as
-    ``/api/internal/send-event-reminders``).
+    ``INTERNAL_COMMS_SECRET`` (SEC-007; independent of ``JWT_SECRET``
+    so the session-signing key is not conflated with internal-service
+    authentication). Same protection scheme as
+    ``/api/internal/send-event-reminders``.
     """
-    if not x_internal_token or x_internal_token != settings.jwt_secret:
+    if not verify_internal_token(x_internal_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid X-Internal-Token.",
@@ -804,9 +807,10 @@ def reconcile_shadow_endpoint(
     """Cron-callable endpoint. Records one ``communication_shadow_
     comparisons`` row per event that has a registered comparator and
     doesn't yet have a comparison row. Idempotent — safe to call at
-    any cadence.
+    any cadence. Requires ``X-Internal-Token`` matching
+    ``INTERNAL_COMMS_SECRET`` (SEC-007).
     """
-    if not x_internal_token or x_internal_token != settings.jwt_secret:
+    if not verify_internal_token(x_internal_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid X-Internal-Token.",
@@ -840,8 +844,8 @@ def reconcile_shadow_endpoint(
 #
 # Fail-closed guards, in order:
 #   1. Refuses to run in APP_ENV=production.
-#   2. Requires X-Internal-Token to match JWT_SECRET (matches the
-#      other internal endpoints in this file).
+#   2. Requires X-Internal-Token to match INTERNAL_COMMS_SECRET
+#      (SEC-007 — matches the other internal endpoints in this file).
 #   3. Requires an existing User row for ``to_email``. The intent
 #      needs a real user_id for ResolvedRecipient — using a real row
 #      also makes the diagnostic behave more like a production send.
@@ -888,8 +892,8 @@ def dev_test_send_endpoint(
         )
 
     # 2. Match the internal-token pattern used by /dispatch-due and
-    #    /reconcile-shadow above.
-    if not x_internal_token or x_internal_token != settings.jwt_secret:
+    #    /reconcile-shadow above (SEC-007: INTERNAL_COMMS_SECRET).
+    if not verify_internal_token(x_internal_token):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid X-Internal-Token.",

@@ -235,6 +235,22 @@ services:
       # See the comment on fc-web's declaration for rotation guidance.
       - key: INTERNAL_BFF_SECRET
         sync: false
+      # SEC-007 — dedicated credential for the four ``/api/internal/*``
+      # endpoints (dispatch-due, reconcile-shadow, dev-test-send,
+      # send-event-reminders). Independent of ``JWT_SECRET`` so
+      # possession of this token cannot mint user session JWTs, and
+      # independent of ``INTERNAL_BFF_SECRET`` so the two internal
+      # trust domains rotate separately. Compared with
+      # ``secrets.compare_digest`` via
+      # ``app.core.internal_auth.verify_internal_token``. Missing
+      # value = every internal endpoint fails closed with 401.
+      #
+      # Not declared on ``fc-web`` (no code path there consumes
+      # internal endpoints) or on the ``fc-fip3-grace-reconciler``
+      # cron (it makes no HTTP calls to fc-api). Add to any future
+      # service that legitimately needs to call ``/api/internal/*``.
+      - key: INTERNAL_COMMS_SECRET
+        sync: false
       # Auto-wired from fc-web's RENDER_EXTERNAL_URL via Render's
       # Blueprint fromService.envVarKey mechanism — the full
       # public HTTPS URL is injected at deploy time, so no

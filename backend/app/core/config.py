@@ -104,6 +104,26 @@ class Settings(BaseSettings):
     # accuracy briefly degrades but no security regression occurs.
     internal_bff_secret: str | None = None
 
+    # SEC-007 — shared authentication credential for the four
+    # ``/api/internal/*`` endpoints (dispatch-due, reconcile-shadow,
+    # dev-test-send, send-event-reminders). Previously these endpoints
+    # authenticated by string-comparing ``X-Internal-Token`` against
+    # ``jwt_secret``, which conflated two distinct identity systems:
+    # possession of the internal-endpoint credential would also mint
+    # arbitrary user/admin session JWTs.
+    #
+    # Independent from ``jwt_secret`` and ``internal_bff_secret`` by
+    # design — different trust domains with different rotation
+    # cadences and blast radii. Do NOT reuse. Do NOT log. Compared
+    # only via ``secrets.compare_digest``; see
+    # ``app.core.internal_auth.verify_internal_token``.
+    #
+    # When None (unset), every ``/api/internal/*`` request fails
+    # closed with 401 regardless of the presented token — better to
+    # reject a legitimate cron than silently fall back to a more-
+    # privileged credential.
+    internal_comms_secret: str | None = None
+
     # Platform timezone — the local frame Fresh Collective operates in.
     # All period boundaries (month, financial year) are anchored here
     # rather than at UTC midnight, so "This month" and "This FY" mean

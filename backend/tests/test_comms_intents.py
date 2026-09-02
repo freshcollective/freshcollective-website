@@ -603,8 +603,13 @@ class TestInternalDispatchEndpoint:
         assert exc.value.status_code == 401
 
     def test_valid_token_dispatches(self, db, make_user, monkeypatch):
+        # SEC-007: dispatch endpoint now authenticates against
+        # ``INTERNAL_COMMS_SECRET`` (not ``JWT_SECRET``).
         from app.core.config import settings as app_settings
-        monkeypatch.setattr(app_settings, "jwt_secret", "shared-secret", raising=False)
+        monkeypatch.setattr(
+            app_settings, "internal_comms_secret", "shared-internal-comms-secret",
+            raising=False,
+        )
 
         register(_CollectingProvider("test_ok", accept=True))
         u = make_user()
@@ -614,8 +619,31 @@ class TestInternalDispatchEndpoint:
         db.flush()
 
         resp = dispatch_due_endpoint(
-            x_internal_token="shared-secret",
+            x_internal_token="shared-internal-comms-secret",
             db=db,
         )
         assert resp.count == 1
         assert intent.id in resp.processed
+
+    def test_jwt_secret_is_no_longer_accepted_as_internal_token(
+        self, db, monkeypatch,
+    ):
+        """SEC-007 regression: after migration, the JWT signing key
+        must NOT authenticate ``/api/internal/comms/dispatch-due``.
+        Prevents a partial-migration mistake where a stray comparison
+        against ``jwt_secret`` accidentally survives."""
+        from app.core.config import settings as app_settings
+        monkeypatch.setattr(
+            app_settings, "jwt_secret", "session-signing-key",
+            raising=False,
+        )
+        monkeypatch.setattr(
+            app_settings, "internal_comms_secret", "distinct-internal-comms-secret",
+            raising=False,
+        )
+        with pytest.raises(HTTPException) as exc:
+            dispatch_due_endpoint(
+                x_internal_token="session-signing-key",  # the OLD credential
+                db=db,
+            )
+        assert exc.value.status_code == 401

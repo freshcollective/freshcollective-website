@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.core.config import settings
 from app.core.database import SessionLocal, get_db
+from app.core.internal_auth import verify_internal_token
 from app.models.notification import Notification
 from app.models.platform import (
     Event,
@@ -280,11 +281,6 @@ def _send_broadcast_emails(
 # POST /api/internal/send-event-reminders
 # ---------------------------------------------------------------------------
 
-class _InternalTokenHeader:
-    """Validates the X-Internal-Token header against settings.jwt_secret."""
-    pass
-
-
 @router.post("/api/internal/send-event-reminders", status_code=status.HTTP_202_ACCEPTED)
 def send_event_reminders(
     background_tasks: BackgroundTasks,
@@ -293,7 +289,10 @@ def send_event_reminders(
 ) -> dict:
     """
     Cron endpoint: query events starting in ~24h or ~1h and send reminders.
-    Protected by X-Internal-Token matching the JWT secret.
+    Protected by X-Internal-Token matching ``INTERNAL_COMMS_SECRET``
+    (SEC-007 — a dedicated internal-service credential, independent
+    of ``JWT_SECRET`` so possession of this token cannot mint user
+    session JWTs).
 
     Production cron configuration
     -----------------------------
@@ -302,11 +301,12 @@ def send_event_reminders(
                 every event lands in at least one window if the caller
                 fires at or below a 10-minute cadence.
     Endpoint:   POST {BACKEND_ORIGIN}/api/internal/send-event-reminders
-    Headers:    X-Internal-Token: <value of JWT_SECRET on the same env>
+    Headers:    X-Internal-Token: <value of INTERNAL_COMMS_SECRET on the same env>
                 Content-Type:     application/json   (body may be empty)
-    Env vars:   JWT_SECRET        must be set — the token compares equal
-                RESEND_API_KEY    required for real email delivery
-                EMAIL_FROM        required (no fallback domain)
+    Env vars:   INTERNAL_COMMS_SECRET  must be set — the token is
+                                       compared via ``secrets.compare_digest``
+                RESEND_API_KEY         required for real email delivery
+                EMAIL_FROM             required (no fallback domain)
 
     Recommended scheduler: whatever the host platform provides
     (Render Cron, Fly Machines cron, Cloudflare Cron Triggers, AWS
@@ -314,7 +314,7 @@ def send_event_reminders(
     itself so the reminder cadence is a deployment concern, not a
     code concern.
     """
-    if not x_internal_token or x_internal_token != settings.jwt_secret:
+    if not verify_internal_token(x_internal_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal token.")
 
     now = datetime.utcnow()
