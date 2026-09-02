@@ -81,7 +81,12 @@ def _has_space_caretaker_membership(user_id: str, space_id: str, db: Session) ->
     return row is not None
 
 
-def _is_active_space_member(user_id: str, space_id: str, db: Session) -> bool:
+def is_active_space_member(user_id: str, space_id: str, db: Session) -> bool:
+    """Public — exposed so peer modules (e.g. community upload endpoints)
+    can reuse the same active-membership predicate the channel gate
+    already uses. Kept alongside ``is_caretaker`` as the two building
+    blocks callers may compose without reimplementing membership
+    semantics."""
     row = (
         db.query(SpaceMembership.id)
         .filter(
@@ -159,7 +164,7 @@ def can_view_channel(
 
     # Ordinary users must at least be active in the Space; a suspended
     # membership loses access even to open Channels.
-    if not _is_active_space_member(user.id, space.id, db):
+    if not is_active_space_member(user.id, space.id, db):
         return False
 
     ct = channel.channel_type

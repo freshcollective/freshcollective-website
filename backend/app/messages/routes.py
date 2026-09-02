@@ -64,7 +64,30 @@ def _get_managed_space(slug: str, user: User, db: Session) -> Space:
     return space
 
 
-def _get_member_space(slug: str, user: User, db: Session) -> Space:
+def _get_message_member_space(slug: str, user: User, db: Session) -> Space:
+    """SEC-005-D — direct-message member gate.
+
+    Deliberately stricter than the community-facing
+    ``spaces.routes._get_member_space``:
+
+      * NO platform-role bypass. A platform admin or platform-role
+        creator without a real ``SpaceMembership`` in this Collective
+        is refused. Direct messages are 1:1 conversations between a
+        member and the collective's creator; admin snooping is not a
+        supported access path. If SEC-005-E later grants admins a
+        formal DM-audit surface, that must go through its own gated
+        endpoint, not through this helper.
+      * NO space-owner bypass. Owners see their creator side of
+        threads via the creator endpoints; the member side is only
+        for the participant.
+      * 403 (not 404) on failure — the endpoint's existence is not a
+        secret to authenticated callers.
+
+    Named ``_get_message_member_space`` so the divergence from
+    ``spaces.routes._get_member_space`` is obvious at every call site
+    and cannot silently drift into that helper's broader bypass set
+    during a future refactor.
+    """
     space = db.query(Space).filter(Space.slug == slug).first()
     if not space:
         raise HTTPException(status_code=404, detail="Space not found.")
@@ -361,7 +384,7 @@ def member_list_threads(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[ThreadSummary]:
-    _get_member_space(slug, current_user, db)
+    _get_message_member_space(slug, current_user, db)
     space = db.query(Space).filter(Space.slug == slug).first()
     threads = (
         db.query(MessageThread)
@@ -382,7 +405,7 @@ def member_get_thread(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ThreadDetail:
-    space = _get_member_space(slug, current_user, db)
+    space = _get_message_member_space(slug, current_user, db)
     thread = db.query(MessageThread).filter(
         MessageThread.id == thread_id,
         MessageThread.space_id == space.id,
@@ -402,7 +425,7 @@ def member_reply(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> ThreadDetail:
-    space = _get_member_space(slug, current_user, db)
+    space = _get_message_member_space(slug, current_user, db)
     thread = db.query(MessageThread).filter(
         MessageThread.id == thread_id,
         MessageThread.space_id == space.id,
@@ -468,7 +491,7 @@ def member_mark_read(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> None:
-    space = _get_member_space(slug, current_user, db)
+    space = _get_message_member_space(slug, current_user, db)
     thread = db.query(MessageThread).filter(
         MessageThread.id == thread_id,
         MessageThread.space_id == space.id,

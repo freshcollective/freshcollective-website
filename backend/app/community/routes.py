@@ -72,6 +72,7 @@ from app.services.channel_permissions import (
     can_post,
     can_react,
     can_view_channel,
+    is_active_space_member,
     is_caretaker,
 )
 
@@ -1056,7 +1057,22 @@ async def upload_community_image(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    _get_space_or_404(slug, db)
+    # SEC-005-C — uploads land in the collective's storage namespace
+    # (``uploads/media/{slug}/community/…``). Being authenticated is
+    # not enough: a stranger with an fc-web account must not be able
+    # to write files into a Collective they cannot even read. Require
+    # an active membership or caretaker (creator/moderator, plus the
+    # existing platform-admin / platform-creator bypass carried by
+    # ``is_caretaker``).
+    space = _get_space_or_404(slug, db)
+    if not (
+        is_caretaker(current_user, space, db)
+        or is_active_space_member(current_user.id, space.id, db)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You must be a member of this collective to upload community images.",
+        )
 
     data = await file.read()
     try:
@@ -1088,8 +1104,30 @@ def toggle_post_reaction(
         raise HTTPException(status_code=400, detail="Emoji not allowed.")
     space = _get_space_or_404(slug, db)
 
+    # SEC-005-A — verify the post belongs to the URL Collective before
+    # touching anything else. Prior code loaded the reaction row by
+    # unscoped ``post_id``, letting an authenticated caller react to
+    # any post in any Collective (including private / link-only) by
+    # supplying an unrelated post_id in a slug they *can* see.
+    post = (
+        db.query(CommunityPost)
+        .filter(CommunityPost.id == post_id, CommunityPost.space_id == space.id)
+        .first()
+    )
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found.")
+
+    # Central channel gate — enforces active space membership, channel
+    # visibility (private/pathway/gathering channels are respected),
+    # and not-archived. Caretakers pass automatically.
+    channel = _get_channel_for_post(post, db)
+    if not can_react(current_user, channel, space, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="You cannot react to this post.")
+
     # Community Care — reactions are a posting-shaped write; block on
-    # freeze or posting restriction.
+    # freeze or posting restriction. Now correctly scoped to the actual
+    # post's Collective (proven equal to the URL slug's Collective above).
     from app.community_care.shared import (
         has_active_posting_restriction, is_space_closed, is_space_frozen,
     )
@@ -1102,7 +1140,7 @@ def toggle_post_reaction(
 
     existing = (
         db.query(PostReaction)
-        .filter_by(post_id=post_id, user_id=current_user.id, emoji=emoji)
+        .filter_by(post_id=post.id, user_id=current_user.id, emoji=emoji)
         .first()
     )
     if existing:
@@ -1112,7 +1150,7 @@ def toggle_post_reaction(
 
     reaction = PostReaction(
         id=str(uuid.uuid4()),
-        post_id=post_id,
+        post_id=post.id,
         user_id=current_user.id,
         emoji=emoji,
     )
@@ -1141,6 +1179,33 @@ def toggle_comment_reaction(
         raise HTTPException(status_code=400, detail="Emoji not allowed.")
     space = _get_space_or_404(slug, db)
 
+    # SEC-005-B — walk the (space → post → comment) object chain before
+    # doing anything else. Prior code loaded the reaction row by
+    # unscoped ``comment_id`` and *ignored* the ``post_id`` URL param
+    # entirely, so any comment in the system could be reacted to by
+    # supplying any (slug, post_id) tuple.
+    post = (
+        db.query(CommunityPost)
+        .filter(CommunityPost.id == post_id, CommunityPost.space_id == space.id)
+        .first()
+    )
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found.")
+    comment = (
+        db.query(PostComment)
+        .filter(PostComment.id == comment_id, PostComment.post_id == post.id)
+        .first()
+    )
+    if not comment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found.")
+
+    channel = _get_channel_for_post(post, db)
+    if not can_react(current_user, channel, space, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="You cannot react to this comment.")
+
+    # Community Care — same rationale as SEC-005-A above; now scoped
+    # to the actual comment's Collective.
     from app.community_care.shared import (
         has_active_posting_restriction, is_space_closed, is_space_frozen,
     )
@@ -1153,7 +1218,7 @@ def toggle_comment_reaction(
 
     existing = (
         db.query(CommentReaction)
-        .filter_by(comment_id=comment_id, user_id=current_user.id, emoji=emoji)
+        .filter_by(comment_id=comment.id, user_id=current_user.id, emoji=emoji)
         .first()
     )
     if existing:
@@ -1163,7 +1228,7 @@ def toggle_comment_reaction(
 
     reaction = CommentReaction(
         id=str(uuid.uuid4()),
-        comment_id=comment_id,
+        comment_id=comment.id,
         user_id=current_user.id,
         emoji=emoji,
     )
