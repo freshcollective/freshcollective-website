@@ -34,8 +34,35 @@
 # storage (S3 / Supabase Storage / R2) is required before any external
 # creator uploads real content.
 #
-# First-production migrations remain manual — this file intentionally
-# does NOT declare a preDeployCommand for ``alembic upgrade head``.
+# Migration policy
+# ----------------
+# fc-api declares ``preDeployCommand: alembic upgrade head`` (see the
+# fc-api service block below). Render runs it against the newly-built
+# release image BEFORE cutting any traffic over, so the schema is
+# always in place before code that requires it starts serving.
+#
+# What this policy covers:
+#   * Normal, additive, backwards-compatible migrations (add nullable
+#     column; add table; add index CONCURRENTLY; add enum value;
+#     backfill that completes in seconds). These run automatically
+#     on every deploy — no operator action required.
+#
+# What this policy does NOT cover — must ship as an explicit,
+# staged multi-deploy plan documented in the migration file itself:
+#   * Dropping or renaming a column, table, enum value, or constraint.
+#   * NOT NULL / CHECK additions that require a data backfill first.
+#   * Any migration whose upgrade() step is not safe to run against
+#     the currently-live application code (e.g. removing a column the
+#     old code still SELECTs).
+#   * Long-running data migrations that hold locks or block writes
+#     beyond a few seconds.
+#   * Anything that cannot be rolled back cleanly without data loss.
+#
+# ``alembic upgrade head`` alone does NOT make an unsafe migration
+# safe — the author of the migration is responsible for staging the
+# rollout (e.g. add-column-nullable → deploy → backfill → deploy →
+# add-NOT-NULL). If in doubt, the migration should note the staging
+# plan at the top and reviewers should confirm the plan before merge.
 
 databases:
   # ─────────────────────────────────────────────────────────────────
@@ -51,13 +78,12 @@ databases:
   # only reachable from services inside the same Render region via
   # the internal connection string.
   #
-  # First-production migration
-  # --------------------------
-  # Migrations are run MANUALLY from fc-api's Render shell (this
-  # Blueprint intentionally does NOT declare a preDeployCommand):
-  #   1. After first fc-api deploy exposes shell access.
-  #   2. Run ``alembic upgrade head`` using the internally-injected
-  #      DATABASE_URL.
+  # Migrations
+  # ----------
+  # Applied automatically by fc-api's ``preDeployCommand`` on every
+  # release (see the top-of-file "Migration policy" block for the
+  # additive-only scope and the staged-rollout requirement for
+  # destructive changes).
   # Backend boots on empty DB: /health has no DB dependency;
   # lifespan background tasks (reconciler + publisher) use
   # asyncio.create_task so exceptions log non-fatally; alembic is
@@ -164,6 +190,14 @@ services:
     branch: main
     rootDir: backend
     buildCommand: pip install -r requirements.txt
+    # Alembic runs against the freshly-built release image before
+    # Render cuts any traffic over, so the schema is always in place
+    # before the new code starts serving. On non-zero exit the deploy
+    # aborts and existing traffic continues to hit the previous
+    # image. See the top-of-file "Migration policy" block for the
+    # additive-only scope and the staged-rollout requirement for
+    # destructive changes.
+    preDeployCommand: alembic upgrade head
     # Render injects $PORT; bind 0.0.0.0 for public traffic.
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
