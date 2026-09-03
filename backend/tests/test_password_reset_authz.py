@@ -307,6 +307,7 @@ class TestEmailSuppression:
 class TestConsumptionUnchanged:
     def test_valid_token_can_be_consumed_once(self, db, make_user):
         u = _seed_user(db, make_user)
+        sv_before = u.session_version
         token = auth_service.create_password_reset_token(db, u.email)
         assert token is not None
 
@@ -315,6 +316,13 @@ class TestConsumptionUnchanged:
         )
         assert result is not None
         assert result.id == u.id
+
+        # SEC-008 / SEC-015 regression: a successful consume must bump
+        # session_version so every previously-issued JWT is invalidated.
+        assert result.session_version == sv_before + 1, (
+            "consume_password_reset_token must bump session_version so "
+            "old JWTs cannot survive the password reset."
+        )
 
         # Single-use: second consume must fail.
         second = auth_service.consume_password_reset_token(

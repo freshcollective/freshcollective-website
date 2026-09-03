@@ -105,7 +105,38 @@ def emit_welcome_after_signup(
 
 
 def create_session_token(user: User) -> str:
-    return create_access_token({"sub": user.id, "email": user.email, "role": user.role})
+    """Issue a fresh authentication JWT for the given user.
+
+    SEC-008 / SEC-015 — the ``sv`` claim carries the user's current
+    ``session_version`` at issue time. ``get_current_user`` refuses
+    any token whose ``sv`` no longer matches the DB value, giving
+    the app single-integer server-side session revocation.
+
+    Callers that bump ``user.session_version`` (password change,
+    password reset, logout-all) must do so BEFORE invoking this
+    helper so the freshly-issued token carries the post-bump value.
+    """
+    return create_access_token({
+        "sub": user.id,
+        "email": user.email,
+        "role": user.role,
+        "sv": user.session_version,
+    })
+
+
+def bump_session_version(user: User) -> None:
+    """SEC-008 / SEC-015 — invalidate every currently-outstanding JWT
+    for this user by incrementing ``session_version``.
+
+    Deliberately does NOT commit. The caller owns the transaction so
+    the version bump and the accompanying security mutation
+    (password change, reset consumption, logout-all cookie clear) are
+    committed atomically or fail together — never partially. The
+    increment is represented on the ORM-managed ``User`` object
+    immediately, so a subsequent ``create_session_token(user)`` in
+    the same transaction picks up the new value.
+    """
+    user.session_version = (user.session_version or 0) + 1
 
 
 _PASSWORD_RESET_COOLDOWN_SECONDS = 60
@@ -187,6 +218,14 @@ def consume_password_reset_token(
     """
     Validates the token, updates the password, marks the token as used.
     Returns the user on success, None on failure.
+
+    SEC-008 / SEC-015 — a successful consume ALSO bumps the user's
+    ``session_version`` so every previously-issued JWT is invalidated
+    on its next authenticated request. Password mutation, single-use
+    marking, and session-version bump are performed inside a single
+    commit so a mid-transaction failure never leaves the account in a
+    partially-secured state (e.g. password rotated but old sessions
+    still valid).
     """
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
     reset = db.query(PasswordReset).filter(PasswordReset.token_hash == token_hash).first()
@@ -204,6 +243,7 @@ def consume_password_reset_token(
 
     user.password_hash = hash_password(new_password)
     reset.used_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    bump_session_version(user)
     db.commit()
     db.refresh(user)
     return user

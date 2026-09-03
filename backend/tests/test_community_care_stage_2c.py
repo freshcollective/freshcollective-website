@@ -921,7 +921,10 @@ class TestSuspensionPendingReview:
             ),
             admin=admin, db=db,
         )
-        token = create_access_token({"sub": target.id})
+        # SEC-008 — include the ``sv`` claim so the token satisfies
+        # the session-version check; the assertion here is that
+        # get_current_user still refuses on suspension grounds.
+        token = create_access_token({"sub": target.id, "sv": target.session_version})
         scope = {
             "type": "http",
             "headers": [(b"cookie", f"fc_session={token}".encode())],

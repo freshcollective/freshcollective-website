@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -33,6 +33,19 @@ class User(Base):
         nullable=False,
         default="user",
         server_default="user",
+    )
+    # SEC-008 / SEC-015 — server-side session revocation counter.
+    # Embedded in every newly-issued JWT as the ``sv`` claim; a
+    # mismatch between token and DB value forces re-authentication.
+    # Bumped by password change, password reset, and explicit
+    # logout-all (see ``app.auth.service.bump_session_version``).
+    # NOT bumped by role change / suspension / cancellation —
+    # those are enforced by live DB reads in ``get_current_user``.
+    session_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
     )
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True

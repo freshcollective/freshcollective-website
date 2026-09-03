@@ -440,8 +440,9 @@ class TestAccountCancellation:
             notification_type="community_care_account_cancellation",
         ).one()
         assert n.severity == "urgent"
-        # Sessions rejected.
-        token = create_access_token({"sub": target.id})
+        # Sessions rejected — token carries a valid sv, and the 401
+        # comes from the cancellation check, not the sv gate.
+        token = create_access_token({"sub": target.id, "sv": target.session_version})
         scope = {
             "type": "http",
             "headers": [(b"cookie", f"fc_session={token}".encode())],
@@ -526,7 +527,9 @@ class TestCreatorCancellation:
             get_creator_user(current_user=creator)
         assert e.value.status_code == 403
         # But member-side get_current_user still lets them through.
-        token = create_access_token({"sub": creator.id})
+        # SEC-008 — include the ``sv`` claim so the token satisfies
+        # the session-version check.
+        token = create_access_token({"sub": creator.id, "sv": creator.session_version})
         scope = {
             "type": "http",
             "headers": [(b"cookie", f"fc_session={token}".encode())],

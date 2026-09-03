@@ -108,6 +108,33 @@ async def logout(response: Response) -> dict:
     return {"message": "Logged out."}
 
 
+@router.post("/logout-all")
+@limiter.limit("5/minute")
+async def logout_all(
+    request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """SEC-008 / SEC-015 — self-service "sign out of every device".
+
+    Bumps the caller's ``session_version`` so every JWT currently
+    outstanding (this device included) is refused on its next
+    authenticated request, then clears the current-device cookie.
+    Deliberately does NOT issue a replacement token — the caller
+    must sign in again from any device they still want to use, and
+    an attacker holding a stolen token loses access on the token's
+    next use.
+
+    Rate-limited via SEC-010's ``client_ip_for_rate_limit`` at
+    5/minute per IP.
+    """
+    service.bump_session_version(current_user)
+    db.commit()
+    response.delete_cookie(key=SESSION_COOKIE, path="/")
+    return {"message": "Signed out of every device."}
+
+
 import json as _json
 
 
@@ -296,11 +323,32 @@ async def get_memberships(
 
 
 @router.post("/me/change-password")
+@limiter.limit("5/minute")
 async def change_password(
+    request: Request,
     payload: ChangePasswordRequest,
+    response: Response,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    """SEC-006 Gate 2 + SEC-008 / SEC-015.
+
+    Requires the current password, then rotates it. On success the
+    user's ``session_version`` is bumped so every previously-issued
+    JWT (including any that may have been stolen) is invalidated on
+    its next authenticated request. The caller's cookie is then
+    replaced with a fresh JWT carrying the new ``sv`` so the current
+    device stays signed in seamlessly.
+
+    Rate-limited via SEC-010's ``client_ip_for_rate_limit`` at
+    5/minute per IP. FastAPI/Pydantic validation runs before the
+    limiter body, so malformed 422 payloads do NOT consume the
+    bucket.
+
+    Wrong-current-password requests raise 400 BEFORE any mutation —
+    password_hash, session_version, and the session cookie are all
+    unchanged in the failure path.
+    """
     from app.core.security import verify_password, hash_password
     if not verify_password(payload.current_password, current_user.password_hash):
         raise HTTPException(
@@ -308,7 +356,12 @@ async def change_password(
             detail="Current password is incorrect.",
         )
     current_user.password_hash = hash_password(payload.new_password)
+    service.bump_session_version(current_user)
     db.commit()
+    # Rotate the caller's session cookie so THIS device stays signed
+    # in with a JWT that carries the new session_version. Every other
+    # session (or a stolen token) will 401 on its next request.
+    set_session_cookie(response, service.create_session_token(current_user))
     return {"message": "Password updated successfully."}
 
 
