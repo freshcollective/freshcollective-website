@@ -1245,8 +1245,15 @@ def toggle_comment_reaction(
 # ---------------------------------------------------------------------------
 
 def _can_moderate(user: User, space: Space, db: Session) -> bool:
-    """Return True if this user can moderate community content in the space."""
-    if user.role in ("admin", "creator"):
+    """Return True if this user can moderate community content in the space.
+
+    SEC-005-E — platform ``User.role == "creator"`` is no longer a
+    global bypass. Authority now requires platform admin, Space
+    ownership, or an active creator/moderator ``SpaceMembership``.
+    """
+    if user.role == "admin":
+        return True
+    if space.creator_id == user.id:
         return True
     row = (
         db.query(SpaceMembership.role)

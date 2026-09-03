@@ -44,10 +44,25 @@ def _sanitize(text: str) -> str:
 
 
 def _get_managed_space(slug: str, user: User, db: Session) -> Space:
+    """SEC-005-E — creator-side direct-message management gate.
+
+    Deliberately stricter than the generic Collective helpers: neither
+    platform ``creator`` role nor platform ``admin`` role grants
+    automatic access to a Collective's DMs. Authority requires one of:
+
+      * ``Space.creator_id`` ownership;
+      * active ``SpaceMembership`` with role in {creator, moderator}.
+
+    Consistent with the sibling ``_get_message_member_space`` (SEC-005-D)
+    stance: private/direct-message access is not inherited from
+    platform-wide roles. A future explicit safety/reporting workflow
+    for DMs must go through its own gated endpoint, not through this
+    helper.
+    """
     space = db.query(Space).filter(Space.slug == slug).first()
     if not space:
         raise HTTPException(status_code=404, detail="Space not found.")
-    if user.role in ("admin", "creator"):
+    if space.creator_id == user.id:
         return space
     membership = (
         db.query(SpaceMembership)

@@ -575,26 +575,19 @@ def trigger_caretaker_reply_to_question(
         if not responder:
             return
 
-        is_caretaker = responder.role in ("admin", "creator")
-        if not is_caretaker:
-            membership_role = (
-                db.query(SpaceMembership.role)
-                .filter(
-                    SpaceMembership.space_id == post.space_id,
-                    SpaceMembership.user_id == responder_id,
-                    SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]),
-                    SpaceMembership.status == SpaceMembershipStatus.active,
-                )
-                .first()
-            )
-            is_caretaker = membership_role is not None
-        if not is_caretaker:
+        space = db.query(Space).filter(Space.id == post.space_id).first()
+        if not space:
+            return
+
+        # SEC-005-E — use the central caretaker predicate so notification
+        # eligibility can never drift out of sync with the access gate.
+        from app.services.channel_permissions import is_caretaker as _is_caretaker
+        if not _is_caretaker(responder, space, db):
             return
 
         responder_name = responder.name or "A Creator"
         title = "A Creator replied to your question"
         message = f"{responder_name} replied to your question."
-        space = db.query(Space).filter(Space.id == post.space_id).first()
         notif_url = f"/spaces/{space.slug}/community/{post.id}" if space else None
         create_notification(
             db=db,

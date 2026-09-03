@@ -59,15 +59,41 @@ from app.models.user import User
 # ---------------------------------------------------------------------------
 
 
+def is_space_owner(user: User | None, space: Space) -> bool:
+    """SEC-005-E — per-Collective ownership predicate. Owners always
+    retain authority over their Collective even without a matching
+    ``SpaceMembership`` row (legacy Collectives predating
+    ``create_space``'s auto-inserted creator_owner membership rely on
+    this branch)."""
+    return user is not None and space.creator_id == user.id
+
+
 def is_caretaker(user: User | None, space: Space, db: Session) -> bool:
+    """Caretaker of the Space — may view, moderate, manage members,
+    schedule, archive, and restore Channels here.
+
+    Post SEC-005-E: platform ``User.role == "creator"`` is a platform
+    capability (may enter Creator Studio); it is NOT global authority
+    over other creators' Collectives. Caretaker status now requires
+    one of:
+
+      * platform ``admin`` — preserved unchanged;
+      * ``Space.creator_id`` ownership;
+      * active ``SpaceMembership`` with role in {creator, moderator}.
+    """
     if user is None:
         return False
-    if user.role in ("admin", "creator"):
+    if user.role == "admin":
         return True
-    return _has_space_caretaker_membership(user.id, space.id, db)
+    if is_space_owner(user, space):
+        return True
+    return has_space_caretaker_membership(user.id, space.id, db)
 
 
-def _has_space_caretaker_membership(user_id: str, space_id: str, db: Session) -> bool:
+def has_space_caretaker_membership(user_id: str, space_id: str, db: Session) -> bool:
+    """Public — active SpaceMembership with role in {creator, moderator}.
+    Exposed so peer modules (event_permissions, community moderation,
+    messages) can share the same predicate rather than reimplement it."""
     row = (
         db.query(SpaceMembership.role)
         .filter(

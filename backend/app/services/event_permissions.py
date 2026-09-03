@@ -28,9 +28,12 @@ from app.models.platform import (
     Space,
     SpaceMembership,
     SpaceMembershipStatus,
-    SpaceRole,
 )
 from app.models.user import User
+from app.services.channel_permissions import (
+    has_space_caretaker_membership,
+    is_space_owner,
+)
 from app.services.gathering_types import normalise_access_type
 
 
@@ -40,21 +43,17 @@ from app.services.gathering_types import normalise_access_type
 
 
 def _is_caretaker(user: User | None, space: Space, db: Session) -> bool:
+    """SEC-005-E — mirrors ``channel_permissions.is_caretaker`` semantics.
+    Platform ``creator`` role no longer grants automatic caretaker
+    authority; access requires admin, Space ownership, or an active
+    creator/moderator ``SpaceMembership``."""
     if user is None:
         return False
-    if user.role in ("admin", "creator"):
+    if user.role == "admin":
         return True
-    row = (
-        db.query(SpaceMembership.role)
-        .filter(
-            SpaceMembership.user_id == user.id,
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.status == SpaceMembershipStatus.active,
-            SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]),
-        )
-        .first()
-    )
-    return row is not None
+    if is_space_owner(user, space):
+        return True
+    return has_space_caretaker_membership(user.id, space.id, db)
 
 
 def _has_active_space_membership(user_id: str, space_id: str, db: Session) -> bool:

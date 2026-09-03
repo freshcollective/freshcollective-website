@@ -312,24 +312,27 @@ class TestManagerVisibility:
         ))
         assert got == {"p-active", "p-coming", "p-draft", "p-archived"}
 
-    def test_platform_role_creator_sees_all_without_membership(
+    def test_platform_role_creator_without_membership_gets_404(
         self, db, make_user, space_with_pathways,
     ):
-        """DOCUMENTED EXISTING BEHAVIOUR — reported to the operator.
-        The surrounding code (``_check_pathway_access`` and
-        ``_compute_pathway_access``) treats any user with
-        ``role='creator'`` as having platform-wide pathway access.
-        SEC-004 fix mirrors that model — deliberately not narrowed
-        here to avoid drift between the two boundaries. If the
-        product decides to narrow this later, all three sites should
-        change together and be governed by a new test that pins the
-        stricter rule."""
+        """SEC-005-E — platform ``User.role == "creator"`` is a
+        platform capability (may enter Creator Studio), NOT global
+        authority over other creators' Collectives. A platform
+        creator with no ownership and no ``SpaceMembership`` here
+        must be refused by ``_get_member_space`` (404, matching
+        stranger-non-member behaviour).
+
+        The full manager-visibility matrix (owner / space-role
+        creator / space-role moderator / platform admin) is exercised
+        by ``test_platform_role_scoping.py``; this test is the
+        SEC-004↔SEC-005-E interaction pin."""
         platform_creator = make_user(role="creator")
-        got = _slugs(list_pathways_progress(
-            slug=space_with_pathways["space"].slug, db=db,
-            current_user=platform_creator,
-        ))
-        assert got == {"p-active", "p-coming", "p-draft", "p-archived"}
+        with pytest.raises(HTTPException) as exc:
+            list_pathways_progress(
+                slug=space_with_pathways["space"].slug, db=db,
+                current_user=platform_creator,
+            )
+        assert exc.value.status_code == 404
 
 
 # ---------------------------------------------------------------------------

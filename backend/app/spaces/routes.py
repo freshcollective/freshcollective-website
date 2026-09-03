@@ -91,6 +91,7 @@ from app.spaces.schemas import (
 from app.models.platform import EventSeries as _EventSeriesModel  # noqa: E402
 from app.models.platform import PathwayStepManualRelease  # noqa: E402
 from app.services.notification_service import trigger_booking_confirmed, trigger_event_booking_creator  # noqa: E402
+from app.services import channel_permissions as channel_perms  # noqa: E402
 
 
 def _option_supports_finite_member_checkout(option) -> bool:
@@ -561,20 +562,19 @@ def _get_member_space(slug: str, current_user: "User", db: Session) -> Space:
     by any authenticated caller, leaking draft/archived pathways and
     letting strangers enumerate private link-only Collectives).
 
-    Qualifying relationships (mirrors the existing authorisation model
-    used by ``_check_pathway_access`` and ``_compute_pathway_access`` —
-    do NOT diverge, or the two boundaries will drift):
+    Qualifying relationships:
 
-      * ``current_user.role`` is ``"admin"`` or ``"creator"``.
-        This matches the surrounding code: platform-role Creators
-        bypass per-Space membership everywhere in this file (see
-        ``_check_pathway_access`` line 795 and ``_compute_pathway_access``
-        line 709). Reported to the operator during the SEC-004 fix so
-        the implication is visible; not narrowed here to avoid drift
-        between this helper and the rest of the module.
+      * ``current_user.role == "admin"`` — platform admin retains
+        cross-Collective read access here (out of scope for SEC-005-E).
       * The caller owns the Space (``space.creator_id == user.id``).
       * The caller has an active ``SpaceMembership`` — any role
         (``learner``, ``moderator``, ``creator``).
+
+    SEC-005-E: platform ``User.role == "creator"`` is no longer a
+    global bypass. A platform creator with no relationship to this
+    Collective is refused; access requires ownership or an active
+    ``SpaceMembership``, matching the sibling ``_check_pathway_access``
+    and ``_compute_pathway_access`` semantics.
 
     Non-members receive **404 Not Found**, not 403. Matches the privacy
     stance of ``_get_space_visible_to``: refusing to acknowledge a
@@ -585,8 +585,8 @@ def _get_member_space(slug: str, current_user: "User", db: Session) -> Space:
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
 
-    # Platform-role admins and creators — matches the existing model.
-    if current_user.role in ("admin", "creator"):
+    # Platform admin — preserved cross-Collective oversight.
+    if current_user.role == "admin":
         return space
 
     # Space owner.
@@ -755,6 +755,11 @@ def _compute_pathway_access(user: "User | None", pathway: Pathway, space: Space,
     """
     Return True if user has access to this pathway; False otherwise.
     Accepts None for unauthenticated visitors — they never have access to paid/included pathways.
+
+    SEC-005-E: platform ``User.role == "creator"`` no longer grants
+    global pathway access. Manager-level access (draft / archived /
+    coming_soon / paid pathways bypass) now requires platform admin,
+    Space ownership, or an active creator/moderator ``SpaceMembership``.
     """
     if user is None:
         p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
@@ -762,7 +767,9 @@ def _compute_pathway_access(user: "User | None", pathway: Pathway, space: Space,
         if p_status in ("draft", "archived", "coming_soon"):
             return False
         return access_type == "free"
-    if user.role in ("creator", "admin"):
+    if user.role == "admin":
+        return True
+    if space.creator_id == user.id:
         return True
     space_role = (
         db.query(SpaceMembership.role)
@@ -838,17 +845,27 @@ def _check_pathway_access(
     """
     Raise HTTP 403 if the user does not have access to this pathway.
 
-    Access rules:
-      - creator/admin role → always allowed
-      - space creator/moderator membership → always allowed
-      - draft/archived pathway → denied to all non-creators
+    Access rules (SEC-005-E — narrowed):
+      - platform admin → always allowed
+      - Space owner → always allowed
+      - active SpaceMembership(role in creator/moderator) → always allowed
+      - draft/archived pathway → denied to everyone else
       - coming_soon pathway → denied (About page is separate, not gated here)
       - free pathway (active) → allowed
       - included pathway (active) → allowed for space members
       - one_time/subscription pathway → requires active PathwayEntitlement row
+
+    Platform ``User.role == "creator"`` is no longer a global bypass;
+    a platform creator with no ownership or per-Collective membership
+    is treated as an ordinary caller here.
     """
-    # Platform admins and creator-role users always have access
-    if user.role in ("creator", "admin"):
+    # Platform admin — preserved cross-Collective oversight.
+    if user.role == "admin":
+        return
+
+    # Space owner — legitimate authority even without a matching
+    # ``SpaceMembership`` row (defends legacy Collectives).
+    if space.creator_id == user.id:
         return
 
     # Space creators and moderators always have access
@@ -1289,23 +1306,14 @@ def list_pathways(
     current_user: "User | None" = Depends(get_optional_user),
 ) -> list[PathwaySummary]:
     space = _get_space_visible_to(slug, db, current_user)
-    is_creator_or_admin = current_user is not None and current_user.role in ("creator", "admin")
-    is_space_manager = False
-    if current_user is not None:
-        space_role = (
-            db.query(SpaceMembership.role)
-            .filter(
-                SpaceMembership.user_id == current_user.id,
-                SpaceMembership.space_id == space.id,
-                SpaceMembership.role.in_(["creator", "moderator"]),
-                SpaceMembership.status == "active",
-            )
-            .first()
-        )
-        is_space_manager = bool(space_role)
+    # SEC-005-E — manager visibility (see draft/archived pathways) now
+    # requires admin, ownership, or active creator/moderator membership.
+    # ``is_caretaker`` centralises this predicate and returns False for
+    # anonymous callers.
+    is_space_manager = channel_perms.is_caretaker(current_user, space, db)
 
     query = db.query(Pathway).filter(Pathway.space_id == space.id)
-    if not (is_creator_or_admin or is_space_manager):
+    if not is_space_manager:
         # Anonymous visitors and regular members only see published pathways (active + coming_soon)
         query = query.filter(Pathway.status.in_(["active", "coming_soon"]))
 
@@ -1378,23 +1386,13 @@ def list_pathways_progress(
     """
     space = _get_member_space(slug, current_user, db)
 
-    # Manager detection matches ``list_pathways`` line 1236 onwards so
-    # the two endpoints keep the same visibility semantics.
-    is_creator_or_admin = current_user.role in ("creator", "admin")
-    space_role = (
-        db.query(SpaceMembership.role)
-        .filter(
-            SpaceMembership.user_id == current_user.id,
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.role.in_(["creator", "moderator"]),
-            SpaceMembership.status == "active",
-        )
-        .first()
-    )
-    is_space_manager = bool(space_role) or space.creator_id == current_user.id
+    # SEC-005-E — same predicate as ``list_pathways`` above so both
+    # endpoints stay in sync. Includes platform admin, Space owner,
+    # and active creator/moderator SpaceMembership.
+    is_space_manager = channel_perms.is_caretaker(current_user, space, db)
 
     query = db.query(Pathway).filter(Pathway.space_id == space.id)
-    if not (is_creator_or_admin or is_space_manager):
+    if not is_space_manager:
         query = query.filter(Pathway.status.in_(["active", "coming_soon"]))
     pathways = query.order_by(Pathway.position).all()
     pathway_ids = [p.id for p in pathways]
@@ -2466,10 +2464,11 @@ def get_event(
     # Sensitive detail visibility — confirmed attendees + caretakers
     # see meeting URL, full venue address, and arrival instructions.
     # Everyone else sees only the venue name as a rough locator.
-    is_caretaker = is_member and (
-        (membership and getattr(membership, 'role', None) in (SpaceRole.creator, SpaceRole.moderator))
-        or (current_user and current_user.role in ('admin', 'creator'))
-    )
+    # SEC-005-E: caretaker is now admin OR Space owner OR active
+    # creator/moderator membership. Platform ``creator`` role alone
+    # no longer surfaces sensitive event detail for other creators'
+    # gatherings.
+    is_caretaker = channel_perms.is_caretaker(current_user, space, db)
     has_confirmed_booking = my_booking_status == "confirmed"
     show_sensitive = bool(is_caretaker or has_confirmed_booking)
 
