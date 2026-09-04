@@ -122,6 +122,56 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ---------------------------------------------------------------------------
+# SEC-011 Stage A — transport/content security headers
+# ---------------------------------------------------------------------------
+# fc-api serves JSON and files, never HTML documents (SEC-003 disables
+# /docs, /redoc, /openapi.json in production). Only the headers that
+# make sense on non-document responses are emitted here:
+#
+#   * Strict-Transport-Security — locks the client to HTTPS for the
+#     configured origin. No ``includeSubDomains`` or ``preload`` in
+#     Stage A per SEC-011 policy amendment 1; revisit when Fresh
+#     Collective moves to its real production apex domain.
+#
+#   * X-Content-Type-Options: nosniff — refuse to reinterpret a
+#     response as a different MIME type. Especially important on
+#     /api/uploads/* where creators upload user content.
+#
+#   * Referrer-Policy: strict-origin-when-cross-origin — standard
+#     modern default. Same-origin gets full referer; cross-origin
+#     gets origin only; downgrades get nothing. Protects any
+#     query-parameter tokens from leaking to third parties on
+#     subsequent navigation.
+#
+# CSP, Permissions-Policy, X-Frame-Options, and frame-ancestors are
+# deliberately NOT emitted here — they don't apply to JSON APIs.
+# fc-web owns those on document responses.
+# ---------------------------------------------------------------------------
+
+
+_TRANSPORT_SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
+    ("Strict-Transport-Security", "max-age=31536000"),
+    ("X-Content-Type-Options", "nosniff"),
+    ("Referrer-Policy", "strict-origin-when-cross-origin"),
+)
+
+
+@app.middleware("http")
+async def add_transport_security_headers(request, call_next):
+    """Attach the SEC-011 Stage A transport/content headers to every
+    response. Middleware runs after the endpoint returns, so any
+    endpoint-set header wins on collision — which is intentional for
+    ``/api/uploads/*`` which adds its own ``Cross-Origin-Resource-
+    Policy`` header on top of these defaults."""
+    response = await call_next(request)
+    for name, value in _TRANSPORT_SECURITY_HEADERS:
+        # setdefault semantics — never overwrite an endpoint's own
+        # header value if one is already present.
+        response.headers.setdefault(name, value)
+    return response
+
 # ---------------------------------------------------------------------------
 # Routers
 # ---------------------------------------------------------------------------

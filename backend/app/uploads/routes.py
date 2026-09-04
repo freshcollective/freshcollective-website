@@ -40,7 +40,22 @@ def _serve(file_path: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="File not found.")
 
     media_type, _ = mimetypes.guess_type(str(target))
-    return FileResponse(str(target), media_type=media_type or "application/octet-stream")
+    # SEC-011 Stage A — ``Cross-Origin-Resource-Policy: cross-origin``
+    # lets fc-web embed these bytes as ``<img src>`` from a different
+    # origin. Without it, a future ``Cross-Origin-Embedder-Policy``
+    # tightening on fc-web would silently block every media load.
+    # ``X-Content-Type-Options: nosniff`` refuses browser MIME
+    # sniffing — the media_type guessed above is authoritative.
+    # (The transport HSTS + Referrer-Policy headers are added
+    # uniformly by the FastAPI middleware in ``app.main``.)
+    return FileResponse(
+        str(target),
+        media_type=media_type or "application/octet-stream",
+        headers={
+            "Cross-Origin-Resource-Policy": "cross-origin",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 # Public route — declared first so FastAPI's specificity ordering picks
