@@ -9,7 +9,7 @@ from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.payment import PaymentTransaction, PaymentTransactionStatus
 from app.core.config import settings
 
-from app.auth.dependencies import get_current_user, get_optional_user
+from app.auth.dependencies import get_current_user, get_optional_user, get_verified_current_user
 from app.core.database import get_db
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.payment_option import PaymentOption
@@ -1116,7 +1116,7 @@ def get_my_access(
 def join_space(
     slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> dict:
     """Join a public Space as a learner."""
     space = _get_space_or_404(slug, db)
@@ -1169,7 +1169,7 @@ def join_space(
 def request_access(
     slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> dict:
     """Submit an access request to a private Space."""
     space = _get_space_or_404(slug, db)
@@ -1252,9 +1252,21 @@ def get_invite_by_token(
 def accept_invite(
     token: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> dict:
-    """Accept a space invite by token. Caller must be logged in."""
+    """Accept a space invite by token.
+
+    SEC-009: caller must be authenticated AND email-verified. Per
+    product policy, invitation acceptance does NOT auto-verify — an
+    unverified invited user must complete verification first (their
+    dashboard shows the "please verify" banner + resend). Requiring
+    a verified email before we bind the account to a Collective
+    keeps membership provenance clean regardless of who typed the
+    email at signup time.
+
+    The underlying invitation stays valid until it's consumed;
+    verification isn't a token replacement, just a precondition.
+    """
     invite = (
         db.query(SpaceInvitation)
         .filter(SpaceInvitation.token == token)
@@ -1777,7 +1789,7 @@ def book_event(
     event_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> BookingResponse:
     """Book a spot at a gathering. Members only. Enforces capacity and cutoff time."""
     space = _get_space_or_404(slug, db)
@@ -2026,7 +2038,7 @@ def cancel_booking(
     slug: str,
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> BookingResponse:
     """Cancel the current user's booking for a gathering."""
     space = _get_space_or_404(slug, db)
@@ -2111,7 +2123,7 @@ def create_gathering_ticket_checkout(
     event_id: str,
     body: GatheringCheckoutRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> GatheringCheckoutResponse:
     """
     Stripe-hosted Checkout for a standalone paid Gathering ticket.
@@ -2556,7 +2568,7 @@ def book_series(
     slug: str,
     series_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> SeriesBookingResponse:
     """Book all future bookable sessions in a recurrence series. Skips full/closed/already-booked."""
     space = _get_space_or_404(slug, db)
@@ -3110,7 +3122,7 @@ def complete_step(
     step_slug: str,
     body: CompleteStepRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> CompleteStepResponse:
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)
@@ -3514,7 +3526,7 @@ def create_step_comment(
     step_slug: str,
     body: StepCommentCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> StepCommentItem:
     space = _get_space_or_404(slug, db)
     pathway = _get_pathway_or_404(space.id, pathway_slug, db)

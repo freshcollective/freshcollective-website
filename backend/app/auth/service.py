@@ -14,7 +14,7 @@ from app.core.security import (
     verify_password,
     verify_password_timing_safe,
 )
-from app.models.user import PasswordReset, User
+from app.models.user import EmailVerification, PasswordReset, User
 
 if TYPE_CHECKING:
     from fastapi import BackgroundTasks
@@ -241,9 +241,179 @@ def consume_password_reset_token(
     if not user:
         return None
 
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     user.password_hash = hash_password(new_password)
-    reset.used_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    reset.used_at = now
     bump_session_version(user)
+    # SEC-009 — successful password reset proves email control. If the
+    # account was never verified (or was fraudulently registered by
+    # someone who then held the row unverified), the real email owner
+    # completing the reset flow reclaims and verifies the account in
+    # the same atomic transaction. Combined with the session_version
+    # bump above, this invalidates every JWT the original registrant
+    # may have held — closing the email-reservation vector without
+    # needing a purge cron. See SEC-009 investigation §9.
+    if user.email_verified_at is None:
+        user.email_verified_at = now
     db.commit()
     db.refresh(user)
     return user
+
+
+# ---------------------------------------------------------------------------
+# SEC-009 — email verification tokens
+# ---------------------------------------------------------------------------
+
+_EMAIL_VERIFICATION_COOLDOWN_SECONDS = 60
+_EMAIL_VERIFICATION_TTL_HOURS = 24
+
+
+def create_email_verification_token(db: Session, user: User) -> str | None:
+    """SEC-009 — issue a verification token for ``user``.
+
+    Returns the raw token (for the email URL) on success, or ``None``
+    when suppressed by the per-account cooldown OR when the user is
+    already verified. The "already verified" branch is silent so the
+    endpoint that wraps this can return a generic success and never
+    reveal per-account verification state to a caller (even the
+    caller themselves cannot distinguish "you're already verified"
+    from "we sent a new link" — both feel identical from the UX).
+
+    Invalidate-and-replace: any prior outstanding row for this user
+    is marked ``invalidated_at`` before the new one is inserted, so
+    an earlier email link becomes dead the moment a resend fires.
+    Mirrors the ``PasswordReset`` pattern.
+
+    Callers own the commit. This helper only flushes so the caller
+    can bundle the token creation with an adjacent mutation (signup,
+    resend endpoint) in a single transaction.
+    """
+    if user.email_verified_at is not None:
+        return None
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    cooldown_cutoff = now - timedelta(seconds=_EMAIL_VERIFICATION_COOLDOWN_SECONDS)
+    recent = (
+        db.query(EmailVerification.id)
+        .filter(
+            EmailVerification.user_id == user.id,
+            EmailVerification.created_at > cooldown_cutoff,
+            EmailVerification.invalidated_at.is_(None),
+        )
+        .first()
+    )
+    if recent is not None:
+        return None
+
+    # Invalidate any prior outstanding (unused + unexpired + not
+    # already invalidated) tokens for this user. Old email links
+    # stop working from this point.
+    (
+        db.query(EmailVerification)
+        .filter(
+            EmailVerification.user_id == user.id,
+            EmailVerification.used_at.is_(None),
+            EmailVerification.invalidated_at.is_(None),
+        )
+        .update({"invalidated_at": now}, synchronize_session=False)
+    )
+
+    raw_token = secrets.token_hex(32)
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    expires_at = now + timedelta(hours=_EMAIL_VERIFICATION_TTL_HOURS)
+
+    row = EmailVerification(
+        id=str(uuid4()),
+        user_id=user.id,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+    db.add(row)
+    db.flush()
+    return raw_token
+
+
+def consume_email_verification_token(db: Session, raw_token: str) -> User | None:
+    """SEC-009 — consume a verification token.
+
+    Returns the freshly-verified user on success, ``None`` for every
+    other failure branch (missing / expired / used / invalidated).
+    The endpoint that wraps this collapses all failure branches into
+    a single generic 400 so the caller cannot enumerate token state.
+
+    A single commit binds (mark used_at, set email_verified_at)
+    atomically. ``session_version`` is deliberately NOT bumped —
+    verification is not a credential-change event; the user's
+    identity is unchanged. Bumping would silently invalidate every
+    other legitimate session (their own other tabs, mobile), which
+    would be surprising after an action the user just performed. See
+    SEC-009 investigation §4 for the reasoning.
+    """
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    row = (
+        db.query(EmailVerification)
+        .filter(EmailVerification.token_hash == token_hash)
+        .first()
+    )
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if (
+        row is None
+        or row.used_at is not None
+        or row.invalidated_at is not None
+        or row.expires_at < now
+    ):
+        return None
+
+    user = db.query(User).filter(User.id == row.user_id).first()
+    if user is None:
+        return None
+
+    row.used_at = now
+    if user.email_verified_at is None:
+        user.email_verified_at = now
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def emit_email_verification_requested(
+    db: Session,
+    user: User,
+    raw_token: str,
+    *,
+    background_tasks: "BackgroundTasks | None" = None,
+) -> None:
+    """SEC-009 — emit ``account.email_verification_requested``.
+
+    Called by signup (both standalone and ``claim_with_signup``) and
+    by the resend endpoint. The verification URL points at the
+    frontend's ``/verify-email`` page, which POSTs the raw token back
+    to ``/api/auth/verify-email`` — keeps the raw token out of the
+    backend's access log.
+    """
+    from app.comms import Source, emit as comms_emit
+    from app.comms.rollout import schedule_routing_if_needed
+    from app.core.config import settings
+
+    first_name = ""
+    if user.name:
+        first_name = user.name.strip().split(" ", 1)[0]
+    verify_url = (
+        f"{settings.frontend_origin.rstrip('/')}/verify-email?token={raw_token}"
+    )
+    ev = comms_emit(
+        db,
+        event_type="account.email_verification_requested",
+        source_type=Source.FRESH_COLLECTIVE,
+        actor_user_id=user.id,
+        subject_type="account",
+        subject_id=user.id,
+        payload={
+            "first_name": first_name,
+            "verify_url": verify_url,
+        },
+    )
+    db.commit()
+    schedule_routing_if_needed(
+        background_tasks, ev, "account.email_verification_requested",
+    )

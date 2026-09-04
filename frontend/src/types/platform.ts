@@ -631,6 +631,9 @@ export interface UserProfile {
   has_completed_onboarding: boolean
   has_completed_creator_onboarding: boolean
   interests: string[]
+  // SEC-009 — null = unverified. Frontend surfaces a verification
+  // banner + resend action when this is null.
+  email_verified_at: string | null
 }
 
 export interface NotificationPrefs {

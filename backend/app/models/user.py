@@ -47,6 +47,16 @@ class User(Base):
         default=1,
         server_default="1",
     )
+    # SEC-009 — email verification. NULL = unverified. Grandfathered
+    # to ``created_at`` on migration 121 for every pre-SEC-009 row.
+    # Set on: successful ``POST /api/auth/verify-email`` AND on
+    # successful password reset (possession of a reset link proves
+    # email control). NOT set by invitation acceptance, Stripe
+    # checkout, or any commerce event — those require an already-
+    # verified user via ``get_verified_current_user``.
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True
     )
@@ -119,6 +129,9 @@ class User(Base):
     password_resets: Mapped[list["PasswordReset"]] = relationship(
         "PasswordReset", back_populates="user", cascade="all, delete-orphan"
     )
+    email_verifications: Mapped[list["EmailVerification"]] = relationship(
+        "EmailVerification", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class PasswordReset(Base):
@@ -136,3 +149,42 @@ class PasswordReset(Base):
     )
 
     user: Mapped[User] = relationship("User", back_populates="password_resets")
+
+
+class EmailVerification(Base):
+    """SEC-009 — per-user email verification token.
+
+    Deliberately separate from ``PasswordReset``. See migration 121
+    for the "why not one table" note.
+
+    Lifecycle:
+      * Created by ``create_email_verification_token`` on signup /
+        resend; ``token_hash`` = SHA-256 of the raw 32-byte hex
+        value. Raw token is only returned once and only ever leaves
+        the server in the verification URL.
+      * Consumed by ``consume_email_verification_token`` on
+        ``POST /api/auth/verify-email``; sets ``used_at`` and
+        flips ``users.email_verified_at`` in the same transaction.
+      * Resend invalidates any prior outstanding row for the user
+        by setting ``invalidated_at``, then issues a new one — the
+        old link becomes dead immediately.
+      * 24-hour ``expires_at``; single-use.
+    """
+
+    __tablename__ = "email_verifications"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+    )
+    token_hash: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False,
+    )
+
+    user: Mapped[User] = relationship("User", back_populates="email_verifications")

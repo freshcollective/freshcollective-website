@@ -18,6 +18,7 @@ import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from './AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
 import RecentMomentsSection from './RecentMomentsSection'
+import VerifyEmailBanner from '@/components/settings/VerifyEmailBanner'
 
 /**
  * Shared card-grid class for every full-width band on /dashboard —
@@ -221,6 +222,13 @@ export default async function DashboardPage() {
 
       {/* Welcome — warm greeting, unchanged from before. */}
       <WelcomeBanner firstName={firstName} />
+
+      {/* SEC-009 — verification banner. Only appears while the
+          account is unverified; disappears the moment the user
+          confirms their email. */}
+      {user && !user.email_verified_at ? (
+        <VerifyEmailBanner email={user.email} />
+      ) : null}
 
       <main className="mx-auto max-w-[1440px] px-6 pt-12 pb-24 md:px-10 md:pt-14 md:pb-28">
 

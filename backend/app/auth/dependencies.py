@@ -97,6 +97,42 @@ def get_optional_user(request: Request, db: Session = Depends(get_db)) -> User |
     return db.query(User).filter(User.id == user_id).first()
 
 
+def get_verified_current_user(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """SEC-009 — trust-action gate.
+
+    Composes on top of ``get_current_user``. The authenticated user
+    must additionally have completed email verification
+    (``users.email_verified_at IS NOT NULL``) before performing any
+    action that:
+
+      * commits them to a Collective (join / access request /
+        invitation acceptance);
+      * writes into a Collective (post / comment / react / upload);
+      * consumes finite/paid capacity (booking / ticket checkout);
+      * broadcasts to other members;
+      * creates or mutates a Collective (creator/admin writes go
+        through ``get_verified_creator_user`` below).
+
+    Deliberately does NOT gate read-only or onboarding surfaces —
+    ``/api/auth/me``, profile edits, ``/logout``, ``/logout-all``,
+    ``/me/change-password``, public browse endpoints, verification
+    itself. See the SEC-009 investigation §5 for the enumerable
+    trust-action set.
+    """
+    if current_user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Please verify your email to continue. Check the link "
+                "we sent to your inbox, or request a new one from your "
+                "dashboard."
+            ),
+        )
+    return current_user
+
+
 def get_creator_user(current_user: User = Depends(get_current_user)) -> User:
     if current_user.role not in ("creator", "admin"):
         raise HTTPException(
@@ -110,6 +146,37 @@ def get_creator_user(current_user: User = Depends(get_current_user)) -> User:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Creator access has been cancelled.",
+        )
+    return current_user
+
+
+def get_verified_creator_user(
+    current_user: User = Depends(get_creator_user),
+) -> User:
+    """SEC-009 — creator/admin trust-action gate.
+
+    Preserves the SEC-005-E and SEC-005 authority model unchanged
+    (``get_creator_user`` still owns platform-role admission and
+    creator-cancellation checks); this wrapper adds the verification
+    requirement on top for mutations. Read-only creator-studio
+    surfaces continue to use ``get_creator_user`` so a legitimate
+    unverified creator can still see their studio home and request a
+    fresh verification link.
+
+    Admin behaviour: an admin whose ``email_verified_at`` is NULL is
+    refused here, same as a creator. Every existing production admin
+    is grandfathered by migration 121, so this only ever bites a
+    hypothetical newly-created admin who hasn't verified yet — the
+    correct posture.
+    """
+    if current_user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Please verify your email to continue. Check the link "
+                "we sent to your inbox, or request a new one from your "
+                "dashboard."
+            ),
         )
     return current_user
 

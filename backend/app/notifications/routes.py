@@ -17,7 +17,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_verified_current_user
 from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.internal_auth import verify_internal_token
@@ -190,7 +190,7 @@ def broadcast_to_space(
     body: BroadcastRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> dict:
     """
     Creator/moderator-only: send an announcement to all active space members.

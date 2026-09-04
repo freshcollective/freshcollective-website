@@ -30,7 +30,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_verified_current_user
 from app.checkout.schemas import (
     GatheringSeriesCheckoutRequest,
     GatheringSeriesCheckoutResponse,
@@ -115,7 +115,7 @@ def checkout_status(
 @router.post("", response_model=UnifiedCheckoutResponse)
 def create_unified_checkout_session(
     body: UnifiedCheckoutRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
     db: Session = Depends(get_db),
 ) -> UnifiedCheckoutResponse:
     """Kind-agnostic Payment Option checkout.
@@ -255,7 +255,7 @@ def create_unified_checkout_session(
 @router.post("/pathway", response_model=PathwayCheckoutResponse)
 def create_pathway_checkout_session(
     body: PathwayCheckoutRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
     db: Session = Depends(get_db),
 ) -> PathwayCheckoutResponse:
     """Legacy pathway-purchase entry point.
@@ -584,7 +584,7 @@ def _legacy_pathway_price_stripe_session(
 @router.post("/gathering-series", response_model=GatheringSeriesCheckoutResponse)
 def create_gathering_series_checkout_session(
     body: GatheringSeriesCheckoutRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
     db: Session = Depends(get_db),
 ) -> GatheringSeriesCheckoutResponse:
     """Legacy Gathering-Series-purchase entry point.

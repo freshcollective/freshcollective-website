@@ -59,6 +59,15 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # by CATEGORY_ACCOUNT — the inbox greeting is transactional, not
     # something a first-time user can (or should) have suppressed.
     EventDefinition("account.welcome_after_signup",       TOPIC_ACCOUNT,   PRIORITY_IMMEDIATE),
+    # SEC-009 — the sole email a new unverified account receives at
+    # signup. Warm + welcoming, primary CTA "verify your email".
+    # The existing ``account.welcome_after_signup`` above fires
+    # AFTER successful verification so a new account gets exactly
+    # two account emails across its lifetime: verify → welcome.
+    # Preference-locked by CATEGORY_ACCOUNT for the same reason as
+    # welcome — a first-time user cannot (and should not) have this
+    # suppressed.
+    EventDefinition("account.email_verification_requested", TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
     EventDefinition("account.password_reset_requested",   TOPIC_SECURITY,  PRIORITY_IMMEDIATE),
     EventDefinition("account.password_reset_completed",   TOPIC_SECURITY,  PRIORITY_IMMEDIATE),
 

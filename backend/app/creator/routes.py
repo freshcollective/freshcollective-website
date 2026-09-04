@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import false as sa_false, func, text
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth.dependencies import get_creator_user
+from app.auth.dependencies import get_creator_user, get_verified_creator_user
 from app.community.sanitize import sanitize_post_body
 from app.community_care.shared import (
     has_active_creator_restriction,
@@ -759,7 +759,7 @@ def list_my_spaces(
 def create_space(
     body: SpaceCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> Space:
     # Enforce the plan's active_collective_limit before creating a new
     # collective. Platform Owner is bypassed inside the guard.
@@ -817,7 +817,7 @@ def update_space(
     slug: str,
     body: SpaceUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> Space:
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
@@ -975,7 +975,7 @@ async def upload_cover_image(
     slug: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> Space:
     space = _get_managed_space(slug, current_user, db)
     filename = file.filename or "cover.jpg"
@@ -998,7 +998,7 @@ async def upload_logo(
     slug: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> Space:
     """Upload an optional Collective Logo — the "hosted by" mark shown
     subtly beside the collective name. Location artwork remains the
@@ -1023,7 +1023,7 @@ async def upload_logo(
 def clear_logo(
     slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> Space:
     space = _get_managed_space(slug, current_user, db)
     if space.logo_url:
@@ -1264,7 +1264,7 @@ def grant_pathway_access(
     user_id: str,
     body: GrantEntitlementRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> EntitlementOut:
     """Manually grant a member access to a paid pathway."""
     space = _get_managed_space(slug, current_user, db)
@@ -1375,7 +1375,7 @@ def revoke_pathway_access(
     user_id: str,
     body: RevokeEntitlementRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> EntitlementOut:
     """Revoke a member's access to a paid pathway."""
     space = _get_managed_space(slug, current_user, db)
@@ -1473,7 +1473,7 @@ def create_invitation(
     slug: str,
     body: InvitationCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> InvitationResponse:
     space = _get_managed_space(slug, current_user, db)
 
@@ -1533,7 +1533,7 @@ def delete_invitation(
     slug: str,
     invitation_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     invitation = (
@@ -1556,7 +1556,7 @@ def send_invitation(
     invitation_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> InvitationResponse:
     """Mark a draft invitation as sent and dispatch the invitation email.
 
@@ -1673,7 +1673,7 @@ def approve_access_request(
     slug: str,
     request_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     """Approve a pending access request — creates membership with learner role."""
     space = _get_managed_space(slug, current_user, db)
@@ -1714,7 +1714,7 @@ def decline_access_request(
     slug: str,
     request_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     """Decline a pending access request."""
     space = _get_managed_space(slug, current_user, db)
@@ -1821,7 +1821,7 @@ def create_pathway(
     slug: str,
     body: PathwayCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
@@ -1884,7 +1884,7 @@ def update_pathway(
     pathway_slug: str,
     body: PathwayUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
@@ -1939,7 +1939,7 @@ def delete_pathway(
     slug: str,
     pathway_slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -1953,7 +1953,7 @@ async def upload_pathway_cover(
     pathway_slug: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -1985,7 +1985,7 @@ def reorder_pathways(
     slug: str,
     body: ReorderRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     for i, pid in enumerate(body.ids):
@@ -2020,7 +2020,7 @@ def create_section(
     pathway_slug: str,
     body: SectionCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> PathwaySection:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2051,7 +2051,7 @@ def update_section(
     section_id: str,
     body: SectionUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> PathwaySection:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2077,7 +2077,7 @@ def delete_section(
     pathway_slug: str,
     section_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2098,7 +2098,7 @@ def reorder_sections(
     pathway_slug: str,
     body: ReorderRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2156,7 +2156,7 @@ def create_step(
     body: StepCreateRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> PathwayStep:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2206,7 +2206,7 @@ def update_step(
     step_slug: str,
     body: StepUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> PathwayStep:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2284,7 +2284,7 @@ def delete_step(
     pathway_slug: str,
     step_slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2405,7 +2405,7 @@ def release_step_for_member(
     step_slug: str,
     user_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Idempotent — releasing a step for the same member twice is a
     no-op (the unique constraint absorbs the duplicate)."""
@@ -2439,7 +2439,7 @@ def reorder_steps(
     pathway_slug: str,
     body: ReorderRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Reorder all steps in a flat (no-sections) pathway by global position."""
     space = _get_managed_space(slug, current_user, db)
@@ -2457,7 +2457,7 @@ def reorder_unsectioned_steps(
     pathway_slug: str,
     body: ReorderRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Reorder unsectioned steps by global position."""
     space = _get_managed_space(slug, current_user, db)
@@ -2478,7 +2478,7 @@ def reorder_section_steps(
     section_id: str,
     body: ReorderRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Reorder steps within a section by section_position."""
     space = _get_managed_space(slug, current_user, db)
@@ -2533,7 +2533,7 @@ def create_step_resource(
     step_slug: str,
     body: StepResourceCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> StepResource:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2579,7 +2579,7 @@ def upload_step_resource(
     description: str | None = Form(None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> StepResource:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2634,7 +2634,7 @@ def update_step_resource(
     resource_id: str,
     body: StepResourceUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> StepResource:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2665,7 +2665,7 @@ def delete_step_resource(
     step_slug: str,
     resource_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -2893,7 +2893,7 @@ def create_event(
     slug: str,
     body: EventCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
@@ -2963,7 +2963,7 @@ def bulk_create_events(
     slug: str,
     body: EventCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> BulkEventCreateResponse:
     """Create a recurring series of individual event records."""
     from datetime import timedelta
@@ -3068,7 +3068,7 @@ def update_event(
     event_id: str,
     body: EventUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
@@ -3173,7 +3173,7 @@ def delete_event(
     slug: str,
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
@@ -3240,7 +3240,7 @@ async def upload_event_thumbnail(
     event_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     """Upload or replace the thumbnail image for a single event."""
     space = _get_managed_space(slug, current_user, db)
@@ -3272,7 +3272,7 @@ def remove_event_thumbnail(
     slug: str,
     event_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Remove the thumbnail image from an event."""
     space = _get_managed_space(slug, current_user, db)
@@ -3292,7 +3292,7 @@ def cancel_event(
     event_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     """Cancel a single event occurrence. Does not affect other events in the series.
     Notifies every confirmed attendee via the notification service.
@@ -3388,7 +3388,7 @@ def manual_book_member(
     event_id: str,
     body: ManualBookingRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     """Manually add a collective member to an event booking.
     TODO: Add manual booking across remaining series sessions later.
@@ -3547,7 +3547,7 @@ def cancel_member_booking(
     event_id: str,
     booking_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     """Creator cancels a member's booking. Record is retained for history.
     TODO: Send cancellation notification to member later.
@@ -3588,7 +3588,7 @@ def update_booking_attendance(
     booking_id: str,
     body: AttendanceUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     """Mark a booking as attended, no_show, or reset to pending."""
     from datetime import datetime as _dt
@@ -3661,7 +3661,7 @@ def remove_member(
     slug: str,
     user_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     """Remove a member from a collective.
 
@@ -3755,7 +3755,7 @@ def add_or_invite_member(
     slug: str,
     body: AddMemberRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> AddMemberResponse:
     """Add an existing user directly as a member, or create a draft invitation if not found.
 
@@ -3924,7 +3924,7 @@ def create_post(
     slug: str,
     body: PostCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     post = CommunityPost(
@@ -3960,7 +3960,7 @@ def update_post(
     post_id: str,
     body: PostUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
@@ -4063,7 +4063,7 @@ def publish_scheduled_post_now(
     slug: str,
     post_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     """Skip the schedule and publish immediately.
 
@@ -4115,7 +4115,7 @@ def toggle_pin(
     slug: str,
     post_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     _ensure_creator_write_allowed(current_user, space, db)
@@ -4133,7 +4133,7 @@ def hide_post(
     slug: str,
     post_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Soft-hide: removes from learner feed but keeps manageable in Creator Studio."""
     space = _get_managed_space(slug, current_user, db)
@@ -4151,7 +4151,7 @@ def unhide_post(
     slug: str,
     post_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Restore a hidden post to the learner feed."""
     space = _get_managed_space(slug, current_user, db)
@@ -4169,7 +4169,7 @@ def delete_post(
     slug: str,
     post_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Hard delete. Use hide/unhide for reversible moderation."""
     space = _get_managed_space(slug, current_user, db)
@@ -4287,7 +4287,7 @@ def create_library_folder(
     slug: str,
     body: LibraryFolderCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
     # Default position — one past the current max, so new folders land
@@ -4322,7 +4322,7 @@ def update_library_folder(
     folder_id: str,
     body: LibraryFolderUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
     folder = db.query(LibraryFolder).filter(
@@ -4349,7 +4349,7 @@ def delete_library_folder(
     slug: str,
     folder_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
     folder = db.query(LibraryFolder).filter(
@@ -4633,7 +4633,7 @@ async def upload_media(
     title: str = Form(""),
     description: str = Form(""),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> CreatorMediaAsset:
     """
     Upload a file to the media library for the given space.
@@ -4685,7 +4685,7 @@ def update_media(
     media_id: str,
     body: MediaAssetUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     """Update title, description, alt text, or tags of a media asset.
 
@@ -4741,7 +4741,7 @@ def archive_media(
     slug: str,
     media_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     """Soft-archive a media asset. Hides from the active library."""
     space = _get_managed_space(slug, current_user, db)
@@ -4905,7 +4905,7 @@ def convert_legacy_content(
     pathway_slug: str,
     step_slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> list[PathwayStepBlock]:
     """Convert a step's legacy content_body into an editable text block.
 
@@ -4953,7 +4953,7 @@ def create_step_block(
     step_slug: str,
     body: StepBlockCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> PathwayStepBlock:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -5057,7 +5057,7 @@ def reorder_step_blocks(
     step_slug: str,
     body: StepBlockReorderRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> list[PathwayStepBlock]:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -5097,7 +5097,7 @@ def update_step_block(
     block_id: str,
     body: StepBlockUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> PathwayStepBlock:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -5161,7 +5161,7 @@ def delete_step_block(
     step_slug: str,
     block_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -5216,7 +5216,7 @@ def create_about_block(
     pathway_slug: str,
     body: AboutBlockCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> PathwayAboutBlock:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -5304,7 +5304,7 @@ def reorder_about_blocks(
     pathway_slug: str,
     body: AboutBlockReorderRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> list[PathwayAboutBlock]:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -5342,7 +5342,7 @@ def update_about_block(
     block_id: str,
     body: AboutBlockUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> PathwayAboutBlock:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -5400,7 +5400,7 @@ def delete_about_block(
     pathway_slug: str,
     block_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -5565,7 +5565,7 @@ def create_space_resource(
     slug: str,
     body: ResourceCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
     resolved_ids = _resolve_pathway_ids(body.pathway_ids, body.scope, body.pathway_id) or []
@@ -5605,7 +5605,7 @@ async def upload_space_resource_file(
     pathway_ids: str | None = Form(None),  # JSON-encoded list[str] or comma-separated
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
     data = await file.read()
@@ -5659,7 +5659,7 @@ def update_space_resource(
     resource_id: str,
     body: ResourceUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
     resource = db.query(SpaceResource).filter(
@@ -5709,7 +5709,7 @@ def delete_space_resource(
     slug: str,
     resource_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     space = _get_managed_space(slug, current_user, db)
     resource = db.query(SpaceResource).filter(
@@ -6352,7 +6352,7 @@ def create_payment_option(
     pathway_slug: str,
     body: PaymentOptionCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -6422,7 +6422,7 @@ def update_payment_option(
     option_id: str,
     body: PaymentOptionUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -6466,7 +6466,7 @@ def archive_payment_option(
     pathway_slug: str,
     option_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Soft-delete: set status to archived. Content and IDs are preserved."""
     space = _get_managed_space(slug, current_user, db)
@@ -6581,7 +6581,7 @@ def create_payment_option_schedule(
     option_id: str,
     body: PaymentOptionScheduleCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -6643,7 +6643,7 @@ def generate_payment_option_schedules(
     option_id: str,
     body: GenerateSchedulesRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> list[dict]:
     """
     Generate draft pay_in_full, weekly, and fortnightly schedules for this option.
@@ -6767,7 +6767,7 @@ def update_payment_option_schedule(
     schedule_id: str,
     body: PaymentOptionScheduleUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
     space = _get_managed_space(slug, current_user, db)
     pathway = _get_pathway(space, pathway_slug, db)
@@ -6809,7 +6809,7 @@ def archive_payment_option_schedule(
     option_id: str,
     schedule_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     """Soft-delete: set status to archived."""
     space = _get_managed_space(slug, current_user, db)
@@ -7003,7 +7003,7 @@ def grant_pass_manually(
     slug: str,
     body: GrantPassRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> GrantPassResponse:
     """Manually grant an AccessPass to a member. Optionally also grant PathwayEntitlement and record payment."""
     from app.models.access_pass import AccessPass as _AP, AccessPassSource, AccessPassStatus, AccessPassType
@@ -7340,7 +7340,7 @@ def book_recurring_sessions(
     user_id: str,
     body: RecurringBookingRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     """Book a member into multiple upcoming sessions at once, respecting pass credits and weekly caps."""
     space = _get_managed_space(slug, current_user, db)
@@ -7611,7 +7611,7 @@ def create_manual_member(
     slug: str,
     body: ManualMemberCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> ManualMemberResponse:
     space = _get_managed_space(slug, current_user, db)
     if not body.first_name.strip():
@@ -7640,7 +7640,7 @@ def update_manual_member(
     member_id: str,
     body: ManualMemberUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> ManualMemberResponse:
     space = _get_managed_space(slug, current_user, db)
     member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
@@ -7675,7 +7675,7 @@ def delete_manual_member(
     slug: str,
     member_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
@@ -7690,7 +7690,7 @@ def promote_manual_member(
     slug: str,
     member_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> ManualMemberResponse:
     """Promote an offline record to 'managed' so pass/pathway/payment can be assigned."""
     space = _get_managed_space(slug, current_user, db)
@@ -7748,7 +7748,7 @@ def grant_manual_member_pathway(
     member_id: str,
     body: GrantManualMemberPathwayRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> ManualMemberPathwayItem:
     space = _get_managed_space(slug, current_user, db)
     member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
@@ -7791,7 +7791,7 @@ def revoke_manual_member_pathway(
     member_id: str,
     pathway_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> None:
     space = _get_managed_space(slug, current_user, db)
     member = db.query(ManualMember).filter_by(id=member_id, space_id=space.id).first()
@@ -7816,7 +7816,7 @@ def invite_managed_member(
     member_id: str,
     body: InviteManagedMemberRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> ManualMemberResponse:
     """Add email to a managed member and create a SpaceInvitation for them."""
     space = _get_managed_space(slug, current_user, db)
@@ -7900,7 +7900,7 @@ def set_pathway_unlock_requirements(
     pathway_slug: str,
     body: SetPathwayUnlockRequirementsRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ) -> list[PathwayUnlockOptionResponse]:
     """Replace the full set of payment options that unlock this pathway."""
     space = _get_managed_space(slug, current_user, db)
@@ -8106,7 +8106,7 @@ def create_offer_page(
     slug: str,
     body: OfferPageCreateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     # Community plan → 403. Offer Pages are a commercial surface; the
     # ``paid_offers_enabled`` capability decides who may author them.
@@ -8181,7 +8181,7 @@ def update_offer_page(
     offer_slug: str,
     body: OfferPageUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     guard_offer_pages_enabled(current_user, db)
     space = _get_managed_space(slug, current_user, db)
@@ -8256,7 +8256,7 @@ def delete_offer_page(
     slug: str,
     offer_slug: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),
 ):
     guard_offer_pages_enabled(current_user, db)
     space = _get_managed_space(slug, current_user, db)

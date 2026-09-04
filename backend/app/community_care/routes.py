@@ -36,7 +36,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from slowapi import Limiter
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_creator_user, get_current_user
+from app.auth.dependencies import (
+    get_creator_user,
+    get_current_user,
+    get_verified_creator_user,
+    get_verified_current_user,
+)
 from app.core.rate_limit import client_ip_for_rate_limit
 from app.community_care.schemas import (
     CreatorSupportAcknowledgement,
@@ -155,7 +160,7 @@ def _notify_creator_support_acknowledgement(
 def submit_member_report(
     request: Request,
     body: MemberReportRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
     db: Session = Depends(get_db),
 ) -> MemberReportAcknowledgement:
     """A member reports a post or comment.
@@ -315,7 +320,7 @@ def submit_member_report(
 def submit_creator_support_request(
     request: Request,
     body: CreatorSupportRequest,
-    current_user: User = Depends(get_creator_user),
+    current_user: User = Depends(get_verified_creator_user),  # SEC-009
     db: Session = Depends(get_db),
 ) -> CreatorSupportAcknowledgement:
     """A creator asks Fresh Collective for support.

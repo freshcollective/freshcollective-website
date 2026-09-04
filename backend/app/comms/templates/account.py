@@ -11,9 +11,10 @@ from app.comms.routing.resolver import ResolvedRecipient
 from app.comms.templates.registry import template_for
 
 
-_EVENT_PASSWORD_RESET_REQUESTED = "account.password_reset_requested"
-_EVENT_WELCOME_AFTER_SIGNUP     = "account.welcome_after_signup"
-_EVENT_CREATOR_PLAN_ACTIVATED   = "creator.plan_activated"
+_EVENT_PASSWORD_RESET_REQUESTED     = "account.password_reset_requested"
+_EVENT_WELCOME_AFTER_SIGNUP         = "account.welcome_after_signup"
+_EVENT_EMAIL_VERIFICATION_REQUESTED = "account.email_verification_requested"
+_EVENT_CREATOR_PLAN_ACTIVATED       = "creator.plan_activated"
 
 
 @template_for(_EVENT_PASSWORD_RESET_REQUESTED, CHANNEL_EMAIL_TRANSACTIONAL)
@@ -58,6 +59,76 @@ class PasswordResetRequestedInAppTemplate:
             subject="Password reset requested",
             body_text="A password reset link was sent to your email.",
             metadata={"notification_type": "password_reset_requested"},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Email verification requested (SEC-009) — the ONE email a new
+# unverified account receives at signup. Warm but verification-first.
+# The existing WelcomeAfterSignup templates below fire AFTER
+# successful verification, so a new account gets exactly two account
+# emails across its lifetime: verify → welcome.
+# ---------------------------------------------------------------------------
+
+
+@template_for(_EVENT_EMAIL_VERIFICATION_REQUESTED, CHANNEL_EMAIL_TRANSACTIONAL)
+class EmailVerificationRequestedEmailTemplate:
+    key = "account.email_verification_requested.email_transactional"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx = recipient.template_context
+        greeting = _greeting(ctx.get("first_name"))
+        verify_url = ctx.get("verify_url") or ""
+
+        subject = "Welcome to Fresh Collective — confirm your email"
+        body_text = (
+            f"{greeting}\n\n"
+            "Welcome to Fresh Collective 🌿\n\n"
+            "One quick thing before you start joining in: confirm your "
+            "email address so we know we can reach you when it matters.\n\n"
+            f"Verify my email:\n{verify_url}\n\n"
+            "This link is good for 24 hours. If it expires you can request "
+            "a fresh one from your dashboard.\n\n"
+            "See you inside."
+        )
+        body_html = (
+            f"<p>{greeting}</p>"
+            "<p>Welcome to Fresh Collective 🌿</p>"
+            "<p>One quick thing before you start joining in: confirm your "
+            "email address so we know we can reach you when it matters.</p>"
+            f'<p><a href="{verify_url}">Verify my email</a></p>'
+            "<p>This link is good for 24 hours. If it expires you can request "
+            "a fresh one from your dashboard.</p>"
+            "<p>See you inside.</p>"
+        )
+        return RenderedPayload(
+            to="",
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text,
+            metadata={"notification_type": "email_verification_requested"},
+        )
+
+
+@template_for(_EVENT_EMAIL_VERIFICATION_REQUESTED, CHANNEL_IN_APP)
+class EmailVerificationRequestedInAppTemplate:
+    key = "account.email_verification_requested.in_app"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        return RenderedPayload(
+            to="",
+            subject="Please verify your email",
+            body_text=(
+                "We sent a verification link to your email. "
+                "Verify to start joining Collectives and Gatherings."
+            ),
+            metadata={"notification_type": "email_verification_requested"},
         )
 
 

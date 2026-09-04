@@ -125,6 +125,29 @@ class UserResponse(BaseModel):
     email: str
     name: str | None
     role: str
+    # SEC-009 — null = unverified. Frontend surfaces the verification
+    # banner + resend button when this is null.
+    email_verified_at: str | None = None
+
+    @field_validator("email_verified_at", mode="before")
+    @classmethod
+    def _serialise_verified_at(cls, v):
+        if v is None:
+            return None
+        # datetime → ISO string; string passes through untouched.
+        return v.isoformat() if hasattr(v, "isoformat") else v
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+    @field_validator("token")
+    @classmethod
+    def validate_token(cls, v: str) -> str:
+        v = v.strip()
+        if not v or len(v) > 200:
+            raise ValueError("Invalid token.")
+        return v
 
 
 class ProfileResponse(BaseModel):
@@ -140,3 +163,5 @@ class ProfileResponse(BaseModel):
     has_completed_onboarding: bool
     has_completed_creator_onboarding: bool
     interests: list[str]
+    # SEC-009 — null = unverified.
+    email_verified_at: str | None = None

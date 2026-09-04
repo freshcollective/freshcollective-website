@@ -53,7 +53,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user, get_optional_user
+from app.auth.dependencies import get_current_user, get_optional_user, get_verified_current_user
 from app.auth.routes import set_session_cookie
 from app.auth import service as auth_service
 from app.checkout.stripe_client import StripeNotConfiguredError, is_configured
@@ -428,7 +428,7 @@ def claim_purchase(
     body: ClaimTokenBody,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> ClaimResponse:
     """Activate the intent for the currently-authenticated user.
 
@@ -556,12 +556,18 @@ def claim_with_signup(
     # behaviour, not introduced by R2B.
     new_user = auth_service.create_user(db, body.name, email, body.password)
 
-    # Welcome email fires against the just-committed User row. Distinct
-    # from the plan-activation email below — one greets the account,
-    # the other greets the Creator plan.
-    auth_service.emit_welcome_after_signup(
-        db, new_user, background_tasks=background_tasks,
-    )
+    # SEC-009 — new account starts unverified. Send the single
+    # verification/welcome email; the existing welcome-after-signup
+    # fires post-verify (in the /verify-email route), matching the
+    # standalone signup lifecycle so purchase-path accounts don't get
+    # two consecutive greetings.
+    raw = auth_service.create_email_verification_token(db, new_user)
+    if raw:
+        auth_service.emit_email_verification_requested(
+            db, new_user, raw, background_tasks=background_tasks,
+        )
+    else:
+        db.commit()
 
     try:
         claim_result = claim_intent(db, intent, new_user)

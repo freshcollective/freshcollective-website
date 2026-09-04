@@ -19,6 +19,7 @@ from app.auth.schemas import (
     SignupRequest,
     UpdateProfileRequest,
     UserResponse,
+    VerifyEmailRequest,
 )
 from app.models.platform import CreatorProfile, Space, SpaceMembership
 from app.core.config import settings
@@ -30,6 +31,24 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 limiter = Limiter(key_func=client_ip_for_rate_limit)
 
 COOKIE_MAX_AGE = 7 * 24 * 60 * 60  # 7 days
+
+
+def _user_response(user: User) -> UserResponse:
+    """Build the wire-shape ``UserResponse`` carrying SEC-009's
+    ``email_verified_at`` in ISO form. Used by every endpoint that
+    returns the current user to the frontend so the verification
+    banner can flip on/off correctly."""
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        role=user.role,
+        email_verified_at=(
+            user.email_verified_at.isoformat()
+            if user.email_verified_at is not None
+            else None
+        ),
+    )
 
 
 def set_session_cookie(response: Response, token: str) -> None:
@@ -75,7 +94,7 @@ async def login(
         )
     token = service.create_session_token(user)
     set_session_cookie(response, token)
-    return UserResponse.model_validate(user)
+    return _user_response(user)
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -94,12 +113,107 @@ async def signup(
             detail="An account with those details already exists. Try logging in instead.",
         )
     user = service.create_user(db, payload.name, payload.email, payload.password)
-    service.emit_welcome_after_signup(
-        db, user, background_tasks=background_tasks,
-    )
+
+    # SEC-009 — new accounts start unverified. Issue the verification
+    # token + email; do NOT emit ``account.welcome_after_signup``
+    # here. The existing welcome email fires from the verify endpoint
+    # so a new account's lifetime email count is exactly two: verify,
+    # then welcome-after-verify. See SEC-009 investigation §6 for the
+    # single-email-at-signup product decision.
+    raw = service.create_email_verification_token(db, user)
+    if raw:
+        service.emit_email_verification_requested(
+            db, user, raw, background_tasks=background_tasks,
+        )
+    else:
+        # Cooldown / already-verified — for a brand-new account this
+        # cannot happen. Committed defensively so the caller sees no
+        # asymmetry.
+        db.commit()
+
     token = service.create_session_token(user)
     set_session_cookie(response, token)
-    return UserResponse.model_validate(user)
+    return _user_response(user)
+
+
+@router.post("/verify-email")
+@limiter.limit("10/minute")
+async def verify_email(
+    request: Request,
+    payload: VerifyEmailRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> dict:
+    """SEC-009 — consume a verification token.
+
+    Deliberately does NOT require authentication. A user might click
+    the link from a device where they never signed in (email on
+    phone, browsing on desktop). Verification is proven by possession
+    of the raw token; the endpoint simply flips
+    ``users.email_verified_at`` for the token's owner.
+
+    Failure branches collapse into a single generic 400 so a caller
+    cannot enumerate token state (missing / expired / used /
+    invalidated all indistinguishable). Rate-limited via SEC-010's
+    ``client_ip_for_rate_limit``.
+
+    On success, emits ``account.welcome_after_signup`` so the person
+    gets their "you're in, here's what's next" email now that we can
+    confirm the address is theirs.
+    """
+    user = service.consume_email_verification_token(db, payload.token)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "This verification link is invalid or has expired. "
+                "Please request a new one."
+            ),
+        )
+    # Post-verify welcome — the existing warm onboarding email now
+    # fires once the address is confirmed. Not fatal if it fails.
+    try:
+        service.emit_welcome_after_signup(
+            db, user, background_tasks=background_tasks,
+        )
+    except Exception:
+        logger.exception(
+            "welcome_after_signup emit failed post-verify for user %s", user.id,
+        )
+    return {"verified": True}
+
+
+@router.post("/verify-email/resend")
+@limiter.limit("5/minute")
+async def verify_email_resend(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """SEC-009 — issue a fresh verification email for the caller.
+
+    Returns the same generic success shape whether we actually sent a
+    new email or suppressed the request (cooldown / already verified /
+    user gone). Prevents the caller from distinguishing those states
+    via the response, matching the anti-enumeration stance of
+    ``/forgot-password``.
+
+    Per-IP rate-limit via SEC-010's ``client_ip_for_rate_limit`` +
+    per-account cooldown enforced inside
+    ``create_email_verification_token``.
+    """
+    raw = service.create_email_verification_token(db, current_user)
+    if raw is not None:
+        service.emit_email_verification_requested(
+            db, current_user, raw, background_tasks=background_tasks,
+        )
+    else:
+        # Nothing to commit here — the helper committed a flush-only
+        # state that will roll back with the request. Explicit commit
+        # keeps the response contract stable.
+        db.commit()
+    return {"ok": True}
 
 
 @router.post("/logout")
@@ -158,6 +272,11 @@ def _profile_response(user: User, cp: "CreatorProfile | None") -> ProfileRespons
         has_completed_onboarding=user.onboarding_completed_at is not None,
         has_completed_creator_onboarding=user.creator_onboarded_at is not None,
         interests=interests,
+        email_verified_at=(
+            user.email_verified_at.isoformat()
+            if user.email_verified_at is not None
+            else None
+        ),
     )
 
 
@@ -444,4 +563,4 @@ async def reset_password(
         )
     token = service.create_session_token(user)
     set_session_cookie(response, token)
-    return UserResponse.model_validate(user)
+    return _user_response(user)

@@ -21,6 +21,33 @@ from app.comms.models import CommunicationEvent
 from app.comms.routing.resolver import ResolvedRecipient, resolver_for
 
 
+@resolver_for("account.email_verification_requested")
+class EmailVerificationRequestedResolver:
+    """SEC-009 — the freshly-signed-up (or resend-requesting) user is
+    the single recipient. The verification URL is the whole point of
+    the email."""
+
+    event_type = "account.email_verification_requested"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        if not event.actor_user_id:
+            return []
+        payload = event.payload or {}
+        return [
+            ResolvedRecipient(
+                user_id=event.actor_user_id,
+                role_in_event="account_owner",
+                human_reason="You just created your Fresh Collective account.",
+                template_context={
+                    "first_name": payload.get("first_name") or "",
+                    "verify_url": payload.get("verify_url") or "",
+                },
+            ),
+        ]
+
+
 @resolver_for("account.password_reset_requested")
 class PasswordResetRequestedResolver:
     event_type = "account.password_reset_requested"

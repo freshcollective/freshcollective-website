@@ -19,7 +19,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_verified_current_user
 from app.core.database import get_db
 from app.core.storage import save_media_file
 from app.models.platform import (
@@ -468,7 +468,7 @@ def create_community_post(
     body: CreatePostRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> PostSummary:
     space = _get_space_or_404(slug, db)
 
@@ -636,7 +636,7 @@ def create_comment(
     body: CreateCommentRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> CommentItem:
     space = _get_space_or_404(slug, db)
 
@@ -775,7 +775,7 @@ def vote_on_poll(
     post_id: str,
     body: CastVoteRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> PollView:
     space = _get_space_or_404(slug, db)
 
@@ -1055,7 +1055,7 @@ async def upload_community_image(
     slug: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> dict:
     # SEC-005-C — uploads land in the collective's storage namespace
     # (``uploads/media/{slug}/community/…``). Being authenticated is
@@ -1098,7 +1098,7 @@ def toggle_post_reaction(
     post_id: str,
     emoji: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> dict:
     if emoji not in ALLOWED_REACTION_EMOJIS:
         raise HTTPException(status_code=400, detail="Emoji not allowed.")
@@ -1173,7 +1173,7 @@ def toggle_comment_reaction(
     comment_id: str,
     emoji: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> dict:
     if emoji not in ALLOWED_REACTION_EMOJIS:
         raise HTTPException(status_code=400, detail="Emoji not allowed.")
@@ -1273,7 +1273,7 @@ def hide_community_post(
     slug: str,
     post_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> None:
     """Soft-hide a community post. Only moderators/creators/admins may hide others' posts."""
     space = _get_space_or_404(slug, db)
@@ -1296,7 +1296,7 @@ def hide_community_comment(
     post_id: str,
     comment_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> None:
     """Soft-hide a comment. Only moderators/creators/admins may hide others' comments."""
     space = _get_space_or_404(slug, db)

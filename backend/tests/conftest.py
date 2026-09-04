@@ -208,12 +208,18 @@ def make_user(db: Session):
     def _factory(**overrides) -> "User":
         # Top-level users.role CHECK allows only 'user' | 'creator' | 'admin'.
         # (SpaceMembership.role is different — 'learner' | 'moderator' | 'creator'.)
+        # SEC-009: default to verified so pre-SEC-009 tests (which
+        # weren't exercising verification) continue to hit the
+        # trust-action gates cleanly. New SEC-009 tests explicitly
+        # pass ``email_verified_at=None`` to test the unverified
+        # branch.
         defaults = dict(
             id=_uid("u"),
             email=f"test-{uuid.uuid4().hex[:8]}@example.test",
             name="Test User",
             role="user",
             password_hash="$2b$12$0000000000000000000000000000000000000000000000000000",
+            email_verified_at=datetime.utcnow(),
         )
         defaults.update(overrides)
         u = User(**defaults)
