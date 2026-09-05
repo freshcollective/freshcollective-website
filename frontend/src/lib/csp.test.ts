@@ -32,23 +32,23 @@ function parseCsp(csp: string): Record<string, string[]> {
 
 
 // ---------------------------------------------------------------------------
-// 1. Report-Only posture — Stage A must NOT enforce
+// 1. Enforcement posture — Stage C must ship enforcing CSP, not Report-Only
 // ---------------------------------------------------------------------------
 
-describe('SEC-011 Stage A — CSP is Report-Only', () => {
-  test('the reported header key is Content-Security-Policy-Report-Only', () => {
+describe('SEC-011 Stage C — CSP is enforcing', () => {
+  test('the reported header key is Content-Security-Policy', () => {
     const keys = SECURITY_HEADERS.map((h: { key: string }) => h.key)
     assert.ok(
-      keys.includes('Content-Security-Policy-Report-Only'),
-      'expected Content-Security-Policy-Report-Only in the shipped header set',
+      keys.includes('Content-Security-Policy'),
+      'expected Content-Security-Policy in the shipped header set',
     )
   })
 
-  test('no enforcing Content-Security-Policy header ships in Stage A', () => {
+  test('Report-Only CSP header is no longer shipped', () => {
     const keys = SECURITY_HEADERS.map((h: { key: string }) => h.key.toLowerCase())
     assert.ok(
-      !keys.includes('content-security-policy'),
-      'Stage A ships Report-Only only — an enforcing CSP would prematurely block traffic',
+      !keys.includes('content-security-policy-report-only'),
+      'Stage C enforces — Report-Only must not ship alongside the enforcing header',
     )
   })
 })

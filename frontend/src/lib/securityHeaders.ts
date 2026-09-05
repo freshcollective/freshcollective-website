@@ -7,10 +7,20 @@
  * frame-src directive is built once from the ``EMBED_PROVIDERS``
  * allowlist and every consumer sees the same value.
  *
- * Stage A ships CSP as ``Content-Security-Policy-Report-Only``.
- * Enforcement (a single-line flip in a separate Stage C commit)
- * happens after a manual observation window with DevTools Console
- * open — see the SEC-011 investigation §5 / §12.
+ * Stage C — CSP now ships as enforcing ``Content-Security-Policy``.
+ * Flipped from Report-Only after a clean production browser
+ * walkthrough (Mother World / admin, Your World, Explore Collectives,
+ * Natural Leader Hub member surfaces, public homepage including
+ * next/image blur-up, /verify-email) surfaced zero legitimate CSP
+ * violations. Residual unexercised directives (``img-src blob:`` —
+ * no production image picker with existing data; ``frame-src`` embed
+ * providers — no active production embed content; Stripe
+ * ``form-action``/``frame-src`` — checkout intentionally disabled)
+ * are accepted coverage gaps: the derived allowlists are drift-
+ * pinned by ``csp.test.ts`` against ``EMBED_PROVIDERS``, and the
+ * defensive Stripe origin is included so the payments flag can flip
+ * on without a follow-up header change. See SEC-011 investigation
+ * §5 / §12 for the enforcement gate policy.
  */
 
 import { EMBED_PROVIDERS } from './embedAllowlist.ts'
@@ -111,5 +121,9 @@ export const SECURITY_HEADERS: readonly { key: string; value: string }[] = [
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Permissions-Policy', value: PERMISSIONS_POLICY },
   { key: 'X-Frame-Options', value: 'DENY' },
-  { key: 'Content-Security-Policy-Report-Only', value: CSP_REPORT_ONLY },
+  // SEC-011 Stage C — enforcing. Value is unchanged from Stage A;
+  // the ``CSP_REPORT_ONLY`` constant name is retained for source-
+  // stability (grep-ability, existing test import path) even though
+  // the header key is now the enforcing form.
+  { key: 'Content-Security-Policy', value: CSP_REPORT_ONLY },
 ]
