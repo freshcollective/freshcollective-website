@@ -22,17 +22,30 @@ import type { SpaceSummary } from '@/types/platform'
  * navigation. Without this the client router cache serves the
  * previously-rendered layout, and the sidebar shows the old
  * collective for a beat.
+ *
+ * Redirect targets are RELATIVE, deliberately. Route Handlers on
+ * Render receive a ``request.url`` whose host is the container's
+ * internal listen address (``http://localhost:$PORT``); constructing
+ * ``new URL('/x', request.url)`` and returning that in a
+ * ``Location`` header would send the browser to
+ * ``http://localhost:10000/x`` in production. Per RFC 7231 §7.1.2,
+ * a relative ``Location`` is resolved against the effective request
+ * URI from the browser's perspective (i.e. the public origin), which
+ * is the behaviour we want here. Every real browser handles this
+ * correctly.
  */
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params
   const spaces: SpaceSummary[] = await getCreatorSpaces()
   const allowed = spaces.some(s => s.slug === slug)
   if (!allowed) {
-    const url = new URL('/creator-studio', request.url)
-    return NextResponse.redirect(url, { status: 303 })
+    return new NextResponse(null, {
+      status: 303,
+      headers: { Location: '/creator-studio' },
+    })
   }
   const cookieStore = await cookies()
   cookieStore.set(ACTIVE_SPACE_COOKIE, slug, {
@@ -42,6 +55,8 @@ export async function GET(
     sameSite: 'lax',
   })
   revalidatePath('/creator-studio', 'layout')
-  const url = new URL('/creator-studio/home', request.url)
-  return NextResponse.redirect(url, { status: 303 })
+  return new NextResponse(null, {
+    status: 303,
+    headers: { Location: '/creator-studio/home' },
+  })
 }
