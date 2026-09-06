@@ -1,20 +1,61 @@
-"""
-Local file storage for V1/dev.
+"""File storage — Cloudflare R2 in production, local disk in dev/test.
 
-Files are stored under backend/uploads/{subdir}/{uuid_filename}.
-Served via GET /api/uploads/{subdir}/{uuid_filename} (auth required).
+Mode selection is per-call and gated on ``settings.is_r2_enabled``.
+When any R2 env var is unset the module writes to ``backend/uploads/``
+under UPLOAD_DIR — the pre-Stage-B behaviour — so tests and local dev
+do not require R2 credentials.
 
-Production upgrade path: replace save_file / delete_file with presigned S3 PUT/DELETE,
-store the S3 key in the url column, and serve via presigned GET URLs instead of
-/api/uploads. The rest of the codebase does not need to change.
+Public / private split
+----------------------
+The R2 side is two buckets, chosen to mirror the split already enforced
+by ``app/uploads/routes.py``:
+
+  * ``r2_bucket_public``  — keys under ``platform-artwork/*``. Fronted
+    by an R2 public URL (temporarily the R2.dev subdomain; later
+    ``media.freshcollective.com``). Served with a plain 302 redirect
+    from ``/api/uploads/platform-artwork/*``.
+  * ``r2_bucket_private`` — every other key (avatars, covers, logos,
+    pathway covers, media library, community images, gathering
+    artwork, step resources, atlas/place artwork, world guide).
+    Served via short-lived pre-signed URLs from the auth-gated
+    ``/api/uploads/*`` route after the user's session is verified.
+
+The bucket for a given key is decided by ``_bucket_for_key`` — the
+sole authoritative mapping. Callers do not choose a bucket; they
+choose a subdir and the routing follows.
+
+Key structure is unchanged from the local-disk layout:
+``{subdir}/{uuid}_{sanitised_filename}``. That means DB values stored
+as ``/api/uploads/{key}`` continue to work verbatim — the serving
+router translates them to R2 at read time. Storage backend swap
+requires zero DB migration.
+
+Deletions call the R2 DeleteObject on the correct bucket (S3 API is
+idempotent: a missing key is not an error). Filesystem fallback keeps
+the pre-existing ``resolve() + is_relative_to`` traversal guard.
 """
+
+from __future__ import annotations
 
 import io
 import pathlib
 import re
+from functools import lru_cache
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-# Absolute path to the uploads root, resolved relative to this file.
+from app.core.config import settings
+
+if TYPE_CHECKING:  # pragma: no cover
+    from mypy_boto3_s3.client import S3Client
+
+
+# Absolute path to the on-disk uploads root, used in filesystem mode
+# and by scripts/tests that monkeypatch this attribute. Kept exported
+# unchanged from pre-Stage-B so ``backfill_location_thumbnails.py``,
+# ``tests/test_uploads_public_prefix.py``, ``tests/test_security_headers.py``,
+# ``tests/test_world_guide.py`` and ``tests/test_physical_locations_routes.py``
+# continue to work without modification.
 UPLOAD_DIR = pathlib.Path(__file__).parent.parent.parent / "uploads"
 
 # Target width for auto-generated thumbnails of curated artwork
@@ -46,10 +87,90 @@ MIME_TO_RESOURCE_TYPE: dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# R2 client — lazy, cached
+# ---------------------------------------------------------------------------
+
+# ``lru_cache`` gives us one boto3 client for the process. boto3 clients
+# are threadsafe and cheap to reuse; recreating per request would add
+# TLS setup overhead on every upload. Tests that toggle R2 mode call
+# ``reset_r2_client_cache()`` to force reconstruction against the
+# monkeypatched settings.
+@lru_cache(maxsize=1)
+def _r2_client() -> "S3Client":
+    """Build the S3-compatible client for R2. Callers MUST gate on
+    ``settings.is_r2_enabled`` first; this function assumes every
+    credential is set."""
+    import boto3  # local import — avoids paying import cost in FS mode
+
+    endpoint = f"https://{settings.r2_account_id}.r2.cloudflarestorage.com"
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=settings.r2_access_key_id,
+        aws_secret_access_key=settings.r2_secret_access_key,
+        # R2 ignores region but boto3 requires *something*. "auto" is the
+        # Cloudflare-documented value.
+        region_name="auto",
+    )
+
+
+def reset_r2_client_cache() -> None:
+    """Force the next ``_r2_client()`` call to rebuild against current
+    settings. Used only by tests that toggle R2 mode on/off."""
+    _r2_client.cache_clear()
+
+
+def _bucket_for_key(key: str) -> str:
+    """Route a storage key to the correct R2 bucket.
+
+    Mirrors the /api/uploads router split: public bucket owns
+    ``platform-artwork/*`` keys, private bucket owns everything else.
+    Atlas + physical-location artwork is intentionally private today —
+    served through the auth-gated route — so it maps to the private
+    bucket even though it is curated content.
+    """
+    if key.startswith("platform-artwork/"):
+        assert settings.r2_bucket_public is not None
+        return settings.r2_bucket_public
+    assert settings.r2_bucket_private is not None
+    return settings.r2_bucket_private
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
 def _sanitize_filename(name: str) -> str:
     name = re.sub(r"[^\w.\-]", "_", name)
     name = re.sub(r"_+", "_", name).strip("_")
     return name[:120] or "file"
+
+
+def _fs_write(subdir: str, stored_name: str, data: bytes) -> None:
+    """Filesystem-mode write. Used only when R2 is not enabled — e.g.
+    local dev and every backend test that doesn't opt into R2 mode."""
+    dest_dir = UPLOAD_DIR / subdir
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    (dest_dir / stored_name).write_bytes(data)
+
+
+def _r2_put(key: str, data: bytes, content_type: str | None) -> None:
+    """R2-mode write. Bucket is derived from the key; content type is
+    passed through so the browser sees the right MIME on subsequent
+    presigned/public GETs."""
+    _r2_client().put_object(
+        Bucket=_bucket_for_key(key),
+        Key=key,
+        Body=data,
+        ContentType=content_type or "application/octet-stream",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API — kept identical to pre-Stage-B so callers do not change
+# ---------------------------------------------------------------------------
 
 
 def save_file(
@@ -59,10 +180,11 @@ def save_file(
     subdir: str,
 ) -> tuple[str, str, int]:
     """
-    Persist upload bytes to disk.
+    Persist upload bytes.
 
     Returns:
-        rel_path      — relative path from UPLOAD_DIR, used as the URL path segment
+        rel_path      — relative path from UPLOAD_DIR / bucket root,
+                        used as the URL path segment
         resource_type — inferred type string (video | audio | pdf | file)
         size          — byte count
     """
@@ -79,12 +201,13 @@ def save_file(
 
     safe_base = _sanitize_filename(pathlib.Path(original_name).stem)
     stored_name = f"{uuid4().hex}_{safe_base}{ext}"
-
-    dest_dir = UPLOAD_DIR / subdir
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    (dest_dir / stored_name).write_bytes(data)
-
     rel_path = f"{subdir}/{stored_name}"
+
+    if settings.is_r2_enabled:
+        _r2_put(rel_path, data, mime_type)
+    else:
+        _fs_write(subdir, stored_name, data)
+
     resource_type = MIME_TO_RESOURCE_TYPE.get(mime_type, "file")
     return rel_path, resource_type, size
 
@@ -127,16 +250,14 @@ def save_media_file(
     space_slug: str,
 ) -> tuple[str, str, str, str, int]:
     """
-    Save a media-library file to disk under uploads/media/{space_slug}/.
+    Save a media-library file. Key layout: ``media/{safe_slug}/…``.
 
     Returns:
-        storage_path    — relative path within UPLOAD_DIR (e.g. "media/my-space/abc_file.pdf")
+        storage_path    — relative path (e.g. "media/my-space/abc_file.pdf")
         file_url        — URL path for serving  (e.g. "/api/uploads/media/my-space/abc_file.pdf")
         media_type      — "image" | "video" | "audio" | "document" | "other"
         stored_filename — just the filename portion
         size            — byte count
-
-    TODO: protect private member resources behind authenticated access checks before production.
     """
     ext = pathlib.Path(original_name).suffix.lower()
     if ext not in MEDIA_EXTENSION_MAP:
@@ -156,17 +277,36 @@ def save_media_file(
 
     safe_slug = re.sub(r"[^\w\-]", "_", space_slug)[:50]
     subdir = f"media/{safe_slug}"
-    dest_dir = UPLOAD_DIR / subdir
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    (dest_dir / stored_filename).write_bytes(data)
-
     storage_path = f"{subdir}/{stored_filename}"
+
+    if settings.is_r2_enabled:
+        _r2_put(storage_path, data, mime_type)
+    else:
+        _fs_write(subdir, stored_filename, data)
+
     file_url = f"/api/uploads/{storage_path}"
     return storage_path, file_url, media_type, stored_filename, size
 
 
 def delete_file(rel_path: str) -> None:
-    """Remove a stored file. Silently ignores missing files or path traversal attempts."""
+    """Remove a stored file. Silently ignores missing files (R2 side)
+    and path-traversal attempts (filesystem side)."""
+    if not rel_path:
+        return
+
+    if settings.is_r2_enabled:
+        try:
+            _r2_client().delete_object(
+                Bucket=_bucket_for_key(rel_path),
+                Key=rel_path,
+            )
+        except Exception:
+            # Deletion is best-effort — mirrors the filesystem branch's
+            # swallow-and-continue posture. Callers do not rely on
+            # deletion success (parent-row commit is authoritative).
+            pass
+        return
+
     try:
         target = (UPLOAD_DIR / rel_path).resolve()
         root = UPLOAD_DIR.resolve()
@@ -254,14 +394,15 @@ def save_image_with_thumbnail(
 ) -> tuple[str, str]:
     """Persist a curated image and generate a proportional thumbnail.
 
-    The hero preserves the original bytes. The thumbnail is downscaled to
-    `target_width` while preserving aspect ratio; images narrower than the
-    target width are not upscaled — the thumbnail simply mirrors the hero
-    at its native size.
+    The hero preserves the original bytes. The thumbnail is downscaled
+    to ``target_width`` while preserving aspect ratio; images narrower
+    than the target width are not upscaled — the thumbnail simply
+    mirrors the hero at its native size.
 
-    Returns:
-        hero_rel_path      — relative path used to construct the URL
-        thumbnail_rel_path — sibling path for the generated thumbnail
+    Both files travel through ``save_file``, so both land in the same
+    bucket (public if ``subdir`` begins with ``platform-artwork/``,
+    private otherwise). This matches the existing behaviour where the
+    thumbnail is served through the same URL prefix as the hero.
     """
     hero_rel, _resource, _size = save_file(data, original_name, mime_type, subdir)
     thumb_bytes, thumb_name = generate_thumbnail_bytes(data, original_name, target_width)

@@ -133,6 +133,29 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     assert.ok(values.includes('blob:'))
   })
 
+  test('img-src covers R2 redirect targets (Stage B)', () => {
+    // Per CSP L3, each redirect hop is re-checked against img-src.
+    // fc-api ``/api/uploads/*`` redirects to R2 — both the private
+    // pre-signed endpoint and the R2 Public URL must be allowed.
+    const values = parsed['img-src']
+    assert.ok(values.includes('https://*.r2.cloudflarestorage.com'))
+    assert.ok(values.includes('https://*.r2.dev'))
+  })
+
+  test('media-src is present and covers the same media hosts', () => {
+    // Without an explicit ``media-src``, ``<audio>``/``<video>`` fall
+    // back to ``default-src 'self'`` — which would block any media
+    // block whose source is fc-api (a cross-origin host). Stage B
+    // adds ``media-src`` so audio/video work end-to-end once creators
+    // upload media through R2.
+    const values = parsed['media-src']
+    assert.ok(values.includes("'self'"))
+    const mediaOrigin = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace(/\/+$/, '')
+    assert.ok(values.includes(mediaOrigin))
+    assert.ok(values.includes('https://*.r2.cloudflarestorage.com'))
+    assert.ok(values.includes('https://*.r2.dev'))
+  })
+
   test('font-src is self only', () => {
     assert.deepEqual(parsed['font-src'], ["'self'"])
   })

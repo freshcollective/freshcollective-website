@@ -25,14 +25,16 @@
 # See docs/finite-payment-plans-stripe-config.md for the operator
 # requirements this Blueprint satisfies.
 #
-# Ephemeral uploads warning
-# -------------------------
-# fc-api writes uploaded assets to ``backend/uploads/`` on the local
-# filesystem, which is EPHEMERAL on Render (wiped on every deploy /
-# restart / instance move). This is acceptable ONLY for the initial
-# technical smoke test after first Blueprint apply. Persistent object
-# storage (S3 / Supabase Storage / R2) is required before any external
-# creator uploads real content.
+# Uploads storage — Cloudflare R2
+# -------------------------------
+# fc-api writes uploads to Cloudflare R2 when the R2_* env vars are
+# set (see the fc-api block below). Two buckets: private for member/
+# creator content served via short-lived presigned URLs, public for
+# platform artwork on marketing pages. When R2 credentials are absent
+# the storage module falls back to ``backend/uploads/`` on the local
+# filesystem — used only by local dev and tests, since that path is
+# EPHEMERAL on Render (wiped on every deploy / restart / instance
+# move). Any production deploy MUST have the R2 env vars set.
 #
 # Migration policy
 # ----------------
@@ -297,6 +299,40 @@ services:
           type: web
           name: fc-web
           envVarKey: RENDER_EXTERNAL_URL
+
+      # Persistent Media Storage — Cloudflare R2.
+      # ----------------------------------------------------------------
+      # Two buckets: ``fc-media`` (private, presigned reads) and
+      # ``fc-media-public`` (public via R2.dev URL for now, custom
+      # domain later). Split matches the ``/api/uploads/*`` router:
+      # ``platform-artwork/*`` keys go to the public bucket, everything
+      # else to the private one. See ``app/core/storage.py`` +
+      # ``app/uploads/routes.py``.
+      #
+      # Production requires all six vars — the ``_check_r2_configuration``
+      # validator in ``core/config.py`` refuses to boot fc-api when
+      # ``APP_ENV=production`` and any R2 var is missing. On Render
+      # that aborts the deploy and the previous image keeps serving,
+      # so uploads never land on the container's ephemeral disk in
+      # production. A partial R2 config (some vars set, others not)
+      # also refuses to boot in any environment.
+      #
+      # ``sync: false`` on the three credentials + the public URL
+      # (which changes when Lindsey attaches a custom domain later).
+      # Bucket names are safe in git and set as literal values so a
+      # blueprint re-apply does not require re-entering them.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET_PRIVATE
+        value: fc-media
+      - key: R2_BUCKET_PUBLIC
+        value: fc-media-public
+      - key: R2_PUBLIC_BASE_URL
+        sync: false
 
   # ─────────────────────────────────────────────────────────────────
   # FIP3 grace-expiry reconciler — independent cron

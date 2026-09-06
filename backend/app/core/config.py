@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -214,9 +215,113 @@ class Settings(BaseSettings):
     # Falls back to platform_owner_email if unset.
     location_provider_contact: str | None = None
 
+    # Cloudflare R2 — persistent object storage. All six variables must
+    # be present for R2 mode to activate; when any are unset the storage
+    # module falls back to writing to the local filesystem
+    # (``backend/uploads/``) so local dev and tests do not require R2
+    # credentials. See ``app/core/storage.py`` and ``app/uploads/routes.py``.
+    #
+    #   * R2_ACCOUNT_ID          — Cloudflare account ID (subdomain of
+    #                              the S3-compatible endpoint URL)
+    #   * R2_ACCESS_KEY_ID       — Access key issued for the FC token
+    #   * R2_SECRET_ACCESS_KEY   — Secret component; never logged
+    #   * R2_BUCKET_PRIVATE      — private bucket ("fc-media")
+    #   * R2_BUCKET_PUBLIC       — public bucket ("fc-media-public"),
+    #                              scope-limited to ``platform-artwork/*``
+    #                              keys — matches the current split in
+    #                              ``uploads/routes.py``.
+    #   * R2_PUBLIC_BASE_URL     — https origin the public bucket is
+    #                              reachable at (R2.dev URL initially;
+    #                              custom domain later)
+    r2_account_id: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket_private: str | None = None
+    r2_bucket_public: str | None = None
+    r2_public_base_url: str | None = None
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"
+
+    @property
+    def is_r2_enabled(self) -> bool:
+        """R2 storage mode is active iff every credential + bucket name +
+        public URL is set. Missing any one falls back to filesystem
+        (dev/test-friendly). Boolean is checked at every call site — see
+        the module docstring in ``app/core/storage.py``.
+
+        Production safety is enforced separately by
+        ``_check_r2_configuration`` below — production boots refuse
+        to start with an incomplete R2 config, and any environment
+        refuses to start with a partial one. Those checks fire before
+        this property ever returns False in a production process."""
+        return all(
+            v
+            for v in (
+                self.r2_account_id,
+                self.r2_access_key_id,
+                self.r2_secret_access_key,
+                self.r2_bucket_private,
+                self.r2_bucket_public,
+                self.r2_public_base_url,
+            )
+        )
+
+    @model_validator(mode="after")
+    def _check_r2_configuration(self) -> "Settings":
+        """Refuse to boot if R2 is misconfigured in a way that would
+        silently downgrade production uploads to ephemeral disk.
+
+        Two rules, both fired at Settings() instantiation (i.e., fc-api
+        boot):
+
+          1. **Production requires full R2.** If ``APP_ENV=production``
+             and any R2 variable is missing, raise. On Render this
+             aborts the deploy — the previous fc-api image continues
+             to serve, so no upload ever lands on the ephemeral disk
+             in a production-marked container.
+
+          2. **No partial config anywhere.** If any R2 variable is set
+             AND any other is missing, raise regardless of env. Catches
+             half-configured local dev before it silently mixes R2
+             writes with filesystem reads (or vice versa).
+
+        Local dev and every existing test remain unaffected because
+        they set zero R2 variables — the ``no-R2-and-not-production``
+        branch is silent and returns the filesystem fallback.
+        """
+        r2_vars = {
+            "R2_ACCOUNT_ID": self.r2_account_id,
+            "R2_ACCESS_KEY_ID": self.r2_access_key_id,
+            "R2_SECRET_ACCESS_KEY": self.r2_secret_access_key,
+            "R2_BUCKET_PRIVATE": self.r2_bucket_private,
+            "R2_BUCKET_PUBLIC": self.r2_bucket_public,
+            "R2_PUBLIC_BASE_URL": self.r2_public_base_url,
+        }
+        present = sorted(k for k, v in r2_vars.items() if v)
+        missing = sorted(k for k, v in r2_vars.items() if not v)
+
+        if self.app_env == "production" and missing:
+            raise ValueError(
+                "R2 storage is required in production but is not fully "
+                f"configured. Missing env vars: {', '.join(missing)}. "
+                "Set every R2_* env var on fc-api, or set "
+                "APP_ENV=development if this environment is intentionally "
+                "using the filesystem fallback (never for production)."
+            )
+
+        if present and missing:
+            raise ValueError(
+                "R2 storage is partially configured. Missing env vars: "
+                f"{', '.join(missing)}. Either set every R2_* env var, "
+                f"or unset {', '.join(present)} to fall back to "
+                "filesystem storage. Refusing to boot with a mix — "
+                "would silently direct some uploads at R2 and others "
+                "at ephemeral disk."
+            )
+
+        return self
 
     @property
     def stripe_enabled(self) -> bool:

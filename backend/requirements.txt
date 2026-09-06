@@ -21,6 +21,12 @@ nh3>=0.2.14
 # (backend/app/services/location_providers/nominatim.py). Async so
 # it composes with FastAPI without blocking the event loop.
 httpx>=0.27.0
+# Cloudflare R2 storage — accessed via the S3-compatible API. boto3
+# is the reference client; R2 documents no incompatibilities with
+# it. Kept optional at runtime: ``app/core/storage.py`` only imports
+# boto3 when ``settings.is_r2_enabled`` is True, so local dev without
+# credentials never triggers the import.
+boto3>=1.35.0
 
 # --- Dev / test only (scoped to backend/tests/) ---------------------------
 # Bootstrapped 2026-07-16 for the standalone paid Gathering test scaffold.

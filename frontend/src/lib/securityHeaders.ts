@@ -31,6 +31,30 @@ const MEDIA_ORIGIN = (
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 ).replace(/\/+$/, '')
 
+// Cloudflare R2 origins — the redirect targets of the fc-api
+// ``/api/uploads/*`` router in R2 mode. Per CSP L3, each redirect hop
+// is re-checked against the appropriate fetch directive, so the R2
+// endpoints must appear in ``img-src`` and ``media-src`` even though
+// the browser only ever *requests* the fc-api origin directly.
+//
+// Wildcarded rather than pinned to Fresh Collective's specific R2
+// hostnames so that a bucket rename, credential rotation, or a switch
+// from the R2.dev URL to a custom domain does not require a CSP edit
+// and a full fc-web redeploy. The trust boundary here is minimal —
+// CSP already allows the entire fc-api origin, which is a strictly
+// larger blast radius than any R2 subdomain.
+//
+//   * ``*.r2.cloudflarestorage.com`` — pre-signed private-bucket URLs
+//   * ``*.r2.dev``                    — public-bucket R2 Public URL
+//                                       used until the day the custom
+//                                       ``media.freshcollective.com``
+//                                       domain is connected, then this
+//                                       entry can be tightened.
+const R2_MEDIA_ORIGINS: readonly string[] = [
+  'https://*.r2.cloudflarestorage.com',
+  'https://*.r2.dev',
+]
+
 // Turn a provider's host list into ``https://<host>`` entries.
 // Every allowlisted embed provider is HTTPS-only (validated at
 // ``checkEmbed`` in embedAllowlist.ts), so hardcoding the scheme
@@ -58,13 +82,23 @@ const CSP_DIRECTIVES: Record<string, readonly string[]> = {
   'style-src': ["'self'", "'unsafe-inline'"],
   // ``self`` for Next optimised images + static assets.
   // MEDIA_ORIGIN for <img src="{NEXT_PUBLIC_API_URL}/api/uploads/…">.
+  // R2_MEDIA_ORIGINS for the redirect hop when R2 mode is active —
+  // per CSP L3 each hop in the fetch chain is re-checked.
   // ``data:`` for Next's built-in image blur-up placeholders.
   // ``blob:`` for local file previews (URL.createObjectURL).
-  'img-src': ["'self'", MEDIA_ORIGIN, 'data:', 'blob:'],
+  'img-src': ["'self'", MEDIA_ORIGIN, ...R2_MEDIA_ORIGINS, 'data:', 'blob:'],
   'font-src': ["'self'"],
   // Browser code only talks to same-origin /api/* (SEC-002). If we
   // ever add browser telemetry, extend this directive.
   'connect-src': ["'self'"],
+  // <audio> and <video> sources. Same host set as ``img-src`` minus
+  // the ``data:``/``blob:`` variants that only apply to previews.
+  // Previously omitted — falling back to ``default-src 'self'`` — which
+  // would silently block audio/video from the fc-api origin (a
+  // cross-origin host). No live audio content exercises this yet, but
+  // shipping R2 mode without a real ``media-src`` would leave the same
+  // gap open once audio blocks are exercised in production.
+  'media-src': ["'self'", MEDIA_ORIGIN, ...R2_MEDIA_ORIGINS],
   // Embed providers + Stripe Checkout (defensive; not currently used
   // as an iframe but the redirect target is Stripe).
   'frame-src': [...EMBED_ORIGINS, STRIPE_CHECKOUT_ORIGIN],
