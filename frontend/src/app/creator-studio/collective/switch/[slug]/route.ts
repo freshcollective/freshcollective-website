@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { ACTIVE_SPACE_COOKIE, getCreatorSpaces } from '@/lib/serverApi'
+import { buildAbsoluteRedirectLocation } from '@/lib/absoluteRedirectLocation'
 import type { SpaceSummary } from '@/types/platform'
 
 /**
@@ -23,19 +24,18 @@ import type { SpaceSummary } from '@/types/platform'
  * previously-rendered layout, and the sidebar shows the old
  * collective for a beat.
  *
- * Redirect targets are RELATIVE, deliberately. Route Handlers on
- * Render receive a ``request.url`` whose host is the container's
- * internal listen address (``http://localhost:$PORT``); constructing
- * ``new URL('/x', request.url)`` and returning that in a
- * ``Location`` header would send the browser to
- * ``http://localhost:10000/x`` in production. Per RFC 7231 §7.1.2,
- * a relative ``Location`` is resolved against the effective request
- * URI from the browser's perspective (i.e. the public origin), which
- * is the behaviour we want here. Every real browser handles this
- * correctly.
+ * Redirect ``Location`` is an ABSOLUTE URL built via
+ * ``buildAbsoluteRedirectLocation`` — see that module for the full
+ * rationale. Short version: relative Location works over plain HTTP
+ * but Next.js App Router's ``<Link>`` client-side navigation reads
+ * the Location string through ``fetch(..., { redirect: 'manual' })``
+ * and hands it to the router; any stale prefetch/cache that
+ * resolves the relative string against an internal URL could still
+ * misroute the browser. An absolute URL from the trusted Host header
+ * bypasses every client-side resolution path.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params
@@ -44,7 +44,9 @@ export async function GET(
   if (!allowed) {
     return new NextResponse(null, {
       status: 303,
-      headers: { Location: '/creator-studio' },
+      headers: {
+        Location: buildAbsoluteRedirectLocation(request, '/creator-studio'),
+      },
     })
   }
   const cookieStore = await cookies()
@@ -57,6 +59,8 @@ export async function GET(
   revalidatePath('/creator-studio', 'layout')
   return new NextResponse(null, {
     status: 303,
-    headers: { Location: '/creator-studio/home' },
+    headers: {
+      Location: buildAbsoluteRedirectLocation(request, '/creator-studio/home'),
+    },
   })
 }

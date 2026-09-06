@@ -1,26 +1,23 @@
 /**
  * Regression tests for the collective-switch Route Handler.
  *
- * Backstory: a production Route Handler that built its redirect target
- * with ``new URL(path, request.url)`` sent Lindsey's browser to
- * ``http://localhost:10000/creator-studio/home`` after onboarding
- * completion and every time she clicked a Collective card. The
- * ``request.url`` inside a Route Handler on Render is the container's
- * internal listen address (Render forwards to Node on
- * ``http://localhost:$PORT``), so the resulting Location header
- * pointed the browser at localhost.
+ * Two-part coverage:
  *
- * The fix uses a RELATIVE ``Location`` header — per RFC 7231 §7.1.2,
- * browsers resolve relative Location against the effective request
- * URI from the browser's perspective (the public origin), so no
- * server-derived base URL is involved.
+ *   * This file (structural) — assert the anti-pattern
+ *     ``new URL(*, request.url)`` remains absent; assert the handler
+ *     builds redirect Location via ``buildAbsoluteRedirectLocation``
+ *     rather than any ad-hoc string; assert both side-effects
+ *     (cookie set + layout revalidate) are preserved.
  *
- * These tests enforce the invariant structurally, in the same way
- * ``src/lib/bffAuth.test.ts`` enforces the SEC-002 response allowlist:
- * read the source, assert the anti-pattern is absent and the
- * corrected pattern is present. Structural checks catch a future
- * refactor that reintroduces the bug without needing to mock the
- * Next.js ``cookies()`` / ``revalidatePath`` / server-API surface.
+ *   * ``src/lib/absoluteRedirectLocation.test.ts`` — exhaustive
+ *     behavioural tests on the helper itself: production headers,
+ *     local dev headers, missing headers, and the negative
+ *     invariant that the result never contains ``localhost:10000``.
+ *
+ * Structural tests avoid mocking ``next/headers`` /
+ * ``next/cache`` / ``@/lib/serverApi`` — those code paths are
+ * already covered by their own unit tests and by end-to-end
+ * verification. Same approach as ``src/lib/bffAuth.test.ts``.
  *
  * Run with:
  *
@@ -39,96 +36,107 @@ const _here = dirname(fileURLToPath(import.meta.url))
 const ROUTE_PATH = join(_here, 'route.ts')
 const SOURCE = readFileSync(ROUTE_PATH, 'utf-8')
 
+// Strip the module's JSDoc / line comments so any pattern named in
+// the rationale doesn't itself trip an assertion.
+const CODE = SOURCE.replace(/\/\*[^]*?\*\//g, '')
+  .split('\n')
+  .map((line) => line.replace(/\/\/.*$/, ''))
+  .join('\n')
 
-describe('collective-switch route — redirect target is browser-resolvable', () => {
+
+describe('collective-switch route — production-safe redirect construction', () => {
   test('does NOT construct redirect URL from request.url (Route Handler anti-pattern on Render)', () => {
-    // The exact anti-pattern this test defends against —
-    // ``new URL(path, request.url)`` inside a Route Handler — yields
-    // ``http://localhost:$PORT/...`` on Render. Strip the module's
-    // JSDoc/docstring first so the pattern named in the fix
-    // rationale doesn't itself trip the assertion.
-    const stripped = SOURCE.replace(/\/\*[^]*?\*\//g, '')
-      .split('\n')
-      .map((line) => line.replace(/\/\/.*$/, ''))
-      .join('\n')
+    // ``request.url`` in a Route Handler on Render is
+    // ``http://localhost:$PORT/…``. Building a redirect target from
+    // it would put localhost in the Location header — the exact bug
+    // this test defends against.
     const antipattern = /new\s+URL\s*\([^)]*request\.url/
     assert.equal(
-      antipattern.test(stripped),
+      antipattern.test(CODE),
       false,
       'route.ts must not build redirect URLs from request.url — ' +
         "Route Handler request.url on Render is 'http://localhost:$PORT'",
     )
   })
 
-  test('the request parameter is unused (underscore-prefixed) so no future edit is tempted to read it', () => {
-    // Belt-and-braces: if request is not received into scope, no
-    // future edit can accidentally reintroduce ``request.url``
-    // without also editing the signature. The prefix documents the
-    // decision.
-    assert.match(
-      SOURCE,
-      /export\s+async\s+function\s+GET\s*\(\s*_request\s*:\s*Request/,
-      "expected 'export async function GET(_request: Request, ...)' — " +
-        "the underscore prefix signals request is deliberately unused",
+  test('does NOT emit any hardcoded localhost host in a Location header', () => {
+    // Belt-and-braces: even a stray literal ``localhost:10000`` or
+    // ``localhost:3000`` in the source would defeat the helper.
+    assert.equal(
+      /localhost:\d+/.test(CODE),
+      false,
+      'route.ts source must not reference any localhost:PORT literal',
     )
   })
 
-  test('success path returns 303 with relative Location "/creator-studio/home"', () => {
-    // The "allowed slug" branch must land the creator on their new
-    // Collective home. Location is relative — browsers resolve it
-    // against the public origin.
+  test('builds Location via buildAbsoluteRedirectLocation (helper carries the trust rules)', () => {
+    // Both Location values must flow through the helper so that
+    // any future refactor of the trust rules (Host header,
+    // x-forwarded-proto, missing-header fallback) lands in exactly
+    // one file. See src/lib/absoluteRedirectLocation.ts.
+    const helperImport = /from\s+['"]@\/lib\/absoluteRedirectLocation['"]/
     assert.match(
-      SOURCE,
-      /status:\s*303[^]{0,120}Location:\s*['"]\/creator-studio\/home['"]/,
-      "expected a 303 response with Location: '/creator-studio/home'",
+      CODE,
+      helperImport,
+      'expected import { buildAbsoluteRedirectLocation } from @/lib/absoluteRedirectLocation',
+    )
+    const callCount = (
+      CODE.match(/buildAbsoluteRedirectLocation\s*\(/g) || []
+    ).length
+    assert.equal(
+      callCount,
+      2,
+      'expected exactly two calls to buildAbsoluteRedirectLocation ' +
+        '(one per branch — success and unauthorized)',
     )
   })
 
-  test('unauthorized path returns 303 with relative Location "/creator-studio"', () => {
-    // The "not-in-allowed-spaces" branch must send the caller back
-    // to the Creator Studio index — not to localhost.
-    assert.match(
-      SOURCE,
-      /status:\s*303[^]{0,120}Location:\s*['"]\/creator-studio['"]/,
-      "expected a 303 response with Location: '/creator-studio'",
-    )
-  })
-
-  test('no absolute URLs (http:// or https://) appear in Location values', () => {
-    // Scan every ``Location: '...'`` and ``Location: "..."`` and
-    // assert the value starts with a single slash. Catches any
-    // future revision that hard-codes an absolute production URL
-    // (which would break preview environments) or reintroduces a
-    // scheme via string concatenation.
+  test('every Location header value is a call to the helper — no bare strings, no ad-hoc URLs', () => {
+    // Match every ``Location: <expression>`` in the code and assert
+    // the expression is a helper call. Catches accidents like a
+    // future edit reintroducing a bare ``Location: '/x'`` or an
+    // absolute URL literal.
     const locations = [
-      ...SOURCE.matchAll(/Location:\s*['"]([^'"]+)['"]/g),
-    ].map((m) => m[1]!)
-    assert.ok(locations.length >= 2, 'expected at least two Location values')
-    for (const loc of locations) {
-      assert.equal(
-        loc.startsWith('/') && !loc.startsWith('//'),
-        true,
-        `Location "${loc}" must be a same-origin relative path ` +
-          '(single leading slash, no scheme, no protocol-relative form)',
+      ...CODE.matchAll(/Location:\s*([^,}\n]+)/g),
+    ].map((m) => m[1]!.trim())
+    assert.ok(locations.length >= 2, 'expected at least two Location fields')
+    for (const value of locations) {
+      assert.match(
+        value,
+        /^buildAbsoluteRedirectLocation\(/,
+        `Location value "${value}" must be a call to buildAbsoluteRedirectLocation`,
       )
     }
   })
 
   test('preserves the two behaviours callers depend on: cookie set + layout revalidate', () => {
-    // The fix must not have accidentally dropped either of these
-    // side effects — they are why the switch route exists at all.
-    // Cookie set: sidebar reads ACTIVE_SPACE_COOKIE to identify the
-    // active collective. revalidatePath: dynamic-route cache would
-    // otherwise serve the previous layout for one navigation cycle.
     assert.match(
-      SOURCE,
+      CODE,
       /cookieStore\.set\(ACTIVE_SPACE_COOKIE,\s*slug,/,
       'active-collective cookie set on success path',
     )
     assert.match(
-      SOURCE,
+      CODE,
       /revalidatePath\(['"]\/creator-studio['"],\s*['"]layout['"]\)/,
       'layout cache revalidated so the sidebar re-renders with the new active collective',
+    )
+  })
+
+  test('both target paths are present (success + unauthorized)', () => {
+    // Guards against a refactor that accidentally drops one of the
+    // two redirect targets.
+    assert.match(
+      CODE,
+      /['"]\/creator-studio\/home['"]/,
+      'success path must redirect to /creator-studio/home',
+    )
+    // The unauthorized branch redirects to /creator-studio (Creator
+    // Studio index). Match on the exact path with word boundary so
+    // it isn't confused with /creator-studio/home.
+    assert.match(
+      CODE,
+      /['"]\/creator-studio['"]/,
+      'unauthorized path must redirect to /creator-studio',
     )
   })
 })
