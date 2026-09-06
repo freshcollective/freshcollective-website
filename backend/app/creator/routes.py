@@ -193,6 +193,11 @@ from app.services.button_validator import (
     validate_button_text,
     validate_button_url,
 )
+from app.services.content_url import (
+    ContentUrlError,
+    validate_media_url,
+    validate_nav_url,
+)
 from app.services.embed_validator import EmbedValidationError, extract_and_validate_embed_url
 from app.services.gathering_types import normalise_access_type
 from app.services.notification_service import trigger_new_step
@@ -5003,6 +5008,24 @@ def create_step_block(
         label = normalised["label"]
         caption = normalised["caption"]
         content = normalised["content"]
+    elif body.block_type in ("link", "video_embed") and embed_url:
+        # SEC-016-1 — ``link`` renders ``<a href={embed_url}>`` directly.
+        # ``video_embed`` renders an iframe when the URL matches a
+        # provider pattern (``getEmbedUrl`` client-side) and falls back
+        # to ``<a href={embed_url}>`` otherwise. Either way the URL can
+        # reach a clickable navigation sink, so apply nav-URL validation.
+        try:
+            embed_url = validate_nav_url(embed_url)
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    elif body.block_type == "image" and embed_url:
+        # SEC-016-1 — ``image`` blocks with no linked asset fall back to
+        # rendering ``<img src={embed_url}>``. Use media-URL validation
+        # (no mailto).
+        try:
+            embed_url = validate_media_url(embed_url)
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
     # Determine position. When a caller passes an explicit position we
     # shift every existing block at or after that position up by one so
@@ -5137,6 +5160,24 @@ def update_step_block(
         except EmbedValidationError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
+    # SEC-016-1 — mirror create_step_block: nav-URL policy for link and
+    # video_embed (fallback <a href>), media-URL policy for image
+    # fallback <img src>. Only validated when a URL is actually present;
+    # clearing remains allowed.
+    if (
+        block.block_type in (StepBlockType.link, StepBlockType.video_embed)
+        and patch.get("embed_url")
+    ):
+        try:
+            patch["embed_url"] = validate_nav_url(patch["embed_url"])
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    if block.block_type == StepBlockType.image and patch.get("embed_url"):
+        try:
+            patch["embed_url"] = validate_media_url(patch["embed_url"])
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
     # Button blocks: _normalise_button_fields skips empty URL/text so a stub
     # button can still be saved while editing in progress.
     if block.block_type == StepBlockType.button:
@@ -5258,6 +5299,21 @@ def create_about_block(
         label = normalised["label"]
         caption = normalised["caption"]
         content = normalised["content"]
+    elif body.block_type in ("link", "video_embed") and embed_url:
+        # SEC-016-1 — mirror create_step_block: about blocks render
+        # through the same renderer family (AboutBlockRenderer), so the
+        # link/video_embed fallback anchor is the same navigation sink.
+        try:
+            embed_url = validate_nav_url(embed_url)
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    elif body.block_type == "image" and embed_url:
+        # SEC-016-1 — image blocks without a linked media_asset fall back
+        # to ``<img src={embed_url}>``. Media-URL policy (no mailto).
+        try:
+            embed_url = validate_media_url(embed_url)
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
     if body.position is not None:
         position = body.position
@@ -5377,6 +5433,22 @@ def update_about_block(
         try:
             patch["embed_url"] = extract_and_validate_embed_url(patch["embed_url"])
         except EmbedValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # SEC-016-1 — mirror create_about_block for the link/video_embed/image
+    # navigation and media sinks. Empty/absent URL leaves the block alone.
+    if (
+        block.block_type in (StepBlockType.link, StepBlockType.video_embed)
+        and patch.get("embed_url")
+    ):
+        try:
+            patch["embed_url"] = validate_nav_url(patch["embed_url"])
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    if block.block_type == StepBlockType.image and patch.get("embed_url"):
+        try:
+            patch["embed_url"] = validate_media_url(patch["embed_url"])
+        except ContentUrlError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
     if block.block_type == StepBlockType.button:

@@ -36,6 +36,11 @@ from app.creator.schemas import (
     AboutBlockResponse,
     AboutBlockUpdateRequest,
 )
+from app.services.content_url import (
+    ContentUrlError,
+    validate_media_url,
+    validate_nav_url,
+)
 from app.services.embed_validator import (
     EmbedValidationError,
     extract_and_validate_embed_url,
@@ -146,6 +151,19 @@ def create_event_about_block(
         label = normalised["label"]
         caption = normalised["caption"]
         content = normalised["content"]
+    elif body.block_type in ("link", "video_embed") and embed_url:
+        # SEC-016-1 — event about blocks share AboutBlockRenderer with
+        # pathway about blocks; the same link/video_embed fallback anchor
+        # is the navigation sink.
+        try:
+            embed_url = validate_nav_url(embed_url)
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    elif body.block_type == "image" and embed_url:
+        try:
+            embed_url = validate_media_url(embed_url)
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
     if body.position is not None:
         position = body.position
@@ -263,6 +281,19 @@ def update_event_about_block(
         try:
             patch["embed_url"] = extract_and_validate_embed_url(patch["embed_url"])
         except EmbedValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    if (
+        block.block_type in (StepBlockType.link, StepBlockType.video_embed)
+        and patch.get("embed_url")
+    ):
+        try:
+            patch["embed_url"] = validate_nav_url(patch["embed_url"])
+        except ContentUrlError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+    if block.block_type == StepBlockType.image and patch.get("embed_url"):
+        try:
+            patch["embed_url"] = validate_media_url(patch["embed_url"])
+        except ContentUrlError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
     if block.block_type == StepBlockType.button:
         _normalise_button_fields(patch)

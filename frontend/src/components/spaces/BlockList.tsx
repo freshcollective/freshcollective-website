@@ -12,6 +12,7 @@ import { decodeColumns, gridTemplateForVariant } from '@/lib/columnsBlock'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import EmbedRenderer from '@/components/EmbedRenderer'
 import ButtonBlock from '@/components/ButtonBlock'
+import { safeHref } from '@/lib/safeHref'
 
 /**
  * BlockList — the single renderer for pathway-step blocks.
@@ -185,6 +186,8 @@ export function renderBlocks(
 
     if (t === 'video_embed' && block.embed_url) {
       const embedSrc = getVideoEmbed(block.embed_url)
+      // SEC-016 — defence-in-depth for the fallback anchor path.
+      const href = embedSrc ? null : safeHref(block.embed_url)
       return withContainer(
         <figure className="my-6">
           {embedSrc ? (
@@ -196,9 +199,9 @@ export function renderBlocks(
                 allowFullScreen
               />
             </div>
-          ) : (
+          ) : href ? (
             <a
-              href={block.embed_url}
+              href={href}
               target="_blank"
               rel="noopener noreferrer"
               className="group flex items-center gap-3 rounded-xl border border-border bg-white px-4 py-3 hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))]"
@@ -209,6 +212,10 @@ export function renderBlocks(
               </span>
               <span className="ml-auto text-[12px] text-black">↗</span>
             </a>
+          ) : (
+            <p className="text-[14px] text-black">
+              {block.caption || block.embed_url}
+            </p>
           )}
           {embedSrc && block.caption && (
             <figcaption className="mt-2 text-center text-[12px] text-black">{block.caption}</figcaption>
@@ -249,24 +256,42 @@ export function renderBlocks(
       block, id,
     )
 
-    if (t === 'link' && block.embed_url) return (
-      <div key={id} className="my-4">
-        <a
-          href={block.embed_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group flex items-start justify-between gap-4 rounded-xl border border-border bg-white px-4 py-3 transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))]"
-        >
-          <div>
-            <p className="text-[14px] font-medium text-navy-900 group-hover:underline underline-offset-2">
-              {block.label || block.embed_url}
-            </p>
-            {block.caption && <p className="mt-0.5 text-[12px] text-black">{block.caption}</p>}
+    if (t === 'link' && block.embed_url) {
+      // SEC-016 — defence-in-depth. Backend rejects unsafe schemes on
+      // write; if a legacy row slips through render a plain card
+      // instead of a live anchor.
+      const href = safeHref(block.embed_url)
+      if (!href) {
+        return (
+          <div key={id} className="my-4">
+            <div className="rounded-xl border border-border bg-white px-4 py-3">
+              <p className="text-[14px] font-medium text-navy-900">
+                {block.label || block.embed_url}
+              </p>
+              {block.caption && <p className="mt-0.5 text-[12px] text-black">{block.caption}</p>}
+            </div>
           </div>
-          <span className="shrink-0 text-[12px] text-black">↗</span>
-        </a>
-      </div>
-    )
+        )
+      }
+      return (
+        <div key={id} className="my-4">
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex items-start justify-between gap-4 rounded-xl border border-border bg-white px-4 py-3 transition-colors hover:border-[color:var(--fc-accent-ring,rgba(56,160,158,0.40))]"
+          >
+            <div>
+              <p className="text-[14px] font-medium text-navy-900 group-hover:underline underline-offset-2">
+                {block.label || block.embed_url}
+              </p>
+              {block.caption && <p className="mt-0.5 text-[12px] text-black">{block.caption}</p>}
+            </div>
+            <span className="shrink-0 text-[12px] text-black">↗</span>
+          </a>
+        </div>
+      )
+    }
 
     if (t === 'reflection_prompt' && block.content) {
       // Journal-quote treatment: prompt rendered as a serif italic

@@ -11,6 +11,7 @@ import EmbedRenderer from '@/components/EmbedRenderer'
 import ButtonBlock from '@/components/ButtonBlock'
 import { decodeColumns, gridTemplateForVariant } from '@/lib/columnsBlock'
 import { exerciseContentToRichText } from '@/lib/exerciseSteps'
+import { safeHref } from '@/lib/safeHref'
 import type { PathwayAboutBlock, StepBlockMedia } from '@/types/platform'
 
 /**
@@ -164,9 +165,20 @@ function renderInner(
       )
     }
     if (block.embed_url) {
+      // SEC-016 — defence-in-depth. Backend validates embed_url on
+      // write, but legacy rows may predate that; render a text-only
+      // fallback for anything the guard rejects.
+      const href = safeHref(block.embed_url)
+      if (!href) {
+        return (
+          <p className="text-[14px] text-black">
+            {block.caption || block.embed_url}
+          </p>
+        )
+      }
       return (
         <a
-          href={block.embed_url}
+          href={href}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 rounded-xl border border-border bg-white px-4 py-3 text-[14px] font-medium text-[color:var(--fc-accent,#0f766e)] transition-colors hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))]"
@@ -214,9 +226,21 @@ function renderInner(
 
   if (t === 'link') {
     if (!block.embed_url) return null
+    // SEC-016 — defence-in-depth. Backend validates on write; a legacy
+    // row with an unsafe scheme (javascript:, data:, etc.) renders as
+    // a plain label/caption instead of a live anchor.
+    const href = safeHref(block.embed_url)
+    if (!href) {
+      return (
+        <div className="rounded-xl border border-border bg-white px-5 py-3.5">
+          <p className="text-[14px] font-semibold text-navy-900">{block.label || block.embed_url}</p>
+          {block.caption && <p className="text-[12px] text-black">{block.caption}</p>}
+        </div>
+      )
+    }
     return (
       <a
-        href={block.embed_url}
+        href={href}
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center gap-3 rounded-xl border border-border bg-white px-5 py-3.5 transition-colors hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))]"
