@@ -6,6 +6,7 @@ import type { BuildYourCollectiveOptions } from '@/lib/build-your-collective/typ
 import type { CreatorSpaceDetail } from '@/types/platform'
 import CollectiveHomePanelSafe from '../assets/CollectiveHomePanelSafe'
 import CollectiveSettingsForm from './CollectiveSettingsForm'
+import DangerZone from './DangerZone'
 import GuidancePanelForm from './GuidancePanelForm'
 import OperatingDetailsForm from './OperatingDetailsForm'
 
@@ -162,6 +163,17 @@ export default function SettingsTabbedShell({
           tab={tab === 'members' || tab === 'place' ? 'details' : tab}
         />
       </div>
+
+      {/* Danger zone — draft-Collective permanent delete. Renders only
+          for drafts; the component self-hides for active/archived
+          Collectives (archive lifecycle for those is a separate
+          future feature). Always at the bottom, regardless of active
+          tab, so a creator can find it without hunting. */}
+      <DangerZone
+        slug={spaceDetail.slug}
+        name={spaceDetail.name}
+        status={spaceDetail.status}
+      />
     </>
   )
 }

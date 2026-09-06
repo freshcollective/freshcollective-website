@@ -27,7 +27,13 @@ from app.community_care.shared import (
 )
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.storage import delete_file, save_file, save_media_file
+from app.core.storage import (
+    StorageDeleteError,
+    delete_file,
+    delete_keys,
+    save_file,
+    save_media_file,
+)
 from app.creator.plan_config import (
     ALL_PLANS,
     ORGANISATION,
@@ -152,6 +158,7 @@ from app.models.platform import (
     EntitlementStatus,
     PathwayEntitlement,
     CommunityPost,
+    PostComment,
     CreatorMediaAsset,
     Enrollment,
     Event,
@@ -177,10 +184,12 @@ from app.models.platform import (
     SpaceResource,
     space_resource_pathways,
     SpaceRole,
+    SpaceStatus,
     StepBlockType,
     StepProgress,
     StepResource,
 )
+from app.models.purchase_plan import PurchasePlan
 from app.models.user import User
 from app.services.banner_image_validator import (
     BannerImageValidationError,
@@ -973,6 +982,312 @@ def _apply_place_and_feel(space: Space, body: SpaceUpdateRequest, db: Session) -
         # Replace any existing link with the new primary.
         db.query(SpacePlace).filter(SpacePlace.space_id == space.id).delete()
         db.add(SpacePlace(space_id=space.id, place_id=target.id))
+
+
+# ---------------------------------------------------------------------------
+# Draft-Collective delete
+# ---------------------------------------------------------------------------
+
+
+def _collect_space_r2_keys(space: Space, db: Session) -> list[str]:
+    """Enumerate every R2 key this Space is the source of truth for.
+
+    Pure DB queries — never prefix-lists R2 — so this can only
+    return keys that a DB row explicitly names. Impossible to touch
+    a different Collective's keys by accident, because each key is
+    read from a row scoped to ``space.id`` (directly or transitively
+    via a child FK). If the DB were ever inconsistent (a URL row
+    pointing at another Space's key) the R2 delete would still be
+    limited to what the DB says belongs to us.
+
+    Keys come from URL fields by stripping the ``/api/uploads/``
+    prefix. External URLs (``https://…`` in an ``embed_url`` that
+    the creator pasted, an external link resource, etc.) and empty
+    values are filtered out. Deduped at the end so the bulk delete
+    doesn't repeat keys unnecessarily.
+    """
+    def _key_from_url(url: str | None) -> str | None:
+        if not url:
+            return None
+        prefix = "/api/uploads/"
+        if url.startswith(prefix):
+            return url[len(prefix):]
+        return None
+
+    collected: list[str] = []
+
+    # 1. Space's own art
+    for value in (space.cover_image_url, space.logo_url):
+        key = _key_from_url(value)
+        if key:
+            collected.append(key)
+
+    # 2. Pathway hierarchy — covers, section/step banners, step blocks
+    #    (block ``embed_url`` may be an uploaded image or an external
+    #    URL; only the former yields a key), step resources.
+    pathway_ids = [
+        pid for (pid,) in db.query(Pathway.id)
+        .filter(Pathway.space_id == space.id)
+        .all()
+    ]
+    if pathway_ids:
+        for (cover_url,) in db.query(Pathway.cover_image_url).filter(
+            Pathway.id.in_(pathway_ids)
+        ).all():
+            key = _key_from_url(cover_url)
+            if key:
+                collected.append(key)
+
+        for (banner_url,) in db.query(PathwaySection.banner_image_url).filter(
+            PathwaySection.pathway_id.in_(pathway_ids)
+        ).all():
+            key = _key_from_url(banner_url)
+            if key:
+                collected.append(key)
+
+        step_ids = [
+            sid for (sid,) in db.query(PathwayStep.id).filter(
+                PathwayStep.pathway_id.in_(pathway_ids)
+            ).all()
+        ]
+        if step_ids:
+            for (banner_url,) in db.query(PathwayStep.banner_image_url).filter(
+                PathwayStep.id.in_(step_ids)
+            ).all():
+                key = _key_from_url(banner_url)
+                if key:
+                    collected.append(key)
+
+            for (embed_url,) in db.query(PathwayStepBlock.embed_url).filter(
+                PathwayStepBlock.step_id.in_(step_ids)
+            ).all():
+                key = _key_from_url(embed_url)
+                if key:
+                    collected.append(key)
+
+            for (res_url,) in db.query(StepResource.url).filter(
+                StepResource.step_id.in_(step_ids)
+            ).all():
+                key = _key_from_url(res_url)
+                if key:
+                    collected.append(key)
+
+        # About blocks scoped to a pathway (the polymorphic table's
+        # event / event_series rows are not owned by the Space).
+        for (embed_url,) in db.query(PathwayAboutBlock.embed_url).filter(
+            PathwayAboutBlock.pathway_id.in_(pathway_ids)
+        ).all():
+            key = _key_from_url(embed_url)
+            if key:
+                collected.append(key)
+
+    # 3. Gathering (Event) thumbnails — ``thumbnail_url`` accepts
+    #    either an uploaded ``/api/uploads/`` path or a pasted https
+    #    URL; only the former yields a key.
+    for (thumb_url,) in db.query(Event.thumbnail_url).filter(
+        Event.space_id == space.id
+    ).all():
+        key = _key_from_url(thumb_url)
+        if key:
+            collected.append(key)
+
+    # 4. Media Library — ``storage_path`` is guaranteed to be a raw R2
+    #    key by ``save_media_file`` (no ``/api/uploads/`` prefix).
+    for (storage_path,) in db.query(CreatorMediaAsset.storage_path).filter(
+        CreatorMediaAsset.space_id == space.id
+    ).all():
+        if storage_path:
+            collected.append(storage_path)
+
+    # 5. Space Resources — ``url`` is a ``/api/uploads/…`` path for
+    #    uploaded files, an external URL for link-type resources.
+    for (res_url,) in db.query(SpaceResource.url).filter(
+        SpaceResource.space_id == space.id
+    ).all():
+        key = _key_from_url(res_url)
+        if key:
+            collected.append(key)
+
+    # 6. Community post + comment images
+    post_ids = [
+        pid for (pid,) in db.query(CommunityPost.id).filter(
+            CommunityPost.space_id == space.id
+        ).all()
+    ]
+    if post_ids:
+        for (img_url,) in db.query(CommunityPost.image_url).filter(
+            CommunityPost.id.in_(post_ids)
+        ).all():
+            key = _key_from_url(img_url)
+            if key:
+                collected.append(key)
+        for (img_url,) in db.query(PostComment.image_url).filter(
+            PostComment.post_id.in_(post_ids)
+        ).all():
+            key = _key_from_url(img_url)
+            if key:
+                collected.append(key)
+
+    # Dedup — the same key appearing twice in the DB (e.g., an asset
+    # referenced from both a Media Library row and a step block) is
+    # rare but shouldn't cause repeat delete calls.
+    return sorted(set(collected))
+
+
+@router.delete("/spaces/{slug}", status_code=204)
+def delete_space(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> None:
+    """Permanently delete a draft Collective.
+
+    Deliberately tight scope for launch: ONLY the founder can delete,
+    and ONLY when the Collective is a pristine draft with no
+    commerce / entitlement / membership footprint. Any other state
+    (active, archived, or a draft that somehow accumulated real
+    records) refuses with 409 — those need archive semantics
+    which are intentionally a separate future feature.
+
+    Flow:
+      1. Ownership check — ``creator_id`` match only; moderators
+         cannot delete. Platform admins do not get automatic delete
+         through the creator route; cross-Collective admin lives at
+         ``/admin/*``.
+      2. Status must be ``draft``.
+      3. Six commerce/membership counts must all be zero:
+         other members, PaymentOption, PaymentTransaction,
+         PathwayEntitlement, AccessPass, PurchasePlan. Every counter
+         listed in the eligibility gate is recomputed server-side;
+         the frontend cannot bypass this by claiming eligibility.
+      4. Collect R2 keys via DB queries only.
+      5. R2 delete FIRST, DB delete SECOND. If R2 fails, abort with
+         500 — DB untouched, retry works.
+      6. ``db.delete(space); db.commit()`` — CASCADE cleans up the
+         16 direct-FK child tables plus their transitive cascades.
+
+    R2 failure semantics — one deliberate choice: **abort on R2
+    error, do not proceed to DB delete**. Rationale: for a draft
+    Collective the key set is tiny (usually 0-5 objects), the
+    failure window is essentially zero, and cross-system consistency
+    (no orphan R2 objects naming a deleted DB row) is worth more
+    than never-fail deletion for a rarely-used destructive action.
+    Contract with the caller: on 500 they may retry; on 204 both
+    stores are consistent.
+    """
+    space = db.query(Space).filter(Space.slug == slug).first()
+    if not space:
+        raise HTTPException(status_code=404, detail="Collective not found.")
+
+    # Owner-only. ``_get_managed_space`` would accept moderators;
+    # delete is more destructive than any other creator-studio
+    # action and must be the founder's decision alone.
+    if space.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the Collective's owner can delete it.",
+        )
+
+    if space.status != SpaceStatus.draft:
+        # SpaceStatus is ``str, Enum`` so ``space.status`` may come back
+        # as either the enum member or the raw string depending on
+        # how the row was created — ``str()`` handles both without
+        # tripping ``.value`` on a plain string.
+        current = str(space.status).rsplit(".", 1)[-1]
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This Collective can no longer be permanently deleted "
+                f"because its status is '{current}'. "
+                "Only draft Collectives are eligible."
+            ),
+        )
+
+    # Belt-and-braces eligibility: a draft SHOULD be empty of all of
+    # these by construction (no publishing, no checkout, no member
+    # invites completed) but this catches drafts that somehow
+    # accumulated real records — e.g., a creator who added a
+    # PaymentOption before ever publishing.
+    blockers: list[str] = []
+
+    other_member_count = (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.user_id != current_user.id,
+        )
+        .count()
+    )
+    if other_member_count:
+        blockers.append(f"{other_member_count} other member(s)")
+
+    payment_option_count = (
+        db.query(PaymentOption).filter(PaymentOption.space_id == space.id).count()
+    )
+    if payment_option_count:
+        blockers.append(f"{payment_option_count} payment option(s)")
+
+    payment_transaction_count = (
+        db.query(PaymentTransaction)
+        .filter(PaymentTransaction.space_id == space.id)
+        .count()
+    )
+    if payment_transaction_count:
+        blockers.append(
+            f"{payment_transaction_count} payment transaction(s)"
+        )
+
+    entitlement_count = (
+        db.query(PathwayEntitlement)
+        .filter(PathwayEntitlement.space_id == space.id)
+        .count()
+    )
+    if entitlement_count:
+        blockers.append(f"{entitlement_count} pathway entitlement(s)")
+
+    access_pass_count = (
+        db.query(AccessPass).filter(AccessPass.space_id == space.id).count()
+    )
+    if access_pass_count:
+        blockers.append(f"{access_pass_count} access pass(es)")
+
+    purchase_plan_count = (
+        db.query(PurchasePlan).filter(PurchasePlan.space_id == space.id).count()
+    )
+    if purchase_plan_count:
+        blockers.append(f"{purchase_plan_count} subscription plan(s)")
+
+    if blockers:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This Collective cannot be permanently deleted because "
+                "it has records that must not be silently discarded: "
+                + ", ".join(blockers)
+                + "."
+            ),
+        )
+
+    # Collect every R2 key BEFORE the CASCADE deletes the rows that
+    # name them. DB-driven enumeration — cannot touch keys not owned
+    # by this Space.
+    keys_to_delete = _collect_space_r2_keys(space, db)
+
+    # R2 first, abort on failure. See docstring above for rationale.
+    try:
+        delete_keys(keys_to_delete)
+    except StorageDeleteError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Storage cleanup failed; Collective NOT deleted. "
+                "Please retry in a moment. "
+                f"Details: {e}"
+            ),
+        ) from e
+
+    db.delete(space)
+    db.commit()
 
 
 @router.post("/spaces/{slug}/cover", response_model=SpaceDetail)

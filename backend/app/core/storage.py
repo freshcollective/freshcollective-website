@@ -316,6 +316,93 @@ def delete_file(rel_path: str) -> None:
         pass
 
 
+class StorageDeleteError(RuntimeError):
+    """Raised by ``delete_keys`` when the R2 bulk delete surfaces a
+    hard error the caller needs to know about (network failure,
+    permission denied). Missing keys are NOT errors — S3
+    ``DeleteObjects`` is idempotent by design.
+
+    Used by orchestrated multi-step deletes (e.g. Collective delete
+    in ``creator/routes.py``) that want to abort before making
+    irreversible DB changes if the storage backend is unavailable."""
+
+
+def delete_keys(keys: list[str]) -> None:
+    """Delete an explicit list of storage keys.
+
+    Different contract from ``delete_file``:
+
+      * ``delete_file(key)`` is best-effort — swallows all errors.
+        Used for single-object cleanup where the parent row commit
+        is authoritative and R2 orphans are acceptable.
+
+      * ``delete_keys(keys)`` RAISES ``StorageDeleteError`` on hard
+        R2 errors so a caller doing a multi-step orchestration
+        (e.g. delete R2 media → delete DB rows) can abort BEFORE
+        the irreversible DB step. Missing keys remain non-errors
+        (S3 ``DeleteObjects`` is idempotent).
+
+    Bucket routing: each key routes to public or private based on
+    the ``platform-artwork/`` prefix, matching ``save_file``.
+
+    In filesystem mode, unlinks each and ignores missing files;
+    never raises.
+    """
+    if not keys:
+        return
+
+    if not settings.is_r2_enabled:
+        for key in keys:
+            _fs_delete_one(key)
+        return
+
+    # Group by bucket so each ``delete_objects`` call targets exactly
+    # one bucket (S3 API constraint).
+    by_bucket: dict[str, list[str]] = {}
+    for key in keys:
+        if not key:
+            continue
+        by_bucket.setdefault(_bucket_for_key(key), []).append(key)
+
+    client = _r2_client()
+    hard_errors: list[str] = []
+    for bucket, bucket_keys in by_bucket.items():
+        # S3 caps bulk delete at 1000 keys per call. Chunk for safety.
+        for i in range(0, len(bucket_keys), 1000):
+            chunk = bucket_keys[i : i + 1000]
+            resp = client.delete_objects(
+                Bucket=bucket,
+                Delete={"Objects": [{"Key": k} for k in chunk], "Quiet": True},
+            )
+            # ``Quiet`` suppresses per-object success entries; only
+            # errors appear in the response. Any key-level error
+            # here is hard (auth, throttling); missing keys do not
+            # produce entries.
+            for err in resp.get("Errors", []) or []:
+                hard_errors.append(
+                    f"{err.get('Key')}: {err.get('Code')} {err.get('Message')}"
+                )
+
+    if hard_errors:
+        raise StorageDeleteError(
+            "R2 bulk delete reported errors: " + "; ".join(hard_errors[:5])
+            + (f" (and {len(hard_errors) - 5} more)" if len(hard_errors) > 5 else "")
+        )
+
+
+def _fs_delete_one(rel_path: str) -> None:
+    """Filesystem-mode single-file delete for ``delete_keys``. Same
+    traversal guard as ``delete_file``; missing files silently
+    tolerated."""
+    try:
+        target = (UPLOAD_DIR / rel_path).resolve()
+        root = UPLOAD_DIR.resolve()
+        if target.is_relative_to(root) and target.is_file():
+            target.unlink()
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # Curated artwork — hero + auto-generated thumbnail
 # ---------------------------------------------------------------------------
