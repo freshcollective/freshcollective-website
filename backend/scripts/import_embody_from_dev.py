@@ -15,6 +15,16 @@ Scope (locked, per approved plan):
   * The published ``The story behind EMBODY`` SpaceResource + its PDF
   * Only CreatorMediaAssets actually referenced by the above
   * Collective cover + logo
+  * The EMBODY SpacePlace association to Melbourne
+
+Shared-reference remapping (never copy local UUIDs):
+  * ``Space.location_id`` resolves to the prod Atlas Location
+    keyed ``sanctuary-springs`` (natural key ``Location.key``).
+  * SpacePlace rows resolve their ``place_id`` to the prod Place
+    keyed ``melbourne`` (natural key ``Place.slug``).
+  * ``Space.closed_by_action_id`` and ``Space.frozen_by_action_id``
+    are defensively nulled — community-care actions are
+    environment-specific and must never be copied across.
 
 Explicitly excluded (checked at every insert site):
   * PaymentOption, PaymentOptionSchedule, PaymentTransaction,
@@ -97,6 +107,7 @@ from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 from app.models.platform import (  # noqa: E402
     CreatorMediaAsset,
+    Location,
     Pathway,
     PathwayAboutBlock,
     PathwaySection,
@@ -109,6 +120,7 @@ from app.models.platform import (  # noqa: E402
     SpaceRole,
     SpaceStatus,
 )
+from app.models.place import Place, SpacePlace  # noqa: E402
 from app.models.payment_option import PaymentOption  # noqa: E402
 from app.models.payment_option_schedule import PaymentOptionSchedule  # noqa: E402
 from app.models.user import User  # noqa: E402
@@ -122,6 +134,13 @@ SOURCE_SLUG = "embody"
 INCLUDED_PATHWAY_SLUGS = {"embody-in-person-sessions", "home-practice"}
 PROD_OWNER_EMAIL = "lindsey@hilliard.net.au"
 INCLUDED_RESOURCE_TITLE = "The story behind EMBODY"
+
+# Shared references — resolved by stable natural key against prod.
+# EMBODY lives inside the Atlas Location keyed ``sanctuary-springs`` and
+# is associated with the Melbourne Place. Local and prod carry different
+# UUIDs for these rows; we never copy the local UUID across.
+EMBODY_LOCATION_KEY = "sanctuary-springs"
+EMBODY_PLACE_SLUGS: set[str] = {"melbourne"}
 
 # Local uploads root — used to read bytes for R2 upload.
 UPLOAD_DIR_LOCAL = Path(__file__).resolve().parent.parent / "uploads"
@@ -141,6 +160,11 @@ class MigrationContext:
     local_session: Session
     prod_session: Session
     prod_lindsey_id: str
+    # Resolved by natural key against prod during preflight — the
+    # importer will FK Space.location_id / SpacePlace.place_id to these,
+    # never to local UUIDs.
+    prod_location_id: str
+    prod_place_ids_by_slug: dict[str, str]
     r2_client: Any  # boto3 S3 client (typed loosely to avoid mypy pain)
     r2_bucket_private: str
     r2_bucket_public: str
@@ -164,6 +188,10 @@ class MigrationPlan:
     about_blocks: list[dict] = field(default_factory=list)
     media_assets: list[dict] = field(default_factory=list)
     resources: list[dict] = field(default_factory=list)
+    # Slugs of Places the EMBODY Space is associated with locally.
+    # Insert time re-resolves each to the prod Place.id via
+    # ``ctx.prod_place_ids_by_slug``.
+    space_place_slugs: list[str] = field(default_factory=list)
     r2_keys: list[str] = field(default_factory=list)  # every key to upload
 
 
@@ -266,16 +294,57 @@ def preflight(args: argparse.Namespace) -> MigrationContext:
             "Danger Zone, then rerun. (This script is one-shot only.)"
         )
 
+    prod_location_id = _resolve_prod_location_id(prod_session)
+    prod_place_ids_by_slug = _resolve_prod_place_ids(prod_session)
+
     return MigrationContext(
         local_session=local_session,
         prod_session=prod_session,
         prod_lindsey_id=prod_lindsey.id,
+        prod_location_id=prod_location_id,
+        prod_place_ids_by_slug=prod_place_ids_by_slug,
         r2_client=r2_client,
         r2_bucket_private=r2_vars["bucket_private"],
         r2_bucket_public=r2_vars["bucket_public"],
         commit=args.commit,
         yes_i_am_sure=args.yes_i_am_sure,
     )
+
+
+def _resolve_prod_location_id(prod_session: Session) -> str:
+    """Look up the prod Location by natural key. Refuse if missing.
+
+    EMBODY expects the Atlas Location ``sanctuary-springs`` to exist in
+    prod (seeded by the Mother World migration). We never copy the
+    local Location UUID — this lookup is the point at which the FK
+    remap decision is made."""
+    loc = prod_session.query(Location).filter(
+        Location.key == EMBODY_LOCATION_KEY
+    ).first()
+    if loc is None:
+        raise PreflightError(
+            f"Prod Location with key {EMBODY_LOCATION_KEY!r} not found. "
+            "Run the Mother World migration first, then rerun."
+        )
+    return loc.id
+
+
+def _resolve_prod_place_ids(prod_session: Session) -> dict[str, str]:
+    """Look up every prod Place named in EMBODY_PLACE_SLUGS by slug.
+    Refuse if any is missing (naming the slug in the error).
+
+    Never copies a local Place UUID — the returned mapping is the sole
+    source of truth for SpacePlace.place_id at insert time."""
+    found: dict[str, str] = {}
+    for slug in sorted(EMBODY_PLACE_SLUGS):
+        place = prod_session.query(Place).filter(Place.slug == slug).first()
+        if place is None:
+            raise PreflightError(
+                f"Prod Place with slug {slug!r} not found. "
+                "Run the Mother World migration first, then rerun."
+            )
+        found[slug] = place.id
+    return found
 
 
 def _load_r2_env() -> dict[str, str]:
@@ -358,6 +427,53 @@ def enumerate_plan(local_session: Session) -> MigrationPlan:
     if not space:
         raise RuntimeError(
             f"Local Space {SOURCE_SLUG!r} not found — nothing to migrate."
+        )
+
+    # Drift check — local Space.location_id must resolve to a Location
+    # whose natural key matches the expected sanctuary-springs Atlas
+    # Location. Catches the case where local dev has silently been
+    # re-pointed at something else.
+    if not space.location_id:
+        raise RuntimeError(
+            f"Local Space {SOURCE_SLUG!r} has no location_id — "
+            f"expected the Atlas Location {EMBODY_LOCATION_KEY!r}. "
+            "Refusing to migrate a Space that has drifted from the plan."
+        )
+    local_loc = local_session.query(Location).filter(
+        Location.id == space.location_id
+    ).first()
+    if local_loc is None or local_loc.key != EMBODY_LOCATION_KEY:
+        actual = local_loc.key if local_loc else "<missing>"
+        raise RuntimeError(
+            f"Local Space {SOURCE_SLUG!r} location_id resolves to "
+            f"Location.key={actual!r}, expected {EMBODY_LOCATION_KEY!r}. "
+            "Refusing to migrate — local drift detected."
+        )
+
+    # Drift check — enumerate every local SpacePlace row and refuse
+    # if the resolved slug set doesn't exactly equal EMBODY_PLACE_SLUGS.
+    # Catches loss of the Melbourne association AND catches unexpected
+    # additions that were never approved for migration.
+    local_space_places = local_session.query(SpacePlace).filter(
+        SpacePlace.space_id == space.id
+    ).all()
+    local_place_slugs: list[str] = []
+    for sp in local_space_places:
+        place = local_session.query(Place).filter(
+            Place.id == sp.place_id
+        ).first()
+        if place is None:
+            raise RuntimeError(
+                f"Local SpacePlace(space={space.id}, place={sp.place_id}) "
+                "references a Place that doesn't exist locally."
+            )
+        local_place_slugs.append(place.slug)
+    if set(local_place_slugs) != EMBODY_PLACE_SLUGS:
+        raise RuntimeError(
+            f"Local EMBODY SpacePlace slugs {sorted(local_place_slugs)!r} "
+            f"do not match the approved scope "
+            f"{sorted(EMBODY_PLACE_SLUGS)!r}. Refusing to migrate — "
+            "local drift detected."
         )
 
     pathways = (
@@ -450,6 +566,7 @@ def enumerate_plan(local_session: Session) -> MigrationPlan:
         about_blocks=[_row_to_dict(b) for b in about_blocks],
         media_assets=[_row_to_dict(a) for a in media_assets],
         resources=[_row_to_dict(r) for r in resources],
+        space_place_slugs=sorted(local_place_slugs),
         r2_keys=sorted(referenced_r2_keys),
     )
 
@@ -467,12 +584,20 @@ def print_summary(plan: MigrationPlan, ctx: MigrationContext) -> None:
     print(f"  Source Space:      {plan.space['slug']!r} "
           f"({plan.space['name']!r})")
     print(f"  Prod owner:        {PROD_OWNER_EMAIL} → id={ctx.prod_lindsey_id}")
+    print(f"  Prod Location:     {EMBODY_LOCATION_KEY!r} → "
+          f"id={ctx.prod_location_id}")
+    print(f"  Prod Places:")
+    for slug in sorted(ctx.prod_place_ids_by_slug):
+        print(f"    {slug!r} → id={ctx.prod_place_ids_by_slug[slug]}")
     print(f"  Prod R2 buckets:   {ctx.r2_bucket_private} (private) / "
           f"{ctx.r2_bucket_public} (public)")
     print()
     print("Would create in prod:")
-    print(f"  Space                   1 row  (status forced to draft)")
+    print(f"  Space                   1 row  (status forced to draft, "
+          f"action FKs nulled)")
     print(f"  SpaceMembership         1 row  (Lindsey / creator / active)")
+    print(f"  SpacePlace              {len(plan.space_place_slugs)} rows  "
+          f"(slugs: {plan.space_place_slugs!r})")
     print(f"  Pathway                 {len(plan.pathways)} rows (both forced to draft)")
     print(f"  PathwaySection          {len(plan.sections)} rows")
     print(f"  PathwayStep             {len(plan.steps)} rows")
@@ -599,9 +724,16 @@ def insert_prod_rows(
     plan: MigrationPlan,
     prod_session: Session,
     prod_lindsey_id: str,
+    prod_location_id: str,
+    prod_place_ids_by_slug: dict[str, str],
 ) -> IdMaps:
     """Insert every plan row into prod. Assumes R2 uploads already
     succeeded (URLs in the plan are then valid).
+
+    ``prod_location_id`` and ``prod_place_ids_by_slug`` are resolved by
+    preflight against the prod DB using stable natural keys
+    (``Location.key``, ``Place.slug``). Local UUIDs for those rows are
+    never copied through.
 
     Caller is responsible for wrapping this in a try/except with
     ``prod_session.rollback()`` on failure — this function does NOT
@@ -609,6 +741,8 @@ def insert_prod_rows(
     maps = IdMaps()
 
     # 1. Space — fresh id, status forced to draft, creator = prod-Lindsey.
+    # location_id remapped to the prod Location resolved by natural key.
+    # Community-care action FKs defensively nulled (environment-specific).
     local_space_id = plan.space["id"]
     prod_space_id = str(uuid4())
     maps.space[local_space_id] = prod_space_id
@@ -616,13 +750,13 @@ def insert_prod_rows(
     space_data["id"] = prod_space_id
     space_data["creator_id"] = prod_lindsey_id
     space_data["status"] = SpaceStatus.draft
-    # ``location_id`` FK — if the local Space picked an Atlas Location,
-    # the corresponding row must exist in prod (World Builders seeds
-    # every Atlas Location as part of Alembic migrations, so the FK
-    # is preserved verbatim without a lookup).
+    space_data["location_id"] = prod_location_id
+    space_data["closed_by_action_id"] = None
+    space_data["frozen_by_action_id"] = None
     prod_session.add(Space(**space_data))
     prod_session.flush()
-    log.info("Space inserted (prod_id=%s)", prod_space_id)
+    log.info("Space inserted (prod_id=%s, location_id=%s)",
+             prod_space_id, prod_location_id)
 
     # 2. Single SpaceMembership row — Lindsey as creator.
     prod_session.add(SpaceMembership(
@@ -634,6 +768,21 @@ def insert_prod_rows(
         source="migration",
     ))
     log.info("SpaceMembership inserted (Lindsey / creator / active)")
+
+    # 2b. SpacePlace bridge rows — resolve every slug to the prod
+    # Place.id supplied by preflight. Never a local UUID.
+    for slug in plan.space_place_slugs:
+        prod_place_id = prod_place_ids_by_slug.get(slug)
+        if prod_place_id is None:
+            raise RuntimeError(
+                f"SpacePlace slug {slug!r} has no resolved prod Place.id. "
+                "Preflight and enumeration are inconsistent — aborting."
+            )
+        prod_session.add(SpacePlace(
+            space_id=prod_space_id, place_id=prod_place_id,
+        ))
+    prod_session.flush()
+    log.info("SpacePlace — inserted %d rows", len(plan.space_place_slugs))
 
     # 3. Media assets — before anything that FKs at them.
     for asset_data in plan.media_assets:
@@ -780,6 +929,8 @@ def verify(
     r2_client: Any,
     bucket_private: str,
     bucket_public: str,
+    prod_location_id: str,
+    expected_place_slugs: set[str],
 ) -> None:
     """Run every post-write invariant against prod. Raises on any
     mismatch (rare — the transaction just committed; more of a smoke
@@ -793,6 +944,42 @@ def verify(
         raise RuntimeError(
             f"VERIFY: prod Space status is {prod_space.status!r} — "
             "expected 'draft'."
+        )
+    if prod_space.location_id != prod_location_id:
+        raise RuntimeError(
+            f"VERIFY: prod Space.location_id={prod_space.location_id!r} "
+            f"does not match expected prod_location_id={prod_location_id!r}. "
+            "Location remap was incorrect."
+        )
+    if prod_space.closed_by_action_id is not None:
+        raise RuntimeError(
+            f"VERIFY: prod Space.closed_by_action_id="
+            f"{prod_space.closed_by_action_id!r} — expected NULL."
+        )
+    if prod_space.frozen_by_action_id is not None:
+        raise RuntimeError(
+            f"VERIFY: prod Space.frozen_by_action_id="
+            f"{prod_space.frozen_by_action_id!r} — expected NULL."
+        )
+
+    # Every SpacePlace row for this Space must resolve to a slug in
+    # ``expected_place_slugs``; the sets must be exactly equal so both
+    # loss AND unexpected addition are caught.
+    actual_slugs: set[str] = set()
+    for sp in prod_session.query(SpacePlace).filter(
+        SpacePlace.space_id == prod_space.id
+    ).all():
+        place = prod_session.query(Place).filter(Place.id == sp.place_id).first()
+        if place is None:
+            raise RuntimeError(
+                f"VERIFY: SpacePlace(place_id={sp.place_id!r}) does not "
+                "resolve to a prod Place."
+            )
+        actual_slugs.add(place.slug)
+    if actual_slugs != expected_place_slugs:
+        raise RuntimeError(
+            f"VERIFY: SpacePlace slug set {sorted(actual_slugs)!r} != "
+            f"expected {sorted(expected_place_slugs)!r}."
         )
 
     pw_count = prod_session.query(Pathway).filter(
@@ -964,7 +1151,10 @@ def main(argv: list[str] | None = None) -> int:
             plan.r2_keys, ctx.r2_client,
             ctx.r2_bucket_private, ctx.r2_bucket_public,
         )
-        insert_prod_rows(plan, ctx.prod_session, ctx.prod_lindsey_id)
+        insert_prod_rows(
+            plan, ctx.prod_session, ctx.prod_lindsey_id,
+            ctx.prod_location_id, ctx.prod_place_ids_by_slug,
+        )
         ctx.prod_session.commit()
     except Exception as e:
         ctx.prod_session.rollback()
@@ -978,6 +1168,7 @@ def main(argv: list[str] | None = None) -> int:
         verify(
             plan, ctx.prod_session, ctx.r2_client,
             ctx.r2_bucket_private, ctx.r2_bucket_public,
+            ctx.prod_location_id, EMBODY_PLACE_SLUGS,
         )
     except Exception as e:
         # Do NOT rollback here — the commit already landed. Just alert

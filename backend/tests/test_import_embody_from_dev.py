@@ -26,11 +26,13 @@ import io
 import os
 import sys
 import uuid
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 # Import the script via its file path — it lives under scripts/ rather
 # than app/ so it's not on the default import path.
@@ -44,8 +46,10 @@ from app.models.payment_option import (  # noqa: E402
     PaymentOptionStatus,
     PaymentOptionType,
 )
+from app.models.place import Place, SpacePlace  # noqa: E402
 from app.models.platform import (  # noqa: E402
     CreatorMediaAsset,
+    Location,
     Pathway,
     PathwayAboutBlock,
     PathwaySection,
@@ -159,6 +163,28 @@ def mini_embody(db: Session, make_user):
     Yields ``(space, included_asset_id, excluded_asset_id, resource_id)``.
     """
     creator = make_user(role="creator")
+
+    # Local Atlas Location — sanctuary-springs. Real local dev has this
+    # row already; the fixture creates it so enumerate_plan's drift
+    # check finds an EMBODY Space with a valid Location.
+    location = Location(
+        id=_uid("loc"), key=importer.EMBODY_LOCATION_KEY,
+        name="Sanctuary Springs", status="active", location_type="ATLAS",
+        preferred_atmospheres=[], preferred_colour_stories=[],
+        preferred_themes=[], position=0,
+    )
+    db.add(location)
+    db.flush()
+
+    # Local Place — melbourne. Local dev has this row; the fixture
+    # creates it so the local SpacePlace bridge row below resolves.
+    place = Place(
+        id=_uid("pl"), slug="melbourne", name="Melbourne",
+        country_code="AU", status="active",
+    )
+    db.add(place)
+    db.flush()
+
     space = Space(
         id=_uid("s"),
         slug="embody",
@@ -168,8 +194,13 @@ def mini_embody(db: Session, make_user):
         status=SpaceStatus.active,  # will be forced to draft on insert
         cover_image_url="/api/uploads/covers/abc_cover.png",
         logo_url="/api/uploads/logos/embody/def_logo.png",
+        location_id=location.id,
     )
     db.add(space)
+    db.flush()
+
+    # Bridge row — EMBODY is associated with Melbourne.
+    db.add(SpacePlace(space_id=space.id, place_id=place.id))
     db.flush()
 
     # Two included pathways
@@ -312,6 +343,8 @@ def mini_embody(db: Session, make_user):
         "included_resource_id": included_resource.id,
         "excluded_resource_id": excluded_resource.id,
         "creator_id": creator.id,
+        "location_id": location.id,
+        "melbourne_place_id": place.id,
     }
 
 
@@ -397,7 +430,13 @@ class TestInsertProdRows:
         # plan to a different slug for the insert.
         plan.space["slug"] = "embody-prod-copy"
 
-        maps = importer.insert_prod_rows(plan, db, prod_owner.id)
+        maps = importer.insert_prod_rows(
+            plan, db, prod_owner.id,
+            prod_location_id=mini_embody["location_id"],
+            prod_place_ids_by_slug={
+                "melbourne": mini_embody["melbourne_place_id"],
+            },
+        )
         db.flush()
 
         prod_space = db.query(Space).filter(Space.slug == "embody-prod-copy").first()
@@ -413,7 +452,13 @@ class TestInsertProdRows:
         db.commit()
         plan.space["slug"] = "embody-prod-2"
 
-        importer.insert_prod_rows(plan, db, prod_owner.id)
+        importer.insert_prod_rows(
+            plan, db, prod_owner.id,
+            prod_location_id=mini_embody["location_id"],
+            prod_place_ids_by_slug={
+                "melbourne": mini_embody["melbourne_place_id"],
+            },
+        )
         db.flush()
 
         prod_space = db.query(Space).filter(Space.slug == "embody-prod-2").first()
@@ -433,7 +478,13 @@ class TestInsertProdRows:
         db.commit()
         plan.space["slug"] = "embody-prod-3"
 
-        importer.insert_prod_rows(plan, db, prod_owner.id)
+        importer.insert_prod_rows(
+            plan, db, prod_owner.id,
+            prod_location_id=mini_embody["location_id"],
+            prod_place_ids_by_slug={
+                "melbourne": mini_embody["melbourne_place_id"],
+            },
+        )
         db.flush()
 
         prod_space = db.query(Space).filter(Space.slug == "embody-prod-3").first()
@@ -448,7 +499,13 @@ class TestInsertProdRows:
         db.commit()
         plan.space["slug"] = "embody-prod-4"
 
-        maps = importer.insert_prod_rows(plan, db, prod_owner.id)
+        maps = importer.insert_prod_rows(
+            plan, db, prod_owner.id,
+            prod_location_id=mini_embody["location_id"],
+            prod_place_ids_by_slug={
+                "melbourne": mini_embody["melbourne_place_id"],
+            },
+        )
         db.flush()
 
         # The one image block in the fixture had media_asset_id =
@@ -474,7 +531,13 @@ class TestInsertProdRows:
         db.commit()
         plan.space["slug"] = "embody-prod-5"
 
-        maps = importer.insert_prod_rows(plan, db, prod_owner.id)
+        maps = importer.insert_prod_rows(
+            plan, db, prod_owner.id,
+            prod_location_id=mini_embody["location_id"],
+            prod_place_ids_by_slug={
+                "melbourne": mini_embody["melbourne_place_id"],
+            },
+        )
         db.flush()
 
         prod_space = db.query(Space).filter(Space.slug == "embody-prod-5").first()
@@ -498,7 +561,13 @@ class TestInsertProdRows:
         db.commit()
         plan.space["slug"] = "embody-prod-6"
 
-        importer.insert_prod_rows(plan, db, prod_owner.id)
+        importer.insert_prod_rows(
+            plan, db, prod_owner.id,
+            prod_location_id=mini_embody["location_id"],
+            prod_place_ids_by_slug={
+                "melbourne": mini_embody["melbourne_place_id"],
+            },
+        )
         db.flush()
 
         prod_space = db.query(Space).filter(Space.slug == "embody-prod-6").first()
@@ -664,7 +733,13 @@ class TestInsertRespectsExclusions:
         db.commit()
         plan.space["slug"] = "embody-prod-excl"
 
-        importer.insert_prod_rows(plan, db, prod_owner.id)
+        importer.insert_prod_rows(
+            plan, db, prod_owner.id,
+            prod_location_id=mini_embody["location_id"],
+            prod_place_ids_by_slug={
+                "melbourne": mini_embody["melbourne_place_id"],
+            },
+        )
         db.flush()
 
         prod_space = db.query(Space).filter(Space.slug == "embody-prod-excl").first()
@@ -686,7 +761,13 @@ class TestInsertRespectsExclusions:
         db.commit()
         plan.space["slug"] = "embody-prod-mem-only"
 
-        importer.insert_prod_rows(plan, db, prod_owner.id)
+        importer.insert_prod_rows(
+            plan, db, prod_owner.id,
+            prod_location_id=mini_embody["location_id"],
+            prod_place_ids_by_slug={
+                "melbourne": mini_embody["melbourne_place_id"],
+            },
+        )
         db.flush()
 
         prod_space = db.query(Space).filter(
@@ -697,3 +778,381 @@ class TestInsertRespectsExclusions:
         ).all()
         assert len(mems) == 1
         assert mems[0].user_id == prod_owner.id
+
+
+# ---------------------------------------------------------------------------
+# Shared-reference remapping — sanctuary-springs Location + melbourne Place
+# ---------------------------------------------------------------------------
+#
+# For these tests we use a SQLite-in-memory session as a physically-
+# distinct "prod" side, seeded with the exact rows Mother World
+# guarantees (an Atlas Location keyed sanctuary-springs and a Place
+# slugged melbourne). Prod rows carry different UUIDs from the local
+# fixture, so the remapping is observable.
+
+
+def _make_sqlite_prod(
+    with_location: bool = True,
+    with_melbourne: bool = True,
+    extra_place_slugs: tuple[str, ...] = (),
+) -> tuple[Session, str, dict[str, str]]:
+    """Fresh in-memory 'prod' session with EMBODY's shared references.
+
+    Returns (session, prod_lindsey_id, prod_place_ids_by_slug).
+    ``with_location`` / ``with_melbourne`` let individual tests
+    reproduce the missing-row preflight failure modes.
+    """
+    engine = create_engine("sqlite:///:memory:", future=True)
+    for model in [
+        User, Location, Place, SpacePlace,
+        Space, SpaceMembership,
+        CreatorMediaAsset,
+        Pathway, PathwaySection, PathwayStep,
+        PathwayStepBlock, PathwayAboutBlock,
+        SpaceResource,
+    ]:
+        model.__table__.create(engine)
+    Session_ = sessionmaker(bind=engine, future=True)
+    prod = Session_()
+
+    prod_lindsey_id = _uid("u")
+    prod.add(User(
+        id=prod_lindsey_id, email=importer.PROD_OWNER_EMAIL,
+        name="Lindsey Hilliard",
+        password_hash="$2b$12$0" + "0" * 52,
+        role="creator",
+        email_verified_at=datetime.utcnow(),
+    ))
+
+    if with_location:
+        prod.add(Location(
+            id=_uid("prodloc"), key=importer.EMBODY_LOCATION_KEY,
+            name="Sanctuary Springs", status="active", location_type="ATLAS",
+            preferred_atmospheres=[], preferred_colour_stories=[],
+            preferred_themes=[], position=0,
+        ))
+
+    prod_place_ids: dict[str, str] = {}
+    if with_melbourne:
+        pid = _uid("prodpl")
+        prod.add(Place(
+            id=pid, slug="melbourne", name="Melbourne",
+            country_code="AU", status="active",
+        ))
+        prod_place_ids["melbourne"] = pid
+    for slug in extra_place_slugs:
+        pid = _uid("prodpl")
+        prod.add(Place(
+            id=pid, slug=slug, name=slug.title(),
+            country_code="AU", status="active",
+        ))
+        prod_place_ids[slug] = pid
+    prod.commit()
+    return prod, prod_lindsey_id, prod_place_ids
+
+
+class TestResolveProdLocation:
+    def test_success_returns_prod_location_id(self) -> None:
+        prod, _, _ = _make_sqlite_prod()
+        loc_id = importer._resolve_prod_location_id(prod)
+        assert loc_id  # non-empty
+        # And it belongs to the sanctuary-springs row.
+        row = prod.query(Location).filter(Location.id == loc_id).first()
+        assert row.key == importer.EMBODY_LOCATION_KEY
+
+    def test_refuses_when_prod_location_missing(self) -> None:
+        prod, _, _ = _make_sqlite_prod(with_location=False)
+        with pytest.raises(
+            importer.PreflightError, match=importer.EMBODY_LOCATION_KEY,
+        ):
+            importer._resolve_prod_location_id(prod)
+
+
+class TestResolveProdPlaces:
+    def test_success_returns_slug_to_id_map(self) -> None:
+        prod, _, seeded = _make_sqlite_prod()
+        mapping = importer._resolve_prod_place_ids(prod)
+        assert mapping == {"melbourne": seeded["melbourne"]}
+
+    def test_refuses_when_slug_missing_names_slug(self) -> None:
+        prod, _, _ = _make_sqlite_prod(with_melbourne=False)
+        with pytest.raises(importer.PreflightError, match="melbourne"):
+            importer._resolve_prod_place_ids(prod)
+
+
+# ---------------------------------------------------------------------------
+# enumerate_plan drift checks
+# ---------------------------------------------------------------------------
+
+
+class TestEnumerateLocalDrift:
+    def test_refuses_when_local_space_has_no_location(
+        self, db: Session, mini_embody,
+    ) -> None:
+        space = db.query(Space).filter(Space.slug == "embody").first()
+        space.location_id = None
+        db.flush()
+        with pytest.raises(RuntimeError, match="no location_id"):
+            importer.enumerate_plan(db)
+
+    def test_refuses_when_local_location_key_is_wrong(
+        self, db: Session, mini_embody,
+    ) -> None:
+        # Point the local Space at a different Location.
+        wrong = Location(
+            id=_uid("loc"), key="cloudhaven", name="Cloudhaven",
+            status="active", location_type="ATLAS",
+            preferred_atmospheres=[], preferred_colour_stories=[],
+            preferred_themes=[], position=1,
+        )
+        db.add(wrong)
+        db.flush()
+        space = db.query(Space).filter(Space.slug == "embody").first()
+        space.location_id = wrong.id
+        db.flush()
+        with pytest.raises(RuntimeError, match="cloudhaven"):
+            importer.enumerate_plan(db)
+
+    def test_refuses_when_local_spaceplace_has_unexpected_slug(
+        self, db: Session, mini_embody,
+    ) -> None:
+        # Add a second Place + SpacePlace that isn't in EMBODY_PLACE_SLUGS.
+        other = Place(
+            id=_uid("pl"), slug="sydney", name="Sydney",
+            country_code="AU", status="active",
+        )
+        db.add(other)
+        db.flush()
+        db.add(SpacePlace(
+            space_id=mini_embody["space"].id, place_id=other.id,
+        ))
+        db.flush()
+        with pytest.raises(RuntimeError, match="sydney"):
+            importer.enumerate_plan(db)
+
+    def test_refuses_when_local_spaceplace_missing_melbourne(
+        self, db: Session, mini_embody,
+    ) -> None:
+        # Delete the Melbourne SpacePlace to simulate lost association.
+        db.query(SpacePlace).filter(
+            SpacePlace.space_id == mini_embody["space"].id
+        ).delete()
+        db.flush()
+        with pytest.raises(RuntimeError, match="do not match"):
+            importer.enumerate_plan(db)
+
+    def test_success_populates_space_place_slugs(
+        self, db: Session, mini_embody,
+    ) -> None:
+        plan = importer.enumerate_plan(db)
+        assert plan.space_place_slugs == ["melbourne"]
+
+
+# ---------------------------------------------------------------------------
+# insert_prod_rows against a physically-distinct SQLite "prod"
+# ---------------------------------------------------------------------------
+
+
+class TestInsertProdRowsRemap:
+    def test_space_location_id_is_prod_not_local(
+        self, db: Session, mini_embody,
+    ) -> None:
+        plan = importer.enumerate_plan(db)
+        prod, prod_lindsey_id, prod_places = _make_sqlite_prod()
+        importer.insert_prod_rows(
+            plan, prod, prod_lindsey_id,
+            prod_location_id=importer._resolve_prod_location_id(prod),
+            prod_place_ids_by_slug=prod_places,
+        )
+        prod.flush()
+
+        prod_space = prod.query(Space).filter(Space.slug == "embody").first()
+        assert prod_space is not None
+        # The prod Location id is DIFFERENT from the local one.
+        assert prod_space.location_id != mini_embody["location_id"]
+        # And it resolves to the sanctuary-springs row in prod.
+        prod_loc = prod.query(Location).filter(
+            Location.id == prod_space.location_id
+        ).first()
+        assert prod_loc.key == importer.EMBODY_LOCATION_KEY
+
+    def test_space_action_fks_are_nulled(
+        self, db: Session, mini_embody,
+    ) -> None:
+        # Simulate a local Space that carries non-null action FKs by
+        # dirtying the enumerated plan dict directly. This proves the
+        # importer actively overrides the fields — a null-by-default
+        # local Space would not distinguish "actively nulled" from
+        # "never touched".
+        plan = importer.enumerate_plan(db)
+        plan.space["closed_by_action_id"] = "cc_fake_closed"
+        plan.space["frozen_by_action_id"] = "cc_fake_frozen"
+
+        prod, prod_lindsey_id, prod_places = _make_sqlite_prod()
+        importer.insert_prod_rows(
+            plan, prod, prod_lindsey_id,
+            prod_location_id=importer._resolve_prod_location_id(prod),
+            prod_place_ids_by_slug=prod_places,
+        )
+        prod.flush()
+
+        prod_space = prod.query(Space).filter(Space.slug == "embody").first()
+        assert prod_space.closed_by_action_id is None
+        assert prod_space.frozen_by_action_id is None
+
+    def test_spaceplace_created_with_prod_place_id(
+        self, db: Session, mini_embody,
+    ) -> None:
+        plan = importer.enumerate_plan(db)
+        prod, prod_lindsey_id, prod_places = _make_sqlite_prod()
+        importer.insert_prod_rows(
+            plan, prod, prod_lindsey_id,
+            prod_location_id=importer._resolve_prod_location_id(prod),
+            prod_place_ids_by_slug=prod_places,
+        )
+        prod.flush()
+
+        prod_space = prod.query(Space).filter(Space.slug == "embody").first()
+        bridges = prod.query(SpacePlace).filter(
+            SpacePlace.space_id == prod_space.id
+        ).all()
+        assert len(bridges) == 1
+        assert bridges[0].place_id == prod_places["melbourne"]
+        # Confirm the id is the prod Place — not the local one.
+        assert bridges[0].place_id != mini_embody["melbourne_place_id"]
+
+
+# ---------------------------------------------------------------------------
+# verify — detects drift on the new invariants
+# ---------------------------------------------------------------------------
+
+
+def _seed_and_insert_for_verify(
+    db: Session, mini_embody,
+) -> tuple[Session, importer.MigrationPlan, str, dict[str, str]]:
+    """Helper: run enumerate + insert against a SQLite prod and return
+    the prod session + plan + resolved ids ready for verify()."""
+    plan = importer.enumerate_plan(db)
+    prod, prod_lindsey_id, prod_places = _make_sqlite_prod()
+    prod_location_id = importer._resolve_prod_location_id(prod)
+    importer.insert_prod_rows(
+        plan, prod, prod_lindsey_id,
+        prod_location_id=prod_location_id,
+        prod_place_ids_by_slug=prod_places,
+    )
+    prod.commit()
+    return prod, plan, prod_location_id, prod_places
+
+
+class TestVerifyDetectsDrift:
+    def test_verify_passes_after_clean_insert(
+        self, db: Session, mini_embody,
+    ) -> None:
+        prod, plan, prod_location_id, _ = _seed_and_insert_for_verify(
+            db, mini_embody,
+        )
+        # No exception — clean invariant satisfaction.
+        importer.verify(
+            plan, prod, MagicMock(),
+            "priv", "pub",
+            prod_location_id, importer.EMBODY_PLACE_SLUGS,
+        )
+
+    def test_verify_catches_wrong_location_id(
+        self, db: Session, mini_embody,
+    ) -> None:
+        prod, plan, prod_location_id, _ = _seed_and_insert_for_verify(
+            db, mini_embody,
+        )
+        # Deliberately corrupt the prod Space's location_id.
+        prod_space = prod.query(Space).filter(Space.slug == "embody").first()
+        prod_space.location_id = "loc_wrong_id"
+        prod.flush()
+        with pytest.raises(RuntimeError, match="location_id"):
+            importer.verify(
+                plan, prod, MagicMock(),
+                "priv", "pub",
+                prod_location_id, importer.EMBODY_PLACE_SLUGS,
+            )
+
+    def test_verify_catches_non_null_closed_action(
+        self, db: Session, mini_embody,
+    ) -> None:
+        prod, plan, prod_location_id, _ = _seed_and_insert_for_verify(
+            db, mini_embody,
+        )
+        prod_space = prod.query(Space).filter(Space.slug == "embody").first()
+        prod_space.closed_by_action_id = "cc_leaked"
+        prod.flush()
+        with pytest.raises(RuntimeError, match="closed_by_action_id"):
+            importer.verify(
+                plan, prod, MagicMock(),
+                "priv", "pub",
+                prod_location_id, importer.EMBODY_PLACE_SLUGS,
+            )
+
+    def test_verify_catches_non_null_frozen_action(
+        self, db: Session, mini_embody,
+    ) -> None:
+        prod, plan, prod_location_id, _ = _seed_and_insert_for_verify(
+            db, mini_embody,
+        )
+        prod_space = prod.query(Space).filter(Space.slug == "embody").first()
+        prod_space.frozen_by_action_id = "cc_leaked"
+        prod.flush()
+        with pytest.raises(RuntimeError, match="frozen_by_action_id"):
+            importer.verify(
+                plan, prod, MagicMock(),
+                "priv", "pub",
+                prod_location_id, importer.EMBODY_PLACE_SLUGS,
+            )
+
+    def test_verify_catches_missing_spaceplace(
+        self, db: Session, mini_embody,
+    ) -> None:
+        prod, plan, prod_location_id, _ = _seed_and_insert_for_verify(
+            db, mini_embody,
+        )
+        prod_space = prod.query(Space).filter(Space.slug == "embody").first()
+        prod.query(SpacePlace).filter(
+            SpacePlace.space_id == prod_space.id
+        ).delete()
+        prod.flush()
+        with pytest.raises(RuntimeError, match="SpacePlace"):
+            importer.verify(
+                plan, prod, MagicMock(),
+                "priv", "pub",
+                prod_location_id, importer.EMBODY_PLACE_SLUGS,
+            )
+
+    def test_verify_catches_extra_spaceplace(
+        self, db: Session, mini_embody,
+    ) -> None:
+        # Prod has a second Place slug we can attach an unexpected
+        # bridge to.
+        prod = None
+        plan = importer.enumerate_plan(db)
+        prod, prod_lindsey_id, prod_places = _make_sqlite_prod(
+            extra_place_slugs=("sydney",),
+        )
+        prod_location_id = importer._resolve_prod_location_id(prod)
+        importer.insert_prod_rows(
+            plan, prod, prod_lindsey_id,
+            prod_location_id=prod_location_id,
+            prod_place_ids_by_slug={
+                "melbourne": prod_places["melbourne"],
+            },
+        )
+        # Attach an unauthorised extra SpacePlace.
+        prod_space = prod.query(Space).filter(Space.slug == "embody").first()
+        prod.add(SpacePlace(
+            space_id=prod_space.id, place_id=prod_places["sydney"],
+        ))
+        prod.commit()
+
+        with pytest.raises(RuntimeError, match="SpacePlace"):
+            importer.verify(
+                plan, prod, MagicMock(),
+                "priv", "pub",
+                prod_location_id, importer.EMBODY_PLACE_SLUGS,
+            )
