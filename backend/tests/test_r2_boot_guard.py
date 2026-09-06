@@ -91,7 +91,7 @@ class TestProductionRequiresFullR2:
         with pytest.raises(ValidationError) as exc:
             _mk_settings(
                 app_env="production",
-                r2_account_id="acc",
+                r2_account_id="0123456789abcdef0123456789abcdef",
                 r2_access_key_id="key",
                 r2_secret_access_key="sec",
                 r2_bucket_private="fc-media",
@@ -105,7 +105,7 @@ class TestProductionRequiresFullR2:
     ) -> None:
         s = _mk_settings(
             app_env="production",
-            r2_account_id="acc",
+            r2_account_id="0123456789abcdef0123456789abcdef",
             r2_access_key_id="key",
             r2_secret_access_key="sec",
             r2_bucket_private="fc-media",
@@ -131,7 +131,7 @@ class TestPartialConfigRefusesEverywhere:
         with pytest.raises(ValidationError) as exc:
             _mk_settings(
                 app_env="development",
-                r2_account_id="acc",
+                r2_account_id="0123456789abcdef0123456789abcdef",
             )
         msg = str(exc.value)
         assert "partially configured" in msg
@@ -149,7 +149,7 @@ class TestPartialConfigRefusesEverywhere:
     def test_dev_with_full_r2_boots_cleanly(self, clean_env) -> None:
         s = _mk_settings(
             app_env="development",
-            r2_account_id="acc",
+            r2_account_id="0123456789abcdef0123456789abcdef",
             r2_access_key_id="key",
             r2_secret_access_key="sec",
             r2_bucket_private="fc-media",
@@ -184,3 +184,111 @@ class TestZeroConfigDevIsAllowed:
         s = _mk_settings()
         assert s.app_env == "development"
         assert s.is_r2_enabled is False
+
+
+# ---------------------------------------------------------------------------
+# Rule 4 — R2_ACCOUNT_ID must be a 32-char hex string
+# ---------------------------------------------------------------------------
+
+
+_VALID_R2_KWARGS = dict(
+    app_env="production",
+    r2_account_id="0123456789abcdef0123456789abcdef",  # 32-char hex
+    r2_access_key_id="key",
+    r2_secret_access_key="sec",
+    r2_bucket_private="fc-media",
+    r2_bucket_public="fc-media-public",
+    r2_public_base_url="https://pub-x.r2.dev",
+)
+
+
+class TestR2AccountIdFormat:
+    def test_valid_32_hex_lowercase_accepted(self, clean_env) -> None:
+        s = _mk_settings(**_VALID_R2_KWARGS)
+        assert s.r2_account_id == "0123456789abcdef0123456789abcdef"
+
+    def test_valid_32_hex_uppercase_accepted(self, clean_env) -> None:
+        kwargs = {**_VALID_R2_KWARGS, "r2_account_id": "ABCDEF0123456789ABCDEF0123456789"}
+        s = _mk_settings(**kwargs)
+        assert s.r2_account_id == "ABCDEF0123456789ABCDEF0123456789"
+
+    def test_placeholder_with_angle_brackets_rejected(self, clean_env) -> None:
+        """The literal case that caused the production ``Invalid
+        endpoint`` error: R2_ACCOUNT_ID set to the documentation
+        placeholder ``<account>``. Must be rejected at boot with a
+        clear message rather than surfacing as a boto3 hostname
+        validation error at first upload."""
+        kwargs = {**_VALID_R2_KWARGS, "r2_account_id": "<account>"}
+        with pytest.raises(ValidationError) as exc:
+            _mk_settings(**kwargs)
+        msg = str(exc.value)
+        assert "R2_ACCOUNT_ID" in msg
+        assert "32-character hex" in msg
+
+    def test_full_url_pasted_instead_of_id_rejected(self, clean_env) -> None:
+        """Second common footgun: pasting the entire endpoint URL
+        into R2_ACCOUNT_ID."""
+        kwargs = {
+            **_VALID_R2_KWARGS,
+            "r2_account_id": "https://abc.r2.cloudflarestorage.com",
+        }
+        with pytest.raises(ValidationError) as exc:
+            _mk_settings(**kwargs)
+        assert "R2_ACCOUNT_ID" in str(exc.value)
+
+    def test_wrong_length_rejected(self, clean_env) -> None:
+        # 31 chars — one short.
+        kwargs = {
+            **_VALID_R2_KWARGS,
+            "r2_account_id": "0123456789abcdef0123456789abcde",
+        }
+        with pytest.raises(ValidationError) as exc:
+            _mk_settings(**kwargs)
+        assert "R2_ACCOUNT_ID" in str(exc.value)
+
+    def test_non_hex_char_rejected(self, clean_env) -> None:
+        # 32 chars but contains a ``g``.
+        kwargs = {
+            **_VALID_R2_KWARGS,
+            "r2_account_id": "g123456789abcdef0123456789abcdef",
+        }
+        with pytest.raises(ValidationError) as exc:
+            _mk_settings(**kwargs)
+        assert "R2_ACCOUNT_ID" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# Rule 1 — whitespace is stripped from every R2 var
+# ---------------------------------------------------------------------------
+
+
+class TestWhitespaceStripping:
+    def test_trailing_newline_on_account_id_stripped(self, clean_env) -> None:
+        # Common when copy-pasting from a terminal or dashboard: the
+        # value carries a trailing newline. Must not turn into an
+        # invalid hostname.
+        kwargs = {
+            **_VALID_R2_KWARGS,
+            "r2_account_id": "0123456789abcdef0123456789abcdef\n",
+        }
+        s = _mk_settings(**kwargs)
+        assert s.r2_account_id == "0123456789abcdef0123456789abcdef"
+
+    def test_surrounding_spaces_stripped_on_public_url(self, clean_env) -> None:
+        kwargs = {
+            **_VALID_R2_KWARGS,
+            "r2_public_base_url": "   https://pub-x.r2.dev   ",
+        }
+        s = _mk_settings(**kwargs)
+        assert s.r2_public_base_url == "https://pub-x.r2.dev"
+
+    def test_whitespace_only_treated_as_missing(self, clean_env) -> None:
+        # R2_ACCOUNT_ID set to only whitespace → after trim, empty →
+        # treated as missing. Under production this fires Rule 2
+        # (production requires full R2), not Rule 4.
+        kwargs = {**_VALID_R2_KWARGS, "r2_account_id": "   \n  "}
+        with pytest.raises(ValidationError) as exc:
+            _mk_settings(**kwargs)
+        msg = str(exc.value)
+        assert "R2_ACCOUNT_ID" in msg
+        assert "Missing env vars" in msg

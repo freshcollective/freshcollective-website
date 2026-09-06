@@ -1,5 +1,14 @@
+import re
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Cloudflare R2 account IDs are 32-character hex strings — the value
+# shown as "Account ID" in the R2 dashboard. Case-insensitive because
+# DNS is case-insensitive and R2 accepts either form as the endpoint
+# subdomain.
+_R2_ACCOUNT_ID_RE = re.compile(r"[a-fA-F0-9]{32}")
 
 
 class Settings(BaseSettings):
@@ -271,26 +280,56 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _check_r2_configuration(self) -> "Settings":
         """Refuse to boot if R2 is misconfigured in a way that would
-        silently downgrade production uploads to ephemeral disk.
+        silently downgrade production uploads to ephemeral disk, or
+        in a way that would surface as an opaque boto3 error at
+        upload time instead of a clear error at deploy time.
 
-        Two rules, both fired at Settings() instantiation (i.e., fc-api
-        boot):
+        Rules fired at Settings() instantiation (i.e., fc-api boot):
 
-          1. **Production requires full R2.** If ``APP_ENV=production``
+          1. **Trim whitespace on every R2 var.** Copy-paste from the
+             Render dashboard commonly picks up trailing newlines or
+             spaces which turn into invalid hostnames or keys later.
+             Idempotent when values are already clean.
+
+          2. **Production requires full R2.** If ``APP_ENV=production``
              and any R2 variable is missing, raise. On Render this
              aborts the deploy — the previous fc-api image continues
              to serve, so no upload ever lands on the ephemeral disk
              in a production-marked container.
 
-          2. **No partial config anywhere.** If any R2 variable is set
+          3. **No partial config anywhere.** If any R2 variable is set
              AND any other is missing, raise regardless of env. Catches
              half-configured local dev before it silently mixes R2
              writes with filesystem reads (or vice versa).
+
+          4. **R2_ACCOUNT_ID format.** Cloudflare R2 account IDs are
+             32-character hex strings. The value is interpolated into
+             ``https://{id}.r2.cloudflarestorage.com`` as the S3 API
+             endpoint (``core/storage.py``). Anything else — a template
+             placeholder like ``<account>``, a full URL pasted in,
+             surrounding quotes — makes boto3's hostname validator
+             reject the endpoint at upload time with a cryptic
+             ``Invalid endpoint`` message. Catching the format at
+             boot surfaces the problem clearly, names the env var,
+             and fails the deploy so the previous image keeps serving.
 
         Local dev and every existing test remain unaffected because
         they set zero R2 variables — the ``no-R2-and-not-production``
         branch is silent and returns the filesystem fallback.
         """
+        # Rule 1 — trim whitespace on every R2 var in place.
+        for name in (
+            "r2_account_id",
+            "r2_access_key_id",
+            "r2_secret_access_key",
+            "r2_bucket_private",
+            "r2_bucket_public",
+            "r2_public_base_url",
+        ):
+            raw = getattr(self, name)
+            if raw is not None and raw != raw.strip():
+                object.__setattr__(self, name, raw.strip())
+
         r2_vars = {
             "R2_ACCOUNT_ID": self.r2_account_id,
             "R2_ACCESS_KEY_ID": self.r2_access_key_id,
@@ -299,9 +338,13 @@ class Settings(BaseSettings):
             "R2_BUCKET_PUBLIC": self.r2_bucket_public,
             "R2_PUBLIC_BASE_URL": self.r2_public_base_url,
         }
+        # Post-trim: whitespace-only values are now empty strings,
+        # which the ``if v`` truthiness check correctly treats as
+        # missing.
         present = sorted(k for k, v in r2_vars.items() if v)
         missing = sorted(k for k, v in r2_vars.items() if not v)
 
+        # Rule 2 — production requires the full set.
         if self.app_env == "production" and missing:
             raise ValueError(
                 "R2 storage is required in production but is not fully "
@@ -311,6 +354,7 @@ class Settings(BaseSettings):
                 "using the filesystem fallback (never for production)."
             )
 
+        # Rule 3 — partial config is always an error.
         if present and missing:
             raise ValueError(
                 "R2 storage is partially configured. Missing env vars: "
@@ -319,6 +363,21 @@ class Settings(BaseSettings):
                 "filesystem storage. Refusing to boot with a mix — "
                 "would silently direct some uploads at R2 and others "
                 "at ephemeral disk."
+            )
+
+        # Rule 4 — R2_ACCOUNT_ID must be a 32-char hex string.
+        # Only applied when the value is present; the presence/partial
+        # rules above own the missing-value cases.
+        if self.r2_account_id and not _R2_ACCOUNT_ID_RE.fullmatch(
+            self.r2_account_id
+        ):
+            raise ValueError(
+                "R2_ACCOUNT_ID must be a 32-character hex string (the "
+                "value shown as 'Account ID' in the Cloudflare R2 "
+                "dashboard) — not a URL, not surrounded by ``<>``, no "
+                f"embedded whitespace. Received {len(self.r2_account_id)} "
+                "characters. Fix the R2_ACCOUNT_ID env var on fc-api "
+                "in the Render dashboard and redeploy."
             )
 
         return self
