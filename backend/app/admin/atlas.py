@@ -324,16 +324,17 @@ def _delete_existing(url: str | None) -> None:
 async def _upload_image_with_thumbnail(
     file: UploadFile,
     subdir: str,
-    existing_hero: str | None,
-    existing_thumbnail: str | None,
 ) -> tuple[str, str]:
+    """Save the new hero + thumbnail; return their ``/api/uploads/…``
+    URLs. Never touches previously-stored artwork — the caller is
+    responsible for scheduling old-object cleanup only after the DB
+    commit succeeds, so a failed upload can never leave a Location
+    pointing at missing media."""
     filename = file.filename or "artwork.jpg"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in _ALLOWED_EXT:
         raise HTTPException(400, detail="Only JPG, PNG, and WebP images are allowed.")
     data = await file.read()
-    _delete_existing(existing_hero)
-    _delete_existing(existing_thumbnail)
     try:
         hero_rel, thumb_rel = save_image_with_thumbnail(
             data, filename, file.content_type or "image/jpeg", subdir,
@@ -341,6 +342,17 @@ async def _upload_image_with_thumbnail(
     except ValueError as e:
         raise HTTPException(400, detail=str(e)) from e
     return f"/api/uploads/{hero_rel}", f"/api/uploads/{thumb_rel}"
+
+
+# Storage namespace for Atlas Location artwork. Kept under
+# ``platform-artwork/`` so ``_bucket_for_key`` routes it to the PUBLIC
+# bucket and the frontend ``<img>`` renders it through the public
+# ``/api/uploads/platform-artwork/*`` route (302 → R2 public URL,
+# no session-cookie dependency). Atlas artwork is platform-curated
+# public content; keeping it in the private bucket would require
+# cross-origin cookies to flow to fc-api, which they do not do
+# reliably for ``<img>`` subresources.
+_ATLAS_ARTWORK_SUBDIR_PREFIX = "platform-artwork/atlas-locations"
 
 
 @router.post("/locations/{key}/artwork", response_model=LocationDetail)
@@ -354,20 +366,45 @@ async def upload_artwork(
 
     The hero is stored at its original resolution; a proportional
     thumbnail (~600px wide) is generated server-side and stored
-    alongside it. Consumers use the thumbnail for grids and cards,
-    and the hero for large previews.
+    alongside it. Both land under
+    ``platform-artwork/atlas-locations/{key}/…`` so the public
+    ``/api/uploads/platform-artwork/*`` serve path handles them
+    without an auth-gated cookie.
+
+    Replacement is safe: the new hero+thumbnail are written first; on
+    any failure the caller's previous artwork remains intact. Old
+    objects are cleaned up only after the DB commit succeeds, so a
+    partial failure never leaves the Location pointing at missing
+    media.
     """
     loc = _get_by_key(key, db)
+    old_hero = loc.hero_artwork_url
+    old_thumb = loc.thumbnail_artwork_url
+
     hero_url, thumb_url = await _upload_image_with_thumbnail(
-        file,
-        f"atlas-locations/{loc.key}",
-        loc.hero_artwork_url,
-        loc.thumbnail_artwork_url,
+        file, f"{_ATLAS_ARTWORK_SUBDIR_PREFIX}/{loc.key}",
     )
+
     loc.hero_artwork_url = hero_url
     loc.thumbnail_artwork_url = thumb_url
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        # DB commit failed after the new R2 objects were written; roll
+        # back the transaction and try to clean up the orphaned R2
+        # objects so we don't leak storage. The old artwork is
+        # untouched (we haven't reached the cleanup step below).
+        db.rollback()
+        _delete_existing(hero_url)
+        _delete_existing(thumb_url)
+        raise
     db.refresh(loc)
+
+    # DB commit succeeded — safe to delete the superseded objects.
+    # Best-effort; a delete failure only leaves an orphaned old file
+    # in R2 and does not affect the Location's current pointer.
+    _delete_existing(old_hero)
+    _delete_existing(old_thumb)
     return _detail_from(loc, db)
 
 

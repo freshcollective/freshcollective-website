@@ -490,8 +490,34 @@ def save_image_with_thumbnail(
     bucket (public if ``subdir`` begins with ``platform-artwork/``,
     private otherwise). This matches the existing behaviour where the
     thumbnail is served through the same URL prefix as the hero.
+
+    Atomic-ish semantics: the thumbnail bytes are generated (Pillow
+    validation) BEFORE any storage writes, so an invalid source raises
+    without leaving orphan objects. If the hero write succeeds but the
+    thumbnail write fails, the just-written hero is deleted to avoid
+    leaking storage.
     """
+    # Generate the thumbnail first — Pillow's decode/encode is where
+    # the vast majority of "bad image" failures happen, and validating
+    # here means an invalid source raises before any R2 write.
+    # Normalise Pillow's error types (UnidentifiedImageError, OSError
+    # on truncated streams) into ValueError so upstream endpoints that
+    # catch ValueError can return a clean 400.
+    try:
+        thumb_bytes, thumb_name = generate_thumbnail_bytes(data, original_name, target_width)
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"Could not decode image: {e}") from e
+
     hero_rel, _resource, _size = save_file(data, original_name, mime_type, subdir)
-    thumb_bytes, thumb_name = generate_thumbnail_bytes(data, original_name, target_width)
-    thumb_rel, _r2, _s2 = save_file(thumb_bytes, thumb_name, mime_type, subdir)
+    try:
+        thumb_rel, _r2, _s2 = save_file(thumb_bytes, thumb_name, mime_type, subdir)
+    except Exception:
+        # Compensate the successful hero write so we don't leak.
+        try:
+            delete_file(hero_rel)
+        except Exception:  # noqa: BLE001
+            pass
+        raise
     return hero_rel, thumb_rel

@@ -69,6 +69,17 @@ def _png_upload(filename: str = "hero.png") -> UploadFile:
     )
 
 
+def _webp_bytes() -> bytes:
+    """A tiny in-memory WebP so tests exercise the format the admin
+    UI actually receives from the browser."""
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 2), (128, 200, 190)).save(
+        buf, format="WEBP", quality=85, method=6,
+    )
+    return buf.getvalue()
+
+
 # ---------------------------------------------------------------------------
 # Admin-only access
 # ---------------------------------------------------------------------------
@@ -385,7 +396,9 @@ class TestUpdate:
 # ---------------------------------------------------------------------------
 
 class TestArtwork:
-    def test_upload_sets_url(self, db, make_user, monkeypatch, tmp_path):
+    def test_upload_sets_url_under_public_platform_artwork_namespace(
+        self, db, make_user, monkeypatch, tmp_path,
+    ):
         from app.core import storage as storage_module
         monkeypatch.setattr(storage_module, "UPLOAD_DIR", tmp_path)
 
@@ -398,8 +411,107 @@ class TestArtwork:
             slug="art-upload", file=_png_upload(), db=db, _=admin,
         ))
         assert result.hero_artwork_url is not None
-        assert result.hero_artwork_url.startswith("/api/uploads/place-artwork/art-upload/")
+        # Public namespace so ``_bucket_for_key`` routes to the public
+        # bucket and the frontend renders through the unauthenticated
+        # /api/uploads/platform-artwork/* path.
+        assert result.hero_artwork_url.startswith(
+            "/api/uploads/platform-artwork/place-artwork/art-upload/"
+        )
         assert result.hero_artwork_url.endswith(".png")
+
+    def test_upload_accepts_webp(self, db, make_user, monkeypatch, tmp_path):
+        from app.core import storage as storage_module
+        monkeypatch.setattr(storage_module, "UPLOAD_DIR", tmp_path)
+
+        admin = make_user(role="admin")
+        p = _place(slug="webp-place", name="WebP Place")
+        db.add(p)
+        db.flush()
+
+        webp_upload = UploadFile(
+            file=io.BytesIO(_webp_bytes()),
+            filename="hero.webp",
+            headers={"content-type": "image/webp"},  # type: ignore[arg-type]
+        )
+        result = asyncio.run(upload_artwork(
+            slug="webp-place", file=webp_upload, db=db, _=admin,
+        ))
+        assert result.hero_artwork_url is not None
+        assert result.hero_artwork_url.startswith(
+            "/api/uploads/platform-artwork/place-artwork/webp-place/"
+        )
+        assert result.hero_artwork_url.endswith(".webp")
+
+    def test_replacement_deletes_old_object_after_commit(
+        self, db, make_user, monkeypatch, tmp_path,
+    ):
+        from app.core import storage as storage_module
+        monkeypatch.setattr(storage_module, "UPLOAD_DIR", tmp_path)
+
+        # Prime an existing artwork file on disk under the new path.
+        subdir = tmp_path / "platform-artwork" / "place-artwork" / "replace-me"
+        subdir.mkdir(parents=True)
+        old_file = subdir / "OLD_hero.png"
+        old_file.write_bytes(_PNG_BYTES)
+
+        admin = make_user(role="admin")
+        p = _place(
+            slug="replace-me", name="Replace Me",
+            hero_artwork_url=(
+                "/api/uploads/platform-artwork/place-artwork/replace-me/OLD_hero.png"
+            ),
+        )
+        db.add(p)
+        db.flush()
+
+        result = asyncio.run(upload_artwork(
+            slug="replace-me", file=_png_upload(), db=db, _=admin,
+        ))
+        assert result.hero_artwork_url != (
+            "/api/uploads/platform-artwork/place-artwork/replace-me/OLD_hero.png"
+        )
+        assert not old_file.exists(), "old artwork should have been cleaned up"
+
+    def test_failed_replacement_preserves_existing_artwork(
+        self, db, make_user, monkeypatch, tmp_path,
+    ):
+        from app.core import storage as storage_module
+        monkeypatch.setattr(storage_module, "UPLOAD_DIR", tmp_path)
+
+        # Prime an existing artwork file — simulate the DB and disk
+        # already carrying a valid pointer.
+        subdir = tmp_path / "platform-artwork" / "place-artwork" / "safe-fail"
+        subdir.mkdir(parents=True)
+        keep = subdir / "KEEP_hero.png"
+        keep.write_bytes(_PNG_BYTES)
+        original_url = (
+            "/api/uploads/platform-artwork/place-artwork/safe-fail/KEEP_hero.png"
+        )
+
+        admin = make_user(role="admin")
+        p = _place(
+            slug="safe-fail", name="Safe Fail",
+            hero_artwork_url=original_url,
+        )
+        db.add(p)
+        db.flush()
+
+        bad = UploadFile(
+            file=io.BytesIO(b"not an image"),
+            filename="hero.txt",
+            headers={"content-type": "text/plain"},  # type: ignore[arg-type]
+        )
+        with pytest.raises(HTTPException) as ex:
+            asyncio.run(upload_artwork(
+                slug="safe-fail", file=bad, db=db, _=admin,
+            ))
+        assert ex.value.status_code == 400
+        # Existing artwork MUST still be on disk and still referenced
+        # in the DB — a failed replacement must not destroy the
+        # working artwork.
+        assert keep.exists(), "existing artwork was destroyed by failed upload"
+        db.refresh(p)
+        assert p.hero_artwork_url == original_url
 
     def test_upload_preserves_focal_point(self, db, make_user, monkeypatch, tmp_path):
         from app.core import storage as storage_module
@@ -448,6 +560,8 @@ class TestArtwork:
         from app.core import storage as storage_module
         monkeypatch.setattr(storage_module, "UPLOAD_DIR", tmp_path)
 
+        # Deliberately use the LEGACY private-namespace URL so this test
+        # also proves ``clear_artwork`` can remove pre-fix artwork.
         admin = make_user(role="admin")
         p = _place(
             slug="clear-me", name="Clear Me",

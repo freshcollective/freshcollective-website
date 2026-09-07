@@ -431,6 +431,15 @@ def update_location(
 # Artwork upload / clear
 # ---------------------------------------------------------------------------
 
+# Storage namespace for Physical Location artwork. Kept under
+# ``platform-artwork/`` so ``_bucket_for_key`` routes it to the PUBLIC
+# bucket and the frontend renders it through the public
+# ``/api/uploads/platform-artwork/*`` route without an auth-gated
+# cookie. Physical Location artwork is platform-curated public
+# content, same rationale as the Atlas Location artwork.
+_PLACE_ARTWORK_SUBDIR_PREFIX = "platform-artwork/place-artwork"
+
+
 @router.post("/{slug}/artwork", response_model=PhysicalLocationDetail)
 async def upload_artwork(
     slug: str,
@@ -440,10 +449,17 @@ async def upload_artwork(
 ) -> PhysicalLocationDetail:
     """Upload the hero artwork for a Physical Location.
 
-    Overwrites any prior artwork (old file cleaned up on
-    best-effort basis). Focal point stays at whatever the admin
-    last set — a fresh upload does NOT reset it, since editors
-    often reupload an updated crop of the same scene.
+    Stored under ``platform-artwork/place-artwork/{slug}/…`` so it is
+    served publicly without an auth-gated cookie.
+
+    Focal point stays at whatever the admin last set — a fresh upload
+    does NOT reset it, since editors often reupload an updated crop of
+    the same scene.
+
+    Replacement is safe: the new artwork is written first; on any
+    failure the caller's previous artwork remains intact. The old
+    object is cleaned up only after the DB commit succeeds, so a
+    partial failure never leaves the Place pointing at missing media.
     """
     place = _get_by_slug(slug, db)
     filename = file.filename or "artwork.jpg"
@@ -452,20 +468,32 @@ async def upload_artwork(
         raise HTTPException(400, detail="Only JPG, PNG, and WebP images are allowed.")
     data = await file.read()
 
-    _delete_existing_artwork(place.hero_artwork_url)
+    old_hero = place.hero_artwork_url
+
     try:
         rel_path, _resource_type, _size = save_file(
             data,
             filename,
             file.content_type or "image/jpeg",
-            f"place-artwork/{place.slug}",
+            f"{_PLACE_ARTWORK_SUBDIR_PREFIX}/{place.slug}",
         )
     except ValueError as e:
         raise HTTPException(400, detail=str(e)) from e
 
-    place.hero_artwork_url = f"/api/uploads/{rel_path}"
-    db.commit()
+    new_url = f"/api/uploads/{rel_path}"
+    place.hero_artwork_url = new_url
+    try:
+        db.commit()
+    except Exception:
+        # DB commit failed after the new R2 object landed; roll back
+        # and try to clean up the orphan. Old artwork is untouched.
+        db.rollback()
+        _delete_existing_artwork(new_url)
+        raise
     db.refresh(place)
+
+    # DB commit succeeded — safe to delete the superseded object.
+    _delete_existing_artwork(old_hero)
     return _detail_from(place, db)
 
 

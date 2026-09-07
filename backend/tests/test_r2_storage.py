@@ -264,6 +264,54 @@ class TestSaveImageWithThumbnailR2Mode:
         for call in r2_client.put_object.call_args_list:
             assert call.kwargs["Bucket"] == "fc-media-public-test"
 
+    def test_invalid_source_raises_before_any_storage_write(
+        self, r2_client: MagicMock,
+    ) -> None:
+        """Thumbnail bytes are generated BEFORE any storage write, so
+        a source Pillow can't decode raises without leaving orphan
+        R2 objects behind."""
+        with pytest.raises(Exception):
+            storage_module.save_image_with_thumbnail(
+                data=b"\x89PNGnot-a-real-png",
+                original_name="broken.png",
+                mime_type="image/png",
+                subdir="platform-artwork/atlas-locations/x",
+            )
+        r2_client.put_object.assert_not_called()
+
+    def test_thumbnail_write_failure_deletes_the_just_written_hero(
+        self, r2_client: MagicMock, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """If the hero write succeeds but the thumbnail write raises,
+        the just-written hero must be cleaned up so we do not leak an
+        orphan object."""
+        png_2x2 = bytes.fromhex(
+            "89504e470d0a1a0a0000000d4948445200000002000000020802000000fdd4"
+            "9a730000001649444154789c63fccfc0c0c0c0c0c4c0c0c0c0c000000d1d01"
+            "036ac29be90000000049454e44ae426082"
+        )
+
+        # First put_object succeeds (hero), second raises (thumbnail).
+        call_count = {"n": 0}
+        def _put_object(**_kwargs):
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                raise RuntimeError("simulated thumbnail write failure")
+            return None
+        r2_client.put_object.side_effect = _put_object
+
+        with pytest.raises(RuntimeError, match="thumbnail"):
+            storage_module.save_image_with_thumbnail(
+                data=png_2x2,
+                original_name="hero.png",
+                mime_type="image/png",
+                subdir="platform-artwork/atlas-locations/y",
+            )
+        # Compensating delete for the hero must have fired.
+        r2_client.delete_object.assert_called_once()
+        deleted_key = r2_client.delete_object.call_args.kwargs["Key"]
+        assert deleted_key.startswith("platform-artwork/atlas-locations/y/")
+
 
 # ---------------------------------------------------------------------------
 # 6. Filesystem fallback — R2 mode disabled by default
