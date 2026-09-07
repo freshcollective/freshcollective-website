@@ -185,7 +185,11 @@ function LocationCard({
     >
       <div
         className="relative w-full overflow-hidden"
-        style={{ aspectRatio: '3 / 2', background: '#F4F7F6' }}
+        // 5:4 matches the dominant Location.hero_artwork_url source
+        // aspect, standardising the treatment across admin viewer,
+        // modal and this picker. Combined with ``object-contain`` the
+        // whole artwork is always shown.
+        style={{ aspectRatio: '5 / 4', background: '#F4F7F6' }}
       >
         {artworkUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -193,7 +197,11 @@ function LocationCard({
             src={artworkUrl}
             alt={loc.name}
             className="h-full w-full transition-transform duration-500 group-hover:scale-[1.02]"
-            style={{ objectFit: 'cover', objectPosition: 'center', display: 'block' }}
+            // ``contain`` matches the Atlas admin viewer so square /
+            // portrait source artwork is shown in full rather than
+            // cropped to the card's 3:2 frame. The neutral background
+            // handles any letterboxing.
+            style={{ objectFit: 'contain', objectPosition: 'center', display: 'block' }}
           />
         ) : (
           <ArtworkPlaceholder label={loc.name} />

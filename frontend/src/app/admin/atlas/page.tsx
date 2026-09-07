@@ -149,12 +149,15 @@ function LocationCard({ loc }: { loc: LocationSummary }) {
     >
       <div
         className="relative w-full overflow-hidden"
-        style={{ aspectRatio: '3 / 2', background: '#F4F7F6' }}
+        // 5:4 + ``contain`` to match the standard Atlas artwork
+        // treatment used in the location editor, creator picker and
+        // island modal.
+        style={{ aspectRatio: '5 / 4', background: '#F4F7F6' }}
       >
         <LocationArtwork
           url={loc.thumbnail_artwork_url ?? loc.hero_artwork_url}
           label={loc.name}
-          fit="cover"
+          fit="contain"
           className="h-full w-full transition-transform duration-500 group-hover:scale-[1.02]"
         />
         {loc.status === 'hidden' && (

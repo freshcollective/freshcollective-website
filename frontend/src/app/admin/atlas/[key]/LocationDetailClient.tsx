@@ -298,7 +298,11 @@ export default function LocationDetailClient({ initialLocation }: Props) {
           }}
           className="mb-6 overflow-hidden rounded-2xl bg-white transition-all"
           style={{
-            aspectRatio: '3 / 2',
+            // 5:4 matches the dominant Location.hero_artwork_url source
+            // aspect. Combined with ``fit="contain"`` no artwork is
+            // cropped, and the majority of images fill the frame with
+            // no letterbox.
+            aspectRatio: '5 / 4',
             border: dragActive
               ? '1px dashed rgba(56, 160, 158, 0.65)'
               : '1px solid rgba(12, 24, 38, 0.08)',
