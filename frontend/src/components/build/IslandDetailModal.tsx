@@ -102,11 +102,13 @@ export default function IslandDetailModal({
           maxHeight: 'calc(100dvh - 2rem)',
         }}
       >
-        {/* Header: artwork hero. Dominant element per the design brief. */}
+        {/* Header: artwork hero. Dominant element per the design brief.
+            3:2 (matches the card thumbnail ratio) so island artwork
+            authored for the card is not cropped at the top. */}
         <div
           className="relative w-full shrink-0 overflow-hidden"
           style={{
-            aspectRatio: '16 / 9',
+            aspectRatio: '3 / 2',
             background: 'linear-gradient(135deg, #E5F0EF 0%, #F4F7F6 60%, #FBFDFC 100%)',
           }}
         >
@@ -243,7 +245,7 @@ function trapFocus(e: KeyboardEvent, container: HTMLElement | null) {
 
 function ArtworkPlaceholder({ label }: { label: string }) {
   return (
-    <svg viewBox="0 0 640 360" preserveAspectRatio="xMidYMid slice" className="h-full w-full" aria-hidden="true">
+    <svg viewBox="0 0 600 400" preserveAspectRatio="xMidYMid slice" className="h-full w-full" aria-hidden="true">
       <defs>
         <radialGradient id={`isl-ph-${label}`} cx="0.5" cy="0.5" r="0.65">
           <stop offset="0%" stopColor="#E5F0EF" />
@@ -251,12 +253,12 @@ function ArtworkPlaceholder({ label }: { label: string }) {
           <stop offset="100%" stopColor="#FBFDFC" />
         </radialGradient>
       </defs>
-      <rect width="640" height="360" fill={`url(#isl-ph-${label})`} />
+      <rect width="600" height="400" fill={`url(#isl-ph-${label})`} />
       <g fill="none" stroke="rgba(56, 160, 158, 0.18)" strokeWidth="1">
-        <ellipse cx="320" cy="200" rx="200" ry="80" />
-        <ellipse cx="320" cy="200" rx="130" ry="55" />
+        <ellipse cx="300" cy="220" rx="190" ry="80" />
+        <ellipse cx="300" cy="220" rx="125" ry="55" />
       </g>
-      <text x="320" y="320" textAnchor="middle" fill="rgba(12,24,38,0.45)" fontFamily="Georgia, serif" fontStyle="italic" fontSize="18">
+      <text x="300" y="360" textAnchor="middle" fill="rgba(12,24,38,0.45)" fontFamily="Georgia, serif" fontStyle="italic" fontSize="18">
         {label}
       </text>
     </svg>
