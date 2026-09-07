@@ -18,6 +18,9 @@ export interface LocationOption {
    *  'ATLAS' is offered to Creator and Pro plans; 'COMMUNITY' is offered
    *  to Community (Free) plans. Used by the picker to group by type. */
   location_type: 'ATLAS' | 'CORNERSTONE' | 'COMMUNITY'
+  /** Long-form story stored on the Location. Rendered in the island
+   *  detail modal (paragraph breaks preserved). May be null. */
+  atlas_entry: string | null
 }
 
 export interface AtmosphereOption {

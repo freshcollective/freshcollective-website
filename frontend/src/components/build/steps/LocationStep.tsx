@@ -1,7 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { resolveMediaUrl } from '@/lib/api'
 import StepShell from '../StepShell'
+import IslandDetailModal from '../IslandDetailModal'
 import type { LocationOption } from '@/lib/build-your-collective/types'
 
 interface Props {
@@ -23,6 +25,10 @@ interface Props {
  * Creator/Pro see only ATLAS, Platform Owner sees all three types.
  * When more than one type comes back, we render each as its own
  * labelled group so it's visually clear which options are which.
+ *
+ * Cards open an ``IslandDetailModal`` for a full artwork + Atlas Entry
+ * preview. Selection only happens from inside the modal — never on
+ * card click — so a creator can explore islands without committing.
  */
 export default function LocationStep({
   locations, value, onChange, onContinue, onBack, onSkip,
@@ -32,6 +38,14 @@ export default function LocationStep({
   const community = locations.filter((l) => l.location_type === 'COMMUNITY')
   const typeCount = [cornerstones, atlas, community].filter((g) => g.length > 0).length
   const grouped = typeCount > 1
+
+  const [openId, setOpenId] = useState<string | null>(null)
+  const openLocation = openId ? locations.find((l) => l.id === openId) ?? null : null
+
+  const handleChoose = (id: string) => {
+    onChange(id)
+    setOpenId(null)
+  }
 
   return (
     <StepShell
@@ -51,7 +65,7 @@ export default function LocationStep({
               hint="Reserved for Fresh Collective's own collectives."
               locations={cornerstones}
               value={value}
-              onChange={onChange}
+              onOpen={setOpenId}
             />
           )}
           {atlas.length > 0 && (
@@ -59,7 +73,7 @@ export default function LocationStep({
               title="Islands"
               locations={atlas}
               value={value}
-              onChange={onChange}
+              onOpen={setOpenId}
             />
           )}
           {community.length > 0 && (
@@ -68,7 +82,7 @@ export default function LocationStep({
               hint="Simple islands where new communities begin."
               locations={community}
               value={value}
-              onChange={onChange}
+              onOpen={setOpenId}
             />
           )}
         </div>
@@ -79,23 +93,31 @@ export default function LocationStep({
               key={loc.id}
               loc={loc}
               selected={value === loc.id}
-              onSelect={onChange}
+              onOpen={setOpenId}
             />
           ))}
         </div>
       )}
+
+      <IslandDetailModal
+        open={openLocation !== null}
+        location={openLocation}
+        isCurrent={openLocation !== null && openLocation.id === value}
+        onChoose={handleChoose}
+        onClose={() => setOpenId(null)}
+      />
     </StepShell>
   )
 }
 
 function LocationGroup({
-  title, hint, locations, value, onChange,
+  title, hint, locations, value, onOpen,
 }: {
   title: string
   hint?: string
   locations: LocationOption[]
   value: string | null
-  onChange: (id: string) => void
+  onOpen: (id: string) => void
 }) {
   return (
     <section>
@@ -121,7 +143,7 @@ function LocationGroup({
             key={loc.id}
             loc={loc}
             selected={value === loc.id}
-            onSelect={onChange}
+            onOpen={onOpen}
           />
         ))}
       </div>
@@ -130,11 +152,11 @@ function LocationGroup({
 }
 
 function LocationCard({
-  loc, selected, onSelect,
+  loc, selected, onOpen,
 }: {
   loc: LocationOption
   selected: boolean
-  onSelect: (id: string) => void
+  onOpen: (id: string) => void
 }) {
   const artworkUrl = resolveMediaUrl(
     loc.thumbnail_artwork_url ?? loc.hero_artwork_url ?? undefined,
@@ -142,9 +164,14 @@ function LocationCard({
   return (
     <button
       type="button"
-      onClick={() => onSelect(loc.id)}
-      aria-pressed={selected}
-      className="group relative overflow-hidden rounded-2xl text-left transition-all"
+      onClick={() => onOpen(loc.id)}
+      aria-haspopup="dialog"
+      aria-label={
+        selected
+          ? `Explore ${loc.name} (your current island)`
+          : `Explore ${loc.name}`
+      }
+      className="group relative flex flex-col overflow-hidden rounded-2xl text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--fc-accent-500)]/50 focus-visible:ring-offset-2"
       style={{
         background: '#FFFFFF',
         border: selected
@@ -171,6 +198,21 @@ function LocationCard({
         ) : (
           <ArtworkPlaceholder label={loc.name} />
         )}
+        {selected && (
+          <span
+            className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
+            style={{
+              background: 'rgba(255,255,255,0.94)',
+              color: '#246B6A',
+              border: '1px solid rgba(56, 160, 158, 0.35)',
+            }}
+          >
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M2.5 6.2l2.4 2.4L9.7 3.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Current
+          </span>
+        )}
         <div
           className="pointer-events-none absolute inset-x-0 bottom-0 transition-all duration-500"
           style={{
@@ -182,7 +224,7 @@ function LocationCard({
         />
       </div>
 
-      <div className="px-5 py-4">
+      <div className="flex flex-1 flex-col px-5 py-4">
         <p className="font-serif text-[17px] leading-tight" style={{ color: '#0C1826' }}>
           {loc.name}
         </p>
@@ -194,6 +236,18 @@ function LocationCard({
             {loc.description}
           </p>
         )}
+        <p
+          className="mt-3 inline-flex items-center gap-1 text-[11.5px] font-semibold uppercase tracking-[0.14em] transition-colors"
+          style={{ color: '#38A09E' }}
+        >
+          Explore this island
+          <span
+            aria-hidden="true"
+            className="transition-transform group-hover:translate-x-0.5"
+          >
+            →
+          </span>
+        </p>
       </div>
     </button>
   )

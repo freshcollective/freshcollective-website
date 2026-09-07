@@ -34,6 +34,7 @@ const MOCK_LOCATION_BASE: LocationOption = {
   hero_artwork_url: null,
   thumbnail_artwork_url: null,
   location_type: 'ATLAS',
+  atlas_entry: null,
 }
 
 const MOCK_DRAFT: DraftData = {

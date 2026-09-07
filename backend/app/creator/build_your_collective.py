@@ -69,6 +69,11 @@ class LocationOptionOut(BaseModel):
     hero_artwork_url: str | None
     thumbnail_artwork_url: str | None
     location_type: str  # 'ATLAS' | 'COMMUNITY' | 'CORNERSTONE' — used by the picker to group
+    # Long-form Atlas Entry. Included so the creator can preview each
+    # island in a detail modal without an extra round-trip. The Location
+    # record remains the single source of truth; nothing here is copied
+    # onto Space rows at selection time.
+    atlas_entry: str | None
 
     model_config = {"from_attributes": True}
 
