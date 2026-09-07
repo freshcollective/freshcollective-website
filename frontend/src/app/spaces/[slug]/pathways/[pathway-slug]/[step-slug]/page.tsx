@@ -77,9 +77,6 @@ function renderContent(body: string): React.ReactNode {
     .filter(Boolean)
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
-
-
 const RESOURCE_GROUP: Record<string, string> = {
   video: 'Watch',
   audio: 'Listen',
@@ -98,9 +95,9 @@ const RESOURCE_ACTION: Record<string, string> = {
 
 function resourceHref(resource: StepResource): string {
   if (!resource.url) return '#'
-  return resource.url.startsWith('http')
-    ? resource.url
-    : `${API_BASE}/api/uploads/${resource.url}`
+  // Same-origin resolver — private uploads flow through the BFF proxy
+  // with the fc_session cookie; external URLs pass through verbatim.
+  return resolveMediaUrl(resource.url) ?? '#'
 }
 
 function StepResourceList({ resources }: { resources: StepResource[] }) {

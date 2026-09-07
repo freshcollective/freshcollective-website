@@ -25,8 +25,13 @@
 
 import { EMBED_PROVIDERS } from './embedAllowlist.ts'
 
-// Media host — ``<img src="{NEXT_PUBLIC_API_URL}/api/uploads/…">``
-// on every uploaded asset. Baked in at build time.
+// Media host — fc-api's public origin, baked in at build time.
+// After the same-origin media routing fix, browser ``<img src>``
+// requests for private uploads go to fc-web (``'self'``) rather than
+// fc-api, so this entry is not strictly required for the primary
+// flow. It stays in ``img-src`` / ``media-src`` as a defensive allow
+// so any surface that legitimately still needs to reach fc-api
+// directly (dev-only pages, future audit tooling) continues to work.
 const MEDIA_ORIGIN = (
   process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 ).replace(/\/+$/, '')
@@ -81,7 +86,8 @@ const CSP_DIRECTIVES: Record<string, readonly string[]> = {
   // nonced/hashed. Not tractable without a large refactor.
   'style-src': ["'self'", "'unsafe-inline'"],
   // ``self`` for Next optimised images + static assets.
-  // MEDIA_ORIGIN for <img src="{NEXT_PUBLIC_API_URL}/api/uploads/…">.
+  // MEDIA_ORIGIN — defensive allow-list entry for fc-api's public
+  // origin (the primary flow is same-origin ``/api/uploads/…``).
   // R2_MEDIA_ORIGINS for the redirect hop when R2 mode is active —
   // per CSP L3 each hop in the fetch chain is re-checked.
   // ``data:`` for Next's built-in image blur-up placeholders.

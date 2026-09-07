@@ -14,11 +14,21 @@
  *   built from ``API_INTERNAL_URL`` — server-to-server traffic that
  *   bypasses the proxy.
  *
- * • ``resolveMediaUrl`` returns absolute URLs against the backend for
- *   ``<img src>`` and other public asset references. It uses
- *   ``NEXT_PUBLIC_API_URL`` because those URLs must be resolvable in
- *   the browser. This variable is NOT used for authenticated API
- *   traffic and holds only the public host.
+ * • ``resolveMediaUrl`` returns the URL to use for ``<img src>`` and
+ *   other browser-visible asset references. Private uploads under
+ *   ``/api/uploads/*`` are rendered SAME-ORIGIN against the Next.js
+ *   BFF proxy: the auth-gated fc-api route requires the ``fc_session``
+ *   cookie, and that cookie lives on the fc-web origin under
+ *   ``SameSite=Lax`` — it does not accompany cross-site subresource
+ *   requests to a different registrable domain (e.g. Render's
+ *   ``*.onrender.com`` split, where ``onrender.com`` is on the Public
+ *   Suffix List and each subdomain is treated as a distinct site).
+ *   The BFF proxy already forwards the cookie server-side and passes
+ *   through the fc-api ``302`` to the short-lived R2 presigned URL,
+ *   so the image bytes never stream through Node — only the redirect
+ *   header does. Public ``/api/uploads/platform-artwork/*`` continues
+ *   to work through the same path (fc-api serves those without an
+ *   auth gate). External ``http(s)://…`` URLs are returned verbatim.
  */
 
 function stripTrailingSlash(url: string): string {
@@ -65,18 +75,28 @@ export function apiUrl(path: string): string {
 }
 
 /**
- * Absolute URL for a media / uploaded-asset reference (``<img src>``,
- * downloadable file, etc.). Uses the public backend host baked into the
- * client bundle via ``NEXT_PUBLIC_API_URL``. Never used for
- * authenticated JSON API calls.
+ * Same-origin URL for a browser-visible asset (``<img src>``,
+ * ``<audio src>``, download links, etc.).
+ *
+ * Behaviour:
+ *   * ``null`` / ``undefined`` / ``''``            → ``null``
+ *   * ``http(s)://…``                              → returned verbatim
+ *     (external — YouTube/Vimeo/Loom embeds, admin-pasted URLs, etc.)
+ *   * ``/api/uploads/…`` or any other absolute path → returned verbatim
+ *     (already a same-origin relative URL — browser hits fc-web,
+ *     the BFF proxy forwards to fc-api with the ``fc_session`` cookie,
+ *     fc-api replies with a 302 to R2's short-lived presigned URL,
+ *     the browser follows the redirect directly to R2)
+ *   * bare storage key (e.g. ``media/embody/{uuid}_x.png``) →
+ *     ``/api/uploads/{key}`` (same-origin relative)
+ *
+ * Never used for authenticated JSON API calls — that's ``apiUrl``.
  */
 export function resolveMediaUrl(path: string | null | undefined): string | null {
   if (!path) return null
-  if (path.startsWith('http')) return path
-  const base = stripTrailingSlash(
-    process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000',
-  )
-  return path.startsWith('/') ? `${base}${path}` : `${base}/${path}`
+  if (path.startsWith('http://') || path.startsWith('https://')) return path
+  if (path.startsWith('/')) return path
+  return `/api/uploads/${path}`
 }
 
 export interface ApiError {

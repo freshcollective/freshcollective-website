@@ -18,22 +18,22 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { apiUrl } from '@/lib/api'
+import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import type { CreatorMediaAsset } from '@/types/platform'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 const ACCEPTED_IMAGE_MIME = 'image/jpeg,image/png,image/webp,image/gif'
 
 function bannerPreviewSrc(url: string): string {
-  if (url.startsWith('http')) return url
-  if (url.startsWith('/')) return `${API_BASE}${url}`
-  return `${API_BASE}/${url}`
+  // Route every preview through the shared same-origin resolver so
+  // private uploads carry the fc_session cookie via the BFF proxy.
+  return resolveMediaUrl(url) ?? url
 }
 
 function assetToUrl(asset: CreatorMediaAsset): string {
-  const u = asset.file_url
-  if (u.startsWith('http') || u.startsWith('/')) return u
-  return `/api/uploads/${u}`
+  // ``resolveMediaUrl`` returns a same-origin ``/api/uploads/…`` for
+  // both absolute-path and bare-key inputs, and passes external URLs
+  // through verbatim.
+  return resolveMediaUrl(asset.file_url) ?? asset.file_url
 }
 
 

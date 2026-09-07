@@ -44,7 +44,9 @@ export default function Avatar({ name, avatarUrl, size = 'md' }: AvatarProps) {
   const sizeClass  = SIZE_CLASSES[size]
   const colorClass = colorForName(name)
   const initials   = initialsFor(name)
-  // resolveMediaUrl turns "/api/uploads/..." → "http://localhost:8000/api/uploads/..."
+  // resolveMediaUrl returns a same-origin URL (e.g. "/api/uploads/…")
+  // for uploaded assets so the browser hits fc-web and the BFF proxy
+  // forwards the fc_session cookie to fc-api. External URLs pass through.
   const resolvedUrl = resolveMediaUrl(avatarUrl)
 
   if (resolvedUrl && !imgFailed) {

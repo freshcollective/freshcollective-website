@@ -11,6 +11,7 @@ import EmbedRenderer from '@/components/EmbedRenderer'
 import ButtonBlock from '@/components/ButtonBlock'
 import { decodeColumns, gridTemplateForVariant } from '@/lib/columnsBlock'
 import { exerciseContentToRichText } from '@/lib/exerciseSteps'
+import { resolveMediaUrl } from '@/lib/api'
 import { safeHref } from '@/lib/safeHref'
 import type { PathwayAboutBlock, StepBlockMedia } from '@/types/platform'
 
@@ -32,11 +33,12 @@ import type { PathwayAboutBlock, StepBlockMedia } from '@/types/platform'
  * to write a second renderer that drifts.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
-
 export function resolveAssetUrl(url: string): string {
-  if (url.startsWith('http')) return url
-  return url.startsWith('/') ? `${API_BASE}${url}` : `${API_BASE}/api/uploads/${url}`
+  // Thin wrapper around ``resolveMediaUrl`` — the shared same-origin
+  // resolver. See ``lib/api.ts:resolveMediaUrl`` for the full behaviour
+  // matrix (external URLs pass through, absolute paths stay relative,
+  // bare storage keys get ``/api/uploads/`` prepended).
+  return resolveMediaUrl(url) ?? url
 }
 
 function getEmbedUrl(raw: string): string | null {
@@ -362,7 +364,7 @@ function renderInner(
     if (!r || r.status !== 'published') return null
     const title = block.label || r.title
     const description = block.caption || r.description
-    const href = r.url ? (r.url.startsWith('http') ? r.url : `${API_BASE}${r.url.startsWith('/') ? r.url : `/api/uploads/${r.url}`}`) : null
+    const href = r.url ? (resolveMediaUrl(r.url) ?? null) : null
     if (!href) return null
     const isFile = !!r.file_name || ['file', 'guide', 'template', 'replay', 'audio', 'video'].includes(r.resource_type)
     const ctaLabel = isFile ? 'Download resource' : 'Open resource'

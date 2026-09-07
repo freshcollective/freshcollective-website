@@ -19,9 +19,17 @@
  *   trusted schedulers with ``X-Internal-Token``. They are not part of
  *   the browser surface and are refused here for the same reason.
  *
- * • Media / uploaded assets under ``/api/uploads/*`` currently render as
- *   direct ``<img src>`` against ``fc-api``; those requests remain
- *   direct so we don't stream every image through a Node dyno.
+ * • Media / uploaded assets under ``/api/uploads/*`` DO flow through
+ *   this proxy. The auth-gated fc-api serve route requires the
+ *   ``fc_session`` cookie, which lives on the fc-web origin and
+ *   does not accompany cross-site ``<img>`` subresource requests
+ *   (Render's ``*.onrender.com`` split, where ``onrender.com`` is
+ *   on the Public Suffix List, makes fc-web and fc-api distinct
+ *   sites for SameSite=Lax purposes). Routing through the proxy
+ *   forwards the cookie server-side and preserves the fc-api ``302``
+ *   to the R2 presigned URL — the browser follows that redirect
+ *   directly to R2 for the actual bytes, so only the redirect header
+ *   (not the image payload) transits Node.
  *
  * Least-privilege: the backend URL is read only from ``API_INTERNAL_URL``
  * (never a client-controlled header) and is never exposed as

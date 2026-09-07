@@ -45,13 +45,12 @@ import {
   resolveCalloutPurposeLabel,
   resolveContainerPalette,
 } from '@/lib/calloutPalette'
+import { resolveMediaUrl } from '@/lib/api'
 import type { EditorBlock, StepBlockType, CreatorMediaAsset, CreatorResource } from '@/types/platform'
 
 // ---------------------------------------------------------------------------
 // Constants & utilities (exported for use in editor files)
 // ---------------------------------------------------------------------------
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 /**
  * Block options shown in the "Add block" picker, in display order.
@@ -132,10 +131,13 @@ export function blockBadgeLabel(block: { block_type: StepBlockType; label?: stri
 }
 
 export function resolveAssetUrl(url: string): string {
-  if (url.startsWith('http')) return url
-  // Media file_url is stored as `/api/uploads/...` (absolute path on the API
-  // host). Anything else is treated as a relative storage path for back-compat.
-  return url.startsWith('/') ? `${API_BASE}${url}` : `${API_BASE}/api/uploads/${url}`
+  // Thin wrapper around ``resolveMediaUrl`` that keeps the historic
+  // string-in / string-out signature so call sites don't need
+  // null-guarding. ``resolveMediaUrl`` returns ``null`` only for
+  // empty/nullish input, which never applies to this call path
+  // (asset.file_url and block.embed_url are always non-empty
+  // strings when we're rendering).
+  return resolveMediaUrl(url) ?? url
 }
 
 /**

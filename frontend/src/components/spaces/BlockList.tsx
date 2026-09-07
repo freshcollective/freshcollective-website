@@ -12,6 +12,7 @@ import { decodeColumns, gridTemplateForVariant } from '@/lib/columnsBlock'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import EmbedRenderer from '@/components/EmbedRenderer'
 import ButtonBlock from '@/components/ButtonBlock'
+import { resolveMediaUrl } from '@/lib/api'
 import { safeHref } from '@/lib/safeHref'
 
 /**
@@ -25,11 +26,11 @@ import { safeHref } from '@/lib/safeHref'
  * that wraps it.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
-
 function resolveUrl(url: string): string {
-  if (url.startsWith('http')) return url
-  return url.startsWith('/') ? `${API_BASE}${url}` : `${API_BASE}/api/uploads/${url}`
+  // Thin wrapper around ``resolveMediaUrl`` (the shared same-origin
+  // resolver) — keeps the string-in/string-out shape the callers
+  // below expect. See ``lib/api.ts:resolveMediaUrl`` for behaviour.
+  return resolveMediaUrl(url) ?? url
 }
 
 function getVideoEmbed(url: string): string | null {
@@ -446,22 +447,14 @@ export function renderBlocks(
       if (linkRef) {
         title = block.label || linkRef.title
         description = block.caption || linkRef.description
-        href = linkRef.url
-          ? (linkRef.url.startsWith('http')
-              ? linkRef.url
-              : `${API_BASE}${linkRef.url.startsWith('/') ? linkRef.url : `/api/uploads/${linkRef.url}`}`)
-          : null
+        href = linkRef.url ? resolveUrl(linkRef.url) : null
         cardTypeLabel = linkRef.resource_type
         isFile = !!linkRef.file_name || ['file', 'guide', 'template', 'replay', 'audio', 'video'].includes(linkRef.resource_type)
         downloadName = isFile && linkRef.file_name ? linkRef.file_name : undefined
       } else if (mediaRef) {
         title = block.label || mediaRef.title
         description = block.caption || null
-        href = mediaRef.file_url
-          ? (mediaRef.file_url.startsWith('http')
-              ? mediaRef.file_url
-              : `${API_BASE}${mediaRef.file_url.startsWith('/') ? mediaRef.file_url : `/api/uploads/${mediaRef.file_url}`}`)
-          : null
+        href = mediaRef.file_url ? resolveUrl(mediaRef.file_url) : null
         cardTypeLabel = mediaRef.media_type
         // Every media asset backs a downloadable file — audio/video
         // still render as a Download card here (creators embed them
