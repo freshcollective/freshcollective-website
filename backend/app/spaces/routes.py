@@ -46,7 +46,6 @@ from app.spaces.schemas import (
     AccessRequestOut,
     CompleteStepRequest,
     CompleteStepResponse,
-    ContinueResponse,
     EventDetail,
     EventSummary,
     GuideSection,
@@ -3418,51 +3417,6 @@ def _section_slug(section: PathwaySection) -> str:
     if not base:
         base = "chapter"
     return f"{base}-{section.id[:8]}"
-
-
-# ---------------------------------------------------------------------------
-# Me — continue journey
-# ---------------------------------------------------------------------------
-
-@me_router.get("/continue", response_model=ContinueResponse | None)
-def get_continue(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> ContinueResponse | None:
-    """Return the user's most relevant next step, defaulting to REAL Journey."""
-    # Always anchor to REAL Journey as the primary pathway
-    pathway = (
-        db.query(Pathway)
-        .join(Space)
-        .filter(Space.slug == "the-natural-leader-hub", Pathway.slug == "real-journey")
-        .first()
-    )
-    if not pathway:
-        return None
-
-    steps = (
-        db.query(PathwayStep)
-        .filter(PathwayStep.pathway_id == pathway.id)
-        .order_by(PathwayStep.position)
-        .all()
-    )
-    if not steps:
-        return None
-
-    step_ids = [s.id for s in steps]
-    completed = _completed_step_ids(current_user.id, step_ids, db)
-    all_complete = len(completed) >= len(steps)
-
-    next_step = next((s for s in steps if s.id not in completed), steps[-1])
-
-    return ContinueResponse(
-        space_slug="the-natural-leader-hub",
-        pathway_slug=pathway.slug,
-        pathway_title=pathway.title,
-        step_slug=next_step.slug,
-        step_title=next_step.title,
-        all_complete=all_complete,
-    )
 
 
 # ---------------------------------------------------------------------------

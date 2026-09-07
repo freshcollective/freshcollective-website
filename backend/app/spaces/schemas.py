@@ -502,15 +502,6 @@ class BookingResponse(BaseModel):
     booking_id: str | None = None
 
 
-class ContinueResponse(BaseModel):
-    space_slug: str
-    pathway_slug: str
-    pathway_title: str
-    step_slug: str
-    step_title: str
-    all_complete: bool
-
-
 class PublicSpaceCard(BaseModel):
     id: str
     slug: str

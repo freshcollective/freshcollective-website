@@ -7,7 +7,6 @@ export interface SpaceWithMeta extends PublicSpaceCard {
 
 // accentColor is display-only — not stored in the database.
 const SPACE_ACCENT: Record<string, string> = {
-  'the-natural-leader-hub': '#38A09E',
   'embody': '#7E6E9A',
 }
 

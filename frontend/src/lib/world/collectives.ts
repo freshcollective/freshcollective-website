@@ -1,13 +1,13 @@
 /**
  * World / collective mapping layer.
  *
- * Defines the three founding constellations (The Grove, EMBODY, Life in
- * Alignment) and the symbolic elements each one adds to a member's personal
- * world. Slugs match the intended member-facing space route (`/spaces/{slug}`).
- * If a space has not been seeded yet, its constellation still renders in the
- * sky — the link just falls through to the standard 404 until the space
- * exists. This is intentional: the sky is the map, and the map is allowed
- * to describe territory that is still being made.
+ * Defines the founding constellations and the symbolic elements each one
+ * adds to a member's personal world. Slugs match the intended member-facing
+ * space route (`/spaces/{slug}`). If a space has not been seeded yet, its
+ * constellation still renders in the sky — the link just falls through to
+ * the standard 404 until the space exists. This is intentional: the sky is
+ * the map, and the map is allowed to describe territory that is still being
+ * made.
  *
  * Structure is deliberately data-only so future collectives, pathways, and
  * activity signals can plug in without touching component code.
@@ -62,24 +62,6 @@ export interface ConstellationDef {
 }
 
 export const COLLECTIVES: ReadonlyArray<ConstellationDef> = [
-  {
-    id: 'grove',
-    name: 'The Grove',
-    tagline: 'Roots, ground, and how you meet the world.',
-    href: '/spaces/the-natural-leader-hub',
-    memberSlugs: ['the-natural-leader-hub', 'grove', 'the-grove'],
-    accent: '#8DE8E6',
-    glow: 'rgba(141, 232, 230, 0.55)',
-    points: [
-      { x: 0.08, y: 0.28 },
-      { x: 0.16, y: 0.38 },
-      { x: 0.13, y: 0.52 },
-      { x: 0.24, y: 0.46 },
-      { x: 0.27, y: 0.60 },
-    ],
-    lines: [[0, 1], [1, 2], [1, 3], [3, 4]],
-    worldElements: ['trees', 'garden'],
-  },
   {
     id: 'embody',
     name: 'EMBODY',
