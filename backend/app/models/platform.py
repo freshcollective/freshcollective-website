@@ -1100,6 +1100,17 @@ class Event(Base):
     # `paid_separately` event has both fields set and price > 0.
     ticket_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     ticket_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    # Attendance-dashboard completion state. Non-NULL = the creator has
+    # finalised attendance for this occurrence; further per-booking
+    # mutations return 409 until Reopen clears these back to NULL. Set
+    # by POST /attendance/finish, cleared by POST /attendance/reopen.
+    # See migration 122.
+    attendance_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    attendance_completed_by: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )
@@ -1152,6 +1163,10 @@ class EventBooking(Base):
     attendance_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     attendance_marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     attendance_marked_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Provenance of an absence. Values: 'manual' | 'auto'. Only meaningful
+    # when attendance_status='no_show'. Reopen reverts only auto rows back
+    # to booked; manual absences are preserved. See migration 122.
+    attendance_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # AccessPass credit tracking (Phase B+)
     access_pass_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("access_passes.id", ondelete="SET NULL"), nullable=True, index=True

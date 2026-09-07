@@ -3910,27 +3910,28 @@ def update_booking_attendance(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
-    """Mark a booking as attended, no_show, or reset to pending."""
-    from datetime import datetime as _dt
-    valid = {"attended", "no_show", "pending"}
-    if body.status not in valid:
-        raise HTTPException(status_code=400, detail=f"status must be one of: {', '.join(sorted(valid))}")
-    space = _get_managed_space(slug, current_user, db)
-    event = db.query(Event).filter(Event.id == event_id, Event.space_id == space.id).first()
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found.")
-    booking = db.query(EventBooking).filter(
-        EventBooking.id == booking_id,
-        EventBooking.event_id == event.id,
-    ).first()
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found.")
-    bstatus = booking.status.value if hasattr(booking.status, "value") else str(booking.status)
-    if bstatus == "cancelled":
-        raise HTTPException(status_code=400, detail="Cannot mark attendance for a cancelled booking.")
-    booking.attendance_status = body.status if body.status != "pending" else None
-    booking.attendance_marked_at = _dt.utcnow()
-    booking.attendance_marked_by = current_user.id
+    """Mark a booking as attended, absent (no_show), or reset to booked
+    (pending).
+
+    Delegates to ``app.creator.attendance.apply_attendance_mutation``
+    so this legacy endpoint and the dashboard-native PATCH cannot
+    drift on permission, locking, or state-transition semantics —
+    every guarantee (auth chain, event-and-booking row locking,
+    completion-gate 409, cancelled-booking 400, payment column
+    isolation) lives in exactly one place and is exercised via both
+    routes' tests.
+
+    Wire vocabulary: accepts both the legacy set (``attended |
+    no_show | pending``) used by the pre-existing callers
+    ``EventManagePanel`` and ``CreatorStudioLiteMobile``, and the
+    dashboard vocabulary (``attended | absent | booked``). Response
+    shape (``booking_id`` + DB-valued ``attendance_status``) is
+    unchanged for backwards compatibility."""
+    from app.creator.attendance import apply_attendance_mutation
+    _event, booking, _new_db_status = apply_attendance_mutation(
+        slug=slug, event_id=event_id, booking_id=booking_id,
+        api_status=body.status, user=current_user, db=db,
+    )
     db.commit()
     return {"booking_id": booking_id, "attendance_status": booking.attendance_status}
 

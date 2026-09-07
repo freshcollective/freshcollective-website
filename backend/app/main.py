@@ -39,6 +39,7 @@ from app.community.channels import (
 )
 from app.members.routes import members_router, profiles_router
 from app.creator.routes import router as creator_router
+from app.creator.attendance import router as creator_attendance_router
 from app.creator.build_your_collective import router as build_your_collective_router
 from app.uploads.routes import uploads_router
 from app.checkout.routes import router as checkout_router
@@ -196,6 +197,7 @@ app.include_router(channels_creator_router)
 app.include_router(members_router)
 app.include_router(profiles_router)
 app.include_router(creator_router)
+app.include_router(creator_attendance_router)
 app.include_router(build_your_collective_router)
 app.include_router(uploads_router)
 app.include_router(invites_router)
