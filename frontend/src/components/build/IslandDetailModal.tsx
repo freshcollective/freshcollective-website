@@ -120,12 +120,11 @@ export default function IslandDetailModal({
               src={artworkUrl}
               alt={location.name}
               className="h-full w-full"
-              // ``contain`` (not ``cover``) so square source artwork —
-              // which the Atlas admin uploads at their natural crop —
-              // is shown in full, matching what the admin sees in the
-              // Atlas viewer. The soft gradient behind the image
-              // handles any letterboxing.
-              style={{ objectFit: 'contain', objectPosition: 'center', display: 'block' }}
+              // ``contain`` so no source is cropped; ``top`` anchoring
+              // pushes any letterbox to the bottom of the frame so the
+              // artwork's upper subject (sky, horizon) stays where the
+              // eye lands.
+              style={{ objectFit: 'contain', objectPosition: 'top', display: 'block' }}
             />
           ) : (
             <ArtworkPlaceholder label={location.name} />

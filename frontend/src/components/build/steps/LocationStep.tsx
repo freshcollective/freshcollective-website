@@ -197,11 +197,10 @@ function LocationCard({
             src={artworkUrl}
             alt={loc.name}
             className="h-full w-full transition-transform duration-500 group-hover:scale-[1.02]"
-            // ``contain`` matches the Atlas admin viewer so square /
-            // portrait source artwork is shown in full rather than
-            // cropped to the card's 3:2 frame. The neutral background
-            // handles any letterboxing.
-            style={{ objectFit: 'contain', objectPosition: 'center', display: 'block' }}
+            // ``contain`` matches the Atlas admin viewer so no source
+            // is cropped; ``top`` anchoring pushes any letterbox to
+            // the bottom of the frame.
+            style={{ objectFit: 'contain', objectPosition: 'top', display: 'block' }}
           />
         ) : (
           <ArtworkPlaceholder label={loc.name} />

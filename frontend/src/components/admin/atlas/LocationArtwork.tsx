@@ -38,7 +38,13 @@ export default function LocationArtwork({ url, label, className, fit = 'cover' }
           width: '100%',
           height: '100%',
           objectFit: fit,
-          objectPosition: 'center',
+          // Anchor to the top of the frame. Under ``contain`` any
+          // letterbox falls at the bottom (image sits flush with the
+          // top edge) so the artwork's compositional focal point —
+          // typically the sky or upper subject — is never pushed below
+          // the fold. Under ``cover`` this preserves the top of the
+          // image on crop instead of splitting the crop top-and-bottom.
+          objectPosition: 'top',
           display: 'block',
         }}
       />
