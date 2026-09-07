@@ -10,8 +10,13 @@ GET /api/uploads/platform-artwork/{file_path:path}
 
 GET /api/uploads/{file_path:path}
     All other uploads (avatars, cover images, resources, atlas artwork,
-    community images, etc.) require a signed-in user of any role. In
-    R2 mode this returns a 302 to a short-lived pre-signed R2 GET URL
+    community images, etc.) require a signed-in user AND per-namespace
+    authorization via ``app.uploads.authorization.authorize_upload``.
+    Rules mirror the read APIs that surface the underlying rows:
+    Space membership for Collective-scoped media, ``_check_pathway_access``
+    for step resources, public-Space rules for covers/logos rendered on
+    Explore surfaces, and default-deny for any prefix we don't recognise.
+    In R2 mode this returns a 302 to a short-lived pre-signed R2 GET URL
     (5 minutes) for the private bucket. In filesystem mode it serves
     the local file directly.
 
@@ -30,12 +35,15 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
+from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core import storage as storage_module
 from app.core.config import settings
+from app.core.database import get_db
 from app.core.storage import UPLOAD_DIR
 from app.models.user import User
+from app.uploads.authorization import authorize_upload
 
 uploads_router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 
@@ -145,8 +153,14 @@ def serve_public_upload(file_path: str):
 def serve_upload(
     file_path: str,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     _reject_traversal(file_path)
+    # Per-namespace authorization. Raises 403 (or 404 for keys that
+    # don't resolve to a DB row). See ``app.uploads.authorization`` for
+    # the full rule matrix. Runs BEFORE the R2 / filesystem branch so
+    # both modes are equally gated.
+    authorize_upload(file_path, current_user, db)
     if settings.is_r2_enabled:
         return _redirect_to_presigned_r2(file_path)
     return _serve_from_filesystem(file_path)
