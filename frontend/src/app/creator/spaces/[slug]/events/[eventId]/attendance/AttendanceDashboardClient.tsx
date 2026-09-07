@@ -479,7 +479,7 @@ function MetricsRow({
   // total_confirmed becomes a secondary "currently confirmed" label.
   // In progress: the primary total IS total_confirmed.
   const primaryTotal = isCompleted && counts.cohort_size != null ? counts.cohort_size : counts.total_confirmed
-  const primaryLabel = isCompleted ? 'Cohort at finish' : 'Total bookings'
+  const primaryLabel = isCompleted ? 'Bookings at finish' : 'Total bookings'
   const primaryCaption = isCompleted
     ? (counts.total_confirmed !== primaryTotal
         ? `Currently ${counts.total_confirmed} confirmed`
