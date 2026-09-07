@@ -141,6 +141,29 @@ export default function StandaloneGatheringCard({ event, slug }: Props) {
             Edit →
           </span>
         </div>
+
+        {/* Attendance dashboard entry point. Rendered outside the card
+            link contract via ``e.stopPropagation()`` — a nested <a>
+            inside <Link> is invalid HTML, so this stays a plain span
+            and navigates programmatically. Suppresses the outer
+            Link's default when clicked. */}
+        {event.requires_booking && !isCancelled && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault(); e.stopPropagation()
+              window.location.href = `/creator/spaces/${slug}/events/${event.id}/attendance`
+            }}
+            className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11.5px] font-semibold transition-colors"
+            style={{
+              borderColor: 'rgba(56,160,158,0.35)',
+              background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
+              color: 'var(--fc-accent-700, #0f766e)',
+            }}
+          >
+            Attendance dashboard →
+          </button>
+        )}
       </div>
     </Link>
   )

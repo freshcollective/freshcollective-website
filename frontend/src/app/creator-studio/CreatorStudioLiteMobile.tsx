@@ -464,6 +464,24 @@ function GatheringBookingsPanel({
         </button>
       </div>
 
+      {/* Attendance dashboard entry point for mobile creators. The
+          full dashboard is a same-URL responsive page, so a plain
+          link is enough — no separate mobile shell to build. */}
+      {gathering.requires_booking && (
+        <a
+          href={`/creator/spaces/${spaceSlug}/events/${gathering.id}/attendance`}
+          className="mb-3 flex items-center justify-between rounded-xl border px-3 py-2 text-[13px] font-semibold transition-colors"
+          style={{
+            background: 'rgba(56,160,158,0.08)',
+            borderColor: 'rgba(56,160,158,0.30)',
+            color: '#0f766e',
+          }}
+        >
+          <span>Open attendance dashboard</span>
+          <span aria-hidden="true">→</span>
+        </a>
+      )}
+
       {isPast && confirmed.length > 0 && (
         <div className="mb-3 flex gap-4 text-[11px]">
           {attendedCount > 0 && <span style={{ color: '#0f766e' }}>{attendedCount} attended</span>}

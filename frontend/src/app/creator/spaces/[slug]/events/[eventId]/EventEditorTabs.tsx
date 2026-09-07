@@ -123,6 +123,34 @@ function SettingsTab({
 
   return (
     <>
+      {/* Attendance dashboard entry point. Rendered above the form so
+          the creator sees it before scrolling. Only surfaces when the
+          gathering actually takes bookings — a "just show up" event
+          doesn't need attendance. Not surfaced for cancelled events. */}
+      {event.requires_booking && event.status !== 'cancelled' && (
+        <div
+          className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4"
+          style={{
+            borderColor: 'rgba(56,160,158,0.25)',
+            background: 'linear-gradient(135deg, rgba(56,160,158,0.06) 0%, rgba(85,184,182,0.04) 100%)',
+          }}
+        >
+          <div className="min-w-0">
+            <p className="font-serif text-[15px] text-navy-900">Check people in on the day</p>
+            <p className="mt-0.5 text-[12.5px] text-slate-600">
+              Search bookings, mark attendance, finish the gathering and export a CSV.
+            </p>
+          </div>
+          <a
+            href={`/creator/spaces/${spaceSlug}/events/${event.id}/attendance`}
+            className="inline-flex h-10 items-center gap-1.5 rounded-[var(--fc-radius-md)] px-4 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg,#38A09E 0%,#55B8B6 100%)' }}
+          >
+            Open attendance →
+          </a>
+        </div>
+      )}
+
       <EventForm spaceSlug={spaceSlug} event={event} pathways={pathways} series={series} />
 
       <div className="mt-6">
