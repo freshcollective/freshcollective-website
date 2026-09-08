@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { parseServerDatetime } from '@/lib/dateTime'
 import type {
   CreatorEvent,
   CreatorGatheringSeries,
@@ -50,6 +51,11 @@ import SeriesPaymentOptionsReference from './SeriesPaymentOptionsReference'
 
 interface Props {
   spaceSlug: string
+  /** IANA timezone from the owning Space. Threaded through the date
+   *  helpers so gathering rows render in the collective's local time
+   *  regardless of the viewer's browser locale. Falls back to
+   *  Australia/Melbourne. */
+  spaceTimezone: string
   initialSeries: CreatorGatheringSeries
   initialGatherings: CreatorEvent[]
   initialPaymentOptions: CreatorSeriesPaymentOption[]
@@ -86,15 +92,24 @@ function dateInputToNaiveIso(dateStr: string, atEndOfDay = false): string | null
   return `${s}T${atEndOfDay ? '23:59:59' : '00:00:00'}`
 }
 
-function fmtDateShort(iso: string | null): string {
+function fmtDateShort(iso: string | null, timezone: string): string {
   if (!iso) return ''
-  return new Date(iso).toLocaleDateString('en-AU', {
+  // ``parseServerDatetime`` appends a ``Z`` to a naive ISO string so
+  // Chrome parses it as UTC (the app-wide storage convention).
+  // Without this, ``new Date("2026-10-05T07:00:00")`` is treated as
+  // browser-local per ES2019+ and the wall-clock reads the raw hour
+  // (e.g. Sat 9 am AEDT is stored as Fri 22:00 UTC — parsed as
+  // Fri 10 pm local under the buggy path, matching the bug the
+  // reviewer reported on the "Gatherings in this Series" list).
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', {
+    timeZone: timezone,
     day: 'numeric', month: 'short', year: 'numeric',
   })
 }
 
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-AU', {
+function fmtDateTime(iso: string, timezone: string): string {
+  return parseServerDatetime(iso).toLocaleString('en-AU', {
+    timeZone: timezone,
     weekday: 'short', day: 'numeric', month: 'short',
     hour: 'numeric', minute: '2-digit',
   })
@@ -103,8 +118,9 @@ function fmtDateTime(iso: string): string {
 /** Full-context date+time used in the Add-existing modal so the
  *  Creator sees title + full date (with year) + time in every row.
  *  E.g. "Thu 13 Aug 2026 · 6:00 pm". */
-function fmtDateTimeFull(iso: string): string {
-  return new Date(iso).toLocaleString('en-AU', {
+function fmtDateTimeFull(iso: string, timezone: string): string {
+  return parseServerDatetime(iso).toLocaleString('en-AU', {
+    timeZone: timezone,
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
     hour: 'numeric', minute: '2-digit',
   }).replace(', ', ' \u00b7 ')
@@ -152,7 +168,7 @@ void SeriesPaymentOptionsCard
 void ({} as unknown as Props)
 
 export default function SeriesEditorClient({
-  spaceSlug, initialSeries, initialGatherings, initialPaymentOptions, pathways,
+  spaceSlug, spaceTimezone, initialSeries, initialGatherings, initialPaymentOptions, pathways,
 }: Props) {
   // Silence the linter for the legacy props (see notes above).
   void initialPaymentOptions
@@ -167,6 +183,7 @@ export default function SeriesEditorClient({
       {tab === 'gatherings' && (
         <SeriesGatheringsCard
           spaceSlug={spaceSlug}
+          spaceTimezone={spaceTimezone}
           seriesId={initialSeries.id}
           seriesSlug={initialSeries.slug}
           seriesTitle={initialSeries.title}
@@ -178,7 +195,7 @@ export default function SeriesEditorClient({
 
       {tab === 'settings' && (
         <>
-          <AboutSeriesCard spaceSlug={spaceSlug} initial={initialSeries} />
+          <AboutSeriesCard spaceSlug={spaceSlug} initial={initialSeries} spaceTimezone={spaceTimezone} />
           <SeriesPaymentOptionsReference
             spaceSlug={spaceSlug}
             seriesSlug={initialSeries.slug}
@@ -475,11 +492,17 @@ function SeriesDangerZone({
 // ---------------------------------------------------------------------------
 
 function AboutSeriesCard({
-  spaceSlug, initial,
+  spaceSlug, initial, spaceTimezone,
 }: {
   spaceSlug: string
   initial: CreatorGatheringSeries
+  /** Accepted so this component matches the interface the parent
+   *  editor uses across all cards. Currently unused inside About —
+   *  the visible fields here are date-only inputs, which use a
+   *  string-slice helper, not a timezone-aware format. */
+  spaceTimezone?: string
 }) {
+  void spaceTimezone
   const router = useRouter()
   const { show } = useToast()
   const [title, setTitle] = useState(initial.title)
@@ -629,9 +652,10 @@ const ACCESS_LABEL: Record<string, string> = {
 }
 
 function SeriesGatheringsCard({
-  spaceSlug, seriesId, seriesSlug, seriesTitle, seriesStartsAt, seriesEndsAt, initialGatherings,
+  spaceSlug, spaceTimezone, seriesId, seriesSlug, seriesTitle, seriesStartsAt, seriesEndsAt, initialGatherings,
 }: {
   spaceSlug: string
+  spaceTimezone: string
   seriesId: string
   seriesSlug: string
   seriesTitle: string
@@ -768,7 +792,7 @@ function SeriesGatheringsCard({
                   </span>
                 </div>
                 <p className="mt-0.5 text-[12.5px] text-slate-600">
-                  {fmtDateTime(g.starts_at)}
+                  {fmtDateTime(g.starts_at, spaceTimezone)}
                   {' · '}
                   <span className="text-slate-500">{ACCESS_LABEL[g.booking_access_type] ?? g.booking_access_type}</span>
                 </p>
@@ -807,6 +831,7 @@ function SeriesGatheringsCard({
       {attachOpen && (
         <AttachExistingModal
           spaceSlug={spaceSlug}
+          spaceTimezone={spaceTimezone}
           seriesId={seriesId}
           seriesStartsAt={seriesStartsAt}
           seriesEndsAt={seriesEndsAt}
@@ -836,10 +861,11 @@ function isEventOutOfRange(
 }
 
 function AttachExistingModal({
-  spaceSlug, seriesId, seriesStartsAt, seriesEndsAt, excludedIds,
+  spaceSlug, spaceTimezone, seriesId, seriesStartsAt, seriesEndsAt, excludedIds,
   onClose, onAttached,
 }: {
   spaceSlug: string
+  spaceTimezone: string
   seriesId: string
   seriesStartsAt: string
   seriesEndsAt: string | null
@@ -910,7 +936,7 @@ function AttachExistingModal({
       (e) => isEventOutOfRange(e.starts_at, seriesStartsAt, seriesEndsAt),
     )
     if (outOfRange.length > 0) {
-      const list = outOfRange.map((e) => `\u2022 ${e.title} \u2014 ${fmtDateTimeFull(e.starts_at)}`).join('\n')
+      const list = outOfRange.map((e) => `\u2022 ${e.title} \u2014 ${fmtDateTimeFull(e.starts_at, spaceTimezone)}`).join('\n')
       const ok = window.confirm(
         `${outOfRange.length === 1
           ? 'This Gathering falls outside the Series dates. Add it anyway?'
@@ -1017,6 +1043,7 @@ function AttachExistingModal({
                 items={inRange}
                 selectedIds={selectedIds}
                 onToggle={toggle}
+                timezone={spaceTimezone}
               />
             )}
             {outRange.length > 0 && (
@@ -1027,6 +1054,7 @@ function AttachExistingModal({
                 selectedIds={selectedIds}
                 onToggle={toggle}
                 muted
+                timezone={spaceTimezone}
               />
             )}
           </div>
@@ -1083,13 +1111,14 @@ function AttachExistingModal({
 }
 
 function EventCheckboxList({
-  heading, subheading, items, selectedIds, onToggle, muted = false,
+  heading, subheading, items, selectedIds, onToggle, timezone, muted = false,
 }: {
   heading: string
   subheading?: string
   items: CreatorEvent[]
   selectedIds: Set<string>
   onToggle: (id: string) => void
+  timezone: string
   muted?: boolean
 }) {
   return (
@@ -1115,7 +1144,7 @@ function EventCheckboxList({
                   {e.title}
                 </p>
                 <p className="mt-0.5 text-[12.5px] text-slate-600">
-                  {fmtDateTimeFull(e.starts_at)}
+                  {fmtDateTimeFull(e.starts_at, timezone)}
                   {e.booking_access_type && e.booking_access_type !== 'included_with_collective' && (
                     <> · <span className="text-slate-500">{ACCESS_LABEL[e.booking_access_type] ?? e.booking_access_type}</span></>
                   )}
@@ -1546,7 +1575,7 @@ function SeriesPaymentOptionModal({
             ) : (
               <p className="text-[13px] text-slate-600">
                 Access ends when the Series ends
-                {seriesEnds ? ` (${fmtDateShort(seriesEnds)})` : ''}.
+                {seriesEnds ? ` (${fmtDateShort(seriesEnds, 'Australia/Melbourne')})` : ''}.
               </p>
             )}
 

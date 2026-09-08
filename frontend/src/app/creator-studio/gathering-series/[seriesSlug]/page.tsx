@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
+import { parseServerDatetime } from '@/lib/dateTime'
 import {
   getActiveCreatorSpace,
   getCreatorBilling,
@@ -101,9 +102,16 @@ export default async function GatheringSeriesEditorPage({ params }: Props) {
     || billing?.current_plan?.paid_offers_enabled
   )
 
+  // Use ``parseServerDatetime`` so the app-wide naive-UTC convention
+  // is honoured (Pydantic emits naive datetimes without ``Z`` and
+  // Chrome would otherwise parse them as browser-local, rolling the
+  // date). Passes ``timeZone`` explicitly so the date reads correctly
+  // regardless of the viewer's browser locale.
+  const spaceTimezone = spaceDetail?.timezone ?? 'Australia/Melbourne'
+  const dateOpts = { timeZone: spaceTimezone, day: 'numeric' as const, month: 'short' as const, year: 'numeric' as const }
   const metaLine = series.ends_at
-    ? `${new Date(series.starts_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })} – ${new Date(series.ends_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`
-    : `Starts ${new Date(series.starts_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })} · Ongoing`
+    ? `${parseServerDatetime(series.starts_at).toLocaleDateString('en-AU', dateOpts)} – ${parseServerDatetime(series.ends_at).toLocaleDateString('en-AU', dateOpts)}`
+    : `Starts ${parseServerDatetime(series.starts_at).toLocaleDateString('en-AU', dateOpts)} · Ongoing`
 
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
@@ -132,6 +140,7 @@ export default async function GatheringSeriesEditorPage({ params }: Props) {
 
       <SeriesEditorClient
         spaceSlug={activeSpace.slug}
+        spaceTimezone={spaceTimezone}
         initialSeries={series}
         initialGatherings={gatherings}
         initialPaymentOptions={paymentOptions}
