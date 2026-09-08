@@ -25,18 +25,30 @@ const ACCESS_REQUIRES_BOOKING: readonly AccessTypeValue[] = [
 ]
 
 
+// Weekday values match Python's ``datetime.weekday()`` convention
+// (Mon=0..Sun=6), which is what the backend's recurrence generator
+// compares against. Visual order stays Sun-first for the standard
+// English calendar reading. Prior to this change the values were
+// JavaScript-style (Sun=0..Sat=6), producing occurrences shifted one
+// weekday later — Mondays landed on Tuesdays, Saturdays on Sundays.
 const WEEKDAYS = [
-  { value: 0, label: 'Sun' },
-  { value: 1, label: 'Mon' },
-  { value: 2, label: 'Tue' },
-  { value: 3, label: 'Wed' },
-  { value: 4, label: 'Thu' },
-  { value: 5, label: 'Fri' },
-  { value: 6, label: 'Sat' },
+  { value: 6, label: 'Sun' },
+  { value: 0, label: 'Mon' },
+  { value: 1, label: 'Tue' },
+  { value: 2, label: 'Wed' },
+  { value: 3, label: 'Thu' },
+  { value: 4, label: 'Fri' },
+  { value: 5, label: 'Sat' },
 ]
 
 function toLocalDatetime(iso: string) {
-  const d = new Date(iso)
+  // Naive server-emitted ISO strings represent UTC (see
+  // ``lib/dateTime.parseServerDatetime`` — Pydantic v2 drops the ``Z``
+  // suffix on ``DateTime(timezone=False)`` columns). Without this
+  // normalisation Chrome interprets the raw string as browser-local
+  // and the datetime-local input pre-fills with the wrong hour.
+  const hasOffset = /Z$|[+-]\d{2}:?\d{2}$/.test(iso)
+  const d = new Date(hasOffset ? iso : iso + 'Z')
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }

@@ -301,6 +301,10 @@ class AttendanceEventOut(BaseModel):
     is_published: bool
     space_slug: str
     space_name: str
+    # IANA timezone (e.g. "Australia/Melbourne") from the owning Space,
+    # so the frontend can render ``starts_at`` / ``ends_at`` in the
+    # collective's local time regardless of the viewer's browser locale.
+    space_timezone: str
     attendance_completed_at: datetime | None
     attendance_completed_by: str | None
 
@@ -588,6 +592,7 @@ def _serialize_event(space: Space, event: Event) -> AttendanceEventOut:
         is_published=event.is_published,
         space_slug=space.slug,
         space_name=space.name,
+        space_timezone=space.timezone,
         attendance_completed_at=event.attendance_completed_at,
         attendance_completed_by=event.attendance_completed_by,
     )

@@ -24,6 +24,10 @@ export interface AttendanceEvent {
   is_published: boolean
   space_slug: string
   space_name: string
+  /** IANA timezone (e.g. "Australia/Melbourne") from the owning
+   *  Space. Frontend formatters consume this so the display honours
+   *  the collective's local time, not the viewer's browser locale. */
+  space_timezone: string
   attendance_completed_at: string | null
   attendance_completed_by: string | null
 }

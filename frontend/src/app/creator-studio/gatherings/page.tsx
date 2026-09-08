@@ -134,7 +134,12 @@ export default async function GatheringsPage() {
             {primarySpace && standalone.length > 0 && (
               <div className="grid gap-4 sm:grid-cols-2">
                 {standalone.map((event) => (
-                  <StandaloneGatheringCard key={event.id} event={event} slug={primarySpace.slug} />
+                  <StandaloneGatheringCard
+                  key={event.id}
+                  event={event}
+                  slug={primarySpace.slug}
+                  spaceTimezone={spaceDetail?.timezone}
+                />
                 ))}
               </div>
             )}

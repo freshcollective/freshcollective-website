@@ -1,11 +1,32 @@
 // TODO: timezone should come from collective settings passed at call sites — do not re-add a hardcoded constant here.
 
+
+/**
+ * Parse a server-emitted datetime string as UTC.
+ *
+ * Pydantic v2 serialises TZ-naive ``DateTime(timezone=False)`` columns
+ * WITHOUT a ``Z`` suffix (e.g. ``"2026-10-05T07:00:00"``). Per ES2019+
+ * browsers parse those strings as LOCAL time — which for our app is
+ * catastrophically wrong because the storage convention is naive-UTC.
+ * This helper appends a ``Z`` when there's no timezone designator so
+ * every caller gets the same UTC-anchored ``Date`` regardless of what
+ * the backend emitted.
+ *
+ * Strings that already carry a ``Z`` or a numeric offset (``+11:00``,
+ * ``-05:30``) pass through unchanged.
+ */
+export function parseServerDatetime(iso: string): Date {
+  const hasOffset = /Z$|[+-]\d{2}:?\d{2}$/.test(iso)
+  return new Date(hasOffset ? iso : iso + 'Z')
+}
+
+
 /**
  * "YYYY-MM-DD" in the given timezone — used as a stable calendar placement key.
  * en-CA locale produces ISO date format natively.
  */
 export function gatheringDateKey(iso: string, timezone: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: timezone })
+  return parseServerDatetime(iso).toLocaleDateString('en-CA', { timeZone: timezone })
 }
 
 /** Date key for today in the given timezone. */
@@ -15,7 +36,7 @@ export function todayGatheringKey(timezone: string): string {
 
 /** "10:00 AEST" or "10:00 AEDT" — local time with auto DST abbreviation. */
 export function formatGatheringTime(iso: string, timezone: string): string {
-  const d = new Date(iso)
+  const d = parseServerDatetime(iso)
   const parts = new Intl.DateTimeFormat('en-AU', {
     timeZone: timezone,
     hour: '2-digit',
@@ -31,7 +52,7 @@ export function formatGatheringTime(iso: string, timezone: string): string {
 
 /** "10:00" without timezone label — for compact calendar chips. */
 export function formatGatheringTimeShort(iso: string, timezone: string): string {
-  return new Date(iso).toLocaleTimeString('en-AU', {
+  return parseServerDatetime(iso).toLocaleTimeString('en-AU', {
     hour: '2-digit',
     minute: '2-digit',
     timeZone: timezone,
@@ -40,7 +61,7 @@ export function formatGatheringTimeShort(iso: string, timezone: string): string 
 
 /** { day: "28", month: "MAY", time: "10:00 AEST" } */
 export function formatGatheringDate(iso: string, timezone: string): { day: string; month: string; time: string } {
-  const d = new Date(iso)
+  const d = parseServerDatetime(iso)
   const day   = d.toLocaleDateString('en-AU', { day: '2-digit',  timeZone: timezone })
   const month = d.toLocaleDateString('en-AU', { month: 'short', timeZone: timezone }).toUpperCase()
   return { day, month, time: formatGatheringTime(iso, timezone) }
@@ -48,7 +69,7 @@ export function formatGatheringDate(iso: string, timezone: string): { day: strin
 
 /** "Thursday, 28 May 2026" in the given timezone. */
 export function formatGatheringFullDate(iso: string, timezone: string): string {
-  return new Date(iso).toLocaleDateString('en-AU', {
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -59,7 +80,7 @@ export function formatGatheringFullDate(iso: string, timezone: string): string {
 
 /** "Thursday, 28 May" label for mobile calendar day groups. */
 export function formatGatheringMobileDayLabel(iso: string, timezone: string): string {
-  return new Date(iso).toLocaleDateString('en-AU', {
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -69,12 +90,12 @@ export function formatGatheringMobileDayLabel(iso: string, timezone: string): st
 
 /** "19 Sep 2026" — compact display date, no timezone conversion. */
 export function formatDisplayDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
 /** "19/09/2026" — numeric form / helper display date. */
 export function formatNumericDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 /**
@@ -95,8 +116,8 @@ export function countdownLabel(
   endsAt: string | null = null,
   now: Date = new Date(),
 ): string {
-  const start = new Date(startsAt)
-  const end = endsAt ? new Date(endsAt) : new Date(start.getTime() + 60 * 60 * 1000)
+  const start = parseServerDatetime(startsAt)
+  const end = endsAt ? parseServerDatetime(endsAt) : new Date(start.getTime() + 60 * 60 * 1000)
 
   if (now >= end) return 'Ended'
   if (now >= start) return 'Live now'

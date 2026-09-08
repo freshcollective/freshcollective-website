@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
+import { parseServerDatetime } from '@/lib/dateTime'
 import { Button, Modal, useToast } from '@/components/platform'
 import type {
   AttendanceDashboard,
@@ -302,6 +303,7 @@ export default function AttendanceDashboardClient({
         <BookingDetailModal
           row={detailFor}
           isCompleted={isCompleted}
+          timezone={event.space_timezone}
           busy={busyBooking === detailFor.booking_id}
           onClose={() => setDetailFor(null)}
           onSave={async (next) => {
@@ -383,7 +385,7 @@ function EventHeader({ event }: { event: AttendanceDashboard['event'] }) {
   const artwork = resolveMediaUrl(event.thumbnail_url ?? undefined)
   const state = event.attendance_completed_at
     ? 'Completed'
-    : (new Date(event.starts_at).getTime() <= Date.now() ? 'Check-in open' : 'Upcoming')
+    : (parseServerDatetime(event.starts_at).getTime() <= Date.now() ? 'Check-in open' : 'Upcoming')
   const stateColor = event.attendance_completed_at
     ? 'var(--fc-accent-700)'
     : 'var(--fc-status-neutral, #6B7280)'
@@ -414,7 +416,7 @@ function EventHeader({ event }: { event: AttendanceDashboard['event'] }) {
           <dl className="mt-4 grid grid-cols-1 gap-2 text-[13px] md:grid-cols-2" style={{ color: 'var(--fc-ink-primary)' }}>
             <div>
               <dt className="text-[10.5px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'rgba(12,24,38,0.55)' }}>Date &amp; time</dt>
-              <dd>{formatDateTime(event.starts_at, event.ends_at)}</dd>
+              <dd>{formatDateTime(event.starts_at, event.ends_at, event.space_timezone)}</dd>
             </div>
             <div>
               <dt className="text-[10.5px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'rgba(12,24,38,0.55)' }}>{event.attendance_format === 'online' ? 'Online' : 'Venue'}</dt>
@@ -439,18 +441,25 @@ function EventHeader({ event }: { event: AttendanceDashboard['event'] }) {
 }
 
 
-function formatDateTime(startIso: string, endIso: string | null): string {
-  const start = new Date(startIso)
+function formatDateTime(startIso: string, endIso: string | null, timezone: string): string {
+  // ``parseServerDatetime`` appends a ``Z`` to the ISO string when it
+  // lacks a timezone designator — the app-wide storage convention is
+  // that a naive datetime represents UTC, but Chrome would otherwise
+  // parse it as browser-local, showing wrong hours.
+  const start = parseServerDatetime(startIso)
   const startFmt = new Intl.DateTimeFormat('en-AU', {
+    timeZone: timezone,
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
     hour: 'numeric', minute: '2-digit',
   }).format(start)
   if (!endIso) return startFmt
-  const end = new Date(endIso)
-  const sameDay = start.toDateString() === end.toDateString()
+  const end = parseServerDatetime(endIso)
+  // Same-day check in the collective's timezone, not the viewer's.
+  const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' })
+  const sameDay = dayFmt.format(start) === dayFmt.format(end)
   const endFmt = new Intl.DateTimeFormat('en-AU', sameDay
-    ? { hour: 'numeric', minute: '2-digit' }
-    : { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' },
+    ? { timeZone: timezone, hour: 'numeric', minute: '2-digit' }
+    : { timeZone: timezone, weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' },
   ).format(end)
   return `${startFmt} – ${endFmt}`
 }
@@ -1062,10 +1071,11 @@ function PreviewNumber({ label, value, suffix }: { label: string; value: number;
 // ---------------------------------------------------------------------------
 
 function BookingDetailModal({
-  row, isCompleted, busy, onClose, onSave, onReopen,
+  row, isCompleted, timezone, busy, onClose, onSave, onReopen,
 }: {
   row: AttendanceRow
   isCompleted: boolean
+  timezone: string
   busy: boolean
   onClose: () => void
   onSave: (next: AttendanceStatus) => void
@@ -1109,7 +1119,7 @@ function BookingDetailModal({
         </div>
         <div className="grid grid-cols-[110px_1fr] gap-3">
           <dt className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'rgba(12,24,38,0.55)' }}>Booked on</dt>
-          <dd>{new Date(row.booked_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</dd>
+          <dd>{parseServerDatetime(row.booked_at).toLocaleString('en-AU', { timeZone: timezone, day: 'numeric', month: 'short', year: 'numeric' })}</dd>
         </div>
         <div className="grid grid-cols-[110px_1fr] gap-3">
           <dt className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'rgba(12,24,38,0.55)' }}>Attendance</dt>
@@ -1118,7 +1128,7 @@ function BookingDetailModal({
         {row.attendance_marked_at && (
           <div className="grid grid-cols-[110px_1fr] gap-3">
             <dt className="text-[11px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'rgba(12,24,38,0.55)' }}>Checked in</dt>
-            <dd>{new Date(row.attendance_marked_at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</dd>
+            <dd>{parseServerDatetime(row.attendance_marked_at).toLocaleString('en-AU', { timeZone: timezone, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</dd>
           </div>
         )}
       </dl>

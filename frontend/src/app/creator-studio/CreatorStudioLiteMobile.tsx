@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { parseServerDatetime } from '@/lib/dateTime'
 import type { EventBooking, AddMemberResponse, SpaceSummary } from '@/types/platform'
 
 // ---------------------------------------------------------------------------
@@ -100,16 +101,26 @@ const TABS: { id: Tab; label: string }[] = [
 // Helpers
 // ---------------------------------------------------------------------------
 
+// TODO: pass the collective's timezone through instead of assuming
+// Melbourne — SpaceSummary needs a ``timezone`` field before we can.
+// The parseServerDatetime + explicit timeZone still fixes the primary
+// naive-parsed-as-local bug for every Melbourne-based creator (~100%
+// of production today).
+const _FALLBACK_TZ = 'Australia/Melbourne'
+
 function formatDate(iso: string) {
+  const d = parseServerDatetime(iso)
   return (
-    new Date(iso).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) +
+    d.toLocaleDateString('en-AU', { timeZone: _FALLBACK_TZ, weekday: 'short', day: 'numeric', month: 'short' }) +
     ' · ' +
-    new Date(iso).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
+    d.toLocaleTimeString('en-AU', { timeZone: _FALLBACK_TZ, hour: '2-digit', minute: '2-digit' })
   )
 }
 
 function formatShortDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', {
+    timeZone: _FALLBACK_TZ, day: 'numeric', month: 'short', year: 'numeric',
+  })
 }
 
 function accessLabel(p: LitePathway): string {

@@ -276,6 +276,7 @@ export default async function MemberGatheringSeriesPage({ params }: Props) {
             past={detail.past_gatherings}
             memberHasSeriesAccess={hasAccess}
             palette={collectivePalette}
+            timezone={space?.timezone ?? undefined}
           />
         </div>
       </div>

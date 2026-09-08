@@ -10,8 +10,9 @@ Permission model:
 import json
 import pathlib
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
@@ -217,6 +218,20 @@ from app.services.schedule_validation import (
 from app.spaces.schemas import SpaceSummary
 
 router = APIRouter(prefix="/api/creator", tags=["creator"])
+
+
+def _to_utc_aware(dt: datetime) -> datetime:
+    """Normalise a datetime to UTC-aware.
+
+    Naive values are treated as UTC — matches the app-wide storage
+    convention (``DateTime(timezone=False)`` columns hold UTC values
+    with the tzinfo stripped). Used by any code path that mixes
+    incoming Pydantic-parsed datetimes (which may or may not carry a
+    ``Z`` suffix) with timezone arithmetic.
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -3305,27 +3320,85 @@ def bulk_create_events(
     # passes against. Fail loudly before any rows are generated.
     _enforce_series_pass_invariant(body.booking_access_type, resolved_series_id)
 
-    duration = None
-    if body.ends_at:
-        duration = body.ends_at - body.starts_at
+    # Recurrence generation runs in the COLLECTIVE'S LOCAL TIMEZONE.
+    # The anchor arrives as UTC-aware (from the frontend's
+    # ``new Date(startsAt).toISOString()``). We convert it to the space
+    # timezone, then enumerate weekdays and preserve the local wall-
+    # clock time on every occurrence. Each generated datetime is
+    # converted back to UTC-naive before storage so the ``DateTime
+    # (timezone=False)`` column retains its "naive = UTC" convention.
+    #
+    # Why local: Python's ``datetime.weekday()`` on the anchor's UTC
+    # date can differ from the anchor's local weekday (e.g. Sat 9 am
+    # AEDT is Fri 22:00 UTC — weekday() = Friday). Enumerating in
+    # local time is the only way to keep "Every Saturday morning" a
+    # Saturday. It also keeps 6-7 pm at 6-7 pm through Australia's
+    # DST transitions, because the wall-clock time is re-anchored to
+    # the local timezone on each occurrence.
+    try:
+        tz = ZoneInfo(space.timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        # Defensive: an unknown timezone string on the Space should
+        # never happen (the column has a NOT NULL default of
+        # Australia/Melbourne), but if it did, fall back to that
+        # default rather than 500-ing.
+        tz = ZoneInfo("Australia/Melbourne")
 
-    start_date = body.starts_at.date()
-    start_time = body.starts_at.time()
+    anchor_start_utc = _to_utc_aware(body.starts_at)
+    anchor_end_utc = _to_utc_aware(body.ends_at) if body.ends_at else None
+    anchor_start_local = anchor_start_utc.astimezone(tz)
+    anchor_end_local = anchor_end_utc.astimezone(tz) if anchor_end_utc else None
 
-    dates: list[tuple] = []
-    candidate = start_date
+    start_hour = anchor_start_local.hour
+    start_minute = anchor_start_local.minute
+    start_second = anchor_start_local.second
+    end_wall_clock = (
+        (anchor_end_local.hour, anchor_end_local.minute, anchor_end_local.second)
+        if anchor_end_local else None
+    )
+
+    # ``repeat_until`` is a datetime for API-shape reasons but is
+    # semantically an inclusive local date the creator picked on the
+    # form. Convert to a local date so the comparison respects the
+    # collective's timezone rather than UTC.
+    repeat_until_local_date = None
+    if rec.repeat_until:
+        repeat_until_local_date = _to_utc_aware(rec.repeat_until).astimezone(tz).date()
+
+    dates: list[tuple[datetime, datetime | None]] = []
+    candidate = anchor_start_local.date()
     max_search = 365 * 3
 
     for _ in range(max_search):
         if candidate.weekday() in days_set:
-            from datetime import datetime as _dt
-            new_start = _dt(candidate.year, candidate.month, candidate.day,
-                            start_time.hour, start_time.minute, start_time.second)
-            new_end = new_start + duration if duration else None
-
-            if rec.repeat_until and new_start.date() > rec.repeat_until.date():
+            # Wall-clock start on this candidate day, in the space's
+            # local timezone. Applying ``tzinfo=tz`` (not ``.replace()``)
+            # via constructor localises correctly around DST — the
+            # zone's transition rules decide whether the resulting
+            # instant is +10 or +11 hours from UTC.
+            local_start = datetime(
+                candidate.year, candidate.month, candidate.day,
+                start_hour, start_minute, start_second, tzinfo=tz,
+            )
+            if repeat_until_local_date and candidate > repeat_until_local_date:
                 break
-            dates.append((new_start, new_end))
+            utc_start = local_start.astimezone(timezone.utc).replace(tzinfo=None)
+
+            utc_end: datetime | None = None
+            if end_wall_clock is not None:
+                eh, em, es = end_wall_clock
+                local_end = datetime(
+                    candidate.year, candidate.month, candidate.day,
+                    eh, em, es, tzinfo=tz,
+                )
+                # If the wall-clock end is earlier than the start it
+                # means the gathering rolls past midnight (e.g. 11 pm
+                # to 1 am). Push the end day forward by one.
+                if local_end <= local_start:
+                    local_end += timedelta(days=1)
+                utc_end = local_end.astimezone(timezone.utc).replace(tzinfo=None)
+
+            dates.append((utc_start, utc_end))
             if rec.end_after_n and len(dates) >= rec.end_after_n:
                 break
 

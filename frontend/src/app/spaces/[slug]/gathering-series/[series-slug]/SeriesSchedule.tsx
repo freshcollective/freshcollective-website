@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
+import { parseServerDatetime } from '@/lib/dateTime'
 import {
   paletteHex,
   rgbaFromHex,
@@ -71,13 +72,14 @@ function sessionState(
   return 'available'
 }
 
-function formatTimeShort(iso: string): string {
-  const d = new Date(iso)
-  return d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+function formatTimeShort(iso: string, timezone: string): string {
+  const d = parseServerDatetime(iso)
+  return d.toLocaleTimeString('en-AU', { timeZone: timezone, hour: 'numeric', minute: '2-digit' }).toLowerCase()
 }
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-AU', {
+function formatDateTime(iso: string, timezone: string): string {
+  return parseServerDatetime(iso).toLocaleString('en-AU', {
+    timeZone: timezone,
     weekday: 'short', day: 'numeric', month: 'short',
     hour: 'numeric', minute: '2-digit',
   })
@@ -119,14 +121,12 @@ function stateChipStyles(
   }
 }
 
-/** Local ``YYYY-MM-DD`` key (avoids the UTC-shift bug that would
- *  smear a Sydney evening session into "tomorrow" in the grid). */
-function localDayKey(iso: string): string {
-  const d = new Date(iso)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+/** ``YYYY-MM-DD`` key in the collective's timezone. Uses
+ *  ``parseServerDatetime`` to normalise the ISO as UTC (matching the
+ *  app-wide "naive = UTC" convention) and Intl to render the calendar
+ *  day IN the collective's timezone. */
+function localDayKey(iso: string, timezone: string): string {
+  return parseServerDatetime(iso).toLocaleDateString('en-CA', { timeZone: timezone })
 }
 
 /** Best month to open on: today's month if the Series has upcoming
@@ -151,10 +151,14 @@ interface Props {
   past: SeriesScheduleGathering[]
   memberHasSeriesAccess: boolean
   palette: CollectivePaletteMeta | null
+  /** IANA timezone from the owning Space. Falls back to
+   *  Australia/Melbourne. */
+  timezone?: string
 }
 
 export default function SeriesSchedule({
   spaceSlug, upcoming, past, memberHasSeriesAccess, palette,
+  timezone = 'Australia/Melbourne',
 }: Props) {
   const [view, setView] = useState<ScheduleView>('calendar')
   const [monthStart, setMonthStart] = useState<Date>(() => pickInitialMonth(upcoming, past))
@@ -170,17 +174,17 @@ export default function SeriesSchedule({
   const sessionsByDay = useMemo(() => {
     const m: Record<string, SeriesScheduleGathering[]> = {}
     for (const g of allSessions) {
-      const k = localDayKey(g.starts_at)
+      const k = localDayKey(g.starts_at, timezone)
       ;(m[k] ??= []).push(g)
     }
     return m
-  }, [allSessions])
+  }, [allSessions, timezone])
 
   const year = monthStart.getFullYear()
   const month = monthStart.getMonth()
   const firstWeekday = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const todayKey = localDayKey(new Date().toISOString())
+  const todayKey = localDayKey(new Date().toISOString(), timezone)
   const prevMonth = () => setMonthStart(new Date(year, month - 1, 1))
   const nextMonth = () => setMonthStart(new Date(year, month + 1, 1))
 
@@ -303,7 +307,7 @@ export default function SeriesSchedule({
                               boxShadow: cs.ring ? `inset 0 0 0 1px ${cs.ring}` : undefined,
                             }}
                           >
-                            <span className="opacity-75">{formatTimeShort(g.starts_at)}</span>{' '}
+                            <span className="opacity-75">{formatTimeShort(g.starts_at, timezone)}</span>{' '}
                             {g.title}
                           </Link>
                         )
@@ -323,6 +327,7 @@ export default function SeriesSchedule({
               sessions={allSessions}
               memberHasSeriesAccess={memberHasSeriesAccess}
               palette={palette}
+              timezone={timezone}
             />
           </div>
         </>
@@ -334,6 +339,7 @@ export default function SeriesSchedule({
           sessions={allSessions}
           memberHasSeriesAccess={memberHasSeriesAccess}
           palette={palette}
+          timezone={timezone}
         />
       )}
     </section>
@@ -345,12 +351,13 @@ export default function SeriesSchedule({
 // ---------------------------------------------------------------------------
 
 function ScheduleList({
-  spaceSlug, sessions, memberHasSeriesAccess, palette,
+  spaceSlug, sessions, memberHasSeriesAccess, palette, timezone,
 }: {
   spaceSlug: string
   sessions: SeriesScheduleGathering[]
   memberHasSeriesAccess: boolean
   palette: CollectivePaletteMeta | null
+  timezone: string
 }) {
   const upcoming = sessions.filter((g) => !g.is_past)
   const past = sessions.filter((g) => g.is_past)
@@ -363,6 +370,7 @@ function ScheduleList({
           g={g}
           state={sessionState(g, memberHasSeriesAccess)}
           palette={palette}
+          timezone={timezone}
         />
       ))}
       {past.length > 0 && (
@@ -379,7 +387,7 @@ function ScheduleList({
                 >
                   <div className="min-w-0">
                     <p className="truncate text-[13px]">{g.title}</p>
-                    <p className="text-[11.5px]">{formatDateTime(g.starts_at)}</p>
+                    <p className="text-[11.5px]">{formatDateTime(g.starts_at, timezone)}</p>
                   </div>
                   <span className="text-[11px]">
                     {g.my_booking_status === 'confirmed' ? 'Attended' : 'Past'}
@@ -395,12 +403,13 @@ function ScheduleList({
 }
 
 function ListRow({
-  spaceSlug, g, state, palette,
+  spaceSlug, g, state, palette, timezone,
 }: {
   spaceSlug: string
   g: SeriesScheduleGathering
   state: SessionState
   palette: CollectivePaletteMeta | null
+  timezone: string
 }) {
   const cs = stateChipStyles(state, palette)
   const format = g.attendance_format === 'in_person' ? 'In person' : 'Online'
@@ -413,7 +422,7 @@ function ListRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-[14px] font-medium text-navy-900">{g.title}</p>
         <p className="mt-0.5 text-[12px] text-slate-500">
-          {formatDateTime(g.starts_at)} · {format}{locality}
+          {formatDateTime(g.starts_at, timezone)} · {format}{locality}
           {g.capacity != null && g.spots_remaining != null && (
             <> · {g.booked_count}/{g.capacity} reserved</>
           )}

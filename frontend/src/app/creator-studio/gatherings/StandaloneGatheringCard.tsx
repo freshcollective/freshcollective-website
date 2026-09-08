@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import type { CreatorEvent } from '@/types/platform'
+import { parseServerDatetime } from '@/lib/dateTime'
 import {
   gatheringIcon, gatheringLabel,
   attendanceFormatLabel,
@@ -21,8 +22,12 @@ import {
  * child Gatherings should stay dense.
  */
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-AU', {
+function fmtDate(iso: string, timezone: string) {
+  // ``parseServerDatetime`` treats naive ISO strings as UTC (matching
+  // the app's storage convention). ``timeZone`` forces the display
+  // into the collective's local time.
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', {
+    timeZone: timezone,
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -46,9 +51,14 @@ function fmtPrice(cents: number, currency: string): string {
 interface Props {
   event: CreatorEvent
   slug: string
+  /** IANA timezone from the owning Space. Falls back to
+   *  Australia/Melbourne for legacy callers that haven't threaded
+   *  the value through yet. */
+  spaceTimezone?: string
 }
 
-export default function StandaloneGatheringCard({ event, slug }: Props) {
+export default function StandaloneGatheringCard({ event, slug, spaceTimezone }: Props) {
+  const timezone = spaceTimezone ?? 'Australia/Melbourne'
   const isCancelled = event.status === 'cancelled'
   const isDraft = !event.is_published && !isCancelled
   const access = accessTypeMeta(event.booking_access_type)
@@ -103,7 +113,7 @@ export default function StandaloneGatheringCard({ event, slug }: Props) {
         </div>
 
         <p className="text-[12.5px] text-black">
-          {fmtDate(event.starts_at)}
+          {fmtDate(event.starts_at, timezone)}
         </p>
         <p className="mt-0.5 text-[11.5px] text-slate-500">
           {formatLabel}
