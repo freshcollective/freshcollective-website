@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { parseServerDatetime } from '@/lib/dateTime'
+import { formatCalendarDate } from '@/lib/dateTime'
 import {
   getActiveCreatorSpace,
   getCreatorBilling,
@@ -102,16 +102,17 @@ export default async function GatheringSeriesEditorPage({ params }: Props) {
     || billing?.current_plan?.paid_offers_enabled
   )
 
-  // Use ``parseServerDatetime`` so the app-wide naive-UTC convention
-  // is honoured (Pydantic emits naive datetimes without ``Z`` and
-  // Chrome would otherwise parse them as browser-local, rolling the
-  // date). Passes ``timeZone`` explicitly so the date reads correctly
-  // regardless of the viewer's browser locale.
+  // ``series.starts_at`` / ``series.ends_at`` are CALENDAR DATES
+  // (set from ``<input type="date">``, stored as
+  // ``YYYY-MM-DDT00:00:00`` and ``YYYY-MM-DDT23:59:59``). Use
+  // ``formatCalendarDate`` which reads the date part directly and
+  // formats without any UTC/timezone round-trip — otherwise the
+  // ``23:59:59`` end-of-day encoding rolls into the next day in
+  // Australia (23:59:59 UTC + 11h = 10:59 next-day AEDT).
   const spaceTimezone = spaceDetail?.timezone ?? 'Australia/Melbourne'
-  const dateOpts = { timeZone: spaceTimezone, day: 'numeric' as const, month: 'short' as const, year: 'numeric' as const }
   const metaLine = series.ends_at
-    ? `${parseServerDatetime(series.starts_at).toLocaleDateString('en-AU', dateOpts)} – ${parseServerDatetime(series.ends_at).toLocaleDateString('en-AU', dateOpts)}`
-    : `Starts ${parseServerDatetime(series.starts_at).toLocaleDateString('en-AU', dateOpts)} · Ongoing`
+    ? `${formatCalendarDate(series.starts_at)} – ${formatCalendarDate(series.ends_at)}`
+    : `Starts ${formatCalendarDate(series.starts_at)} · Ongoing`
 
   return (
     <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">

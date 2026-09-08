@@ -17,7 +17,47 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 // @ts-expect-error - Node-native import path
-import { parseServerDatetime } from './dateTime.ts'
+import { parseServerDatetime, formatCalendarDate } from './dateTime.ts'
+
+
+describe('formatCalendarDate — calendar days do NOT roll into the next day', () => {
+  test('YYYY-MM-DDT23:59:59 (end-of-day storage) reads as its calendar day', () => {
+    // The Series editor writes ``dateInputToNaiveIso("2026-12-12", true)``
+    // which returns "2026-12-12T23:59:59". Under the datetime path
+    // that string is UTC 23:59:59 and Melbourne AEDT (+11) is
+    // 10:59 the NEXT day — so the buggy banner rendered 13 Dec. The
+    // calendar-date helper reads the YYYY-MM-DD prefix directly, so
+    // it always renders 12 Dec regardless of viewer timezone.
+    const out = formatCalendarDate('2026-12-12T23:59:59')
+    assert.equal(out, '12 Dec 2026')
+  })
+
+  test('YYYY-MM-DDT00:00:00 (start-of-day storage) reads as its calendar day', () => {
+    const out = formatCalendarDate('2026-10-05T00:00:00')
+    assert.equal(out, '5 Oct 2026')
+  })
+
+  test('Bare YYYY-MM-DD string reads as its calendar day', () => {
+    const out = formatCalendarDate('2026-10-05')
+    assert.equal(out, '5 Oct 2026')
+  })
+
+  test('Empty / invalid string returns empty', () => {
+    assert.equal(formatCalendarDate(''), '')
+    assert.equal(formatCalendarDate('not a date'), '')
+    assert.equal(formatCalendarDate('202X-12-12'), '')
+  })
+
+  test('Custom options are honoured', () => {
+    const out = formatCalendarDate('2026-12-12T23:59:59', {
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    })
+    // Sat 12 Dec 2026
+    assert.ok(out.includes('Saturday'), `expected "Saturday" in ${out}`)
+    assert.ok(out.includes('12 December'), `expected "12 December" in ${out}`)
+    assert.ok(out.includes('2026'), `expected "2026" in ${out}`)
+  })
+})
 
 
 describe('parseServerDatetime — naive strings are treated as UTC', () => {

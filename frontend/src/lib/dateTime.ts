@@ -22,6 +22,42 @@ export function parseServerDatetime(iso: string): Date {
 
 
 /**
+ * Format a stored *calendar date* as a human-readable string.
+ *
+ * Some fields are calendar dates, not instants — Gathering Series
+ * ``starts_at`` / ``ends_at``, for example, are set from a
+ * ``<input type="date">`` and stored as ``YYYY-MM-DDT00:00:00`` /
+ * ``YYYY-MM-DDT23:59:59``. Passing those through the timezone-aware
+ * ``parseServerDatetime`` path is wrong: 23:59:59 UTC converts to
+ * 10:59 the NEXT day in Melbourne, so a Series that ends 12 Dec
+ * would render as ending 13 Dec.
+ *
+ * This helper reads the calendar day directly from the string (first
+ * ten characters, ``YYYY-MM-DD``) and formats it as a local
+ * ``Date`` constructed at LOCAL midnight — no timezone conversion,
+ * no rollover. Robust to strings with or without a time portion.
+ *
+ * Options default to ``{ day: 'numeric', month: 'short', year:
+ * 'numeric' }`` (matches the Gathering Series banner style); callers
+ * can override.
+ */
+export function formatCalendarDate(
+  iso: string,
+  options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' },
+): string {
+  const match = String(iso).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return ''
+  const [, y, m, d] = match
+  // Construct a local Date at midnight — represents the calendar day
+  // regardless of the viewer's timezone. Do NOT pass ``timeZone`` to
+  // the formatter; that would round-trip through UTC and reintroduce
+  // the bug.
+  const dt = new Date(Number(y), Number(m) - 1, Number(d))
+  return dt.toLocaleDateString('en-AU', options)
+}
+
+
+/**
  * "YYYY-MM-DD" in the given timezone — used as a stable calendar placement key.
  * en-CA locale produces ISO date format natively.
  */
