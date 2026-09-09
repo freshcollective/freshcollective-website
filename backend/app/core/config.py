@@ -382,6 +382,97 @@ class Settings(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def _check_stripe_configuration(self) -> "Settings":
+        """Refuse to boot when Stripe is misconfigured in a way that
+        would either take real money in a sandbox environment, or
+        silently degrade production to a "checkout unavailable" state.
+
+        Symmetric with ``_check_r2_configuration`` above — same shape,
+        same failure mode: raise at ``Settings()`` instantiation so on
+        Render the deploy is aborted before the new fc-api image starts
+        serving traffic.
+
+        Rules
+        -----
+
+          1. **Whitespace trim on both Stripe vars.** Copy-paste from the
+             Stripe / Render dashboards commonly picks up trailing
+             newlines. Idempotent when values are already clean.
+
+          2. **Production requires BOTH env vars.** ``STRIPE_SECRET_KEY``
+             and ``STRIPE_WEBHOOK_SECRET`` are both required for
+             signature verification to work AND for the checkout code
+             path to reach Stripe. Missing either one in production
+             turns every purchase attempt into a 503 — better to
+             fail-fast at deploy so the previous image keeps serving.
+
+          3. **``sk_live_*`` is forbidden outside production.** A live
+             Stripe key in a staging or local-dev environment can
+             charge real cards; catching it at boot prevents accidents.
+
+          4. **Production refuses a ``sk_test_*`` key.** The inverse of
+             rule 3: a test-mode key in production would silently take
+             *play* money for a real transaction. This should be a
+             deploy-time abort, not a discovery in the ops channel.
+
+        Local dev with no Stripe configured remains unaffected —
+        both vars unset falls out of every rule as a no-op.
+        """
+        # Rule 1 — trim whitespace on both vars in place.
+        for name in ("stripe_secret_key", "stripe_webhook_secret"):
+            raw = getattr(self, name)
+            if raw is not None and raw != raw.strip():
+                object.__setattr__(self, name, raw.strip())
+        # Post-trim: whitespace-only values are now empty strings; the
+        # ``or None`` normalises those back to "not set".
+        for name in ("stripe_secret_key", "stripe_webhook_secret"):
+            raw = getattr(self, name)
+            if raw == "":
+                object.__setattr__(self, name, None)
+
+        secret = self.stripe_secret_key
+        webhook = self.stripe_webhook_secret
+        is_production = self.app_env == "production"
+
+        # Rule 2 — production requires the full set.
+        missing = [
+            n for n, v in (
+                ("STRIPE_SECRET_KEY", secret),
+                ("STRIPE_WEBHOOK_SECRET", webhook),
+            ) if not v
+        ]
+        if is_production and missing:
+            raise ValueError(
+                "Stripe is required in production but is not fully "
+                f"configured. Missing env vars: {', '.join(missing)}. "
+                "Set both on fc-api in the Render dashboard, or set "
+                "APP_ENV=development if this environment is intentionally "
+                "unable to take payments."
+            )
+
+        # Rule 3 — no live keys outside production.
+        if secret and secret.startswith("sk_live_") and not is_production:
+            raise ValueError(
+                "STRIPE_SECRET_KEY is a LIVE key (sk_live_…) but "
+                f"APP_ENV={self.app_env!r}, not 'production'. Refusing "
+                "to boot — a live key in a non-production environment "
+                "can charge real cards during testing. Use a Stripe "
+                "test-mode key (sk_test_…) or set APP_ENV=production."
+            )
+
+        # Rule 4 — production refuses a test key.
+        if is_production and secret and secret.startswith("sk_test_"):
+            raise ValueError(
+                "STRIPE_SECRET_KEY is a TEST key (sk_test_…) but "
+                "APP_ENV=production. Refusing to boot — production must "
+                "use a live key so real member purchases actually clear. "
+                "Rotate the env var on fc-api to the sk_live_… key from "
+                "the Stripe Dashboard."
+            )
+
+        return self
+
     @property
     def stripe_enabled(self) -> bool:
         return bool(self.stripe_secret_key and self.stripe_webhook_secret)

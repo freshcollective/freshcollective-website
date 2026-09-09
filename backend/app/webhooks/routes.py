@@ -42,8 +42,10 @@ from app.models.payment import (
 from app.models.payment_option import PaymentOption
 from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.services.purchase_fulfilment import (
+    FulfilmentResolution,
     FulfilmentStatus,
     apply_intent,
+    deserialise_intent,
     resolve_intent_for_option,
     validate_intent,
 )
@@ -626,18 +628,45 @@ def _handle_checkout_completed(
                 payment_option_id,
             )
 
-    # ── Delegate fulfilment to the shared service. B4A: source of
-    #    truth is now ``PaymentOption.grants`` when the option has
-    #    any grant rows; otherwise the legacy resolver runs (with a
-    #    structured warning) as transition-period compatibility.
-    #    The atomicity contract (resolve → validate → apply) is
-    #    the same regardless of which resolver picks the intent. ──
-    resolution = resolve_intent_for_option(
-        db,
-        payment_option=payment_option,
-        metadata_pathway_id=pathway_id or None,
-        now=now,
-    )
+    # ── Delegate fulfilment to the shared service. Phase 1: if the
+    #    ledger row carries a ``snapshot_grants_json`` populated at
+    #    checkout-session creation, use it verbatim so a Creator
+    #    edit to the Payment Option's grants between "Pay" and this
+    #    webhook cannot silently alter the fulfilment. Falls back
+    #    to the live resolver when the snapshot is absent (pre-
+    #    migration rows, free-path, or a resolver hiccup at
+    #    checkout time). The atomicity contract (resolve → validate
+    #    → apply) is the same regardless of which path picks the
+    #    intent. ──
+    if txn.snapshot_grants_json is not None:
+        try:
+            snapshot_intent = deserialise_intent(txn.snapshot_grants_json)
+            resolution = FulfilmentResolution(intent=snapshot_intent)
+            logger.info(
+                "checkout.session.completed: fulfilling from snapshot session=%s txn=%s",
+                session_id, txn.id,
+            )
+        except Exception as exc:
+            # Malformed snapshot is a bug — do NOT silently swallow
+            # it. Block the fulfilment so operator intervention can
+            # decide whether to hand-fulfil or re-run after fixing
+            # the snapshot payload. Stripe re-delivery will re-hit
+            # this path.
+            txn.fulfilment_status = PaymentFulfilmentStatus.blocked
+            db.commit()
+            logger.exception(
+                "checkout.session.completed: snapshot deserialisation failed "
+                "session=%s txn=%s — %s",
+                session_id, txn.id, exc,
+            )
+            return
+    else:
+        resolution = resolve_intent_for_option(
+            db,
+            payment_option=payment_option,
+            metadata_pathway_id=pathway_id or None,
+            now=now,
+        )
 
     # ── Resolver-side hard error (e.g. series-attached option
     # pointing at a missing Series row). Payment succeeded, so the

@@ -20,6 +20,7 @@ from app.notifications.routes import router as notifications_router
 from app.activities.routes import router as activities_router
 from app.client.routes import router as client_router
 from app.admin.routes import router as admin_router
+from app.admin.access_revocation import router as admin_access_revocation_router
 from app.admin.atlas import router as admin_atlas_router
 from app.admin.physical_locations import router as admin_physical_locations_router
 from app.admin.community_care.routes import router as admin_community_care_router
@@ -77,6 +78,15 @@ async def lifespan(_: FastAPI):
     # is idempotent and safe under duplicate execution. See
     # app/services/finite_plan_reconciler.py.
     start_finite_plan_reconciler()
+    # Stripe status at boot — makes Render logs the source of truth
+    # when verifying a deploy. Boot-time config guards
+    # (``_check_stripe_configuration`` in ``core/config.py``) already
+    # refuse to instantiate ``Settings`` for mis-configured combos,
+    # so at this point we only report the resolved state.
+    logger.info(
+        "Stripe: enabled=%s mode=%s app_env=%s",
+        settings.stripe_enabled, settings.stripe_mode, settings.app_env,
+    )
     # Comms M6 — surface a config gap that would otherwise fail silently
     # until the first real webhook fired. Outbound email still works
     # without this secret; delivery/bounce/complaint webhooks do not.
@@ -179,6 +189,7 @@ async def add_transport_security_headers(request, call_next):
 app.include_router(auth_router)
 app.include_router(client_router)
 app.include_router(admin_router)
+app.include_router(admin_access_revocation_router)
 app.include_router(admin_atlas_router)
 app.include_router(admin_physical_locations_router)
 app.include_router(admin_community_care_router)

@@ -69,6 +69,7 @@ from app.services.purchase_fulfilment import (
     apply_intent,
     option_grant_readiness,
     resolve_intent_for_option,
+    serialise_intent,
     validate_intent,
 )
 
@@ -586,6 +587,49 @@ def _create_stripe_session_and_txn(
     metadata = {**metadata, "transaction_id": txn_id}
     payment_intent_metadata = {**payment_intent_metadata, "transaction_id": txn_id}
 
+    # Grants snapshot (Phase 1) — MANDATORY for every new pay-in-full
+    # checkout. Resolves BEFORE Stripe so a resolver error stops the
+    # buyer with a retryable 503 rather than opening a Stripe Session
+    # that would later fulfil against live grants (which would recreate
+    # the race the snapshot exists to prevent). The NULL → live-resolve
+    # branch in the webhook remains only for historical rows created
+    # before migration 123.
+    try:
+        snapshot_resolution = resolve_intent_for_option(
+            db,
+            payment_option=resolved.payment_option,
+            metadata_pathway_id=txn_pathway_id,
+            now=now,
+        )
+    except Exception:
+        logger.exception(
+            "checkout_orchestration: snapshot resolve raised for option=%s "
+            "user=%s — refusing to create Stripe Session.",
+            resolved.payment_option.id, payer.id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "We couldn't lock in this offer right now. Please try again "
+                "in a moment."
+            ),
+        )
+    if snapshot_resolution.fatal_error:
+        logger.error(
+            "checkout_orchestration: snapshot resolver reported fatal_error "
+            "for option=%s user=%s: %s — refusing to create Stripe Session.",
+            resolved.payment_option.id, payer.id,
+            snapshot_resolution.fatal_error,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "This offer can't be purchased right now. Please try again "
+                "in a moment."
+            ),
+        )
+    snapshot = serialise_intent(snapshot_resolution.intent)
+
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
@@ -639,6 +683,7 @@ def _create_stripe_session_and_txn(
             else PayoutStatus.pending
         ),
         stripe_mode=settings.stripe_mode,
+        snapshot_grants_json=snapshot,
         created_at=now,
         updated_at=now,
     )

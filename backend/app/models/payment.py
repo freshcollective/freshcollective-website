@@ -22,6 +22,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -284,6 +285,20 @@ class PaymentTransaction(Base):
     # relying on created_at ordering. NULL on pay-in-full rows.
     installment_number: Mapped[int | None] = mapped_column(
         Integer, nullable=True,
+    )
+
+    # Grants snapshot for pay-in-full purchases (Phase 1, migration
+    # 123). JSON-serialised ``FulfilmentIntent`` captured at
+    # checkout-session creation. Prevents a Creator edit to the
+    # Payment Option's grants between "buyer clicked Pay" and Stripe
+    # firing ``checkout.session.completed`` from silently altering
+    # what the purchase grants. Nullable so historical ledger rows
+    # (pre-migration and future free/legacy paths) fall back to the
+    # live-DB resolver in the webhook. Symmetric with
+    # ``PurchasePlan.snapshot_grants_json`` — same JSON shape, same
+    # ``services.purchase_fulfilment.serialise_intent`` helper.
+    snapshot_grants_json: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True,
     )
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -50,7 +50,23 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
     # APP_ENV comes from the dev .env; unset here so each test picks
     # what it wants explicitly.
     monkeypatch.delenv("APP_ENV", raising=False)
+    # Stripe env vars in the dev .env would trigger the Phase-1
+    # ``_check_stripe_configuration`` guard when a test sets
+    # ``app_env=production`` — unset them here so R2 tests only assert
+    # R2 rules. Individual tests that need Stripe configured pass the
+    # values as kwargs.
+    for name in ("STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"):
+        monkeypatch.delenv(name, raising=False)
     return monkeypatch
+
+
+# Live-mode Stripe stub used in production-mode R2 tests so the
+# Phase-1 Stripe guard is a no-op and the test only asserts R2
+# behaviour.
+_LIVE_STRIPE = {
+    "stripe_secret_key": "sk_live_stub",
+    "stripe_webhook_secret": "whsec_stub",
+}
 
 
 def _mk_settings(**kwargs) -> Settings:
@@ -63,6 +79,8 @@ def _mk_settings(**kwargs) -> Settings:
         "jwt_secret": "test-only",
         "_env_file": None,
     }
+    if kwargs.get("app_env") == "production":
+        defaults.update(_LIVE_STRIPE)
     defaults.update(kwargs)
     return Settings(**defaults)
 
