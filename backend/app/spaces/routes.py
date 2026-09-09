@@ -221,11 +221,21 @@ def _series_info_for(event, db) -> tuple[str | None, str | None, str | None]:
 
 
 def _viewer_has_series_pass(user, series_id: str | None, db, now) -> bool:
-    """True when ``user`` holds a valid, in-window AccessPass scoped
-    to ``series_id``. Mirrors the booking-endpoint eligibility rule
-    so the UI can render Reserve vs Pass-required without a
-    speculative POST. Returns False for anonymous viewers or events
-    without a semantic series link."""
+    """True when ``user`` holds an active, not-yet-expired AccessPass
+    scoped to ``series_id``. Used by the UI to render Reserve vs
+    Pass-required.
+
+    This is a series-level ownership check — it deliberately does not
+    require ``valid_from <= now``. A member who has purchased a future
+    Series (e.g. Term 4 bought in September, pass ``valid_from`` set
+    to the 5 October start) legitimately holds the pass and should
+    see Reserve. Per-event window enforcement lives in the booking
+    commit (``book_event``), which compares the pass window against
+    ``event.starts_at``.
+
+    Returns False for anonymous viewers or events without a semantic
+    series link.
+    """
     if user is None or not series_id:
         return False
     from app.models.access_pass import AccessPass, AccessPassStatus
@@ -235,7 +245,6 @@ def _viewer_has_series_pass(user, series_id: str | None, db, now) -> bool:
             AccessPass.user_id == user.id,
             AccessPass.eligible_series_id == series_id,
             AccessPass.status == AccessPassStatus.active,
-            AccessPass.valid_from <= now,
             or_(
                 AccessPass.valid_until.is_(None),
                 AccessPass.valid_until > now,
@@ -1604,8 +1613,13 @@ def list_events(
     # Bulk-check the viewer's active AccessPasses for these series so
     # the booking UI can distinguish "has pass → Reserve" from "no
     # pass → explain requirement". Same window rule as the booking
-    # endpoint: status active AND valid_from <= now AND (valid_until
-    # NULL OR valid_until > now).
+    # endpoint: series-level ownership check — status active AND
+    # (valid_until NULL OR valid_until > now). Deliberately no
+    # ``valid_from`` filter here: a member who has purchased a future
+    # Series (pass ``valid_from`` in the future) legitimately holds
+    # the pass. Per-event window enforcement happens in ``book_event``
+    # against ``event.starts_at``, which is what actually determines
+    # whether a given session is inside the pass window.
     user_series_pass_ids: set[str] = set()
     if current_user and series_ids:
         pass_rows = (
@@ -1614,7 +1628,6 @@ def list_events(
                 AccessPass.user_id == current_user.id,
                 AccessPass.eligible_series_id.in_(series_ids),
                 AccessPass.status == AccessPassStatus.active,
-                AccessPass.valid_from <= now,
                 or_(
                     AccessPass.valid_until.is_(None),
                     AccessPass.valid_until > now,
@@ -1871,19 +1884,22 @@ def book_event(
     #      event's ``series_id`` authorises booking. This is what a
     #      term-pass buyer holds.
     #
-    # Validity window: BOTH ends are enforced (``valid_from <= now``
-    # AND (``valid_until IS NULL OR valid_until > now``)). Without the
-    # ``valid_from`` check a future-term pass would be usable early —
-    # e.g. buying Term 4 during Term 3 would let the buyer immediately
-    # book Term 3 events using the Term 4 pass. That is the behaviour
-    # this branch prevents.
+    # Validity window: the pass window is enforced against
+    # ``event.starts_at`` — the pass covers a session iff the
+    # session's start falls inside ``[valid_from, valid_until)``.
+    # Keyed on the event's calendar position (not "now") so a member
+    # who buys a future Series can immediately reserve future sessions
+    # within its window. The cross-term concern ("Term 4 pass used to
+    # book a Term 3 event") is already prevented by the series-match
+    # predicate (``eligible_series_id == event.series_id``); a Term 4
+    # pass never satisfies the match for a Term 3 event.
     #
     # ``included_with_series`` events with no matching pass are
-    # rejected here (no legacy lenient fallback): "the term hasn't
-    # started" and "I never bought a pass" are both correctly a
-    # booking denial. ``included_with_pathway`` events keep the
-    # legacy lenient fallback because a member may hold a manual
-    # PathwayEntitlement without a term pass.
+    # rejected here (no legacy lenient fallback): "I never bought a
+    # pass" and "this event sits outside the pass window" are both
+    # correctly a booking denial. ``included_with_pathway`` events
+    # keep the legacy lenient fallback because a member may hold a
+    # manual PathwayEntitlement without a term pass.
     #
     # Creators and moderators bypass all credit checks.
     access_pass_to_charge: AccessPass | None = None
@@ -1908,10 +1924,10 @@ def book_event(
                     AccessPass.user_id == current_user.id,
                     AccessPass.status == AccessPassStatus.active,
                     or_(*match_conditions),
-                    AccessPass.valid_from <= now,
+                    AccessPass.valid_from <= event.starts_at,
                     or_(
                         AccessPass.valid_until.is_(None),
-                        AccessPass.valid_until > now,
+                        AccessPass.valid_until > event.starts_at,
                     ),
                 )
                 .order_by(AccessPass.created_at.desc())
@@ -1927,7 +1943,7 @@ def book_event(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
                     "This session is part of a term. You need an active term "
-                    "pass to book it (or the term may not have started yet)."
+                    "pass whose validity window covers this session's date."
                 ),
             )
 

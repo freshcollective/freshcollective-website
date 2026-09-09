@@ -278,6 +278,15 @@ class MemberPaymentOptionOut(BaseModel):
 def _find_active_series_pass(
     user: User | None, series_id: str, db: Session, now: datetime,
 ) -> AccessPass | None:
+    """Series-level ownership lookup — active + not-yet-expired.
+
+    Deliberately does not filter by ``valid_from <= now``: a member
+    who has purchased a future Series (e.g. Term 4 in September, with
+    ``valid_from`` set to the October start) legitimately holds the
+    pass and should see it on the Series page. Per-event window
+    enforcement lives in the booking commit and is keyed off
+    ``event.starts_at``.
+    """
     if user is None:
         return None
     return (
@@ -286,7 +295,6 @@ def _find_active_series_pass(
             AccessPass.user_id == user.id,
             AccessPass.eligible_series_id == series_id,
             AccessPass.status == AccessPassStatus.active,
-            AccessPass.valid_from <= now,
             or_(
                 AccessPass.valid_until.is_(None),
                 AccessPass.valid_until > now,

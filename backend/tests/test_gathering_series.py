@@ -16,8 +16,11 @@ Covers the migration-105 groundwork:
       – ``grants_pathway_id`` when set creates an immediate
         PathwayEntitlement scoped to the series end.
   * Booking eligibility (``spaces.routes.book_event``):
-      – ``valid_from`` enforcement — a future-term pass cannot be
-        used to book events until the term begins;
+      – window enforcement is keyed on ``event.starts_at`` — an event
+        scheduled outside ``[valid_from, valid_until)`` on its own
+        pass is refused, regardless of when the booking is placed
+        (advance booking of future sessions is covered separately in
+        ``test_series_advance_booking.py``);
       – series pass authorises booking of a series event;
       – Term-3 pass cannot book a Term-4 event, and vice versa;
       – overlapping-term coexistence — both passes live and each
@@ -502,8 +505,15 @@ class TestBookingEligibility:
         self, db, make_space, make_user
     ):
         """Purchase a Term-4 pass while Term 4 is still in the future.
-        Try to book an event that belongs to Term 4 (also in the
-        future, but before valid_from). Denied — valid_from > now."""
+        Try to book an event tagged to Term 4 but scheduled *before*
+        ``valid_from`` (a mis-scheduled or Term-3-era session that
+        somehow carries the Term 4 ``series_id``). Denied — the pass
+        window does not cover the event date.
+
+        Advance-booking a *future* session that legitimately falls
+        inside the pass window is exercised in
+        ``test_series_advance_booking.py`` (the September-purchase /
+        October-session case)."""
         space = make_space()
         payer = make_user()
         _member(db, payer, space)
@@ -746,9 +756,20 @@ class TestOverlappingTerms:
         self, db, make_space, make_user
     ):
         """Alice holds a live Term-3 pass and a future Term-4 pass at
-        the same time. Booking a Term-3 event uses the Term-3 pass;
-        booking a Term-4 event before Term 4 begins is denied; after
-        Term 4 begins, the Term-4 pass authorises Term-4 bookings."""
+        the same time.
+
+        * Booking a Term-3 event today uses the Term-3 pass — only
+          its credits move.
+        * Booking a Term-4 event scheduled inside the Term-4 window
+          succeeds even though today is before Term 4 opens — the
+          pass window is enforced against ``event.starts_at``, not
+          against the booking-creation moment. This is the
+          advance-booking behaviour the September-purchase /
+          October-session product case relies on.
+        * A Term-4 event scheduled *outside* the Term-4 window
+          (defensive: e.g. mis-scheduled with the wrong ``series_id``)
+          is still refused.
+        """
         space = make_space()
         payer = make_user()
         _member(db, payer, space)
@@ -809,17 +830,42 @@ class TestOverlappingTerms:
         assert t3_pass.used_credits == 1
         assert t4_pass.used_credits == 0
 
-        # Term-4 event scheduled inside Term 4 but "now" is before
-        # Term 4 begins → the Term-4 pass is not yet valid.
-        t4_event_future = _make_booking_event(
+        # Term-4 event scheduled inside Term 4 (day +40 — well inside
+        # the [+30d, +90d] pass window). Advance booking succeeds and
+        # the Term-4 pass is decremented; the Term-3 pass is untouched.
+        t4_event_inside = _make_booking_event(
             db, space, series=term4,
             starts_at=datetime.utcnow() + timedelta(days=40),
             booking_access_type="included_with_series",
         )
         db.commit()
+        r4 = book_event(
+            slug=space.slug, event_id=t4_event_inside.id,
+            background_tasks=BackgroundTasks(),
+            db=db, current_user=payer,
+        )
+        assert r4.status == "confirmed"
+        t3_pass = next(p for p in db.query(AccessPass).filter(
+            AccessPass.user_id == payer.id
+        ).all() if p.eligible_series_id == term3.id)
+        t4_pass = next(p for p in db.query(AccessPass).filter(
+            AccessPass.user_id == payer.id
+        ).all() if p.eligible_series_id == term4.id)
+        assert t3_pass.used_credits == 1
+        assert t4_pass.used_credits == 1
+
+        # A Term-4 event scheduled AFTER Term 4 ends (day +100 vs
+        # window end at +90) — refused. Defensive: proves the pass
+        # window still bounds the far end.
+        t4_event_outside = _make_booking_event(
+            db, space, series=term4,
+            starts_at=datetime.utcnow() + timedelta(days=100),
+            booking_access_type="included_with_series",
+        )
+        db.commit()
         with pytest.raises(HTTPException) as ex:
             book_event(
-                slug=space.slug, event_id=t4_event_future.id,
+                slug=space.slug, event_id=t4_event_outside.id,
                 background_tasks=BackgroundTasks(),
                 db=db, current_user=payer,
             )

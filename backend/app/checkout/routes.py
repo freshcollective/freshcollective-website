@@ -626,13 +626,18 @@ def create_gathering_series_checkout_session(
         )
 
     # ── Duplicate-pass guard (legacy single-Series policy) ────────
+    # Series-level ownership check — active + not-yet-expired. No
+    # ``valid_from`` filter: a member who has purchased a *future*
+    # Series (e.g. Term 4 in September with ``valid_from`` in
+    # October) already owns the seat and must not be able to
+    # double-buy the same overlap simply because today is before
+    # the window opens.
     existing_pass = (
         db.query(AccessPass.id)
         .filter(
             AccessPass.user_id == current_user.id,
             AccessPass.eligible_series_id == series.id,
             AccessPass.status == AccessPassStatus.active,
-            AccessPass.valid_from <= now,
             or_(
                 AccessPass.valid_until.is_(None),
                 AccessPass.valid_until > now,
