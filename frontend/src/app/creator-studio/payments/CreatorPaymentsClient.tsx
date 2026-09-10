@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { apiUrl } from '@/lib/api'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
+import RevokeAccessModal, { type RevokeResult } from './RevokeAccessModal'
 
 interface CreatorPaymentSummary {
   total_gross_amount_cents: number
@@ -41,6 +42,16 @@ interface CreatorPaymentTransaction {
    *  entry — no aggregation, no fake combined transaction. */
   purchase_plan_id: string | null
   installment_number: number | null
+  /** Grant lifecycle indicator, orthogonal to Stripe payment status.
+   *  Values: intact | partially_revoked | fully_revoked | no_grant_records.
+   *  Derived server-side from the AccessPass + reachable
+   *  PathwayEntitlement rows for the transaction. Determines whether
+   *  the Revoke access button shows (intact + partially_revoked) and
+   *  which "Access revoked" chip renders. */
+  grant_state: 'intact' | 'partially_revoked' | 'fully_revoked' | 'no_grant_records'
+  /** Earliest admin revoke timestamp across the grant universe. NULL
+   *  for intact / no_grant_records. */
+  grant_revoked_at: string | null
   notes: string | null
   created_at: string
 }
@@ -83,6 +94,47 @@ function fmtDate(iso: string) {
 
 function labelType(t: string) {
   return t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+/** Small secondary chip next to the payment StatusBadge. Present only
+ *  when access has been administratively touched — silent for
+ *  ``intact`` and ``no_grant_records`` so intact rows stay quiet. */
+function GrantStateChip({ state }: { state: CreatorPaymentTransaction['grant_state'] }) {
+  if (state === 'fully_revoked') {
+    return (
+      <span
+        className="ml-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold"
+        style={{ background: '#FEF2F2', color: '#B91C1C', borderColor: '#FCA5A5' }}
+        title="Every access grant from this purchase has been revoked."
+      >
+        Access revoked
+      </span>
+    )
+  }
+  if (state === 'partially_revoked') {
+    return (
+      <span
+        className="ml-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-semibold"
+        style={{ background: '#FFFBEB', color: '#B45309', borderColor: '#FDE68A' }}
+        title="Some grants from this purchase have been revoked; others remain active."
+      >
+        Access partially revoked
+      </span>
+    )
+  }
+  return null
+}
+
+/** Show the Revoke access action when: caller is a platform admin,
+ *  the purchase is not plan-anchored (endpoint 409s otherwise), and
+ *  something remains to revoke (``intact`` or ``partially_revoked``).
+ *  Deliberately NOT keyed on ``row.status`` — refund status and
+ *  grant state are separate concepts; a refunded payment with
+ *  active grants must still be revocable here. */
+function canRevoke(row: CreatorPaymentTransaction, isPlatformOwner: boolean): boolean {
+  if (!isPlatformOwner) return false
+  if (row.purchase_plan_id) return false
+  return row.grant_state === 'intact' || row.grant_state === 'partially_revoked'
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -153,22 +205,56 @@ export default function CreatorPaymentsClient({
   const [rows, setRows] = useState<CreatorPaymentTransaction[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [revokingRow, setRevokingRow] = useState<CreatorPaymentTransaction | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  async function loadRows() {
+    const [sumRes, rowsRes] = await Promise.all([
+      fetch(apiUrl('/api/creator/payments/summary'), { credentials: 'include' }),
+      fetch(apiUrl('/api/creator/payments'), { credentials: 'include' }),
+    ])
+    if (!sumRes.ok) throw new Error(`Error ${sumRes.status}`)
+    if (!rowsRes.ok) throw new Error(`Error ${rowsRes.status}`)
+    const [sum, txns] = await Promise.all([
+      sumRes.json() as Promise<CreatorPaymentSummary>,
+      rowsRes.json() as Promise<CreatorPaymentTransaction[]>,
+    ])
+    setSummary(sum)
+    setRows(txns)
+  }
 
   useEffect(() => {
-    Promise.all([
-      fetch(apiUrl('/api/creator/payments/summary'), { credentials: 'include' }).then((r) => {
-        if (!r.ok) throw new Error(`Error ${r.status}`)
-        return r.json() as Promise<CreatorPaymentSummary>
-      }),
-      fetch(apiUrl('/api/creator/payments'), { credentials: 'include' }).then((r) => {
-        if (!r.ok) throw new Error(`Error ${r.status}`)
-        return r.json() as Promise<CreatorPaymentTransaction[]>
-      }),
-    ])
-      .then(([sum, txns]) => { setSummary(sum); setRows(txns) })
+    loadRows()
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
+
+  function handleRevoked(result: RevokeResult) {
+    // Summarise the outcome. Idempotent second call reads
+    // "This purchase's access was already revoked. No changes made."
+    if (result.already_revoked) {
+      setToast("This purchase's access was already revoked. No changes made.")
+    } else {
+      const bits: string[] = []
+      bits.push(`${result.access_passes_revoked} access pass${result.access_passes_revoked === 1 ? '' : 'es'} revoked`)
+      if (result.entitlements_revoked > 0) {
+        bits.push(`${result.entitlements_revoked} pathway entitlement${result.entitlements_revoked === 1 ? '' : 's'} revoked`)
+      }
+      if (result.grant_records_revoked > 0) {
+        bits.push(`${result.grant_records_revoked} grant record${result.grant_records_revoked === 1 ? '' : 's'} marked`)
+      }
+      if (result.future_bookings_released > 0) {
+        bits.push(`${result.future_bookings_released} future booking${result.future_bookings_released === 1 ? '' : 's'} released back to capacity`)
+      }
+      if (result.membership_removed) {
+        bits.push('Collective membership removed')
+      }
+      setToast(`Revoked · ${bits.join(' · ')}.`)
+    }
+    setRevokingRow(null)
+    // Refresh the ledger so the chips + button eligibility update.
+    loadRows().catch(() => { /* non-fatal: page will retry on next mount */ })
+  }
 
   const feeDisplay = `${(feeBasisPoints / 100).toFixed(0)}%`
   const displayCurrency = rows[0]?.currency ?? currency
@@ -432,8 +518,8 @@ export default function CreatorPaymentsClient({
                 <table className="w-full text-left">
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                      {['Date', 'Member', 'Collective', 'Purchase', 'Source', 'Gross', 'FC Fee', 'Est. Creator', 'Status'].map((h) => (
-                        <th key={h} className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">
+                      {['Date', 'Member', 'Collective', 'Purchase', 'Source', 'Gross', 'FC Fee', 'Est. Creator', 'Status', ''].map((h, idx) => (
+                        <th key={`${h}-${idx}`} className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">
                           {h}
                         </th>
                       ))}
@@ -477,8 +563,20 @@ export default function CreatorPaymentsClient({
                         <td className="px-3 py-3 text-[12px] font-semibold whitespace-nowrap" style={{ color: '#38A09E' }}>
                           {row.net_creator_amount_cents != null ? fmt(row.net_creator_amount_cents, row.currency) : '—'}
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-3 whitespace-nowrap">
                           <StatusBadge status={row.status} />
+                          <GrantStateChip state={row.grant_state} />
+                        </td>
+                        <td className="px-3 py-3 whitespace-nowrap text-right">
+                          {canRevoke(row, isPlatformOwner) && (
+                            <button
+                              type="button"
+                              onClick={() => setRevokingRow(row)}
+                              className="rounded-full border border-red-200 px-2.5 py-1 text-[11px] font-semibold text-red-600 transition-colors hover:bg-red-50"
+                            >
+                              Revoke access
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -500,7 +598,10 @@ export default function CreatorPaymentsClient({
                           {row.payer_name || row.payer_email || 'Unknown member'} · {fmtDate(row.created_at)} · {providerLabel(row)}
                         </p>
                       </div>
-                      <StatusBadge status={row.status} />
+                      <div className="text-right">
+                        <StatusBadge status={row.status} />
+                        <div className="mt-1"><GrantStateChip state={row.grant_state} /></div>
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-[12px]">
                       <div>
@@ -518,12 +619,55 @@ export default function CreatorPaymentsClient({
                         </p>
                       </div>
                     </div>
+                    {canRevoke(row, isPlatformOwner) && (
+                      <div className="mt-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setRevokingRow(row)}
+                          className="rounded-full border border-red-200 px-3 py-1 text-[11.5px] font-semibold text-red-600 transition-colors hover:bg-red-50"
+                        >
+                          Revoke access
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
         </>
+      )}
+
+      {/* Ephemeral success/idempotency notice — sits above the table
+          so the state change is obvious after Revoke. Auto-clears when
+          the operator opens another modal or reloads. */}
+      {toast && (
+        <div
+          className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-full px-4 py-2 text-[12.5px] font-medium text-white shadow-lg"
+          style={{ background: '#0F172A' }}
+          onClick={() => setToast(null)}
+          role="status"
+        >
+          {toast}
+        </div>
+      )}
+
+      {revokingRow && (
+        <RevokeAccessModal
+          txnId={revokingRow.id}
+          memberLabel={
+            revokingRow.payer_name
+            || revokingRow.payer_email
+            || 'Unknown member'
+          }
+          purchaseLabel={
+            revokingRow.payment_option_name
+            || labelType(revokingRow.transaction_type)
+          }
+          amountLabel={fmt(revokingRow.gross_amount_cents, revokingRow.currency)}
+          onClose={() => setRevokingRow(null)}
+          onRevoked={handleRevoked}
+        />
       )}
     </div>
   )

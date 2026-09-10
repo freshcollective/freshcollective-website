@@ -54,7 +54,10 @@ from app.models.access_grant_record import AccessGrantRecord
 from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.payment import PaymentTransaction
 from app.models.platform import (
+    BookingStatus,
     EntitlementStatus,
+    Event,
+    EventBooking,
     PathwayEntitlement,
     SpaceMembership,
     SpaceMembershipStatus,
@@ -329,6 +332,12 @@ class RevokePurchaseResult(BaseModel):
     entitlements_revoked: int
     grant_records_revoked: int
     membership_removed: bool
+    # Future confirmed EventBookings released back to capacity as
+    # part of the revoke — deliberately excludes past / in-progress
+    # sessions so historical attendance stays as history. Zero on
+    # idempotent second calls or when the purchase never granted a
+    # pass that a booking was consumed against.
+    future_bookings_released: int
     already_revoked: bool
 
 
@@ -466,6 +475,38 @@ def revoke_purchase(
         ap.updated_at = now
         passes_revoked += 1
 
+    # Release future confirmed bookings that were consumed from
+    # this purchase's AccessPasses back to gathering capacity. Past
+    # or in-progress sessions (``Event.starts_at <= now``) are left
+    # confirmed so historical attendance survives.
+    #
+    # Deliberately no ``used_credits`` restoration — the pass is
+    # being cancelled entirely; accounting on a cancelled pass is
+    # inert and restoring would inflate a phantom balance on a
+    # revoked entitlement.
+    #
+    # Idempotent: on a second admin call, ``revoked_pass_ids`` may
+    # still be non-empty (the passes exist, just already cancelled),
+    # but no future confirmed bookings will be linked to them, so
+    # ``future_bookings_released`` returns 0.
+    future_bookings_released = 0
+    revoked_pass_ids = [ap.id for ap in access_passes]
+    if revoked_pass_ids:
+        future_bookings = (
+            db.query(EventBooking)
+            .join(Event, Event.id == EventBooking.event_id)
+            .filter(
+                EventBooking.access_pass_id.in_(revoked_pass_ids),
+                EventBooking.status == BookingStatus.confirmed,
+                Event.starts_at > now,
+            )
+            .all()
+        )
+        for booking in future_bookings:
+            booking.status = BookingStatus.cancelled
+            booking.cancelled_at = now
+            future_bookings_released += 1
+
     entitlements_revoked = 0
     if entitlement_ids:
         ents = (
@@ -489,11 +530,13 @@ def revoke_purchase(
         now=now,
     )
 
-    # Idempotency signal — a second admin call touches zero rows.
+    # Idempotency signal — a second admin call touches zero rows
+    # across every mutation surface, including the booking release.
     already_revoked = (
         passes_revoked == 0
         and entitlements_revoked == 0
         and grant_records_revoked == 0
+        and future_bookings_released == 0
     )
 
     membership_removed = False
@@ -532,10 +575,11 @@ def revoke_purchase(
 
     logger.info(
         "admin revoke: purchase txn=%s revoked by admin=%s user=%s space=%s "
-        "passes=%d entitlements=%d agr=%d membership_removed=%s reason=%r",
+        "passes=%d entitlements=%d agr=%d future_bookings_released=%d "
+        "membership_removed=%s reason=%r",
         txn.id, admin.id, txn.payer_user_id, txn.space_id,
         passes_revoked, entitlements_revoked, grant_records_revoked,
-        membership_removed, reason_text,
+        future_bookings_released, membership_removed, reason_text,
     )
     return RevokePurchaseResult(
         payment_transaction_id=txn.id,
@@ -543,5 +587,6 @@ def revoke_purchase(
         entitlements_revoked=entitlements_revoked,
         grant_records_revoked=grant_records_revoked,
         membership_removed=membership_removed,
+        future_bookings_released=future_bookings_released,
         already_revoked=already_revoked,
     )

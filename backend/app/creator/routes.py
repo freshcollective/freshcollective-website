@@ -6356,7 +6356,7 @@ def list_creator_payments(
 
     # Batch-load related snapshots. Two-pass — collect ids first,
     # then a single SELECT per kind — so a page of hundreds of rows
-    # stays at three extra queries total.
+    # stays at a bounded number of extra queries total.
     payer_ids = {r.payer_user_id for r in rows if r.payer_user_id}
     space_ids = {r.space_id for r in rows if r.space_id}
     option_ids = {r.payment_option_id for r in rows if r.payment_option_id}
@@ -6373,6 +6373,84 @@ def list_creator_payments(
         {o.id: o for o in db.query(PaymentOption).filter(PaymentOption.id.in_(option_ids)).all()}
         if option_ids else {}
     )
+
+    # Grant-state derivation. Universe per transaction = every
+    # AccessPass linked by ``payment_transaction_id`` PLUS every
+    # PathwayEntitlement reachable via those passes'
+    # ``pathway_entitlement_id``. Same universe ``revoke_purchase``
+    # touches, so counts match by construction. A row is
+    # "admin-revoked" iff ``revoked_by_user_id IS NOT NULL`` — this
+    # distinguishes administrative revoke from natural pass expiry.
+    from app.models.access_pass import AccessPass as _AccessPass
+    from app.models.platform import PathwayEntitlement as _PathwayEnt
+
+    txn_ids = [r.id for r in rows]
+    # Per-txn accumulators: (total_grant_rows, admin_revoked_count,
+    # earliest_admin_revoked_at)
+    grant_totals: dict[str, int] = {}
+    grant_revoked_counts: dict[str, int] = {}
+    grant_revoked_at_by_txn: dict[str, datetime] = {}
+
+    pass_rows: list[tuple[str, str, str | None, str | None, datetime | None]] = []
+    if txn_ids:
+        pass_rows = (
+            db.query(
+                _AccessPass.payment_transaction_id,
+                _AccessPass.id,
+                _AccessPass.pathway_entitlement_id,
+                _AccessPass.revoked_by_user_id,
+                _AccessPass.revoked_at,
+            )
+            .filter(_AccessPass.payment_transaction_id.in_(txn_ids))
+            .all()
+        )
+    for txn_id, _pass_id, _ent_id, revoked_by, revoked_at in pass_rows:
+        grant_totals[txn_id] = grant_totals.get(txn_id, 0) + 1
+        if revoked_by is not None:
+            grant_revoked_counts[txn_id] = grant_revoked_counts.get(txn_id, 0) + 1
+            if revoked_at is not None:
+                cur = grant_revoked_at_by_txn.get(txn_id)
+                if cur is None or revoked_at < cur:
+                    grant_revoked_at_by_txn[txn_id] = revoked_at
+
+    ent_ids_by_txn: dict[str, set[str]] = {}
+    for txn_id, _pass_id, ent_id, _rb, _ra in pass_rows:
+        if ent_id:
+            ent_ids_by_txn.setdefault(txn_id, set()).add(ent_id)
+    all_ent_ids: set[str] = {e for s in ent_ids_by_txn.values() for e in s}
+    ent_state: dict[str, tuple[str | None, datetime | None]] = {}
+    if all_ent_ids:
+        for eid, rb, ra in (
+            db.query(
+                _PathwayEnt.id,
+                _PathwayEnt.revoked_by_user_id,
+                _PathwayEnt.revoked_at,
+            )
+            .filter(_PathwayEnt.id.in_(all_ent_ids))
+            .all()
+        ):
+            ent_state[eid] = (rb, ra)
+    for txn_id, ent_ids in ent_ids_by_txn.items():
+        for eid in ent_ids:
+            rb, ra = ent_state.get(eid, (None, None))
+            grant_totals[txn_id] = grant_totals.get(txn_id, 0) + 1
+            if rb is not None:
+                grant_revoked_counts[txn_id] = grant_revoked_counts.get(txn_id, 0) + 1
+                if ra is not None:
+                    cur = grant_revoked_at_by_txn.get(txn_id)
+                    if cur is None or ra < cur:
+                        grant_revoked_at_by_txn[txn_id] = ra
+
+    def _grant_state_for(txn_id: str) -> str:
+        total = grant_totals.get(txn_id, 0)
+        if total == 0:
+            return "no_grant_records"
+        revoked = grant_revoked_counts.get(txn_id, 0)
+        if revoked == 0:
+            return "intact"
+        if revoked == total:
+            return "fully_revoked"
+        return "partially_revoked"
 
     out: list[CreatorPaymentTransactionOut] = []
     for r in rows:
@@ -6412,6 +6490,8 @@ def list_creator_payments(
             # FIP4C — plan context. NULL on pay-in-full rows.
             purchase_plan_id=r.purchase_plan_id,
             installment_number=r.installment_number,
+            grant_state=_grant_state_for(r.id),
+            grant_revoked_at=grant_revoked_at_by_txn.get(r.id),
             notes=r.notes,
             created_at=r.created_at,
             updated_at=r.updated_at,

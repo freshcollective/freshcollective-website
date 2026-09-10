@@ -1869,6 +1869,30 @@ class CreatorPaymentTransactionOut(BaseModel):
     purchase_plan_id: str | None = None
     installment_number: int | None = None
 
+    # Grant-lifecycle indicator, orthogonal to Stripe payment status.
+    # Derived from the AccessPass rows attached to this transaction
+    # plus their linked PathwayEntitlement rows (the same universe
+    # ``revoke_purchase`` touches). ``grant_state`` values:
+    #
+    #   intact              — no grant row admin-revoked
+    #   partially_revoked   — some but not all grant rows admin-revoked
+    #                         (surgical AccessPass or PathwayEntitlement
+    #                         revoke on a multi-grant purchase)
+    #   fully_revoked       — every grant row admin-revoked
+    #   no_grant_records    — no AccessPass rows for this txn
+    #                         (legacy / free-flow / fulfilment never
+    #                         landed a pass)
+    #
+    # Deliberately NOT derived from ``AccessPass.status`` alone
+    # (natural expiry ≠ administrative revoke) and deliberately NOT
+    # keyed on the payment ``status`` (refund status and grant state
+    # are separate concepts — a refunded payment may still have
+    # active grants that need revoking, and vice-versa).
+    grant_state: str = "intact"
+    # Earliest admin ``revoked_at`` across the grant-row universe.
+    # NULL for ``intact`` and ``no_grant_records``.
+    grant_revoked_at: datetime | None = None
+
     notes: str | None
     created_at: datetime
     updated_at: datetime
