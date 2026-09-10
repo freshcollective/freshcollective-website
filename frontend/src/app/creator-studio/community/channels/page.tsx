@@ -3,12 +3,13 @@ import {
   getActiveCreatorSpace,
   getCreatorChannels,
   getCreatorEvents,
+  getCreatorGatheringSeriesList,
   getCreatorPathways,
   getSpaceMembers,
   type ChannelManageDetail,
 } from '@/lib/serverApi'
 import type { CreatorEvent, CreatorPathway, MemberProfile, SpaceSummary } from '@/types/platform'
-import ManageChannelsClient from './ManageChannelsClient'
+import ManageChannelsClient, { type CreatorGatheringSeries } from './ManageChannelsClient'
 
 /**
  * Creator Studio → Conversations → Channels
@@ -25,19 +26,21 @@ import ManageChannelsClient from './ManageChannelsClient'
 export default async function ManageChannelsPage() {
   const activeSpace: SpaceSummary | null = await getActiveCreatorSpace()
 
-  const [channels, members, pathways, events]: [
+  const [channels, members, pathways, events, series]: [
     ChannelManageDetail[],
     MemberProfile[],
     CreatorPathway[],
     CreatorEvent[],
+    CreatorGatheringSeries[],
   ] = activeSpace
     ? await Promise.all([
         getCreatorChannels(activeSpace.slug),
         getSpaceMembers(activeSpace.slug) as Promise<MemberProfile[]>,
         getCreatorPathways(activeSpace.slug) as Promise<CreatorPathway[]>,
         getCreatorEvents(activeSpace.slug) as Promise<CreatorEvent[]>,
+        getCreatorGatheringSeriesList(activeSpace.slug) as Promise<CreatorGatheringSeries[]>,
       ])
-    : [[], [], [], []]
+    : [[], [], [], [], []]
 
   return (
     <div className="w-full max-w-[980px] px-8 py-8 md:px-10 md:py-10">
@@ -65,8 +68,8 @@ export default async function ManageChannelsPage() {
         <p className="mt-2 text-[14px] leading-relaxed text-black">
           Shape distinct places for conversation within your collective.
           Create open places everyone can enjoy, private places for smaller
-          circles, or Channels linked to Pathways and Gatherings so people
-          arrive when they belong.
+          circles, or Channels linked to a Gathering Series, a Pathway, or
+          an individual Gathering so people arrive when they belong.
         </p>
       </div>
 
@@ -84,6 +87,7 @@ export default async function ManageChannelsPage() {
           members={members}
           pathways={pathways}
           events={events}
+          series={series}
         />
       )}
     </div>

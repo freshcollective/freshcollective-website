@@ -28,6 +28,14 @@ By channel_type
                  access source — revoke the grant, lose the Channel.
     gathering  — every user with a confirmed EventBooking on the linked
                  gathering + caretakers.
+    series     — every user who currently has access to the linked
+                 EventSeries under the canonical ``compute_series_access``
+                 rule (an active, not-yet-expired AccessPass whose
+                 ``eligible_series_id`` matches — covering pay-in-full,
+                 finite plan, and manual grants uniformly) + caretakers.
+                 A confirmed EventBooking on a single gathering inside
+                 the series is NOT a Series-access source. Revoke or
+                 expire the pass, lose the Channel.
 
 Archived Channels
     Still viewable to whoever could view them pre-archive. Not
@@ -53,6 +61,7 @@ from app.models.platform import (
     EntitlementStatus,
     Event,
     EventBooking,
+    EventSeries,
     Pathway,
     PathwayEntitlement,
     PathwayUnlockRequirement,
@@ -63,6 +72,7 @@ from app.models.platform import (
 )
 from app.models.user import User
 from app.services.pathway_access import compute_pathway_access
+from app.services.series_access import compute_series_access
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +175,25 @@ def _has_pathway_channel_access(
     return compute_pathway_access(user, pathway, space, db)
 
 
+def _has_series_channel_access(
+    user: User, series_id: str, space: Space, db: Session,
+) -> bool:
+    """Series-linked Channel visibility mirrors the canonical
+    ``compute_series_access`` rule for the linked EventSeries.
+
+    A confirmed ``EventBooking`` on a single session inside the
+    series is not a Series-access source; attending one gathering
+    doesn't buy you the whole term. Access requires an active,
+    not-yet-expired ``AccessPass`` whose ``eligible_series_id``
+    matches (covers pay-in-full, finite plan, and manual grants
+    uniformly) or caretaker privilege.
+    """
+    series = db.query(EventSeries).filter(EventSeries.id == series_id).first()
+    if series is None:
+        return False
+    return compute_series_access(user, series, space, db)
+
+
 def _is_confirmed_gathering_attendee(user_id: str, gathering_id: str, db: Session) -> bool:
     """Access to a gathering Channel is granted by a confirmed
     EventBooking. Registrants keep access after the event so the
@@ -222,6 +251,10 @@ def can_view_channel(
     if ct == "gathering":
         return channel.gathering_id is not None and _is_confirmed_gathering_attendee(
             user.id, channel.gathering_id, db,
+        )
+    if ct == "series":
+        return channel.series_id is not None and _has_series_channel_access(
+            user, channel.series_id, space, db,
         )
     return False
 
@@ -466,4 +499,26 @@ def accessible_user_ids_for_channel(
             EventBooking.status == BookingStatus.confirmed,
         ).all()
         return {r.user_id for r in rows} | caretaker_ids
+    if ct == "series" and channel.series_id:
+        # Mirror ``compute_series_access`` for the linked EventSeries.
+        # Deliberately no EventBooking join — attending a single
+        # session in the series is not a Series-access source.
+        active_member_ids = {
+            row.user_id
+            for row in db.query(SpaceMembership.user_id)
+            .filter(
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+            )
+            .all()
+        }
+        now = datetime.utcnow()
+        rows = db.query(AccessPass.user_id).filter(
+            AccessPass.space_id == space.id,
+            AccessPass.eligible_series_id == channel.series_id,
+            AccessPass.status == AccessPassStatus.active,
+            (AccessPass.valid_until.is_(None) | (AccessPass.valid_until > now)),
+        ).all()
+        candidates = {r.user_id for r in rows}
+        return (candidates & active_member_ids) | caretaker_ids
     return caretaker_ids

@@ -30,6 +30,7 @@ from app.models.platform import (
     ConversationChannel,
     Enrollment,
     Event,
+    EventSeries,
     Pathway,
     Space,
     SpaceMembership,
@@ -78,14 +79,17 @@ class ChannelSummary(BaseModel):
     scheduling_allowed: bool
     pathway_id: str | None
     gathering_id: str | None
-    # Human-readable name of the linked Pathway / Gathering, resolved
-    # server-side so the Creator Studio card + member selector can
-    # render "Linked to · <name>" without a sibling fetch. Populated
-    # only for the corresponding channel_type; NULL otherwise.
+    series_id: str | None = None
+    # Human-readable name of the linked Pathway / Gathering / Series,
+    # resolved server-side so the Creator Studio card + member selector
+    # can render "Linked to · <name>" without a sibling fetch.
+    # Populated only for the corresponding channel_type; NULL otherwise.
     pathway_title: str | None = None
     pathway_archived: bool = False
     gathering_title: str | None = None
     gathering_archived: bool = False
+    series_title: str | None = None
+    series_archived: bool = False
     unread_count: int = 0  # reserved for future; always 0 today
 
 
@@ -110,9 +114,10 @@ class ChannelCreateRequest(BaseModel):
     slug: str | None = None
     description: str | None = None
     # Icons are strictly type-driven — no icon input from creators.
-    channel_type: str = "open"  # open | private | pathway | gathering
+    channel_type: str = "open"  # open | private | pathway | gathering | series
     pathway_id: str | None = None
     gathering_id: str | None = None
+    series_id: str | None = None
     member_posting_allowed: bool = True
     comments_allowed: bool = True
     polls_allowed: bool = True
@@ -356,14 +361,15 @@ def _summary_from(
     *,
     pathway_titles: dict[str, tuple[str, bool]] | None = None,
     gathering_titles: dict[str, tuple[str, bool]] | None = None,
+    series_titles: dict[str, tuple[str, bool]] | None = None,
 ) -> ChannelSummary:
     """Serialise a channel row for the wire.
 
-    ``pathway_titles`` / ``gathering_titles`` (both optional) are the
-    bulk-lookup maps produced by ``_resolve_link_titles``. Values are
-    ``(title, is_archived)`` tuples. When absent the linked-title
-    fields fall back to NULL — safe for callers that don't need them
-    (single-channel responses in the CRUD endpoints, tests).
+    ``pathway_titles`` / ``gathering_titles`` / ``series_titles`` (all
+    optional) are the bulk-lookup maps produced by
+    ``_resolve_link_titles``. Values are ``(title, is_archived)``
+    tuples. When absent the linked-title fields fall back to NULL —
+    safe for callers that don't need them.
     """
     pw_title: str | None = None
     pw_archived = False
@@ -377,6 +383,12 @@ def _summary_from(
         entry = gathering_titles.get(channel.gathering_id)
         if entry is not None:
             gt_title, gt_archived = entry
+    sr_title: str | None = None
+    sr_archived = False
+    if channel.series_id and series_titles is not None:
+        entry = series_titles.get(channel.series_id)
+        if entry is not None:
+            sr_title, sr_archived = entry
     return ChannelSummary(
         id=channel.id,
         slug=channel.slug,
@@ -395,21 +407,29 @@ def _summary_from(
         scheduling_allowed=channel.scheduling_allowed,
         pathway_id=channel.pathway_id,
         gathering_id=channel.gathering_id,
+        series_id=channel.series_id,
         pathway_title=pw_title,
         pathway_archived=pw_archived,
         gathering_title=gt_title,
         gathering_archived=gt_archived,
+        series_title=sr_title,
+        series_archived=sr_archived,
     )
 
 
 def _resolve_link_titles(
     channels: list[ConversationChannel], db: Session,
-) -> tuple[dict[str, tuple[str, bool]], dict[str, tuple[str, bool]]]:
+) -> tuple[
+    dict[str, tuple[str, bool]],
+    dict[str, tuple[str, bool]],
+    dict[str, tuple[str, bool]],
+]:
     """Bulk-fetch ``(title, is_archived)`` for every linked Pathway /
-    Gathering referenced by the given channels. Two round-trips total,
-    regardless of channel count."""
+    Gathering / Series referenced by the given channels. Three
+    round-trips total, regardless of channel count."""
     pw_ids = {c.pathway_id for c in channels if c.pathway_id}
     gt_ids = {c.gathering_id for c in channels if c.gathering_id}
+    sr_ids = {c.series_id for c in channels if c.series_id}
     pathway_titles: dict[str, tuple[str, bool]] = {}
     if pw_ids:
         for row in (
@@ -430,7 +450,18 @@ def _resolve_link_titles(
                 row.status.value if hasattr(row.status, "value") else str(row.status)
             )
             gathering_titles[row.id] = (row.title, status_val == "archived")
-    return pathway_titles, gathering_titles
+    series_titles: dict[str, tuple[str, bool]] = {}
+    if sr_ids:
+        for row in (
+            db.query(EventSeries.id, EventSeries.title, EventSeries.status)
+            .filter(EventSeries.id.in_(sr_ids))
+            .all()
+        ):
+            status_val = row.status if isinstance(row.status, str) else (
+                row.status.value if hasattr(row.status, "value") else str(row.status)
+            )
+            series_titles[row.id] = (row.title, status_val == "archived")
+    return pathway_titles, gathering_titles, series_titles
 
 
 def _detail_from(
@@ -439,6 +470,7 @@ def _detail_from(
     *,
     pathway_titles: dict[str, tuple[str, bool]] | None = None,
     gathering_titles: dict[str, tuple[str, bool]] | None = None,
+    series_titles: dict[str, tuple[str, bool]] | None = None,
 ) -> ChannelManageDetail:
     post_count = (
         db.query(func.count(CommunityPost.id))
@@ -454,6 +486,7 @@ def _detail_from(
         channel,
         pathway_titles=pathway_titles,
         gathering_titles=gathering_titles,
+        series_titles=series_titles,
     ).model_dump()
     return ChannelManageDetail(
         **base,
@@ -481,9 +514,14 @@ def list_member_channels(
     # Caretakers still see everything.
     if not is_caretaker(current_user, space, db):
         channels = [c for c in channels if c.show_in_navigation]
-    pw_titles, gt_titles = _resolve_link_titles(channels, db)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles(channels, db)
     return [
-        _summary_from(c, pathway_titles=pw_titles, gathering_titles=gt_titles)
+        _summary_from(
+            c,
+            pathway_titles=pw_titles,
+            gathering_titles=gt_titles,
+            series_titles=sr_titles,
+        )
         for c in channels
     ]
 
@@ -517,9 +555,15 @@ def list_creator_channels(
         )
         .all()
     )
-    pw_titles, gt_titles = _resolve_link_titles(channels, db)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles(channels, db)
     return [
-        _detail_from(c, db, pathway_titles=pw_titles, gathering_titles=gt_titles)
+        _detail_from(
+            c,
+            db,
+            pathway_titles=pw_titles,
+            gathering_titles=gt_titles,
+            series_titles=sr_titles,
+        )
         for c in channels
     ]
 
@@ -542,6 +586,25 @@ def create_channel(
         raise HTTPException(400, detail="Pathway Channels require pathway_id.")
     if body.channel_type == "gathering" and not body.gathering_id:
         raise HTTPException(400, detail="Gathering Channels require gathering_id.")
+    if body.channel_type == "series" and not body.series_id:
+        raise HTTPException(400, detail="Series Channels require series_id.")
+
+    # Enforce that the linked entity belongs to this same Space —
+    # a caretaker of Collective A must not be able to link a Channel
+    # here to a Pathway/Gathering/Series that lives in Collective B.
+    if body.channel_type == "series":
+        series_row = (
+            db.query(EventSeries.id)
+            .filter(
+                EventSeries.id == body.series_id,
+                EventSeries.space_id == space.id,
+            )
+            .first()
+        )
+        if series_row is None:
+            raise HTTPException(
+                400, detail="Series not found in this Collective.",
+            )
 
     existing = {c[0] for c in db.query(ConversationChannel.slug).filter(
         ConversationChannel.space_id == space.id
@@ -570,6 +633,7 @@ def create_channel(
         scheduling_allowed=body.scheduling_allowed,
         pathway_id=body.pathway_id if body.channel_type == "pathway" else None,
         gathering_id=body.gathering_id if body.channel_type == "gathering" else None,
+        series_id=body.series_id if body.channel_type == "series" else None,
         created_by=current_user.id,
     )
     db.add(channel)
@@ -584,8 +648,13 @@ def create_channel(
             ))
     db.commit()
     db.refresh(channel)
-    pw_titles, gt_titles = _resolve_link_titles([channel], db)
-    return _detail_from(channel, db, pathway_titles=pw_titles, gathering_titles=gt_titles)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles([channel], db)
+    return _detail_from(
+        channel, db,
+        pathway_titles=pw_titles,
+        gathering_titles=gt_titles,
+        series_titles=sr_titles,
+    )
 
 
 @creator_router.patch("/{slug}/channels/{channel_id}", response_model=ChannelManageDetail)
@@ -622,8 +691,13 @@ def update_channel(
         setattr(channel, field, v)
     db.commit()
     db.refresh(channel)
-    pw_titles, gt_titles = _resolve_link_titles([channel], db)
-    return _detail_from(channel, db, pathway_titles=pw_titles, gathering_titles=gt_titles)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles([channel], db)
+    return _detail_from(
+        channel, db,
+        pathway_titles=pw_titles,
+        gathering_titles=gt_titles,
+        series_titles=sr_titles,
+    )
 
 
 @creator_router.post("/{slug}/channels/{channel_id}/archive", response_model=ChannelManageDetail)
@@ -642,8 +716,13 @@ def archive_channel(
     channel.archived_by = current_user.id
     db.commit()
     db.refresh(channel)
-    pw_titles, gt_titles = _resolve_link_titles([channel], db)
-    return _detail_from(channel, db, pathway_titles=pw_titles, gathering_titles=gt_titles)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles([channel], db)
+    return _detail_from(
+        channel, db,
+        pathway_titles=pw_titles,
+        gathering_titles=gt_titles,
+        series_titles=sr_titles,
+    )
 
 
 @creator_router.post("/{slug}/channels/{channel_id}/restore", response_model=ChannelManageDetail)
@@ -661,8 +740,13 @@ def restore_channel(
     channel.archived_by = None
     db.commit()
     db.refresh(channel)
-    pw_titles, gt_titles = _resolve_link_titles([channel], db)
-    return _detail_from(channel, db, pathway_titles=pw_titles, gathering_titles=gt_titles)
+    pw_titles, gt_titles, sr_titles = _resolve_link_titles([channel], db)
+    return _detail_from(
+        channel, db,
+        pathway_titles=pw_titles,
+        gathering_titles=gt_titles,
+        series_titles=sr_titles,
+    )
 
 
 @creator_router.delete("/{slug}/channels/{channel_id}", status_code=204)

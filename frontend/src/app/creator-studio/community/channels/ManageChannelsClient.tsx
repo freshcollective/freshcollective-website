@@ -26,15 +26,25 @@ import type { CreatorEvent, CreatorPathway, MemberProfile } from '@/types/platfo
  *   - Groups with no channels collapse.
  */
 
+/** Minimal shape the Add-a-Channel picker needs — matches the
+ *  ``GatheringSeriesResponse`` fields we consult. */
+export interface CreatorGatheringSeries {
+  id: string
+  slug: string
+  title: string
+  status: string  // 'draft' | 'published' | 'archived'
+}
+
 interface Props {
   spaceSlug: string
   initialChannels: ChannelManageDetail[]
   members: MemberProfile[]
   pathways: CreatorPathway[]
   events: CreatorEvent[]
+  series: CreatorGatheringSeries[]
 }
 
-type ChannelType = 'open' | 'private' | 'pathway' | 'gathering'
+type ChannelType = 'open' | 'private' | 'pathway' | 'gathering' | 'series'
 
 interface CreateForm {
   name: string
@@ -42,6 +52,7 @@ interface CreateForm {
   description: string
   pathway_id: string
   gathering_id: string
+  series_id: string
   member_posting_allowed: boolean
   polls_allowed: boolean
   initial_member_user_ids: string[]
@@ -53,12 +64,13 @@ const EMPTY_CREATE: CreateForm = {
   description: '',
   pathway_id: '',
   gathering_id: '',
+  series_id: '',
   member_posting_allowed: true,
   polls_allowed: true,
   initial_member_user_ids: [],
 }
 
-const GROUP_ORDER: string[] = ['PATHWAYS', 'GATHERINGS', 'PRIVATE', 'OPEN DISCUSSIONS']
+const GROUP_ORDER: string[] = ['SERIES', 'PATHWAYS', 'GATHERINGS', 'PRIVATE', 'OPEN DISCUSSIONS']
 
 export default function ManageChannelsClient({
   spaceSlug,
@@ -66,6 +78,7 @@ export default function ManageChannelsClient({
   members,
   pathways,
   events,
+  series,
 }: Props) {
   const router = useRouter()
   const [channels, setChannels] = useState<ChannelManageDetail[]>(initialChannels)
@@ -83,6 +96,10 @@ export default function ManageChannelsClient({
   const eligibleEvents = useMemo(
     () => events.filter((e) => e.status !== 'archived' && e.status !== 'cancelled'),
     [events],
+  )
+  const eligibleSeries = useMemo(
+    () => series.filter((s) => s.status !== 'archived'),
+    [series],
   )
   const memberOptions = useMemo(
     () => members.slice().sort((a, b) => a.display_name.localeCompare(b.display_name)),
@@ -128,6 +145,10 @@ export default function ManageChannelsClient({
       setError('Choose which Gathering this Channel belongs to.')
       return
     }
+    if (createForm.channel_type === 'series' && !createForm.series_id) {
+      setError('Choose which Gathering Series this Channel belongs to.')
+      return
+    }
     setBusy(true)
     try {
       const res = await fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/channels`), {
@@ -140,6 +161,7 @@ export default function ManageChannelsClient({
           channel_type: createForm.channel_type,
           pathway_id: createForm.channel_type === 'pathway' ? createForm.pathway_id : null,
           gathering_id: createForm.channel_type === 'gathering' ? createForm.gathering_id : null,
+          series_id: createForm.channel_type === 'series' ? createForm.series_id : null,
           member_posting_allowed: createForm.member_posting_allowed,
           polls_allowed: createForm.polls_allowed,
           initial_member_user_ids: createForm.channel_type === 'private'
@@ -258,6 +280,7 @@ export default function ManageChannelsClient({
           onChange={setCreateForm}
           eligiblePathways={eligiblePathways}
           eligibleEvents={eligibleEvents}
+          eligibleSeries={eligibleSeries}
           memberOptions={memberOptions}
           busy={busy}
           onCancel={() => { setCreateOpen(false); setCreateForm(EMPTY_CREATE); setError('') }}
@@ -479,6 +502,12 @@ function ChannelRow({
               {channel.gathering_archived && <span className="italic text-slate-400"> (archived)</span>}
             </p>
           )}
+          {(channel.channel_type === 'series' && channel.series_title) && (
+            <p className="mt-1 text-[11.5px] text-slate-500">
+              Linked to · <span className="text-navy-800">{channel.series_title}</span>
+              {channel.series_archived && <span className="italic text-slate-400"> (archived)</span>}
+            </p>
+          )}
           <p className="mt-1 text-[11.5px] text-slate-500">
             {channel.post_count} conversation{channel.post_count === 1 ? '' : 's'}
             {channel.channel_type === 'private' && ` · ${channel.private_member_count} member${channel.private_member_count === 1 ? '' : 's'}`}
@@ -623,16 +652,19 @@ function TypeChip({ type }: { type: string }) {
     type === 'private' ? 'Private' :
     type === 'pathway' ? 'Pathway' :
     type === 'gathering' ? 'Gathering' :
+    type === 'series' ? 'Series' :
     type
   const bg =
     type === 'private' ? 'rgba(126,66,145,0.14)' :
     type === 'pathway' ? 'rgba(212,176,72,0.16)' :
     type === 'gathering' ? 'rgba(56,160,158,0.14)' :
+    type === 'series' ? 'rgba(66,199,198,0.14)' :
     'rgba(12,24,38,0.06)'
   const color =
     type === 'private' ? '#6B2C7A' :
     type === 'pathway' ? '#8A6A15' :
     type === 'gathering' ? 'var(--fc-accent, #0f766e)' :
+    type === 'series' ? '#07545C' :
     'rgba(12,24,38,0.62)'
   return (
     <span
@@ -649,13 +681,14 @@ function TypeChip({ type }: { type: string }) {
 // ---------------------------------------------------------------------------
 
 function CreateChannelForm({
-  form, onChange, eligiblePathways, eligibleEvents,
+  form, onChange, eligiblePathways, eligibleEvents, eligibleSeries,
   memberOptions, busy, onCancel, onSubmit,
 }: {
   form: CreateForm
   onChange: (f: CreateForm) => void
   eligiblePathways: CreatorPathway[]
   eligibleEvents: CreatorEvent[]
+  eligibleSeries: CreatorGatheringSeries[]
   memberOptions: MemberProfile[]
   busy: boolean
   onCancel: () => void
@@ -699,6 +732,9 @@ function CreateChannelForm({
           >
             <option value="open">💬 Open discussion — everyone in the collective</option>
             <option value="private">🔒 Private — chosen members only</option>
+            <option value="series" disabled={eligibleSeries.length === 0}>
+              🗓 Gathering Series — active Series pass holders
+            </option>
             <option value="pathway" disabled={eligiblePathways.length === 0}>
               🛤 Pathway — active enrollees only
             </option>
@@ -746,6 +782,22 @@ function CreateChannelForm({
               <option value="">Choose a Gathering…</option>
               {eligibleEvents.map((ev) => (
                 <option key={ev.id} value={ev.id}>{ev.title}</option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {form.channel_type === 'series' && (
+          <label className="text-[12px] text-black md:col-span-2">
+            <span className="mb-1 block font-semibold uppercase tracking-[0.14em]">Gathering Series</span>
+            <select
+              value={form.series_id}
+              onChange={(e) => onChange({ ...form, series_id: e.target.value })}
+              className="w-full rounded-lg border border-border bg-white px-3 py-2 text-[13.5px] text-navy-900 focus:border-teal-400 focus:outline-none"
+            >
+              <option value="">Choose a Gathering Series…</option>
+              {eligibleSeries.map((s) => (
+                <option key={s.id} value={s.id}>{s.title}</option>
               ))}
             </select>
           </label>

@@ -1295,6 +1295,17 @@ class ConversationChannel(Base):
     gathering_id: Mapped[str | None] = mapped_column(
         String, nullable=True,
     )
+    # Series-scoped Conversation channels (migration 124) — channel
+    # visibility is gated by ``services.series_access.compute_series_access``
+    # on the linked ``EventSeries`` (an active AccessPass with
+    # ``eligible_series_id`` matching this column, plus active
+    # SpaceMembership). ``ON DELETE SET NULL`` matches the
+    # ``pathway_id`` convention: deleting a Series leaves the
+    # channel row intact so a caretaker can re-link or archive it.
+    series_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("event_series.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     created_by: Mapped[str | None] = mapped_column(
         String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
     )

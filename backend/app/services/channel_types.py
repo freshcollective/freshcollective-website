@@ -23,6 +23,7 @@ ALL_CHANNEL_TYPES: tuple[str, ...] = (
     "private",
     "pathway",
     "gathering",
+    "series",
 )
 
 # Types a creator may choose when authoring a new Channel through the
@@ -33,10 +34,15 @@ CREATOR_ASSIGNABLE_TYPES: tuple[str, ...] = (
     "private",
     "pathway",
     "gathering",
+    "series",
 )
 
 # Types that require a linked entity (validated on create).
-LINKED_TYPES = {"pathway": "pathway_id", "gathering": "gathering_id"}
+LINKED_TYPES = {
+    "pathway": "pathway_id",
+    "gathering": "gathering_id",
+    "series": "series_id",
+}
 
 # Type → default emoji icon. Icons are strictly type-driven; creators
 # do not pick icons in the UI. Every channel type must be represented.
@@ -47,6 +53,7 @@ CHANNEL_TYPE_ICONS: dict[str, str] = {
     "private": "🔒",
     "pathway": "🛤",
     "gathering": "📅",
+    "series": "🗓",
 }
 
 # Human-friendly group heading for the member selector + manage view.
@@ -55,6 +62,7 @@ CHANNEL_TYPE_ICONS: dict[str, str] = {
 GROUP_LABEL_BY_TYPE: dict[str, str | None] = {
     "start_here": None,
     "general":    None,
+    "series":     "SERIES",
     "pathway":    "PATHWAYS",
     "gathering":  "GATHERINGS",
     "private":    "PRIVATE",

@@ -44,6 +44,7 @@ interface Props {
 // render — appended alphabetically after the known ones — so the UI
 // tolerates future channel types before this file catches up.
 const GROUP_ORDER: string[] = [
+  'SERIES',
   'PATHWAYS',
   'GATHERINGS',
   'PRIVATE',
