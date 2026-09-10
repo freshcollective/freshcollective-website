@@ -1894,20 +1894,35 @@ def book_event(
     # predicate (``eligible_series_id == event.series_id``); a Term 4
     # pass never satisfies the match for a Term 3 event.
     #
-    # ``included_with_series`` events with no matching pass are
-    # rejected here (no legacy lenient fallback): "I never bought a
-    # pass" and "this event sits outside the pass window" are both
-    # correctly a booking denial. ``included_with_pathway`` events
-    # keep the legacy lenient fallback because a member may hold a
-    # manual PathwayEntitlement without a term pass.
+    # Privilege rule (creator / moderator on this Collective):
     #
-    # Creators and moderators bypass all credit checks.
+    #   * Privilege bypasses REJECTION only — a creator or moderator
+    #     is allowed to attend/test a gathering even when they don't
+    #     hold a matching pass, or when their pass has already
+    #     reached its weekly or total allowance.
+    #   * Privilege does NOT bypass CONSUMPTION. When a matching
+    #     pass exists AND the booking fits inside its remaining
+    #     weekly + total allowance, the pass is charged normally
+    #     (``used_credits += 1``, booking row carries ``access_pass_id``)
+    #     regardless of role — so a creator who purchased their own
+    #     offering sees accurate accounting.
+    #   * Privilege must NEVER inflate accounting past what was
+    #     purchased. When the caps are already met, the booking
+    #     proceeds without a pass attached — attendance outside the
+    #     entitlement, not accounting exceeding the entitlement.
+    #
+    # ``included_with_series`` events with no matching pass and no
+    # privilege are rejected: "I never bought a pass" and "this
+    # event sits outside the pass window" are both correctly a
+    # booking denial. ``included_with_pathway`` events keep the
+    # legacy lenient fallback because a member may hold a manual
+    # PathwayEntitlement without a term pass.
     access_pass_to_charge: AccessPass | None = None
     event_series_id: str | None = getattr(event, 'series_id', None)
     is_series_gated = event_access_type == 'included_with_series'
     is_pathway_gated = event_access_type == 'included_with_pathway' and bool(required_pid)
 
-    credit_check_applies = not is_privileged and (is_pathway_gated or is_series_gated)
+    credit_check_applies = is_pathway_gated or is_series_gated
 
     if credit_check_applies:
         match_conditions = []
@@ -1934,36 +1949,33 @@ def book_event(
                 .first()
             )
 
-        # A series-gated event with no matching pass is a hard 403 —
-        # no legacy manual-entitlement fallback exists for term-scoped
-        # bookings. A pathway-gated event keeps the fallback because a
-        # member may hold a manual PathwayEntitlement without a pass.
-        if candidate_pass is None and is_series_gated and not is_pathway_gated:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "This session is part of a term. You need an active term "
-                    "pass whose validity window covers this session's date."
-                ),
-            )
-
-        if candidate_pass is not None:
-            # Hard enforce: total credits exhausted
-            if (
+        if candidate_pass is None:
+            # No matching pass. Reject only for the strict series-only
+            # gate applied to non-privileged users; everyone else
+            # (privileged, or pathway-gated with the legacy manual-
+            # entitlement fallback) books through without pass tracking.
+            if is_series_gated and not is_pathway_gated and not is_privileged:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "This session is part of a term. You need an active term "
+                        "pass whose validity window covers this session's date."
+                    ),
+                )
+        else:
+            # Matching pass found. Evaluate caps against the pass;
+            # enforcement is per-role, consumption is decided by
+            # whether the caps have headroom.
+            exceeds_total = (
                 candidate_pass.total_credits is not None
                 and candidate_pass.used_credits >= candidate_pass.total_credits
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="You have no remaining sessions on your current pass.",
-                )
-
-            # Hard enforce: weekly cap
-            # Uses the EVENT's starts_at week, not the booking creation time.
-            # This allows a member to book sessions in multiple future weeks on
-            # the same day, while still preventing two sessions in the same event week.
+            )
+            exceeds_weekly = False
             if candidate_pass.credits_per_week is not None:
-                # Determine the Monday of the week the target event falls in
+                # Weekly cap bucket is the EVENT's calendar week, not
+                # the booking creation week. That lets a member book
+                # multiple future weeks on the same weekday while
+                # blocking two sessions inside a single event-week.
                 event_weekday = event.starts_at.weekday()  # 0=Mon … 6=Sun
                 event_week_start = (event.starts_at - timedelta(days=event_weekday)).replace(
                     hour=0, minute=0, second=0, microsecond=0
@@ -1980,7 +1992,19 @@ def book_event(
                     )
                     .scalar()
                 ) or 0
-                if weekly_used >= candidate_pass.credits_per_week:
+                exceeds_weekly = weekly_used >= candidate_pass.credits_per_week
+
+            if exceeds_total:
+                if not is_privileged:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="You have no remaining sessions on your current pass.",
+                    )
+                # Privileged: allow attendance outside the
+                # entitlement; leave ``access_pass_to_charge`` None so
+                # the booking is created without a pass link.
+            elif exceeds_weekly:
+                if not is_privileged:
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
                         detail=(
@@ -1988,9 +2012,13 @@ def book_event(
                             f"{candidate_pass.credits_per_week} session(s)."
                         ),
                     )
-
-            access_pass_to_charge = candidate_pass
-        # else: no AccessPass found → legacy/manual path, booking proceeds without credit tracking
+                # Privileged: same rationale — attendance outside the
+                # entitlement, no pass consumption.
+            else:
+                # Within caps for everyone (learner and privileged).
+                # Charge the pass so accounting stays accurate for
+                # anyone who legitimately holds one.
+                access_pass_to_charge = candidate_pass
 
     if event.starts_at <= now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering has already started.")

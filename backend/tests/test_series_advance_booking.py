@@ -54,16 +54,23 @@ from app.models.payment_option import (
 from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     Event,
+    EventBooking,
     EventSeries,
     SpaceMembership,
     SpaceMembershipStatus,
     SpaceRole,
 )
-from app.spaces._series_member_routes import _find_active_series_pass
+from app.models.user import User
+from app.creator.routes import list_space_passes
+from app.spaces._series_member_routes import (
+    _find_active_series_pass,
+    get_member_gathering_series,
+)
 from app.spaces.routes import (
     _viewer_has_series_pass,
     book_event,
     get_event,
+    get_my_passes,
     list_events,
 )
 from app.webhooks.routes import _handle_checkout_completed
@@ -761,3 +768,483 @@ class TestFuturePassBlocksRepurchase:
         except Exception:
             # Stripe SDK bubble — also proves we're past the guard.
             pass
+
+
+# ---------------------------------------------------------------------------
+# 5. Privileged-role behaviour on booking + pass consumption
+#
+# Product rule (see book_event's Privilege rule comment):
+#
+#   * Privilege bypasses REJECTION (403/409) so a creator or moderator
+#     can attend or test a gathering they don't have a pass for, or
+#     one whose caps are already met.
+#   * Privilege does NOT bypass CONSUMPTION. When a matching pass
+#     exists AND the booking fits inside its remaining weekly + total
+#     allowance, the pass is charged normally — otherwise a creator
+#     who buys their own offering sees perpetually-stale accounting.
+#   * Privilege NEVER inflates accounting past what was purchased.
+#     When caps are met, the booking proceeds without a pass link.
+# ---------------------------------------------------------------------------
+
+
+def _term4_series(db, space):
+    """Same shape as the production Term 4 window."""
+    return _make_series(
+        db, space, title="EMBODY Term 4 2026",
+        starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        ends_at=datetime(2026, 12, 12, 12, 0, 0),
+    )
+
+
+def _seed_pass_directly(
+    db, *, user, space, series, role_membership: SpaceMembership,
+    total_credits: int = 10, credits_per_week: int = 1,
+    used_credits: int = 0,
+) -> AccessPass:
+    """Bypass the webhook and seed a pass in one place — lets the
+    per-case tests be explicit about the starting ``used_credits``
+    and role, rather than driving every case through the checkout
+    fulfilment. Roles are set on the SpaceMembership fixture."""
+    ap = AccessPass(
+        id=_uid("ap"),
+        user_id=user.id,
+        space_id=space.id,
+        pass_type=AccessPassType.term_pass,
+        status=AccessPassStatus.active,
+        valid_from=series.starts_at,
+        valid_until=series.ends_at,
+        eligible_series_id=series.id,
+        total_credits=total_credits,
+        used_credits=used_credits,
+        credits_per_week=credits_per_week,
+        source=AccessPassSource.one_time_purchase,
+    )
+    db.add(ap)
+    db.flush()
+    return ap
+
+
+# NOW must be inside the series pass window so weekly-usage counters
+# read against a real "current week" at the time the booking happens
+# — otherwise `_weekly_usage_for()` sits in September and never sees
+# the Oct 5 booking during the same test call. All the privilege
+# cases test consumption at book time, which is where the fix lives.
+
+
+class TestLearnerBaseline:
+    """Learner behaviour must NOT change under the fix. These cases
+    pin the pre-existing enforcement semantics so a refactor that
+    accidentally weakens them fails loudly."""
+
+    def test_learner_with_available_allowance_consumes_pass(
+        self, db, make_space, make_user,
+    ):
+        space = make_space()
+        payer = make_user()
+        _member(db, payer, space, role=SpaceRole.learner)
+        series = _term4_series(db, space)
+        event = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        )
+        ap = _seed_pass_directly(
+            db, user=payer, space=space, series=series,
+            role_membership=None,
+        )
+        db.commit()
+
+        result = book_event(
+            slug=space.slug, event_id=event.id,
+            background_tasks=BackgroundTasks(),
+            db=db, current_user=payer,
+        )
+        assert result.status == "confirmed"
+
+        db.refresh(ap)
+        assert ap.used_credits == 1
+        booking = (
+            db.query(EventBooking)
+            .filter(EventBooking.event_id == event.id,
+                    EventBooking.user_id == payer.id)
+            .one()
+        )
+        assert booking.access_pass_id == ap.id
+        assert booking.credits_used == 1
+
+    def test_learner_without_pass_series_gated_rejected(
+        self, db, make_space, make_user,
+    ):
+        space = make_space()
+        payer = make_user()
+        _member(db, payer, space, role=SpaceRole.learner)
+        series = _term4_series(db, space)
+        event = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        )
+        db.commit()
+
+        with pytest.raises(HTTPException) as exc:
+            book_event(
+                slug=space.slug, event_id=event.id,
+                background_tasks=BackgroundTasks(),
+                db=db, current_user=payer,
+            )
+        assert exc.value.status_code == 403
+
+    def test_learner_total_cap_exhausted_rejected(
+        self, db, make_space, make_user,
+    ):
+        space = make_space()
+        payer = make_user()
+        _member(db, payer, space, role=SpaceRole.learner)
+        series = _term4_series(db, space)
+        event = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        )
+        # 10 of 10 already used.
+        _seed_pass_directly(
+            db, user=payer, space=space, series=series,
+            role_membership=None,
+            total_credits=10, used_credits=10,
+        )
+        db.commit()
+
+        with pytest.raises(HTTPException) as exc:
+            book_event(
+                slug=space.slug, event_id=event.id,
+                background_tasks=BackgroundTasks(),
+                db=db, current_user=payer,
+            )
+        assert exc.value.status_code == 409
+
+    def test_learner_weekly_cap_hit_rejected(
+        self, db, make_space, make_user,
+    ):
+        space = make_space()
+        payer = make_user()
+        _member(db, payer, space, role=SpaceRole.learner)
+        series = _term4_series(db, space)
+        first = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        )
+        second = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 8, 7, 0, 0),  # same week
+        )
+        _seed_pass_directly(
+            db, user=payer, space=space, series=series,
+            role_membership=None,
+            total_credits=10, credits_per_week=1,
+        )
+        db.commit()
+
+        book_event(
+            slug=space.slug, event_id=first.id,
+            background_tasks=BackgroundTasks(),
+            db=db, current_user=payer,
+        )
+        with pytest.raises(HTTPException) as exc:
+            book_event(
+                slug=space.slug, event_id=second.id,
+                background_tasks=BackgroundTasks(),
+                db=db, current_user=payer,
+            )
+        assert exc.value.status_code == 409
+
+
+class TestPrivilegedRoleWithPass:
+    """Creator / moderator + matching pass with headroom → consume
+    the pass. Fixes the production bug where a privileged buyer
+    saw perpetual 0/10."""
+
+    @pytest.mark.parametrize("role", [SpaceRole.creator, SpaceRole.moderator])
+    def test_privileged_with_available_allowance_consumes_pass(
+        self, db, make_space, make_user, role,
+    ):
+        # ``make_space`` seeds a fresh creator user as space.creator_id.
+        # For this case we want a *distinct* privileged user (either a
+        # co-creator or moderator) so we're not conflating "the Space's
+        # owner" with the tester.
+        space = make_space()
+        payer = make_user()
+        _member(db, payer, space, role=role)
+        series = _term4_series(db, space)
+        event = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        )
+        ap = _seed_pass_directly(
+            db, user=payer, space=space, series=series,
+            role_membership=None,
+        )
+        db.commit()
+
+        result = book_event(
+            slug=space.slug, event_id=event.id,
+            background_tasks=BackgroundTasks(),
+            db=db, current_user=payer,
+        )
+        assert result.status == "confirmed"
+
+        db.refresh(ap)
+        assert ap.used_credits == 1, (
+            f"{role.value} with a matching pass must have used_credits "
+            "incremented when the booking fits inside the allowance."
+        )
+        booking = (
+            db.query(EventBooking)
+            .filter(EventBooking.event_id == event.id,
+                    EventBooking.user_id == payer.id)
+            .one()
+        )
+        assert booking.access_pass_id == ap.id
+        assert booking.credits_used == 1
+
+
+class TestPrivilegedRoleWithoutPass:
+    """Creator / moderator without a matching pass → booking allowed
+    via privilege, no pass consumption. Unchanged bypass semantic."""
+
+    @pytest.mark.parametrize("role", [SpaceRole.creator, SpaceRole.moderator])
+    def test_privileged_without_pass_series_gated_allowed(
+        self, db, make_space, make_user, role,
+    ):
+        space = make_space()
+        payer = make_user()
+        _member(db, payer, space, role=role)
+        series = _term4_series(db, space)
+        event = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        )
+        db.commit()
+
+        result = book_event(
+            slug=space.slug, event_id=event.id,
+            background_tasks=BackgroundTasks(),
+            db=db, current_user=payer,
+        )
+        assert result.status == "confirmed"
+
+        booking = (
+            db.query(EventBooking)
+            .filter(EventBooking.event_id == event.id,
+                    EventBooking.user_id == payer.id)
+            .one()
+        )
+        assert booking.access_pass_id is None
+        assert booking.credits_used == 0
+        # Sanity: no phantom pass was created.
+        assert db.query(AccessPass).filter(
+            AccessPass.user_id == payer.id
+        ).count() == 0
+
+
+class TestPrivilegedRoleWithCappedPass:
+    """Privileged users with a pass whose caps are met — booking
+    allowed via privilege, but the pass must NOT be charged past
+    the allowance. Privilege can permit attendance outside the
+    entitlement; it must not inflate the accounting."""
+
+    @pytest.mark.parametrize("role", [SpaceRole.creator, SpaceRole.moderator])
+    def test_privileged_with_total_exhausted_does_not_charge_pass(
+        self, db, make_space, make_user, role,
+    ):
+        space = make_space()
+        payer = make_user()
+        _member(db, payer, space, role=role)
+        series = _term4_series(db, space)
+        event = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        )
+        ap = _seed_pass_directly(
+            db, user=payer, space=space, series=series,
+            role_membership=None,
+            total_credits=10, used_credits=10,
+        )
+        db.commit()
+
+        result = book_event(
+            slug=space.slug, event_id=event.id,
+            background_tasks=BackgroundTasks(),
+            db=db, current_user=payer,
+        )
+        assert result.status == "confirmed"
+
+        db.refresh(ap)
+        assert ap.used_credits == 10, (
+            "Privilege must not push used_credits past total_credits."
+        )
+        booking = (
+            db.query(EventBooking)
+            .filter(EventBooking.event_id == event.id,
+                    EventBooking.user_id == payer.id)
+            .one()
+        )
+        assert booking.access_pass_id is None
+        assert booking.credits_used == 0
+
+    @pytest.mark.parametrize("role", [SpaceRole.creator, SpaceRole.moderator])
+    def test_privileged_with_weekly_cap_hit_does_not_charge_pass(
+        self, db, make_space, make_user, role,
+    ):
+        space = make_space()
+        payer = make_user()
+        _member(db, payer, space, role=role)
+        series = _term4_series(db, space)
+        first = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        )
+        second = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 8, 7, 0, 0),  # same event-week
+        )
+        ap = _seed_pass_directly(
+            db, user=payer, space=space, series=series,
+            role_membership=None,
+            total_credits=10, credits_per_week=1,
+        )
+        db.commit()
+
+        # First booking uses the pass (within cap for that week).
+        book_event(
+            slug=space.slug, event_id=first.id,
+            background_tasks=BackgroundTasks(),
+            db=db, current_user=payer,
+        )
+        db.refresh(ap)
+        assert ap.used_credits == 1
+
+        # Second booking in the same event-week: privilege permits
+        # attendance but must not charge the pass a second time.
+        result = book_event(
+            slug=space.slug, event_id=second.id,
+            background_tasks=BackgroundTasks(),
+            db=db, current_user=payer,
+        )
+        assert result.status == "confirmed"
+
+        db.refresh(ap)
+        assert ap.used_credits == 1, (
+            "Privileged booking beyond the weekly cap must not increment "
+            "used_credits."
+        )
+        second_booking = (
+            db.query(EventBooking)
+            .filter(EventBooking.event_id == second.id,
+                    EventBooking.user_id == payer.id)
+            .one()
+        )
+        assert second_booking.access_pass_id is None
+        assert second_booking.credits_used == 0
+
+
+class TestReadThroughSummariesAfterPrivilegedBooking:
+    """After a privileged buyer with an in-allowance booking, the
+    three surfaces the user called out must all reflect the
+    consumption. Verifies both the write (in earlier tests) and the
+    read paths together — no stale-cache-y intermediate."""
+
+    def _setup_creator_with_pass_and_booking(
+        self, db, make_space, make_user, *, role=SpaceRole.creator,
+    ):
+        space = make_space()
+        payer = make_user()
+        _member(db, payer, space, role=role)
+        series = _term4_series(db, space)
+        event = _make_event(
+            db, space, series=series,
+            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+        )
+        ap = _seed_pass_directly(
+            db, user=payer, space=space, series=series,
+            role_membership=None,
+            total_credits=10, credits_per_week=1,
+        )
+        # Attach the payment_option so the my-passes / access page
+        # can resolve option_name — mirrors the production shape
+        # without needing to run the full checkout webhook.
+        opt = _make_series_option(
+            db, space, series, name="Awaken",
+            total_sessions=10, sessions_per_week=1, price_cents=20000,
+        )
+        ap.payment_option_id = opt.id
+        db.flush()
+        db.commit()
+
+        book_event(
+            slug=space.slug, event_id=event.id,
+            background_tasks=BackgroundTasks(),
+            db=db, current_user=payer,
+        )
+        db.refresh(ap)
+        return space, payer, series, event, ap
+
+    def test_my_passes_endpoint_shows_1_booked_9_remaining(
+        self, db, make_space, make_user,
+    ):
+        """Powers the Collective Gatherings page "Booked" /
+        "Available to book" widget (spaces.routes.get_my_passes,
+        rendered by frontend/.../events/page.tsx:150)."""
+        space, payer, _, _, _ = self._setup_creator_with_pass_and_booking(
+            db, make_space, make_user,
+        )
+        rows = get_my_passes(slug=space.slug, db=db, current_user=payer)
+        [row] = [r for r in rows if r.pass_type == "term_pass"]
+        assert row.used_credits == 1
+        assert row.remaining_credits == 9
+        assert row.total_credits == 10
+
+    def test_series_your_access_shows_1_of_10_and_remaining_9(
+        self, db, make_space, make_user,
+    ):
+        """Powers the Series page "Your Access" card
+        (_series_access_summary via get_member_gathering_series,
+        rendered by SeriesSidebar.tsx)."""
+        space, payer, series, _, _ = self._setup_creator_with_pass_and_booking(
+            db, make_space, make_user,
+        )
+        detail = get_member_gathering_series(
+            slug=space.slug, series_slug=series.slug,
+            db=db, current_user=payer,
+        )
+        assert detail.access.has_access is True
+        assert detail.access.gatherings_used == 1
+        assert detail.access.gatherings_total == 10
+        assert detail.access.gatherings_remaining == 9
+        assert detail.access.gatherings_per_week == 1
+
+    def test_creator_studio_access_endpoint_shows_credit_and_booking(
+        self, db, make_space, make_user,
+    ):
+        """Powers the Creator Studio Access page rows
+        (creator.routes.list_space_passes, rendered by AccessClient.tsx).
+        The "Gathering allowance" column reads used/total and the
+        "Bookings (30d)" column counts EventBooking rows with
+        access_pass_id == this pass — the exact metric production
+        currently shows as 10/10 and 0 bookings."""
+        space, payer, _, _, ap = self._setup_creator_with_pass_and_booking(
+            db, make_space, make_user,
+        )
+        # list_space_passes requires a creator/admin of the Space to
+        # call it. The Space's owner (space.creator_id) satisfies
+        # ``_get_managed_space`` via is_owner.
+        owner = db.query(User).filter(User.id == space.creator_id).one()
+        rows = list_space_passes(
+            slug=space.slug, status_filter=None,
+            db=db, current_user=owner,
+        )
+        [row] = [r for r in rows if r.id == ap.id]
+        # CreditBar source — the "Gathering allowance" column.
+        assert row.used_credits == 1
+        assert row.total_credits == 10
+        assert row.remaining_credits == 9
+        # "Bookings (30d)" column source. The booking was just made,
+        # so both counters see it.
+        assert row.total_bookings == 1
+        assert row.recent_bookings == 1
