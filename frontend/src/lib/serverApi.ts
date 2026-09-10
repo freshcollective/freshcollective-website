@@ -53,6 +53,13 @@ export interface ChannelSummaryLite {
   scheduling_allowed: boolean
   pathway_id: string | null
   gathering_id: string | null
+  /** Resolved server-side so the Creator Studio card + member
+   *  selector can render "Linked to · <name>" without a sibling
+   *  fetch. Populated only for the corresponding channel_type. */
+  pathway_title: string | null
+  pathway_archived: boolean
+  gathering_title: string | null
+  gathering_archived: boolean
 }
 
 export const getMemberChannels = cache(async (spaceSlug: string): Promise<ChannelSummaryLite[]> => {

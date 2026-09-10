@@ -467,6 +467,18 @@ function ChannelRow({
               {channel.description}
             </p>
           )}
+          {(channel.channel_type === 'pathway' && channel.pathway_title) && (
+            <p className="mt-1 text-[11.5px] text-slate-500">
+              Linked to · <span className="text-navy-800">{channel.pathway_title}</span>
+              {channel.pathway_archived && <span className="italic text-slate-400"> (archived)</span>}
+            </p>
+          )}
+          {(channel.channel_type === 'gathering' && channel.gathering_title) && (
+            <p className="mt-1 text-[11.5px] text-slate-500">
+              Linked to · <span className="text-navy-800">{channel.gathering_title}</span>
+              {channel.gathering_archived && <span className="italic text-slate-400"> (archived)</span>}
+            </p>
+          )}
           <p className="mt-1 text-[11.5px] text-slate-500">
             {channel.post_count} conversation{channel.post_count === 1 ? '' : 's'}
             {channel.channel_type === 'private' && ` · ${channel.private_member_count} member${channel.private_member_count === 1 ? '' : 's'}`}

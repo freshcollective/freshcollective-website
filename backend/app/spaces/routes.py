@@ -759,89 +759,13 @@ def _ensure_enrollment(user_id: str, pathway_id: str, db: Session) -> None:
         db.flush()
 
 
-def _compute_pathway_access(user: "User | None", pathway: Pathway, space: Space, db: Session) -> bool:
-    """
-    Return True if user has access to this pathway; False otherwise.
-    Accepts None for unauthenticated visitors — they never have access to paid/included pathways.
-
-    SEC-005-E: platform ``User.role == "creator"`` no longer grants
-    global pathway access. Manager-level access (draft / archived /
-    coming_soon / paid pathways bypass) now requires platform admin,
-    Space ownership, or an active creator/moderator ``SpaceMembership``.
-    """
-    if user is None:
-        p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
-        access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
-        if p_status in ("draft", "archived", "coming_soon"):
-            return False
-        return access_type == "free"
-    if user.role == "admin":
-        return True
-    if space.creator_id == user.id:
-        return True
-    space_role = (
-        db.query(SpaceMembership.role)
-        .filter(
-            SpaceMembership.user_id == user.id,
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.role.in_(["creator", "moderator"]),
-            SpaceMembership.status == "active",
-        )
-        .first()
-    )
-    if space_role:
-        return True
-    p_status = pathway.status.value if hasattr(pathway.status, "value") else str(pathway.status)
-    access_type = pathway.access_type.value if hasattr(pathway.access_type, "value") else str(pathway.access_type or "free")
-    if p_status in ("draft", "archived", "coming_soon"):
-        return False
-    if access_type == "free":
-        return True
-    if access_type == "included":
-        mem = (
-            db.query(SpaceMembership.id)
-            .filter(
-                SpaceMembership.user_id == user.id,
-                SpaceMembership.space_id == space.id,
-                SpaceMembership.status == "active",
-            )
-            .first()
-        )
-        return mem is not None
-    if access_type == "included_with_offer":
-        unlock_option_ids = [
-            row.payment_option_id
-            for row in db.query(PathwayUnlockRequirement.payment_option_id)
-            .filter(PathwayUnlockRequirement.pathway_id == pathway.id)
-            .all()
-        ]
-        if not unlock_option_ids:
-            return False
-        pass_row = (
-            db.query(AccessPass.id)
-            .filter(
-                AccessPass.user_id == user.id,
-                AccessPass.space_id == space.id,
-                AccessPass.status == AccessPassStatus.active,
-                AccessPass.payment_option_id.in_(unlock_option_ids),
-            )
-            .first()
-        )
-        return pass_row is not None
-
-    # one_time or subscription — requires active PathwayEntitlement that hasn't expired
-    now = datetime.utcnow()
-    ent = (
-        db.query(PathwayEntitlement.id)
-        .filter(
-            PathwayEntitlement.user_id == user.id,
-            PathwayEntitlement.pathway_id == pathway.id,
-            PathwayEntitlement.status == EntitlementStatus.active,
-            (PathwayEntitlement.ends_at.is_(None) | (PathwayEntitlement.ends_at > now)),
-        )
-        .first()
-    )
-    return ent is not None
+# Canonical Pathway-access predicate — sourced from the shared
+# ``app.services.pathway_access`` module so every surface (Pathway
+# page, Pathway Conversation channels, mention autocomplete) evaluates
+# the same rule against the same access sources. This delegate
+# preserves the private ``_compute_pathway_access`` name for
+# backward compatibility with in-module callers.
+from app.services.pathway_access import compute_pathway_access as _compute_pathway_access  # noqa: E402
 
 
 def _check_pathway_access(

@@ -20,8 +20,12 @@ By channel_type
     general    — every active SpaceMembership user (system, 🏡 Common Room).
     open       — every active SpaceMembership user (creator-made).
     private    — every user with a ChannelMembership row + caretakers.
-    pathway    — every user with an active Enrollment on the linked
-                 Pathway + caretakers.
+    pathway    — every user who currently has access to the linked
+                 Pathway under the canonical ``compute_pathway_access``
+                 rule (paid, plan-based, complimentary/manual grant,
+                 or a legitimate free/included path) + caretakers.
+                 Enrollment progress history is NOT an independent
+                 access source — revoke the grant, lose the Channel.
     gathering  — every user with a confirmed EventBooking on the linked
                  gathering + caretakers.
 
@@ -38,20 +42,27 @@ Draft Space
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
+from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.platform import (
     ChannelMembership,
     ConversationChannel,
-    Enrollment,
+    EntitlementStatus,
     Event,
     EventBooking,
+    Pathway,
+    PathwayEntitlement,
+    PathwayUnlockRequirement,
     Space,
     SpaceMembership,
     SpaceMembershipStatus,
     SpaceRole,
 )
 from app.models.user import User
+from app.services.pathway_access import compute_pathway_access
 
 
 # ---------------------------------------------------------------------------
@@ -137,17 +148,21 @@ def _is_private_channel_member(user_id: str, channel_id: str, db: Session) -> bo
     return row is not None
 
 
-def _is_active_pathway_enrollee(user_id: str, pathway_id: str, db: Session) -> bool:
-    row = (
-        db.query(Enrollment.id)
-        .filter(
-            Enrollment.user_id == user_id,
-            Enrollment.pathway_id == pathway_id,
-            Enrollment.status == "active",
-        )
-        .first()
-    )
-    return row is not None
+def _has_pathway_channel_access(
+    user: User, pathway_id: str, space: Space, db: Session,
+) -> bool:
+    """Pathway-linked Channel visibility mirrors the canonical
+    ``compute_pathway_access`` rule for the linked Pathway.
+
+    Deliberately NOT keyed on ``Enrollment`` — that's a progress-
+    tracking record, not an access grant. A member who completed a
+    step but later had their access revoked must lose the Channel
+    the moment the last legitimate access source disappears.
+    """
+    pathway = db.query(Pathway).filter(Pathway.id == pathway_id).first()
+    if pathway is None:
+        return False
+    return compute_pathway_access(user, pathway, space, db)
 
 
 def _is_confirmed_gathering_attendee(user_id: str, gathering_id: str, db: Session) -> bool:
@@ -201,8 +216,8 @@ def can_view_channel(
     if ct == "private":
         return _is_private_channel_member(user.id, channel.id, db)
     if ct == "pathway":
-        return channel.pathway_id is not None and _is_active_pathway_enrollee(
-            user.id, channel.pathway_id, db,
+        return channel.pathway_id is not None and _has_pathway_channel_access(
+            user, channel.pathway_id, space, db,
         )
     if ct == "gathering":
         return channel.gathering_id is not None and _is_confirmed_gathering_attendee(
@@ -385,11 +400,65 @@ def accessible_user_ids_for_channel(
         ).all()
         return {r.user_id for r in rows} | caretaker_ids
     if ct == "pathway" and channel.pathway_id:
-        rows = db.query(Enrollment.user_id).filter(
-            Enrollment.pathway_id == channel.pathway_id,
-            Enrollment.status == "active",
+        # Mention-autocomplete must use the same effective permission
+        # as ``can_view_channel``. Build the set branch-by-branch to
+        # match ``compute_pathway_access`` without a per-user loop,
+        # then intersect with the Space's active membership so a stray
+        # AccessPass or PathwayEntitlement held by a non-space-member
+        # cannot surface (the view-side gate does the same via
+        # ``is_active_space_member``).
+        pathway = (
+            db.query(Pathway).filter(Pathway.id == channel.pathway_id).first()
+        )
+        if pathway is None:
+            return caretaker_ids
+        p_status = (
+            pathway.status.value if hasattr(pathway.status, "value")
+            else str(pathway.status)
+        )
+        if p_status in ("draft", "archived", "coming_soon"):
+            # Canonical rule: only caretakers can access these Pathways.
+            return caretaker_ids
+        active_member_ids = {
+            row.user_id
+            for row in db.query(SpaceMembership.user_id)
+            .filter(
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+            )
+            .all()
+        }
+        access_type = (
+            pathway.access_type.value if hasattr(pathway.access_type, "value")
+            else str(pathway.access_type or "free")
+        )
+        if access_type in ("free", "included"):
+            return active_member_ids | caretaker_ids
+        if access_type == "included_with_offer":
+            unlock_option_ids = [
+                row.payment_option_id
+                for row in db.query(PathwayUnlockRequirement.payment_option_id)
+                .filter(PathwayUnlockRequirement.pathway_id == pathway.id)
+                .all()
+            ]
+            if not unlock_option_ids:
+                return caretaker_ids
+            rows = db.query(AccessPass.user_id).filter(
+                AccessPass.space_id == space.id,
+                AccessPass.status == AccessPassStatus.active,
+                AccessPass.payment_option_id.in_(unlock_option_ids),
+            ).all()
+            candidates = {r.user_id for r in rows}
+            return (candidates & active_member_ids) | caretaker_ids
+        # one_time / subscription — active, non-expired PathwayEntitlement.
+        now = datetime.utcnow()
+        rows = db.query(PathwayEntitlement.user_id).filter(
+            PathwayEntitlement.pathway_id == pathway.id,
+            PathwayEntitlement.status == EntitlementStatus.active,
+            (PathwayEntitlement.ends_at.is_(None) | (PathwayEntitlement.ends_at > now)),
         ).all()
-        return {r.user_id for r in rows} | caretaker_ids
+        candidates = {r.user_id for r in rows}
+        return (candidates & active_member_ids) | caretaker_ids
     if ct == "gathering" and channel.gathering_id:
         from app.models.platform import BookingStatus  # local import — avoids cycle
         rows = db.query(EventBooking.user_id).filter(
