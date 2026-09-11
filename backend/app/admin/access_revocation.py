@@ -89,7 +89,17 @@ def _revoke_grant_records_by_txn(
     reason: str,
     now: datetime,
 ) -> int:
-    """Mark AGR rows anchored to ``payment_transaction_id`` as revoked.
+    """Mark every unrevoked AGR row anchored to ``payment_transaction_id``
+    as revoked.
+
+    Whole-purchase revoke uses this — every grant created by one
+    purchase is being reversed together.
+
+    **Not for surgical revoke.** A surgical revoke of one AccessPass
+    or PathwayEntitlement targets exactly one grant; using this
+    txn-wide helper there over-revokes sibling AGR rows on multi-
+    grant purchases. Use :func:`_revoke_grant_record_for_target`
+    from surgical callers instead.
 
     Mirrors :func:`services.access_grant_records.revoke_records_for_plan`
     but keyed on the pay-in-full source (``source_payment_transaction_id``).
@@ -114,6 +124,79 @@ def _revoke_grant_records_by_txn(
         logger.info(
             "access_grant_records: revoked %d record(s) for payment_transaction=%s reason=%s",
             len(rows), payment_transaction_id, reason,
+        )
+    return len(rows)
+
+
+def _revoke_grant_record_for_target(
+    db: Session, *,
+    user_id: str,
+    payment_transaction_id: str | None,
+    target_pathway_id: str | None,
+    target_series_id: str | None,
+    reason: str,
+    now: datetime,
+) -> int:
+    """Mark revoked the AGR row(s) matching the specific
+    ``(user, source_payment_transaction_id, target)`` natural key.
+
+    Surgical revoke of an AccessPass or PathwayEntitlement targets
+    exactly one grant. This helper is deliberately narrower than
+    :func:`_revoke_grant_records_by_txn` — sibling AGR rows for
+    other grants from the same purchase remain untouched. Idempotent
+    via the ``revoked_at IS NULL`` filter.
+
+    Conservative no-op when the caller cannot uniquely identify a
+    target:
+
+    * ``payment_transaction_id`` is None (legacy / manual pass with
+      no linked purchase) → returns 0 without touching any row.
+    * neither target is set, or both are set → returns 0 (data
+      anomaly, safer to leave the log as-is than guess).
+
+    Multiple matching rows (rare — would require different
+    ``source_type`` values on the same ``(user, target, txn)``,
+    since the fulfilment natural key includes ``source_type``): all
+    matching rows are revoked. They all represent "this member's
+    grant of X via this purchase" and should share a lifecycle.
+
+    Returns the count of rows flipped (0 or more).
+    """
+    if not payment_transaction_id:
+        return 0
+    if (target_pathway_id is None) == (target_series_id is None):
+        # Both None or both set — no unique target to key on.
+        return 0
+    q = (
+        db.query(AccessGrantRecord)
+        .filter(
+            AccessGrantRecord.user_id == user_id,
+            AccessGrantRecord.source_payment_transaction_id == payment_transaction_id,
+            AccessGrantRecord.revoked_at.is_(None),
+        )
+    )
+    if target_pathway_id is not None:
+        q = q.filter(
+            AccessGrantRecord.grant_kind == "pathway",
+            AccessGrantRecord.target_pathway_id == target_pathway_id,
+        )
+    else:
+        q = q.filter(
+            AccessGrantRecord.grant_kind == "series",
+            AccessGrantRecord.target_series_id == target_series_id,
+        )
+    rows = q.all()
+    for r in rows:
+        r.revoked_at = now
+        r.revoked_reason = reason
+        r.updated_at = now
+    if rows:
+        db.flush()
+        logger.info(
+            "access_grant_records: surgical revoke touched %d row(s) "
+            "user=%s payment_transaction=%s target=%s reason=%s",
+            len(rows), user_id, payment_transaction_id,
+            target_pathway_id or target_series_id, reason,
         )
     return len(rows)
 
@@ -184,9 +267,28 @@ def revoke_access_pass(
     ap.revoked_by_user_id = admin.id
     ap.updated_at = now
 
-    grant_rows = _revoke_grant_records_by_txn(
+    # Surgical revoke — target the ONE AGR that corresponds to this
+    # pass's own grant, not every AGR from the whole purchase.
+    # Series-scoped passes → target the series AGR. Pathway-scoped
+    # passes → target the pathway AGR. A pass that carries both a
+    # series eligibility AND a bundled ``grants_pathway_id`` is
+    # anchored to the series (the pathway grant is represented by
+    # the linked ``PathwayEntitlement``, which owns the pathway AGR
+    # via its own surgical revoke path).
+    target_pathway_id: str | None = None
+    target_series_id: str | None = None
+    if ap.eligible_series_id:
+        target_series_id = ap.eligible_series_id
+    elif ap.eligible_pathway_id:
+        target_pathway_id = ap.eligible_pathway_id
+    elif ap.grants_pathway_id:
+        target_pathway_id = ap.grants_pathway_id
+    grant_rows = _revoke_grant_record_for_target(
         db,
+        user_id=ap.user_id,
         payment_transaction_id=ap.payment_transaction_id,
+        target_pathway_id=target_pathway_id,
+        target_series_id=target_series_id,
         reason=reason_text,
         now=now,
     )
@@ -297,9 +399,14 @@ def revoke_pathway_entitlement(
     if anchoring_pass is not None:
         anchoring_txn_id = anchoring_pass.payment_transaction_id
 
-    grant_rows = _revoke_grant_records_by_txn(
+    # Surgical revoke — target the ONE pathway AGR for this
+    # entitlement's target, not every AGR from the whole purchase.
+    grant_rows = _revoke_grant_record_for_target(
         db,
+        user_id=ent.user_id,
         payment_transaction_id=anchoring_txn_id,
+        target_pathway_id=ent.pathway_id,
+        target_series_id=None,
         reason=reason_text,
         now=now,
     )

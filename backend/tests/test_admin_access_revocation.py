@@ -543,3 +543,416 @@ class TestRevokePurchase:
                 admin=admin, db=db,
             )
         assert ei.value.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# Surgical revoke AGR scoping — regression matrix for the fix that
+# swaps ``_revoke_grant_records_by_txn`` (whole-txn sweep) for
+# ``_revoke_grant_record_for_target`` (single grant) in the surgical
+# callers. Whole-purchase revoke continues to use the txn-wide helper.
+# ---------------------------------------------------------------------------
+
+
+def _make_multi_grant_purchase(db, make_user, make_space):
+    """Fabricate a single purchase that granted:
+      * a Series pass (AccessPass with ``eligible_series_id``)
+      * two Pathway grants (each backed by AccessPass +
+        PathwayEntitlement, linked via ``pathway_entitlement_id``)
+
+    Three AGR rows are seeded to match the fulfilment natural key
+    exactly — one row per (user, target, source). Returns a dict of
+    handles the tests poke.
+    """
+    from app.models.access_pass import (
+        AccessPass, AccessPassSource, AccessPassStatus, AccessPassType,
+    )
+    from app.models.payment import (
+        PaymentProvider, PaymentTransaction,
+        PaymentTransactionStatus, PaymentTransactionType, PayoutStatus,
+    )
+    from app.models.platform import (
+        EventSeries,
+        EntitlementSource,
+        EntitlementStatus,
+        Pathway,
+        PathwayEntitlement,
+        PathwayType,
+    )
+
+    admin = make_user(role="admin")
+    member = make_user()
+    space = make_space()
+    now = datetime.utcnow()
+
+    series = EventSeries(
+        id=_uid("es"),
+        space_id=space.id,
+        slug=f"es-{uuid.uuid4().hex[:8]}",
+        title="Term 4",
+        starts_at=now + timedelta(days=30),
+        ends_at=now + timedelta(days=90),
+        status="published",
+    )
+    db.add(series)
+
+    pathway_a = Pathway(
+        id=_uid("pwa"), space_id=space.id,
+        slug=f"pwa-{uuid.uuid4().hex[:8]}",
+        title="EMBODY In-Person Sessions", status="active",
+        access_type="paid", price_cents=10000,
+        pathway_type=PathwayType.guided_experience,
+    )
+    pathway_b = Pathway(
+        id=_uid("pwb"), space_id=space.id,
+        slug=f"pwb-{uuid.uuid4().hex[:8]}",
+        title="Home Practice", status="active",
+        access_type="paid", price_cents=10000,
+        pathway_type=PathwayType.guided_experience,
+    )
+    db.add(pathway_a)
+    db.add(pathway_b)
+    db.flush()
+
+    txn = PaymentTransaction(
+        id=_uid("txn"),
+        transaction_type=PaymentTransactionType.member_pathway_purchase,
+        status=PaymentTransactionStatus.succeeded,
+        payment_provider=PaymentProvider.stripe,
+        payer_user_id=member.id,
+        creator_user_id=space.creator_id,
+        space_id=space.id,
+        currency="AUD",
+        gross_amount_cents=20000,
+        platform_fee_basis_points=800,
+        platform_fee_cents=1600,
+        net_creator_amount_cents=18400,
+        stripe_mode="test",
+        payout_status=PayoutStatus.pending,
+        created_at=now, updated_at=now,
+    )
+    db.add(txn)
+    db.flush()
+
+    # Two PathwayEntitlements, each with its own linked AccessPass —
+    # matches the shape purchase fulfilment produces for a Series-
+    # attached option with two pathway grants bundled in.
+    ent_a = PathwayEntitlement(
+        id=_uid("pe"), user_id=member.id, space_id=space.id,
+        pathway_id=pathway_a.id,
+        source=EntitlementSource.one_time_purchase,
+        status=EntitlementStatus.active,
+        starts_at=now, created_at=now, updated_at=now,
+    )
+    ent_b = PathwayEntitlement(
+        id=_uid("pe"), user_id=member.id, space_id=space.id,
+        pathway_id=pathway_b.id,
+        source=EntitlementSource.one_time_purchase,
+        status=EntitlementStatus.active,
+        starts_at=now, created_at=now, updated_at=now,
+    )
+    db.add(ent_a); db.add(ent_b)
+    db.flush()
+
+    series_pass = AccessPass(
+        id=_uid("ap"), user_id=member.id, space_id=space.id,
+        payment_transaction_id=txn.id,
+        pass_type=AccessPassType.term_pass,
+        status=AccessPassStatus.active,
+        valid_from=now,
+        eligible_series_id=series.id,
+        source=AccessPassSource.one_time_purchase,
+        created_at=now, updated_at=now,
+    )
+    pathway_pass_a = AccessPass(
+        id=_uid("ap"), user_id=member.id, space_id=space.id,
+        payment_transaction_id=txn.id,
+        pass_type=AccessPassType.pathway_access,
+        status=AccessPassStatus.active,
+        valid_from=now,
+        grants_pathway_id=pathway_a.id,
+        pathway_entitlement_id=ent_a.id,
+        source=AccessPassSource.one_time_purchase,
+        created_at=now, updated_at=now,
+    )
+    pathway_pass_b = AccessPass(
+        id=_uid("ap"), user_id=member.id, space_id=space.id,
+        payment_transaction_id=txn.id,
+        pass_type=AccessPassType.pathway_access,
+        status=AccessPassStatus.active,
+        valid_from=now,
+        grants_pathway_id=pathway_b.id,
+        pathway_entitlement_id=ent_b.id,
+        source=AccessPassSource.one_time_purchase,
+        created_at=now, updated_at=now,
+    )
+    db.add(series_pass); db.add(pathway_pass_a); db.add(pathway_pass_b)
+    db.flush()
+
+    # One AGR per grant target, matching the fulfilment natural key.
+    agr_series = agr.record_series_grant(
+        db, user_id=member.id, series_id=series.id,
+        source_type=agr.SOURCE_PAY_IN_FULL,
+        source_purchase_plan_id=None,
+        source_payment_transaction_id=txn.id,
+        granted_at=now,
+    )
+    agr_a = agr.record_pathway_grant(
+        db, user_id=member.id, pathway_id=pathway_a.id,
+        source_type=agr.SOURCE_PAY_IN_FULL,
+        source_purchase_plan_id=None,
+        source_payment_transaction_id=txn.id,
+        granted_at=now,
+    )
+    agr_b = agr.record_pathway_grant(
+        db, user_id=member.id, pathway_id=pathway_b.id,
+        source_type=agr.SOURCE_PAY_IN_FULL,
+        source_purchase_plan_id=None,
+        source_payment_transaction_id=txn.id,
+        granted_at=now,
+    )
+    db.commit()
+
+    return {
+        "admin": admin, "member": member, "space": space,
+        "series": series, "pathway_a": pathway_a, "pathway_b": pathway_b,
+        "txn": txn, "series_pass": series_pass,
+        "pathway_pass_a": pathway_pass_a, "pathway_pass_b": pathway_pass_b,
+        "ent_a": ent_a, "ent_b": ent_b,
+        "agr_series": agr_series, "agr_a": agr_a, "agr_b": agr_b,
+    }
+
+
+class TestSurgicalRevokeAgrScoping:
+    def test_surgical_pathway_revoke_marks_only_that_pathway_agr(
+        self, db, make_user, make_space,
+    ):
+        """The regression pin: revoking one PathwayEntitlement must
+        NOT stamp sibling AGR rows revoked."""
+        f = _make_multi_grant_purchase(db, make_user, make_space)
+
+        result = revoke_pathway_entitlement(
+            f["ent_a"].id, RevokeAccessRequest(reason="test"),
+            admin=f["admin"], db=db,
+        )
+        assert result.already_revoked is False
+        assert result.grant_records_revoked == 1
+
+        db.refresh(f["agr_series"])
+        db.refresh(f["agr_a"])
+        db.refresh(f["agr_b"])
+        assert f["agr_a"].revoked_at is not None
+        assert f["agr_series"].revoked_at is None
+        assert f["agr_b"].revoked_at is None
+
+    def test_surgical_pass_revoke_marks_only_series_agr(
+        self, db, make_user, make_space,
+    ):
+        """Revoking the Series AccessPass must NOT stamp the two
+        Pathway AGRs revoked."""
+        f = _make_multi_grant_purchase(db, make_user, make_space)
+
+        result = revoke_access_pass(
+            f["series_pass"].id, RevokeAccessRequest(reason="test"),
+            admin=f["admin"], db=db,
+        )
+        assert result.already_revoked is False
+        assert result.grant_records_revoked == 1
+
+        db.refresh(f["agr_series"])
+        db.refresh(f["agr_a"])
+        db.refresh(f["agr_b"])
+        assert f["agr_series"].revoked_at is not None
+        assert f["agr_a"].revoked_at is None
+        assert f["agr_b"].revoked_at is None
+
+    def test_surgical_pathway_pass_revoke_marks_only_that_pathway_agr(
+        self, db, make_user, make_space,
+    ):
+        """Pathway-scoped AccessPass revoke (grants_pathway_id set)
+        targets only that pathway's AGR — the series AGR and the
+        other pathway's AGR remain active."""
+        f = _make_multi_grant_purchase(db, make_user, make_space)
+
+        result = revoke_access_pass(
+            f["pathway_pass_a"].id, RevokeAccessRequest(reason="test"),
+            admin=f["admin"], db=db,
+        )
+        assert result.already_revoked is False
+        assert result.grant_records_revoked == 1
+
+        db.refresh(f["agr_series"])
+        db.refresh(f["agr_a"])
+        db.refresh(f["agr_b"])
+        assert f["agr_a"].revoked_at is not None
+        assert f["agr_series"].revoked_at is None
+        assert f["agr_b"].revoked_at is None
+
+    def test_whole_purchase_revoke_still_marks_all_remaining_agrs(
+        self, db, make_user, make_space,
+    ):
+        """After a surgical revoke has already stamped one AGR, a
+        subsequent whole-purchase revoke stamps the remaining
+        unrevoked AGRs — proving the txn-wide helper stayed
+        unchanged for the whole-purchase path."""
+        f = _make_multi_grant_purchase(db, make_user, make_space)
+
+        # Surgical: only Pathway A.
+        revoke_pathway_entitlement(
+            f["ent_a"].id, RevokeAccessRequest(reason="phase 1"),
+            admin=f["admin"], db=db,
+        )
+        db.refresh(f["agr_a"])
+        pathway_a_stamp = f["agr_a"].revoked_at
+        assert pathway_a_stamp is not None
+
+        # Whole purchase.
+        result = revoke_purchase(
+            f["txn"].id, RevokeAccessRequest(reason="phase 2"),
+            admin=f["admin"], db=db,
+        )
+        # The whole-purchase sweep only touches AGRs that are still
+        # unrevoked at call time — that's the series AGR + pathway B.
+        assert result.grant_records_revoked == 2
+
+        db.refresh(f["agr_series"])
+        db.refresh(f["agr_a"])
+        db.refresh(f["agr_b"])
+        # All three now revoked.
+        assert f["agr_series"].revoked_at is not None
+        assert f["agr_a"].revoked_at is not None
+        assert f["agr_b"].revoked_at is not None
+        # The earlier surgical revoke's timestamp on pathway A is
+        # preserved — the sweep skips already-revoked rows.
+        assert f["agr_a"].revoked_at == pathway_a_stamp
+
+    def test_repeated_surgical_revoke_is_idempotent(
+        self, db, make_user, make_space,
+    ):
+        f = _make_multi_grant_purchase(db, make_user, make_space)
+
+        first = revoke_pathway_entitlement(
+            f["ent_a"].id, RevokeAccessRequest(reason="test"),
+            admin=f["admin"], db=db,
+        )
+        assert first.already_revoked is False
+        assert first.grant_records_revoked == 1
+        db.refresh(f["agr_a"])
+        first_stamp = f["agr_a"].revoked_at
+
+        second = revoke_pathway_entitlement(
+            f["ent_a"].id, RevokeAccessRequest(reason="test"),
+            admin=f["admin"], db=db,
+        )
+        assert second.already_revoked is True
+        assert second.grant_records_revoked == 0
+
+        db.refresh(f["agr_a"])
+        # Second call did not re-stamp the AGR row.
+        assert f["agr_a"].revoked_at == first_stamp
+        db.refresh(f["agr_series"])
+        db.refresh(f["agr_b"])
+        assert f["agr_series"].revoked_at is None
+        assert f["agr_b"].revoked_at is None
+
+    def test_overlapping_second_purchase_agrs_untouched(
+        self, db, make_user, make_space,
+    ):
+        """Same member holds a second, overlapping purchase that
+        granted the same Pathway A. Surgical revoke on the first
+        purchase's entitlement touches only the first purchase's
+        AGR; the second purchase's AGR for Pathway A stays active."""
+        from app.models.payment import (
+            PaymentProvider, PaymentTransaction,
+            PaymentTransactionStatus, PaymentTransactionType, PayoutStatus,
+        )
+
+        f = _make_multi_grant_purchase(db, make_user, make_space)
+        now = datetime.utcnow()
+
+        second_txn = PaymentTransaction(
+            id=_uid("txn"),
+            transaction_type=PaymentTransactionType.member_pathway_purchase,
+            status=PaymentTransactionStatus.succeeded,
+            payment_provider=PaymentProvider.stripe,
+            payer_user_id=f["member"].id,
+            creator_user_id=f["space"].creator_id,
+            space_id=f["space"].id,
+            currency="AUD",
+            gross_amount_cents=10000,
+            platform_fee_basis_points=800,
+            platform_fee_cents=800,
+            net_creator_amount_cents=9200,
+            stripe_mode="test",
+            payout_status=PayoutStatus.pending,
+            created_at=now, updated_at=now,
+        )
+        db.add(second_txn)
+        db.flush()
+
+        agr_second = agr.record_pathway_grant(
+            db, user_id=f["member"].id, pathway_id=f["pathway_a"].id,
+            source_type=agr.SOURCE_PAY_IN_FULL,
+            source_purchase_plan_id=None,
+            source_payment_transaction_id=second_txn.id,
+            granted_at=now,
+        )
+        db.commit()
+
+        revoke_pathway_entitlement(
+            f["ent_a"].id, RevokeAccessRequest(reason="test"),
+            admin=f["admin"], db=db,
+        )
+
+        db.refresh(f["agr_a"])
+        db.refresh(agr_second)
+        # First purchase's Pathway A AGR revoked; second purchase's
+        # AGR for the same Pathway stays active (different txn).
+        assert f["agr_a"].revoked_at is not None
+        assert agr_second.revoked_at is None
+
+    def test_surgical_revoke_no_agr_target_is_conservative_noop(
+        self, db, make_user, make_space,
+    ):
+        """Pass with ``payment_transaction_id IS NULL`` (legacy /
+        manual) — surgical revoke flips the pass row to cancelled
+        and returns ``grant_records_revoked == 0``. No AGR row is
+        touched (safer than guessing at a target)."""
+        from app.models.access_pass import (
+            AccessPass, AccessPassSource, AccessPassStatus, AccessPassType,
+        )
+        from app.models.platform import Pathway, PathwayType
+
+        admin = make_user(role="admin")
+        member = make_user()
+        space = make_space()
+        pathway = Pathway(
+            id=_uid("pw"), space_id=space.id,
+            slug=f"pw-{uuid.uuid4().hex[:8]}",
+            title="Legacy path", status="active",
+            access_type="paid", price_cents=10000,
+            pathway_type=PathwayType.guided_experience,
+        )
+        db.add(pathway)
+        db.flush()
+        now = datetime.utcnow()
+        ap = AccessPass(
+            id=_uid("ap"), user_id=member.id, space_id=space.id,
+            payment_transaction_id=None,   # <- legacy / manual
+            pass_type=AccessPassType.pathway_access,
+            status=AccessPassStatus.active,
+            valid_from=now,
+            grants_pathway_id=pathway.id,
+            source=AccessPassSource.admin_grant,
+            created_at=now, updated_at=now,
+        )
+        db.add(ap)
+        db.commit()
+
+        result = revoke_access_pass(
+            ap.id, RevokeAccessRequest(reason="test"),
+            admin=admin, db=db,
+        )
+        assert result.already_revoked is False
+        assert result.grant_records_revoked == 0
+        db.refresh(ap)
+        assert ap.status == AccessPassStatus.cancelled
