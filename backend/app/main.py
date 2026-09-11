@@ -21,6 +21,7 @@ from app.activities.routes import router as activities_router
 from app.client.routes import router as client_router
 from app.admin.routes import router as admin_router
 from app.admin.access_revocation import router as admin_access_revocation_router
+from app.admin.plan_cancellation import router as admin_plan_cancellation_router
 from app.admin.atlas import router as admin_atlas_router
 from app.admin.physical_locations import router as admin_physical_locations_router
 from app.admin.community_care.routes import router as admin_community_care_router
@@ -190,6 +191,7 @@ app.include_router(auth_router)
 app.include_router(client_router)
 app.include_router(admin_router)
 app.include_router(admin_access_revocation_router)
+app.include_router(admin_plan_cancellation_router)
 app.include_router(admin_atlas_router)
 app.include_router(admin_physical_locations_router)
 app.include_router(admin_community_care_router)

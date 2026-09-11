@@ -279,7 +279,7 @@ class PaymentInstalmentFailedInAppTemplate:
 @template_for(_EVENT_ACCESS_SUSPENDED, CHANNEL_EMAIL_TRANSACTIONAL)
 class AccessSuspendedEmailTemplate:
     key = "access.suspended.email_transactional"
-    version = "v1"
+    version = "v2"
 
     def render(
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
@@ -295,6 +295,17 @@ class AccessSuspendedEmailTemplate:
             f"We couldn’t recover the overdue payment on your payment plan "
             f"for {experience}, so your access has been paused."
         )
+        # Booking-release disclosure — the plan bookings the member had
+        # made against this plan's pass have been cancelled and their
+        # seats released. Deliberately does NOT promise the seat is
+        # still available: the seat is released back to capacity and
+        # can be taken by another member.
+        bookings_note = (
+            "Any future sessions you had booked using this plan have been "
+            "cancelled and their places released. If you have another valid "
+            "pass, or if your payment plan resumes, you’re welcome to "
+            "rebook subject to availability."
+        )
         promise = (
             "Nothing else is required from Fresh Collective — as soon as the "
             "payment succeeds, your access will be restored."
@@ -307,6 +318,7 @@ class AccessSuspendedEmailTemplate:
         body_text = (
             f"{greeting}\n\n"
             f"{opening}\n\n"
+            f"{bookings_note}\n\n"
             f"{how}\n\n"
             f"Fix payment:\n{repair_url}\n\n"
             f"{promise}"
@@ -314,6 +326,7 @@ class AccessSuspendedEmailTemplate:
         body_html = (
             f"<p>{greeting}</p>"
             f"<p>{opening}</p>"
+            f"<p>{bookings_note}</p>"
             f"<p>{how}</p>"
             f'<p><a href="{repair_url}">Fix payment</a>.</p>'
             f"<p>{promise}</p>"
@@ -330,7 +343,7 @@ class AccessSuspendedEmailTemplate:
 @template_for(_EVENT_ACCESS_SUSPENDED, CHANNEL_IN_APP)
 class AccessSuspendedInAppTemplate:
     key = "access.suspended.in_app"
-    version = "v1"
+    version = "v2"
 
     def render(
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
@@ -342,7 +355,9 @@ class AccessSuspendedInAppTemplate:
             to="",
             subject=f"Access paused — {experience}",
             body_text=(
-                "Your access is paused until the overdue payment succeeds."
+                "Your access is paused and any future sessions booked on this "
+                "plan have been released. Update the payment on file to restore "
+                "access; you can then rebook subject to availability."
             ),
             metadata={
                 "notification_type": "access_suspended",

@@ -215,10 +215,100 @@ function KeyDate({ plan }: { plan: CreatorPurchasePlanSummary }): React.ReactNod
   return null
 }
 
-export default function CreatorPaymentPlansClient() {
+interface CreatorPaymentPlansClientProps {
+  // Platform-owner gate for admin-only actions (currently: Cancel plan).
+  // Non-owners see the plan lifecycle but cannot cancel from this UI.
+  isPlatformOwner?: boolean
+}
+
+export default function CreatorPaymentPlansClient({
+  isPlatformOwner = false,
+}: CreatorPaymentPlansClientProps = {}) {
   const [rows, setRows] = useState<CreatorPurchasePlanSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Cancel-plan modal state. Only reachable when isPlatformOwner is true.
+  const [cancelTarget, setCancelTarget] = useState<CreatorPurchasePlanSummary | null>(null)
+  const [cancelReason, setCancelReason] = useState<string>('')
+  const [cancelNote, setCancelNote] = useState<string>('')
+  const [cancelSubmitting, setCancelSubmitting] = useState<boolean>(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
+
+  function openCancelModal(plan: CreatorPurchasePlanSummary) {
+    setCancelTarget(plan)
+    setCancelReason('')
+    setCancelNote('')
+    setCancelError(null)
+  }
+  function closeCancelModal() {
+    if (cancelSubmitting) return
+    setCancelTarget(null)
+    setCancelReason('')
+    setCancelNote('')
+    setCancelError(null)
+  }
+  async function submitCancel() {
+    if (!cancelTarget) return
+    setCancelSubmitting(true)
+    setCancelError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/admin/purchase-plans/${cancelTarget.id}/cancel`),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reason: cancelReason.trim() || 'admin_cancelled',
+            note: cancelNote.trim() || null,
+          }),
+        },
+      )
+      if (!res.ok) {
+        let detail = `Error ${res.status}`
+        try {
+          const body = (await res.json()) as { detail?: string }
+          if (body?.detail) detail = body.detail
+        } catch { /* ignore */ }
+        throw new Error(detail)
+      }
+      // Optimistically flip the row's status. A full refetch would
+      // work too, but the outcome from the server is authoritative.
+      const body = (await res.json()) as {
+        purchase_plan_id: string
+        plan_status: string
+      }
+      setRows((prev) =>
+        prev.map((p) =>
+          p.id === body.purchase_plan_id
+            ? { ...p, status: body.plan_status as CreatorPurchasePlanSummary['status'], cancelled_at: new Date().toISOString() }
+            : p,
+        ),
+      )
+      setCancelTarget(null)
+      setCancelReason('')
+      setCancelNote('')
+    } catch (e) {
+      setCancelError(e instanceof Error ? e.message : 'Cancel failed.')
+    } finally {
+      setCancelSubmitting(false)
+    }
+  }
+
+  // A plan is cancel-eligible while it still has live provider state
+  // — active / payment_problem / suspended. Terminal states
+  // (completed / cancelled / failed) are not cancellable. Repeat
+  // cancels on an already-cancelled plan ARE safe (the backend
+  // converges incomplete cleanup), but we don't expose the button
+  // once the plan has reached the cancelled label — the operator
+  // instead invokes a targeted repair through a separate channel.
+  function canCancel(plan: CreatorPurchasePlanSummary): boolean {
+    if (!isPlatformOwner) return false
+    return plan.status === 'active'
+      || plan.status === 'payment_problem'
+      || plan.status === 'suspended'
+  }
 
   // Filter state — all client-side after a single server fetch.
   // A creator's plan volume is bounded enough that server filtering
@@ -474,6 +564,9 @@ export default function CreatorPaymentPlansClient() {
                           {h}
                         </th>
                       ))}
+                      {isPlatformOwner && (
+                        <th className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">Action</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -528,6 +621,21 @@ export default function CreatorPaymentPlansClient() {
                         <td className="px-3 py-3 text-[11.5px] whitespace-nowrap">
                           <KeyDate plan={plan} />
                         </td>
+                        {isPlatformOwner && (
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            {canCancel(plan) ? (
+                              <button
+                                type="button"
+                                onClick={() => openCancelModal(plan)}
+                                className="rounded-full border border-red-200 bg-white px-3 py-1 text-[11.5px] font-medium text-red-700 transition-colors hover:bg-red-50"
+                              >
+                                Cancel plan
+                              </button>
+                            ) : (
+                              <span className="text-[11px] text-slate-400">—</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -579,12 +687,97 @@ export default function CreatorPaymentPlansClient() {
                     <div className="mt-2 text-[11.5px]">
                       <KeyDate plan={plan} />
                     </div>
+                    {isPlatformOwner && canCancel(plan) && (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={() => openCancelModal(plan)}
+                          className="rounded-full border border-red-200 bg-white px-3 py-1 text-[11.5px] font-medium text-red-700 transition-colors hover:bg-red-50"
+                        >
+                          Cancel plan
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
         </>
+      )}
+
+      {cancelTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-plan-modal-title"
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h2
+              id="cancel-plan-modal-title"
+              className="font-serif text-[1.25rem] leading-tight text-navy-900"
+            >
+              Cancel this payment plan?
+            </h2>
+            <p className="mt-2 text-[13px] text-black">
+              For <span className="font-medium">{cancelTarget.member_name || cancelTarget.member_email}</span> on{' '}
+              <span className="font-medium">{cancelTarget.payment_option_name}</span>.
+              {' '}This will stop future Stripe charges, suspend the
+              plan-owned access, and release future plan-dependent
+              bookings. Past attendance and content are preserved.
+              Refunds are handled separately in the Stripe Dashboard.
+            </p>
+            <div className="mt-4 space-y-3">
+              <label className="block text-[12px] font-medium text-navy-900">
+                Reason
+                <input
+                  type="text"
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  maxLength={120}
+                  disabled={cancelSubmitting}
+                  placeholder="admin_cancelled"
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 focus:border-teal-400 focus:outline-none"
+                />
+              </label>
+              <label className="block text-[12px] font-medium text-navy-900">
+                Note (optional)
+                <textarea
+                  value={cancelNote}
+                  onChange={(e) => setCancelNote(e.target.value)}
+                  maxLength={250}
+                  rows={3}
+                  disabled={cancelSubmitting}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-navy-900 focus:border-teal-400 focus:outline-none"
+                />
+              </label>
+            </div>
+            {cancelError && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+                {cancelError}
+              </div>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeCancelModal}
+                disabled={cancelSubmitting}
+                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-[12.5px] font-medium text-navy-900 transition-colors hover:bg-slate-50 disabled:opacity-50"
+              >
+                Keep plan
+              </button>
+              <button
+                type="button"
+                onClick={submitCancel}
+                disabled={cancelSubmitting}
+                className="rounded-full bg-red-600 px-4 py-2 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {cancelSubmitting ? 'Cancelling…' : 'Cancel plan'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from sqlalchemy import text
@@ -58,7 +58,10 @@ from app.models.payment import (
     PayoutStatus,
 )
 from app.models.platform import (
+    BookingStatus,
     EntitlementStatus,
+    Event,
+    EventBooking,
     PathwayEntitlement,
 )
 from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
@@ -118,6 +121,15 @@ class SuspensionOutcome:
     suspended_access_pass_ids: list[str]
     preserved_entitlement_ids: list[str]
     preserved_access_pass_ids: list[str]
+    # Future plan-dependent bookings cancelled + credit-restored on
+    # this suspension. **All** confirmed future bookings whose
+    # ``access_pass_id`` is a plan-owned pass are cancelled — the
+    # earlier "preserve when an overlapping pass exists" branch was
+    # removed because it silently bypassed the alternate pass's
+    # own weekly/total quota checks. Members with an alternate pass
+    # or a plan recovery can rebook through the normal booking flow,
+    # which will apply that pass's quotas honestly.
+    cancelled_booking_ids: list[str] = field(default_factory=list)
     # R3 — populated when the transition genuinely happened
     # (``payment_problem → suspended``).
     comms_event: object | None = None
@@ -128,6 +140,28 @@ class ReinstatementOutcome:
     plan_id: str
     reinstated_entitlement_ids: list[str]
     reinstated_access_pass_ids: list[str]
+
+
+@dataclass
+class PlanCancellationOutcome:
+    """Outcome of :func:`cancel_plan_by_admin`.
+
+    Convergent semantics: an ``already_cancelled=True`` call still runs
+    every downstream cleanup step so an incomplete prior cancellation
+    (plan marked cancelled but access/bookings/AGR still active) gets
+    finished. ``plan_transitioned`` distinguishes the transitioning
+    call from a convergence call — only the first stamps
+    ``cancelled_by_user_id`` / ``cancelled_reason`` / ``cancelled_at``.
+    """
+    plan_id: str
+    plan_transitioned: bool
+    suspended_entitlement_ids: list[str]
+    suspended_access_pass_ids: list[str]
+    preserved_entitlement_ids: list[str]
+    preserved_access_pass_ids: list[str]
+    cancelled_booking_ids: list[str]
+    grant_records_revoked: int
+    comms_event: object | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -743,14 +777,23 @@ def _suspend_plan_and_access(
         new_ent_status=EntitlementStatus.suspended,
         now=now,
     )
+
+    # Release future confirmed plan-dependent bookings — unconditional
+    # cancel + restore credit on the plan pass. Overlap preservation
+    # was removed because it silently bypassed the alternate pass's
+    # weekly / total quota checks in ``book_event``.
+    cancelled_ids = _release_future_plan_bookings(db, plan=plan, now=now)
+    outcome.cancelled_booking_ids = cancelled_ids
+
     logger.info(
         "FIP3 suspend: plan=%s (was %s) suspended_entitlements=%d preserved=%d "
-        "suspended_passes=%d preserved=%d",
+        "suspended_passes=%d preserved=%d cancelled_bookings=%d",
         plan.id, prev.value,
         len(outcome.suspended_entitlement_ids),
         len(outcome.preserved_entitlement_ids),
         len(outcome.suspended_access_pass_ids),
         len(outcome.preserved_access_pass_ids),
+        len(cancelled_ids),
     )
 
     # R3 — emit ``access.suspended`` for the member. This helper is
@@ -924,6 +967,223 @@ def _clear_grace_fields(plan: PurchasePlan) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Booking release on plan suspension / cancellation
+# ---------------------------------------------------------------------------
+
+
+def _release_future_plan_bookings(
+    db: Session, *,
+    plan: PurchasePlan,
+    now: datetime,
+) -> list[str]:
+    """Cancel every future confirmed booking anchored to this plan's
+    AccessPasses and restore the consumed credit on the plan pass.
+
+    **No overlap preservation.** An earlier design preserved a booking
+    when the member held another qualifying pass, but the booking
+    stayed linked to the (suspended) plan pass and the alternate
+    pass's ``used_credits`` / ``credits_per_week`` were never
+    incremented. The booking-authorisation code in
+    ``book_event`` (``backend/app/spaces/routes.py``) counts weekly
+    and total usage per ``access_pass_id`` — so a preserved booking
+    was invisible to the alternate pass's quota, letting the member
+    exceed their entitlement. See the launch audit for the trace.
+
+    Unconditional cancel keeps every pass's own counters as the
+    exact upper bound on its bookings. Members with a live alternate
+    pass — or whose plan later recovers — rebook through the normal
+    ``book_event`` flow, which applies that pass's quotas honestly.
+
+    Rules:
+      * ``EventBooking.status`` set to ``cancelled`` with
+        ``cancelled_at = now``.
+      * Consumed credit restored on the plan-owned pass unconditionally
+        (ignore the 24h member-courtesy gate — suspension is not a
+        member choice, and honest accounting matters more than the
+        courtesy). ``used_credits = max(0, used_credits - credits_used)``.
+      * Past events (``event.starts_at <= now``) are never touched;
+        attendance is history.
+
+    Idempotent: on a repeat call, already-cancelled bookings fall
+    outside the ``status == confirmed`` filter and are skipped.
+    """
+    plan_pass_ids = [
+        row.id for row in
+        db.query(AccessPass.id)
+        .filter(AccessPass.purchase_plan_id == plan.id)
+        .all()
+    ]
+    if not plan_pass_ids:
+        return []
+
+    rows = (
+        db.query(EventBooking, Event)
+        .join(Event, Event.id == EventBooking.event_id)
+        .filter(
+            EventBooking.access_pass_id.in_(plan_pass_ids),
+            EventBooking.status == BookingStatus.confirmed,
+            Event.starts_at > now,
+        )
+        .all()
+    )
+
+    cancelled_ids: list[str] = []
+    for booking, event in rows:
+        booking.status = BookingStatus.cancelled
+        booking.cancelled_at = now
+        booking.updated_at = now
+        if booking.access_pass_id and booking.credits_used > 0:
+            plan_pass = (
+                db.query(AccessPass)
+                .filter(AccessPass.id == booking.access_pass_id)
+                .first()
+            )
+            if plan_pass is not None:
+                plan_pass.used_credits = max(
+                    0, plan_pass.used_credits - booking.credits_used,
+                )
+                plan_pass.updated_at = now
+        cancelled_ids.append(booking.id)
+        logger.info(
+            "FIP3 booking-release: cancelled booking=%s event=%s user=%s "
+            "credits_restored=%d on pass=%s",
+            booking.id, event.id, booking.user_id,
+            booking.credits_used, booking.access_pass_id,
+        )
+
+    if cancelled_ids:
+        db.flush()
+    return cancelled_ids
+
+
+# ---------------------------------------------------------------------------
+# Admin plan cancellation — coordinated, provider-first, convergent
+# ---------------------------------------------------------------------------
+
+
+def cancel_plan_by_admin(
+    db: Session, *,
+    plan: PurchasePlan,
+    admin_user_id: str,
+    reason: str,
+    note: str | None,
+    now: datetime,
+) -> PlanCancellationOutcome:
+    """Admin/creator plan-cancel entry point.
+
+    One coordinated operation. Provider-first, then converges local
+    state. Refunds are intentionally separate and are NOT triggered
+    here — those flow through the operator's Stripe Dashboard action
+    plus the ``charge.refunded`` webhook.
+
+    Ordering:
+      1. Cancel the Stripe SubscriptionSchedule so no future
+         instalments can be charged. Idempotent — Stripe accepts a
+         cancel on an already-``canceled``/``completed`` schedule.
+         A transient Stripe error propagates so the operator can
+         retry; local state is left untouched.
+      2. Transition ``plan.status → cancelled`` and stamp
+         ``cancelled_by_user_id`` / ``cancelled_reason`` /
+         ``cancelled_at`` — but ONLY on the transitioning call.
+         Repeated calls preserve the original audit fields.
+      3a. Revoke this plan's ``AccessGrantRecord`` rows with reason
+         ``plan_cancelled``. Already-revoked rows are skipped.
+      3b. Suspend plan-owned access via the source-aware helper.
+         Overlapping access from a different source is preserved.
+      4. Release future confirmed plan-dependent bookings via the
+         same source-aware release helper used by grace-expiry
+         suspension. Overlapping qualifying access preserves the
+         booking without restoring the plan-pass credit.
+
+    **Convergence on incomplete prior cancellation.** ``plan.status
+    == cancelled`` alone does NOT short-circuit. Steps 3–4 always run;
+    each has its own natural-key/status guards so already-completed
+    work is skipped while incomplete work is finished. This protects
+    against partial states where a prior cancel commit succeeded but
+    an intervening error left access/bookings/AGR incomplete.
+    """
+    from app.services import stripe_finite_plan
+
+    # 1. Provider first — propagate transient errors.
+    stripe_finite_plan.cancel_finite_subscription_schedule(plan=plan)
+
+    # 2. Local plan transition — audit stamps only on transition.
+    plan_transitioned = False
+    if plan.status != PurchasePlanStatus.cancelled:
+        plan.status = PurchasePlanStatus.cancelled
+        plan.cancelled_at = now
+        plan.cancelled_by_user_id = admin_user_id
+        composed = f"{reason}: {note}" if note else reason
+        plan.cancelled_reason = composed[:250]
+        plan.updated_at = now
+        plan_transitioned = True
+
+    # 3a. Revoke AGR records (reason='plan_cancelled') before the
+    # access-effect step so any residual overlap check treats this
+    # plan's records as gone.
+    revoked_rows = _agr.revoke_records_for_plan(
+        db,
+        purchase_plan_id=plan.id,
+        reason="plan_cancelled",
+        now=now,
+    )
+
+    # 3b. Access effects — source-aware suspend of plan-owned rows.
+    outcome = _apply_access_effects_for_plan_state(
+        db, plan=plan,
+        new_ap_status=AccessPassStatus.suspended,
+        new_ent_status=EntitlementStatus.suspended,
+        now=now,
+    )
+
+    # 4. Release future plan-dependent bookings.
+    cancelled_ids = _release_future_plan_bookings(db, plan=plan, now=now)
+
+    logger.info(
+        "FIP admin cancel: plan=%s admin=%s reason=%r transitioned=%s "
+        "agr_revoked=%d suspended_ents=%d preserved_ents=%d "
+        "suspended_passes=%d preserved_passes=%d cancelled_bookings=%d",
+        plan.id, admin_user_id, reason, plan_transitioned,
+        len(revoked_rows),
+        len(outcome.suspended_entitlement_ids),
+        len(outcome.preserved_entitlement_ids),
+        len(outcome.suspended_access_pass_ids),
+        len(outcome.preserved_access_pass_ids),
+        len(cancelled_ids),
+    )
+
+    # Emit member-facing "access paused" comms only when access
+    # actually changed state on this call. Reuses the existing
+    # ``access.suspended`` template.
+    comms_event = None
+    if outcome.suspended_entitlement_ids or outcome.suspended_access_pass_ids:
+        from app.services import purchase_lifecycle_emit as _r3
+        from app.models.payment_option import PaymentOption
+        payment_option = (
+            db.query(PaymentOption)
+            .filter(PaymentOption.id == plan.payment_option_id).first()
+            if plan.payment_option_id else None
+        )
+        member = db.query(User).filter(User.id == plan.member_user_id).first()
+        if member is not None:
+            comms_event = _r3.emit_access_suspended(
+                db, user=member, plan=plan, payment_option=payment_option,
+            )
+
+    return PlanCancellationOutcome(
+        plan_id=plan.id,
+        plan_transitioned=plan_transitioned,
+        suspended_entitlement_ids=outcome.suspended_entitlement_ids,
+        suspended_access_pass_ids=outcome.suspended_access_pass_ids,
+        preserved_entitlement_ids=outcome.preserved_entitlement_ids,
+        preserved_access_pass_ids=outcome.preserved_access_pass_ids,
+        cancelled_booking_ids=cancelled_ids,
+        grant_records_revoked=len(revoked_rows),
+        comms_event=comms_event,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Subscription / schedule end reconciliation
 # ---------------------------------------------------------------------------
 
@@ -1041,6 +1301,9 @@ def handle_subscription_deleted_for_plan(
         new_ent_status=EntitlementStatus.suspended,
         now=now,
     )
+    # Release future plan-dependent bookings for the abnormal end so
+    # a member left without recovered access does not hold ghost seats.
+    _release_future_plan_bookings(db, plan=plan, now=now)
     logger.warning(
         "FIP3 subscription_deleted: plan=%s abnormal end (was %s, %d/%d) → failed",
         plan.id, prev.value, plan.installments_paid, plan.installments_expected,
