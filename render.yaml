@@ -375,10 +375,23 @@ services:
   # SAME idempotency-key derived from the RefundOperation.id when
   # replaying — never creates a new one, so no double-refund risk.
   #
-  # Needs the Stripe secret (Refund.retrieve, Refund.list, Refund.create
-  # replay). fc-api's STRIPE_SECRET_KEY is the same key — configured
-  # in the Render Dashboard, marked sync:false so it is never written
-  # to Git.
+  # Runtime config (least-privilege):
+  #   * FC_SERVICE_ROLE=job     — skips web-only Settings validators
+  #                                (R2 not required, JWT_SECRET not
+  #                                required). See app/core/config.py
+  #                                ``_check_service_role_configuration``
+  #                                and ``_check_r2_configuration``.
+  #   * DATABASE_URL            — same DB as fc-api.
+  #   * STRIPE_SECRET_KEY       — for Refund.retrieve / Refund.list /
+  #                                Refund.create replay. Same live key
+  #                                as fc-api.
+  #   * APP_ENV=production      — required so the live Stripe key
+  #                                passes the "no sk_live outside
+  #                                production" guard.
+  #   * STRIPE_WEBHOOK_SECRET   — NOT set. The reconciler doesn't
+  #                                consume webhooks; the Stripe
+  #                                validator only requires it for
+  #                                FC_SERVICE_ROLE=web.
   - type: cron
     name: fc-refund-reconciler
     runtime: python
@@ -389,11 +402,13 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/fc_refund_reconciler.py
     envVars:
+      - key: FC_SERVICE_ROLE
+        value: "job"
+      - key: APP_ENV
+        value: production
       - key: DATABASE_URL
         fromDatabase:
           name: fc-db
           property: connectionString
-      - key: JWT_SECRET
-        sync: false
       - key: STRIPE_SECRET_KEY
         sync: false

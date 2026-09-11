@@ -15,11 +15,36 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     database_url: str
-    jwt_secret: str
+    # JWT signing/verification. Required for the web service (auth
+    # dependency graph invokes encode/decode); NOT required for
+    # background jobs that never handle HTTP auth (see
+    # ``fc_service_role`` below). The boot-time validator
+    # ``_check_service_role_configuration`` enforces the web-role
+    # requirement — for a job-role service, ``jwt_secret`` may be
+    # unset and no code path in that service ever reaches
+    # ``app.core.security``.
+    jwt_secret: str | None = None
     jwt_algorithm: str = "HS256"
     jwt_expire_days: int = 7
     frontend_origin: str = "http://localhost:3000"
     app_env: str = "development"
+
+    # Service role — controls which production-boot invariants apply.
+    #
+    #   web (default)  — the fc-api / fc-web ASGI service. Full
+    #                    validation applies: R2 required in production,
+    #                    JWT secret required in every env.
+    #   job            — a background/cron service that never handles
+    #                    HTTP auth and never touches R2 uploads
+    #                    (e.g. fc-refund-reconciler,
+    #                    fc-fip3-grace-reconciler). Skips the web-only
+    #                    validators so the job doesn't pay the R2/JWT
+    #                    tax for capabilities it doesn't use.
+    #
+    # Setting FC_SERVICE_ROLE=job on the web service would be a real
+    # regression (uploads would fall back to ephemeral disk in
+    # production). Defensive check + doc kept in Rule 5 below.
+    fc_service_role: str = "web"
 
     # Stripe — set both values in .env before accepting real payments.
     # Leave blank/unset in development to disable Stripe endpoints gracefully.
@@ -344,14 +369,25 @@ class Settings(BaseSettings):
         present = sorted(k for k, v in r2_vars.items() if v)
         missing = sorted(k for k, v in r2_vars.items() if not v)
 
-        # Rule 2 — production requires the full set.
-        if self.app_env == "production" and missing:
+        # Rule 2 — production requires the full set — but only for the
+        # web service role. Background jobs (fc_service_role='job')
+        # that never handle uploads legitimately do not need R2. Their
+        # own boot must still satisfy Rules 3–4 (no partial config,
+        # valid account-id format) if any R2 var IS set — that
+        # catches accidental copy-paste of R2 vars onto a job service.
+        if (
+            self.app_env == "production"
+            and self.fc_service_role == "web"
+            and missing
+        ):
             raise ValueError(
                 "R2 storage is required in production but is not fully "
                 f"configured. Missing env vars: {', '.join(missing)}. "
                 "Set every R2_* env var on fc-api, or set "
                 "APP_ENV=development if this environment is intentionally "
-                "using the filesystem fallback (never for production)."
+                "using the filesystem fallback (never for production). "
+                "If this service is a background job that never handles "
+                "uploads, set FC_SERVICE_ROLE=job to skip the R2 check."
             )
 
         # Rule 3 — partial config is always an error.
@@ -380,6 +416,34 @@ class Settings(BaseSettings):
                 "in the Render dashboard and redeploy."
             )
 
+        return self
+
+    @model_validator(mode="after")
+    def _check_service_role_configuration(self) -> "Settings":
+        """Enforce web-role invariants that don't apply to background jobs.
+
+        * ``fc_service_role`` must be one of the known values.
+        * When role is ``web``, ``JWT_SECRET`` must be set (encode/decode
+          of auth tokens happens on every authenticated request; a
+          missing secret would surface as an opaque 500 at request
+          time). Job services never touch ``app.core.security`` and
+          therefore need no JWT secret.
+        """
+        role = self.fc_service_role
+        if role not in ("web", "job"):
+            raise ValueError(
+                f"FC_SERVICE_ROLE={role!r} is not a known value. "
+                "Set to 'web' (default) for the fc-api / fc-web service, "
+                "or 'job' for a background/cron service that does not "
+                "handle HTTP auth or uploads."
+            )
+        if role == "web" and not self.jwt_secret:
+            raise ValueError(
+                "JWT_SECRET is required for the web service (auth "
+                "encode/decode). Set JWT_SECRET on fc-api, or set "
+                "FC_SERVICE_ROLE=job if this is a background job that "
+                "never signs or verifies auth tokens."
+            )
         return self
 
     @model_validator(mode="after")
@@ -434,19 +498,27 @@ class Settings(BaseSettings):
         secret = self.stripe_secret_key
         webhook = self.stripe_webhook_secret
         is_production = self.app_env == "production"
+        is_web = self.fc_service_role == "web"
 
-        # Rule 2 — production requires the full set.
-        missing = [
-            n for n, v in (
-                ("STRIPE_SECRET_KEY", secret),
-                ("STRIPE_WEBHOOK_SECRET", webhook),
-            ) if not v
+        # Rule 2 — production requires the vars each role actually uses.
+        # * STRIPE_SECRET_KEY — every service that makes Stripe API
+        #   calls in production needs it (fc-api checkout AND background
+        #   jobs like the refund reconciler).
+        # * STRIPE_WEBHOOK_SECRET — only the web service verifies
+        #   incoming webhook signatures. Background jobs never handle
+        #   webhooks. Requiring it on a job would be paying for a
+        #   capability the job doesn't have.
+        required_stripe_vars: list[tuple[str, str | None]] = [
+            ("STRIPE_SECRET_KEY", secret),
         ]
+        if is_web:
+            required_stripe_vars.append(("STRIPE_WEBHOOK_SECRET", webhook))
+        missing = [n for n, v in required_stripe_vars if not v]
         if is_production and missing:
             raise ValueError(
                 "Stripe is required in production but is not fully "
                 f"configured. Missing env vars: {', '.join(missing)}. "
-                "Set both on fc-api in the Render dashboard, or set "
+                "Set the required vars in the Render dashboard, or set "
                 "APP_ENV=development if this environment is intentionally "
                 "unable to take payments."
             )

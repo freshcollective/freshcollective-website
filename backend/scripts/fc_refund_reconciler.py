@@ -36,8 +36,38 @@ BACKEND_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
 # ruff: noqa: E402
-# Force full model registry load (see fip3_reconcile_grace.py for rationale).
-import app.main  # noqa: F401
+# Force full SQLAlchemy model registry load WITHOUT importing app.main.
+# app.main pulls in every FastAPI router → every service → every model
+# but also every unrelated web-app dependency (uploads/R2, comms
+# webhooks, auth, etc.) which forces the reconciler to satisfy web-only
+# runtime config (R2 credentials, JWT_SECRET). We only need the models
+# so SQLAlchemy can resolve string-referenced relationships when
+# RefundOperation and its FKs are queried.
+#
+# List mirrors backend/alembic/env.py so any model added to the alembic
+# registry is also loaded here.
+from app.db.base import Base  # noqa: F401
+import app.models.user  # noqa: F401
+import app.models.sales  # noqa: F401
+import app.models.platform  # noqa: F401
+import app.models.creator_billing  # noqa: F401
+import app.models.payment  # noqa: F401
+import app.models.payment_option  # noqa: F401
+import app.models.payment_option_schedule  # noqa: F401
+import app.models.payment_option_grant  # noqa: F401
+import app.models.access_pass  # noqa: F401
+import app.models.notification  # noqa: F401
+import app.models.activity  # noqa: F401
+import app.models.place  # noqa: F401
+import app.models.purchase_intent  # noqa: F401
+import app.models.purchase_plan  # noqa: F401
+import app.models.webhook_event  # noqa: F401
+import app.models.community_care  # noqa: F401
+import app.models.access_grant_record  # noqa: F401
+import app.models.refund_operation  # noqa: F401
+import app.models.creator_payout_batch  # noqa: F401
+import app.comms.models  # noqa: F401
+
 from app.core.database import SessionLocal
 from app.models.refund_operation import (
     RefundOperation,
