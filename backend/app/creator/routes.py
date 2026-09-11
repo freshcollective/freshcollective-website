@@ -176,7 +176,6 @@ from app.models.platform import (
     PathwayStep,
     PathwayStepBlock,
     PathwayStepManualRelease,
-    PathwayUnlockRequirement,
     Space,
     SpaceAccessRequest,
     SpaceInvitation,
@@ -8408,65 +8407,30 @@ def invite_managed_member(
 # ---------------------------------------------------------------------------
 
 class PathwayUnlockOptionResponse(BaseModel):
+    """Reserved — the response shape was previously returned by the
+    retired ``/unlock-requirements`` endpoints (see below). Kept as a
+    named type so external references (if any) still resolve while
+    the class-level import graph settles."""
     id: str
     name: str
     payment_type: str
 
 
-class SetPathwayUnlockRequirementsRequest(BaseModel):
-    payment_option_ids: list[str]
-
-
-@router.get("/spaces/{slug}/pathways/{pathway_slug}/unlock-requirements", response_model=list[PathwayUnlockOptionResponse])
-def get_pathway_unlock_requirements(
-    slug: str,
-    pathway_slug: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_creator_user),
-) -> list[PathwayUnlockOptionResponse]:
-    space = _get_managed_space(slug, current_user, db)
-    pathway = _get_pathway(space, pathway_slug, db)
-    rows = (
-        db.query(PaymentOption)
-        .join(PathwayUnlockRequirement, PathwayUnlockRequirement.payment_option_id == PaymentOption.id)
-        .filter(PathwayUnlockRequirement.pathway_id == pathway.id)
-        .all()
-    )
-    return [PathwayUnlockOptionResponse(id=r.id, name=r.name, payment_type=r.payment_type.value) for r in rows]
-
-
-@router.put("/spaces/{slug}/pathways/{pathway_slug}/unlock-requirements", response_model=list[PathwayUnlockOptionResponse])
-def set_pathway_unlock_requirements(
-    slug: str,
-    pathway_slug: str,
-    body: SetPathwayUnlockRequirementsRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_verified_creator_user),
-) -> list[PathwayUnlockOptionResponse]:
-    """Replace the full set of payment options that unlock this pathway."""
-    space = _get_managed_space(slug, current_user, db)
-    pathway = _get_pathway(space, pathway_slug, db)
-
-    # Validate all provided option IDs belong to this space
-    valid_options: list[PaymentOption] = []
-    for opt_id in body.payment_option_ids:
-        opt = db.query(PaymentOption).filter(PaymentOption.id == opt_id, PaymentOption.space_id == space.id).first()
-        if not opt:
-            raise HTTPException(status_code=404, detail=f"Payment option '{opt_id}' not found in this space.")
-        valid_options.append(opt)
-
-    # Delete existing requirements and replace
-    db.query(PathwayUnlockRequirement).filter(PathwayUnlockRequirement.pathway_id == pathway.id).delete()
-    for opt in valid_options:
-        req = PathwayUnlockRequirement(
-            id=str(uuid4()),
-            pathway_id=pathway.id,
-            payment_option_id=opt.id,
-        )
-        db.add(req)
-    db.commit()
-
-    return [PathwayUnlockOptionResponse(id=opt.id, name=opt.name, payment_type=opt.payment_type.value) for opt in valid_options]
+# ---------------------------------------------------------------------------
+# Retired: ``/api/creator/spaces/{slug}/pathways/{slug}/unlock-requirements``
+# GET + PUT (migration 125 backfilled every historical row into the
+# canonical ``PaymentOptionGrant`` table). ``compute_pathway_access``,
+# the mention-autocomplete branch, and the display readers now derive
+# the "which Options unlock this Pathway" set from PaymentOptionGrant
+# directly — the single source of truth for what a PaymentOption
+# grants. The legacy ``pathway_unlock_requirements`` table is left in
+# place for rollback safety; a housekeeping migration will drop it in
+# a later release once we're confident nothing external reads it.
+#
+# No frontend caller existed at the time of retirement (confirmed via
+# grep on the frontend tree). Creators manage the unlock relationship
+# by editing the Payment Option's grants in Commerce → Payment Options.
+# ---------------------------------------------------------------------------
 
 
 @router.get("/spaces/{slug}/payment-options", response_model=list[PathwayUnlockOptionResponse])

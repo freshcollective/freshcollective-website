@@ -56,7 +56,6 @@ from app.models.platform import (
     Pathway,
     PathwayEntitlement,
     PathwayStatus,
-    PathwayUnlockRequirement,
     SpaceMembership,
     SpaceMembershipStatus,
     SpaceRole,
@@ -161,8 +160,15 @@ def _make_enrollment(db, user, pathway) -> Enrollment:
 
 def _make_included_with_offer_bundle(
     db, space, pathway,
-) -> tuple[PaymentOption, PathwayUnlockRequirement]:
-    """A published PaymentOption whose AccessPass unlocks the Pathway."""
+) -> tuple[PaymentOption, "PaymentOptionGrant"]:
+    """A published PaymentOption whose AccessPass unlocks the Pathway.
+
+    Since migration 125, ``PaymentOptionGrant`` is the sole source of
+    truth for the "which Options include this Pathway" relationship —
+    this fixture writes a grant row rather than the retired legacy
+    ``PathwayUnlockRequirement`` row.
+    """
+    from app.models.payment_option_grant import PaymentOptionGrant
     opt = PaymentOption(
         id=_uid("po"),
         space_id=space.id,
@@ -177,14 +183,15 @@ def _make_included_with_offer_bundle(
     )
     db.add(opt)
     db.flush()
-    req = PathwayUnlockRequirement(
-        id=_uid("pur"),
-        pathway_id=pathway.id,
+    grant = PaymentOptionGrant(
+        id=_uid("pog"),
         payment_option_id=opt.id,
+        grant_kind="pathway",
+        pathway_id=pathway.id,
     )
-    db.add(req)
+    db.add(grant)
     db.flush()
-    return opt, req
+    return opt, grant
 
 
 def _grant_access_pass(db, *, user, space, payment_option) -> AccessPass:

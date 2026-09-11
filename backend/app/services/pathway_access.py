@@ -6,17 +6,19 @@ Pathway-linked Conversation Channels, the @mention autocomplete for
 those Channels, and any future feature scoped to Pathway access —
 routes through :func:`compute_pathway_access`.
 
-Recognised access sources (matches the historical behaviour of
-``spaces.routes._compute_pathway_access``, from which this module
-was extracted verbatim):
+Recognised access sources:
 
 * platform admin (``User.role == "admin"``);
 * Space owner (``Space.creator_id == user.id``);
 * active caretaker ``SpaceMembership`` (role in ``creator``/``moderator``);
 * free published Pathway (any active space member);
 * ``included`` Pathway + active ``SpaceMembership``;
-* ``included_with_offer`` Pathway + active ``AccessPass`` tied to one
-  of the Pathway's ``PathwayUnlockRequirement.payment_option_id``s;
+* ``included_with_offer`` Pathway + active ``SpaceMembership`` AND
+  an active, not-yet-expired ``AccessPass`` whose
+  ``payment_option_id`` grants this Pathway via
+  ``PaymentOptionGrant``. The Option's ``status`` must be
+  ``published`` (currently sold) or ``archived`` (historical
+  buyers keep access); ``draft`` options never unlock anything;
 * ``one_time`` / ``subscription`` Pathway + active
   ``PathwayEntitlement`` whose ``ends_at`` is NULL or in the future.
 
@@ -27,6 +29,11 @@ Explicitly not an access source:
   scheduling and recognition; it is NOT a permanent entitlement.
   A revoked purchase whose owner had already completed a step must
   still lose access.
+* ``PathwayUnlockRequirement`` — legacy join table (migration 051).
+  As of migration 125 its rows have been backfilled into
+  ``PaymentOptionGrant``; this predicate does not consult it. The
+  table is left in place for rollback safety and is scheduled for
+  drop in a later housekeeping migration.
 
 Extraction rationale
 --------------------
@@ -45,13 +52,15 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.access_pass import AccessPass, AccessPassStatus
+from app.models.payment_option import PaymentOption, PaymentOptionStatus
+from app.models.payment_option_grant import PaymentOptionGrant
 from app.models.platform import (
     EntitlementStatus,
     Pathway,
     PathwayEntitlement,
-    PathwayUnlockRequirement,
     Space,
     SpaceMembership,
+    SpaceMembershipStatus,
 )
 from app.models.user import User
 
@@ -113,21 +122,49 @@ def compute_pathway_access(
         )
         return mem is not None
     if access_type == "included_with_offer":
-        unlock_option_ids = [
-            row.payment_option_id
-            for row in db.query(PathwayUnlockRequirement.payment_option_id)
-            .filter(PathwayUnlockRequirement.pathway_id == pathway.id)
-            .all()
-        ]
-        if not unlock_option_ids:
+        # Ordinary members: require an active SpaceMembership on this
+        # Collective. A stray AccessPass held by a non-member cannot
+        # unlock the Pathway.
+        member_row = (
+            db.query(SpaceMembership.id)
+            .filter(
+                SpaceMembership.user_id == user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == SpaceMembershipStatus.active,
+            )
+            .first()
+        )
+        if member_row is None:
             return False
+        # Derive the unlock set from PaymentOptionGrant — the single
+        # source of truth for "which Options include this Pathway".
+        # Filter by Option status: ``published`` (currently sold) and
+        # ``archived`` (historical buyers keep access) count;
+        # ``draft`` Options never unlock anything.
+        unlock_option_ids_q = (
+            db.query(PaymentOptionGrant.payment_option_id)
+            .join(
+                PaymentOption,
+                PaymentOption.id == PaymentOptionGrant.payment_option_id,
+            )
+            .filter(
+                PaymentOptionGrant.grant_kind == "pathway",
+                PaymentOptionGrant.pathway_id == pathway.id,
+                PaymentOption.status.in_([
+                    PaymentOptionStatus.published,
+                    PaymentOptionStatus.archived,
+                ]),
+            )
+        )
+        now = datetime.utcnow()
         pass_row = (
             db.query(AccessPass.id)
             .filter(
                 AccessPass.user_id == user.id,
                 AccessPass.space_id == space.id,
                 AccessPass.status == AccessPassStatus.active,
-                AccessPass.payment_option_id.in_(unlock_option_ids),
+                AccessPass.payment_option_id.in_(unlock_option_ids_q),
+                (AccessPass.valid_until.is_(None) | (AccessPass.valid_until > now)),
             )
             .first()
         )

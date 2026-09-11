@@ -44,7 +44,7 @@ function AccessPricingSection({
   currency: _currency, setCurrency: _setCurrency,
   priceError: _priceError,
   spaceSlug: _spaceSlug,
-  unlockOptionIds: _unlockOptionIds, setUnlockOptionIds: _setUnlockOptionIds,
+  unlockOptionIds, setUnlockOptionIds: _setUnlockOptionIds,
 }: {
   accessType: string
   setAccessType: (v: string) => void
@@ -60,34 +60,32 @@ function AccessPricingSection({
   setUnlockOptionIds: (ids: string[]) => void
 }) {
   // Legacy paid states that pre-date Commerce → Payment Options.
-  // We render them read-only so the Creator understands why the
-  // choice they remember isn't shown — but they can switch back to
-  // ``free`` / ``included`` to opt out.
+  // ``one_time`` / ``subscription`` remain read-only banners: those
+  // predate ``PaymentOptionGrant`` and are being phased out.
+  // ``included_with_offer`` is NOT legacy — it's the third first-class
+  // choice below (Payment Option access).
   const isPaymentOptionsMode = pricingMode === PRICING_MODE_PAYMENT_OPTIONS_VALUE
   const legacyPaid = isPaymentOptionsMode
     || accessType === 'one_time'
     || accessType === 'subscription'
-    || accessType === 'included_with_offer'
 
-  // Both choices are non-commercial and give *members* the same
-  // access. They diverge on *public visibility*:
-  //   free     — the Pathway is publicly discoverable (unauth
-  //              visitors see it and can preview the About page).
-  //   included — the Pathway is member-only (unauth visitors see
-  //              a "Join to begin" prompt and are redirected to
-  //              login; the card is hidden from public lists).
-  // Confirmed via backend access resolver in
-  // ``spaces/routes.py:599-730`` — keep both to preserve that
-  // deliberate distinction.
+  // Three first-class choices for who can access this Pathway.
+  // ``included_with_offer`` (Payment Option access) derives its
+  // unlock set from ``PaymentOptionGrant`` — the same Options that
+  // list this Pathway in Commerce → Payment Options are the ones
+  // that unlock it. No separate unlock checklist to maintain.
   const CHOICES: { value: string; label: string; description: string }[] = [
-    { value: 'free',     label: 'Public',      description: 'Anyone can find and preview this Pathway on your Collective\u2019s public pages. Members can begin it immediately.' },
-    { value: 'included', label: 'Members only', description: 'Only signed-in members of this Collective can see or begin this Pathway. Non-members are prompted to join.' },
+    { value: 'free',                label: 'Public',      description: 'Anyone can find and preview this Pathway on your Collective\u2019s public pages. Members can begin it immediately.' },
+    { value: 'included',            label: 'Members only', description: 'Only signed-in members of this Collective can see or begin this Pathway. Non-members are prompted to join.' },
+    { value: 'included_with_offer', label: 'Payment Option access', description: 'Only members whose current Payment Option includes this Pathway can access it.' },
   ]
 
   function handleChoiceClick(value: string) {
     setPricingMode('legacy')
     setAccessType(value)
   }
+
+  const showEmptyGrantWarning = accessType === 'included_with_offer' && unlockOptionIds.length === 0
 
   return (
     <div>
@@ -96,10 +94,10 @@ function AccessPricingSection({
       {legacyPaid && (
         <div className="mb-3 rounded-xl border border-teal-200 bg-teal-50/40 px-4 py-3 text-[12px] leading-relaxed text-teal-900">
           <strong>Paid access is now managed in Commerce → Payment Options.</strong>{' '}
-          This Pathway is currently configured with a legacy paid access mode. The
-          Payment Options that include this Pathway are shown below. To take
-          this Pathway off paid access, choose <em>Free</em> or <em>Included in
-          collective access</em>.
+          This Pathway is on a legacy paid access mode. Payment Options that
+          include this Pathway are shown below. To take this Pathway off paid
+          access, choose <em>Public</em>, <em>Members only</em>, or <em>Payment
+          Option access</em>.
         </div>
       )}
 
@@ -132,6 +130,29 @@ function AccessPricingSection({
           )
         })}
       </div>
+
+      {showEmptyGrantWarning && (
+        <div
+          className="mt-3 rounded-xl px-4 py-3 text-[12px] leading-relaxed"
+          style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#78350F' }}
+        >
+          <p className="font-semibold" style={{ color: '#92400E' }}>
+            No Payment Options currently include this Pathway.
+          </p>
+          <p className="mt-1">
+            Members won\u2019t be able to reach this Pathway until at least one
+            Payment Option grants it.{' '}
+            <a
+              href="/creator-studio/payment-options"
+              className="underline hover:no-underline"
+              style={{ color: '#92400E' }}
+            >
+              Manage Payment Options
+            </a>{' '}
+            to add this Pathway to an existing offer.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -1113,12 +1134,29 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
     }
   }
 
-  // Load existing unlock requirements on mount
+  // Derive the current unlock set from PaymentOptionGrant — the
+  // single source of truth for "which Payment Options include this
+  // Pathway". Read via ``/payment-option-references`` (same feed the
+  // "This Pathway is included in" section renders). The retired
+  // ``/unlock-requirements`` endpoints are no longer available.
+  //
+  // Draft Options don't unlock anything, but the reference endpoint
+  // deliberately excludes archived Options only; we filter the
+  // ``payment_option_status !== 'draft'`` set here so the empty-set
+  // warning matches the backend's derivation.
   useEffect(() => {
-    if (pathway.access_type !== 'included_with_offer') return
-    fetch(apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/unlock-requirements`), { credentials: 'include' })
+    fetch(
+      apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/payment-option-references`),
+      { credentials: 'include' },
+    )
       .then(r => r.ok ? r.json() : [])
-      .then((opts: { id: string }[]) => setUnlockOptionIds(opts.map(o => o.id)))
+      .then((refs: { payment_option_id: string; payment_option_status: string }[]) =>
+        setUnlockOptionIds(
+          refs
+            .filter(r => r.payment_option_status !== 'draft')
+            .map(r => r.payment_option_id),
+        ),
+      )
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -1169,18 +1207,12 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
         return
       }
 
-      // Save unlock requirements when using included_with_offer
-      if (accessType === 'included_with_offer') {
-        await fetch(
-          apiUrl(`/api/creator/spaces/${spaceSlug}/pathways/${pathway.slug}/unlock-requirements`),
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ payment_option_ids: unlockOptionIds }),
-          },
-        )
-      }
+      // No separate unlock-set write: PaymentOptionGrant is the
+      // single source of truth for "which Options include this
+      // Pathway". Creators edit the relationship in Commerce →
+      // Payment Options. The empty-set warning above nudges them
+      // to add this Pathway to an Option's grants when they've
+      // chosen Payment Option access and no Option grants it yet.
 
       setSaved(true)
       startTransition(() => { router.refresh() })
@@ -1390,7 +1422,7 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
              Legacy PaymentOptionsSection / PaymentSchedulesSection
              functions above are retained during the transition
              but no longer rendered. ── */}
-      <PathwayPaymentOptionsReference spaceSlug={spaceSlug} pathwaySlug={pathway.slug} />
+      <PathwayPaymentOptionsReference spaceSlug={spaceSlug} pathwaySlug={pathway.slug} accessType={accessType} />
 
     </div>
   )

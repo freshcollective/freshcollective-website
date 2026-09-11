@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.auth.dependencies import get_current_user, get_optional_user, get_verified_current_user
 from app.core.database import get_db
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
-from app.models.payment_option import PaymentOption
+from app.models.payment_option import PaymentOption, PaymentOptionStatus
 from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     BookingStatus,
@@ -27,7 +27,6 @@ from app.models.platform import (
     PathwaySection,
     PathwayStep,
     PathwayStepBlock,
-    PathwayUnlockRequirement,
     Space,
     SpaceAccessRequest,
     SpaceInvitation,
@@ -840,20 +839,42 @@ def _check_pathway_access(
         raise HTTPException(status_code=403, detail="This pathway is included with space membership.")
 
     if access_type == "included_with_offer":
-        unlock_option_ids = [
-            row.payment_option_id
-            for row in db.query(PathwayUnlockRequirement.payment_option_id)
-            .filter(PathwayUnlockRequirement.pathway_id == pathway.id)
-            .all()
-        ]
-        if unlock_option_ids:
+        # Mirror of ``services.pathway_access.compute_pathway_access``
+        # for the ``included_with_offer`` branch — kept in lockstep so
+        # the HTTP-raising and bool-returning helpers can never
+        # diverge. Source of truth for unlock relationship:
+        # ``PaymentOptionGrant``, filtered by Option status.
+        member_row = (
+            db.query(SpaceMembership.id)
+            .filter(
+                SpaceMembership.user_id == user.id,
+                SpaceMembership.space_id == space.id,
+                SpaceMembership.status == "active",
+            )
+            .first()
+        )
+        if member_row is not None:
+            from app.models.payment_option import PaymentOption as _PO
+            from app.models.payment_option import PaymentOptionStatus as _POS
+            from app.models.payment_option_grant import PaymentOptionGrant as _POG
+            unlock_option_ids_q = (
+                db.query(_POG.payment_option_id)
+                .join(_PO, _PO.id == _POG.payment_option_id)
+                .filter(
+                    _POG.grant_kind == "pathway",
+                    _POG.pathway_id == pathway.id,
+                    _PO.status.in_([_POS.published, _POS.archived]),
+                )
+            )
+            now = datetime.utcnow()
             pass_row = (
                 db.query(AccessPass.id)
                 .filter(
                     AccessPass.user_id == user.id,
                     AccessPass.space_id == space.id,
                     AccessPass.status == AccessPassStatus.active,
-                    AccessPass.payment_option_id.in_(unlock_option_ids),
+                    AccessPass.payment_option_id.in_(unlock_option_ids_q),
+                    (AccessPass.valid_until.is_(None) | (AccessPass.valid_until > now)),
                 )
                 .first()
             )
@@ -1273,13 +1294,25 @@ def list_pathways(
             .all()
         )
 
-    # Bulk-fetch unlock offer names for included_with_offer pathways
+    # Bulk-fetch unlock offer names for included_with_offer pathways.
+    # Sourced from PaymentOptionGrant (the single source of truth for
+    # "which Options include this Pathway"). Draft Options are
+    # excluded — they're not sold, so listing them as unlock offers
+    # would mislead members.
     unlock_offer_names_by_pathway: dict[str, list[str]] = {}
     if pathway_ids:
+        from app.models.payment_option_grant import PaymentOptionGrant as _POG
         rows = (
-            db.query(PathwayUnlockRequirement.pathway_id, PaymentOption.name)
-            .join(PaymentOption, PaymentOption.id == PathwayUnlockRequirement.payment_option_id)
-            .filter(PathwayUnlockRequirement.pathway_id.in_(pathway_ids))
+            db.query(_POG.pathway_id, PaymentOption.name)
+            .join(PaymentOption, PaymentOption.id == _POG.payment_option_id)
+            .filter(
+                _POG.grant_kind == "pathway",
+                _POG.pathway_id.in_(pathway_ids),
+                PaymentOption.status.in_([
+                    PaymentOptionStatus.published,
+                    PaymentOptionStatus.archived,
+                ]),
+            )
             .all()
         )
         for pid, name in rows:
@@ -2722,11 +2755,19 @@ def get_pathway(
 ) -> PathwaySummary:
     space = _get_space_or_404(slug, db)
     p = _get_pathway_or_404(space.id, pathway_slug, db)
+    from app.models.payment_option_grant import PaymentOptionGrant as _POG_single
     unlock_offer_names = [
         row.name
         for row in db.query(PaymentOption.name)
-        .join(PathwayUnlockRequirement, PathwayUnlockRequirement.payment_option_id == PaymentOption.id)
-        .filter(PathwayUnlockRequirement.pathway_id == p.id)
+        .join(_POG_single, _POG_single.payment_option_id == PaymentOption.id)
+        .filter(
+            _POG_single.grant_kind == "pathway",
+            _POG_single.pathway_id == p.id,
+            PaymentOption.status.in_([
+                PaymentOptionStatus.published,
+                PaymentOptionStatus.archived,
+            ]),
+        )
         .all()
     ]
     return PathwaySummary(

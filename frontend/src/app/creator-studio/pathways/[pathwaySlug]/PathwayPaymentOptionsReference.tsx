@@ -43,10 +43,13 @@ function statusBadge(status: Reference['payment_option_status']) {
 }
 
 export default function PathwayPaymentOptionsReference({
-  spaceSlug, pathwaySlug,
+  spaceSlug, pathwaySlug, accessType,
 }: {
   spaceSlug: string
   pathwaySlug: string
+  /** When ``included_with_offer``, the Options in this list ARE the
+   *  unlock set — surface that plainly in the header copy. */
+  accessType?: string
 }) {
   const [rows, setRows] = useState<Reference[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -78,6 +81,13 @@ export default function PathwayPaymentOptionsReference({
             Payment Options are now managed centrally at the Collective level.
             This Pathway can be included in one or more of them.
           </p>
+          {accessType === 'included_with_offer' && (
+            <p className="mt-1 text-[12.5px] text-slate-500">
+              Because Access is set to <strong>Payment Option access</strong>,
+              the Options below are the ones that unlock this Pathway. Manage
+              them in Commerce → Payment Options.
+            </p>
+          )}
         </div>
         <Link
           href="/creator-studio/payment-options"

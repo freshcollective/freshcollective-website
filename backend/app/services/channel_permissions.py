@@ -64,7 +64,6 @@ from app.models.platform import (
     EventSeries,
     Pathway,
     PathwayEntitlement,
-    PathwayUnlockRequirement,
     Space,
     SpaceMembership,
     SpaceMembershipStatus,
@@ -468,18 +467,32 @@ def accessible_user_ids_for_channel(
         if access_type in ("free", "included"):
             return active_member_ids | caretaker_ids
         if access_type == "included_with_offer":
-            unlock_option_ids = [
-                row.payment_option_id
-                for row in db.query(PathwayUnlockRequirement.payment_option_id)
-                .filter(PathwayUnlockRequirement.pathway_id == pathway.id)
-                .all()
-            ]
-            if not unlock_option_ids:
-                return caretaker_ids
+            # Unlock set derived from PaymentOptionGrant — the single
+            # source of truth. Filter out draft Options; keep
+            # published (currently sold) and archived (historical
+            # buyers still hold valid passes).
+            from app.models.payment_option import (
+                PaymentOption as _PO,
+                PaymentOptionStatus as _POS,
+            )
+            from app.models.payment_option_grant import (
+                PaymentOptionGrant as _POG,
+            )
+            unlock_option_ids_q = (
+                db.query(_POG.payment_option_id)
+                .join(_PO, _PO.id == _POG.payment_option_id)
+                .filter(
+                    _POG.grant_kind == "pathway",
+                    _POG.pathway_id == pathway.id,
+                    _PO.status.in_([_POS.published, _POS.archived]),
+                )
+            )
+            now = datetime.utcnow()
             rows = db.query(AccessPass.user_id).filter(
                 AccessPass.space_id == space.id,
                 AccessPass.status == AccessPassStatus.active,
-                AccessPass.payment_option_id.in_(unlock_option_ids),
+                AccessPass.payment_option_id.in_(unlock_option_ids_q),
+                (AccessPass.valid_until.is_(None) | (AccessPass.valid_until > now)),
             ).all()
             candidates = {r.user_id for r in rows}
             return (candidates & active_member_ids) | caretaker_ids
