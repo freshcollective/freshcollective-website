@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { CreatorMediaAsset, CreatorPathway } from '@/types/platform'
 import ImagePickerField from '@/components/creator/ImagePickerField'
@@ -1022,6 +1022,20 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
   const router = useRouter()
   const [, startTransition] = useTransition()
 
+  // Baseline values captured at mount + after each successful save.
+  // ``handleSave`` writes back to these so the sticky "Unsaved
+  // changes" bar disappears cleanly after persistence — matching the
+  // dirty state to actual server truth, not just to component
+  // lifecycle. Every field that participates in ``handleSave`` has
+  // a corresponding entry here.
+  const [savedTitle, setSavedTitle]                 = useState(pathway.title)
+  const [savedDescription, setSavedDescription]     = useState(pathway.description ?? '')
+  const [savedStatus, setSavedStatus]               = useState<string>(pathway.status)
+  const [savedAccessType, setSavedAccessType]       = useState<string>(pathway.access_type ?? 'free')
+  const [savedPricingMode, setSavedPricingMode]     = useState<string>(pathway.pricing_mode ?? 'legacy')
+  const [savedPriceDollars, setSavedPriceDollars]   = useState(centsToDisplay(pathway.price_cents))
+  const [savedCurrency, setSavedCurrency]           = useState(pathway.currency ?? 'AUD')
+
   const [title, setTitle]               = useState(pathway.title)
   const [description, setDescription]   = useState(pathway.description ?? '')
   const [status, setStatus]             = useState<string>(pathway.status)
@@ -1214,6 +1228,17 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
       // to add this Pathway to an Option's grants when they've
       // chosen Payment Option access and no Option grants it yet.
 
+      // Reset the "saved" baseline so ``isDirty`` clears and the
+      // sticky Unsaved Changes bar disappears. Anchoring to the
+      // values we just persisted (not to a re-fetch) keeps the UI
+      // snappy without racing the server round-trip.
+      setSavedTitle(title.trim())
+      setSavedDescription(description.trim())
+      setSavedStatus(status)
+      setSavedAccessType(accessType)
+      setSavedPricingMode(pricingMode)
+      setSavedPriceDollars(priceDollars)
+      setSavedCurrency(currency)
       setSaved(true)
       startTransition(() => { router.refresh() })
       setTimeout(() => setSaved(false), 3000)
@@ -1224,8 +1249,37 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
     }
   }
 
+  // Dirty state — every field that participates in ``handleSave`` is
+  // compared against the last-saved baseline. When any diverge, the
+  // sticky "Unsaved changes" bar at the bottom of the viewport
+  // surfaces the fact that a Save is pending. Empty-string
+  // description normalisation matches what the save call sends to
+  // the server (``description.trim() || null``) so re-typing then
+  // deleting doesn't leave phantom dirt.
+  const isDirty = useMemo(() => (
+    title.trim() !== savedTitle.trim()
+    || description.trim() !== savedDescription.trim()
+    || status !== savedStatus
+    || accessType !== savedAccessType
+    || pricingMode !== savedPricingMode
+    || priceDollars !== savedPriceDollars
+    || currency !== savedCurrency
+  ), [
+    title, savedTitle,
+    description, savedDescription,
+    status, savedStatus,
+    accessType, savedAccessType,
+    pricingMode, savedPricingMode,
+    priceDollars, savedPriceDollars,
+    currency, savedCurrency,
+  ])
+
   return (
-    <div className="space-y-6">
+    // Extra bottom padding reserves space for the sticky
+    // Unsaved-changes bar so the final section is never hidden
+    // beneath it. ``pb-24`` gives enough clearance for a 56-px
+    // action bar plus the viewport safe-area on mobile.
+    <div className={isDirty ? "space-y-6 pb-24" : "space-y-6"}>
 
       {/* ── 1. Essential setup — title / short description / status / Save. ── */}
       <div className="rounded-2xl border border-border bg-white p-6">
@@ -1419,10 +1473,58 @@ export default function PathwaySettingsClient({ pathway, spaceSlug, mediaAssets 
              Commerce → Payment Options. This section reads back
              the Options that grant access to this Pathway so the
              Creator can navigate to them without re-authoring here.
-             Legacy PaymentOptionsSection / PaymentSchedulesSection
-             functions above are retained during the transition
-             but no longer rendered. ── */}
-      <PathwayPaymentOptionsReference spaceSlug={spaceSlug} pathwaySlug={pathway.slug} accessType={accessType} />
+
+             Display-only guard: only render when Access is set to
+             Payment Option access. For Public / Members-only /
+             legacy paid modes the section is hidden so it doesn't
+             misleadingly suggest Payment Options are controlling
+             access. PaymentOptionGrant rows are NEVER mutated
+             when the section is hidden or when the Creator
+             switches access mode — existing relationships remain
+             intact and re-appear if Payment Option access is
+             chosen again. ── */}
+      {accessType === 'included_with_offer' && (
+        <PathwayPaymentOptionsReference
+          spaceSlug={spaceSlug}
+          pathwaySlug={pathway.slug}
+          accessType={accessType}
+        />
+      )}
+
+      {/* Sticky page-level save bar. Surfaces only when the settings
+          form is dirty relative to the last save. Uses the same
+          ``handleSave`` as the button inside the top card so there
+          is one save behaviour with two triggers, not two independent
+          save paths. Clears automatically after ``handleSave`` writes
+          the new baseline into the ``saved*`` state. */}
+      {isDirty && (
+        <div
+          role="region"
+          aria-label="Unsaved changes"
+          className="fixed bottom-0 left-0 right-0 z-40 border-t bg-white/95 px-6 py-3 backdrop-blur"
+          style={{ borderColor: 'rgba(12,24,38,0.08)', boxShadow: '0 -2px 12px rgba(15,23,42,0.06)' }}
+        >
+          <div className="mx-auto flex max-w-[980px] items-center justify-between gap-3">
+            <p className="flex items-center gap-2 text-[13px] font-medium text-navy-900">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ background: '#D97706' }}
+                aria-hidden="true"
+              />
+              Unsaved changes
+            </p>
+            <button
+              type="button"
+              disabled={loading || !title.trim()}
+              onClick={handleSave}
+              className="rounded-xl px-5 py-2 text-[13.5px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            >
+              {loading ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   )
