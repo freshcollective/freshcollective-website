@@ -6298,20 +6298,55 @@ def get_creator_payment_summary(
         )
         .all()
     )
-    succeeded = [r for r in rows if r.status == PaymentTransactionStatus.succeeded]
+    # Aggregation base: every row whose payment historically
+    # succeeded — including partially and fully refunded rows. Gross
+    # Sales is the original before-refund amount (historical fact);
+    # Refunds is the cumulative refunded amount; Total Revenue /
+    # Net retained = Gross - Refunds. A fully-refunded row therefore
+    # contributes its full gross to Gross Sales AND its full refunded
+    # amount to Refunds, netting to zero — the correct product
+    # semantic. ``failed`` / ``cancelled`` / ``pending`` rows are
+    # excluded from every aggregate.
+    in_scope = [
+        r for r in rows if r.status in (
+            PaymentTransactionStatus.succeeded,
+            PaymentTransactionStatus.partially_refunded,
+            PaymentTransactionStatus.refunded,
+        )
+    ]
+    gross = sum(r.gross_amount_cents for r in in_scope)
+    refunded = sum(r.refunded_amount_cents or 0 for r in in_scope)
+    platform_fee = sum(r.platform_fee_cents for r in in_scope)
+    creator_net = sum(r.net_creator_amount_cents or 0 for r in in_scope)
+    # Pending payout continues to only count rows currently in
+    # payout_status=pending (the payout side is unwired for
+    # Connect; refund → payout adjustment is a separate follow-up).
+    pending_payout = sum(
+        r.net_creator_amount_cents or 0
+        for r in in_scope
+        if r.payout_status == PayoutStatus.pending
+    )
+    succeeded_count = sum(
+        1 for r in rows if r.status == PaymentTransactionStatus.succeeded
+    )
+    refunded_count = sum(1 for r in rows if r.status in (
+        PaymentTransactionStatus.refunded,
+        PaymentTransactionStatus.partially_refunded,
+    ))
+    partially_refunded_count = sum(
+        1 for r in rows
+        if r.status == PaymentTransactionStatus.partially_refunded
+    )
     return CreatorPaymentSummary(
-        total_gross_amount_cents=sum(r.gross_amount_cents for r in succeeded),
-        total_platform_fee_cents=sum(r.platform_fee_cents for r in succeeded),
-        total_creator_net_amount_cents=sum(r.net_creator_amount_cents or 0 for r in succeeded),
-        pending_payout_cents=sum(
-            r.net_creator_amount_cents or 0
-            for r in succeeded
-            if r.payout_status == PayoutStatus.pending
-        ),
-        succeeded_count=len(succeeded),
-        refunded_count=sum(1 for r in rows if r.status in (
-            PaymentTransactionStatus.refunded, PaymentTransactionStatus.partially_refunded
-        )),
+        total_gross_amount_cents=gross,
+        total_platform_fee_cents=platform_fee,
+        total_creator_net_amount_cents=creator_net,
+        pending_payout_cents=pending_payout,
+        total_refunded_amount_cents=refunded,
+        total_net_retained_amount_cents=gross - refunded,
+        succeeded_count=succeeded_count,
+        refunded_count=refunded_count,
+        partially_refunded_count=partially_refunded_count,
         disputed_count=sum(1 for r in rows if r.status == PaymentTransactionStatus.disputed),
         pending_count=sum(1 for r in rows if r.status == PaymentTransactionStatus.pending),
     )
@@ -6491,6 +6526,8 @@ def list_creator_payments(
             installment_number=r.installment_number,
             grant_state=_grant_state_for(r.id),
             grant_revoked_at=grant_revoked_at_by_txn.get(r.id),
+            refunded_amount_cents=r.refunded_amount_cents or 0,
+            last_refunded_at=r.last_refunded_at,
             notes=r.notes,
             created_at=r.created_at,
             updated_at=r.updated_at,

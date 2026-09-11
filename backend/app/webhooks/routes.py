@@ -163,6 +163,19 @@ async def stripe_webhook(
             provider_event_id=event["id"],
             event_livemode=event_livemode,
         )
+    elif event_type == "charge.refunded":
+        # Stripe refund sync — the sole MVP refund event. Stamps
+        # PaymentTransaction.refunded_amount_cents / status /
+        # last_refunded_at with monotonic guards. Deliberately does
+        # NOT touch access — revoke remains a separate admin action
+        # via the Payments received UI.
+        from app.webhooks.refund_handlers import handle_charge_refunded
+        handle_charge_refunded(
+            event_object, db,
+            provider_event_id=event["id"],
+            event_created=event["created"],
+            event_livemode=event_livemode,
+        )
     else:
         logger.debug("Unhandled Stripe event type: %s", event_type)
 

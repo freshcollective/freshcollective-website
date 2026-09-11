@@ -303,6 +303,19 @@ class PaymentTransaction(Base):
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Refund state (migration 126). Populated by the
+    # ``charge.refunded`` webhook handler with Stripe's cumulative
+    # ``charge.amount_refunded`` value — the handler enforces
+    # monotonicity so an out-of-order older event cannot regress
+    # these fields. ``status`` becomes ``refunded`` (fully) or
+    # ``partially_refunded`` when this column is set.
+    refunded_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    last_refunded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+
     # 'test' when created against sk_test_* Stripe keys, 'live' when against sk_live_*.
     # Used to separate sandbox figures from real revenue in dashboards.
     stripe_mode: Mapped[str] = mapped_column(

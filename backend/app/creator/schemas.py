@@ -1808,8 +1808,23 @@ class GrantPassResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class CreatorPaymentSummary(BaseModel):
-    """Earnings summary for the current creator's transactions."""
-    # Totals from succeeded member purchases (excludes creator subscription payments)
+    """Earnings summary for the current creator's transactions.
+
+    Refund semantics (see ``get_creator_payment_summary``):
+
+    * ``total_gross_amount_cents`` — original successful sale
+      amounts before refunds. Historical fact. Fully-refunded
+      transactions still contribute their original amount here.
+    * ``total_refunded_amount_cents`` — cumulative refunded amount
+      across in-scope rows.
+    * ``total_net_retained_amount_cents`` — Gross minus Refunds.
+      What the collective has actually kept, refunds subtracted.
+
+    Aggregation base = rows whose payment historically succeeded
+    (status IN succeeded, partially_refunded, refunded). ``failed``
+    / ``cancelled`` / ``pending`` rows are excluded from every
+    aggregate.
+    """
     total_gross_amount_cents: int
     total_platform_fee_cents: int
     total_creator_net_amount_cents: int
@@ -1818,11 +1833,16 @@ class CreatorPaymentSummary(BaseModel):
     # TODO: subtract once Stripe Connect transfers are processed (payout_status → paid)
     pending_payout_cents: int
 
+    # Refund figures (migration 126 + charge.refunded webhook).
+    total_refunded_amount_cents: int = 0
+    total_net_retained_amount_cents: int = 0
+
     # Transaction counts by status
     succeeded_count: int
     refunded_count: int
     disputed_count: int
     pending_count: int
+    partially_refunded_count: int = 0
 
 
 class CreatorPaymentTransactionOut(BaseModel):
@@ -1868,6 +1888,17 @@ class CreatorPaymentTransactionOut(BaseModel):
     # row but stay behind the schema boundary.
     purchase_plan_id: str | None = None
     installment_number: int | None = None
+
+    # Refund state (migration 126). ``refunded_amount_cents`` is the
+    # cumulative refunded amount on this transaction (Stripe's
+    # ``charge.amount_refunded``). Zero when there has been no refund.
+    # ``last_refunded_at`` is stamped when a refund webhook updates
+    # the row and is monotonic (never moves backwards on out-of-order
+    # events). Payment ``status`` continues to reflect the row's
+    # payment lifecycle: ``succeeded`` when no refund, ``partially_refunded``
+    # after a partial, ``refunded`` after a full — never downgrades.
+    refunded_amount_cents: int = 0
+    last_refunded_at: datetime | None = None
 
     # Grant-lifecycle indicator, orthogonal to Stripe payment status.
     # Derived from the AccessPass rows attached to this transaction

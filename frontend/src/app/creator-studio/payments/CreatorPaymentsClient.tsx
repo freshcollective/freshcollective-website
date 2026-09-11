@@ -10,8 +10,18 @@ interface CreatorPaymentSummary {
   total_platform_fee_cents: number
   total_creator_net_amount_cents: number
   pending_payout_cents: number
+  /** Cumulative refunded amount across in-scope rows (rows whose
+   *  payment historically succeeded — includes fully-refunded rows
+   *  in the base set so Gross remains a historical figure). */
+  total_refunded_amount_cents: number
+  /** Gross Sales minus Refunds — what the collective has actually
+   *  retained after refunds. */
+  total_net_retained_amount_cents: number
   succeeded_count: number
   refunded_count: number
+  /** Sub-count of ``refunded_count`` — rows currently in the
+   *  ``partially_refunded`` state (some money kept, some returned). */
+  partially_refunded_count: number
   disputed_count: number
   pending_count: number
 }
@@ -42,6 +52,14 @@ interface CreatorPaymentTransaction {
    *  entry — no aggregation, no fake combined transaction. */
   purchase_plan_id: string | null
   installment_number: number | null
+  /** Cumulative refunded amount on this transaction (Stripe's
+   *  ``charge.amount_refunded``). Zero when there has been no refund.
+   *  Payment ``status`` reflects the state — ``succeeded`` / ``partially_refunded``
+   *  / ``refunded`` — and is monotonic (never downgrades on out-of-
+   *  order webhook events). */
+  refunded_amount_cents: number
+  /** Timestamp of the most recent refund event, or null. */
+  last_refunded_at: string | null
   /** Grant lifecycle indicator, orthogonal to Stripe payment status.
    *  Values: intact | partially_revoked | fully_revoked | no_grant_records.
    *  Derived server-side from the AccessPass + reachable
@@ -436,18 +454,17 @@ export default function CreatorPaymentsClient({
               <SummaryCard
                 label="Gross Sales"
                 value={summary ? fmt(summary.total_gross_amount_cents, displayCurrency) : '—'}
-                sub="succeeded only"
+                sub="historical, before refunds"
               />
               <SummaryCard
-                label="FC Fee"
-                value={fmt(0, displayCurrency)}
-                sub="0% — platform-owned"
-                accent
+                label="Refunds"
+                value={summary ? fmt(summary.total_refunded_amount_cents, displayCurrency) : '—'}
+                sub="cumulative refunded"
               />
               <SummaryCard
                 label="Total Revenue"
-                value={summary ? fmt(summary.total_gross_amount_cents, displayCurrency) : '—'}
-                sub="100% retained by FC"
+                value={summary ? fmt(summary.total_net_retained_amount_cents, displayCurrency) : '—'}
+                sub="Gross minus Refunds"
                 accent
               />
             </div>
@@ -456,7 +473,12 @@ export default function CreatorPaymentsClient({
               <SummaryCard
                 label="Gross Sales"
                 value={summary ? fmt(summary.total_gross_amount_cents, displayCurrency) : '—'}
-                sub="succeeded only"
+                sub="historical, before refunds"
+              />
+              <SummaryCard
+                label="Refunds"
+                value={summary ? fmt(summary.total_refunded_amount_cents, displayCurrency) : '—'}
+                sub="cumulative refunded"
               />
               <SummaryCard
                 label="FC Fee"
@@ -468,11 +490,6 @@ export default function CreatorPaymentsClient({
                 label="Est. Creator Earnings"
                 value={summary ? fmt(summary.total_creator_net_amount_cents, displayCurrency) : '—'}
                 sub={`after ${feeDisplay} fee`}
-              />
-              <SummaryCard
-                label="Pending Payout"
-                value={summary ? fmt(summary.pending_payout_cents, displayCurrency) : '—'}
-                sub="not yet disbursed"
               />
             </div>
           )}
@@ -554,8 +571,20 @@ export default function CreatorPaymentsClient({
                         <td className="px-3 py-3 text-[12px] text-slate-600 whitespace-nowrap">
                           {providerLabel(row)}
                         </td>
-                        <td className="px-3 py-3 text-[12px] font-semibold text-[#0F172A] whitespace-nowrap">
-                          {fmt(row.gross_amount_cents, row.currency)}
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          <p className="text-[12px] font-semibold text-[#0F172A]">
+                            {fmt(row.gross_amount_cents, row.currency)}
+                          </p>
+                          {row.refunded_amount_cents > 0 && (
+                            <>
+                              <p className="mt-0.5 text-[11px]" style={{ color: '#B45309' }}>
+                                Refunded −{fmt(row.refunded_amount_cents, row.currency)}
+                              </p>
+                              <p className="text-[11px] font-semibold" style={{ color: '#38A09E' }}>
+                                Net {fmt(row.gross_amount_cents - row.refunded_amount_cents, row.currency)}
+                              </p>
+                            </>
+                          )}
                         </td>
                         <td className="px-3 py-3 text-[12px] text-black whitespace-nowrap">
                           {fmt(row.platform_fee_cents, row.currency)}
@@ -619,6 +648,22 @@ export default function CreatorPaymentsClient({
                         </p>
                       </div>
                     </div>
+                    {row.refunded_amount_cents > 0 && (
+                      <div className="mt-2 grid grid-cols-2 gap-2 text-[12px]">
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-black">Refunded</p>
+                          <p style={{ color: '#B45309' }}>
+                            −{fmt(row.refunded_amount_cents, row.currency)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-black">Net retained</p>
+                          <p className="font-semibold" style={{ color: '#38A09E' }}>
+                            {fmt(row.gross_amount_cents - row.refunded_amount_cents, row.currency)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                     {canRevoke(row, isPlatformOwner) && (
                       <div className="mt-3 text-right">
                         <button
