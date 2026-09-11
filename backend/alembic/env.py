@@ -26,6 +26,8 @@ import app.models.purchase_plan    # noqa: F401 — registers PurchasePlan (FIP1
 import app.models.webhook_event    # noqa: F401 — registers WebhookEvent (FIP1 provider webhook idempotency)
 import app.models.community_care    # noqa: F401 — registers CommunityCare models (User FKs reference these)
 import app.models.access_grant_record  # noqa: F401 — registers AccessGrantRecord (FIP3 grant log, migration 119)
+import app.models.refund_operation  # noqa: F401 — registers RefundOperation (migration 128)
+import app.models.creator_payout_batch  # noqa: F401 — registers CreatorPayoutBatch + BatchItem (migration 129)
 import app.comms.models             # noqa: F401 — registers Communications Layer models (Milestone 1)
 
 config = context.config

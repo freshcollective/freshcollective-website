@@ -6316,13 +6316,28 @@ def get_creator_payment_summary(
     ]
     gross = sum(r.gross_amount_cents for r in in_scope)
     refunded = sum(r.refunded_amount_cents or 0 for r in in_scope)
-    platform_fee = sum(r.platform_fee_cents for r in in_scope)
-    creator_net = sum(r.net_creator_amount_cents or 0 for r in in_scope)
-    # Pending payout continues to only count rows currently in
-    # payout_status=pending (the payout side is unwired for
-    # Connect; refund → payout adjustment is a separate follow-up).
+    # Retained platform fee and retained creator net — subtract the
+    # cumulative reversal columns (migration 127) so refunds properly
+    # reduce both figures. Without this, a fully-refunded row would
+    # still contribute its full original fee + creator amount to the
+    # totals — silently overstating platform revenue and creator
+    # earnings once creators run non-zero fees.
+    platform_fee_original = sum(r.platform_fee_cents for r in in_scope)
+    platform_fee_reversed = sum(
+        (r.refunded_platform_fee_cents or 0) for r in in_scope
+    )
+    platform_fee = platform_fee_original - platform_fee_reversed
+    creator_net_original = sum(r.net_creator_amount_cents or 0 for r in in_scope)
+    creator_net_reversed = sum(
+        (r.refunded_creator_amount_cents or 0) for r in in_scope
+    )
+    creator_net = creator_net_original - creator_net_reversed
+    # Pending payout uses RETAINED creator amount (net - reversed).
+    # A partially-refunded row contributes only its retained portion;
+    # a fully-refunded row contributes zero.
     pending_payout = sum(
-        r.net_creator_amount_cents or 0
+        (r.net_creator_amount_cents or 0)
+        - (r.refunded_creator_amount_cents or 0)
         for r in in_scope
         if r.payout_status == PayoutStatus.pending
     )
@@ -6528,6 +6543,12 @@ def list_creator_payments(
             grant_revoked_at=grant_revoked_at_by_txn.get(r.id),
             refunded_amount_cents=r.refunded_amount_cents or 0,
             last_refunded_at=r.last_refunded_at,
+            refunded_platform_fee_cents=r.refunded_platform_fee_cents or 0,
+            refunded_creator_amount_cents=r.refunded_creator_amount_cents or 0,
+            payout_status=(
+                r.payout_status.value
+                if hasattr(r.payout_status, "value") else str(r.payout_status)
+            ),
             notes=r.notes,
             created_at=r.created_at,
             updated_at=r.updated_at,

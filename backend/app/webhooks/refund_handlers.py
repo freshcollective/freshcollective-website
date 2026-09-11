@@ -137,6 +137,8 @@ def _find_txn_for_charge(
 
 def _do_charge_refunded(
     db: Session, *, charge: dict, event_created: datetime | None,
+    provider_event_id: str | None = None,
+    webhook_event_row_id: str | None = None,
 ) -> None:
     txn = _find_txn_for_charge(db, charge)
     if txn is None:
@@ -163,6 +165,34 @@ def _do_charge_refunded(
 
     txn.refunded_amount_cents = incoming_amount
 
+    # Cumulative fee-split reversal targets (migration 127). Never
+    # accumulates incrementally — always derived from the immutable
+    # snapshot amounts + Stripe's cumulative amount_refunded so
+    # out-of-order events are idempotent and full-refund coercion
+    # eliminates rounding drift.
+    from app.services.refund_reversal import compute_cumulative_reversal_targets
+    target_platform, target_creator = compute_cumulative_reversal_targets(
+        gross_amount_cents=txn.gross_amount_cents,
+        platform_fee_cents=txn.platform_fee_cents,
+        net_creator_amount_cents=(txn.net_creator_amount_cents or 0),
+        cumulative_refunded=incoming_amount,
+    )
+    # Full-refund short-circuit — the pure function already coerces
+    # when cumulative >= gross, but Stripe's ``refunded`` flag is the
+    # authoritative "yes, this is fully done" signal even when the
+    # arithmetic happens to disagree (edge cases around Stripe
+    # customer-balance credit vs invoice.total).
+    if is_fully_refunded:
+        target_platform = max(0, txn.platform_fee_cents)
+        target_creator = max(0, txn.net_creator_amount_cents or 0)
+    # Monotonic guards on the reversal columns. Under valid inputs
+    # the derived targets are non-decreasing (f(cumulative), and
+    # cumulative only rises), so these are safety nets.
+    if target_platform >= txn.refunded_platform_fee_cents:
+        txn.refunded_platform_fee_cents = target_platform
+    if target_creator >= txn.refunded_creator_amount_cents:
+        txn.refunded_creator_amount_cents = target_creator
+
     # Monotonic status guard — never downgrade from ``refunded`` to
     # ``partially_refunded``. Order preference:
     #   already refunded → stay refunded
@@ -184,17 +214,37 @@ def _do_charge_refunded(
         txn.last_refunded_at = stamp
 
     txn.updated_at = now
+    db.flush()
 
     logger.info(
         "charge.refunded: txn=%s charge=%s refunded_amount_cents=%d "
+        "refunded_platform_fee_cents=%d refunded_creator_amount_cents=%d "
         "status=%s last_refunded_at=%s",
         txn.id, _sfield(charge, "id"),
         txn.refunded_amount_cents,
+        txn.refunded_platform_fee_cents,
+        txn.refunded_creator_amount_cents,
         (
             txn.status.value if hasattr(txn.status, "value")
             else str(txn.status)
         ),
         txn.last_refunded_at,
+    )
+
+    # Correlate RefundOperation state to this webhook. Metadata-first
+    # so an ``in_flight`` op whose API path hasn't yet persisted
+    # ``accepted``/``stripe_refund_id`` is still transitioned. Also
+    # matches ``accepted`` ops whose stripe_refund_id we already know.
+    # Absence of a match is safe — Dashboard-originated refunds carry
+    # no RefundOperation and the ledger update above still handles
+    # cumulative accounting.
+    from app.services.refund_webhook_correlator import correlate_refund_operations
+    correlate_refund_operations(
+        db,
+        txn=txn,
+        charge=charge,
+        event_created=event_created,
+        webhook_event_row_id=webhook_event_row_id,
     )
 
 
@@ -218,8 +268,27 @@ def handle_charge_refunded(
     """
     stamp = _stripe_created_to_datetime(event_created)
 
+    # The correlator needs the WebhookEvent row id to stamp
+    # ``confirming_webhook_event_id`` on any RefundOperation it
+    # transitions. Fetch it inside the handler closure so the lease
+    # has already been acquired by ``process_webhook_event``.
     def _handler() -> None:
-        _do_charge_refunded(db, charge=charge, event_created=stamp)
+        from sqlalchemy import text as _text
+        row = db.execute(
+            _text(
+                "SELECT id FROM webhook_events "
+                "WHERE provider = 'stripe' AND provider_event_id = :pe"
+            ),
+            {"pe": provider_event_id},
+        ).first()
+        we_row_id = row[0] if row else None
+        _do_charge_refunded(
+            db,
+            charge=charge,
+            event_created=stamp,
+            provider_event_id=provider_event_id,
+            webhook_event_row_id=we_row_id,
+        )
 
     process_webhook_event(
         db,

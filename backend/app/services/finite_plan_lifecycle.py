@@ -289,6 +289,14 @@ def record_later_successful_instalment(
     platform_fee = round(gross * plan.platform_fee_basis_points / 10000)
     net_creator = gross - platform_fee
 
+    # Best-effort Stripe processing-fee capture — parity with pay-in-full
+    # and first-invoice paths. FC absorbs Stripe fees for MVP; stored for
+    # reporting only, never deducted from creator earnings.
+    processing_fee_cents: int | None = None
+    if charge_id:
+        from app.services import stripe_finite_plan
+        processing_fee_cents = stripe_finite_plan.retrieve_processing_fee_for_charge(charge_id)
+
     if existing_txn is not None:
         # Recovery — upgrade the failed row in-place. Preserves the
         # original ``id``, the fk linkage to ``purchase_plan_id``, and
@@ -305,6 +313,7 @@ def record_later_successful_instalment(
         txn.net_platform_amount_cents = platform_fee
         txn.provider_charge_id = charge_id
         txn.provider_payment_intent_id = payment_intent_id
+        txn.processing_fee_cents = processing_fee_cents
         txn.installment_number = installment_number
         txn.payout_status = PayoutStatus.pending
         if audit_note:
@@ -336,6 +345,7 @@ def record_later_successful_instalment(
             provider_subscription_id=subscription_id,
             provider_charge_id=charge_id,
             provider_payment_intent_id=payment_intent_id,
+            processing_fee_cents=processing_fee_cents,
             payment_option_id=plan.payment_option_id,
             payment_option_schedule_id=plan.payment_option_schedule_id,
             purchase_plan_id=plan.id,

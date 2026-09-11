@@ -367,3 +367,33 @@ services:
           property: connectionString
       - key: JWT_SECRET
         sync: false
+
+  # Refund reconciler — safety net for creator-initiated refunds whose
+  # confirming webhook never arrives, and for in_flight rows stranded
+  # by a server crash between DB insert and Stripe API response. Runs
+  # every 15 minutes to align with the FIP3 sweep cadence. Uses the
+  # SAME idempotency-key derived from the RefundOperation.id when
+  # replaying — never creates a new one, so no double-refund risk.
+  #
+  # Needs the Stripe secret (Refund.retrieve, Refund.list, Refund.create
+  # replay). fc-api's STRIPE_SECRET_KEY is the same key — configured
+  # in the Render Dashboard, marked sync:false so it is never written
+  # to Git.
+  - type: cron
+    name: fc-refund-reconciler
+    runtime: python
+    region: singapore
+    branch: main
+    rootDir: backend
+    schedule: "*/15 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/fc_refund_reconciler.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fc-db
+          property: connectionString
+      - key: JWT_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false

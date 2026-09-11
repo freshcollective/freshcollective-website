@@ -216,8 +216,13 @@ function KeyDate({ plan }: { plan: CreatorPurchasePlanSummary }): React.ReactNod
 }
 
 interface CreatorPaymentPlansClientProps {
-  // Platform-owner gate for admin-only actions (currently: Cancel plan).
-  // Non-owners see the plan lifecycle but cannot cancel from this UI.
+  // ``isPlatformOwner`` remains as UI context but the Cancel-plan
+  // action is now available to creator-owners too. The list endpoint
+  // (``GET /api/creator/payment-plans``) already scopes to owned
+  // Spaces, so every plan the caller sees is one they may cancel.
+  // The POST target is the creator endpoint at
+  // ``/api/creator/purchase-plans/{plan_id}/cancel`` which accepts
+  // admin actors as well.
   isPlatformOwner?: boolean
 }
 
@@ -254,13 +259,15 @@ export default function CreatorPaymentPlansClient({
     setCancelError(null)
     try {
       const res = await fetch(
-        apiUrl(`/api/admin/purchase-plans/${cancelTarget.id}/cancel`),
+        // Creator-first URL — accepts admin actors as well. Server
+        // enforces ownership; cross-Collective attempts return 404.
+        apiUrl(`/api/creator/purchase-plans/${cancelTarget.id}/cancel`),
         {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            reason: cancelReason.trim() || 'admin_cancelled',
+            reason: cancelReason.trim() || 'creator_cancelled',
             note: cancelNote.trim() || null,
           }),
         },
@@ -304,7 +311,9 @@ export default function CreatorPaymentPlansClient({
   // once the plan has reached the cancelled label — the operator
   // instead invokes a targeted repair through a separate channel.
   function canCancel(plan: CreatorPurchasePlanSummary): boolean {
-    if (!isPlatformOwner) return false
+    // The list endpoint already scopes to owned Spaces (creator or
+    // admin), so every plan visible here is one the caller may
+    // cancel. Gate purely on plan lifecycle state.
     return plan.status === 'active'
       || plan.status === 'payment_problem'
       || plan.status === 'suspended'
@@ -564,9 +573,7 @@ export default function CreatorPaymentPlansClient({
                           {h}
                         </th>
                       ))}
-                      {isPlatformOwner && (
-                        <th className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">Action</th>
-                      )}
+                      <th className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -621,21 +628,19 @@ export default function CreatorPaymentPlansClient({
                         <td className="px-3 py-3 text-[11.5px] whitespace-nowrap">
                           <KeyDate plan={plan} />
                         </td>
-                        {isPlatformOwner && (
-                          <td className="px-3 py-3 whitespace-nowrap">
-                            {canCancel(plan) ? (
-                              <button
-                                type="button"
-                                onClick={() => openCancelModal(plan)}
-                                className="rounded-full border border-red-200 bg-white px-3 py-1 text-[11.5px] font-medium text-red-700 transition-colors hover:bg-red-50"
-                              >
-                                Cancel plan
-                              </button>
-                            ) : (
-                              <span className="text-[11px] text-slate-400">—</span>
-                            )}
-                          </td>
-                        )}
+                        <td className="px-3 py-3 whitespace-nowrap">
+                          {canCancel(plan) ? (
+                            <button
+                              type="button"
+                              onClick={() => openCancelModal(plan)}
+                              className="rounded-full border border-red-200 bg-white px-3 py-1 text-[11.5px] font-medium text-red-700 transition-colors hover:bg-red-50"
+                            >
+                              Cancel plan
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-slate-400">—</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -687,7 +692,7 @@ export default function CreatorPaymentPlansClient({
                     <div className="mt-2 text-[11.5px]">
                       <KeyDate plan={plan} />
                     </div>
-                    {isPlatformOwner && canCancel(plan) && (
+                    {canCancel(plan) && (
                       <div className="mt-3">
                         <button
                           type="button"

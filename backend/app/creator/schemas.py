@@ -1826,6 +1826,12 @@ class CreatorPaymentSummary(BaseModel):
     aggregate.
     """
     total_gross_amount_cents: int
+    # Retained figures — original snapshot MINUS cumulative reversals
+    # from ``PaymentTransaction.refunded_platform_fee_cents`` +
+    # ``refunded_creator_amount_cents`` (migration 127). Prior to that
+    # migration these columns did not exist and both figures overstated
+    # after any refund; the field names stayed the same for API
+    # backward-compatibility.
     total_platform_fee_cents: int
     total_creator_net_amount_cents: int
 
@@ -1899,6 +1905,17 @@ class CreatorPaymentTransactionOut(BaseModel):
     # after a partial, ``refunded`` after a full — never downgrades.
     refunded_amount_cents: int = 0
     last_refunded_at: datetime | None = None
+    # Fee-split reversal (migration 127). Cumulative reversed portions
+    # of ``platform_fee_cents`` and ``net_creator_amount_cents``. Both
+    # zero until a refund lands. Frontend uses these to display
+    # retained-figures ("FC fee retained: $X after refunds") without
+    # needing to compute proportional arithmetic client-side.
+    refunded_platform_fee_cents: int = 0
+    refunded_creator_amount_cents: int = 0
+    # Payout state — surfaced so the Refund modal can gate the button
+    # for creators when the transaction has been paid out. Values match
+    # the ``PayoutStatus`` enum.
+    payout_status: str = "pending"
 
     # Grant-lifecycle indicator, orthogonal to Stripe payment status.
     # Derived from the AccessPass rows attached to this transaction

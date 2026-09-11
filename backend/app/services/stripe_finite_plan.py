@@ -552,6 +552,41 @@ def cancel_finite_subscription_schedule(*, plan: PurchasePlan) -> None:
 # ---------------------------------------------------------------------------
 
 
+def retrieve_processing_fee_for_charge(charge_id: str) -> int | None:
+    """Best-effort read of the Stripe processing fee for a Charge.
+
+    Mirrors the pay-in-full pattern in ``webhooks/routes.py`` — fetches
+    the Charge with its ``balance_transaction`` expanded and returns
+    ``balance_transaction.fee`` (in cents). Returns ``None`` on any
+    error so the caller can proceed without blocking on informational
+    data.
+
+    Fresh Collective absorbs Stripe processing costs for MVP; this
+    value is stored as ``PaymentTransaction.processing_fee_cents`` for
+    reporting only. It is NOT deducted from ``net_creator_amount_cents``.
+    """
+    if not charge_id:
+        return None
+    _bind_key()
+    try:
+        charge = stripe.Charge.retrieve(
+            charge_id, expand=["balance_transaction"],
+        )
+        bt = getattr(charge, "balance_transaction", None)
+        if bt is None:
+            return None
+        fee = getattr(bt, "fee", None)
+        if fee is None:
+            return None
+        return int(fee)
+    except Exception as exc:  # noqa: BLE001 — best-effort informational
+        logger.warning(
+            "retrieve_processing_fee_for_charge: could not read fee for "
+            "charge=%s: %s", charge_id, exc,
+        )
+        return None
+
+
 def list_invoices_for_subscription(
     subscription_id: str, *, limit: int = 100,
 ) -> list[dict]:

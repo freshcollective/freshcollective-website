@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { apiUrl } from '@/lib/api'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import RevokeAccessModal, { type RevokeResult } from './RevokeAccessModal'
+import RefundPaymentModal, { type RefundResult } from './RefundPaymentModal'
 
 interface CreatorPaymentSummary {
   total_gross_amount_cents: number
@@ -60,6 +61,13 @@ interface CreatorPaymentTransaction {
   refunded_amount_cents: number
   /** Timestamp of the most recent refund event, or null. */
   last_refunded_at: string | null
+  /** Cumulative fee-side reversal (migration 127). Populated by the
+   *  charge.refunded webhook alongside refunded_amount_cents. */
+  refunded_platform_fee_cents: number
+  refunded_creator_amount_cents: number
+  /** Payout lifecycle — surfaced so the Refund button can gate for
+   *  creators when the transaction has already been paid out. */
+  payout_status: 'pending' | 'paid' | 'held' | 'cancelled' | 'not_applicable'
   /** Grant lifecycle indicator, orthogonal to Stripe payment status.
    *  Values: intact | partially_revoked | fully_revoked | no_grant_records.
    *  Derived server-side from the AccessPass + reachable
@@ -155,6 +163,29 @@ function canRevoke(row: CreatorPaymentTransaction, isPlatformOwner: boolean): bo
   return row.grant_state === 'intact' || row.grant_state === 'partially_revoked'
 }
 
+/** Show the Refund payment action when: caller is a platform admin
+ *  OR a creator-owner (server enforces; UI shows the button and lets
+ *  the endpoint's 404/409 be the source of truth for edge cases),
+ *  the transaction is Stripe-processed, in a refundable status,
+ *  has remaining refundable balance, AND either the payout has not
+ *  yet been marked ``paid``/``held`` OR the caller is an admin (who
+ *  is allowed to override with a post-payout advisory flag).
+ *
+ *  We deliberately do NOT couple to grant_state or plan-anchored
+ *  status — refund and access are independent, and finite-plan
+ *  instalments are individually refundable. */
+function canRefund(row: CreatorPaymentTransaction, isPlatformOwner: boolean): boolean {
+  if (row.payment_provider !== 'stripe') return false
+  if (row.status !== 'succeeded' && row.status !== 'partially_refunded') return false
+  const refundable = row.gross_amount_cents - row.refunded_amount_cents
+  if (refundable <= 0) return false
+  if (row.payout_status === 'paid' || row.payout_status === 'held') {
+    return isPlatformOwner
+  }
+  if (row.payout_status === 'not_applicable') return false
+  return true
+}
+
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     succeeded:          'bg-teal-50 text-teal-700 border-teal-200',
@@ -224,6 +255,7 @@ export default function CreatorPaymentsClient({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [revokingRow, setRevokingRow] = useState<CreatorPaymentTransaction | null>(null)
+  const [refundingRow, setRefundingRow] = useState<CreatorPaymentTransaction | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
   async function loadRows() {
@@ -272,6 +304,27 @@ export default function CreatorPaymentsClient({
     setRevokingRow(null)
     // Refresh the ledger so the chips + button eligibility update.
     loadRows().catch(() => { /* non-fatal: page will retry on next mount */ })
+  }
+
+  function handleRefunded(result: RefundResult) {
+    // The refund LEDGER writes are webhook-authoritative — the row
+    // may not show refunded_amount_cents changes until the webhook
+    // arrives (usually seconds). Show the operation's terminal_status
+    // so the operator sees the truthful state.
+    let msg: string
+    if (result.terminal_status === 'webhook_confirmed') {
+      msg = `Refund confirmed — ${result.stripe_refund_id ?? 'no Stripe id'}.`
+    } else if (result.terminal_status === 'accepted') {
+      msg = 'Refund initiated. Ledger will update when Stripe confirms (usually seconds).'
+    } else {
+      msg = result.message
+    }
+    if (result.payout_advisory) {
+      msg += ' — creator has already been paid; manual recovery required.'
+    }
+    setToast(msg)
+    setRefundingRow(null)
+    loadRows().catch(() => { /* non-fatal */ })
   }
 
   const feeDisplay = `${(feeBasisPoints / 100).toFixed(0)}%`
@@ -597,15 +650,27 @@ export default function CreatorPaymentsClient({
                           <GrantStateChip state={row.grant_state} />
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap text-right">
-                          {canRevoke(row, isPlatformOwner) && (
-                            <button
-                              type="button"
-                              onClick={() => setRevokingRow(row)}
-                              className="rounded-full border border-red-200 px-2.5 py-1 text-[11px] font-semibold text-red-600 transition-colors hover:bg-red-50"
-                            >
-                              Revoke access
-                            </button>
-                          )}
+                          <div className="inline-flex items-center gap-1.5">
+                            {canRefund(row, isPlatformOwner) && (
+                              <button
+                                type="button"
+                                onClick={() => setRefundingRow(row)}
+                                className="rounded-full border border-red-200 px-2.5 py-1 text-[11px] font-semibold text-red-600 transition-colors hover:bg-red-50"
+                                title="Refund via Stripe. Does not change access."
+                              >
+                                Refund
+                              </button>
+                            )}
+                            {canRevoke(row, isPlatformOwner) && (
+                              <button
+                                type="button"
+                                onClick={() => setRevokingRow(row)}
+                                className="rounded-full border border-red-200 px-2.5 py-1 text-[11px] font-semibold text-red-600 transition-colors hover:bg-red-50"
+                              >
+                                Revoke access
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -664,15 +729,26 @@ export default function CreatorPaymentsClient({
                         </div>
                       </div>
                     )}
-                    {canRevoke(row, isPlatformOwner) && (
-                      <div className="mt-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => setRevokingRow(row)}
-                          className="rounded-full border border-red-200 px-3 py-1 text-[11.5px] font-semibold text-red-600 transition-colors hover:bg-red-50"
-                        >
-                          Revoke access
-                        </button>
+                    {(canRefund(row, isPlatformOwner) || canRevoke(row, isPlatformOwner)) && (
+                      <div className="mt-3 flex items-center justify-end gap-1.5">
+                        {canRefund(row, isPlatformOwner) && (
+                          <button
+                            type="button"
+                            onClick={() => setRefundingRow(row)}
+                            className="rounded-full border border-red-200 px-3 py-1 text-[11.5px] font-semibold text-red-600 transition-colors hover:bg-red-50"
+                          >
+                            Refund
+                          </button>
+                        )}
+                        {canRevoke(row, isPlatformOwner) && (
+                          <button
+                            type="button"
+                            onClick={() => setRevokingRow(row)}
+                            className="rounded-full border border-red-200 px-3 py-1 text-[11.5px] font-semibold text-red-600 transition-colors hover:bg-red-50"
+                          >
+                            Revoke access
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -712,6 +788,26 @@ export default function CreatorPaymentsClient({
           amountLabel={fmt(revokingRow.gross_amount_cents, revokingRow.currency)}
           onClose={() => setRevokingRow(null)}
           onRevoked={handleRevoked}
+        />
+      )}
+      {refundingRow && (
+        <RefundPaymentModal
+          txnId={refundingRow.id}
+          memberLabel={
+            refundingRow.payer_name
+            || refundingRow.payer_email
+            || 'Unknown member'
+          }
+          purchaseLabel={
+            refundingRow.payment_option_name
+            || labelType(refundingRow.transaction_type)
+          }
+          currency={refundingRow.currency}
+          grossAmountCents={refundingRow.gross_amount_cents}
+          alreadyRefundedCents={refundingRow.refunded_amount_cents}
+          payoutStatus={refundingRow.payout_status}
+          onClose={() => setRefundingRow(null)}
+          onRefunded={handleRefunded}
         />
       )}
     </div>

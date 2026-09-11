@@ -315,6 +315,24 @@ class PaymentTransaction(Base):
     last_refunded_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True,
     )
+    # Fee-split reversal columns (migration 127). Cumulative reversed
+    # portions of ``platform_fee_cents`` and ``net_creator_amount_cents``.
+    # Maintained by the ``charge.refunded`` handler using
+    # ``services.refund_reversal.compute_cumulative_reversal_targets``.
+    # Invariant enforced on every write:
+    #
+    #   refunded_platform_fee_cents + refunded_creator_amount_cents
+    #       == refunded_amount_cents
+    #
+    # (subject to deterministic cent rounding, with a full-refund
+    # short-circuit that forces the columns to their exact originals).
+    # Zero for rows that have never been refunded.
+    refunded_platform_fee_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    refunded_creator_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
 
     # 'test' when created against sk_test_* Stripe keys, 'live' when against sk_live_*.
     # Used to separate sandbox figures from real revenue in dashboards.
@@ -322,8 +340,13 @@ class PaymentTransaction(Base):
         String(10), nullable=False, default="test", server_default="test"
     )
 
-    # Payout tracking — populated by admin when transfer is processed
-    # TODO: wire to Stripe Connect payouts once connected
+    # Payout tracking — populated by admin when transfer is processed.
+    # For manual payouts (migration 129), the CreatorPayoutBatch flow
+    # transitions ``pending → paid`` atomically alongside setting
+    # ``payout_batch_id``. ``payout_marked_at`` and ``payout_reference``
+    # are denormalised convenience copies of the batch's ``paid_at`` and
+    # ``reference`` for legacy readers and quick per-row inspection.
+    # The authoritative payout history lives on ``CreatorPayoutBatchItem``.
     payout_status: Mapped[PayoutStatus] = mapped_column(
         SAEnum(PayoutStatus, name="payout_status_enum", create_type=False),
         nullable=False,
@@ -334,6 +357,17 @@ class PaymentTransaction(Base):
         DateTime(timezone=False), nullable=True
     )
     payout_reference: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Convenience pointer to the current (most recent uncancelled) batch
+    # this transaction is part of. Nullable — cleared by batch
+    # cancellation with revert_transactions=True. Not the authoritative
+    # history: CreatorPayoutBatchItem is never deleted, so a query on
+    # that table gives the full membership trail.
+    payout_batch_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("creator_payout_batches.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False

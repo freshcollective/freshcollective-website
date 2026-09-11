@@ -894,6 +894,14 @@ def _do_invoice_succeeded(
     platform_fee = round(gross * plan.platform_fee_basis_points / 10000)
     net_creator = gross - platform_fee
 
+    # Best-effort Stripe processing-fee capture (parity with pay-in-full
+    # path in webhooks/routes.py). Fresh Collective absorbs the fee for
+    # MVP; stored for reporting only.
+    processing_fee_cents: int | None = None
+    if charge_id:
+        from app.services.stripe_finite_plan import retrieve_processing_fee_for_charge
+        processing_fee_cents = retrieve_processing_fee_for_charge(charge_id)
+
     txn = PaymentTransaction(
         id=str(uuid.uuid4()),
         transaction_type=PaymentTransactionType.member_payment_option_purchase,
@@ -910,6 +918,7 @@ def _do_invoice_succeeded(
         platform_fee_cents=platform_fee,
         net_creator_amount_cents=net_creator,
         net_platform_amount_cents=platform_fee,
+        processing_fee_cents=processing_fee_cents,
         provider_invoice_id=invoice_id,
         provider_subscription_id=subscription_id,
         provider_charge_id=charge_id,
