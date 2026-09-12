@@ -61,6 +61,16 @@ interface LedgerRow {
   gross_amount_cents: number
   platform_fee_cents: number
   net_creator_amount_cents: number | null
+  // Refund reversal (migration 127). "Original creator share" is
+  // ``net_creator_amount_cents`` (immutable snapshot); "Retained"
+  // is derived as ``net_creator_amount_cents - refunded_creator_amount_cents``.
+  refunded_amount_cents: number
+  refunded_platform_fee_cents: number
+  refunded_creator_amount_cents: number
+  // True when the row belongs to a Fresh Collective-owned Collective
+  // (``Space.creator_id IS NULL``). Creator earnings columns render
+  // "—" for these — the sale is FC's, not payable to a creator.
+  is_platform_owned: boolean
 }
 
 interface PlatformStatus {
@@ -441,7 +451,7 @@ function TransactionsTable({ rows }: { rows: LedgerRow[] }) {
         <table className="w-full text-left">
           <thead>
             <tr>
-              {['Date', 'Type', 'Status', 'Buyer', 'Creator', 'Collective / item', 'Gross', 'FC fee', 'Creator earnings', 'Payout'].map((h) => (
+              {['Date', 'Type', 'Status', 'Buyer', 'Creator', 'Collective / item', 'Gross', 'FC fee', 'Creator share', 'Retained', 'Payout'].map((h) => (
                 <th
                   key={h}
                   className="px-4 py-3.5 text-[10.5px] font-semibold uppercase tracking-[0.14em]"
@@ -502,7 +512,17 @@ function TransactionRow({ row, first }: { row: LedgerRow; first: boolean }) {
         {fmtMoney(row.platform_fee_cents, row.currency)}
       </td>
       <td className="px-4 py-3.5 align-top whitespace-nowrap tabular-nums text-[13px]" style={{ color: INK }}>
-        {row.net_creator_amount_cents != null ? fmtMoney(row.net_creator_amount_cents, row.currency) : '—'}
+        {row.is_platform_owned || row.net_creator_amount_cents == null
+          ? <span title="Platform-owned Collective — no creator payout applies">—</span>
+          : fmtMoney(row.net_creator_amount_cents, row.currency)}
+      </td>
+      <td className="px-4 py-3.5 align-top whitespace-nowrap tabular-nums text-[13px]" style={{ color: INK }}>
+        {row.is_platform_owned || row.net_creator_amount_cents == null
+          ? <span title="Platform-owned Collective — no creator payout applies">—</span>
+          : fmtMoney(
+              Math.max(0, row.net_creator_amount_cents - (row.refunded_creator_amount_cents ?? 0)),
+              row.currency,
+            )}
       </td>
       <td className="px-4 py-3.5 align-top">
         <StatusPill hue={PAYOUT_HUE[row.payout_status] ?? 'navy'}>{prettify(row.payout_status)}</StatusPill>
@@ -537,6 +557,26 @@ function TransactionMobileRow({ row, first }: { row: LedgerRow; first: boolean }
       <div className="mt-2 flex items-baseline justify-between gap-3">
         <span className="text-[12.5px]" style={{ color: INK_MUTED }}>
           Gross <span className="tabular-nums" style={{ color: INK }}>{fmtMoney(row.gross_amount_cents, row.currency)}</span>
+          {(row.refunded_amount_cents ?? 0) > 0 && (
+            <>
+              {' · '}
+              <span style={{ color: WM_HUE.coral.text }}>
+                Refunded −{fmtMoney(row.refunded_amount_cents, row.currency)}
+              </span>
+            </>
+          )}
+          {!row.is_platform_owned && row.net_creator_amount_cents != null && (
+            <>
+              {' · '}
+              Retained{' '}
+              <span className="tabular-nums" style={{ color: INK }}>
+                {fmtMoney(
+                  Math.max(0, row.net_creator_amount_cents - (row.refunded_creator_amount_cents ?? 0)),
+                  row.currency,
+                )}
+              </span>
+            </>
+          )}
         </span>
         <StatusPill hue={PAYOUT_HUE[row.payout_status] ?? 'navy'}>{prettify(row.payout_status)}</StatusPill>
       </div>
@@ -767,9 +807,21 @@ const TRANSACTIONS_CSV_COLUMNS: CsvColumn<LedgerRow>[] = [
   { header: 'Collective / item', value: (r) => [r.space_name, r.pathway_title].filter(Boolean).join(CSV_MULTI_DELIMITER) },
   { header: 'Currency',          value: (r) => r.currency },
   { header: 'Gross',             value: (r) => (r.gross_amount_cents / 100).toFixed(2) },
+  { header: 'Refunded',          value: (r) => ((r.refunded_amount_cents ?? 0) / 100).toFixed(2) },
   { header: 'FC fee',            value: (r) => (r.platform_fee_cents / 100).toFixed(2) },
-  { header: 'Creator earnings',  value: (r) => r.net_creator_amount_cents != null ? (r.net_creator_amount_cents / 100).toFixed(2) : '' },
-  { header: 'Payout',            value: (r) => prettify(r.payout_status) },
+  { header: 'FC fee reversed',   value: (r) => ((r.refunded_platform_fee_cents ?? 0) / 100).toFixed(2) },
+  { header: 'Creator share (original)',
+    value: (r) => r.is_platform_owned || r.net_creator_amount_cents == null
+      ? ''
+      : (r.net_creator_amount_cents / 100).toFixed(2),
+  },
+  { header: 'Creator earnings (retained)',
+    value: (r) => r.is_platform_owned || r.net_creator_amount_cents == null
+      ? ''
+      : (Math.max(0, r.net_creator_amount_cents - (r.refunded_creator_amount_cents ?? 0)) / 100).toFixed(2),
+  },
+  { header: 'Platform-owned', value: (r) => r.is_platform_owned ? 'yes' : 'no' },
+  { header: 'Payout',         value: (r) => prettify(r.payout_status) },
 ]
 
 // ---------------------------------------------------------------------------

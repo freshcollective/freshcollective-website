@@ -636,12 +636,21 @@ async def get_stats(
 # Payment Transactions
 # ---------------------------------------------------------------------------
 
-# Revenue-relevant transaction types — excludes creator subscription payments
+# Revenue-relevant transaction types — every real member-money movement
+# EXCEPT creator subscription payments (those are FC's own subscription
+# revenue and handled separately in ``_compute_revenue_summary``) and
+# non-money bookkeeping (refund / adjustment).
 _MEMBER_TXN_TYPES = {
     PaymentTransactionType.member_pathway_purchase,
     PaymentTransactionType.member_collective_purchase,
     PaymentTransactionType.member_pathway_subscription,
     PaymentTransactionType.member_collective_subscription,
+    PaymentTransactionType.gathering_ticket_purchase,
+    PaymentTransactionType.member_series_pass_purchase,
+    # Unified B4B checkout — the type modern PaymentOption purchases
+    # write. Historically absent from this set, which silently
+    # excluded every EMBODY row from admin revenue metrics.
+    PaymentTransactionType.member_payment_option_purchase,
 }
 _REVENUE_STATUSES = {PaymentTransactionStatus.succeeded}
 _REFUNDED_STATUSES = {
@@ -944,6 +953,13 @@ def get_payments_ledger(
             gross_amount_cents=t.gross_amount_cents,
             platform_fee_cents=t.platform_fee_cents,
             net_creator_amount_cents=t.net_creator_amount_cents,
+            refunded_amount_cents=(t.refunded_amount_cents or 0),
+            refunded_platform_fee_cents=(t.refunded_platform_fee_cents or 0),
+            refunded_creator_amount_cents=(t.refunded_creator_amount_cents or 0),
+            # Platform-owned iff the write-time creator_user_id is
+            # NULL. See ``Space.platform_owned`` and the checkout
+            # orchestration's ``FeeContext.is_platform_owned``.
+            is_platform_owned=(t.creator_user_id is None),
         ))
     return result
 
@@ -2676,9 +2692,44 @@ def _compute_revenue_summary(
 ) -> AdminRevenueSummary:
     """Compute an :class:`AdminRevenueSummary` over an optional half-open
     ``[starts_at, ends_at)`` UTC window, optionally further constrained
-    by ``stripe_mode``. Called by both the flat and periodic endpoints.
+    by ``stripe_mode``.
+
+    Card-by-card semantics (post refund-reversal work, migration 127):
+
+    * **Gross Volume** = historical member payment volume. Includes rows
+      in ``succeeded`` / ``partially_refunded`` / ``refunded`` — refunds
+      do NOT reduce this figure. Fully-refunded rows still contribute
+      their original ``gross_amount_cents``.
+
+    * **Fresh Collective Revenue** = money economically retained by FC:
+        * subscription revenue (creator paying FC), net of any refunds
+          on those subscription rows;
+        * plus, for third-party creator member sales, the RETAINED
+          platform fee: ``platform_fee_cents - refunded_platform_fee_cents``;
+        * plus, for PLATFORM-OWNED member sales (``Space.creator_id``
+          IS NULL, mirrored on ``PaymentTransaction.creator_user_id``
+          at write time), the RETAINED gross: ``gross - refunded``.
+          These are FC's own sales — no creator gets paid, so the
+          whole retained gross is FC revenue.
+
+    * **Creator Earnings** = retained third-party creator amount:
+      ``net_creator_amount_cents - refunded_creator_amount_cents``,
+      strictly for rows with ``creator_user_id IS NOT NULL``. Platform-
+      owned rows contribute ZERO — a platform-owned sale is not payable
+      to a creator, so it must not inflate this metric.
+
+    * **Paid Out** = retained third-party creator amount where
+      ``payout_status='paid'`` (batch has been recorded).
+
+    * **Pending Payouts** = retained third-party creator amount where
+      ``payout_status='pending'``. Not-applicable / held / cancelled /
+      paid rows are excluded per their existing semantics.
     """
-    succeeded = PaymentTransactionStatus.succeeded
+    money_statuses = [
+        PaymentTransactionStatus.succeeded,
+        PaymentTransactionStatus.partially_refunded,
+        PaymentTransactionStatus.refunded,
+    ]
 
     def _mode_filter(q):
         if stripe_mode:
@@ -2689,75 +2740,154 @@ def _compute_revenue_summary(
             q = q.filter(PaymentTransaction.created_at < ends_at)
         return q
 
-    # Creator subscription fees paid to FC (gross = FC revenue)
+    # Common helper — retained amount SQL expression.
+    #   net_col - COALESCE(refunded_col, 0)
+    # SQLAlchemy handles NULL propagation, but COALESCE keeps the sum
+    # honest when the refunded column is null (never should be after
+    # migration 127's server_default='0', but defensive).
+    from sqlalchemy import func as _func
+
+    def _retained(net_col, refunded_col):
+        return _func.coalesce(net_col, 0) - _func.coalesce(refunded_col, 0)
+
+    _refunded_col = PaymentTransaction.refunded_amount_cents
+    _refunded_platform_col = PaymentTransaction.refunded_platform_fee_cents
+    _refunded_creator_col = PaymentTransaction.refunded_creator_amount_cents
+
+    # Subscription revenue — RETAINED gross of creator subscription
+    # payments. A refunded subscription payment reduces FC revenue.
     sub_revenue = int(
         _mode_filter(
-            db.query(func.sum(PaymentTransaction.gross_amount_cents))
+            db.query(func.sum(_retained(
+                PaymentTransaction.gross_amount_cents, _refunded_col,
+            )))
             .filter(
-                PaymentTransaction.status == succeeded,
-                PaymentTransaction.transaction_type == PaymentTransactionType.creator_subscription_payment,
+                PaymentTransaction.status.in_(money_statuses),
+                PaymentTransaction.transaction_type
+                == PaymentTransactionType.creator_subscription_payment,
             )
         ).scalar() or 0
     )
 
-    # Platform fees retained from member purchases
-    platform_fee_revenue = int(
+    # Retained FC platform fee — THIRD-PARTY creator member sales only.
+    # Platform-owned rows (creator_user_id IS NULL) contribute zero
+    # here because their entire retained gross flows to FC via the
+    # platform_owned_retained bucket below.
+    third_party_fee_revenue = int(
         _mode_filter(
-            db.query(func.sum(PaymentTransaction.platform_fee_cents))
+            db.query(func.sum(_retained(
+                PaymentTransaction.platform_fee_cents, _refunded_platform_col,
+            )))
             .filter(
-                PaymentTransaction.status == succeeded,
-                PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+                PaymentTransaction.status.in_(money_statuses),
+                PaymentTransaction.transaction_type.in_(
+                    [t.value for t in _MEMBER_TXN_TYPES],
+                ),
+                PaymentTransaction.creator_user_id.isnot(None),
             )
         ).scalar() or 0
     )
 
-    # Gross member sales (total of what members paid for creator content)
+    # Platform-owned member sales — RETAINED gross is FC revenue,
+    # because no creator gets paid.
+    platform_owned_retained = int(
+        _mode_filter(
+            db.query(func.sum(_retained(
+                PaymentTransaction.gross_amount_cents, _refunded_col,
+            )))
+            .filter(
+                PaymentTransaction.status.in_(money_statuses),
+                PaymentTransaction.transaction_type.in_(
+                    [t.value for t in _MEMBER_TXN_TYPES],
+                ),
+                PaymentTransaction.creator_user_id.is_(None),
+            )
+        ).scalar() or 0
+    )
+    # Aggregate FC-side platform-fee-revenue figure carried on the
+    # response schema (`platform_fee_revenue_cents`). Combines the two
+    # member-sale contributions so downstream readers get a single
+    # "what FC keeps from member sales" number.
+    platform_fee_revenue = third_party_fee_revenue + platform_owned_retained
+
+    # Gross Volume — historical member payment volume, no refund
+    # subtraction. Includes fully-refunded rows so history is preserved.
     gross_sales = int(
         _mode_filter(
             db.query(func.sum(PaymentTransaction.gross_amount_cents))
             .filter(
-                PaymentTransaction.status == succeeded,
-                PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+                PaymentTransaction.status.in_(money_statuses),
+                PaymentTransaction.transaction_type.in_(
+                    [t.value for t in _MEMBER_TXN_TYPES],
+                ),
             )
         ).scalar() or 0
     )
 
-    # Creator net from member sales
+    # Creator Earnings — RETAINED third-party creator amount. Platform-
+    # owned rows (creator_user_id IS NULL) contribute zero: a platform-
+    # owned sale is not payable to a creator.
     creator_net = int(
         _mode_filter(
-            db.query(func.sum(PaymentTransaction.net_creator_amount_cents))
+            db.query(func.sum(_retained(
+                PaymentTransaction.net_creator_amount_cents,
+                _refunded_creator_col,
+            )))
             .filter(
-                PaymentTransaction.status == succeeded,
-                PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+                PaymentTransaction.status.in_(money_statuses),
+                PaymentTransaction.transaction_type.in_(
+                    [t.value for t in _MEMBER_TXN_TYPES],
+                ),
+                PaymentTransaction.creator_user_id.isnot(None),
                 PaymentTransaction.net_creator_amount_cents.isnot(None),
             )
         ).scalar() or 0
     )
 
-    # Paid out
+    # Paid Out — retained third-party creator amount where the batch
+    # has landed. Retained accounting so a post-payout refund is not
+    # double-counted (the RefundOperation.payout_advisory flow handles
+    # the manual-recovery bookkeeping separately).
     paid_out = int(
         _mode_filter(
-            db.query(func.sum(PaymentTransaction.net_creator_amount_cents))
+            db.query(func.sum(_retained(
+                PaymentTransaction.net_creator_amount_cents,
+                _refunded_creator_col,
+            )))
             .filter(
-                PaymentTransaction.status == succeeded,
+                PaymentTransaction.status.in_(money_statuses),
                 PaymentTransaction.payout_status == PayoutStatus.paid,
+                PaymentTransaction.creator_user_id.isnot(None),
                 PaymentTransaction.net_creator_amount_cents.isnot(None),
             )
         ).scalar() or 0
     )
 
-    # Pending payout (member sales only — creator subs go to FC directly)
+    # Pending Payouts — retained third-party creator amount currently
+    # payable (payout_status='pending'). Excludes not_applicable
+    # (platform-owned or failed rows), paid (already batched), held
+    # and cancelled (require operator review).
     pending_payout = int(
         _mode_filter(
-            db.query(func.sum(PaymentTransaction.net_creator_amount_cents))
+            db.query(func.sum(_retained(
+                PaymentTransaction.net_creator_amount_cents,
+                _refunded_creator_col,
+            )))
             .filter(
-                PaymentTransaction.status == succeeded,
+                PaymentTransaction.status.in_(money_statuses),
                 PaymentTransaction.payout_status == PayoutStatus.pending,
-                PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TXN_TYPES]),
+                PaymentTransaction.transaction_type.in_(
+                    [t.value for t in _MEMBER_TXN_TYPES],
+                ),
+                PaymentTransaction.creator_user_id.isnot(None),
                 PaymentTransaction.net_creator_amount_cents.isnot(None),
             )
         ).scalar() or 0
     )
+    # Counts kept below (succeeded/refunded/failed) preserve the
+    # existing status enum semantics — those are enumerations of row
+    # states, not money aggregates.
+    succeeded = PaymentTransactionStatus.succeeded
 
     succeeded_count = int(
         _mode_filter(

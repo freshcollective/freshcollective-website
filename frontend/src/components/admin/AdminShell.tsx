@@ -33,10 +33,11 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: '💰 COMMERCE',
     items: [
-      { href: '/admin/revenue',  label: 'Commerce' },
-      { href: '/admin/payments', label: 'Transactions' },
-      { href: '/admin/billing',  label: 'Creator Subscriptions' },
-      { href: '/admin/pricing',  label: 'Fresh Collective Plans' },
+      { href: '/admin/revenue',         label: 'Commerce' },
+      { href: '/admin/payments',        label: 'Transactions' },
+      { href: '/admin/creator-payouts', label: 'Creator Payouts' },
+      { href: '/admin/billing',         label: 'Creator Subscriptions' },
+      { href: '/admin/pricing',         label: 'Fresh Collective Plans' },
     ],
   },
   {

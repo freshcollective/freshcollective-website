@@ -588,7 +588,7 @@ export default function CreatorPaymentsClient({
                 <table className="w-full text-left">
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                      {['Date', 'Member', 'Collective', 'Purchase', 'Source', 'Gross', 'FC Fee', 'Est. Creator', 'Status', ''].map((h, idx) => (
+                      {['Date', 'Member', 'Collective', 'Purchase', 'Source', 'Gross', 'FC Fee', 'Est. Retained', 'Status', ''].map((h, idx) => (
                         <th key={`${h}-${idx}`} className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">
                           {h}
                         </th>
@@ -642,8 +642,21 @@ export default function CreatorPaymentsClient({
                         <td className="px-3 py-3 text-[12px] text-black whitespace-nowrap">
                           {fmt(row.platform_fee_cents, row.currency)}
                         </td>
-                        <td className="px-3 py-3 text-[12px] font-semibold whitespace-nowrap" style={{ color: '#38A09E' }}>
-                          {row.net_creator_amount_cents != null ? fmt(row.net_creator_amount_cents, row.currency) : '—'}
+                        <td
+                          className="px-3 py-3 text-[12px] font-semibold whitespace-nowrap"
+                          style={{ color: '#38A09E' }}
+                          title="Retained creator earnings — original creator share minus the reversed portion of any refund. Zero when the transaction is fully refunded."
+                        >
+                          {row.net_creator_amount_cents != null
+                            ? fmt(
+                                Math.max(
+                                  0,
+                                  row.net_creator_amount_cents
+                                  - (row.refunded_creator_amount_cents ?? 0),
+                                ),
+                                row.currency,
+                              )
+                            : '—'}
                         </td>
                         <td className="px-3 py-3 whitespace-nowrap">
                           <StatusBadge status={row.status} />
@@ -707,9 +720,18 @@ export default function CreatorPaymentsClient({
                         <p className="text-black">{fmt(row.platform_fee_cents, row.currency)}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-black">Creator Net</p>
-                        <p style={{ color: '#38A09E' }}>
-                          {row.net_creator_amount_cents != null ? fmt(row.net_creator_amount_cents, row.currency) : '—'}
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-black">Retained</p>
+                        <p style={{ color: '#38A09E' }} title="Retained creator earnings after refunds">
+                          {row.net_creator_amount_cents != null
+                            ? fmt(
+                                Math.max(
+                                  0,
+                                  row.net_creator_amount_cents
+                                  - (row.refunded_creator_amount_cents ?? 0),
+                                ),
+                                row.currency,
+                              )
+                            : '—'}
                         </p>
                       </div>
                     </div>

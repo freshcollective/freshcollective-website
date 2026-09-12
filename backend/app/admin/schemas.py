@@ -692,8 +692,20 @@ class LedgerRow(BaseModel):
     creator_email: str | None
     space_name: str | None
     pathway_title: str | None
-    # Money
+    # Money — original snapshot amounts, immutable per row.
     currency: str
     gross_amount_cents: int
     platform_fee_cents: int
     net_creator_amount_cents: int | None
+    # Refund reversal (migration 127). Zero when no refund has landed.
+    # Retained figures for display are derived client-side as
+    # ``original - refunded`` so both concepts stay visible.
+    refunded_amount_cents: int = 0
+    refunded_platform_fee_cents: int = 0
+    refunded_creator_amount_cents: int = 0
+    # Platform-owned flag — mirrors ``Space.creator_id IS NULL`` at
+    # write time via ``PaymentTransaction.creator_user_id``. When True,
+    # the row represents a Fresh Collective sale (no creator payout);
+    # the "Creator earnings" column must render as "—" and the row
+    # must not imply a creator is payable.
+    is_platform_owned: bool = False
