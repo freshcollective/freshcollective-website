@@ -220,21 +220,36 @@ class TestPlatformOwned:
         summary = _compute_revenue_summary(db, stripe_mode="test")
         assert summary.total_fc_revenue_cents == 7000
 
-    def test_embody_style_current_production(self, db, make_user, make_space):
-        """Regression scenario mirroring current EMBODY production state:
-        two platform-owned FC transactions ($1 + $20), both fully
-        refunded, both with platform_fee_cents=0. Expected:
-        Gross Volume = $22, Retained FC Revenue = $1 * 0 + $20 * 0 = 0
-        under the strict Space.creator_id IS NULL discriminator.
+    def test_embody_style_current_production_platform_owned(
+        self, db, make_user, make_space,
+    ):
+        """Regression scenario mirroring current EMBODY production state
+        under the PLATFORM-OWNED interpretation (Space.creator_id IS NULL):
 
-        Note: this fixture assumes EMBODY has Space.creator_id IS NULL.
-        If in production EMBODY has a real creator_user_id set, the
-        FC Revenue math falls through the "third-party creator" branch
-        with fee=0, producing 0 as well. Either way Gross Volume = $22.
+        THREE rows in scope, all platform-owned, all fee=0:
+
+          1. $1 pay-in-full — succeeded, refunded_amount_cents = 0
+          2. $1 pay-in-full — fully refunded
+          3. $20 finite-plan instalment — fully refunded
+
+        Expected:
+          Gross Volume            = 100 + 100 + 2000 = 2200 cents ($22)
+          Fresh Collective Revenue = retained-gross-per-row summed:
+                                     (100-0) + (100-100) + (2000-2000) = 100
+          Creator Earnings         = 0 (platform-owned contributes zero)
+          Pending Creator Payouts  = 0 (platform-owned excluded from pool)
         """
         member = make_user()
         space = make_space(creator_id=None)
-        # $1 fully refunded
+        # Row 1 — surviving $1 succeeded, not refunded.
+        _make_txn(
+            db, creator_user_id=None, space_id=space.id,
+            payer_user_id=member.id,
+            gross=100, fee=0,
+            status=PaymentTransactionStatus.succeeded,
+            payout_status=PayoutStatus.not_applicable,
+        )
+        # Row 2 — $1 fully refunded.
         _make_txn(
             db, creator_user_id=None, space_id=space.id,
             payer_user_id=member.id,
@@ -243,7 +258,7 @@ class TestPlatformOwned:
             status=PaymentTransactionStatus.refunded,
             payout_status=PayoutStatus.not_applicable,
         )
-        # $20 fully refunded
+        # Row 3 — $20 fully refunded.
         _make_txn(
             db, creator_user_id=None, space_id=space.id,
             payer_user_id=member.id,
@@ -253,13 +268,64 @@ class TestPlatformOwned:
             payout_status=PayoutStatus.not_applicable,
         )
         summary = _compute_revenue_summary(db, stripe_mode="test")
-        assert summary.total_gross_sales_cents == 2100
-        # Both fully refunded → retained gross = 0 → FC Revenue = 0.
-        # Or with a $1 partial refund on one, FC Revenue would be
-        # 100 - refunded portion. Fully refunded here → 0.
-        assert summary.total_fc_revenue_cents == 0
+        assert summary.total_gross_sales_cents == 2200
+        # Retained-gross bucket for platform-owned:
+        #   100 (surviving) + 0 (refunded $1) + 0 (refunded $20) = 100.
+        assert summary.total_fc_revenue_cents == 100
+        assert summary.platform_fee_revenue_cents == 100
         assert summary.total_creator_net_cents == 0
         assert summary.pending_payout_cents == 0
+
+    def test_embody_style_current_production_creator_owned_zero_fee(
+        self, db, make_user, make_space,
+    ):
+        """Alternative interpretation — EMBODY has Space.creator_id set
+        to a real user whose CreatorPlan carries 0 bps. Same three
+        production rows, but creator_user_id IS NOT NULL and fee=0.
+
+        Under the strict third-party path:
+          Gross Volume            = 2200
+          Fresh Collective Revenue = SUM(platform_fee - refunded_platform_fee) = 0
+          Creator Earnings         = retained-net-creator, third-party only:
+                                     (100-0) + (100-100) + (2000-2000) = 100
+          Pending Creator Payouts  = 100 (the one succeeded row still pending)
+        """
+        creator = make_user(role="creator")
+        member = make_user()
+        space = make_space(creator=creator)
+        # Row 1 — surviving $1 succeeded.
+        _make_txn(
+            db, creator_user_id=creator.id, space_id=space.id,
+            payer_user_id=member.id,
+            gross=100, fee=0,
+            status=PaymentTransactionStatus.succeeded,
+            payout_status=PayoutStatus.pending,
+        )
+        # Row 2 — $1 fully refunded.
+        _make_txn(
+            db, creator_user_id=creator.id, space_id=space.id,
+            payer_user_id=member.id,
+            gross=100, fee=0,
+            refunded=100, refunded_platform_fee=0, refunded_creator=100,
+            status=PaymentTransactionStatus.refunded,
+            payout_status=PayoutStatus.pending,
+        )
+        # Row 3 — $20 fully refunded.
+        _make_txn(
+            db, creator_user_id=creator.id, space_id=space.id,
+            payer_user_id=member.id,
+            gross=2000, fee=0,
+            refunded=2000, refunded_platform_fee=0, refunded_creator=2000,
+            status=PaymentTransactionStatus.refunded,
+            payout_status=PayoutStatus.pending,
+        )
+        summary = _compute_revenue_summary(db, stripe_mode="test")
+        assert summary.total_gross_sales_cents == 2200
+        assert summary.total_fc_revenue_cents == 0
+        assert summary.platform_fee_revenue_cents == 0
+        # Retained creator earnings from the surviving row.
+        assert summary.total_creator_net_cents == 100
+        assert summary.pending_payout_cents == 100
 
 
 class TestPendingPayoutRetained:
