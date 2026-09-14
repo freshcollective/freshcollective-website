@@ -55,6 +55,7 @@ from app.creator.schemas import (
     AddMemberResponse,
     AttendanceUpdateRequest,
     CreatorBillingResponse,
+    SpaceBillingContextResponse,
     CreatorMemberItem,
     CreatorPaymentSetup,
     CreatorPaymentSummary,
@@ -756,6 +757,53 @@ def get_creator_billing(
         available_plans=available_out,
         payment_setup=payment_setup,
         is_platform_owner=False,
+    )
+
+
+@router.get(
+    "/spaces/{slug}/billing-context",
+    response_model=SpaceBillingContextResponse,
+)
+def get_space_billing_context(
+    slug: str,
+    current_user: User = Depends(get_creator_user),
+    db: Session = Depends(get_db),
+) -> SpaceBillingContextResponse:
+    """Per-Space billing context — separates viewer role from selected-
+    Space ownership so Creator Studio can render truthful copy.
+
+    Authorization mirrors the other space-scoped endpoints:
+    * unknown slug → 404;
+    * normal creator on another creator's Space → 404 (existence not leaked);
+    * admin may resolve any Space.
+
+    Effective transaction fee comes from THIS Space's creator's active
+    CreatorPlan (via ``resolve_fee_context``), NOT from the viewer's
+    own billing identity. An admin viewing another creator's Space
+    sees that creator's fee.
+    """
+    from app.services.checkout_orchestration import resolve_fee_context
+
+    # ``_resolve_space_by_slug_or_404`` isn't defined until further
+    # down the file; use its exact contract here without a forward
+    # import (it lives in the same module).
+    space = _resolve_space_by_slug_or_404(slug, current_user, db)
+    fee_context = resolve_fee_context(space, db)
+
+    return SpaceBillingContextResponse(
+        space_id=space.id,
+        space_slug=space.slug,
+        space_name=space.name,
+        space_creator_user_id=space.creator_id,
+        selected_space_is_platform_owned=(space.creator_id is None),
+        effective_transaction_fee_basis_points=fee_context.fee_bps,
+        # Currency comes from the fee-resolution layer once creator
+        # plans carry per-space currency overrides; for MVP the
+        # platform currency (AUD) is the correct answer for both
+        # platform-owned and creator-owned Spaces.
+        effective_currency="AUD",
+        viewer_is_platform_admin=(current_user.role == "admin"),
+        viewer_is_space_owner=(space.creator_id == current_user.id),
     )
 
 
@@ -6260,18 +6308,20 @@ def get_resource_usage(
 
 @router.get("/payments/summary", response_model=CreatorPaymentSummary)
 def get_creator_payment_summary(
+    space_slug: str | None = None,
     current_user: User = Depends(get_creator_user),
     db: Session = Depends(get_db),
 ) -> CreatorPaymentSummary:
-    """
-    Earnings summary for the current creator.
-    Only includes member purchase transactions (not creator subscription payments).
-    Revenue totals are from succeeded transactions only.
+    """Earnings summary for the current creator, optionally scoped to
+    a single Collective by ``space_slug``.
 
-    pending_payout_cents = net_creator sum for succeeded transactions where
-    payout_status=pending. Updated to 'paid' when Stripe Connect transfers are
-    processed.
-    # TODO: deduct payout_status=paid rows once Stripe Connect is wired up.
+    Scope rules are identical to :func:`list_creator_payments` — the
+    summary and row list MUST always be computed over the same scope
+    so the numbers stay consistent within a page render.
+
+    ``pending_payout_cents`` = retained creator amount for
+    ``status IN (succeeded, partially_refunded, refunded)`` rows
+    whose ``payout_status='pending'``.
     """
     from app.models.payment import PaymentProvider as _PP
 
@@ -6285,10 +6335,13 @@ def get_creator_payment_summary(
         PaymentTransactionType.member_payment_option_purchase,
         PaymentTransactionType.member_series_pass_purchase,
     ]
+    scope_filter = _resolve_space_scope_or_creator_wide(
+        space_slug=space_slug, current_user=current_user, db=db,
+    )
     rows = (
         db.query(PaymentTransaction)
         .filter(
-            PaymentTransaction.creator_user_id == current_user.id,
+            scope_filter,
             PaymentTransaction.transaction_type.in_([t.value for t in _MEMBER_TYPES]),
             # Same rationale as ``list_creator_payments`` — Access-only
             # audit anchors (Grant Access, legacy manual records) must
@@ -6369,14 +6422,26 @@ def get_creator_payment_summary(
 
 @router.get("/payments", response_model=list[CreatorPaymentTransactionOut])
 def list_creator_payments(
+    space_slug: str | None = None,
     current_user: User = Depends(get_creator_user),
     db: Session = Depends(get_db),
 ) -> list[CreatorPaymentTransactionOut]:
-    """Actual payments received by this creator.
+    """Actual payments received by this creator, optionally scoped to
+    a single Collective by ``space_slug``.
 
-    Enriched with member, Collective and Payment Option snapshots so
-    the Payments page renders readable context rather than raw ID
-    slugs.
+    Space scoping (per Creator Studio Payments received requirements):
+
+    * When ``space_slug`` is provided:
+      - resolve the Space by slug; unknown → 404;
+      - **normal creator**: require ``Space.creator_id == current_user.id``;
+        cross-Collective attempts return 404 (existence not leaked);
+      - **platform admin** (``role == 'admin'``): may resolve any Space
+        and see transactions for that Space regardless of the
+        ``PaymentTransaction.creator_user_id`` snapshot;
+      - query filters ``PaymentTransaction.space_id == space.id``.
+    * When ``space_slug`` is omitted, preserves the historical
+      creator-wide behaviour (``creator_user_id == current_user.id``)
+      for backward compatibility with any legacy caller.
 
     Excluded from this ledger:
       * ``creator_subscription_payment`` — belongs on Billing.
@@ -6391,10 +6456,14 @@ def list_creator_payments(
     """
     from app.models.payment import PaymentProvider as _PP
 
+    scope_filter = _resolve_space_scope_or_creator_wide(
+        space_slug=space_slug, current_user=current_user, db=db,
+    )
+
     rows = (
         db.query(PaymentTransaction)
         .filter(
-            PaymentTransaction.creator_user_id == current_user.id,
+            scope_filter,
             PaymentTransaction.transaction_type
             != PaymentTransactionType.creator_subscription_payment,
             PaymentTransaction.payment_provider == _PP.stripe,
@@ -6591,6 +6660,59 @@ def _resolve_managed_space_ids(current_user: User, db: Session) -> set[str]:
     return owned_ids | member_ids
 
 
+def _resolve_space_by_slug_or_404(
+    space_slug: str, current_user: User, db: Session,
+) -> Space:
+    """Look up a Space by ``slug``, enforce owner-or-admin authorization,
+    and return the Space row. On any failure, raise 404 (do NOT 403 —
+    existence must not be leaked to a caller who lacks access).
+
+    * Space not found → 404.
+    * Space found AND caller is admin → return.
+    * Space found AND ``Space.creator_id == current_user.id`` → return.
+    * Space found AND caller is a normal creator on a different
+      creator's Space → 404 (not 403).
+
+    Used by every Creator Studio financial endpoint that accepts a
+    ``space_slug`` scoping query parameter. Uniform authz + response
+    semantics across those endpoints.
+    """
+    space = db.query(Space).filter(Space.slug == space_slug).first()
+    if space is None:
+        raise HTTPException(status_code=404, detail="Space not found.")
+    if current_user.role == "admin":
+        return space
+    if space.creator_id == current_user.id:
+        return space
+    # Cross-Collective attempt by a non-admin — 404, existence not leaked.
+    raise HTTPException(status_code=404, detail="Space not found.")
+
+
+def _resolve_space_scope_or_creator_wide(
+    *, space_slug: str | None, current_user: User, db: Session,
+):
+    """Return the SQLAlchemy filter to use as the scope predicate on
+    ``PaymentTransaction`` for the Creator Studio Payments/Payment-Plans
+    endpoints.
+
+    * When ``space_slug`` is provided, resolve+authorize the Space
+      (see :func:`_resolve_space_by_slug_or_404`) and return
+      ``PaymentTransaction.space_id == space.id``. For admin viewers
+      of a Space owned by another creator, this MUST NOT retain the
+      historical ``creator_user_id == current_user.id`` predicate —
+      that would incorrectly exclude the actual creator's rows on the
+      admin viewer's page.
+    * When ``space_slug`` is omitted, preserve historical creator-wide
+      behaviour: ``creator_user_id == current_user.id``. Keeps legacy
+      API consumers unchanged while the Creator Studio pages always
+      pass a slug.
+    """
+    if space_slug is not None:
+        space = _resolve_space_by_slug_or_404(space_slug, current_user, db)
+        return PaymentTransaction.space_id == space.id
+    return PaymentTransaction.creator_user_id == current_user.id
+
+
 def _resolve_owned_space_ids(current_user: User, db: Session) -> set[str]:
     """FIP4C — owner-only scope for Creator Studio financial surfaces.
 
@@ -6688,6 +6810,7 @@ def list_creator_payment_plans(
     status: list[str] | None = Query(default=None),
     payment_option_id: str | None = Query(default=None),
     member_search: str | None = Query(default=None),
+    space_slug: str | None = None,
     current_user: User = Depends(get_creator_user),
     db: Session = Depends(get_db),
 ) -> list[CreatorPurchasePlanSummary]:
@@ -6740,9 +6863,21 @@ def list_creator_payment_plans(
     """
     from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
 
-    managed_space_ids = _resolve_owned_space_ids(current_user, db)
-    if not managed_space_ids:
-        return []
+    # Space scoping — mirrors payments endpoints:
+    # * ``space_slug`` provided → resolve+authorize the Space (admin
+    #   any Space; normal creator must own it; cross-Collective 404),
+    #   scope query to that Space.
+    # * omitted → historical owner-only-across-all-owned-Spaces
+    #   behaviour via ``_resolve_owned_space_ids``.
+    space_id_predicate = None
+    if space_slug is not None:
+        space = _resolve_space_by_slug_or_404(space_slug, current_user, db)
+        space_id_predicate = PurchasePlan.space_id == space.id
+    else:
+        managed_space_ids = _resolve_owned_space_ids(current_user, db)
+        if not managed_space_ids:
+            return []
+        space_id_predicate = PurchasePlan.space_id.in_(managed_space_ids)
 
     # ── Status filter. Default hides pending_setup / failed /
     # ── cancelled — legitimate but rarely useful in the plan-level
@@ -6761,7 +6896,7 @@ def list_creator_payment_plans(
     q = (
         db.query(PurchasePlan)
         .filter(
-            PurchasePlan.space_id.in_(managed_space_ids),
+            space_id_predicate,
             PurchasePlan.status.in_([PurchasePlanStatus(s) for s in requested]),
         )
     )

@@ -1742,6 +1742,38 @@ class CreatorBillingResponse(BaseModel):
     is_platform_owner: bool = False
 
 
+class SpaceBillingContextResponse(BaseModel):
+    """Per-Space billing context for Creator Studio commerce surfaces.
+
+    Deliberately separates two orthogonal signals:
+
+    * ``viewer_is_platform_admin`` — the CALLER'S role (permission signal).
+      Governs admin overrides (refund of paid/held rows, plan cancel on
+      any Space, etc.).
+
+    * ``selected_space_is_platform_owned`` — derived from
+      ``Space.creator_id IS NULL`` on the RESOLVED Space. Governs the
+      account-type card, transaction-fee copy, and payout-note phrasing
+      on the Creator Studio Payments received page.
+
+    * ``effective_transaction_fee_basis_points`` — the fee that applies
+      to member purchases on THIS Space, resolved from THIS Space's
+      creator (via ``services.checkout_orchestration.resolve_fee_context``).
+      Zero for platform-owned. Never derived from the viewer's own
+      billing identity — an admin viewing another creator's Space sees
+      THAT creator's fee, not their own.
+    """
+    space_id: str
+    space_slug: str
+    space_name: str
+    space_creator_user_id: str | None
+    selected_space_is_platform_owned: bool
+    effective_transaction_fee_basis_points: int
+    effective_currency: str
+    viewer_is_platform_admin: bool
+    viewer_is_space_owner: bool
+
+
 # ---------------------------------------------------------------------------
 # Pathway Entitlements (Creator Studio People panel)
 # ---------------------------------------------------------------------------

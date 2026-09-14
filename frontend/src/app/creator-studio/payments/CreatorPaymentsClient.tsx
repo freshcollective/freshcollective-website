@@ -236,7 +236,10 @@ export default function CreatorPaymentsClient({
   currency,
   stripeEnabled,
   stripeTestMode,
-  isPlatformOwner,
+  viewerIsAdmin,
+  selectedSpaceIsPlatformOwned,
+  spaceOwnerIsViewer,
+  spaceSlug,
   headerCollectiveName,
   headerLocation,
   headerCoverImageUrl,
@@ -245,11 +248,31 @@ export default function CreatorPaymentsClient({
   currency: string
   stripeEnabled: boolean
   stripeTestMode: boolean
-  isPlatformOwner: boolean
+  // Permission signal: the CALLER is a Fresh Collective platform admin.
+  // Used for admin-only overrides (refund of paid/held rows, revoke).
+  viewerIsAdmin: boolean
+  // Ownership signal: the SELECTED Space is FC-owned
+  // (``Space.creator_id IS NULL``). Governs the account-type card,
+  // fee-display copy, payout-note copy, and summary layout. NEVER
+  // conflated with viewerIsAdmin — admin viewers of a creator-owned
+  // Space should see the creator plan copy, not the platform-owned copy.
+  selectedSpaceIsPlatformOwned: boolean
+  // True when the viewer is the OWNER of the selected Space. Governs
+  // "Your creator plan" vs "Creator plan" phrasing (admin viewing
+  // another creator's Space sees "Creator plan").
+  spaceOwnerIsViewer: boolean
+  // The active Collective's slug. Always sent to the payments +
+  // summary endpoints as ``?space_slug=…`` so the page shows only
+  // this Collective's data. When null (no Space yet), fetches fall
+  // back to the legacy creator-wide behaviour.
+  spaceSlug: string | null
   headerCollectiveName: string | null
   headerLocation: { name?: string; hero_artwork_url?: string | null; thumbnail_artwork_url?: string | null } | null
   headerCoverImageUrl: string | null
 }) {
+  // Legacy internal name kept for the refund/revoke gating helpers
+  // (`canRefund`/`canRevoke`) — semantically identical to viewerIsAdmin.
+  const isPlatformOwner = viewerIsAdmin
   const [summary, setSummary] = useState<CreatorPaymentSummary | null>(null)
   const [rows, setRows] = useState<CreatorPaymentTransaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -259,9 +282,17 @@ export default function CreatorPaymentsClient({
   const [toast, setToast] = useState<string | null>(null)
 
   async function loadRows() {
+    // Always attach ``space_slug`` when a Collective is selected so
+    // the endpoints scope to it. Omitting the query param falls back
+    // to the legacy creator-wide behaviour on the backend, which is
+    // never what the Creator Studio Payments received page wants —
+    // the page has committed to always passing a slug via SSR.
+    const qs = spaceSlug
+      ? `?space_slug=${encodeURIComponent(spaceSlug)}`
+      : ''
     const [sumRes, rowsRes] = await Promise.all([
-      fetch(apiUrl('/api/creator/payments/summary'), { credentials: 'include' }),
-      fetch(apiUrl('/api/creator/payments'), { credentials: 'include' }),
+      fetch(apiUrl(`/api/creator/payments/summary${qs}`), { credentials: 'include' }),
+      fetch(apiUrl(`/api/creator/payments${qs}`), { credentials: 'include' }),
     ])
     if (!sumRes.ok) throw new Error(`Error ${sumRes.status}`)
     if (!rowsRes.ok) throw new Error(`Error ${rowsRes.status}`)
@@ -274,10 +305,14 @@ export default function CreatorPaymentsClient({
   }
 
   useEffect(() => {
+    // Re-fetch when the active Collective changes so the page rebinds
+    // to the newly-selected Space's data without a full reload.
+    setLoading(true)
     loadRows()
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spaceSlug])
 
   function handleRevoked(result: RevokeResult) {
     // Summarise the outcome. Idempotent second call reads
@@ -408,12 +443,17 @@ export default function CreatorPaymentsClient({
         </div>
       )}
 
-      {/* Creator plan / platform ownership */}
+      {/* Selected-Space billing card. Two orthogonal signals govern
+          copy: viewerIsAdmin (permission — hidden here, drives the
+          Refund/Revoke gates elsewhere) and selectedSpaceIsPlatformOwned
+          (whether THIS Collective is FC-owned). Prior versions
+          conflated them via `isPlatformOwner`; an admin viewing a
+          creator-owned Space then saw platform-owned copy. */}
       <div
         className="mb-6 rounded-2xl p-5"
         style={{ background: '#F0FDFB', border: '1px solid #99E6E4' }}
       >
-        {isPlatformOwner ? (
+        {selectedSpaceIsPlatformOwned ? (
           <>
             <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#38A09E' }}>
               Account type
@@ -438,7 +478,7 @@ export default function CreatorPaymentsClient({
         ) : (
           <>
             <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider" style={{ color: '#38A09E' }}>
-              Your creator plan
+              {spaceOwnerIsViewer ? 'Your creator plan' : 'Creator plan'}
             </p>
             <p className="font-serif text-[1.1rem] font-semibold text-[#0F172A]">
               Founding Creator Access
@@ -502,7 +542,7 @@ export default function CreatorPaymentsClient({
       {!loading && !error && (
         <>
           {/* Summary cards */}
-          {isPlatformOwner ? (
+          {selectedSpaceIsPlatformOwned ? (
             <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
               <SummaryCard
                 label="Gross Sales"
@@ -553,7 +593,7 @@ export default function CreatorPaymentsClient({
             style={{ background: '#F8FAFC', border: '1px solid #E2E8F0' }}
           >
             <span className="mt-0.5 shrink-0 text-black">ℹ</span>
-            {isPlatformOwner ? (
+            {selectedSpaceIsPlatformOwned ? (
               <span>
                 <span className="font-semibold text-[#0F172A]">Platform-owned collective — no Fresh Collective transaction fee applies.</span>{' '}
                 Sales go directly to the Fresh Collective Stripe account. No payout tracking or disbursement is required.

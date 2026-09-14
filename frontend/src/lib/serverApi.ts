@@ -622,6 +622,32 @@ export const getCreatorSpace = cache(async (slug: string) => {
   return res.json()
 })
 
+export interface SpaceBillingContext {
+  space_id: string
+  space_slug: string
+  space_name: string
+  space_creator_user_id: string | null
+  selected_space_is_platform_owned: boolean
+  effective_transaction_fee_basis_points: number
+  effective_currency: string
+  viewer_is_platform_admin: boolean
+  viewer_is_space_owner: boolean
+}
+
+/** Per-Space billing context — separates viewer role (permission) from
+ *  selected-Space ownership (account-type card copy). Fetched by
+ *  Creator Studio Payments received + Payment Plans page so the SSR
+ *  layer can pass truthful ownership info to the client. */
+export const getSpaceBillingContext = cache(
+  async (slug: string): Promise<SpaceBillingContext | null> => {
+    const res = await fetchWithSession(
+      `/api/creator/spaces/${slug}/billing-context`,
+    )
+    if (!res.ok) return null
+    return res.json() as Promise<SpaceBillingContext>
+  },
+)
+
 /**
  * Header context for the shared collective page header.
  *

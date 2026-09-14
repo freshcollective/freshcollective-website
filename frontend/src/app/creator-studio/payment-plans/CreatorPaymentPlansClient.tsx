@@ -224,10 +224,16 @@ interface CreatorPaymentPlansClientProps {
   // ``/api/creator/purchase-plans/{plan_id}/cancel`` which accepts
   // admin actors as well.
   isPlatformOwner?: boolean
+  // Active Collective slug (from fc_creator_space cookie). When set,
+  // list fetches append ``?space_slug=`` so the caller sees only the
+  // plans for the currently-selected Collective. Omitted preserves
+  // the legacy creator-wide view.
+  spaceSlug?: string | null
 }
 
 export default function CreatorPaymentPlansClient({
   isPlatformOwner = false,
+  spaceSlug = null,
 }: CreatorPaymentPlansClientProps = {}) {
   const [rows, setRows] = useState<CreatorPurchasePlanSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -328,6 +334,13 @@ export default function CreatorPaymentPlansClient({
   const [memberSearch, setMemberSearch] = useState<string>('')
 
   useEffect(() => {
+    // Reset state when the active Collective changes so terminal
+    // rows loaded for the previous Space don't bleed into the new
+    // view.
+    setRows([])
+    setTerminalLoaded({})
+    setLoading(true)
+    setError(null)
     // Fetch every visible-by-default status in one go so the pill
     // switches feel instant. The "failed"/"cancelled"/"pending_setup"
     // pills need a follow-up fetch on demand — see below.
@@ -335,6 +348,7 @@ export default function CreatorPaymentPlansClient({
     for (const s of ['active', 'payment_problem', 'suspended', 'completed']) {
       params.append('status', s)
     }
+    if (spaceSlug) params.append('space_slug', spaceSlug)
     fetch(apiUrl(`/api/creator/payment-plans?${params.toString()}`), {
       credentials: 'include',
     })
@@ -345,7 +359,7 @@ export default function CreatorPaymentPlansClient({
       .then(setRows)
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [spaceSlug])
 
   // Lazy-fetch terminal statuses only when their pill is selected.
   const [terminalLoaded, setTerminalLoaded] = useState<Record<string, boolean>>({})
@@ -360,6 +374,7 @@ export default function CreatorPaymentPlansClient({
     if (need.length === 0) return
     const params = new URLSearchParams()
     for (const s of need) params.append('status', s)
+    if (spaceSlug) params.append('space_slug', spaceSlug)
     fetch(apiUrl(`/api/creator/payment-plans?${params.toString()}`), {
       credentials: 'include',
     })
@@ -372,7 +387,7 @@ export default function CreatorPaymentPlansClient({
         setTerminalLoaded((prev) => ({ ...prev, ...Object.fromEntries(need.map((s) => [s, true])) }))
       })
       .catch(() => {/* non-fatal — pill will show empty */})
-  }, [pill, terminalLoaded])
+  }, [pill, terminalLoaded, spaceSlug])
 
   // The "all" pill needs the terminal fetches too.
   useEffect(() => {
@@ -381,6 +396,7 @@ export default function CreatorPaymentPlansClient({
     if (need.length === 0) return
     const params = new URLSearchParams()
     for (const s of need) params.append('status', s)
+    if (spaceSlug) params.append('space_slug', spaceSlug)
     fetch(apiUrl(`/api/creator/payment-plans?${params.toString()}`), {
       credentials: 'include',
     })
@@ -393,7 +409,7 @@ export default function CreatorPaymentPlansClient({
         setTerminalLoaded((prev) => ({ ...prev, ...Object.fromEntries(need.map((s) => [s, true])) }))
       })
       .catch(() => {/* non-fatal */})
-  }, [pill, terminalLoaded])
+  }, [pill, terminalLoaded, spaceSlug])
 
   // Options for the option-filter dropdown — derived from loaded data.
   const optionChoices = useMemo(() => {
