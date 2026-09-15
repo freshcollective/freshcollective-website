@@ -117,6 +117,29 @@ def apply_creator_eligibility_change(user: User, db: Session) -> None:
         existing = _find_auto_role_membership(user.id, space.id, db)
         if eligible:
             if existing is None:
+                # Idempotency guard — the unique constraint
+                # ``space_memberships_user_space_unique (user_id,
+                # space_id)`` spans ALL source values, so a
+                # coexisting non-auto_role row (creator_owner /
+                # joined / invited / purchase / legacy NULL) would
+                # cause a UniqueViolation here. The user already has
+                # access through that stronger relationship, and
+                # non-auto_role rows are explicitly off-limits to
+                # this reconciler (see module docstring lines
+                # 21-24), so we skip the INSERT entirely and let
+                # the existing row stand. This closes the bug where
+                # assigning a Creator Plan to a user who was already
+                # a member of the auto-grant Space (e.g. the
+                # platform owner in World Builders) rolled back the
+                # whole plan-change transaction with a 500.
+                if _has_any_membership(user.id, space.id, db):
+                    logger.debug(
+                        "creator_eligibility: skipping auto_role INSERT "
+                        "for user=%s space=%s — non-auto_role membership "
+                        "already grants access.",
+                        user.id, space.id,
+                    )
+                    continue
                 db.add(
                     SpaceMembership(
                         id=str(uuid.uuid4()),
@@ -213,4 +236,21 @@ def _find_auto_role_membership(
             SpaceMembership.source == AUTO_ROLE_SOURCE,
         )
         .first()
+    )
+
+
+def _has_any_membership(user_id: str, space_id: str, db: Session) -> bool:
+    """True iff a ``SpaceMembership`` exists for (user, space) regardless
+    of ``source``. Used ONLY to guard the auto_role INSERT against the
+    unique constraint ``(user_id, space_id)`` which spans every source
+    value. Does not authorise the reconciler to touch non-auto_role
+    rows — those remain off-limits per the module docstring."""
+    return (
+        db.query(SpaceMembership.id)
+        .filter(
+            SpaceMembership.user_id == user_id,
+            SpaceMembership.space_id == space_id,
+        )
+        .first()
+        is not None
     )
