@@ -208,12 +208,19 @@ services:
       # Committed, safe defaults ------------------------------------
       - key: APP_ENV
         value: production
-      # Public member finite-plan checkout stays HARD-OFF by default.
-      # Flip to "true" in the Render Dashboard only after the
-      # hosted smoke sequence in
-      # docs/finite-payment-plans-stripe-config.md §6 passes.
+      # Public member finite-plan checkout — Dashboard-managed kill
+      # switch. Declared here with ``sync: false`` so Render prompts on
+      # first Blueprint sync but NEVER overwrites the production
+      # Dashboard value on subsequent deploys (a previous
+      # ``value: "false"`` declaration silently reset production every
+      # time the Blueprint was re-applied). Application default when
+      # the env var is absent is ``False`` — see
+      # ``finite_plan_member_checkout_enabled: bool = False`` in
+      # ``backend/app/core/config.py``. Flip to "true" only via the
+      # Render Dashboard, and only after the hosted smoke sequence in
+      # ``docs/finite-payment-plans-stripe-config.md`` §6 passes.
       - key: FINITE_PLAN_MEMBER_CHECKOUT_ENABLED
-        value: "false"
+        sync: false
       - key: DISCOVERY_PILLAR_ENABLED
         value: "false"
       - key: COMMUNITY_CARE_ENABLED
