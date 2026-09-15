@@ -242,14 +242,43 @@ function UsageRow({ label, value }: { label: string; value: string }) {
 // ---------------------------------------------------------------------------
 
 function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; header: HeaderProps }) {
-  // Non-platform-owner rows always have a current plan; the backend enforces
-  // that. The null-guard here is just to keep TypeScript happy after we
-  // widened the type to `CreatorPlanOut | null`.
   const current_plan = billing.current_plan
-  if (!current_plan) {
+  // "Not configured" state: creator has no active/trialing
+  // CreatorSubscription. Renders a truthful warning card and hides
+  // the fee-display / upgrade UI. Paid checkout is blocked (see the
+  // guard in ``services/checkout_orchestration.py``); nothing here
+  // needs to enforce that — but everything shown must line up with
+  // the reality that no commercial terms are in effect yet.
+  if (!current_plan || !billing.has_active_plan) {
     return (
       <div className="w-full max-w-[1180px] px-8 py-8 md:px-10 md:py-10">
-        <p className="text-black">Unable to load your creator plan. Please try again.</p>
+        {header ? (
+          <CollectiveArtworkHeader
+            collectiveName={header.collectiveName}
+            sectionTitle="Billing"
+            meta="Your Fresh Collective plan and usage."
+            location={header.location}
+            coverImageUrl={header.coverImageUrl}
+          />
+        ) : (
+          <div className="mb-8">
+            <h1 className="font-serif text-2xl text-navy-900 md:text-3xl">Billing</h1>
+          </div>
+        )}
+        <div
+          className="rounded-2xl p-6"
+          style={{ background: '#FFF7ED', border: '1px solid #FBD38D' }}
+        >
+          <p className="font-serif text-[20px] text-[#7C2D12]">
+            Your Fresh Collective creator plan has not been configured yet.
+          </p>
+          <p className="mt-2 text-[14px] leading-relaxed text-[#7C2D12]">
+            Paid checkout is unavailable on your Collectives until your
+            commercial terms are set. Contact Fresh Collective to
+            activate your plan. Free offers continue to work while your
+            plan is being configured.
+          </p>
+        </div>
       </div>
     )
   }
@@ -302,6 +331,13 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
               &nbsp;·&nbsp;
               {formatFee(current_plan.transaction_fee_basis_points)} transaction fee
             </p>
+            {current_plan.monthly_price_cents !== null && current_plan.monthly_price_cents > 0 && (
+              <p className="mt-1 text-[12px] italic text-black">
+                Monthly plan fee is currently billed manually by Fresh
+                Collective. Automatic Stripe subscription billing is
+                planned but not yet live.
+              </p>
+            )}
           </div>
           <div className="text-right">
             <p className="text-[12px] font-semibold uppercase tracking-wide text-black">
@@ -398,13 +434,20 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
           Plan changes are managed by Fresh Collective. Automatic plan upgrades will be available in a future update.
         </p>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {available_plans.map((plan) => (
-            <PlanCard
-              key={plan.id}
-              plan={plan}
-              isCurrent={plan.slug === current_plan.slug}
-            />
-          ))}
+          {available_plans
+            // Hide non-purchasable plans (Founding Creator,
+            // Organisation) from the picker — they're only assignable
+            // manually by Fresh Collective. Keep the current plan
+            // visible even if is_purchasable=false so Lindsey sees
+            // her Founding Creator card while on it.
+            .filter((plan) => plan.is_purchasable || plan.slug === current_plan.slug)
+            .map((plan) => (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                isCurrent={plan.slug === current_plan.slug}
+              />
+            ))}
         </div>
       </div>
 

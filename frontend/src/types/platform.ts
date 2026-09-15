@@ -1308,9 +1308,12 @@ export interface CreatorPaymentSetup {
 export interface CreatorBillingResponse {
   /** Present only for Creator accounts (Free / Plus / Pro). Null when the
    *  authenticated user is a Platform Owner — Platform Owners are their own
-   *  account type and do not belong to any creator subscription plan. */
+   *  account type and do not belong to any creator subscription plan.
+   *  Also null when a creator has no active/trialing CreatorSubscription
+   *  (the "not configured" state — see has_active_plan below). */
   current_plan: CreatorPlanOut | null
-  /** Present only for Creator accounts. Null for Platform Owners. */
+  /** Present only for Creator accounts. Null for Platform Owners AND for
+   *  creators in the "not configured" state. */
   subscription: CreatorSubscriptionOut | null
   usage: CreatorUsage
   /** Empty for Platform Owners; the plan lineup is meaningless for that account type. */
@@ -1318,6 +1321,13 @@ export interface CreatorBillingResponse {
   payment_setup: CreatorPaymentSetup
   /** True when the user is the Fresh Collective Platform Owner. */
   is_platform_owner: boolean
+  /** True iff the user has an active/trialing CreatorSubscription OR
+   *  is the Platform Owner. Powers the "not configured" warning card
+   *  when false. */
+  has_active_plan: boolean
+  /** True iff the current plan's PlanCapability.paid_offers_enabled is
+   *  True. Platform Owner is True. Community is False. */
+  plan_permits_paid_offers: boolean
 }
 
 

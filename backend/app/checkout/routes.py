@@ -471,6 +471,7 @@ def _legacy_pathway_price_stripe_session(
         PaymentTransactionType, PayoutStatus,
     )
     from app.services.checkout_orchestration import (
+        NoActiveCreatorPlanError as _NoActiveCreatorPlanError,
         resolve_fee_context as _resolve_fee_context,
     )
     from app.models.platform import Space
@@ -486,7 +487,27 @@ def _legacy_pathway_price_stripe_session(
     if not space:
         raise HTTPException(status_code=404, detail="Collective not found.")
 
-    fee_context = _resolve_fee_context(space, db)
+    try:
+        fee_context = _resolve_fee_context(space, db)
+    except _NoActiveCreatorPlanError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Fresh Collective commercial terms have not been "
+                "configured for this Collective. Paid checkout is "
+                "unavailable until an admin assigns a Creator Plan."
+            ),
+        ) from exc
+    if not fee_context.permits_paid_offers:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This Collective's Fresh Collective plan does not "
+                "include paid offers. The creator's plan must be "
+                "upgraded to Creator or higher to enable commercial "
+                "checkout."
+            ),
+        )
     gross = pathway.price_cents
     currency = (pathway.currency or "AUD").upper()
     platform_fee = round(gross * fee_context.fee_bps / 10000)

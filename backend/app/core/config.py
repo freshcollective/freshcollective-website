@@ -92,6 +92,22 @@ class Settings(BaseSettings):
     # setting confirmed "Leave the subscription past due".
     finite_plan_member_checkout_enabled: bool = False
 
+    # Creator Plan guard — when enabled, paid checkout against a
+    # creator-owned Space with no active/trialing CreatorSubscription
+    # raises NoActiveCreatorPlanError (translated to HTTP 409 by every
+    # checkout entry point). When disabled, checkout falls back to
+    # fee_bps=0 with a Sentry warning — the "grace mode" retained
+    # through the deploy window that adds this feature until Fresh
+    # Collective founders have been manually assigned an explicit
+    # Founding Creator subscription.
+    #
+    # Default False so a fresh Blueprint sync does not accidentally
+    # 409 EMBODY checkout in production. Flip to True via Render
+    # Dashboard AFTER the manual Founding Creator assignment for
+    # Lindsey is verified. See docs/creator-plan-rollout.md if it
+    # exists, otherwise the commit body of the introducing PR.
+    creator_plan_guard_enabled: bool = False
+
     # Stripe Checkout Session lifetime for standalone Gathering tickets, in
     # minutes. Stripe supports 30–1440 minutes; we default to the platform
     # minimum so abandoned holds free up capacity quickly. Any change must

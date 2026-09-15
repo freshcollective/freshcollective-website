@@ -82,8 +82,31 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-# Default fee rate (Basic plan 8%) used when creator has no active subscription
-_DEFAULT_FEE_BPS = 800
+class NoActiveCreatorPlanError(Exception):
+    """A creator-owned Space has no active/trialing CreatorSubscription.
+
+    Every paid checkout entry point catches this and returns HTTP 409
+    with the copy 'Fresh Collective commercial terms have not been
+    configured for this Collective. Paid checkout is unavailable until
+    an admin assigns a Creator Plan.' See
+    ``docs/permissions-matrix.md`` / audit log for the rationale
+    behind failing loud rather than silently falling back to a
+    default fee.
+
+    Raised by :func:`_resolve_fee_bps_for_creator` when
+    ``settings.creator_plan_guard_enabled`` is True. While the flag
+    remains False, the same missing-plan condition falls back to
+    ``fee_bps=0`` and emits a WARNING log line — grace mode retained
+    through the deploy window that adds this feature so Fresh
+    Collective founders can be assigned an explicit Founding Creator
+    subscription before the guard is enforced.
+    """
+
+    def __init__(self, creator_id: str) -> None:
+        super().__init__(
+            f"No active/trialing CreatorSubscription for creator {creator_id}."
+        )
+        self.creator_id = creator_id
 
 
 @dataclass(frozen=True)
@@ -93,6 +116,31 @@ class FeeContext:
     creator_subscription_id: str | None
     is_platform_owned: bool
     creator_id: str | None
+    # Whether the resolved plan's ``PlanCapability.paid_offers_enabled``
+    # is True. Platform-owned Spaces are always True (Fresh Collective
+    # sells directly). Under grace mode (guard flag off, creator has no
+    # plan), True — preserves legacy behaviour until the guard flips.
+    # Consumed by :class:`PlanForbidsPaidOffersError` at every paid
+    # checkout entry point.
+    permits_paid_offers: bool = True
+
+
+class PlanForbidsPaidOffersError(Exception):
+    """The Space's creator has an active plan but its
+    :attr:`PlanCapability.paid_offers_enabled` is False (Community).
+
+    Distinct from :class:`NoActiveCreatorPlanError` — a Community
+    creator has clearly stated commercial terms (0% fee, no paid
+    offers). Every paid checkout entry point translates this to
+    HTTP 403 with a plan-specific message.
+    """
+
+    def __init__(self, creator_id: str, plan_slug: str) -> None:
+        super().__init__(
+            f"Creator {creator_id}'s plan '{plan_slug}' does not permit paid offers."
+        )
+        self.creator_id = creator_id
+        self.plan_slug = plan_slug
 
 
 def resolve_fee_context(space: Space, db: Session) -> FeeContext:
@@ -101,7 +149,13 @@ def resolve_fee_context(space: Space, db: Session) -> FeeContext:
     Platform-owned spaces (creator_id IS NULL = Fresh Collective
     owns the space) pay zero platform fee and require no payout —
     the money stays directly with FC.
+
+    Raises :class:`NoActiveCreatorPlanError` when the flag
+    ``creator_plan_guard_enabled`` is on AND the Space's creator has
+    no active/trialing CreatorSubscription. Grace mode (flag off)
+    returns ``fee_bps=0`` with a WARNING log.
     """
+    from app.creator.plan_config import get_plan_capability
     if space.creator_id is None:
         return FeeContext(
             fee_bps=0,
@@ -109,25 +163,60 @@ def resolve_fee_context(space: Space, db: Session) -> FeeContext:
             creator_subscription_id=None,
             is_platform_owned=True,
             creator_id=None,
+            permits_paid_offers=True,
         )
     fee_bps, plan_id, sub_id = _resolve_fee_bps_for_creator(space.creator_id, db)
+    permits = True
+    if plan_id is not None:
+        plan_row = db.query(CreatorPlan).filter(CreatorPlan.id == plan_id).first()
+        capability = get_plan_capability(plan_row.slug) if plan_row else None
+        # If capability lookup fails (unrecognised slug), fail closed:
+        # the plan row exists but no PlanCapability record means every
+        # guard would silently permit. RECOGNISED_PLAN_SLUGS on the
+        # admin-CRUD side prevents this at creation time; this is a
+        # defence-in-depth read-side check.
+        permits = capability.paid_offers_enabled if capability else False
     return FeeContext(
         fee_bps=fee_bps,
         creator_plan_id=plan_id,
         creator_subscription_id=sub_id,
         is_platform_owned=False,
         creator_id=space.creator_id,
+        permits_paid_offers=permits,
     )
+
+
+def try_resolve_fee_context(space: Space, db: Session) -> FeeContext | None:
+    """Display-safe variant of :func:`resolve_fee_context`.
+
+    Returns ``None`` when the Space's creator has no active plan and
+    the guard is enabled — for UI billing surfaces that must render a
+    truthful 'not configured' state without 500-ing. Every checkout
+    entry point uses :func:`resolve_fee_context` directly instead so
+    the missing-plan signal fails loud.
+    """
+    try:
+        return resolve_fee_context(space, db)
+    except NoActiveCreatorPlanError:
+        return None
 
 
 def _resolve_fee_bps_for_creator(
     creator_id: str, db: Session,
 ) -> tuple[int, str | None, str | None]:
-    """Return ``(fee_bps, creator_plan_id, creator_subscription_id)``.
+    """Return ``(fee_bps, creator_plan_id, creator_subscription_id)``
+    for the creator's active/trialing plan.
 
-    Uses the creator's active CreatorSubscription → CreatorPlan.
-    Falls back to the cheapest active plan, then to the hardcoded
-    default (800 = 8%).
+    * Active/trialing CreatorSubscription exists → its plan's fee.
+    * No active/trialing subscription AND guard flag ON →
+      :class:`NoActiveCreatorPlanError`.
+    * No active/trialing subscription AND guard flag OFF → return
+      ``(0, None, None)`` with a WARNING log (grace mode; see the
+      exception docstring for the rollout rationale).
+
+    The historical "cheapest active plan" and hardcoded 800-bps
+    fallbacks were deliberately removed on 2026-09-15 — either was
+    a silent misconfiguration hazard for external creators.
     """
     sub = (
         db.query(CreatorSubscription)
@@ -141,23 +230,38 @@ def _resolve_fee_bps_for_creator(
         .order_by(CreatorSubscription.created_at.desc())
         .first()
     )
-    if sub:
-        plan = (
-            db.query(CreatorPlan)
-            .filter(CreatorPlan.id == sub.creator_plan_id)
-            .first()
+    if sub is None:
+        if settings.creator_plan_guard_enabled:
+            raise NoActiveCreatorPlanError(creator_id)
+        logger.warning(
+            "creator_plan_guard_disabled: creator %s has no active "
+            "subscription; falling back to fee_bps=0. Flip "
+            "CREATOR_PLAN_GUARD_ENABLED=true once every commercially "
+            "active creator has an explicit CreatorSubscription.",
+            creator_id,
         )
-        if plan:
-            return plan.transaction_fee_basis_points, plan.id, sub.id
-    fallback = (
+        return 0, None, None
+    plan = (
         db.query(CreatorPlan)
-        .filter(CreatorPlan.is_active.is_(True))
-        .order_by(CreatorPlan.monthly_price_cents)
+        .filter(CreatorPlan.id == sub.creator_plan_id)
         .first()
     )
-    if fallback:
-        return fallback.transaction_fee_basis_points, None, None
-    return _DEFAULT_FEE_BPS, None, None
+    if plan is None:
+        # Data integrity — sub.creator_plan_id points at a row that
+        # doesn't exist (should be impossible under the FK, but a
+        # historical hard-delete could produce this). Fail loud when
+        # the guard is on; log-and-fall-back when it's off, matching
+        # the missing-subscription branch above.
+        if settings.creator_plan_guard_enabled:
+            raise NoActiveCreatorPlanError(creator_id)
+        logger.error(
+            "creator_plan_guard_disabled: creator %s active subscription "
+            "%s points at deleted CreatorPlan %s; falling back to "
+            "fee_bps=0.",
+            creator_id, sub.id, sub.creator_plan_id,
+        )
+        return 0, None, sub.id
+    return plan.transaction_fee_basis_points, plan.id, sub.id
 
 
 # ---------------------------------------------------------------------------
@@ -769,7 +873,27 @@ def orchestrate_paid_checkout(
         )
 
     stripe.api_key = settings.stripe_secret_key
-    fee_context = resolve_fee_context(resolved.space, db)
+    try:
+        fee_context = resolve_fee_context(resolved.space, db)
+    except NoActiveCreatorPlanError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Fresh Collective commercial terms have not been "
+                "configured for this Collective. Paid checkout is "
+                "unavailable until an admin assigns a Creator Plan."
+            ),
+        ) from exc
+    if not fee_context.permits_paid_offers:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This Collective's Fresh Collective plan does not "
+                "include paid offers. The creator's plan must be "
+                "upgraded to Creator or higher to enable commercial "
+                "checkout."
+            ),
+        )
 
     base_metadata: dict[str, str] = {
         "payment_option_id": resolved.payment_option.id,
@@ -879,7 +1003,21 @@ def orchestrate_free_checkout(
             ),
         )
 
-    fee_context = resolve_fee_context(resolved.space, db)
+    # Free checkout is financially safe (gross=0 → fee=0) regardless
+    # of the creator's plan state, so this path uses the display-safe
+    # ``try_resolve_fee_context`` variant. A creator with no active
+    # plan can still fulfil a free offer; only paid checkout is
+    # gated. This matches the product decision that "free offers
+    # remain usable" even before commercial terms are configured.
+    fee_context_or_none = try_resolve_fee_context(resolved.space, db)
+    fee_context = fee_context_or_none or FeeContext(
+        fee_bps=0,
+        creator_plan_id=None,
+        creator_subscription_id=None,
+        is_platform_owned=False,
+        creator_id=resolved.space.creator_id,
+        permits_paid_offers=True,   # free path, not gated
+    )
     txn_transaction_type = (
         txn_transaction_type_override
         if txn_transaction_type_override is not None

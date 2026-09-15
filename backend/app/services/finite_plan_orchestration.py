@@ -42,6 +42,7 @@ from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
 from app.models.user import User
 from app.services.checkout_orchestration import (
     FeeContext,
+    NoActiveCreatorPlanError,
     resolve_fee_context,
 )
 from app.services.purchase_fulfilment import (
@@ -288,7 +289,27 @@ def start_finite_plan_setup(
         )
 
     # ── Fee snapshot ───────────────────────────────────────────────
-    fee_context: FeeContext = resolve_fee_context(resolved.space, db)
+    try:
+        fee_context: FeeContext = resolve_fee_context(resolved.space, db)
+    except NoActiveCreatorPlanError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Fresh Collective commercial terms have not been "
+                "configured for this Collective. Paid checkout is "
+                "unavailable until an admin assigns a Creator Plan."
+            ),
+        ) from exc
+    if not fee_context.permits_paid_offers:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "This Collective's Fresh Collective plan does not "
+                "include paid offers. The creator's plan must be "
+                "upgraded to Creator or higher to enable commercial "
+                "checkout."
+            ),
+        )
 
     # ── Insert plan row ───────────────────────────────────────────
     schedule = resolved.payment_schedule

@@ -1732,14 +1732,23 @@ class CreatorBillingResponse(BaseModel):
     # Platform Owners (role='admin') are a separate account type: they do not
     # belong to any creator subscription plan and receive `current_plan`,
     # `subscription`, and `available_plans` = None / []. Every other creator
-    # always has a plan and subscription. Usage counts and payment setup are
-    # populated for both account types.
+    # either has an active/trialing CreatorSubscription (has_active_plan=True)
+    # or is in the "not configured" state (has_active_plan=False) which
+    # renders the Creator Studio warning card.
     current_plan: CreatorPlanOut | None = None
     subscription: CreatorSubscriptionOut | None = None
     usage: CreatorUsage
     available_plans: list[CreatorPlanOut] = []
     payment_setup: CreatorPaymentSetup
     is_platform_owner: bool = False
+    # Convenience flags for the Creator Studio Billing UI so it doesn't
+    # need to re-derive them from current_plan + capability lookup.
+    # Platform Owner is treated as "has plan" (commerce works, fee=0).
+    has_active_plan: bool = False
+    # True iff the current plan's ``PlanCapability.paid_offers_enabled``.
+    # Platform Owner is True. Community is False. Creator/Pro/Founding
+    # Creator/Organisation are True.
+    plan_permits_paid_offers: bool = False
 
 
 class SpaceBillingContextResponse(BaseModel):
@@ -1768,10 +1777,22 @@ class SpaceBillingContextResponse(BaseModel):
     space_name: str
     space_creator_user_id: str | None
     selected_space_is_platform_owned: bool
-    effective_transaction_fee_basis_points: int
+    # ``None`` when a creator-owned Space's creator has no active
+    # CreatorSubscription AND ``CREATOR_PLAN_GUARD_ENABLED`` is on.
+    # Creator Studio uses this + ``has_active_plan`` to render the
+    # "not configured" state instead of a numeric fee.
+    effective_transaction_fee_basis_points: int | None
     effective_currency: str
     viewer_is_platform_admin: bool
     viewer_is_space_owner: bool
+    # ``True`` for platform-owned Spaces (no plan needed) OR for a
+    # creator-owned Space whose creator has an active/trialing
+    # CreatorSubscription. ``False`` = "commercial terms not configured".
+    has_active_plan: bool = False
+    # ``True`` when the Space's creator plan permits paid offers
+    # (Creator / Pro / Founding Creator / Organisation). Community
+    # returns False. Platform-owned returns True.
+    plan_permits_paid_offers: bool = False
 
 
 # ---------------------------------------------------------------------------

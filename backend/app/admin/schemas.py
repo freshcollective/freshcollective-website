@@ -48,6 +48,10 @@ class CreatorBillingRow(BaseModel):
     # effective-access columns (Access / Status / Ends) render as owner
     # access, not as the historical sub's cancelled state.
     is_platform_owner: bool = False
+    # `False` when the creator has no active/trialing subscription —
+    # numeric price/fee columns are zeroes in that state and the
+    # frontend renders "No active plan" rather than a fabricated fee.
+    has_active_plan: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +190,11 @@ class SimplePaidPathwayRow(BaseModel):
     price_cents: int
     currency: str
     billing_interval: str | None
-    creator_fee_basis_points: int
+    # ``None`` when the Space's creator has no active/trialing
+    # CreatorSubscription — the admin display shows "not configured"
+    # instead of a fabricated fallback fee. Platform-owned Spaces
+    # return 0.
+    creator_fee_basis_points: int | None
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +312,18 @@ class AdminCreatorRow(BaseModel):
     published_collective_count: int = 0
     draft_collective_count: int = 0
     plan_name: str
+    # ``None`` when the creator has no active/trialing subscription —
+    # exposed alongside ``plan_name`` so the frontend can render the
+    # "No active plan" chip and filter without needing to parse copy.
+    plan_slug: str | None = None
+    # Effective transaction fee in basis points on the current plan.
+    # ``None`` when the creator has no active plan; frontend renders
+    # "—" or "not configured".
+    plan_transaction_fee_basis_points: int | None = None
+    # True iff the creator has an active/trialing CreatorSubscription.
+    # Powers the admin "no active plan" filter + the Change Plan
+    # affordance on each row.
+    has_active_plan: bool = False
     subscription_status: str
     # Gallery / List additions ------------------------------------------------
     # Derived server-side so the client renders one truthful phrase per
@@ -508,6 +528,24 @@ class ExtendPlanAccessRequest(BaseModel):
 class RevokePlanAccessRequest(BaseModel):
     reason: str | None = None
     note: str | None = None
+
+
+class ChangeCreatorPlanRequest(BaseModel):
+    """Body of ``POST /api/admin/creators/{user_id}/plan/change``.
+
+    ``plan_slug`` — the destination plan.
+    ``reason`` — audit; free-form label recorded on both the revoke
+    of the current sub and the grant of the new one.
+    ``note`` — optional operator note; same audit copy.
+    ``ends_at`` / ``duration`` — optional; when supplied bound the
+    new subscription's window (same semantics as GrantPlanAccessRequest).
+    Omit both for an indefinite grant.
+    """
+    plan_slug: str
+    reason: str
+    note: str | None = None
+    ends_at: datetime | None = None
+    duration: str | None = None
 
 
 class PlanGrantHistoryRow(BaseModel):

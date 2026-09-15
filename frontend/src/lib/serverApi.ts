@@ -570,6 +570,9 @@ export interface AdminCreatorRow {
   published_collective_count: number
   draft_collective_count: number
   plan_name: string
+  plan_slug: string | null
+  plan_transaction_fee_basis_points: number | null
+  has_active_plan: boolean
   subscription_status: string
   avatar_url: string | null
   collectives: AdminCreatorCollectiveChip[]
@@ -585,6 +588,32 @@ export const getAdminCreators = cache(async (): Promise<AdminCreatorRow[]> => {
   const res = await fetchWithSession('/api/admin/platform/creators')
   if (!res.ok) return []
   return res.json()
+})
+
+export interface AdminAvailablePlan {
+  id: string
+  slug: string
+  name: string
+  transaction_fee_basis_points: number
+  monthly_price_cents: number
+  is_active: boolean
+}
+
+export const getAdminCreatorPlans = cache(async (): Promise<AdminAvailablePlan[]> => {
+  const res = await fetchWithSession('/api/admin/creator-plans')
+  if (!res.ok) return []
+  const rows = (await res.json()) as Array<Record<string, unknown>>
+  // The admin/creator-plans endpoint returns a wider row shape
+  // (AdminCreatorPlanRow). We only need these four fields for the
+  // Change Plan picker; strip the rest so unknown drift is inert.
+  return rows.map((r) => ({
+    id: String(r.id ?? ''),
+    slug: String(r.slug ?? ''),
+    name: String(r.name ?? ''),
+    transaction_fee_basis_points: Number(r.transaction_fee_basis_points ?? 0),
+    monthly_price_cents: Number(r.monthly_price_cents ?? 0),
+    is_active: Boolean(r.is_active),
+  }))
 })
 
 // ---------------------------------------------------------------------------

@@ -221,6 +221,18 @@ services:
       # ``docs/finite-payment-plans-stripe-config.md`` §6 passes.
       - key: FINITE_PLAN_MEMBER_CHECKOUT_ENABLED
         sync: false
+      # Creator Plan guard — Dashboard-managed. When true, paid
+      # checkout for a creator-owned Space with no active/trialing
+      # CreatorSubscription raises HTTP 409 instead of silently
+      # falling back to fee_bps=0. Kept ``sync: false`` for the same
+      # reason as FINITE_PLAN_MEMBER_CHECKOUT_ENABLED — the Dashboard
+      # is the operational source of truth, not this file. Flip to
+      # true only AFTER Fresh Collective founders are on an explicit
+      # Founding Creator subscription. Application default when the
+      # env var is absent is False (see
+      # ``backend/app/core/config.py:creator_plan_guard_enabled``).
+      - key: CREATOR_PLAN_GUARD_ENABLED
+        sync: false
       - key: DISCOVERY_PILLAR_ENABLED
         value: "false"
       - key: COMMUNITY_CARE_ENABLED

@@ -131,6 +131,7 @@ from app.services.schedule_validation import (
     validate_recurring_installments_payload,
 )
 from app.services.checkout_orchestration import (
+    NoActiveCreatorPlanError,
     check_option_fulfillable_or_raise,
     check_same_option_not_active,
     resolve_fee_context,
@@ -1433,7 +1434,18 @@ def manual_grant_payment_option(
         )
 
     # ── Ledger row + fulfilment (single transaction) ─────────────
-    fee_context = resolve_fee_context(space, db)
+    try:
+        fee_context = resolve_fee_context(space, db)
+    except NoActiveCreatorPlanError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Fresh Collective commercial terms have not been "
+                "configured for this Collective's creator. Assign a "
+                "Creator Plan before recording manual grants — the "
+                "resulting audit anchor needs a plan attribution."
+            ),
+        ) from exc
     txn_id = str(uuid4())
     notes_prefix = f"Manual grant — {body.source}"
     if body.notes:

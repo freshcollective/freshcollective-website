@@ -128,7 +128,15 @@ export default function CreatorsShell({ rows }: { rows: AdminCreatorRow[] }) {
           label="Plan"
           value={plan}
           onChange={setPlan}
-          options={[['all', 'All plans'], ...planOptions.map((p): [string, string] => [p, p])]}
+          options={[
+            ['all', 'All plans'],
+            // Sentinel option — filters ``has_active_plan=false``
+            // rows. Distinct from any real plan name to guarantee no
+            // collision with a future plan called literally "No
+            // active plan".
+            ['__no_active_plan__', 'No active plan'],
+            ...planOptions.map((p): [string, string] => [p, p]),
+          ]}
         />
         <FilterSelect
           label="Arrived"
@@ -175,7 +183,10 @@ export default function CreatorsShell({ rows }: { rows: AdminCreatorRow[] }) {
             <Chip label={healthChipLabel(health)} onClear={() => setHealth('all')} />
           )}
           {plan !== 'all' && (
-            <Chip label={`on ${plan}`} onClear={() => setPlan('all')} />
+            <Chip
+              label={plan === '__no_active_plan__' ? 'no active plan' : `on ${plan}`}
+              onClear={() => setPlan('all')}
+            />
           )}
           {newness === 'this_month' && (
             <Chip label="arrived this month" onClear={() => setNewness('all')} />
@@ -233,7 +244,9 @@ function filterAndSort(args: {
   const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000
   const filtered = rows.filter((r) => {
     if (health !== 'all' && r.health !== health) return false
-    if (plan !== 'all' && r.plan_name !== plan) return false
+    if (plan === '__no_active_plan__') {
+      if (r.has_active_plan) return false
+    } else if (plan !== 'all' && r.plan_name !== plan) return false
     if (newness === 'this_month' && Date.parse(r.created_at) < monthAgo) return false
     if (q) {
       const collectiveNames = r.collectives.map((c) => c.name).join(' ')

@@ -1,9 +1,15 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { getAdminCreators, type AdminCreatorRow, type AdminCreatorHealth } from '@/lib/serverApi'
+import {
+  getAdminCreators,
+  getAdminCreatorPlans,
+  type AdminCreatorRow,
+  type AdminCreatorHealth,
+} from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
 import { AvatarPortrait } from '../CreatorsShell'
 import ContactCard from './ContactCard'
+import PlanCard from './PlanCard'
 
 /**
  * World Management view of a single Creator.
@@ -18,7 +24,12 @@ import ContactCard from './ContactCard'
  * Consequences enforced here:
  *   - No link into Creator Studio.
  *   - No "log in as" / impersonation.
- *   - No plan editing (that lives on Creator Plans).
+ *   - Plan ASSIGNMENT + CHANGE (grant/revoke/swap) is here — this is
+ *     the caretaker's authoritative place to configure a creator's
+ *     Fresh Collective commercial terms. Plan DEFINITION (fee %,
+ *     price, limits) lives on Creator Plans; the two surfaces are
+ *     deliberately separate so editing one plan's fee doesn't blur
+ *     with granting it to a specific creator.
  *   - No moderation actions (that lives on Community Care).
  *   - No caretaker notes yet — needs a real product decision about
  *     whether the creator can see them and how they're audited.
@@ -69,7 +80,10 @@ export default async function CreatorDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const rows = await getAdminCreators()
+  const [rows, availablePlans] = await Promise.all([
+    getAdminCreators(),
+    getAdminCreatorPlans(),
+  ])
   const row = rows.find((r) => r.id === id)
   if (!row) notFound()
 
@@ -105,6 +119,18 @@ export default async function CreatorDetailPage({
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <PulseCard row={row} healthLabel={health.label} healthDot={health.dot} />
         <ContactCard email={row.email} name={row.name} />
+      </div>
+
+      {/* Fresh Collective plan */}
+      <div className="mt-6">
+        <PlanCard
+          userId={row.id}
+          planName={row.plan_name}
+          planSlug={row.plan_slug}
+          feeBasisPoints={row.plan_transaction_fee_basis_points}
+          hasActivePlan={row.has_active_plan}
+          availablePlans={availablePlans}
+        />
       </div>
 
       {/* The world they've built */}

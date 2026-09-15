@@ -10,8 +10,10 @@ from __future__ import annotations
 from app.creator.plan_config import (
     COMMUNITY,
     CREATOR,
+    FOUNDING_CREATOR,
     ORGANISATION,
     PRO,
+    RECOGNISED_PLAN_SLUGS,
 )
 
 
@@ -90,3 +92,50 @@ def test_organisation_is_not_self_service_or_purchasable():
     assert ORGANISATION.is_self_service is False
     assert ORGANISATION.is_purchasable is False
     assert ORGANISATION.monthly_price_cents is None  # "Talk to us"
+
+
+# ---------------------------------------------------------------------------
+# Founding Creator — internal / comped commercial terms
+# ---------------------------------------------------------------------------
+
+
+def test_founding_creator_is_commercially_capable_but_manual_only():
+    """Founding Creator must permit paid offers (unlike Community) yet
+    stay out of self-service signup + Stripe billing (unlike Creator
+    or Pro). The four booleans below are load-bearing — accidentally
+    flipping any of them either leaks a founder plan into public
+    signup or breaks EMBODY's commercial capability."""
+    assert FOUNDING_CREATOR.slug == "founding-creator"
+    assert FOUNDING_CREATOR.monthly_price_cents == 0
+    assert FOUNDING_CREATOR.transaction_fee_basis_points == 0
+    assert FOUNDING_CREATOR.paid_offers_enabled is True
+    assert FOUNDING_CREATOR.commercial_use is True
+    # Neither self-service nor billed via Stripe.
+    assert FOUNDING_CREATOR.is_self_service is False
+    assert FOUNDING_CREATOR.is_purchasable is False
+    # No restrictive limits (unlike Community / Creator).
+    assert FOUNDING_CREATOR.active_collective_limit is None
+    assert FOUNDING_CREATOR.pathways_max_per_collective is None
+    assert FOUNDING_CREATOR.member_allowance_per_collective is None
+
+
+# ---------------------------------------------------------------------------
+# Recognised-slug allowlist
+# ---------------------------------------------------------------------------
+
+
+def test_recognised_slugs_cover_every_creatable_plan():
+    """Every slug an admin can create via the plan CRUD must have a
+    PlanCapability record; otherwise guards silently permit actions on
+    it. Organisation is deliberately excluded from RECOGNISED_PLAN_SLUGS
+    because it's a synthetic capability-only entry (no DB row)."""
+    assert RECOGNISED_PLAN_SLUGS == frozenset({
+        "community",
+        "creator",
+        "pro",
+        "founding-creator",
+    })
+    # Every recognised slug must resolve to a PlanCapability.
+    from app.creator.plan_config import PLANS_BY_SLUG
+    for slug in RECOGNISED_PLAN_SLUGS:
+        assert slug in PLANS_BY_SLUG, f"Missing capability for {slug!r}"

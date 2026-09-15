@@ -43,8 +43,12 @@ interface PlanCreateForm {
   name: string
   slug: string
   description: string
-  monthly_price_cents: string
-  transaction_fee_basis_points: string
+  // Admin-facing UI values: dollars + percent. Converted to cents/bps
+  // at submit time (2026-09-15). Backend keeps basis points as the
+  // authoritative storage unit; this UI only accepts the human
+  // representation so operators can't paste `10` and mean 0.1%.
+  monthly_price_dollars: string
+  transaction_fee_percent: string
   collective_limit: string
   is_active: boolean
 }
@@ -53,10 +57,24 @@ const EMPTY_FORM: PlanCreateForm = {
   name: '',
   slug: '',
   description: '',
-  monthly_price_cents: '',
-  transaction_fee_basis_points: '',
+  monthly_price_dollars: '',
+  transaction_fee_percent: '',
   collective_limit: '1',
   is_active: true,
+}
+
+// Percentage <-> basis-points conversion. 10% = 1000 bps.
+// 7.5% = 750 bps. 3.25% = 325 bps. Rounds to the nearest integer so
+// arbitrary decimals never accumulate float rounding error server-side.
+function percentToBps(pct: string): number {
+  const n = parseFloat(pct)
+  if (isNaN(n)) return NaN
+  return Math.round(n * 100)
+}
+function dollarsToCents(dollars: string): number {
+  const n = parseFloat(dollars)
+  if (isNaN(n)) return NaN
+  return Math.round(n * 100)
 }
 
 // ---------------------------------------------------------------------------
@@ -357,11 +375,11 @@ function AddPlanModal({
 
   async function handleSave() {
     if (!form.name.trim() || !form.slug.trim()) { setError('Name and slug are required.'); return }
-    const priceCents = parseInt(form.monthly_price_cents, 10)
-    const feeBps = parseInt(form.transaction_fee_basis_points, 10)
+    const priceCents = dollarsToCents(form.monthly_price_dollars)
+    const feeBps = percentToBps(form.transaction_fee_percent)
     const limit = parseInt(form.collective_limit, 10)
-    if (isNaN(priceCents) || priceCents < 0) { setError('Monthly price must be a non-negative number of cents.'); return }
-    if (isNaN(feeBps) || feeBps < 0 || feeBps > 10000) { setError('Transaction fee must be 0–10000 basis points.'); return }
+    if (isNaN(priceCents) || priceCents < 0) { setError('Monthly price must be a non-negative dollar amount.'); return }
+    if (isNaN(feeBps) || feeBps < 0 || feeBps > 10000) { setError('Transaction fee must be between 0% and 100%.'); return }
     if (isNaN(limit) || limit < 1) { setError('Collective limit must be at least 1.'); return }
 
     setSaving(true)
@@ -442,32 +460,32 @@ function AddPlanModal({
               <p className="mt-0.5 text-[10.5px]" style={{ color: INK_MUTED }}>URL-safe, lowercase, hyphens only. Must be unique.</p>
             </label>
             <label className="block">
-              <span className={labelCls} style={labelStyle}>Monthly price (cents AUD) <span style={{ color: WM_HUE.coral.text }}>*</span></span>
+              <span className={labelCls} style={labelStyle}>Monthly price (AUD) <span style={{ color: WM_HUE.coral.text }}>*</span></span>
               <input
                 className={inputCls} style={inputStyle}
-                type="number" min="0"
-                placeholder="e.g. 4900 = $49"
-                value={form.monthly_price_cents}
-                onChange={field('monthly_price_cents')}
+                type="number" min="0" step="0.01"
+                placeholder="e.g. 19 for $19/month"
+                value={form.monthly_price_dollars}
+                onChange={field('monthly_price_dollars')}
               />
-              {form.monthly_price_cents && !isNaN(parseInt(form.monthly_price_cents)) && (
+              {form.monthly_price_dollars && !isNaN(dollarsToCents(form.monthly_price_dollars)) && (
                 <p className="mt-0.5 text-[11px]" style={{ color: WM_HUE.teal.text }}>
-                  = {fmtMoney(parseInt(form.monthly_price_cents), 'AUD')}/month
+                  = {fmtMoney(dollarsToCents(form.monthly_price_dollars), 'AUD')}/month · stored as {dollarsToCents(form.monthly_price_dollars)} cents
                 </p>
               )}
             </label>
             <label className="block">
-              <span className={labelCls} style={labelStyle}>Transaction fee (basis points) <span style={{ color: WM_HUE.coral.text }}>*</span></span>
+              <span className={labelCls} style={labelStyle}>Transaction fee (%) <span style={{ color: WM_HUE.coral.text }}>*</span></span>
               <input
                 className={inputCls} style={inputStyle}
-                type="number" min="0" max="10000"
-                placeholder="e.g. 500 = 5%"
-                value={form.transaction_fee_basis_points}
-                onChange={field('transaction_fee_basis_points')}
+                type="number" min="0" max="100" step="0.01"
+                placeholder="e.g. 8 for 8%, 7.5 for 7.5%"
+                value={form.transaction_fee_percent}
+                onChange={field('transaction_fee_percent')}
               />
-              {form.transaction_fee_basis_points && !isNaN(parseInt(form.transaction_fee_basis_points)) && (
+              {form.transaction_fee_percent && !isNaN(percentToBps(form.transaction_fee_percent)) && (
                 <p className="mt-0.5 text-[11px]" style={{ color: WM_HUE.teal.text }}>
-                  = {(parseInt(form.transaction_fee_basis_points) / 100).toFixed(2)}% of member sales
+                  = {percentToBps(form.transaction_fee_percent)} basis points on member sales
                 </p>
               )}
             </label>
@@ -569,8 +587,8 @@ function EditPlanButton({ onClick }: { onClick: () => void }) {
 interface EditPlanForm {
   name: string
   description: string
-  monthly_price_cents: string
-  transaction_fee_basis_points: string
+  monthly_price_dollars: string
+  transaction_fee_percent: string
   collective_limit: string
   is_active: boolean
 }
@@ -579,8 +597,16 @@ function planToEditForm(plan: CreatorPlanRow): EditPlanForm {
   return {
     name: plan.name,
     description: plan.description ?? '',
-    monthly_price_cents: String(plan.monthly_price_cents ?? 0),
-    transaction_fee_basis_points: String(plan.transaction_fee_basis_points ?? 0),
+    monthly_price_dollars: (
+      plan.monthly_price_cents == null
+        ? ''
+        : (plan.monthly_price_cents / 100).toString()
+    ),
+    transaction_fee_percent: (
+      plan.transaction_fee_basis_points == null
+        ? ''
+        : (plan.transaction_fee_basis_points / 100).toString()
+    ),
     collective_limit: String(plan.collective_limit ?? 1),
     is_active: plan.is_active,
   }
@@ -606,11 +632,11 @@ function EditPlanModal({
 
   async function handleSave() {
     if (!form.name.trim()) { setError('Name is required.'); return }
-    const priceCents = parseInt(form.monthly_price_cents, 10)
-    const feeBps = parseInt(form.transaction_fee_basis_points, 10)
+    const priceCents = dollarsToCents(form.monthly_price_dollars)
+    const feeBps = percentToBps(form.transaction_fee_percent)
     const limit = parseInt(form.collective_limit, 10)
-    if (isNaN(priceCents) || priceCents < 0) { setError('Monthly price must be a non-negative number of cents.'); return }
-    if (isNaN(feeBps) || feeBps < 0 || feeBps > 10000) { setError('Transaction fee must be 0–10000 basis points.'); return }
+    if (isNaN(priceCents) || priceCents < 0) { setError('Monthly price must be a non-negative dollar amount.'); return }
+    if (isNaN(feeBps) || feeBps < 0 || feeBps > 10000) { setError('Transaction fee must be between 0% and 100%.'); return }
     if (isNaN(limit) || limit < 1) { setError('Collective limit must be at least 1.'); return }
 
     setSaving(true)
@@ -710,31 +736,31 @@ function EditPlanModal({
             </label>
 
             <label className="block">
-              <span className={labelCls} style={labelStyle}>Monthly price (cents AUD) <span style={{ color: WM_HUE.coral.text }}>*</span></span>
+              <span className={labelCls} style={labelStyle}>Monthly price (AUD) <span style={{ color: WM_HUE.coral.text }}>*</span></span>
               <input
                 className={inputCls} style={inputStyle}
-                type="number" min="0"
-                value={form.monthly_price_cents}
-                onChange={field('monthly_price_cents')}
+                type="number" min="0" step="0.01"
+                value={form.monthly_price_dollars}
+                onChange={field('monthly_price_dollars')}
               />
-              {form.monthly_price_cents && !isNaN(parseInt(form.monthly_price_cents)) && (
+              {form.monthly_price_dollars && !isNaN(dollarsToCents(form.monthly_price_dollars)) && (
                 <p className="mt-0.5 text-[11px]" style={{ color: WM_HUE.teal.text }}>
-                  = {fmtMoney(parseInt(form.monthly_price_cents), plan.currency)}/month
+                  = {fmtMoney(dollarsToCents(form.monthly_price_dollars), plan.currency)}/month · stored as {dollarsToCents(form.monthly_price_dollars)} cents
                 </p>
               )}
             </label>
 
             <label className="block">
-              <span className={labelCls} style={labelStyle}>Transaction fee (basis points) <span style={{ color: WM_HUE.coral.text }}>*</span></span>
+              <span className={labelCls} style={labelStyle}>Transaction fee (%) <span style={{ color: WM_HUE.coral.text }}>*</span></span>
               <input
                 className={inputCls} style={inputStyle}
-                type="number" min="0" max="10000"
-                value={form.transaction_fee_basis_points}
-                onChange={field('transaction_fee_basis_points')}
+                type="number" min="0" max="100" step="0.01"
+                value={form.transaction_fee_percent}
+                onChange={field('transaction_fee_percent')}
               />
-              {form.transaction_fee_basis_points && !isNaN(parseInt(form.transaction_fee_basis_points)) && (
+              {form.transaction_fee_percent && !isNaN(percentToBps(form.transaction_fee_percent)) && (
                 <p className="mt-0.5 text-[11px]" style={{ color: WM_HUE.teal.text }}>
-                  = {(parseInt(form.transaction_fee_basis_points) / 100).toFixed(2)}% of member sales
+                  = {percentToBps(form.transaction_fee_percent)} basis points on member sales
                 </p>
               )}
             </label>

@@ -693,6 +693,8 @@ def get_creator_billing(
             available_plans=[],
             payment_setup=payment_setup,
             is_platform_owner=True,
+            has_active_plan=True,           # platform owner always transacts
+            plan_permits_paid_offers=True,  # platform owner always permitted
         )
 
     # Creator: attach the current plan and full plan lineup.
@@ -709,23 +711,15 @@ def get_creator_billing(
         .filter(CreatorPlan.is_active.is_(True))
         .all()
     )
-    current_plan_row = (
-        subscription.plan if subscription
-        else (min(db_plans, key=lambda p: p.monthly_price_cents) if db_plans else None)
+    # No fallback to cheapest plan — a creator with no active/trialing
+    # subscription reports has_active_plan=False and receives the
+    # "not configured" state on the Creator Studio Billing page.
+    current_plan_row = subscription.plan if subscription else None
+    current_capability = (
+        get_plan_capability(current_plan_row.slug) if current_plan_row else None
     )
-    if not current_plan_row:
-        raise HTTPException(status_code=500, detail="No creator plans are configured.")
 
-    if not subscription:
-        from datetime import datetime as dt
-        sub_out = CreatorSubscriptionOut(
-            id="",
-            status="active",
-            starts_at=dt.utcnow(),
-            ends_at=None,
-            stripe_connected=False,
-        )
-    else:
+    if subscription:
         sub_out = CreatorSubscriptionOut(
             id=subscription.id,
             status=subscription.status.value if hasattr(subscription.status, "value") else str(subscription.status),
@@ -733,11 +727,17 @@ def get_creator_billing(
             ends_at=subscription.ends_at,
             stripe_connected=False,
         )
+    else:
+        sub_out = None
 
     # Merge DB rows with capability records. Community/Creator/Pro come
     # from DB (real plans users can subscribe to). Organisation is added as
     # a synthetic entry so the pricing UI can render its "Talk to us" card
     # without inserting a fake subscribable plan into the database.
+    # Non-purchasable plans (Founding Creator, Organisation) are still
+    # returned here so the current-plan lookup can find them if the
+    # caller happens to be on one — the frontend filters is_purchasable
+    # before rendering the self-service plan-picker cards.
     db_out = [
         _creator_plan_out(row, get_plan_capability(row.slug))
         for row in db_plans
@@ -749,14 +749,19 @@ def get_creator_billing(
     )
 
     return CreatorBillingResponse(
-        current_plan=_creator_plan_out(
-            current_plan_row, get_plan_capability(current_plan_row.slug)
+        current_plan=(
+            _creator_plan_out(current_plan_row, current_capability)
+            if current_plan_row else None
         ),
         subscription=sub_out,
         usage=usage,
         available_plans=available_out,
         payment_setup=payment_setup,
         is_platform_owner=False,
+        has_active_plan=current_plan_row is not None,
+        plan_permits_paid_offers=(
+            current_capability.paid_offers_enabled if current_capability else False
+        ),
     )
 
 
@@ -782,13 +787,23 @@ def get_space_billing_context(
     own billing identity. An admin viewing another creator's Space
     sees that creator's fee.
     """
-    from app.services.checkout_orchestration import resolve_fee_context
+    from app.services.checkout_orchestration import try_resolve_fee_context
 
     # ``_resolve_space_by_slug_or_404`` isn't defined until further
     # down the file; use its exact contract here without a forward
     # import (it lives in the same module).
     space = _resolve_space_by_slug_or_404(slug, current_user, db)
-    fee_context = resolve_fee_context(space, db)
+    # Display-safe variant: returns None when a creator-owned Space's
+    # creator has no active/trialing subscription AND the guard flag
+    # is on. Creator Studio then renders a "not configured" state
+    # instead of 500-ing.
+    fee_context = try_resolve_fee_context(space, db)
+    has_active_plan = fee_context is not None and (
+        fee_context.is_platform_owned or fee_context.creator_plan_id is not None
+    )
+    plan_permits_paid_offers = (
+        fee_context.permits_paid_offers if fee_context is not None else False
+    )
 
     return SpaceBillingContextResponse(
         space_id=space.id,
@@ -796,7 +811,9 @@ def get_space_billing_context(
         space_name=space.name,
         space_creator_user_id=space.creator_id,
         selected_space_is_platform_owned=(space.creator_id is None),
-        effective_transaction_fee_basis_points=fee_context.fee_bps,
+        effective_transaction_fee_basis_points=(
+            fee_context.fee_bps if fee_context is not None else None
+        ),
         # Currency comes from the fee-resolution layer once creator
         # plans carry per-space currency overrides; for MVP the
         # platform currency (AUD) is the correct answer for both
@@ -804,6 +821,8 @@ def get_space_billing_context(
         effective_currency="AUD",
         viewer_is_platform_admin=(current_user.role == "admin"),
         viewer_is_space_owner=(space.creator_id == current_user.id),
+        has_active_plan=has_active_plan,
+        plan_permits_paid_offers=plan_permits_paid_offers,
     )
 
 

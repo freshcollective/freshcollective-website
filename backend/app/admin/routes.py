@@ -42,6 +42,7 @@ from app.admin.schemas import (
     CommerceMovementEvent,
     CommerceWindow,
     CreatorBillingRow,
+    ChangeCreatorPlanRequest,
     ExtendPlanAccessRequest,
     GRANT_REASONS,
     GrantPathwayAccessRequest,
@@ -179,21 +180,16 @@ def list_creator_billing(
     )
     sub_map: dict[str, CreatorSubscription] = {s.user_id: s for s in subs}
 
-    # Default to cheapest plan when no subscription exists
-    fallback_plan = (
-        db.query(CreatorPlan)
-        .filter(CreatorPlan.is_active.is_(True))
-        .order_by(CreatorPlan.monthly_price_cents)
-        .first()
-    )
+    # No fallback plan lookup here — a creator with no active/trialing
+    # subscription reports has_active_plan=False and price/fee=0
+    # sentinels. The admin UI renders "No active plan" and the Change
+    # Plan action instead of a fabricated fee.
 
     rows: list[CreatorBillingRow] = []
     for creator in creators:
         sub = sub_map.get(creator.id)
-        plan = (plans_by_id.get(sub.creator_plan_id) if sub else None) or fallback_plan
-        if not plan:
-            continue
-
+        plan = plans_by_id.get(sub.creator_plan_id) if sub else None
+        has_active_plan = plan is not None
         sub_status = "none"
         if sub:
             sub_status = sub.status.value if hasattr(sub.status, "value") else str(sub.status)
@@ -223,8 +219,15 @@ def list_creator_billing(
         # Emit an explicit "Platform owner" label instead; the
         # historical row remains untouched in the DB and is still
         # surfaced in Access history.
-        effective_plan_name = "Platform owner" if owner_flag else plan.name
-        effective_plan_slug = "platform_owner" if owner_flag else plan.slug
+        if owner_flag:
+            effective_plan_name = "Platform owner"
+            effective_plan_slug = "platform_owner"
+        elif plan is not None:
+            effective_plan_name = plan.name
+            effective_plan_slug = plan.slug
+        else:
+            effective_plan_name = "No active plan"
+            effective_plan_slug = ""
 
         rows.append(CreatorBillingRow(
             user_id=creator.id,
@@ -232,15 +235,18 @@ def list_creator_billing(
             email=creator.email,
             current_plan_name=effective_plan_name,
             current_plan_slug=effective_plan_slug,
-            monthly_price_cents=plan.monthly_price_cents,
-            currency=plan.currency,
-            transaction_fee_basis_points=plan.transaction_fee_basis_points,
+            monthly_price_cents=plan.monthly_price_cents if plan else 0,
+            currency=plan.currency if plan else "AUD",
+            transaction_fee_basis_points=(
+                plan.transaction_fee_basis_points if plan else 0
+            ),
             collective_limit=allowance,
             subscription_status=sub_status,
             collectives_used=len(space_ids),
             pathways_used=pathways_used,
             joined_at=creator.created_at,
             is_platform_owner=owner_flag,
+            has_active_plan=has_active_plan or owner_flag,
         ))
 
     return rows
@@ -566,6 +572,196 @@ def revoke_creator_plan_grant(
         plan_slug=plan.slug if plan else "",
         plan_name=plan.name if plan else "",
         reactivated=False,
+    )
+
+
+@router.post(
+    "/creators/{user_id}/plan/change",
+    response_model=GrantPlanAccessResult,
+)
+def change_creator_plan_atomic(
+    user_id: str,
+    body: ChangeCreatorPlanRequest,
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db),
+) -> GrantPlanAccessResult:
+    """Atomically change a creator's active plan.
+
+    Revokes the current active/trialing CreatorSubscription (if any)
+    and grants a new one, all in a single transaction. Guarantees
+    that at no intermediate point does the user have zero *or* two
+    active subscriptions — the partial UNIQUE index added in
+    migration 130 enforces the two-active case at the DB level, but
+    ordering the UPDATE-before-INSERT here keeps the transaction
+    trivially valid rather than relying on deferred-constraint magic.
+
+    Downgrade safety: refuses when the new plan has an
+    ``active_collective_limit`` that the creator's current
+    non-archived Collective count exceeds. Admin must archive the
+    surplus Collectives explicitly before the change — this endpoint
+    never picks which Collectives to close.
+
+    Paid ``stripe_paid`` subscriptions are refused as source rows —
+    those must be cancelled through their own workflow before a
+    manual Change Plan is possible.
+    """
+    from app.creator.plan_activation import ActivationConflictError
+    from app.creator.plan_config import RECOGNISED_PLAN_SLUGS
+    from app.models.platform import Space
+
+    # --- Validate inputs ------------------------------------------------
+    if body.reason not in PLAN_GRANT_REASONS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid reason {body.reason!r}. Valid: {list(PLAN_GRANT_REASONS)}.",
+        )
+    note = (body.note or "").strip() or None
+    if body.reason == "other" and not note:
+        raise HTTPException(
+            status_code=422,
+            detail="A note is required when reason is 'other'.",
+        )
+    if body.plan_slug not in RECOGNISED_PLAN_SLUGS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Slug '{body.plan_slug}' is not a recognised Creator "
+                f"Plan. Recognised: {sorted(RECOGNISED_PLAN_SLUGS)}."
+            ),
+        )
+
+    creator = db.query(User).filter(User.id == user_id).first()
+    if not creator:
+        raise HTTPException(status_code=404, detail="Creator not found.")
+    new_plan = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.slug == body.plan_slug, CreatorPlan.is_active.is_(True))
+        .first()
+    )
+    if not new_plan:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Plan '{body.plan_slug}' not found or inactive.",
+        )
+
+    # --- Row-lock existing active/trialing sub, if any -----------------
+    existing_active = (
+        db.query(CreatorSubscription)
+        .filter(
+            CreatorSubscription.user_id == user_id,
+            CreatorSubscription.status.in_([
+                CreatorSubscriptionStatus.active,
+                CreatorSubscriptionStatus.trialing,
+            ]),
+        )
+        .with_for_update()
+        .order_by(CreatorSubscription.created_at.desc())
+        .first()
+    )
+    if existing_active and existing_active.source == "stripe_paid":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Creator has an active Stripe-paid subscription; cancel "
+                "it through the Stripe workflow before manually changing "
+                "the plan."
+            ),
+        )
+    if existing_active and existing_active.creator_plan_id == new_plan.id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Creator is already on this plan. Use the extend "
+                "endpoint to adjust the end date."
+            ),
+        )
+
+    # --- Downgrade over-limit refusal ----------------------------------
+    # If the destination plan caps active Collectives at N and the
+    # creator already owns more than N, refuse — admin must archive
+    # the surplus manually. Founding Creator (limit=None) is unlimited
+    # and always passes.
+    new_capability = get_plan_capability(new_plan.slug)
+    if new_capability and new_capability.active_collective_limit is not None:
+        active_collective_count = (
+            db.query(func.count(Space.id))
+            .filter(
+                Space.creator_id == user_id,
+                Space.status != "archived",
+            )
+            .scalar() or 0
+        )
+        if active_collective_count > new_capability.active_collective_limit:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Cannot change to '{new_plan.slug}': it allows "
+                    f"{new_capability.active_collective_limit} active "
+                    f"Collective(s), but this creator currently has "
+                    f"{active_collective_count}. Archive the surplus "
+                    "Collectives before changing plan."
+                ),
+            )
+
+    # --- Revoke existing, then grant new — one transaction -------------
+    now = datetime.utcnow()
+    if existing_active is not None:
+        existing_active.status = CreatorSubscriptionStatus.cancelled
+        existing_active.revoked_at = now
+        existing_active.revoked_by_user_id = admin.id
+        existing_active.revoked_reason = f"plan_change:{body.reason}"
+        existing_active.updated_at = now
+        service.record_grant_event(
+            db,
+            subscription=existing_active,
+            action="revoked",
+            reason=f"plan_change:{body.reason}",
+            note=note,
+            actor_user_id=admin.id,
+        )
+        # Flush the revoke so the partial UNIQUE index no longer
+        # sees the old row as active before the new INSERT lands.
+        db.flush()
+
+    starts_at = now
+    ends_at = _resolve_grant_ends_at(starts_at, body.ends_at, body.duration)
+    try:
+        result = activate_creator_plan(
+            db,
+            creator,
+            new_plan.slug,
+            ActivationSource(
+                source="manual_grant",
+                reason=body.reason,
+                note=note,
+                actor_user_id=admin.id,
+                starts_at=starts_at,
+                ends_at=ends_at,
+            ),
+        )
+    except ActivationConflictError as exc:
+        # Shouldn't fire — we just revoked the only active row — but
+        # translate to 409 for defensive completeness.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    db.commit()
+    db.refresh(result.subscription)
+    sub = result.subscription
+    return GrantPlanAccessResult(
+        subscription_id=sub.id,
+        source=sub.source,
+        status=sub.status.value,
+        reason=sub.grant_reason or "",
+        note=sub.grant_note,
+        starts_at=sub.starts_at,
+        ends_at=sub.ends_at,
+        granted_at=sub.updated_at,
+        granted_by_user_id=sub.granted_by_user_id or admin.id,
+        creator_name=creator.name,
+        creator_email=creator.email,
+        plan_slug=new_plan.slug,
+        plan_name=new_plan.name,
+        reactivated=result.was_reactivated,
     )
 
 
@@ -992,17 +1188,14 @@ def list_paid_pathways_simple(
         .all()
     )
 
-    # Cheapest active plan as a fee fallback
-    fallback_plan = (
-        db.query(CreatorPlan)
-        .filter(CreatorPlan.is_active.is_(True))
-        .order_by(CreatorPlan.monthly_price_cents)
-        .first()
-    )
-    fallback_bps = fallback_plan.transaction_fee_basis_points if fallback_plan else 800
-
-    # Cache creator fee bps per creator_user_id
-    fee_cache: dict[str, int] = {}
+    # Cache creator fee bps per creator_user_id. ``None`` marks
+    # "creator has no active plan" — the admin display then shows
+    # "not configured" instead of fabricating a fallback fee. The
+    # cheapest-plan + hardcoded-800 fallbacks were deliberately
+    # removed on 2026-09-15 alongside the same fallbacks in
+    # ``_resolve_fee_bps_for_creator``; either path returning a
+    # silent number was a misconfiguration hazard.
+    fee_cache: dict[str, int | None] = {}
 
     rows: list[SimplePaidPathwayRow] = []
     for pw in pathways:
@@ -1011,7 +1204,7 @@ def list_paid_pathways_simple(
 
         # Platform-owned spaces (creator_id IS NULL) always use 0 bps
         if space.platform_owned:
-            bps = 0
+            bps: int | None = 0
         else:
             if creator_id and creator_id not in fee_cache:
                 sub = (
@@ -1028,11 +1221,11 @@ def list_paid_pathways_simple(
                 )
                 if sub:
                     plan = db.query(CreatorPlan).filter(CreatorPlan.id == sub.creator_plan_id).first()
-                    fee_cache[creator_id] = plan.transaction_fee_basis_points if plan else fallback_bps
+                    fee_cache[creator_id] = plan.transaction_fee_basis_points if plan else None
                 else:
-                    fee_cache[creator_id] = fallback_bps
+                    fee_cache[creator_id] = None
 
-            bps = fee_cache.get(creator_id or "", fallback_bps)
+            bps = fee_cache.get(creator_id or "")
 
         rows.append(SimplePaidPathwayRow(
             id=pw.id,
@@ -1960,12 +2153,9 @@ def list_platform_creators(
         .all()
     )
     sub_map: dict[str, CreatorSubscription] = {s.user_id: s for s in subs}
-    fallback_plan = (
-        db.query(CreatorPlan)
-        .filter(CreatorPlan.is_active.is_(True))
-        .order_by(CreatorPlan.monthly_price_cents)
-        .first()
-    )
+    # No cheapest-plan fallback here — a creator with no active
+    # subscription reports plan_slug=None + has_active_plan=False so
+    # the admin UI can surface the "No active plan" state truthfully.
 
     # ---- Avatars --------------------------------------------------------
     profile_avatars = dict(
@@ -2099,8 +2289,11 @@ def list_platform_creators(
     rows: list[AdminCreatorRow] = []
     for creator in creators:
         sub = sub_map.get(creator.id)
-        plan = (plans_by_id.get(sub.creator_plan_id) if sub else None) or fallback_plan
-        plan_name = plan.name if plan else "—"
+        plan = plans_by_id.get(sub.creator_plan_id) if sub else None
+        plan_name = plan.name if plan else "No active plan"
+        plan_slug = plan.slug if plan else None
+        plan_fee_bps = plan.transaction_fee_basis_points if plan else None
+        has_active_plan = sub is not None and plan is not None
         sub_status = "none"
         if sub:
             sub_status = sub.status.value if hasattr(sub.status, "value") else str(sub.status)
@@ -2179,6 +2372,9 @@ def list_platform_creators(
             published_collective_count=published_count,
             draft_collective_count=draft_count,
             plan_name=plan_name,
+            plan_slug=plan_slug,
+            plan_transaction_fee_basis_points=plan_fee_bps,
+            has_active_plan=has_active_plan,
             subscription_status=sub_status,
             avatar_url=profile_avatars.get(creator.id),
             collectives=chips,
@@ -2495,6 +2691,26 @@ def create_creator_plan(
     db: Session = Depends(get_db),
 ) -> AdminCreatorPlanRow:
     """Create a new creator billing plan. Slug must be unique. Admin only."""
+    from app.creator.plan_config import RECOGNISED_PLAN_SLUGS
+
+    # Slug allowlist — every recognised slug MUST have a
+    # PlanCapability constant. Admin cannot invent a runtime slug
+    # (e.g. "creator-vip") that has no capability record, because
+    # every guard (paid_offers_enabled, active_collective_limit, etc.)
+    # is capability-driven and would silently permit actions on an
+    # unrecognised plan. Extending the platform to support a new
+    # commercial tier requires an engineering PR that adds both the
+    # PlanCapability constant AND the RECOGNISED_PLAN_SLUGS entry.
+    if body.slug not in RECOGNISED_PLAN_SLUGS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Slug '{body.slug}' is not a recognised Creator Plan. "
+                f"Recognised: {sorted(RECOGNISED_PLAN_SLUGS)}. Adding a "
+                "new plan tier requires an engineering deploy that "
+                "registers its PlanCapability record first."
+            ),
+        )
     existing = db.query(CreatorPlan).filter(CreatorPlan.slug == body.slug).first()
     if existing:
         raise HTTPException(status_code=409, detail=f"A plan with slug '{body.slug}' already exists.")

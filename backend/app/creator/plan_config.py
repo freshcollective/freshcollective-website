@@ -234,6 +234,48 @@ PRO = PlanCapability(
     ),
 )
 
+FOUNDING_CREATOR = PlanCapability(
+    slug="founding-creator",
+    display_name="Founding Creator",
+    tagline="Fresh Collective founder commercial terms.",
+    positioning=(
+        "Internal / complimentary plan for Fresh Collective founders "
+        "and comped creators. Assigned manually by Fresh Collective; "
+        "never shown in self-service plan selection."
+    ),
+    monthly_price_cents=0,
+    active_collective_limit=None,           # unrestricted
+    member_allowance_per_collective=None,   # unrestricted
+    pooled_member_allowance=None,           # unrestricted
+    caretaker_limit_per_collective=None,    # unrestricted
+    pathways_max_per_collective=None,       # unrestricted
+    storage_allowance_mb=None,              # unrestricted
+    location_scope="atlas_full",
+    analytics_level="advanced",
+    paid_offers_enabled=True,
+    pathways_enabled=True,
+    gatherings_enabled=True,
+    resources_enabled=True,
+    automations_enabled=True,
+    commercial_use=True,
+    approval_required=False,
+    # is_self_service + is_purchasable both False: never surfaced in
+    # self-service signup, never billed via Stripe. Assignment is
+    # manual via admin Change-Plan flow, mirroring Organisation's
+    # handling (but with commercial abilities enabled, unlike
+    # Organisation which has TBD tailored terms).
+    is_self_service=False,
+    is_purchasable=False,
+    transaction_fee_basis_points=0,   # explicit 0% — no fallback path
+    card_headline="Fresh Collective founder — no monthly charge, 0% fee.",
+    card_features=(
+        "0% transaction fee",
+        "No monthly platform charge",
+        "Unrestricted Collectives, pathways, and members",
+        "Assigned by Fresh Collective",
+    ),
+)
+
 ORGANISATION = PlanCapability(
     slug="organisation",
     display_name="Organisation",
@@ -274,11 +316,27 @@ ORGANISATION = PlanCapability(
 # ---------------------------------------------------------------------------
 
 
-ALL_PLANS: tuple[PlanCapability, ...] = (COMMUNITY, CREATOR, PRO, ORGANISATION)
+ALL_PLANS: tuple[PlanCapability, ...] = (
+    COMMUNITY, CREATOR, PRO, FOUNDING_CREATOR, ORGANISATION,
+)
 PURCHASABLE_PLANS: tuple[PlanCapability, ...] = tuple(
     p for p in ALL_PLANS if p.is_purchasable
 )
 PLANS_BY_SLUG: dict[str, PlanCapability] = {p.slug: p for p in ALL_PLANS}
+
+# Slugs that admin plan-CRUD is allowed to create in the DB. Every
+# recognised slug MUST have a PlanCapability constant above — otherwise
+# every capability lookup would return None at runtime and the guard
+# system would silently permit actions on that plan. Organisation is
+# deliberately excluded: it's a synthetic capability-only entry (no DB
+# row) rendered via ``_creator_plan_out(None, ORGANISATION)`` in the
+# billing endpoint.
+RECOGNISED_PLAN_SLUGS: frozenset[str] = frozenset({
+    "community",
+    "creator",
+    "pro",
+    "founding-creator",
+})
 
 
 def get_plan_capability(slug: str | None) -> PlanCapability | None:
