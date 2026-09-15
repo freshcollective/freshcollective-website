@@ -2618,7 +2618,22 @@ def _admin_plan_row(
     if capability is not None and not capability.paid_offers_enabled:
         transaction_fee_basis_points = None
 
-    plan_type = "enterprise" if capability is not None and not capability.is_purchasable else "subscription"
+    # "Enterprise" presentation (Tailored pricing / Talk to us / Active
+    # organisations metric) applies to plans with truly custom pricing —
+    # ``monthly_price_cents IS NULL`` on the capability. Non-purchasable
+    # plans that DO have an explicit price (e.g. Founding Creator at $0,
+    # or any comped tier at some fixed amount) render as a normal
+    # subscription card — Fresh Collective has already set the
+    # commercial terms; there's nothing to "talk to us" about. The
+    # ``is_purchasable`` flag continues to hide the plan from the
+    # self-service picker, but it does not force enterprise presentation.
+    plan_type = (
+        "enterprise"
+        if capability is not None
+        and not capability.is_purchasable
+        and capability.monthly_price_cents is None
+        else "subscription"
+    )
 
     return AdminCreatorPlanRow(
         id=row_id,

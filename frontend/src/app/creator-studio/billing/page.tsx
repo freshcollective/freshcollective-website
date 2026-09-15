@@ -57,7 +57,7 @@ function StatusBadge({
   const label =
     state === 'connected' ? 'Connected'
     : state === 'not_connected' ? 'Not connected'
-    : 'Not applicable'
+    : 'Not required'
   return (
     <span
       className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
@@ -358,12 +358,27 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
             <p className="text-[12px] font-semibold uppercase tracking-wide text-black">
               Billing status
             </p>
-            <p
-              className="mt-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
-              style={{ background: '#FEF9C3', color: '#854D0E', display: 'inline-block' }}
-            >
-              Billing not connected yet
-            </p>
+            {/* A plan with monthly_price_cents == 0 AND is_purchasable == false
+                is an internal/comped plan (e.g. Founding Creator). There is
+                nothing to bill and no Stripe setup missing — "not connected"
+                would misrepresent the state. Any priced plan (Creator, Pro)
+                falls through to the historical "Billing not connected yet"
+                pill until real Stripe subscription billing lands. */}
+            {current_plan.monthly_price_cents === 0 && current_plan.is_purchasable === false ? (
+              <p
+                className="mt-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
+                style={{ background: '#F1F5F9', color: '#475569', display: 'inline-block' }}
+              >
+                No billing required
+              </p>
+            ) : (
+              <p
+                className="mt-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
+                style={{ background: '#FEF9C3', color: '#854D0E', display: 'inline-block' }}
+              >
+                Billing not connected yet
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -480,7 +495,21 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
                 Your monthly subscription payment to Fresh Collective
               </p>
             </div>
-            <StatusBadge state={payment_setup.creator_billing_connected ? 'connected' : 'not_connected'} />
+            {/* For a $0 non-purchasable plan there is nothing to bill —
+                surface "Not required" instead of "Not connected", which
+                would imply an incomplete Stripe setup. Any priced or
+                purchasable plan continues to reflect the actual
+                connection state. */}
+            <StatusBadge
+              state={
+                payment_setup.creator_billing_connected
+                  ? 'connected'
+                  : (current_plan.monthly_price_cents === 0
+                      && current_plan.is_purchasable === false)
+                    ? 'not_applicable'
+                    : 'not_connected'
+              }
+            />
           </div>
 
           <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
@@ -542,17 +571,36 @@ function PlanCard({
   plan: CreatorPlanOut
   isCurrent: boolean
 }) {
-  const isOrganisation = !plan.is_purchasable
-  const priceLabel = isOrganisation
+  // "Talk to us" presentation is reserved for plans with truly
+  // custom pricing (Organisation) — identified by
+  // ``monthly_price_cents === null``. A non-purchasable plan with a
+  // fixed price (Founding Creator at $0, or any comped tier) is
+  // rendered as a normal priced card because Fresh Collective has
+  // already set its commercial terms. ``is_purchasable`` continues
+  // to gate the CTA below (no self-service checkout) but does not
+  // force enterprise presentation on top.
+  const isCustomPricing = plan.monthly_price_cents === null
+  const priceLabel = isCustomPricing
     ? 'Talk to us'
     : plan.monthly_price_cents === 0
       ? 'Free'
       : formatPrice(plan.monthly_price_cents, plan.currency)
-  const showMonthly = !isOrganisation && (plan.monthly_price_cents ?? 0) > 0
+  const showMonthly = !isCustomPricing && (plan.monthly_price_cents ?? 0) > 0
 
-  const features = plan.card_features.length > 0
-    ? plan.card_features
-    : legacyFeaturesFallback(plan)
+  // For internal / comped plans (Founding Creator and any future
+  // ``is_purchasable=false`` plan with an explicit $0 price) prefer
+  // DB-derived bullets that reflect the actual assigned terms
+  // (transaction fee %, collective_limit, paid_offers_enabled) over
+  // the static ``card_features`` copy on the capability constant,
+  // which would otherwise inherit whatever generic language the
+  // constant carries. Purchasable plans keep the curated marketing
+  // ``card_features`` unchanged.
+  const isInternalFreeplan = plan.is_purchasable === false && plan.monthly_price_cents === 0
+  const features = isInternalFreeplan
+    ? internalPlanFeatures(plan)
+    : plan.card_features.length > 0
+      ? plan.card_features
+      : legacyFeaturesFallback(plan)
 
   return (
     <div
@@ -596,11 +644,10 @@ function PlanCard({
           >
             Current plan
           </button>
-        ) : isOrganisation ? (
-          // No self-service checkout for Organisation. Link to the
-          // existing /for-creators marketing page as the interim lead
-          // pathway — TODO: replace with a dedicated contact form once
-          // that flow is built.
+        ) : isCustomPricing ? (
+          // Enterprise / custom-pricing plan (Organisation). No
+          // self-service checkout — link to the existing
+          // /for-creators marketing page as the interim lead pathway.
           <a
             href="/for-creators"
             className="block w-full rounded-xl px-4 py-2.5 text-center text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
@@ -636,6 +683,33 @@ function legacyFeaturesFallback(plan: CreatorPlanOut): string[] {
   if (plan.transaction_fee_basis_points !== null) {
     out.push(`${formatFee(plan.transaction_fee_basis_points)} Fresh Collective transaction fee`)
   }
+  return out
+}
+
+/**
+ * Bullet list for internal / comped plans (``is_purchasable=false``
+ * with an explicit $0 price — Founding Creator today). Every line
+ * is derived from the plan's actual DB / capability values so no
+ * hardcoded per-slug copy leaks into the card. The trailing
+ * "Assigned by Fresh Collective" line makes it clear the plan is
+ * not something the creator selects themselves.
+ */
+function internalPlanFeatures(plan: CreatorPlanOut): string[] {
+  const out: string[] = []
+  if (plan.transaction_fee_basis_points !== null) {
+    out.push(`${formatFee(plan.transaction_fee_basis_points)} transaction fee`)
+  }
+  out.push('No monthly platform charge')
+  if (plan.collective_limit !== null) {
+    const noun = plan.collective_limit === 1 ? 'Collective' : 'Collectives'
+    out.push(`Up to ${plan.collective_limit} ${noun}`)
+  } else {
+    out.push('Unlimited Collectives')
+  }
+  if (plan.paid_offers_enabled) {
+    out.push('Paid offers enabled')
+  }
+  out.push('Assigned by Fresh Collective')
   return out
 }
 
