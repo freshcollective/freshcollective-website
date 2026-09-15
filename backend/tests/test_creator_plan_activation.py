@@ -129,6 +129,39 @@ class TestPromoteToCreator:
         ).all()
         assert len(wb) == 1
 
+    def test_admin_role_is_preserved_never_downgraded(
+        self, db, make_user, world_builders,
+    ):
+        """Regression: production incident 2026-09-15 where assigning
+        a Creator Plan to the Fresh Collective founder overwrote her
+        ``users.role='admin'`` with ``'creator'``, immediately
+        stripping World Management access. Admins outrank Creators;
+        plan activation must never downgrade them."""
+        user = make_user(role="admin")
+        promote_to_creator(user, db)
+        db.flush()
+        assert user.role == "admin", (
+            "promote_to_creator must preserve admin role — admins "
+            "already outrank Creators."
+        )
+
+    def test_regular_user_is_promoted_to_creator(
+        self, db, make_user, world_builders,
+    ):
+        user = make_user(role="user")
+        assert user.role == "user"
+        promote_to_creator(user, db)
+        db.flush()
+        assert user.role == "creator"
+
+    def test_creator_role_is_preserved(
+        self, db, make_user, world_builders,
+    ):
+        user = make_user(role="creator")
+        promote_to_creator(user, db)
+        db.flush()
+        assert user.role == "creator"
+
 
 # ---------------------------------------------------------------------------
 # activate_creator_plan — happy paths

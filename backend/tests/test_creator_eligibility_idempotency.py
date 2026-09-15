@@ -196,6 +196,69 @@ class TestReconcilerIdempotency:
         assert rows[0].status == SpaceMembershipStatus.active
 
 
+class TestPlanChangePreservesAdminRole:
+    """End-to-end regression for the production incident 2026-09-15:
+    assigning Founding Creator to the platform admin overwrote
+    ``users.role='admin'`` with ``'creator'`` mid-transaction, which
+    dropped their World Management access. The atomic Change Plan
+    endpoint must never downgrade an existing admin role."""
+
+    def test_admin_receiving_plan_stays_admin(
+        self, db, client, make_user,
+    ):
+        from app.auth.dependencies import get_admin_user
+        from app.main import app
+        from app.models.creator_billing import CreatorPlan
+        from app.models.user import User
+
+        # Seed the target plan.
+        plan = (
+            db.query(CreatorPlan)
+            .filter(CreatorPlan.slug == "founding-creator")
+            .first()
+        )
+        if plan is None:
+            plan = CreatorPlan(
+                id=_uid("cp"),
+                name="Founding Creator",
+                slug="founding-creator",
+                monthly_price_cents=0,
+                transaction_fee_basis_points=0,
+                collective_limit=1,
+                is_active=True,
+            )
+            db.add(plan)
+            db.flush()
+
+        admin_actor = make_user(role="admin")
+        # The subject IS an admin — the exact production case.
+        subject = make_user(role="admin")
+        db.commit()
+
+        app.dependency_overrides[get_admin_user] = lambda: admin_actor
+        try:
+            res = client.post(
+                f"/api/admin/creators/{subject.id}/plan/change",
+                json={
+                    "plan_slug": "founding-creator",
+                    "reason": "comp",
+                    "note": "founder terms",
+                    "duration": "indefinite",
+                },
+            )
+            assert res.status_code == 200, res.text
+        finally:
+            app.dependency_overrides.pop(get_admin_user, None)
+
+        db.expire_all()
+        refreshed = db.query(User).filter(User.id == subject.id).first()
+        assert refreshed is not None
+        assert refreshed.role == "admin", (
+            "Assigning a Creator Plan to an admin must not downgrade "
+            "them to 'creator' — admins outrank Creators."
+        )
+
+
 class TestPlanChangePreservesOwnerMembership:
     """End-to-end: the atomic Change Plan endpoint must succeed when
     the target creator is already a member (via creator_owner) of an

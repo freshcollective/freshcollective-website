@@ -59,20 +59,34 @@ def record_grant_event(
 
 
 def promote_to_creator(user: User, db: Session) -> User:
-    """Set ``user.role='creator'`` (idempotent) and reconcile
-    eligibility-driven memberships (World Builders).
+    """Promote a non-creator user to ``role='creator'`` and reconcile
+    eligibility-driven memberships (World Builders). Never downgrades.
 
     Callable from any context (webhook, admin route, migration). Does
     not commit — the caller owns the transaction. The reconciler is
     itself idempotent per its docstring, so this function is safe to
     call multiple times in the same request.
 
+    Role transitions supported here:
+      * ``user``    → ``creator``  (the intended promotion path)
+      * ``creator`` → ``creator``  (no-op)
+      * ``admin``   → ``admin``    (**preserved** — admins outrank
+        Creators; assigning a Creator Plan to an admin, for example
+        the Fresh Collective founder receiving a Founding Creator
+        plan, must NEVER strip World Management access by
+        overwriting ``users.role='admin'`` with ``'creator'``.
+        Regression: production incident 2026-09-15 where Lindsey
+        lost admin access mid-rollout via this function.)
+
     Deliberately separate from :func:`set_user_role`, which is the
     admin-UI mutation and refuses ``creator`` as a value: promoting a
     user to Creator is not an admin action, it is the effect of a
     successful plan activation.
     """
-    if user.role != "creator":
+    # Only elevate the base ``user`` role. Anything higher (admin) or
+    # already-Creator is a no-op — the eligibility reconciler still
+    # runs afterwards to keep auto_role memberships consistent.
+    if user.role == "user":
         user.role = "creator"
     apply_creator_eligibility_change(user, db)
     return user
