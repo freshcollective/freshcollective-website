@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { apiUrl } from '@/lib/api'
 
 /**
@@ -197,6 +197,18 @@ export default function PaymentOptionsIndexClient({ spaceSlug }: { spaceSlug: st
   const [error, setError] = useState<string | null>(null)
   const [includeArchived, setIncludeArchived] = useState(false)
 
+  // Reorder mode state — drives every "click a card to open it" vs
+  // "grab the handle to reorder" UI branch below. ``draftOrder`` holds
+  // the reordered non-archived rows while the creator is arranging;
+  // Save flushes to the server, Cancel discards. Archived rows are
+  // intentionally frozen out during reorder so a stale UI can't
+  // accidentally shuffle historical options — the server rejects
+  // payloads that touch archived rows too.
+  const [reorderMode, setReorderMode] = useState(false)
+  const [draftOrder, setDraftOrder] = useState<PaymentOptionRow[] | null>(null)
+  const [reorderSaving, setReorderSaving] = useState(false)
+  const [reorderError, setReorderError] = useState<string | null>(null)
+
   useEffect(() => {
     const url = apiUrl(
       `/api/creator/spaces/${spaceSlug}/commerce/payment-options` +
@@ -212,6 +224,71 @@ export default function PaymentOptionsIndexClient({ spaceSlug }: { spaceSlug: st
       .then(setRows)
       .catch((err) => setError(String(err?.message ?? err)))
   }, [spaceSlug, includeArchived])
+
+  // Non-archived rows in server order — the input to reorder mode
+  // and the "shown when arranging" list. Recomputed whenever the
+  // fetched rows change.
+  const activeRows = useMemo(
+    () => (rows ?? []).filter((r) => r.status !== 'archived'),
+    [rows],
+  )
+  const archivedRows = useMemo(
+    () => (rows ?? []).filter((r) => r.status === 'archived'),
+    [rows],
+  )
+
+  function beginReorder() {
+    setDraftOrder(activeRows.slice())
+    setReorderError(null)
+    setReorderMode(true)
+  }
+  function cancelReorder() {
+    setReorderMode(false)
+    setDraftOrder(null)
+    setReorderError(null)
+  }
+  function moveDraft(from: number, to: number) {
+    if (!draftOrder) return
+    if (to < 0 || to >= draftOrder.length || from === to) return
+    const next = draftOrder.slice()
+    const [row] = next.splice(from, 1)
+    next.splice(to, 0, row)
+    setDraftOrder(next)
+  }
+  async function saveReorder() {
+    if (!draftOrder) return
+    setReorderSaving(true)
+    setReorderError(null)
+    try {
+      const res = await fetch(
+        apiUrl(`/api/creator/spaces/${spaceSlug}/commerce/payment-options/reorder`),
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: draftOrder.map((r) => r.id) }),
+        },
+      )
+      if (!res.ok) {
+        let detail = `${res.status} ${res.statusText}`
+        try {
+          const body = (await res.json()) as { detail?: string }
+          if (body?.detail) detail = body.detail
+        } catch { /* ignore */ }
+        throw new Error(detail)
+      }
+      // Optimistic: keep the draft order live; refetch the full list
+      // (including archived, if that view is on) so we pick up any
+      // server-side normalisation.
+      setRows([...draftOrder, ...archivedRows])
+      setReorderMode(false)
+      setDraftOrder(null)
+    } catch (e) {
+      setReorderError(e instanceof Error ? e.message : 'Save failed.')
+    } finally {
+      setReorderSaving(false)
+    }
+  }
 
   if (error) {
     return (
@@ -249,26 +326,136 @@ export default function PaymentOptionsIndexClient({ spaceSlug }: { spaceSlug: st
     )
   }
 
+  const listRows = reorderMode ? (draftOrder ?? []) : rows
+
   return (
     <>
-      <div className="mb-3 flex items-center justify-between text-[12px]">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-[12px]">
         <label className="inline-flex items-center gap-2 text-slate-600">
           <input
             type="checkbox"
             checked={includeArchived}
             onChange={(e) => setIncludeArchived(e.target.checked)}
+            disabled={reorderMode}
             className="rounded border-slate-300"
           />
           Include archived
         </label>
-        <p className="text-slate-500">{rows.length} Payment Option{rows.length === 1 ? '' : 's'}</p>
+        <div className="flex items-center gap-3">
+          <p className="text-slate-500">
+            {reorderMode
+              ? `Reordering ${activeRows.length} option${activeRows.length === 1 ? '' : 's'}`
+              : `${rows.length} Payment Option${rows.length === 1 ? '' : 's'}`}
+          </p>
+          {!reorderMode && activeRows.length > 1 && (
+            <button
+              type="button"
+              onClick={beginReorder}
+              className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[12px] font-medium text-navy-900 hover:border-teal-400 hover:bg-teal-50"
+            >
+              Reorder
+            </button>
+          )}
+          {reorderMode && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={cancelReorder}
+                disabled={reorderSaving}
+                className="inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-[12px] font-medium text-navy-900 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveReorder}
+                disabled={reorderSaving}
+                className="inline-flex items-center rounded-full bg-teal-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-teal-700 disabled:opacity-50"
+              >
+                {reorderSaving ? 'Saving…' : 'Save order'}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
+      {reorderError && (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+          {reorderError}
+        </div>
+      )}
+
       <ul className="space-y-3">
-        {rows.map((row) => {
+        {listRows.map((row, index) => {
           const included = includedList(row)
           const access = accessSummary(row)
           const payments = paymentSummary(row)
+          if (reorderMode) {
+            return (
+              <li
+                key={row.id}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', String(index))
+                  e.dataTransfer.effectAllowed = 'move'
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = 'move'
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const from = Number(e.dataTransfer.getData('text/plain'))
+                  if (!Number.isNaN(from)) moveDraft(from, index)
+                }}
+                className="rounded-xl border border-slate-300 bg-white p-5"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="flex flex-col items-center gap-1">
+                    <span
+                      aria-hidden
+                      className="cursor-grab select-none rounded-md border border-slate-200 px-2 py-1 text-slate-500"
+                      title="Drag to reorder"
+                    >
+                      ≡
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Move ${row.name} up`}
+                      onClick={() => moveDraft(index, index - 1)}
+                      disabled={index === 0}
+                      className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] text-navy-900 hover:bg-slate-50 disabled:opacity-40"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Move ${row.name} down`}
+                      onClick={() => moveDraft(index, index + 1)}
+                      disabled={index === (draftOrder?.length ?? 0) - 1}
+                      className="rounded-md border border-slate-200 px-2 py-0.5 text-[11px] text-navy-900 hover:bg-slate-50 disabled:opacity-40"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-serif text-lg text-navy-900">{row.name}</h3>
+                      {statusPill(row.status)}
+                    </div>
+                    {row.description && (
+                      <p className="mt-1 line-clamp-2 text-[13px] text-slate-600">{row.description}</p>
+                    )}
+                    {payments.length > 0 && (
+                      <p className="mt-2 text-[12px] text-slate-500">
+                        {payments.map((p) => p.text).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            )
+          }
           return (
             <li key={row.id}>
               <Link

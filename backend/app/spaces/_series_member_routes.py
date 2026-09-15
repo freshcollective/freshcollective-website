@@ -391,7 +391,11 @@ def _member_purchasable_options_for_series(
         member checkout runs today. Recurring / manual / subscription
         schedules stay authoring-only (Creator Studio surfaces them).
     """
-    # Options that grant this Series.
+    # Options that grant this Series. Order by the creator-controlled
+    # ``position`` so the member surface honours the Payment Options
+    # Reorder in Creator Studio. ``created_at`` is a stable tiebreaker
+    # for options that happened to share a position value before the
+    # first reorder (early options were created at position 0).
     q = (
         db.query(PaymentOption)
         .join(PaymentOptionGrant, PaymentOptionGrant.payment_option_id == PaymentOption.id)
@@ -401,6 +405,7 @@ def _member_purchasable_options_for_series(
             PaymentOptionGrant.grant_kind == "event_series",
             PaymentOptionGrant.series_id == series.id,
         )
+        .order_by(PaymentOption.position, PaymentOption.created_at)
         .distinct()
     )
     candidates: list[PaymentOption] = q.all()

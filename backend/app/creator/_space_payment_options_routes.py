@@ -105,6 +105,7 @@ from app.creator.schemas import (
     PaymentOptionScheduleResponse,
     PaymentOptionScheduleUpdateRequest,
     PaymentOptionUpdateRequest,
+    ReorderRequest,
 )
 from app.models.payment import (
     PaymentFulfilmentStatus,
@@ -468,6 +469,90 @@ def list_commerce_payment_options(
         PaymentOption.created_at,
     ).all()
     return [_serialise_option(db, space, o) for o in opts]
+
+
+@router.post(
+    "/spaces/{slug}/commerce/payment-options/reorder",
+    status_code=204,
+)
+def reorder_commerce_payment_options(
+    slug: str,
+    body: ReorderRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_creator_user),
+) -> None:
+    """Set the display order of Payment Options in this Collective.
+
+    The client sends the FULL desired ordering — every non-archived
+    Payment Option belonging to the Space (archived rows retain their
+    prior ``position`` untouched). Server enforces:
+
+    * caller manages the Space (owner / moderator; a platform admin
+      may also reorder any Space's options — used for cross-
+      Collective admin overrides);
+    * no duplicate IDs in the payload;
+    * every submitted ID belongs to this Space — a foreign ID (option
+      from another Collective) rejects the entire payload with 400 so
+      we never silently move another creator's option;
+    * the set of submitted IDs matches the Space's non-archived
+      options exactly, so a stale UI can't leave the ordering
+      partially applied.
+
+    Ordering is committed atomically. Archived options keep whatever
+    ``position`` they were carrying, so unarchiving does not reshuffle
+    the visible order.
+    """
+    if current_user.role == "admin":
+        space = db.query(Space).filter(Space.slug == slug).first()
+        if space is None:
+            raise HTTPException(status_code=404, detail="Space not found.")
+    else:
+        space = _get_managed_space(slug, current_user, db)
+
+    ids = list(body.ids)
+    if len(ids) != len(set(ids)):
+        raise HTTPException(
+            status_code=400,
+            detail="Duplicate Payment Option ID in reorder payload.",
+        )
+
+    live_options = (
+        db.query(PaymentOption)
+        .filter(
+            PaymentOption.space_id == space.id,
+            PaymentOption.status != "archived",
+        )
+        .all()
+    )
+    live_ids = {o.id for o in live_options}
+
+    submitted = set(ids)
+    foreign = submitted - live_ids
+    if foreign:
+        # Refuse the whole payload rather than silently ignore — a
+        # foreign ID means either a stale UI, or an attempt to touch
+        # another Collective's Payment Option. Either way, don't
+        # partially apply the change.
+        raise HTTPException(
+            status_code=400,
+            detail="One or more Payment Option IDs do not belong to this Collective.",
+        )
+    missing = live_ids - submitted
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Reorder payload must include every non-archived Payment Option "
+                "in this Collective."
+            ),
+        )
+
+    for i, opt_id in enumerate(ids):
+        db.query(PaymentOption).filter(
+            PaymentOption.id == opt_id,
+            PaymentOption.space_id == space.id,
+        ).update({"position": i})
+    db.commit()
 
 
 @router.post(
