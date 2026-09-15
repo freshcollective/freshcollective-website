@@ -97,7 +97,17 @@ export default async function BillingPage() {
     )
   }
 
-  if (billing.is_platform_owner) {
+  // Route on whether the caller has an actual plan attached.
+  // Historical behaviour routed admins to PlatformOwnerBilling
+  // regardless of subscription state — which meant an admin who
+  // had been granted a Creator Plan (Fresh Collective's founder on
+  // Founding Creator) saw "no creator subscription plan attached"
+  // instead of their real plan. Now: admins without a plan still
+  // route to PlatformOwnerBilling; admins WITH a plan see the same
+  // truthful plan card any other creator sees. The backend
+  // response still carries ``is_platform_owner`` so the plan card
+  // can annotate it if we want.
+  if (billing.is_platform_owner && billing.current_plan === null) {
     return <PlatformOwnerBilling billing={billing} header={headerProps} />
   }
 
@@ -336,6 +346,11 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
                 Monthly plan fee is currently billed manually by Fresh
                 Collective. Automatic Stripe subscription billing is
                 planned but not yet live.
+              </p>
+            )}
+            {billing.is_platform_owner && (
+              <p className="mt-1 text-[12px] italic text-black">
+                Platform Owner privileges also apply to this account.
               </p>
             )}
           </div>

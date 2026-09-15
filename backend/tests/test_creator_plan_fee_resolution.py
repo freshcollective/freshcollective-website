@@ -493,6 +493,61 @@ class TestAtomicPlanChange:
         assert res.status_code == 422
 
 
+class TestBillingResponseAdminWithPlan:
+    """``GET /api/creator/billing`` must reflect an admin's active
+    CreatorSubscription in ``current_plan`` — not silently hide it
+    behind the Platform Owner short-circuit.
+
+    Regression: production incident 2026-09-15 where Lindsey's
+    freshly-assigned Founding Creator sub returned in the DB but the
+    Creator Studio Billing card still showed 'Platform Owner — no
+    creator subscription plan attached'.
+    """
+
+    def test_admin_with_active_sub_reports_plan_and_platform_owner(
+        self, db, client, make_user,
+    ):
+        admin = make_user(role="admin")
+        plan = _ensure_plan(db, slug="founding-creator", fee_bps=0, price=0)
+        _grant_sub(db, admin, plan)
+        db.commit()
+
+        app.dependency_overrides[get_creator_user] = lambda: admin
+        res = client.get("/api/creator/billing")
+        assert res.status_code == 200, res.text
+        body = res.json()
+
+        # Both signals are true — dual status is preserved.
+        assert body["is_platform_owner"] is True
+        assert body["has_active_plan"] is True
+        # And the plan card actually renders the founding-creator row.
+        assert body["current_plan"] is not None
+        assert body["current_plan"]["slug"] == "founding-creator"
+        assert body["current_plan"]["transaction_fee_basis_points"] == 0
+        assert body["current_plan"]["monthly_price_cents"] == 0
+        # Subscription is populated (not None as in the historical
+        # admin-only branch).
+        assert body["subscription"] is not None
+
+    def test_admin_without_sub_still_gets_platform_owner_branch(
+        self, db, client, make_user,
+    ):
+        # Admin with no CreatorSubscription — historical behaviour
+        # remains: current_plan=None, is_platform_owner=True.
+        admin = make_user(role="admin")
+        db.commit()
+
+        app.dependency_overrides[get_creator_user] = lambda: admin
+        res = client.get("/api/creator/billing")
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["is_platform_owner"] is True
+        assert body["current_plan"] is None
+        assert body["subscription"] is None
+        # ``has_active_plan`` stays True — admin always transacts.
+        assert body["has_active_plan"] is True
+
+
 class TestUniqueActiveSubIndex:
     def test_second_active_grant_fails_at_db_level(
         self, db, make_user,

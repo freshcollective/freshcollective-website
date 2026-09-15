@@ -684,8 +684,26 @@ def get_creator_billing(
         media_storage_used_mb=None,  # TODO: sum media asset file sizes when tracked
     )
 
-    # Platform Owner: return the account without any plan attached.
-    if is_platform_owner:
+    # Look up any active/trialing subscription BEFORE branching on
+    # role. An admin who has been granted a Creator Plan (e.g. Fresh
+    # Collective's founder on Founding Creator) must see that plan
+    # reflected truthfully — not the historical "Platform Owner —
+    # no plan attached" copy, which contradicts the DB.
+    subscription = (
+        db.query(CreatorSubscription)
+        .filter(
+            CreatorSubscription.user_id == current_user.id,
+            CreatorSubscription.status.in_(["active", "trialing"]),
+        )
+        .first()
+    )
+
+    # Platform Owner branch — same as before for admins WITHOUT an
+    # active sub. Admins WITH an active sub fall through and are
+    # handled by the creator branch below (with is_platform_owner
+    # still True on the response, so the frontend can surface the
+    # inherent platform-owner privileges separately from the plan).
+    if is_platform_owner and subscription is None:
         return CreatorBillingResponse(
             current_plan=None,
             subscription=None,
@@ -697,15 +715,10 @@ def get_creator_billing(
             plan_permits_paid_offers=True,  # platform owner always permitted
         )
 
-    # Creator: attach the current plan and full plan lineup.
-    subscription = (
-        db.query(CreatorSubscription)
-        .filter(
-            CreatorSubscription.user_id == current_user.id,
-            CreatorSubscription.status.in_(["active", "trialing"]),
-        )
-        .first()
-    )
+    # Creator branch (also covers admin-with-active-sub — the
+    # subscription is authoritative for plan display, and
+    # ``is_platform_owner`` on the response reflects the caller's
+    # role independently).
     db_plans = (
         db.query(CreatorPlan)
         .filter(CreatorPlan.is_active.is_(True))
@@ -757,10 +770,22 @@ def get_creator_billing(
         usage=usage,
         available_plans=available_out,
         payment_setup=payment_setup,
-        is_platform_owner=False,
-        has_active_plan=current_plan_row is not None,
+        # Faithful to the caller's role. An admin with an active
+        # Creator Plan is BOTH a platform owner AND on that plan;
+        # the response reports both so the frontend can render the
+        # real plan card while still signalling admin privileges
+        # separately if it wishes.
+        is_platform_owner=is_platform_owner,
+        # Admin always transacts (fee=0 on any Space they own by
+        # virtue of platform-owned bypass, and any plan they're
+        # assigned resolves normally). ``has_active_plan`` reflects
+        # whether the subscription is truthy — admins without a sub
+        # already took the early-return branch above and get True
+        # there, so this branch only sees admins WITH a sub.
+        has_active_plan=(current_plan_row is not None) or is_platform_owner,
         plan_permits_paid_offers=(
-            current_capability.paid_offers_enabled if current_capability else False
+            current_capability.paid_offers_enabled if current_capability
+            else is_platform_owner
         ),
     )
 
