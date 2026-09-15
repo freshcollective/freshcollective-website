@@ -152,7 +152,14 @@ function PlanTab({ billing }: { billing: CreatorBillingResponse | null }) {
     )
   }
 
-  if (billing.is_platform_owner) {
+  // Route to the Platform Owner card only when the admin has NO
+  // active CreatorSubscription. Admins WITH a plan (e.g. Fresh
+  // Collective's founder on Founding Creator) fall through and see
+  // the real plan card — production incident 2026-09-15 where this
+  // branch fired on ``is_platform_owner`` alone and buried the real
+  // Founding Creator plan behind "no creator subscription plan
+  // attached" copy that contradicted the DB.
+  if (billing.is_platform_owner && billing.current_plan === null) {
     return (
       <section className="rounded-2xl border border-slate-200 bg-white p-6 md:p-7">
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -230,6 +237,16 @@ function PlanTab({ billing }: { billing: CreatorBillingResponse | null }) {
           </dd>
         </div>
         <div>
+          <dt className="text-[12px] font-medium text-slate-500">Transaction fee</dt>
+          <dd className="mt-1 text-[15px] text-navy-900">
+            {plan.transaction_fee_basis_points != null
+              ? `${(plan.transaction_fee_basis_points / 100).toFixed(
+                  plan.transaction_fee_basis_points % 100 === 0 ? 0 : 2,
+                )}% on member sales`
+              : <span className="italic text-slate-400">Not set</span>}
+          </dd>
+        </div>
+        <div>
           <dt className="text-[12px] font-medium text-slate-500">Collectives</dt>
           <dd className="mt-1 text-[15px] text-navy-900">
             {limit != null
@@ -238,6 +255,14 @@ function PlanTab({ billing }: { billing: CreatorBillingResponse | null }) {
           </dd>
         </div>
       </dl>
+      {billing.is_platform_owner && (
+        <p
+          className="mt-4 text-[12.5px] italic"
+          style={{ color: 'rgba(12,24,38,0.60)', fontFamily: 'Georgia, serif' }}
+        >
+          Platform Owner privileges also apply to this account.
+        </p>
+      )}
 
       <div className="mt-6 border-t border-slate-100 pt-5">
         <Link
