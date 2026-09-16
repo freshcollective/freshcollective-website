@@ -677,7 +677,6 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
           <ul className="mt-2 space-y-1 text-[13px] text-black">
             <li>· Stripe Connect onboarding for automatic creator payouts</li>
             <li>· Refunds, disputes, and payout reporting</li>
-            <li>· Creator subscription billing via Stripe</li>
             <li>· GST/tax reporting and invoicing</li>
           </ul>
         </div>
