@@ -46,6 +46,20 @@ class Settings(BaseSettings):
     # production). Defensive check + doc kept in Rule 5 below.
     fc_service_role: str = "web"
 
+    # Per-job opt-out from the boot-time Stripe validator. Most
+    # background jobs DO call Stripe (fc-refund-reconciler reads
+    # /creates Stripe Refund objects) and must fail-fast at deploy
+    # if STRIPE_SECRET_KEY is unset in production — that's the
+    # default (``True``). DB-only jobs (fc-creator-subscription-
+    # grace-reconciler is the current example — it only sweeps
+    # rows with ``grace_expires_at < now`` and never touches
+    # Stripe) set ``FC_JOB_REQUIRES_STRIPE=false`` in their Render
+    # env so they can boot on ``DATABASE_URL`` alone.
+    #
+    # Only consulted when ``fc_service_role='job'``. Web services
+    # always require Stripe in production regardless.
+    fc_job_requires_stripe: bool = True
+
     # Stripe — set both values in .env before accepting real payments.
     # Leave blank/unset in development to disable Stripe endpoints gracefully.
     stripe_secret_key: str | None = None
@@ -515,18 +529,24 @@ class Settings(BaseSettings):
         webhook = self.stripe_webhook_secret
         is_production = self.app_env == "production"
         is_web = self.fc_service_role == "web"
+        is_job = self.fc_service_role == "job"
 
         # Rule 2 — production requires the vars each role actually uses.
         # * STRIPE_SECRET_KEY — every service that makes Stripe API
         #   calls in production needs it (fc-api checkout AND background
-        #   jobs like the refund reconciler).
+        #   jobs like the refund reconciler that actually call Stripe).
+        #   Jobs that never touch Stripe (fc-creator-subscription-grace-
+        #   reconciler is DB-only) opt out via
+        #   ``FC_JOB_REQUIRES_STRIPE=false`` so their cron can boot on
+        #   ``DATABASE_URL`` alone.
         # * STRIPE_WEBHOOK_SECRET — only the web service verifies
         #   incoming webhook signatures. Background jobs never handle
         #   webhooks. Requiring it on a job would be paying for a
         #   capability the job doesn't have.
-        required_stripe_vars: list[tuple[str, str | None]] = [
-            ("STRIPE_SECRET_KEY", secret),
-        ]
+        job_uses_stripe = is_job and self.fc_job_requires_stripe
+        required_stripe_vars: list[tuple[str, str | None]] = []
+        if is_web or job_uses_stripe:
+            required_stripe_vars.append(("STRIPE_SECRET_KEY", secret))
         if is_web:
             required_stripe_vars.append(("STRIPE_WEBHOOK_SECRET", webhook))
         missing = [n for n, v in required_stripe_vars if not v]

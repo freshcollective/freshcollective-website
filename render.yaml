@@ -439,11 +439,17 @@ services:
   # touch member finite payment plans or existing member access.
   #
   # Runtime config (least-privilege):
-  #   * FC_SERVICE_ROLE=job     — skips web-only Settings validators.
-  #   * DATABASE_URL            — same DB as fc-api.
-  #   * APP_ENV=production      — for the Stripe-key mode guard,
-  #                                even though this script never
-  #                                touches Stripe.
+  #   * FC_SERVICE_ROLE=job         — skips web-only Settings validators.
+  #   * FC_JOB_REQUIRES_STRIPE=false — this reconciler is DB-only. Opts
+  #                                    the job out of the boot-time
+  #                                    STRIPE_SECRET_KEY requirement
+  #                                    (added 2026-09-16 after the
+  #                                    initial cron deploy failed on
+  #                                    Settings validation).
+  #   * DATABASE_URL                — same DB as fc-api.
+  #   * APP_ENV=production          — reports the correct environment
+  #                                    to logs / error tracking even
+  #                                    though no Stripe key is needed.
   - type: cron
     name: fc-creator-subscription-grace-reconciler
     runtime: python
@@ -456,6 +462,8 @@ services:
     envVars:
       - key: FC_SERVICE_ROLE
         value: "job"
+      - key: FC_JOB_REQUIRES_STRIPE
+        value: "false"
       - key: APP_ENV
         value: production
       - key: DATABASE_URL

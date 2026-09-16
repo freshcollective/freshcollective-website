@@ -168,3 +168,100 @@ class TestWhitespaceIsTrimmed:
                 stripe_webhook_secret="   ",
             )
         assert "STRIPE_SECRET_KEY" in str(exc.value)
+
+
+class TestJobRoleStripeRequirement:
+    """``FC_SERVICE_ROLE=job`` interaction with the Stripe validator.
+
+    Regression: the fc-creator-subscription-grace-reconciler is DB-only
+    and previously failed to boot because the production Stripe check
+    fired uniformly for every role. The flag ``FC_JOB_REQUIRES_STRIPE``
+    lets a specific DB-only job opt out; jobs that DO call Stripe
+    (fc-refund-reconciler) leave the flag at its default True and
+    continue to fail-fast on missing config.
+    """
+
+    def test_job_role_default_requires_stripe_key_in_production(
+        self, clean_env,
+    ):
+        """Baseline: fc-refund-reconciler (job + implicit
+        ``fc_job_requires_stripe=True``) still fails-fast when
+        STRIPE_SECRET_KEY is missing."""
+        with pytest.raises(ValidationError) as exc:
+            _mk_settings(
+                app_env="production",
+                fc_service_role="job",
+                # STRIPE_SECRET_KEY deliberately unset
+            )
+        assert "STRIPE_SECRET_KEY" in str(exc.value)
+
+    def test_job_role_with_flag_false_boots_without_stripe_key(
+        self, clean_env,
+    ):
+        """Fix: fc-creator-subscription-grace-reconciler sets
+        ``FC_JOB_REQUIRES_STRIPE=false`` in its Render env and boots
+        cleanly on DATABASE_URL alone (in production)."""
+        s = _mk_settings(
+            app_env="production",
+            fc_service_role="job",
+            fc_job_requires_stripe=False,
+            # STRIPE_SECRET_KEY deliberately unset
+        )
+        assert s.stripe_secret_key is None
+        assert s.fc_service_role == "job"
+        assert s.fc_job_requires_stripe is False
+
+    def test_web_role_still_requires_stripe_regardless_of_flag(
+        self, clean_env,
+    ):
+        """Rule 5 defence: setting ``fc_job_requires_stripe=false`` on
+        the WEB service must not weaken the validator — web always
+        needs Stripe in production."""
+        with pytest.raises(ValidationError) as exc:
+            _mk_settings(
+                app_env="production",
+                fc_service_role="web",
+                fc_job_requires_stripe=False,
+                # STRIPE_SECRET_KEY deliberately unset
+            )
+        assert "STRIPE_SECRET_KEY" in str(exc.value)
+
+
+class TestGraceReconcilerScriptBoot:
+    """Smoke: the grace-reconciler script can import + resolve its
+    ``sweep_expired_creator_grace`` entry point under the intended
+    minimal job env (production + FC_SERVICE_ROLE=job +
+    FC_JOB_REQUIRES_STRIPE=false, no Stripe/R2 secrets).
+
+    Doesn't run the cron end-to-end (that requires a live DB) — the
+    goal here is to catch Settings-validation regressions before they
+    reach Render, which is exactly the failure mode this fix
+    addresses.
+    """
+
+    def test_settings_boot_with_minimal_grace_reconciler_env(
+        self, monkeypatch,
+    ):
+        """Rebuild Settings from environ under the exact env vars the
+        cron declares in ``render.yaml`` (minus DATABASE_URL, which
+        Settings requires to exist but doesn't need to be reachable
+        for validation)."""
+        for name in (
+            "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
+            "R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
+            "R2_BUCKET_PRIVATE", "R2_BUCKET_PUBLIC", "R2_PUBLIC_BASE_URL",
+            "JWT_SECRET",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        s = Settings(
+            database_url="postgresql://test-only",
+            app_env="production",
+            fc_service_role="job",
+            fc_job_requires_stripe=False,
+            _env_file=None,
+        )
+        # None of the "web-only" secrets need to be set for this job
+        # to boot cleanly.
+        assert s.stripe_secret_key is None
+        assert s.stripe_webhook_secret is None
+        assert s.jwt_secret is None
