@@ -54,7 +54,11 @@ from app.creator.schemas import (
     AddMemberRequest,
     AddMemberResponse,
     AttendanceUpdateRequest,
+    CreatorBillingPortalResponse,
     CreatorBillingResponse,
+    CreatorPlanChangeRequest,
+    CreatorSubscribeRequest,
+    CreatorSubscribeResponse,
     SpaceBillingContextResponse,
     CreatorMemberItem,
     CreatorPaymentSetup,
@@ -150,7 +154,11 @@ from app.creator.schemas import (
     AccessPassAdminOut,
 )
 from app.models.access_pass import AccessPass, AccessPassStatus
-from app.models.creator_billing import CreatorPlan, CreatorSubscription
+from app.models.creator_billing import (
+    CreatorPlan,
+    CreatorSubscription,
+    CreatorSubscriptionStatus,
+)
 from app.models.payment import PaymentTransaction, PaymentTransactionStatus, PaymentTransactionType, PayoutStatus
 from app.models.payment_option import PaymentOption
 from app.models.payment_option_schedule import PaymentOptionSchedule
@@ -733,12 +741,26 @@ def get_creator_billing(
     )
 
     if subscription:
+        pending_plan_slug: str | None = None
+        if subscription.pending_downgrade_plan_id:
+            pending_plan = (
+                db.query(CreatorPlan)
+                .filter(CreatorPlan.id == subscription.pending_downgrade_plan_id)
+                .first()
+            )
+            pending_plan_slug = pending_plan.slug if pending_plan else None
         sub_out = CreatorSubscriptionOut(
             id=subscription.id,
             status=subscription.status.value if hasattr(subscription.status, "value") else str(subscription.status),
             starts_at=subscription.starts_at,
             ends_at=subscription.ends_at,
-            stripe_connected=False,
+            stripe_connected=bool(subscription.stripe_subscription_id),
+            source=subscription.source,
+            current_period_end=subscription.current_period_end,
+            cancel_at_period_end=subscription.cancel_at_period_end,
+            grace_expires_at=subscription.grace_expires_at,
+            pending_downgrade_plan_slug=pending_plan_slug,
+            pending_downgrade_effective_at=subscription.pending_downgrade_effective_at,
         )
     else:
         sub_out = None
@@ -788,6 +810,319 @@ def get_creator_billing(
             else is_platform_owner
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Creator subscription checkout / portal / lifecycle
+# ---------------------------------------------------------------------------
+
+
+def _resolve_active_creator_subscription(
+    user: User, db: Session,
+) -> CreatorSubscription:
+    """Return the creator's active/trialing/past_due Stripe-backed
+    subscription or raise 409. Used by every lifecycle endpoint below
+    that requires an existing Stripe sub to act on."""
+    sub = (
+        db.query(CreatorSubscription)
+        .filter(
+            CreatorSubscription.user_id == user.id,
+            CreatorSubscription.source == "stripe_paid",
+            CreatorSubscription.stripe_subscription_id.is_not(None),
+            CreatorSubscription.status.in_([
+                CreatorSubscriptionStatus.active,
+                CreatorSubscriptionStatus.trialing,
+                CreatorSubscriptionStatus.past_due,
+            ]),
+        )
+        .first()
+    )
+    if sub is None:
+        raise HTTPException(
+            status_code=409,
+            detail="No active Stripe subscription — start one via /billing/subscribe first.",
+        )
+    return sub
+
+
+def _public_app_url() -> str:
+    """Public origin for Stripe redirect URLs. Delegates to the
+    existing ``settings.resolved_public_app_url`` helper (strips
+    trailing slash and falls back to ``FRONTEND_ORIGIN``)."""
+    return settings.resolved_public_app_url
+
+
+@router.post(
+    "/billing/subscribe",
+    response_model=CreatorSubscribeResponse,
+)
+def start_creator_subscription(
+    body: CreatorSubscribeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> CreatorSubscribeResponse:
+    """Begin a Stripe subscription checkout for the caller.
+
+    Refuses when:
+      * ``settings.stripe_secret_key`` is unset (503);
+      * the target plan is not purchasable (Community, Founding
+        Creator, Organisation — 403);
+      * the required Stripe Price env var is missing (503);
+      * caller already has an active/past_due Stripe subscription on
+        the SAME plan (409).
+
+    Returns a one-shot Stripe Checkout Session URL. Activation of the
+    resulting CreatorSubscription happens only on ``invoice.paid``
+    — see ``webhooks/creator_billing_handlers.py``.
+    """
+    if not settings.stripe_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe payments are not configured on this server.",
+        )
+
+    from app.services import stripe_creator_billing as _scb
+    plan = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.slug == body.plan_slug, CreatorPlan.is_active.is_(True))
+        .first()
+    )
+    if plan is None:
+        raise HTTPException(status_code=404, detail=f"Plan '{body.plan_slug}' not found.")
+    capability = get_plan_capability(plan.slug)
+    if capability is None or not capability.is_purchasable:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Plan '{body.plan_slug}' is not available for self-service "
+                "subscription. Contact Fresh Collective for assignment."
+            ),
+        )
+
+    # Reject "start" against a plan the caller is already on. Upgrade
+    # / downgrade / cancellation each have their own endpoint.
+    existing = (
+        db.query(CreatorSubscription)
+        .filter(
+            CreatorSubscription.user_id == current_user.id,
+            CreatorSubscription.source == "stripe_paid",
+            CreatorSubscription.creator_plan_id == plan.id,
+            CreatorSubscription.status.in_([
+                CreatorSubscriptionStatus.active,
+                CreatorSubscriptionStatus.trialing,
+                CreatorSubscriptionStatus.past_due,
+            ]),
+        )
+        .first()
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"You are already subscribed to the {plan.name} plan. "
+                "Use Manage billing to update your card or cancel."
+            ),
+        )
+
+    try:
+        session = _scb.create_checkout_session(
+            user=current_user,
+            plan=plan,
+            success_url=f"{_public_app_url()}/creator-studio/billing?activated=1",
+            cancel_url=f"{_public_app_url()}/creator-studio/billing?cancelled=1",
+            db=db,
+        )
+    except _scb.StripeCreatorBillingConfigError as exc:
+        # Missing env-var Price ID. Fail-safe 503 — never proceed
+        # against a placeholder ID.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except _scb.PlanNotSubscribableError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    return CreatorSubscribeResponse(checkout_url=session["url"])
+
+
+@router.post(
+    "/billing/portal-session",
+    response_model=CreatorBillingPortalResponse,
+)
+def create_billing_portal_session(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> CreatorBillingPortalResponse:
+    """Return a one-shot Stripe Customer Portal URL for the caller to
+    update card / view invoices / cancel."""
+    if not settings.stripe_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe payments are not configured on this server.",
+        )
+    sub = _resolve_active_creator_subscription(current_user, db)
+    if not sub.stripe_customer_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Your subscription has no Stripe Customer id yet — retry after your first successful payment.",
+        )
+    from app.services import stripe_creator_billing as _scb
+    portal = _scb.create_portal_session(
+        customer_id=sub.stripe_customer_id,
+        return_url=f"{_public_app_url()}/creator-studio/billing",
+    )
+    return CreatorBillingPortalResponse(portal_url=portal["url"])
+
+
+@router.post("/billing/upgrade", status_code=202)
+def upgrade_creator_subscription(
+    body: CreatorPlanChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> dict:
+    """Immediate prorated upgrade to a higher-tier plan.
+
+    Uses ``payment_behavior='pending_if_incomplete'`` so the local
+    plan_id only flips after Stripe confirms the prorated invoice
+    resolved paid (via ``customer.subscription.updated``). If the
+    prorated payment fails, the creator stays on the current tier
+    with the current fee. See workstream amendment C.
+    """
+    if not settings.stripe_enabled:
+        raise HTTPException(status_code=503, detail="Stripe payments are not configured.")
+    sub = _resolve_active_creator_subscription(current_user, db)
+    target = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.slug == body.plan_slug, CreatorPlan.is_active.is_(True))
+        .first()
+    )
+    if target is None:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+    if target.id == sub.creator_plan_id:
+        raise HTTPException(status_code=409, detail="Already on that plan.")
+    # Only true upgrades — same-tier or downgrade must use the
+    # downgrade endpoint (which uses a Schedule).
+    if (target.monthly_price_cents or 0) <= (sub.plan.monthly_price_cents or 0):
+        raise HTTPException(
+            status_code=409,
+            detail="Use /billing/downgrade to move to a lower-priced plan.",
+        )
+    capability = get_plan_capability(target.slug)
+    if capability is None or not capability.is_purchasable:
+        raise HTTPException(status_code=403, detail="Target plan not subscribable.")
+    from app.services import stripe_creator_billing as _scb
+    try:
+        _scb.upgrade_subscription(
+            subscription_id=sub.stripe_subscription_id,
+            target_plan_slug=target.slug,
+        )
+    except _scb.StripeCreatorBillingConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"queued": True}
+
+
+@router.post("/billing/downgrade", status_code=202)
+def downgrade_creator_subscription(
+    body: CreatorPlanChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> dict:
+    """Schedule a downgrade at ``current_period_end`` via Stripe
+    Subscription Schedule. Refuses if current usage exceeds the
+    destination plan's active-Collective limit."""
+    if not settings.stripe_enabled:
+        raise HTTPException(status_code=503, detail="Stripe payments are not configured.")
+    sub = _resolve_active_creator_subscription(current_user, db)
+    target = (
+        db.query(CreatorPlan)
+        .filter(CreatorPlan.slug == body.plan_slug, CreatorPlan.is_active.is_(True))
+        .first()
+    )
+    if target is None:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+    if target.id == sub.creator_plan_id:
+        raise HTTPException(status_code=409, detail="Already on that plan.")
+    if (target.monthly_price_cents or 0) >= (sub.plan.monthly_price_cents or 0):
+        raise HTTPException(
+            status_code=409,
+            detail="Use /billing/upgrade to move to a higher-priced plan.",
+        )
+    capability = get_plan_capability(target.slug)
+    if capability is None or not capability.is_purchasable:
+        raise HTTPException(status_code=403, detail="Target plan not subscribable.")
+
+    # Downgrade over-limit refusal — same pattern as the atomic Change
+    # Plan admin endpoint.
+    if capability.active_collective_limit is not None:
+        current_active_collectives = (
+            db.query(func.count(Space.id))
+            .filter(
+                Space.creator_id == current_user.id,
+                Space.status != "archived",
+            )
+            .scalar() or 0
+        )
+        if current_active_collectives > capability.active_collective_limit:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Cannot downgrade to '{target.slug}': it allows "
+                    f"{capability.active_collective_limit} active "
+                    f"Collective(s); you currently have "
+                    f"{current_active_collectives}. Archive the surplus "
+                    "before downgrading."
+                ),
+            )
+
+    from app.services import stripe_creator_billing as _scb
+    try:
+        schedule = _scb.schedule_downgrade(
+            subscription_id=sub.stripe_subscription_id,
+            target_plan_slug=target.slug,
+        )
+    except _scb.StripeCreatorBillingConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    # Persist enough state to render "Downgrade to Creator scheduled
+    # for {date}". Actual plan-id flip happens when the schedule
+    # transitions and Stripe fires ``customer.subscription.updated``.
+    sub.stripe_subscription_schedule_id = schedule["id"]
+    sub.pending_downgrade_plan_id = target.id
+    sub.pending_downgrade_effective_at = sub.current_period_end
+    db.commit()
+    return {"queued": True, "effective_at": sub.pending_downgrade_effective_at}
+
+
+@router.post("/billing/cancel", status_code=202)
+def cancel_creator_subscription(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> dict:
+    """Flip ``cancel_at_period_end=True`` on the Stripe subscription.
+    Creator retains commercial capability through
+    ``current_period_end``; final cancellation is applied on
+    ``customer.subscription.deleted``."""
+    if not settings.stripe_enabled:
+        raise HTTPException(status_code=503, detail="Stripe payments are not configured.")
+    sub = _resolve_active_creator_subscription(current_user, db)
+    from app.services import stripe_creator_billing as _scb
+    _scb.cancel_at_period_end(sub.stripe_subscription_id)
+    sub.cancel_at_period_end = True
+    db.commit()
+    return {"queued": True}
+
+
+@router.post("/billing/reactivate", status_code=202)
+def reactivate_creator_subscription(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> dict:
+    """Undo a pending cancellation before it takes effect."""
+    if not settings.stripe_enabled:
+        raise HTTPException(status_code=503, detail="Stripe payments are not configured.")
+    sub = _resolve_active_creator_subscription(current_user, db)
+    from app.services import stripe_creator_billing as _scb
+    _scb.reactivate(sub.stripe_subscription_id)
+    sub.cancel_at_period_end = False
+    db.commit()
+    return {"queued": True}
 
 
 @router.get(

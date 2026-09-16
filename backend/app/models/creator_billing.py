@@ -75,8 +75,15 @@ class CreatorPlan(Base):
         nullable=False,
     )
 
+    # ``subscriptions`` follows the ACTIVE plan pointer
+    # (``creator_subscriptions.creator_plan_id``). CreatorSubscription
+    # also has ``pending_downgrade_plan_id`` (added by migration 131)
+    # which is a separate FK to creator_plans; ``foreign_keys`` here
+    # disambiguates against that column.
     subscriptions: Mapped[list["CreatorSubscription"]] = relationship(
-        "CreatorSubscription", back_populates="plan"
+        "CreatorSubscription",
+        back_populates="plan",
+        foreign_keys="CreatorSubscription.creator_plan_id",
     )
 
 
@@ -158,11 +165,66 @@ class CreatorSubscription(Base):
     )
     revoked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # TODO: Stripe billing — populate these when Stripe subscriptions go live
+    # Stripe billing — populated for ``source='stripe_paid'`` rows once
+    # the initial invoice is confirmed paid. ``stripe_customer_id`` and
+    # ``stripe_subscription_id`` are set via
+    # ``checkout.session.completed``; ``current_period_end`` and
+    # subsequent lifecycle columns come from ``invoice.paid`` /
+    # ``customer.subscription.updated``. See migration 131 for the
+    # column addition and ``app/services/stripe_creator_billing.py`` for
+    # the write sites.
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     stripe_customer_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
-    plan: Mapped[CreatorPlan] = relationship("CreatorPlan", back_populates="subscriptions")
+    # Renewal date reported by Stripe (`subscription.current_period_end`).
+    # Populated at activation and refreshed on every
+    # ``customer.subscription.updated`` / ``invoice.paid`` event.
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    # True when Stripe reports ``cancel_at_period_end=true``. The
+    # subscription remains ``status='active'`` (or ``past_due``) until
+    # Stripe fires ``customer.subscription.deleted`` at
+    # ``current_period_end``, which then flips ``status='cancelled'``.
+    # Creator retains commercial capability through the paid-through
+    # date.
+    cancel_at_period_end: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
+    # Fresh Collective's 7-day grace window after a failed invoice
+    # payment. Set by ``invoice.payment_failed``. Cleared on
+    # ``invoice.paid`` (recovery). If the grace-expiry cron finds
+    # ``grace_expires_at < now`` while ``status='past_due'``, it flips
+    # ``status='unpaid'`` — new paid checkout is then blocked via the
+    # existing ``NoActiveCreatorPlanError`` guard. Existing members are
+    # not affected.
+    grace_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+
+    # Scheduled Pro → Creator downgrade metadata. When present, a
+    # Stripe Subscription Schedule is queued to switch the recurring
+    # Price at ``pending_downgrade_effective_at`` (= current
+    # ``current_period_end`` at the moment the downgrade was scheduled).
+    # Creator retains the higher tier's fee + capabilities until that
+    # date. Cleared when the schedule is cancelled or the switch
+    # completes. See ``stripe_creator_billing.schedule_downgrade``.
+    pending_downgrade_plan_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("creator_plans.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    pending_downgrade_effective_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    stripe_subscription_schedule_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True,
+    )
+
+    plan: Mapped[CreatorPlan] = relationship(
+        "CreatorPlan",
+        back_populates="subscriptions",
+        foreign_keys=[creator_plan_id],
+    )
 
 
 class CreatorPlanGrant(Base):

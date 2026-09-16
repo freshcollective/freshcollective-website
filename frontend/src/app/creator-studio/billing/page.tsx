@@ -2,6 +2,12 @@ import { getActiveCreatorSpace, getCreatorBilling, getCreatorSpace } from '@/lib
 import type { CreatorBillingResponse, CreatorPlanOut, CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import BillingFeeCalculator from './BillingFeeCalculator'
+import {
+  CancelSubscriptionButton,
+  ManageBillingButton,
+  ReactivateSubscriptionButton,
+  StartSubscriptionButton,
+} from './BillingActions'
 
 export const metadata = { title: 'Billing — Creator Studio' }
 
@@ -37,6 +43,55 @@ function formatPrice(cents: number | null, currency: string): string {
 function formatFee(basisPoints: number | null): string {
   if (basisPoints === null) return 'To be defined'
   return `${(basisPoints / 100).toFixed(0)}%`
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-AU', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  })
+}
+
+/**
+ * Contextual billing-status pill. Reads the truest available state
+ * from ``billing.subscription`` and falls back to the "not required
+ * / not connected" categorisation used for manual-grant + priced-but-
+ * not-yet-billed plans.
+ */
+function BillingStatusPill({ billing, plan }: {
+  billing: CreatorBillingResponse
+  plan: CreatorPlanOut
+}) {
+  const sub = billing.subscription
+  const stripePaid = sub?.source === 'stripe_paid'
+  let label = 'Billing not connected yet'
+  let style: React.CSSProperties = { background: '#FEF9C3', color: '#854D0E' }
+  if (plan.monthly_price_cents === 0 && plan.is_purchasable === false) {
+    label = 'No billing required'
+    style = { background: '#F1F5F9', color: '#475569' }
+  } else if (stripePaid && sub?.status === 'active') {
+    label = 'Active'
+    style = { background: '#ECFDF5', color: '#065F46' }
+  } else if (stripePaid && sub?.status === 'past_due') {
+    label = 'Past due (grace)'
+    style = { background: '#FFF7ED', color: '#7C2D12' }
+  } else if (stripePaid && sub?.status === 'unpaid') {
+    label = 'Lapsed'
+    style = { background: '#FEF2F2', color: '#7F1D1D' }
+  } else if (stripePaid && sub?.status === 'cancelled') {
+    label = 'Cancelled'
+    style = { background: '#F1F5F9', color: '#475569' }
+  }
+  return (
+    <p
+      className="mt-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
+      style={{ ...style, display: 'inline-block' }}
+    >
+      {label}
+    </p>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -341,11 +396,17 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
               &nbsp;·&nbsp;
               {formatFee(current_plan.transaction_fee_basis_points)} transaction fee
             </p>
-            {current_plan.monthly_price_cents !== null && current_plan.monthly_price_cents > 0 && (
+            {billing.subscription?.source === 'stripe_paid'
+              && billing.subscription.current_period_end && (
+              <p className="mt-1 text-[12px] text-black">
+                Renews {formatDate(billing.subscription.current_period_end)}
+              </p>
+            )}
+            {billing.subscription?.source === 'manual_grant'
+              && current_plan.monthly_price_cents !== null
+              && current_plan.monthly_price_cents > 0 && (
               <p className="mt-1 text-[12px] italic text-black">
-                Monthly plan fee is currently billed manually by Fresh
-                Collective. Automatic Stripe subscription billing is
-                planned but not yet live.
+                Billed manually by Fresh Collective.
               </p>
             )}
             {billing.is_platform_owner && (
@@ -358,29 +419,82 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
             <p className="text-[12px] font-semibold uppercase tracking-wide text-black">
               Billing status
             </p>
-            {/* A plan with monthly_price_cents == 0 AND is_purchasable == false
-                is an internal/comped plan (e.g. Founding Creator). There is
-                nothing to bill and no Stripe setup missing — "not connected"
-                would misrepresent the state. Any priced plan (Creator, Pro)
-                falls through to the historical "Billing not connected yet"
-                pill until real Stripe subscription billing lands. */}
-            {current_plan.monthly_price_cents === 0 && current_plan.is_purchasable === false ? (
-              <p
-                className="mt-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
-                style={{ background: '#F1F5F9', color: '#475569', display: 'inline-block' }}
-              >
-                No billing required
-              </p>
-            ) : (
-              <p
-                className="mt-1.5 rounded-full px-3 py-1 text-[13px] font-semibold"
-                style={{ background: '#FEF9C3', color: '#854D0E', display: 'inline-block' }}
-              >
-                Billing not connected yet
-              </p>
-            )}
+            <BillingStatusPill billing={billing} plan={current_plan} />
           </div>
         </div>
+
+        {/* Contextual banners — past_due grace, cancel_at_period_end,
+            unpaid/lapsed. Every banner reads truthful state directly
+            from ``billing.subscription`` fields the backend populates
+            from webhook data. */}
+        {billing.subscription?.status === 'past_due' && billing.subscription.grace_expires_at && (
+          <div
+            className="mt-4 rounded-xl px-4 py-3 text-[13px]"
+            style={{ background: '#FFF7ED', border: '1px solid #FBD38D', color: '#7C2D12' }}
+          >
+            <p className="font-semibold">Payment failed — please update your card.</p>
+            <p className="mt-1">
+              Your subscription will lapse on{' '}
+              {formatDate(billing.subscription.grace_expires_at)} if payment is
+              not recovered. Existing member purchases and access continue
+              regardless.
+            </p>
+          </div>
+        )}
+        {billing.subscription?.status === 'unpaid' && (
+          <div
+            className="mt-4 rounded-xl px-4 py-3 text-[13px]"
+            style={{ background: '#FEF2F2', border: '1px solid #FCA5A5', color: '#7F1D1D' }}
+          >
+            <p className="font-semibold">Subscription lapsed.</p>
+            <p className="mt-1">
+              New paid sales are blocked. Existing member purchases and
+              access continue. Update your billing to reactivate.
+            </p>
+          </div>
+        )}
+        {billing.subscription?.cancel_at_period_end
+          && billing.subscription.current_period_end && (
+          <div
+            className="mt-4 rounded-xl px-4 py-3 text-[13px]"
+            style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#334155' }}
+          >
+            <p className="font-semibold">
+              Cancellation scheduled for{' '}
+              {formatDate(billing.subscription.current_period_end)}.
+            </p>
+            <p className="mt-1">
+              You retain commercial capability until then. Existing member
+              purchases and payment plans continue after cancellation.
+            </p>
+          </div>
+        )}
+        {billing.subscription?.pending_downgrade_plan_slug
+          && billing.subscription.pending_downgrade_effective_at && (
+          <div
+            className="mt-4 rounded-xl px-4 py-3 text-[13px]"
+            style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#334155' }}
+          >
+            <p className="font-semibold">
+              Downgrade to {billing.subscription.pending_downgrade_plan_slug} scheduled for{' '}
+              {formatDate(billing.subscription.pending_downgrade_effective_at)}.
+            </p>
+          </div>
+        )}
+
+        {/* Primary CTAs — Manage billing for Stripe-paid subs;
+            Cancel / Reactivate as the sub state warrants. Manual-grant
+            plans (Founding Creator / admin-comped Community) don't
+            expose these — there's nothing to manage. */}
+        {billing.subscription?.source === 'stripe_paid' && (
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <ManageBillingButton />
+            {billing.subscription.cancel_at_period_end
+              ? <ReactivateSubscriptionButton />
+              : billing.subscription.status !== 'cancelled'
+                && <CancelSubscriptionButton />}
+          </div>
+        )}
       </div>
 
       {/* Usage */}
@@ -655,14 +769,24 @@ function PlanCard({
           >
             Talk to us
           </a>
+        ) : (plan.slug === 'creator' || plan.slug === 'pro') ? (
+          // Real Stripe subscription checkout. The button is a client
+          // component so it can call the API + redirect.
+          <StartSubscriptionButton
+            planSlug={plan.slug}
+            label={`Start ${plan.name} subscription`}
+          />
         ) : (
+          // Non-purchasable plans that aren't the current plan and
+          // aren't Organisation (e.g. Community shown to a Creator
+          // user). Keep quiet — plan-change to a lower tier is an
+          // admin action for MVP.
           <button
             disabled
             className="w-full cursor-not-allowed rounded-xl px-4 py-2.5 text-[13px] font-semibold text-black"
             style={{ background: '#F1F5F9', border: '1px solid #E2E8F0', opacity: 0.6 }}
-            title="Automatic plan changes coming soon"
           >
-            Change plan — coming soon
+            Not available
           </button>
         )}
       </div>

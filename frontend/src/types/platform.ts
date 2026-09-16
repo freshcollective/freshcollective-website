@@ -1290,6 +1290,18 @@ export interface CreatorSubscriptionOut {
   starts_at: string
   ends_at: string | null
   stripe_connected: boolean
+  /** 'stripe_paid' when the sub is Stripe-billed, 'manual_grant' when
+   *  admin-comped (Founding Creator, Community). */
+  source?: 'stripe_paid' | 'manual_grant'
+  /** Renewal date from Stripe. Populated for source='stripe_paid' subs. */
+  current_period_end?: string | null
+  /** True when the creator has scheduled a cancellation at period end. */
+  cancel_at_period_end?: boolean
+  /** Fresh Collective's 7-day grace deadline after a failed invoice. */
+  grace_expires_at?: string | null
+  /** Populated when a Pro → Creator downgrade is scheduled. */
+  pending_downgrade_plan_slug?: string | null
+  pending_downgrade_effective_at?: string | null
 }
 
 export interface CreatorUsage {

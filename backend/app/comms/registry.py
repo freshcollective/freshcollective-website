@@ -144,6 +144,16 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # no-op path returns ``was_noop=True`` and the emit site skips).
     EventDefinition("creator.plan_activated",             TOPIC_ACCOUNT,            PRIORITY_IMMEDIATE),
 
+    # Creator monthly Stripe subscription lifecycle. Same TOPIC_ACCOUNT
+    # + immediate priority as plan_activated — every one of these is
+    # a "your billing state has changed" transactional message that
+    # must not be preference-gated. Emitted from the creator-billing
+    # webhook handlers (see ``app/webhooks/creator_billing_handlers.py``).
+    EventDefinition("creator.subscription.payment_failed",         TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    EventDefinition("creator.subscription.recovered",              TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    EventDefinition("creator.subscription.cancellation_scheduled", TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+    EventDefinition("creator.subscription.cancelled",              TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
+
     # Creator updates (broadcasts internally, "Updates" to members)
     EventDefinition("creator.update.sent",                TOPIC_CREATOR_BROADCASTS, PRIORITY_IMMEDIATE),
 

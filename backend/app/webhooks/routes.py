@@ -106,53 +106,120 @@ async def stripe_webhook(
     event_livemode = bool(event["livemode"])
 
     if event_type == "checkout.session.completed":
-        _handle_checkout_completed(
-            event_object, db,
-            event_livemode=event_livemode,
-        )
+        # Creator-subscription checkout links the Stripe Customer +
+        # Subscription onto a placeholder ``CreatorSubscription`` row
+        # with ``status='past_due'``. Activation to ``status='active'``
+        # only happens on ``invoice.paid`` — see workstream amendment A.
+        # Every other checkout kind (member finite-plan, standalone
+        # gathering, pay-in-full pathway) continues to fall through to
+        # the existing ``_handle_checkout_completed`` dispatcher.
+        metadata = event_object.get("metadata") or {}
+        if metadata.get("purchase_type") == "creator_subscription":
+            from app.webhooks.creator_billing_handlers import (
+                handle_checkout_completed_creator_subscription,
+            )
+            handle_checkout_completed_creator_subscription(
+                event_object, db,
+                event_id=event["id"],
+                event_type=event_type,
+            )
+        else:
+            _handle_checkout_completed(
+                event_object, db,
+                event_livemode=event_livemode,
+            )
     elif event_type == "checkout.session.expired":
         _handle_checkout_expired(event_object, db)
     elif event_type == "payment_intent.payment_failed":
         _handle_payment_failed(event_object, db)
-    elif event_type == "invoice.payment_succeeded":
-        # FIP2 — first-invoice fulfilment for finite payment plans.
-        # FIP3 — later-instalment recording, recovery from
-        # payment_problem, completion transition; all inside the
-        # same handler which dispatches on plan.status.
-        from app.webhooks.finite_plan_handlers import (
-            handle_invoice_payment_succeeded,
+    elif event_type in ("invoice.paid", "invoice.payment_succeeded"):
+        # Try creator-subscription routing FIRST. The creator-billing
+        # handler retrieves the underlying Stripe Subscription and
+        # gates on ``metadata.purchase_type == 'creator_subscription'``;
+        # if the invoice belongs to a member finite-plan subscription
+        # instead, it returns False and we fall through to the FIP2/3
+        # handler. Isolation invariant per workstream amendment B.
+        from app.webhooks.creator_billing_handlers import (
+            handle_invoice_paid as _handle_creator_invoice_paid,
         )
-        handle_invoice_payment_succeeded(
+        handled_creator = _handle_creator_invoice_paid(
             event_object, db,
-            provider_event_id=event["id"],
-            event_livemode=event_livemode,
+            event_id=event["id"],
+            event_type=event_type,
         )
+        if not handled_creator:
+            # FIP2 — first-invoice fulfilment for finite payment plans.
+            # FIP3 — later-instalment recording, recovery from
+            # payment_problem, completion transition; all inside the
+            # same handler which dispatches on plan.status.
+            from app.webhooks.finite_plan_handlers import (
+                handle_invoice_payment_succeeded,
+            )
+            handle_invoice_payment_succeeded(
+                event_object, db,
+                provider_event_id=event["id"],
+                event_livemode=event_livemode,
+            )
     elif event_type == "invoice.payment_failed":
-        # FIP3 — later-instalment failure opens the 7-day grace
-        # window. Payment_intent-level failures on the pay-in-full
-        # path continue to be handled by the legacy
-        # ``payment_intent.payment_failed`` branch above.
-        from app.webhooks.finite_plan_handlers import (
-            handle_invoice_payment_failed,
+        # Creator-subscription failure → 7-day grace. Falls through to
+        # finite-plan handler if the invoice belongs to a member sub.
+        from app.webhooks.creator_billing_handlers import (
+            handle_invoice_payment_failed as _handle_creator_invoice_failed,
         )
-        handle_invoice_payment_failed(
+        handled_creator = _handle_creator_invoice_failed(
             event_object, db,
-            provider_event_id=event["id"],
-            event_livemode=event_livemode,
+            event_id=event["id"],
+            event_type=event_type,
+        )
+        if not handled_creator:
+            # FIP3 — later-instalment failure opens the 7-day grace
+            # window. Payment_intent-level failures on the pay-in-full
+            # path continue to be handled by the legacy
+            # ``payment_intent.payment_failed`` branch above.
+            from app.webhooks.finite_plan_handlers import (
+                handle_invoice_payment_failed,
+            )
+            handle_invoice_payment_failed(
+                event_object, db,
+                provider_event_id=event["id"],
+                event_livemode=event_livemode,
+            )
+    elif event_type == "customer.subscription.updated":
+        # Creator-subscription only; member finite-plan subscriptions
+        # do not currently subscribe to this event type. Metadata gate
+        # ensures isolation regardless.
+        from app.webhooks.creator_billing_handlers import (
+            handle_subscription_updated as _handle_creator_sub_updated,
+        )
+        _handle_creator_sub_updated(
+            event_object, db,
+            event_id=event["id"],
+            event_type=event_type,
         )
     elif event_type == "customer.subscription.deleted":
-        # FIP3 — reconcile plan state with Stripe subscription end.
-        # Distinguishes normal finite end (installments_paid ==
-        # expected → completed) from abnormal end (paid < expected
-        # → failed + suspend access, source-aware).
-        from app.webhooks.finite_plan_handlers import (
-            handle_subscription_deleted,
+        # Try creator-subscription routing FIRST. If the deleted sub
+        # belongs to a member finite-plan, fall through to FIP3.
+        from app.webhooks.creator_billing_handlers import (
+            handle_subscription_deleted as _handle_creator_sub_deleted,
         )
-        handle_subscription_deleted(
+        handled_creator = _handle_creator_sub_deleted(
             event_object, db,
-            provider_event_id=event["id"],
-            event_livemode=event_livemode,
+            event_id=event["id"],
+            event_type=event_type,
         )
+        if not handled_creator:
+            # FIP3 — reconcile plan state with Stripe subscription end.
+            # Distinguishes normal finite end (installments_paid ==
+            # expected → completed) from abnormal end (paid < expected
+            # → failed + suspend access, source-aware).
+            from app.webhooks.finite_plan_handlers import (
+                handle_subscription_deleted,
+            )
+            handle_subscription_deleted(
+                event_object, db,
+                provider_event_id=event["id"],
+                event_livemode=event_livemode,
+            )
     elif event_type == "subscription_schedule.completed":
         # FIP3 — belt-and-braces companion to subscription.deleted.
         from app.webhooks.finite_plan_handlers import (

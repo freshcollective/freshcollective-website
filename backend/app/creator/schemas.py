@@ -1710,8 +1710,19 @@ class CreatorSubscriptionOut(BaseModel):
     status: str
     starts_at: datetime
     ends_at: datetime | None
-    # Stripe fields intentionally not exposed here
-    stripe_connected: bool = False  # always False until Stripe is live
+    stripe_connected: bool = False
+    # Lifecycle surface for the Creator Studio Billing UI. Never
+    # exposes Stripe subscription/customer ids — those live on
+    # ``CreatorSubscription`` for server-side use and stay behind
+    # the schema boundary.
+    source: str = "manual_grant"       # 'stripe_paid' | 'manual_grant'
+    current_period_end: datetime | None = None
+    cancel_at_period_end: bool = False
+    grace_expires_at: datetime | None = None
+    # Populated when a Pro → Creator downgrade is scheduled. Frontend
+    # uses this to render "Downgrade to {plan_name} scheduled for {date}".
+    pending_downgrade_plan_slug: str | None = None
+    pending_downgrade_effective_at: datetime | None = None
 
 
 class CreatorUsage(BaseModel):
@@ -1749,6 +1760,26 @@ class CreatorBillingResponse(BaseModel):
     # Platform Owner is True. Community is False. Creator/Pro/Founding
     # Creator/Organisation are True.
     plan_permits_paid_offers: bool = False
+
+
+class CreatorSubscribeRequest(BaseModel):
+    """Body of ``POST /api/creator/billing/subscribe``."""
+    plan_slug: str
+
+
+class CreatorSubscribeResponse(BaseModel):
+    """Response with the Stripe Checkout URL to redirect to."""
+    checkout_url: str
+
+
+class CreatorBillingPortalResponse(BaseModel):
+    portal_url: str
+
+
+class CreatorPlanChangeRequest(BaseModel):
+    """Body of ``POST /api/creator/billing/upgrade`` +
+    ``POST /api/creator/billing/downgrade``."""
+    plan_slug: str
 
 
 class SpaceBillingContextResponse(BaseModel):

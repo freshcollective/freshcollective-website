@@ -479,6 +479,13 @@ class AdminCreatorSubscriptionRow(BaseModel):
     revoked_at: datetime | None = None
     stripe_subscription_id: str | None
     stripe_customer_id: str | None
+    # Stripe subscription lifecycle fields — populated for
+    # ``source='stripe_paid'`` rows via the creator-billing webhook
+    # handlers. NULL for manual_grant rows. Renewal date +
+    # cancellation-scheduled flag + FC grace window.
+    current_period_end: datetime | None = None
+    cancel_at_period_end: bool = False
+    grace_expires_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -2904,6 +2904,9 @@ def list_creator_subscriptions_admin(
             revoked_at=sub.revoked_at,
             stripe_subscription_id=getattr(sub, "stripe_subscription_id", None),
             stripe_customer_id=getattr(sub, "stripe_customer_id", None),
+            current_period_end=getattr(sub, "current_period_end", None),
+            cancel_at_period_end=bool(getattr(sub, "cancel_at_period_end", False)),
+            grace_expires_at=getattr(sub, "grace_expires_at", None),
             created_at=sub.created_at,
             updated_at=sub.updated_at,
         ))
