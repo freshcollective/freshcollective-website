@@ -615,17 +615,24 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
                 Your monthly subscription payment to Fresh Collective
               </p>
             </div>
-            {/* For a $0 non-purchasable plan there is nothing to bill —
-                surface "Not required" instead of "Not connected", which
-                would imply an incomplete Stripe setup. Any priced or
-                purchasable plan continues to reflect the actual
-                connection state. */}
+            {/* Any $0 plan has nothing to bill — surface
+                "Not required" instead of "Not connected", which would
+                imply a broken Stripe setup. Covers BOTH Founding
+                Creator (``monthly=0`` + ``is_purchasable=false``,
+                admin-comped) AND Community (``monthly=0`` +
+                ``is_purchasable=true``, free non-commercial). Only
+                priced plans that lack a live Stripe subscription
+                fall through to "Not connected". Note: an ended /
+                lapsed / cancelled Stripe subscription cannot reach
+                this pill — the backend's subscription query filters
+                on ``status IN ('active','trialing')`` so
+                ``creator_billing_connected`` can only be True when
+                billing is actually healthy. */}
             <StatusBadge
               state={
                 payment_setup.creator_billing_connected
                   ? 'connected'
-                  : (current_plan.monthly_price_cents === 0
-                      && current_plan.is_purchasable === false)
+                  : current_plan.monthly_price_cents === 0
                     ? 'not_applicable'
                     : 'not_connected'
               }
