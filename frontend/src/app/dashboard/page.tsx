@@ -316,6 +316,7 @@ export default async function DashboardPage() {
             <Section
               title="Your Collectives"
               subtitle="Communities you&rsquo;re currently part of."
+              action={cards.length > 0 ? <CreateCollectiveLink /> : null}
               noSpacing
               className="order-3 lg:col-start-1 lg:row-start-2"
             >
@@ -330,17 +331,7 @@ export default async function DashboardPage() {
                   ))}
                 </div>
               ) : (
-                <div
-                  className="rounded-2xl bg-white px-6 py-8 text-center"
-                  style={ATLAS_CARD_STYLE}
-                >
-                  <p
-                    className="text-[14px] italic"
-                    style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
-                  >
-                    You&rsquo;re not part of any Collectives yet.
-                  </p>
-                </div>
+                <EmptyCollectivesCard />
               )}
             </Section>
           </div>
@@ -353,6 +344,7 @@ export default async function DashboardPage() {
             <Section
               title="Your Collectives"
               subtitle="Communities you&rsquo;re currently part of."
+              action={cards.length > 0 ? <CreateCollectiveLink /> : null}
               noSpacing
             >
               {cards.length > 0 ? (
@@ -366,17 +358,7 @@ export default async function DashboardPage() {
                   ))}
                 </div>
               ) : (
-                <div
-                  className="rounded-2xl bg-white px-6 py-8 text-center"
-                  style={ATLAS_CARD_STYLE}
-                >
-                  <p
-                    className="text-[14px] italic"
-                    style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
-                  >
-                    You&rsquo;re not part of any Collectives yet.
-                  </p>
-                </div>
+                <EmptyCollectivesCard />
               )}
             </Section>
           </div>
@@ -493,7 +475,7 @@ export default async function DashboardPage() {
 // ---------------------------------------------------------------------------
 
 function Section({
-  eyebrow, title, subtitle, children, noSpacing, className,
+  eyebrow, title, subtitle, action, children, noSpacing, className,
 }: {
   /** Optional small caps label above the title. Most Your World
    *  sections drop this — a home shouldn't feel like a dashboard
@@ -501,6 +483,10 @@ function Section({
   eyebrow?: string
   title: string
   subtitle?: string
+  /** Optional right-aligned action slot beside the title. Used by
+   *  Your Collectives to surface the Create-a-Collective link on the
+   *  populated state without dominating the section. */
+  action?: React.ReactNode
   children: React.ReactNode
   /** When true, omit the top margin — used when the Section is placed
    *  inside a composed layout wrapper that already provides spacing. */
@@ -511,32 +497,97 @@ function Section({
   const spacingClass = noSpacing ? '' : 'mt-14 first:mt-10'
   return (
     <section className={[spacingClass, className].filter(Boolean).join(' ')}>
-      <div className="mb-6">
-        {eyebrow && (
-          <p
-            className="mb-2 text-[11px] font-semibold uppercase tracking-[0.28em]"
-            style={{ color: '#38A09E' }}
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          {eyebrow && (
+            <p
+              className="mb-2 text-[11px] font-semibold uppercase tracking-[0.28em]"
+              style={{ color: '#38A09E' }}
+            >
+              {eyebrow}
+            </p>
+          )}
+          <h2
+            className="font-serif text-[22px] leading-tight md:text-[24px]"
+            style={{ color: '#0C1826' }}
           >
-            {eyebrow}
-          </p>
-        )}
-        <h2
-          className="font-serif text-[22px] leading-tight md:text-[24px]"
-          style={{ color: '#0C1826' }}
-        >
-          {title}
-        </h2>
-        {subtitle && (
-          <p
-            className="mt-1.5 max-w-[560px] text-[13.5px] italic leading-relaxed"
-            style={{ color: 'rgba(12, 24, 38, 0.60)', fontFamily: 'Georgia, serif' }}
-          >
-            {subtitle}
-          </p>
+            {title}
+          </h2>
+          {subtitle && (
+            <p
+              className="mt-1.5 max-w-[560px] text-[13.5px] italic leading-relaxed"
+              style={{ color: 'rgba(12, 24, 38, 0.60)', fontFamily: 'Georgia, serif' }}
+            >
+              {subtitle}
+            </p>
+          )}
+        </div>
+        {action && (
+          <div className="shrink-0 self-center">{action}</div>
         )}
       </div>
       {children}
     </section>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
+// Your Collectives — Create a Collective discoverability
+// ---------------------------------------------------------------------------
+//
+// Both CTAs below deep-link to ``/for-creators``, matching the public
+// homepage HeroPrimaryCta ("Create a Collective" at HomeHero.tsx:123)
+// so the authenticated dashboard and the unauthenticated marketing
+// hero converge on the same creator-entry flow. Plan selection,
+// Community / Creator / Pro eligibility, active-Collective limits and
+// the CREATOR_PLAN_GUARD_ENABLED gate all continue to be enforced by
+// the existing backend/creation path — this component only surfaces
+// the entry point.
+
+const CREATE_COLLECTIVE_HREF = '/for-creators'
+
+function CreateCollectiveLink() {
+  return (
+    <Link
+      href={CREATE_COLLECTIVE_HREF}
+      className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-navy-900 transition-colors hover:border-teal-400 hover:bg-teal-50"
+    >
+      <span aria-hidden>+</span> Create a Collective
+    </Link>
+  )
+}
+
+function EmptyCollectivesCard() {
+  return (
+    <div
+      className="rounded-2xl bg-white px-6 py-8 text-center"
+      style={ATLAS_CARD_STYLE}
+    >
+      <p
+        className="text-[14px] italic"
+        style={{ color: 'rgba(12, 24, 38, 0.62)', fontFamily: 'Georgia, serif' }}
+      >
+        You&rsquo;re not part of any Collectives yet.
+        <br />
+        Explore what&rsquo;s already here, or create a space of your own.
+      </p>
+      <div className="mt-5 flex flex-wrap justify-center gap-2.5">
+        <Link
+          href="/spaces"
+          className="inline-flex items-center rounded-full border border-slate-300 bg-white px-4 py-1.5 text-[12.5px] font-semibold text-navy-900 transition-colors hover:border-teal-400 hover:bg-teal-50"
+        >
+          Explore Collectives
+        </Link>
+        <Link
+          href={CREATE_COLLECTIVE_HREF}
+          className="inline-flex items-center rounded-full px-4 py-1.5 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Create a Collective
+        </Link>
+      </div>
+    </div>
   )
 }
 
