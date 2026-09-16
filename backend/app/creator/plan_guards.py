@@ -77,7 +77,15 @@ def resolve_creator_plan(user: User, db: Session) -> PlanCapability | None:
         db.query(CreatorSubscription)
         .filter(
             CreatorSubscription.user_id == user.id,
-            CreatorSubscription.status.in_(["active", "trialing"]),
+            # ``past_due`` counts as "has plan" during the 7-day FC
+            # grace window so ``guard_paid_offers_enabled`` /
+            # ``guard_active_collective_limit`` / ``guard_pathway_limit``
+            # keep the creator's authoring capability intact. The
+            # grace-expiry cron transitions ``past_due → unpaid`` at
+            # 7 days; ``unpaid`` remains outside this filter so
+            # commercial capability collapses on that boundary, as
+            # designed. See the 2026-09-17 grace-lifecycle audit.
+            CreatorSubscription.status.in_(["active", "trialing", "past_due"]),
         )
         .first()
     )

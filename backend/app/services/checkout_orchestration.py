@@ -222,9 +222,18 @@ def _resolve_fee_bps_for_creator(
         db.query(CreatorSubscription)
         .filter(
             CreatorSubscription.user_id == creator_id,
+            # ``past_due`` is included so member checkout keeps
+            # succeeding at the creator's snapshotted fee during the
+            # 7-day Fresh Collective grace window. When the grace-
+            # expiry cron flips ``past_due → unpaid``, the row falls
+            # out of this filter naturally and paid checkout 409s
+            # again — grace duration is enforced at the DB status
+            # transition, not here. See the 2026-09-17 grace-
+            # lifecycle audit for the full rationale.
             CreatorSubscription.status.in_([
                 CreatorSubscriptionStatus.active,
                 CreatorSubscriptionStatus.trialing,
+                CreatorSubscriptionStatus.past_due,
             ]),
         )
         .order_by(CreatorSubscription.created_at.desc())

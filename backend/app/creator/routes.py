@@ -690,7 +690,17 @@ def get_creator_billing(
         db.query(CreatorSubscription)
         .filter(
             CreatorSubscription.user_id == current_user.id,
-            CreatorSubscription.status.in_(["active", "trialing"]),
+            # ``past_due`` is included so the Billing page can render
+            # the creator's plan card + the grace-warning banner
+            # during the 7-day Fresh Collective grace window. Without
+            # this, past_due creators saw a misleading "your plan is
+            # not configured" empty state and the banner code was
+            # unreachable. The grace-expiry cron flips
+            # ``past_due → unpaid``; ``unpaid`` remains excluded so
+            # the Billing page correctly falls back to the empty-
+            # state card at that boundary. See the 2026-09-17
+            # grace-lifecycle audit.
+            CreatorSubscription.status.in_(["active", "trialing", "past_due"]),
         )
         .first()
     )
