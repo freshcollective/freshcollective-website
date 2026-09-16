@@ -145,6 +145,52 @@ export function CancelSubscriptionButton() {
   )
 }
 
+export function UpgradeSubscriptionButton({ targetPlanSlug, label }: {
+  targetPlanSlug: 'creator' | 'pro'
+  label: string
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  async function onClick() {
+    if (!confirm(
+      "Upgrade now? You'll be prorated for the remainder of this " +
+      "billing period, and the new transaction fee applies only " +
+      "after Stripe confirms your payment succeeded.",
+    )) return
+    setBusy(true)
+    setError(null)
+    try {
+      await postJson<{ queued: boolean }>(
+        '/api/creator/billing/upgrade',
+        { plan_slug: targetPlanSlug },
+      )
+      // Upgrade is asynchronous — Stripe confirms via
+      // customer.subscription.updated. Give the webhook a moment,
+      // then reload so the page re-reads the new plan.
+      setTimeout(() => window.location.reload(), 1500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not upgrade.')
+      setBusy(false)
+    }
+  }
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        className="w-full rounded-xl px-4 py-2.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+        style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+      >
+        {busy ? 'Confirming upgrade…' : label}
+      </button>
+      {error && (
+        <p className="mt-2 text-[12px] text-red-700">{error}</p>
+      )}
+    </div>
+  )
+}
+
 export function ReactivateSubscriptionButton() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)

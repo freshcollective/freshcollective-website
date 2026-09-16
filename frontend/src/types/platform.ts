@@ -1284,6 +1284,31 @@ export interface CreatorPlanOut {
   card_features: string[]
 }
 
+export interface CreatorInvoiceOut {
+  id: string
+  number: string | null
+  created_at: string
+  period_start: string | null
+  period_end: string | null
+  amount_paid_cents: number
+  amount_due_cents: number
+  currency: string
+  /** paid | open | draft | uncollectible | void | unknown */
+  status: string
+  hosted_invoice_url: string | null
+  invoice_pdf: string | null
+  description: string | null
+}
+
+export interface CreatorInvoicesResponse {
+  invoices: CreatorInvoiceOut[]
+  /** ``false`` when the caller has no live Stripe subscription
+   *  (Founding Creator, Community, no plan) — the UI renders a
+   *  "not applicable" state rather than an empty list. */
+  billed_via_stripe: boolean
+}
+
+
 export interface CreatorSubscriptionOut {
   id: string
   status: 'active' | 'trialing' | 'past_due' | 'cancelled' | 'unpaid'

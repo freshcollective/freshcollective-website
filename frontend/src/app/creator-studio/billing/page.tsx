@@ -1,12 +1,14 @@
 import { getActiveCreatorSpace, getCreatorBilling, getCreatorSpace } from '@/lib/serverApi'
 import type { CreatorBillingResponse, CreatorPlanOut, CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
+import { creatorFacingPlanName } from '@/lib/creatorPlanDisplay'
 import BillingFeeCalculator from './BillingFeeCalculator'
 import {
   CancelSubscriptionButton,
   ManageBillingButton,
   ReactivateSubscriptionButton,
   StartSubscriptionButton,
+  UpgradeSubscriptionButton,
 } from './BillingActions'
 
 export const metadata = { title: 'Billing — Creator Studio' }
@@ -385,7 +387,7 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
               Current plan
             </p>
             <p className="mt-1 font-serif text-[22px] font-semibold text-navy-900">
-              {current_plan.name}
+              {creatorFacingPlanName(current_plan.slug, current_plan.name)}
             </p>
             <p className="mt-0.5 text-[15px] text-black">
               {current_plan.monthly_price_cents === 0
@@ -568,14 +570,16 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
         </div>
       )}
 
-      {/* Plan comparison — Community · Creator · Pro · Organisation */}
+      {/* Plan comparison — Community · Creator · Creator Portfolio · Organisation */}
       <div
         className="mb-6 rounded-2xl p-6"
         style={{ background: '#FFFFFF', border: '1px solid #E2E8F0' }}
       >
         <h2 className="mb-1 text-[15px] font-semibold text-navy-900">Plan comparison</h2>
         <p className="mb-5 text-[13px] text-black">
-          Plan changes are managed by Fresh Collective. Automatic plan upgrades will be available in a future update.
+          Upgrades take effect immediately and are billed with a prorated
+          adjustment. Downgrades take effect at the end of the current
+          billing period.
         </p>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {available_plans
@@ -590,6 +594,8 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
                 key={plan.id}
                 plan={plan}
                 isCurrent={plan.slug === current_plan.slug}
+                currentPlanSlug={current_plan.slug}
+                currentSubscriptionSource={billing.subscription?.source}
               />
             ))}
         </div>
@@ -681,9 +687,18 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
 function PlanCard({
   plan,
   isCurrent,
+  currentPlanSlug,
+  currentSubscriptionSource,
 }: {
   plan: CreatorPlanOut
   isCurrent: boolean
+  /** The caller's current plan slug — used to decide upgrade vs
+   *  fresh-subscription CTA on the target card. */
+  currentPlanSlug: string
+  /** ``stripe_paid`` means the caller has a live Stripe subscription
+   *  the upgrade endpoint can modify; anything else falls back to
+   *  fresh subscription checkout. */
+  currentSubscriptionSource: 'stripe_paid' | 'manual_grant' | undefined
 }) {
   // "Talk to us" presentation is reserved for plans with truly
   // custom pricing (Organisation) — identified by
@@ -734,7 +749,9 @@ function PlanCard({
           Current plan
         </span>
       )}
-      <p className="font-serif text-[18px] font-semibold text-navy-900">{plan.name}</p>
+      <p className="font-serif text-[18px] font-semibold text-navy-900">
+        {creatorFacingPlanName(plan.slug, plan.name)}
+      </p>
       <p className="mt-1 text-[28px] font-bold text-navy-900">
         {priceLabel}
         {showMonthly && <span className="text-[14px] font-normal text-black">/month</span>}
@@ -770,12 +787,31 @@ function PlanCard({
             Talk to us
           </a>
         ) : (plan.slug === 'creator' || plan.slug === 'pro') ? (
-          // Real Stripe subscription checkout. The button is a client
-          // component so it can call the API + redirect.
-          <StartSubscriptionButton
-            planSlug={plan.slug}
-            label={`Start ${plan.name} subscription`}
-          />
+          // Two flows converge here:
+          //   * Upgrade — the caller already has a live Stripe
+          //     subscription (source='stripe_paid') and the target
+          //     is a higher-priced tier (Creator → Creator Portfolio).
+          //     Uses POST /api/creator/billing/upgrade which drives
+          //     an immediate prorated ``Subscription.modify`` with
+          //     ``payment_behavior='pending_if_incomplete'`` — the
+          //     3% fee only applies after Stripe confirms payment.
+          //     Does NOT create a second Stripe subscription.
+          //   * Start subscription — everyone else (no live sub yet,
+          //     or downgrade path from Creator Portfolio to Creator,
+          //     which is handled by the Manage Billing / dedicated
+          //     downgrade flow, not this card).
+          currentSubscriptionSource === 'stripe_paid'
+            && (currentPlanSlug === 'creator' && plan.slug === 'pro') ? (
+            <UpgradeSubscriptionButton
+              targetPlanSlug="pro"
+              label={`Upgrade to ${creatorFacingPlanName(plan.slug, plan.name)}`}
+            />
+          ) : (
+            <StartSubscriptionButton
+              planSlug={plan.slug}
+              label={`Start ${creatorFacingPlanName(plan.slug, plan.name)} subscription`}
+            />
+          )
         ) : (
           // Non-purchasable plans that aren't the current plan and
           // aren't Organisation (e.g. Community shown to a Creator

@@ -36,6 +36,7 @@ resource. Callers own the DB commit boundary.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 
 import stripe
@@ -390,6 +391,75 @@ def retrieve_subscription(subscription_id: str) -> stripe.Subscription:
     """
     stripe.api_key = settings.stripe_secret_key
     return stripe.Subscription.retrieve(subscription_id)
+
+
+@dataclass(frozen=True)
+class CreatorInvoiceSummary:
+    """One row for the Creator Studio Billing History list. Everything
+    is safe to render — no card details, no PII beyond the amount +
+    date, and the hosted URLs are Stripe's own tokenised links."""
+    id: str
+    number: str | None
+    created_at: datetime
+    period_start: datetime | None
+    period_end: datetime | None
+    amount_paid_cents: int
+    amount_due_cents: int
+    currency: str
+    status: str          # paid | open | draft | uncollectible | void
+    hosted_invoice_url: str | None
+    invoice_pdf: str | None
+    description: str | None
+
+
+def list_creator_invoices(
+    *,
+    customer_id: str,
+    subscription_id: str | None = None,
+    limit: int = 24,
+) -> list[CreatorInvoiceSummary]:
+    """Return invoices for the creator's Stripe Customer, filtered to
+    the given subscription when supplied. Read-only Stripe call — no
+    DB mutation. Card / payment-method / private billing data are
+    deliberately not surfaced.
+
+    ``subscription_id`` — when passed, only invoices attached to that
+    Stripe Subscription are returned. This keeps member finite-plan
+    invoices (which live on different subscriptions) out of the
+    creator billing history even if the same Customer id happens to
+    be reused.
+    """
+    stripe.api_key = settings.stripe_secret_key
+    kwargs: dict = {"customer": customer_id, "limit": limit}
+    if subscription_id:
+        kwargs["subscription"] = subscription_id
+    resp = stripe.Invoice.list(**kwargs)
+    out: list[CreatorInvoiceSummary] = []
+    for inv in resp.auto_paging_iter() if hasattr(resp, "auto_paging_iter") else resp.get("data", []):
+        # ``stripe.Invoice`` behaves as dict; use .get for defensive
+        # access against optional fields (period_start etc. are absent
+        # on some invoice types).
+        data = inv if isinstance(inv, dict) else inv.to_dict()
+        created_ts = data.get("created")
+        ps = data.get("period_start")
+        pe = data.get("period_end")
+        out.append(CreatorInvoiceSummary(
+            id=data["id"],
+            number=data.get("number"),
+            created_at=datetime.utcfromtimestamp(created_ts) if created_ts else datetime.utcnow(),
+            period_start=datetime.utcfromtimestamp(ps) if ps else None,
+            period_end=datetime.utcfromtimestamp(pe) if pe else None,
+            amount_paid_cents=int(data.get("amount_paid") or 0),
+            amount_due_cents=int(data.get("amount_due") or 0),
+            currency=(data.get("currency") or "aud").upper(),
+            status=data.get("status") or "unknown",
+            hosted_invoice_url=data.get("hosted_invoice_url"),
+            invoice_pdf=data.get("invoice_pdf"),
+            description=data.get("description"),
+        ))
+        if len(out) >= limit:
+            break
+    return out
 
 
 def is_creator_subscription(sub: dict) -> bool:

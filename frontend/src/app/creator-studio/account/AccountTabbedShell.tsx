@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import type { CreatorBillingResponse } from '@/types/platform'
+import { creatorFacingPlanName } from '@/lib/creatorPlanDisplay'
 
 type AccountTab = 'profile' | 'plan' | 'billing' | 'settings'
 
@@ -211,7 +212,7 @@ function PlanTab({ billing }: { billing: CreatorBillingResponse | null }) {
         </p>
         <div className="mt-2 flex flex-wrap items-baseline gap-3">
           <h2 className="font-serif text-[24px] leading-tight text-navy-900">
-            {plan.name}
+            {creatorFacingPlanName(plan.slug, plan.name)}
           </h2>
           {sub && (
             <span
@@ -278,30 +279,232 @@ function PlanTab({ billing }: { billing: CreatorBillingResponse | null }) {
 }
 
 function BillingHistoryTab() {
-  // Billing history for the creator's own Fresh Collective subscription
-  // is not currently exposed by the backend as a dedicated invoice
-  // list. Present a truthful empty state per user request rather than
-  // mock data.
+  return <BillingInvoicesList />
+}
+
+interface InvoiceRow {
+  id: string
+  number: string | null
+  created_at: string
+  amount_paid_cents: number
+  amount_due_cents: number
+  currency: string
+  status: string
+  hosted_invoice_url: string | null
+  invoice_pdf: string | null
+}
+
+function BillingInvoicesList() {
+  // Client-side fetch — the Billing History tab is inside a client
+  // component (AccountTabbedShell) and only renders when the user
+  // selects the tab, so paying for a server round-trip on every
+  // Account page visit would waste latency.
+  const [state, setState] = useState<{
+    loading: boolean
+    invoices: InvoiceRow[] | null
+    billedViaStripe: boolean
+    error: string | null
+  }>({ loading: true, invoices: null, billedViaStripe: false, error: null })
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await fetch(
+          typeof window !== 'undefined'
+            ? `${window.location.origin}/api/creator/billing/invoices`
+            : '/api/creator/billing/invoices',
+          { credentials: 'include' },
+        )
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+        const body = (await res.json()) as {
+          invoices: InvoiceRow[]
+          billed_via_stripe: boolean
+        }
+        if (!cancelled) {
+          setState({
+            loading: false,
+            invoices: body.invoices,
+            billedViaStripe: body.billed_via_stripe,
+            error: null,
+          })
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setState({
+            loading: false,
+            invoices: null,
+            billedViaStripe: false,
+            error: e instanceof Error ? e.message : 'Could not load invoices.',
+          })
+        }
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
+
+  if (state.loading) {
+    return (
+      <section
+        className="rounded-2xl bg-white p-8 text-center"
+        style={{ border: '1px dashed rgba(12,24,38,0.14)' }}
+      >
+        <p className="text-[13px] italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+          Loading invoices…
+        </p>
+      </section>
+    )
+  }
+
+  if (state.error) {
+    return (
+      <section
+        className="rounded-2xl bg-white p-6"
+        style={{ border: '1px solid rgba(179,36,36,0.24)' }}
+      >
+        <p className="text-[13.5px] text-red-800">
+          Could not load invoices — {state.error}
+        </p>
+      </section>
+    )
+  }
+
+  // Not billed via Stripe (Founding Creator, Community, no plan).
+  if (!state.billedViaStripe) {
+    return (
+      <section
+        className="rounded-2xl bg-white p-8 text-center"
+        style={{ border: '1px dashed rgba(12,24,38,0.14)' }}
+      >
+        <p className="font-serif text-[17px] leading-snug text-navy-900">
+          No billing history.
+        </p>
+        <p
+          className="mx-auto mt-2 max-w-md text-[13.5px] italic leading-relaxed"
+          style={{ color: 'rgba(12,24,38,0.60)', fontFamily: 'Georgia, serif' }}
+        >
+          Your current plan is not billed via Stripe, so there are no invoices to display.
+        </p>
+        <p className="mt-4 text-[12px] text-slate-500">
+          Looking for collective payments? Those are under{' '}
+          <Link href="/creator-studio/payments" className="text-teal-700 hover:underline">Payments</Link>.
+        </p>
+      </section>
+    )
+  }
+
+  const invoices = state.invoices ?? []
+  if (invoices.length === 0) {
+    return (
+      <section
+        className="rounded-2xl bg-white p-8 text-center"
+        style={{ border: '1px dashed rgba(12,24,38,0.14)' }}
+      >
+        <p className="font-serif text-[17px] leading-snug text-navy-900">
+          No invoices yet.
+        </p>
+        <p
+          className="mx-auto mt-2 max-w-md text-[13.5px] italic leading-relaxed"
+          style={{ color: 'rgba(12,24,38,0.60)', fontFamily: 'Georgia, serif' }}
+        >
+          Your first Fresh Collective invoice will appear here once
+          it&apos;s issued.
+        </p>
+      </section>
+    )
+  }
+
   return (
     <section
-      className="rounded-2xl bg-white p-8 text-center"
-      style={{ border: '1px dashed rgba(12,24,38,0.14)' }}
+      className="rounded-2xl border border-slate-200 bg-white p-2 md:p-4"
     >
-      <p className="font-serif text-[17px] leading-snug text-navy-900">
-        Nothing to show yet.
-      </p>
-      <p
-        className="mx-auto mt-2 max-w-md text-[13.5px] italic leading-relaxed"
-        style={{ color: 'rgba(12,24,38,0.60)', fontFamily: 'Georgia, serif' }}
-      >
-        Once we begin issuing creator-subscription invoices, they&apos;ll appear here.
-      </p>
-      <p className="mt-4 text-[12px] text-slate-500">
-        Looking for collective payments? Those are under{' '}
-        <Link href="/creator-studio/payments" className="text-teal-700 hover:underline">Payments</Link>.
+      <table className="w-full text-left text-[13px]">
+        <thead>
+          <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+            <th className="px-3 py-2.5">Date</th>
+            <th className="px-3 py-2.5">Description</th>
+            <th className="px-3 py-2.5 text-right">Amount</th>
+            <th className="px-3 py-2.5">Status</th>
+            <th className="px-3 py-2.5 text-right">Receipt</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {invoices.map((inv) => (
+            <tr key={inv.id}>
+              <td className="px-3 py-3 text-navy-900">
+                {formatInvoiceDate(inv.created_at)}
+              </td>
+              <td className="px-3 py-3 text-navy-900">
+                Fresh Collective subscription
+                {inv.number && (
+                  <span className="ml-2 text-[11px] text-slate-500">
+                    · {inv.number}
+                  </span>
+                )}
+              </td>
+              <td className="px-3 py-3 text-right text-navy-900">
+                {formatMoney(inv.amount_paid_cents || inv.amount_due_cents, inv.currency)}
+              </td>
+              <td className="px-3 py-3">
+                <InvoiceStatusBadge status={inv.status} />
+              </td>
+              <td className="px-3 py-3 text-right">
+                {inv.hosted_invoice_url ? (
+                  <a
+                    href={inv.hosted_invoice_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[12.5px] font-semibold text-teal-700 hover:underline"
+                  >
+                    View →
+                  </a>
+                ) : (
+                  <span className="text-[12px] text-slate-400">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-3 px-3 pb-2 text-[11.5px] italic text-slate-500">
+        Invoices are issued by Stripe on behalf of Fresh Collective.
+        View or download the full receipt via the link.
       </p>
     </section>
   )
+}
+
+function InvoiceStatusBadge({ status }: { status: string }) {
+  const cfg =
+    status === 'paid'          ? { label: 'Paid',          fg: '#0f766e', bg: 'rgba(56,160,158,0.12)' } :
+    status === 'open'          ? { label: 'Open',          fg: '#7C2D12', bg: '#FFF7ED' } :
+    status === 'draft'         ? { label: 'Draft',         fg: '#334155', bg: '#F1F5F9' } :
+    status === 'uncollectible' ? { label: 'Uncollectible', fg: '#7F1D1D', bg: '#FEF2F2' } :
+    status === 'void'          ? { label: 'Void',          fg: '#334155', bg: '#F1F5F9' } :
+                                 { label: status,          fg: '#334155', bg: '#F1F5F9' }
+  return (
+    <span
+      className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide"
+      style={{ color: cfg.fg, background: cfg.bg }}
+    >
+      {cfg.label}
+    </span>
+  )
+}
+
+function formatInvoiceDate(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-AU', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  })
+}
+
+function formatMoney(cents: number, currency: string): string {
+  const symbol = currency === 'AUD' || currency === 'USD' ? '$' : `${currency} `
+  const dollars = cents / 100
+  return `${symbol}${Number.isInteger(dollars) ? dollars.toFixed(0) : dollars.toFixed(2)}`
 }
 
 function SettingsTab({ user }: { user: User }) {

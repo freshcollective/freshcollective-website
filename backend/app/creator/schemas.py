@@ -1776,6 +1776,32 @@ class CreatorBillingPortalResponse(BaseModel):
     portal_url: str
 
 
+class CreatorInvoiceOut(BaseModel):
+    """One Stripe invoice row for Creator Studio Billing History.
+    Read-only projection — never carries card / payment-method / PII."""
+    id: str
+    number: str | None
+    created_at: datetime
+    period_start: datetime | None
+    period_end: datetime | None
+    amount_paid_cents: int
+    amount_due_cents: int
+    currency: str
+    status: str
+    hosted_invoice_url: str | None
+    invoice_pdf: str | None
+    description: str | None
+
+
+class CreatorInvoicesResponse(BaseModel):
+    """``GET /api/creator/billing/invoices`` shape. When the creator
+    has no Stripe subscription (Founding Creator / Community / no
+    plan) the list is empty and ``billed_via_stripe=False`` — the
+    frontend then renders the "not applicable" state."""
+    invoices: list[CreatorInvoiceOut]
+    billed_via_stripe: bool
+
+
 class CreatorPlanChangeRequest(BaseModel):
     """Body of ``POST /api/creator/billing/upgrade`` +
     ``POST /api/creator/billing/downgrade``."""

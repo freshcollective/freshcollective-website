@@ -56,6 +56,8 @@ from app.creator.schemas import (
     AttendanceUpdateRequest,
     CreatorBillingPortalResponse,
     CreatorBillingResponse,
+    CreatorInvoiceOut,
+    CreatorInvoicesResponse,
     CreatorPlanChangeRequest,
     CreatorSubscribeRequest,
     CreatorSubscribeResponse,
@@ -673,19 +675,6 @@ def get_creator_billing(
         .scalar()
     ) if creator_space_ids else 0
 
-    payment_setup = CreatorPaymentSetup(
-        # Platform Owner never subscribes to a creator plan, so creator
-        # billing is meaningfully "not applicable" — surfaced separately
-        # by the frontend, not implied by this boolean.
-        creator_billing_connected=False,
-        member_payments_connected=settings.stripe_enabled,
-        stripe_connect_connected=False,
-        stripe_test_mode=bool(
-            settings.stripe_secret_key
-            and settings.stripe_secret_key.startswith("sk_test_")
-        ),
-    )
-
     usage = CreatorUsage(
         collectives_used=collectives_used,
         pathways_used=pathways_used,
@@ -704,6 +693,27 @@ def get_creator_billing(
             CreatorSubscription.status.in_(["active", "trialing"]),
         )
         .first()
+    )
+
+    # ``creator_billing_connected`` reflects real state — an active
+    # Stripe-paid subscription is "connected". Manual grants
+    # (Founding Creator, admin-comped Community) have nothing to
+    # bill, so the frontend renders "Not required" for those via a
+    # separate branch on the plan itself. Post-2026-09-16 fix
+    # (previously hardcoded False, misrepresenting live paid subs).
+    creator_billing_connected = bool(
+        subscription is not None
+        and subscription.source == "stripe_paid"
+        and subscription.stripe_subscription_id
+    )
+    payment_setup = CreatorPaymentSetup(
+        creator_billing_connected=creator_billing_connected,
+        member_payments_connected=settings.stripe_enabled,
+        stripe_connect_connected=False,
+        stripe_test_mode=bool(
+            settings.stripe_secret_key
+            and settings.stripe_secret_key.startswith("sk_test_")
+        ),
     )
 
     # Platform Owner branch — same as before for admins WITHOUT an
@@ -969,6 +979,90 @@ def create_billing_portal_session(
         return_url=f"{_public_app_url()}/creator-studio/billing",
     )
     return CreatorBillingPortalResponse(portal_url=portal["url"])
+
+
+@router.get(
+    "/billing/invoices",
+    response_model=CreatorInvoicesResponse,
+)
+def list_creator_billing_invoices(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> CreatorInvoicesResponse:
+    """List Stripe-issued invoices for the caller's Creator
+    subscription. Empty list + ``billed_via_stripe=False`` when the
+    caller has no live Stripe subscription (Founding Creator,
+    Community, no plan) — the frontend uses that flag to render a
+    truthful "not applicable" state.
+
+    Deliberately filtered by the caller's own ``stripe_subscription_id``
+    so member finite-plan invoices (which live on different Stripe
+    subscriptions on the same Stripe Customer, if any) cannot leak
+    into Creator Studio Billing History.
+
+    Read-only — no DB mutation. Returns 503 if Stripe is not
+    configured; the caller renders "unavailable" and offers Manage
+    Billing (Portal) as a fallback surface.
+    """
+    if not settings.stripe_enabled:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe payments are not configured on this server.",
+        )
+    sub = (
+        db.query(CreatorSubscription)
+        .filter(
+            CreatorSubscription.user_id == current_user.id,
+            CreatorSubscription.source == "stripe_paid",
+            CreatorSubscription.stripe_customer_id.is_not(None),
+            CreatorSubscription.stripe_subscription_id.is_not(None),
+        )
+        .order_by(CreatorSubscription.created_at.desc())
+        .first()
+    )
+    if sub is None:
+        # Not billed via Stripe (Founding Creator, Community, no
+        # plan). Not an error — just an empty list.
+        return CreatorInvoicesResponse(invoices=[], billed_via_stripe=False)
+
+    from app.services import stripe_creator_billing as _scb
+    import stripe as _stripe
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    try:
+        rows = _scb.list_creator_invoices(
+            customer_id=sub.stripe_customer_id,
+            subscription_id=sub.stripe_subscription_id,
+        )
+    except _stripe.error.StripeError as exc:  # pragma: no cover
+        _log.exception(
+            "list_creator_billing_invoices: Stripe API failure user=%s",
+            current_user.id,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Could not load invoices from Stripe.",
+        ) from exc
+    return CreatorInvoicesResponse(
+        invoices=[
+            CreatorInvoiceOut(
+                id=r.id,
+                number=r.number,
+                created_at=r.created_at,
+                period_start=r.period_start,
+                period_end=r.period_end,
+                amount_paid_cents=r.amount_paid_cents,
+                amount_due_cents=r.amount_due_cents,
+                currency=r.currency,
+                status=r.status,
+                hosted_invoice_url=r.hosted_invoice_url,
+                invoice_pdf=r.invoice_pdf,
+                description=r.description,
+            )
+            for r in rows
+        ],
+        billed_via_stripe=True,
+    )
 
 
 @router.post("/billing/upgrade", status_code=202)
