@@ -468,8 +468,9 @@ function BillingInvoicesList() {
         </tbody>
       </table>
       <p className="mt-3 px-3 pb-2 text-[11.5px] italic text-slate-500">
-        Invoices are issued by Stripe on behalf of Fresh Collective.
-        View or download the full receipt via the link.
+        Invoices and receipts are provided securely through Stripe on
+        behalf of Fresh Collective. View or download the full receipt
+        via the link.
       </p>
     </section>
   )
