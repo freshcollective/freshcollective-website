@@ -136,6 +136,18 @@ class TestCreatorSubscriptionSuccess:
         assert kwargs["line_items"] == [
             {"price": "price_creator_test", "quantity": 1}
         ]
+        # Card-only per the creator-subscription workstream: without
+        # this, Stripe falls back to the account-level payment-method
+        # rules and starts offering Klarna for AUD — a BNPL method
+        # whose async subscription lifecycle we haven't designed for.
+        # Apple Pay / Google Pay wallets stay available (Stripe
+        # surfaces them through the ``card`` type). Regression for
+        # the 2026-09-16 live-test finding.
+        assert kwargs["payment_method_types"] == ["card"], (
+            "creator subscription Checkout Session must specify "
+            "payment_method_types=['card']; got "
+            f"{kwargs.get('payment_method_types')!r}"
+        )
         assert kwargs["idempotency_key"] == f"purchase_intent:{intent.id}:session:v1"
 
         # URLs are built from the resolved public app URL and carry the

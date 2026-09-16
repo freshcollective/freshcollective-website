@@ -14,13 +14,15 @@ import {
 import { getPublicPlan } from '@/lib/plans'
 
 /**
- * /checkout/creator?plan=creator|pro — payment placeholder for the
- * Creator + Creator Portfolio plans.
+ * /checkout/creator?plan=creator|pro — Review-your-plan screen for
+ * the Creator + Creator Portfolio subscriptions.
  *
- * PROTOTYPE ONLY. This page does not initiate a Stripe session, does
- * not create any purchase record, and does not grant any entitlement.
- * Its only job is to preview the future payment step and forward the
- * visitor to the next honest screen in the prototype.
+ * Stripe is live. Clicking the CTA below POSTs to
+ * ``/api/purchases/creator-subscription`` which creates a Stripe
+ * Checkout Session (card-only per the workstream invariant) and
+ * redirects the browser to Stripe's hosted checkout. Activation of
+ * the local ``CreatorSubscription`` row happens only after
+ * ``invoice.paid`` — see ``webhooks/creator_billing_handlers.py``.
  *
  * Community skips this page entirely — a plan=community request is
  * server-redirected to /signup/creator?plan=community.
@@ -76,28 +78,29 @@ export default async function CheckoutCreatorPage({
             />
 
             <div className="flex flex-col">
+              <p
+                className="text-[11px] font-semibold uppercase tracking-[0.28em]"
+                style={{ color: TEAL_DEEP }}
+              >
+                Secure checkout
+              </p>
               <h1
-                className="font-serif leading-[1.06]"
+                className="mt-3 font-serif leading-[1.06]"
                 style={{
                   fontSize: 'clamp(2rem, 4.4vw, 2.75rem)',
                   letterSpacing: '-0.025em',
                   color: NAVY,
                 }}
               >
-                Payment will happen here
+                Review your plan
               </h1>
-
-              <PrototypePill className="mt-5" />
 
               <p
                 className="mt-4 max-w-[520px] text-[15.5px] italic leading-relaxed"
                 style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
               >
-                When Stripe is connected, you&rsquo;ll review your
-                purchase and complete payment securely before continuing.
-                Nothing is charged in this prototype — no account is
-                created, no Creator plan is activated, no access is
-                granted.
+                You&rsquo;ll complete payment securely with Stripe.
+                Your plan will activate once payment is confirmed.
               </p>
 
               <div
@@ -145,10 +148,6 @@ export default async function CheckoutCreatorPage({
               </div>
 
               <div className="mt-8 flex flex-col items-start gap-4">
-                {/* Stage 2: real Stripe Checkout Session creation.
-                    Falls back to an honest "not configured" banner
-                    when Stripe credentials are unset — never a fake
-                    success. */}
                 <CreatorCheckoutButton planSlug={plan.slug} />
                 <Link
                   href="/for-creators#plans"
@@ -163,25 +162,5 @@ export default async function CheckoutCreatorPage({
         </Container>
       </section>
     </SiteShell>
-  )
-}
-
-function PrototypePill({ className }: { className?: string }) {
-  return (
-    <span
-      className={`inline-flex w-fit items-center rounded-full border px-3 py-1 ${className ?? ''}`}
-      style={{
-        borderColor: 'rgba(56, 160, 158, 0.32)',
-        color: TEAL_DEEP,
-        fontSize: '11px',
-        letterSpacing: '0.16em',
-        textTransform: 'uppercase',
-        fontWeight: 600,
-        fontFamily:
-          'ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
-      }}
-    >
-      Prototype preview
-    </span>
   )
 }

@@ -341,6 +341,19 @@ def _build_session_args(db: Session, intent: PurchaseIntent) -> dict:
             "line_items": [{"price": price_id, "quantity": 1}],
             "metadata": metadata,
             "subscription_data": {"metadata": metadata},
+            # Card-only for creator subscriptions. Without this list
+            # Stripe falls back to the account-level payment-method
+            # rules, which include Klarna for AUD. Klarna is a
+            # deferred / BNPL method whose ``invoice.paid`` timing
+            # can lag and whose subscription lifecycle differs from
+            # cards — neither of which we've designed for in the
+            # creator-billing webhook handlers. Locking to
+            # ``card`` keeps the "invoice.paid confirms activation"
+            # invariant true and keeps Apple Pay / Google Pay wallets
+            # available (Stripe surfaces those through card). Applies
+            # ONLY to creator subscriptions; member checkout is
+            # unaffected (its own Session args live elsewhere).
+            "payment_method_types": ["card"],
             # No `payment_intent_data.metadata` in subscription mode —
             # Stripe rejects that field. Recurring invoices carry the
             # subscription metadata forward.
