@@ -17,8 +17,15 @@ from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL, CHANNEL_IN_APP
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
+from app.comms.templates.base import render_email_shell
 from app.comms.templates.registry import template_for
 
+
+# Every event in this module resolves to CATEGORY_PURCHASES, which is
+# locked for email_transactional — a member cannot switch off messages
+# about their own money and access, so the footer does not offer a
+# preferences link they cannot act on.
+_SHOW_PREFS = False
 
 _EVENT_PURCHASE_COMPLETED       = "purchase.completed"
 _EVENT_INSTALMENT_FAILED        = "payment.instalment_failed"
@@ -128,13 +135,17 @@ class PurchaseCompletedEmailTemplate:
             f"{cta_label}:\n{member_url}\n\n"
             "Take your time — Fresh Collective is built for depth, not speed."
         )
-        body_html = (
-            f"<p>{greeting}</p>"
-            f"<p>{first_line}</p>"
-            f"<p>{middle_line}</p>"
-            f'<p><a href="{member_url}">{cta_label}</a>.</p>'
-            "<p>Take your time — Fresh Collective is built for depth, "
-            "not speed.</p>"
+        body_html = render_email_shell(
+            preheader=first_line,
+            heading=subject,
+            greeting=greeting,
+            body_paragraphs=[first_line, middle_line],
+            action=(cta_label, member_url),
+            signoff=(
+                "Take your time — Fresh Collective is built for depth, "
+                "not speed."
+            ),
+            show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
             to="",
@@ -226,14 +237,17 @@ class PaymentInstalmentFailedEmailTemplate:
             "If nothing needs to change on your card, no action is required "
             "— we’ll keep trying."
         )
-        body_html = (
-            f"<p>{greeting}</p>"
-            f"<p>{opening}</p>"
-            f"<p>{reassurance}</p>"
-            f"<p>{deadline}</p>"
-            f'<p><a href="{repair_url}">Fix payment</a>.</p>'
-            "<p>If nothing needs to change on your card, no action is "
-            "required — we’ll keep trying.</p>"
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            greeting=greeting,
+            body_paragraphs=[opening, reassurance, deadline],
+            action=("Fix payment", repair_url),
+            signoff=(
+                "If nothing needs to change on your card, no action is "
+                "required — we’ll keep trying."
+            ),
+            show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
             to="",
@@ -323,13 +337,17 @@ class AccessSuspendedEmailTemplate:
             f"Fix payment:\n{repair_url}\n\n"
             f"{promise}"
         )
-        body_html = (
-            f"<p>{greeting}</p>"
-            f"<p>{opening}</p>"
-            f"<p>{bookings_note}</p>"
-            f"<p>{how}</p>"
-            f'<p><a href="{repair_url}">Fix payment</a>.</p>'
-            f"<p>{promise}</p>"
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            # Paragraph order mirrors body_text exactly, so the
+            # booking-release disclosure sits between the opening and
+            # the repair instruction in both parts.
+            body_paragraphs=[opening, bookings_note, how],
+            greeting=greeting,
+            action=("Fix payment", repair_url),
+            signoff=promise,
+            show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
             to="",
@@ -411,11 +429,13 @@ class PaymentRecoveredEmailTemplate:
             f"{progress_line}\n\n"
             f"Open {experience}:\n{member_url}"
         )
-        body_html = (
-            f"<p>{greeting}</p>"
-            f"<p>{opening}</p>"
-            f"<p>{progress_line}</p>"
-            f'<p><a href="{member_url}">Open {experience}</a>.</p>'
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            greeting=greeting,
+            body_paragraphs=[opening, progress_line],
+            action=(f"Open {experience}", member_url),
+            show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
             to="",
@@ -502,13 +522,16 @@ class PurchasePlanCompletedEmailTemplate:
             f"Open {experience}:\n{member_url}\n\n"
             "Thank you for being part of Fresh Collective."
         )
-        body_html = (
-            f"<p>{greeting}</p>"
-            f"<p>{opening}</p>"
-            + (f"<p>{summary_line}</p>" if summary_line else "")
-            + f"<p>{closing}</p>"
-            f'<p><a href="{member_url}">Open {experience}</a>.</p>'
-            "<p>Thank you for being part of Fresh Collective.</p>"
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            greeting=greeting,
+            # Empty paragraphs are dropped by the shell, so the optional
+            # summary line needs no conditional here.
+            body_paragraphs=[opening, summary_line, closing],
+            action=(f"Open {experience}", member_url),
+            signoff="Thank you for being part of Fresh Collective.",
+            show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
             to="",

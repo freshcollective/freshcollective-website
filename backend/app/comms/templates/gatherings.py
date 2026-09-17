@@ -8,6 +8,7 @@ from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL, CHANNEL_IN_APP
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
+from app.comms.templates.base import render_email_shell
 from app.comms.templates.registry import template_for
 
 
@@ -49,14 +50,23 @@ class BookingConfirmedEmailTemplate:
         starts_at = recipient.template_context.get("gathering_starts_at") or "the scheduled time"
         collective = recipient.template_context.get("collective_name") or "the collective"
         subject = f"Booked: {title}"
+        opening = (
+            f"You're booked for {title} in {collective}, starting {starts_at}."
+        )
         body_text = (
-            f"You're booked for {title} in {collective}, starting {starts_at}.\n\n"
+            f"{opening}\n\n"
             "We'll send a reminder closer to the time."
         )
-        body_html = (
-            f"<p>You're booked for <strong>{title}</strong> in {collective}, "
-            f"starting {starts_at}.</p>"
-            "<p>We'll send a reminder closer to the time.</p>"
+        # No CTA: the booking resolver's template_context carries no URL
+        # to link to. Adding one is a resolver change, which is out of
+        # scope for a rendering-only migration.
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            body_paragraphs=[
+                opening,
+                "We'll send a reminder closer to the time.",
+            ],
         )
         return RenderedPayload(
             to="",

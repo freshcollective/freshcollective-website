@@ -178,7 +178,10 @@ def test_welcome_after_signup_emits_and_dispatches_via_resend(
     params, _ = sdk_spy.calls[0]
     assert params["to"] == [user.email]
     assert "Welcome to Fresh Collective" in params["subject"]
-    assert "Hi Ada," in params["html"]
+    # P1 — the welcome email greets every new account identically and
+    # does NOT echo the payload's first_name back at them.
+    assert "Hey friend," in params["html"]
+    assert "Hi Ada," not in params["html"]
     assert "https://example.com/dashboard" in params["html"]
 
     email_intents = db.query(CommunicationIntent).filter(
@@ -427,7 +430,13 @@ def test_creator_plan_activated_uses_canonical_plan_name(
     params, _ = sdk_spy.calls[0]
     # The seed row's ``name`` for slug='pro' is 'Creator Portfolio'.
     assert "Creator Portfolio" in params["html"]
-    assert "Pro" not in params["html"]
+    # The "no 'Pro'" check runs against the plain-text part. Since P1 the
+    # HTML part carries the branded shell, whose font stack legitimately
+    # contains "SF Pro Display" — that is CSS, not member-facing copy,
+    # and scanning the whole document for the substring no longer tests
+    # what this case is about.
+    assert "Creator Portfolio" in params["text"]
+    assert "Pro" not in params["text"]
 
 
 # ---------------------------------------------------------------------------

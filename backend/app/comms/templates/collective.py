@@ -15,6 +15,7 @@ from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
+from app.comms.templates.base import render_email_shell
 from app.comms.templates.registry import template_for
 
 
@@ -36,21 +37,31 @@ class InvitationSentEmailTemplate:
 
         subject = f"{inviter_name} invited you to {collective_name}"
 
-        body_text = (
+        opening = (
             f"{inviter_name} has invited you to join {collective_name} on "
             "Fresh Collective — a place to gather, learn together, and stay "
-            "connected.\n\n"
+            "connected."
+        )
+
+        body_text = (
+            f"{opening}\n\n"
             "Follow the link below to accept the invitation and set up your "
             "account:\n"
             f"{accept_url}"
         )
 
-        body_html = (
-            f'<p>{inviter_name} has invited you to join '
-            f'<strong>{collective_name}</strong> on Fresh Collective — a '
-            "place to gather, learn together, and stay connected.</p>"
-            f'<p><a href="{accept_url}">Accept the invitation</a> and set up '
-            "your account.</p>"
+        # No preferences link: the invitee usually has no account yet, so
+        # there are no preferences for them to manage.
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            body_paragraphs=[
+                opening,
+                "Follow the link below to accept the invitation and set up "
+                "your account.",
+            ],
+            action=("Accept invitation", accept_url),
+            show_preferences_link=False,
         )
 
         return RenderedPayload(

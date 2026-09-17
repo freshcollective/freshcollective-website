@@ -8,6 +8,7 @@ from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL, CHANNEL_IN_APP
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
+from app.comms.templates.base import render_email_shell
 from app.comms.templates.registry import template_for
 
 
@@ -17,10 +18,40 @@ _EVENT_EMAIL_VERIFICATION_REQUESTED = "account.email_verification_requested"
 _EVENT_CREATOR_PLAN_ACTIVATED       = "creator.plan_activated"
 
 
+# Every event in this module resolves to CATEGORY_ACCOUNT, which is
+# locked for email_transactional (``communication_channel_defaults``).
+# A member cannot switch these off, so the footer does not offer them a
+# preferences link they cannot act on.
+_SHOW_PREFS = False
+
+
+# ---------------------------------------------------------------------------
+# Greetings
+# ---------------------------------------------------------------------------
+
+# P1 product decision — the two emails a brand-new account receives
+# (verify, then welcome) greet everyone identically and do NOT derive a
+# name from ``users.name``. That field is unvalidated free text used as
+# a legal/display name, and whatever a person typed at signup was being
+# echoed back as the way Fresh Collective addresses them. Fixing the
+# name architecture is deliberately out of scope for this phase; not
+# greeting a stranger by an unverified string is the safe default in
+# the meantime.
+FRIEND_GREETING = "Hey friend,"
+
+
+def _greeting(first_name: str | None) -> str:
+    """Name-derived greeting, retained for emails sent to accounts whose
+    identity is already established (see ``FRIEND_GREETING`` above for
+    why the two signup emails no longer use this)."""
+    name = (first_name or "").strip()
+    return f"Hi {name}," if name else "Hi,"
+
+
 @template_for(_EVENT_PASSWORD_RESET_REQUESTED, CHANNEL_EMAIL_TRANSACTIONAL)
 class PasswordResetRequestedEmailTemplate:
     key = "account.password_reset_requested.email_transactional"
-    version = "v1"
+    version = "v2"
 
     def render(
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
@@ -32,10 +63,16 @@ class PasswordResetRequestedEmailTemplate:
             f"Open this link to choose a new one:\n{reset_url}\n\n"
             "If you didn't request this, you can safely ignore this message."
         )
-        body_html = (
-            "<p>You asked to reset your password.</p>"
-            f'<p><a href="{reset_url}">Open this link to choose a new one</a>.</p>'
-            "<p>If you didn't request this, you can safely ignore this message.</p>"
+        body_html = render_email_shell(
+            preheader="You asked to reset your password.",
+            heading="Reset your password",
+            body_paragraphs=[
+                "You asked to reset your password.",
+                "If you didn't request this, you can safely ignore this "
+                "message.",
+            ],
+            action=("Choose a new password", reset_url),
+            show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
             to="",  # decision pipeline fills recipient_address on the intent
@@ -74,13 +111,13 @@ class PasswordResetRequestedInAppTemplate:
 @template_for(_EVENT_EMAIL_VERIFICATION_REQUESTED, CHANNEL_EMAIL_TRANSACTIONAL)
 class EmailVerificationRequestedEmailTemplate:
     key = "account.email_verification_requested.email_transactional"
-    version = "v1"
+    version = "v2"
 
     def render(
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
     ) -> RenderedPayload:
         ctx = recipient.template_context
-        greeting = _greeting(ctx.get("first_name"))
+        greeting = FRIEND_GREETING
         verify_url = ctx.get("verify_url") or ""
 
         subject = "Welcome to Fresh Collective — confirm your email"
@@ -94,15 +131,23 @@ class EmailVerificationRequestedEmailTemplate:
             "a fresh one from your dashboard.\n\n"
             "See you inside."
         )
-        body_html = (
-            f"<p>{greeting}</p>"
-            "<p>Welcome to Fresh Collective 🌿</p>"
-            "<p>One quick thing before you start joining in: confirm your "
-            "email address so we know we can reach you when it matters.</p>"
-            f'<p><a href="{verify_url}">Verify my email</a></p>'
-            "<p>This link is good for 24 hours. If it expires you can request "
-            "a fresh one from your dashboard.</p>"
-            "<p>See you inside.</p>"
+        body_html = render_email_shell(
+            preheader=(
+                "Confirm your email address so we know we can reach you "
+                "when it matters."
+            ),
+            heading="Confirm your email",
+            greeting=greeting,
+            body_paragraphs=[
+                "Welcome to Fresh Collective 🌿",
+                "One quick thing before you start joining in: confirm your "
+                "email address so we know we can reach you when it matters.",
+                "This link is good for 24 hours. If it expires you can "
+                "request a fresh one from your dashboard.",
+            ],
+            action=("Verify my email", verify_url),
+            signoff="See you inside.",
+            show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
             to="",
@@ -137,21 +182,16 @@ class EmailVerificationRequestedInAppTemplate:
 # ---------------------------------------------------------------------------
 
 
-def _greeting(first_name: str | None) -> str:
-    name = (first_name or "").strip()
-    return f"Hi {name}," if name else "Hi,"
-
-
 @template_for(_EVENT_WELCOME_AFTER_SIGNUP, CHANNEL_EMAIL_TRANSACTIONAL)
 class WelcomeAfterSignupEmailTemplate:
     key = "account.welcome_after_signup.email_transactional"
-    version = "v1"
+    version = "v2"
 
     def render(
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
     ) -> RenderedPayload:
         ctx = recipient.template_context
-        greeting = _greeting(ctx.get("first_name"))
+        greeting = FRIEND_GREETING
         next_url = ctx.get("next_url") or ""
 
         subject = "Welcome to Fresh Collective"
@@ -163,13 +203,19 @@ class WelcomeAfterSignupEmailTemplate:
             f"When you're ready, sign in here:\n{next_url}\n\n"
             "We're glad you're here."
         )
-        body_html = (
-            f"<p>{greeting}</p>"
-            "<p>Welcome to Fresh Collective. Your account is ready.</p>"
-            "<p>Fresh Collective is a calm, structured place to gather, "
-            "learn, and stay connected. Take your time — there's no rush.</p>"
-            f'<p>When you\'re ready, <a href="{next_url}">sign in here</a>.</p>'
-            "<p>We're glad you're here.</p>"
+        body_html = render_email_shell(
+            preheader="Your account is ready.",
+            heading="Welcome to Fresh Collective",
+            greeting=greeting,
+            body_paragraphs=[
+                "Welcome to Fresh Collective. Your account is ready.",
+                "Fresh Collective is a calm, structured place to gather, "
+                "learn, and stay connected. Take your time — there's no "
+                "rush.",
+            ],
+            action=("Sign in", next_url),
+            signoff="We're glad you're here.",
+            show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
             to="",
@@ -211,7 +257,7 @@ class WelcomeAfterSignupInAppTemplate:
 @template_for(_EVENT_CREATOR_PLAN_ACTIVATED, CHANNEL_EMAIL_TRANSACTIONAL)
 class CreatorPlanActivatedEmailTemplate:
     key = "creator.plan_activated.email_transactional"
-    version = "v1"
+    version = "v2"
 
     def render(
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
@@ -246,21 +292,28 @@ class CreatorPlanActivatedEmailTemplate:
             )
             cta_label = "Open Creator Studio"
 
+        activation_line = (
+            f"Your Fresh Collective {plan_name} plan is now active."
+        )
+
         body_text = (
             f"{greeting}\n\n"
-            f"Your Fresh Collective {plan_name} plan is now active.\n\n"
+            f"{activation_line}\n\n"
             f"{supporting_line}\n\n"
             f"{cta_label}:\n{next_url}\n\n"
             "Take your time — Fresh Collective is built for depth, not speed."
         )
-        body_html = (
-            f"<p>{greeting}</p>"
-            f"<p>Your Fresh Collective <strong>{plan_name}</strong> plan is "
-            "now active.</p>"
-            f"<p>{supporting_line}</p>"
-            f'<p><a href="{next_url}">{cta_label}</a>.</p>'
-            "<p>Take your time — Fresh Collective is built for depth, "
-            "not speed.</p>"
+        body_html = render_email_shell(
+            preheader=activation_line,
+            heading=subject,
+            greeting=greeting,
+            body_paragraphs=[activation_line, supporting_line],
+            action=(cta_label, next_url),
+            signoff=(
+                "Take your time — Fresh Collective is built for depth, "
+                "not speed."
+            ),
+            show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
             to="",

@@ -8,6 +8,7 @@ from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL, CHANNEL_IN_APP
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
+from app.comms.templates.base import render_email_shell
 from app.comms.templates.registry import template_for
 
 
@@ -46,15 +47,21 @@ class DirectMessageEmailTemplate:
         sender = recipient.template_context.get("sender_name") or "A member"
         excerpt = (recipient.template_context.get("excerpt") or "").strip()
         subject = f"{sender} sent you a message"
+        opening = f"{sender} sent you a message on Fresh Collective."
         body_text = (
-            f"{sender} sent you a message on Fresh Collective.\n\n"
+            f"{opening}\n\n"
             + (excerpt + "\n\n" if excerpt else "")
             + "Open Fresh Collective to reply."
         )
-        body_html = (
-            f"<p><strong>{sender}</strong> sent you a message on Fresh Collective.</p>"
-            + (f"<blockquote>{excerpt}</blockquote>" if excerpt else "")
-            + "<p>Open Fresh Collective to reply.</p>"
+        # No CTA: this event's template_context carries no thread URL.
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            body_paragraphs=[
+                opening,
+                excerpt,
+                "Open Fresh Collective to reply.",
+            ],
         )
         return RenderedPayload(
             to="",

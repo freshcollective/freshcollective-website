@@ -8,6 +8,7 @@ from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL, CHANNEL_IN_APP
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
+from app.comms.templates.base import render_email_shell
 from app.comms.templates.registry import template_for
 
 
@@ -47,14 +48,19 @@ class PathwayPublishedEmailTemplate:
         collective = recipient.template_context.get("collective_name") or "your collective"
         pathway = recipient.template_context.get("pathway_title") or "a new pathway"
         subject = f"New pathway in {collective}: {pathway}"
+        opening = f"A new pathway is available in {collective}: {pathway}."
         body_text = (
-            f"A new pathway is available in {collective}: {pathway}.\n\n"
+            f"{opening}\n\n"
             "Open Fresh Collective to explore."
         )
-        body_html = (
-            f"<p>A new pathway is available in <strong>{collective}</strong>: "
-            f"<em>{pathway}</em>.</p>"
-            "<p>Open Fresh Collective to explore.</p>"
+        # No CTA: this event's template_context carries no pathway URL.
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            body_paragraphs=[
+                opening,
+                "Open Fresh Collective to explore.",
+            ],
         )
         return RenderedPayload(
             to="",
