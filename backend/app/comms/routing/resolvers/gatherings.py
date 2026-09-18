@@ -71,3 +71,36 @@ class GatheringCancelledResolver:
             for uid in recipient_ids
             if uid
         ]
+
+
+@resolver_for("gathering.reminder.24h")
+class GatheringReminder24hResolver:
+    """Single recipient — the member whose booking is being reminded.
+
+    The sweep resolves every member-facing fact (local start time,
+    collective name, gathering URL) at emit time, so nothing here needs
+    to re-read the domain graph.
+    """
+
+    event_type = "gathering.reminder.24h"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        payload = event.payload or {}
+        user_id = payload.get("recipient_user_id") or event.actor_user_id
+        if not user_id:
+            return []
+        return [
+            ResolvedRecipient(
+                user_id=user_id,
+                role_in_event="attendee",
+                human_reason="You have a place booked at this gathering.",
+                template_context={
+                    "gathering_title": payload.get("gathering_title") or "",
+                    "gathering_when":  payload.get("gathering_when") or "",
+                    "collective_name": payload.get("collective_name") or "",
+                    "gathering_url":   payload.get("gathering_url") or "",
+                },
+            ),
+        ]

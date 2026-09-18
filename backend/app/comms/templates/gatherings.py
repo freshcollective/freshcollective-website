@@ -170,3 +170,84 @@ class GatheringCancelledInAppTemplate:
             body_text="Your place has been released.",
             metadata={"notification_type": "gathering_cancelled"},
         )
+
+
+# ---------------------------------------------------------------------------
+# gathering.reminder.24h — one reminder, roughly a day ahead
+# ---------------------------------------------------------------------------
+#
+# Deliberately short. The member already chose to be there; this is a
+# nudge, not a pitch. The registered ``gathering.reminder.1h`` event has
+# no template on purpose — the MVP sends exactly one reminder.
+
+
+_EVENT_REMINDER_24H = "gathering.reminder.24h"
+
+
+@template_for(_EVENT_REMINDER_24H, CHANNEL_EMAIL_TRANSACTIONAL)
+class GatheringReminder24hEmailTemplate:
+    key = "gathering.reminder.24h.email_transactional"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx        = recipient.template_context
+        title      = (ctx.get("gathering_title") or "").strip() or "your gathering"
+        when       = (ctx.get("gathering_when") or "").strip()
+        collective = (ctx.get("collective_name") or "").strip()
+        url        = (ctx.get("gathering_url") or "").strip()
+
+        subject = f"Tomorrow: {title}"
+
+        opening = (
+            f"{title} is coming up {when}."
+            if when else f"{title} is coming up tomorrow."
+        )
+        if collective:
+            opening += f" It\u2019s part of {collective}."
+
+        paragraphs = [opening, "Your place is booked \u2014 we look forward to seeing you."]
+
+        body_text = (
+            f"{opening}\n\nYour place is booked \u2014 we look forward to "
+            "seeing you."
+            + (f"\n\nView the gathering:\n{url}" if url else "")
+        )
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            body_paragraphs=paragraphs,
+            action=("View the gathering", url) if url else None,
+        )
+        return RenderedPayload(
+            to="",
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text,
+            metadata={"notification_type": "gathering_reminder_24h"},
+        )
+
+
+@template_for(_EVENT_REMINDER_24H, CHANNEL_IN_APP)
+class GatheringReminder24hInAppTemplate:
+    key = "gathering.reminder.24h.in_app"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx   = recipient.template_context
+        title = (ctx.get("gathering_title") or "").strip() or "your gathering"
+        when  = (ctx.get("gathering_when") or "").strip()
+        return RenderedPayload(
+            to="",
+            subject=f"Tomorrow: {title}",
+            body_text=(
+                f"Coming up {when}." if when else "Coming up tomorrow."
+            ),
+            metadata={
+                "notification_type": "gathering_reminder_24h",
+                "url": ctx.get("gathering_url"),
+            },
+        )
