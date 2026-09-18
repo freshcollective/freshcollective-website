@@ -88,7 +88,8 @@ from app.spaces.schemas import (
 
 from app.models.platform import EventSeries as _EventSeriesModel  # noqa: E402
 from app.models.platform import PathwayStepManualRelease  # noqa: E402
-from app.services.notification_service import trigger_booking_confirmed, trigger_event_booking_creator  # noqa: E402
+from app.services.gathering_booking_emit import emit_booking_confirmed  # noqa: E402
+from app.services.notification_service import trigger_event_booking_creator  # noqa: E402
 from app.services import channel_permissions as channel_perms  # noqa: E402
 
 
@@ -254,34 +255,6 @@ def _viewer_has_series_pass(user, series_id: str | None, db, now) -> bool:
     return hit is not None
 
 
-def _emit_booking_confirmed(db, background_tasks, *, event, booker) -> None:
-    """M5c: emit gathering.booking.confirmed alongside the legacy
-    trigger. Kept as a helper so the two call sites (upsert + fresh
-    booking) share one place to bundle the payload.
-    """
-    from app.comms import Source, emit as comms_emit
-    from app.comms.rollout import schedule_routing_if_needed
-    ev = comms_emit(
-        db,
-        event_type="gathering.booking.confirmed",
-        source_type=Source.CREATOR,
-        source_id=event.creator_id if getattr(event, "creator_id", None) else booker.id,
-        actor_user_id=booker.id,
-        subject_type="gathering", subject_id=event.id,
-        context={
-            "space_id": event.space_id,
-            "collective_name": getattr(event, "collective_name", None),
-        },
-        payload={
-            "booker_id": booker.id,
-            "gathering_title": getattr(event, "title", None),
-            "gathering_starts_at": (
-                event.starts_at.isoformat() if getattr(event, "starts_at", None) else None
-            ),
-        },
-    )
-    db.commit()
-    schedule_routing_if_needed(background_tasks, ev, "gathering.booking.confirmed")
 from app.services.pathway_release import (  # noqa: E402
     Availability,
     PreviousStepState,
@@ -2011,7 +1984,12 @@ def book_event(
         db.commit()
         db.refresh(existing)
         background_tasks.add_task(trigger_event_booking_creator, event.id, current_user.id)
-        background_tasks.add_task(trigger_booking_confirmed, event.id, current_user.id)
+        # Comms — member booking confirmation. Replaces the legacy
+        # trigger, which has stood down for this topic since
+        # ``gatherings`` went live and left members with no email.
+        emit_booking_confirmed(
+            db, booking=existing, background_tasks=background_tasks,
+        )
         return BookingResponse(status="confirmed", booking_id=existing.id)
 
     booking = EventBooking(
@@ -2029,7 +2007,9 @@ def book_event(
     db.commit()
     db.refresh(booking)
     background_tasks.add_task(trigger_event_booking_creator, event.id, current_user.id)
-    background_tasks.add_task(trigger_booking_confirmed, event.id, current_user.id)
+    emit_booking_confirmed(
+        db, booking=booking, background_tasks=background_tasks,
+    )
     return BookingResponse(status="confirmed", booking_id=booking.id)
 
 

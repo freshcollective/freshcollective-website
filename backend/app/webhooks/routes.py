@@ -487,12 +487,20 @@ def _handle_gathering_ticket_completed(
         # are impossible). Email is a graceful no-op when RESEND_API_KEY
         # is unset.
         try:
+            from app.services.gathering_booking_emit import (
+                emit_booking_confirmed,
+            )
             from app.services.notification_service import (
-                trigger_booking_confirmed,
                 trigger_event_booking_creator,
             )
             trigger_event_booking_creator(event_id, payer_user_id)
-            trigger_booking_confirmed(event_id, payer_user_id)
+            # Comms — member booking confirmation. Only reached on first
+            # fulfilment (re-delivery short-circuits on
+            # ``already_fulfilled`` above); the emit's dedupe key is a
+            # second guard. No BackgroundTasks in a webhook, so routing
+            # dispatches synchronously.
+            if outcome.booking is not None:
+                emit_booking_confirmed(db, booking=outcome.booking)
         except Exception as exc:  # noqa: BLE001 — never let notify failure block fulfilment
             logger.warning(
                 "gathering ticket: notification failed for txn=%s: %s",
