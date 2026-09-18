@@ -173,3 +173,33 @@ class PurchasePlanCompletedResolver:
                 template_context=ctx,
             ),
         ]
+
+
+@resolver_for("purchase.refunded")
+class PurchaseRefundedResolver:
+    """The payer is the single recipient. Creator payout accounting is
+    deliberately absent from the payload and therefore from the context."""
+
+    event_type = "purchase.refunded"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        if not event.actor_user_id:
+            return []
+        p = event.payload or {}
+        return [
+            ResolvedRecipient(
+                user_id=event.actor_user_id,
+                role_in_event="buyer",
+                human_reason="A refund on your Fresh Collective purchase was processed.",
+                template_context={
+                    "first_name":      p.get("first_name") or "",
+                    "amount_cents":    p.get("amount_cents"),
+                    "currency":        (p.get("currency") or "").upper(),
+                    "collective_name": p.get("collective_name") or "",
+                    "item_name":       p.get("item_name") or "",
+                    "is_full_refund":  bool(p.get("is_full_refund")),
+                },
+            ),
+        ]

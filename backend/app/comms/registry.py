@@ -134,6 +134,14 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # ``finite_plan_lifecycle.record_later_successful_instalment``. One
     # event per plan for its whole lifetime.
     EventDefinition("purchase.plan_completed",            TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
+    # A refund Stripe has actually settled. Emitted from
+    # ``webhooks/refund_handlers.py`` on ``charge.refunded``, which
+    # Stripe fires only AFTER a refund succeeds — never on a refund
+    # merely being requested. Fires once per genuine increase in the
+    # charge's cumulative refunded amount, so a partial refund followed
+    # by a second partial produces two events, and a duplicate webhook
+    # delivery produces none.
+    EventDefinition("purchase.refunded",                  TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
     # Creator platform-plan activation (Fresh Collective Creator /
     # Creator Portfolio tiers). Registered under TOPIC_ACCOUNT rather
     # than TOPIC_SUBSCRIPTIONS because this is a transactional

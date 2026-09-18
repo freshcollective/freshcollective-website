@@ -255,7 +255,20 @@ def handle_invoice_paid(
     sub_row.grace_expires_at = None
     sub_row.current_period_end = scb.period_end_from_stripe(subscription)
     sub_row.cancel_at_period_end = bool(subscription.get("cancel_at_period_end", False))
+
+    # Comms — recovery only. An ``invoice.paid`` for an already-active
+    # subscription is the ordinary monthly renewal and emits nothing.
+    recovered_event = None
+    if was_past_due:
+        from app.services.creator_billing_emit import emit_subscription_recovered
+        recovered_event = emit_subscription_recovered(db, sub=sub_row)
+
     db.commit()
+    if recovered_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, recovered_event, "creator.subscription.recovered",
+        )
 
     logger.info(
         "creator_billing_webhook: invoice.paid handled — subscription=%s "
@@ -321,10 +334,27 @@ def handle_invoice_payment_failed(
     # Only start a new grace window if not already in one. Repeated
     # invoice failures within a single grace period do not extend it —
     # the window runs from the FIRST failure.
-    if sub_row.grace_expires_at is None:
+    grace_window_opened = sub_row.grace_expires_at is None
+    if grace_window_opened:
         sub_row.grace_expires_at = now + _GRACE_WINDOW
     sub_row.status = CreatorSubscriptionStatus.past_due
+
+    # Comms — one email per grace window. Stripe retries a failing
+    # invoice several times inside our 7-day window; only the failure
+    # that OPENS the window is worth an email.
+    failed_event = None
+    if grace_window_opened:
+        from app.services.creator_billing_emit import (
+            emit_subscription_payment_failed,
+        )
+        failed_event = emit_subscription_payment_failed(db, sub=sub_row)
+
     db.commit()
+    if failed_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, failed_event, "creator.subscription.payment_failed",
+        )
     logger.info(
         "creator_billing_webhook: invoice.payment_failed — sub=%s "
         "grace_expires_at=%s",
@@ -373,9 +403,15 @@ def handle_subscription_updated(
         )
         return True
 
-    # Refresh lifecycle fields from the latest Stripe payload.
+    # Refresh lifecycle fields from the latest Stripe payload. Capture
+    # the prior cancel flag FIRST — the False → True transition is what
+    # earns an email, not merely arriving with the flag already set.
+    was_cancel_scheduled = bool(sub_row.cancel_at_period_end)
     sub_row.current_period_end = scb.period_end_from_stripe(subscription)
     sub_row.cancel_at_period_end = bool(subscription.get("cancel_at_period_end", False))
+    cancellation_newly_scheduled = (
+        sub_row.cancel_at_period_end and not was_cancel_scheduled
+    )
 
     # Plan change (upgrade confirmed). Read the CURRENT price on the
     # subscription and map back to a slug via the metadata (Stripe
@@ -408,7 +444,23 @@ def handle_subscription_updated(
         # ``customer.subscription.deleted`` also fires; treat this as
         # a defensive noop and let deleted handle it.
         pass
+
+    # Comms — the creator scheduled a cancellation. The plan is still
+    # active until ``current_period_end``; the template says so.
+    scheduled_event = None
+    if cancellation_newly_scheduled:
+        from app.services.creator_billing_emit import (
+            emit_subscription_cancellation_scheduled,
+        )
+        scheduled_event = emit_subscription_cancellation_scheduled(db, sub=sub_row)
+
     db.commit()
+    if scheduled_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, scheduled_event,
+            "creator.subscription.cancellation_scheduled",
+        )
     mark_processed(db, event_id)
     return True
 
@@ -453,10 +505,25 @@ def handle_subscription_deleted(
         )
         return True
 
+    already_cancelled = sub_row.status == CreatorSubscriptionStatus.cancelled
     sub_row.status = CreatorSubscriptionStatus.cancelled
     sub_row.grace_expires_at = None
     sub_row.ends_at = datetime.utcnow()
+
+    # Comms — the subscription has actually ended. Guarded on the prior
+    # status so a replay against an already-cancelled row stays silent
+    # even if it somehow gets past ``claim_event``.
+    cancelled_event = None
+    if not already_cancelled:
+        from app.services.creator_billing_emit import emit_subscription_cancelled
+        cancelled_event = emit_subscription_cancelled(db, sub=sub_row)
+
     db.commit()
+    if cancelled_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, cancelled_event, "creator.subscription.cancelled",
+        )
     logger.info(
         "creator_billing_webhook: subscription.deleted — sub=%s status=cancelled",
         subscription["id"],

@@ -8,6 +8,7 @@ registry via each submodule's decorator side effects.
 from app.comms.routing.resolvers import account       # noqa: F401
 from app.comms.routing.resolvers import collective    # noqa: F401
 from app.comms.routing.resolvers import community     # noqa: F401
+from app.comms.routing.resolvers import creator_billing  # noqa: F401
 from app.comms.routing.resolvers import diagnostics   # noqa: F401
 from app.comms.routing.resolvers import gatherings    # noqa: F401
 from app.comms.routing.resolvers import messages      # noqa: F401

@@ -10,6 +10,7 @@ from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
 from app.comms.templates.base import render_email_shell
 from app.comms.templates.registry import template_for
+from app.services.creator_plan_labels import creator_facing_plan_label
 
 
 _EVENT_PASSWORD_RESET_REQUESTED     = "account.password_reset_requested"
@@ -264,7 +265,12 @@ class CreatorPlanActivatedEmailTemplate:
     ) -> RenderedPayload:
         ctx = recipient.template_context
         greeting = _greeting(ctx.get("first_name"))
-        plan_name = (ctx.get("plan_name") or "").strip() or "Creator"
+        # ``plan_name`` arrives as the internal ``CreatorPlan.name``,
+        # which for the ``pro`` tier is the internal shorthand "Pro".
+        # Translate to the creator-facing label before it reaches copy.
+        plan_name = creator_facing_plan_label(
+            slug=ctx.get("plan_slug"), name=ctx.get("plan_name"),
+        )
         next_url = ctx.get("next_url") or ""
         is_fresh_creator = bool(ctx.get("is_fresh_creator"))
 
@@ -333,7 +339,9 @@ class CreatorPlanActivatedInAppTemplate:
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
     ) -> RenderedPayload:
         ctx = recipient.template_context
-        plan_name = (ctx.get("plan_name") or "").strip() or "Creator"
+        plan_name = creator_facing_plan_label(
+            slug=ctx.get("plan_slug"), name=ctx.get("plan_name"),
+        )
         next_url = ctx.get("next_url") or ""
         is_fresh_creator = bool(ctx.get("is_fresh_creator"))
         body_text = (

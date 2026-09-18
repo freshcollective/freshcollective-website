@@ -565,3 +565,104 @@ class PurchasePlanCompletedInAppTemplate:
                 "url": member_url,
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# purchase.refunded — a refund Stripe has actually settled
+# ---------------------------------------------------------------------------
+
+
+_EVENT_REFUNDED = "purchase.refunded"
+
+
+def _refund_subject_item(ctx: dict) -> str:
+    """What was refunded, in the member's words. Falls back through
+    item → collective → a neutral noun, never an internal id."""
+    item = (ctx.get("item_name") or "").strip()
+    if item:
+        return item
+    collective = (ctx.get("collective_name") or "").strip()
+    if collective:
+        return collective
+    return "your purchase"
+
+
+@template_for(_EVENT_REFUNDED, CHANNEL_EMAIL_TRANSACTIONAL)
+class PurchaseRefundedEmailTemplate:
+    key = "purchase.refunded.email_transactional"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx        = recipient.template_context
+        greeting   = _greeting(ctx.get("first_name"))
+        what       = _refund_subject_item(ctx)
+        amount     = _fmt_amount(ctx.get("amount_cents"), ctx.get("currency"))
+        collective = (ctx.get("collective_name") or "").strip()
+        is_full    = bool(ctx.get("is_full_refund"))
+
+        subject = f"Your refund for {what} has been processed"
+
+        opening = (
+            f"We\u2019ve processed a refund of {amount} for {what}."
+            if amount else f"We\u2019ve processed a refund for {what}."
+        )
+        if collective and collective != what:
+            opening += f" This was part of {collective}."
+
+        # Partial vs full is a materially different fact for the member.
+        scope = (
+            "This refunds the full amount you paid."
+            if is_full
+            else "This is a partial refund — the rest of your payment stands."
+        )
+
+        # The one thing members ask about, and the one thing Fresh
+        # Collective does not control.
+        timing = (
+            "How quickly it appears is up to your bank or card provider, "
+            "and can take several business days. There\u2019s nothing you need "
+            "to do in the meantime."
+        )
+
+        body_text = (
+            f"{greeting}\n\n{opening}\n\n{scope}\n\n{timing}"
+        )
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            greeting=greeting,
+            body_paragraphs=[opening, scope, timing],
+            show_preferences_link=_SHOW_PREFS,
+        )
+        return RenderedPayload(
+            to="",
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text,
+            metadata={"notification_type": "purchase_refunded"},
+        )
+
+
+@template_for(_EVENT_REFUNDED, CHANNEL_IN_APP)
+class PurchaseRefundedInAppTemplate:
+    key = "purchase.refunded.in_app"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx    = recipient.template_context
+        what   = _refund_subject_item(ctx)
+        amount = _fmt_amount(ctx.get("amount_cents"), ctx.get("currency"))
+        return RenderedPayload(
+            to="",
+            subject=f"Refund processed \u2014 {what}",
+            body_text=(
+                f"A refund of {amount} is on its way back to your payment method."
+                if amount else
+                "A refund is on its way back to your payment method."
+            ),
+            metadata={"notification_type": "purchase_refunded"},
+        )

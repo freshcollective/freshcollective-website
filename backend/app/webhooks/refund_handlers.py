@@ -47,6 +47,11 @@ Guardrails
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.comms.models import CommunicationEvent
+
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -139,7 +144,9 @@ def _do_charge_refunded(
     db: Session, *, charge: dict, event_created: datetime | None,
     provider_event_id: str | None = None,
     webhook_event_row_id: str | None = None,
-) -> None:
+) -> "CommunicationEvent | None":
+    """Returns the emitted ``purchase.refunded`` event, if any, so the
+    caller can schedule its routing after the surrounding commit."""
     txn = _find_txn_for_charge(db, charge)
     if txn is None:
         raise SkipWebhookEvent(
@@ -163,6 +170,9 @@ def _do_charge_refunded(
         )
         return
 
+    # Delta for this event = what the member actually sees returned now.
+    # Captured before the cumulative value is overwritten below.
+    previous_refunded_cents = txn.refunded_amount_cents
     txn.refunded_amount_cents = incoming_amount
 
     # Cumulative fee-split reversal targets (migration 127). Never
@@ -247,6 +257,27 @@ def _do_charge_refunded(
         webhook_event_row_id=webhook_event_row_id,
     )
 
+    # Comms — member-facing refund confirmation. Stripe fires
+    # ``charge.refunded`` only after a refund has actually succeeded, so
+    # reaching this line means the money is genuinely on its way back.
+    # Guarded on a real increase in the cumulative total: same-value
+    # re-delivery and out-of-order events emit nothing.
+    refund_delta = incoming_amount - previous_refunded_cents
+    if refund_delta > 0:
+        from app.services.refund_emit import emit_purchase_refunded
+        refund_event = emit_purchase_refunded(
+            db,
+            txn=txn,
+            refund_amount_cents=refund_delta,
+            cumulative_refunded_cents=incoming_amount,
+        )
+        if refund_event is not None:
+            # Routing is scheduled by the caller AFTER
+            # ``process_webhook_event`` commits — the routing pipeline
+            # opens its own session and must see the committed event.
+            return refund_event
+    return None
+
 
 def handle_charge_refunded(
     charge: dict, db: Session, *,
@@ -282,13 +313,18 @@ def handle_charge_refunded(
             {"pe": provider_event_id},
         ).first()
         we_row_id = row[0] if row else None
-        _do_charge_refunded(
-            db,
-            charge=charge,
-            event_created=stamp,
-            provider_event_id=provider_event_id,
-            webhook_event_row_id=we_row_id,
+        emitted.append(
+            _do_charge_refunded(
+                db,
+                charge=charge,
+                event_created=stamp,
+                provider_event_id=provider_event_id,
+                webhook_event_row_id=we_row_id,
+            )
         )
+
+    # Collected inside the handler closure, drained after the commit.
+    emitted: list[Any] = []
 
     process_webhook_event(
         db,
@@ -297,3 +333,11 @@ def handle_charge_refunded(
         event_type="charge.refunded",
         handler=_handler,
     )
+
+    # Schedule routing for any refund confirmation the handler emitted.
+    # Runs outside a request context (Stripe webhook), so
+    # ``schedule_routing_if_needed`` dispatches synchronously.
+    for event in emitted:
+        if event is not None:
+            from app.comms.rollout import schedule_routing_if_needed
+            schedule_routing_if_needed(None, event, "purchase.refunded")

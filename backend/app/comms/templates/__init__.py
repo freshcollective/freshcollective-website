@@ -32,6 +32,7 @@ from app.comms.templates.registry import (
 from app.comms.templates import account         # noqa: F401
 from app.comms.templates import collective      # noqa: F401
 from app.comms.templates import community       # noqa: F401
+from app.comms.templates import creator_billing  # noqa: F401
 from app.comms.templates import diagnostics     # noqa: F401
 from app.comms.templates import gatherings      # noqa: F401
 from app.comms.templates import messages        # noqa: F401

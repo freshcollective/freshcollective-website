@@ -4263,9 +4263,98 @@ def cancel_event(
             recipient_ids=recipient_ids,
             cancelled_by_id=current_user.id,
         )
+        # Comms — the member-facing cancellation email. The in-app
+        # notification above is unchanged; this adds the email the
+        # Phase 2 audit found missing. Recipients are captured here
+        # because the booking rows are already ``cancelled`` by now and
+        # cannot be re-queried by the resolver.
+        _emit_gathering_cancelled(
+            db,
+            event=event,
+            space=space,
+            recipient_ids=[
+                uid for uid in recipient_ids if uid != current_user.id
+            ],
+            was_ticketed=any(
+                (bk.access_pass_id is not None or bk.credits_used > 0)
+                for bk in confirmed_bookings
+            ),
+            background_tasks=background_tasks,
+        )
 
     booked_count = 0  # all bookings are now cancelled
     return _event_to_dict(event, booked_count)
+
+
+def _emit_gathering_cancelled(
+    db,
+    *,
+    event,
+    space,
+    recipient_ids: list[str],
+    was_ticketed: bool,
+    background_tasks=None,
+) -> None:
+    """Emit ``gathering.cancelled`` for the released attendees.
+
+    Never raises — a comms failure must not roll back a cancellation
+    the creator has already been told succeeded.
+    """
+    if not recipient_ids:
+        return
+    try:
+        from app.comms import Source, emit as comms_emit
+        from app.comms.rollout import schedule_routing_if_needed
+
+        starts_at = ""
+        if getattr(event, "starts_at", None) is not None:
+            starts_at = _format_event_start_for_space(event, space)
+
+        ev = comms_emit(
+            db,
+            event_type="gathering.cancelled",
+            source_type=Source.COLLECTIVE,
+            source_id=space.id,
+            actor_user_id=None,
+            subject_type="event",
+            subject_id=event.id,
+            context={"space_id": space.id, "collective_name": space.name},
+            payload={
+                "gathering_title":     event.title,
+                "gathering_starts_at": starts_at,
+                "collective_name":     space.name,
+                "recipient_user_ids":  recipient_ids,
+                "was_ticketed":        was_ticketed,
+            },
+            # A gathering is cancelled once.
+            dedupe_key=f"gathering_cancelled:{event.id}",
+        )
+        db.commit()
+        schedule_routing_if_needed(background_tasks, ev, "gathering.cancelled")
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "gathering.cancelled emit failed for event %s", event.id,
+        )
+
+
+def _format_event_start_for_space(event, space) -> str:
+    """Gathering start time in the Collective's own timezone.
+
+    ``Event.starts_at`` is naive UTC; ``Space.timezone`` is the
+    Collective's display zone. Falls back to a bare UTC rendering if
+    the zone is missing or unknown — never raises.
+    """
+    from datetime import timezone as _timezone
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(space.timezone) if getattr(space, "timezone", None) else None
+    except Exception:
+        tz = None
+    dt = event.starts_at
+    if tz is not None:
+        dt = dt.replace(tzinfo=_timezone.utc).astimezone(tz)
+    return dt.strftime("%-d %B %Y at %-I:%M%p").replace("AM", "am").replace("PM", "pm")
 
 
 def _notify_gathering_cancelled_recipients(

@@ -78,3 +78,95 @@ class BookingConfirmedEmailTemplate:
                 "gathering_id": recipient.template_context.get("gathering_id"),
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# gathering.cancelled — the creator cancelled the whole gathering
+# ---------------------------------------------------------------------------
+#
+# Scope note. Only the creator-cancels-the-gathering case emails. The
+# other three ways a booking can end are deliberately silent here:
+#
+#   * member cancels their own booking — they performed the action and
+#     saw it confirmed in the UI;
+#   * plan suspension releases future bookings — the
+#     ``access.suspended`` email already discloses exactly this, and a
+#     second email would duplicate it;
+#   * admin access revocation — an operator-driven flow with its own
+#     member communication.
+
+
+_EVENT_CANCELLED = "gathering.cancelled"
+
+
+@template_for(_EVENT_CANCELLED, CHANNEL_EMAIL_TRANSACTIONAL)
+class GatheringCancelledEmailTemplate:
+    key = "gathering.cancelled.email_transactional"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx        = recipient.template_context
+        title      = (ctx.get("gathering_title") or "").strip() or "your gathering"
+        collective = (ctx.get("collective_name") or "").strip()
+        starts_at  = (ctx.get("gathering_starts_at") or "").strip()
+        ticketed   = bool(ctx.get("was_ticketed"))
+
+        subject = f"Cancelled: {title}"
+
+        opening = (
+            f"{title} has been cancelled"
+            + (f" by {collective}." if collective else ".")
+        )
+        when = (
+            f"It was due to take place {starts_at}. Your place has been "
+            "released and there\u2019s nothing you need to do."
+            if starts_at else
+            "Your place has been released and there\u2019s nothing you need to do."
+        )
+
+        paragraphs = [opening, when]
+        # Only say anything about money when a ticket was actually paid
+        # for. Refunds are handled separately and confirmed by their own
+        # email, so this promises nothing about timing or amount.
+        if ticketed:
+            paragraphs.append(
+                "If you paid for a ticket, any refund will be confirmed "
+                "separately by email."
+            )
+
+        body_text = f"{opening}\n\n{when}" + (
+            "\n\nIf you paid for a ticket, any refund will be confirmed "
+            "separately by email." if ticketed else ""
+        )
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            body_paragraphs=paragraphs,
+        )
+        return RenderedPayload(
+            to="",
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text,
+            metadata={"notification_type": "gathering_cancelled"},
+        )
+
+
+@template_for(_EVENT_CANCELLED, CHANNEL_IN_APP)
+class GatheringCancelledInAppTemplate:
+    key = "gathering.cancelled.in_app"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx   = recipient.template_context
+        title = (ctx.get("gathering_title") or "").strip() or "your gathering"
+        return RenderedPayload(
+            to="",
+            subject=f"Cancelled: {title}",
+            body_text="Your place has been released.",
+            metadata={"notification_type": "gathering_cancelled"},
+        )
