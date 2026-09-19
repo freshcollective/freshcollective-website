@@ -60,6 +60,15 @@ router = APIRouter(
 
 TEST_SUBJECT_PREFIX = "[TEST] "
 
+# The only difference between a test send and the preview the admin was
+# just looking at. Named so a test can reconstruct the transformation
+# exactly and assert byte equality with the preview, rather than
+# checking for a few substrings and hoping.
+TEST_BANNER_TEXT = (
+    "This is a test email sent from Fresh Collective World Management. "
+    "It was rendered with sample data and is not a real notification."
+)
+
 
 # ---------------------------------------------------------------------------
 # Sample context
@@ -638,6 +647,11 @@ def test_send_email_template(
             ),
         )
 
+    # Resolved through exactly the same path the preview endpoint uses,
+    # from exactly the same request shape — ``mode``, ``drafts`` and
+    # ``variant`` all included. The admin presses Send test while
+    # looking at a rendered email, so the test must be that email; one
+    # that quietly sent something else would be worse than none.
     effective, errors = _resolve_for_preview(db, decl, body)
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
@@ -645,14 +659,11 @@ def test_send_email_template(
     subject, html, text = _render(decl, effective, body.variant)
 
     # Marked as a test at render time, never by editing a slot — the
-    # stored copy and the code defaults are untouched by this.
+    # stored copy and the code defaults are untouched by this. This is
+    # the only difference from the preview.
     subject = f"{TEST_SUBJECT_PREFIX}{subject}"
-    banner = (
-        "This is a test email sent from Fresh Collective World Management. "
-        "It was rendered with sample data and is not a real notification."
-    )
-    text = f"[TEST] {banner}\n\n{text}"
-    html = _inject_test_banner(html, banner)
+    text = f"[TEST] {TEST_BANNER_TEXT}\n\n{text}"
+    html = _inject_test_banner(html, TEST_BANNER_TEXT)
 
     from app.comms.providers import get as get_provider
     from app.comms.providers.base import RenderedPayload

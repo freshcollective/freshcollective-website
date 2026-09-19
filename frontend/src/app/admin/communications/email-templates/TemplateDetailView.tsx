@@ -197,10 +197,10 @@ export default function TemplateDetailView({
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        // Always the current wording, whichever way the preview
-        // toggle happens to be set — a test exists to check an edit
-        // before committing to it.
-        body: JSON.stringify(previewBody(detail, 'effective', drafts, selection)),
+        // Exactly the body the preview was just rendered from — same
+        // mode, same drafts, same variant. A test email that differed
+        // from the email on screen would be worse than no test at all.
+        body: JSON.stringify(previewBody(detail, mode, drafts, selection)),
       })
       if (!res.ok) throw new Error(String(res.status))
       const body = await res.json()
@@ -374,8 +374,14 @@ export default function TemplateDetailView({
               </div>
               <p className="text-[12px]" style={{ color: INK_SOFTER }}>
                 Saved wording takes effect on the next email sent. A test goes
-                only to {adminEmail}, using your current wording whether or not it
-                is saved.
+                only to {adminEmail} and sends exactly what the preview is
+                showing — right now that is{' '}
+                <strong style={{ fontWeight: 600 }}>
+                  {mode === 'default'
+                    ? 'the Fresh Collective default'
+                    : 'your current wording, saved or not'}
+                </strong>
+                .
               </p>
 
               {confirmReset && (

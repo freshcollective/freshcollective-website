@@ -395,13 +395,28 @@ describe('test send', () => {
       'Test email sent to admin@freshcollective.au')
   })
 
-  test('the request body is the preview body — current unsaved wording', () => {
-    // A test that sent the *saved* copy would be useless for checking
-    // an edit before committing to it.
-    const d = detail()
-    const body = previewBody(d, 'effective', { heading: 'Unsaved' },
-                             { booking_source: 'added_by_creator' })
+  // Both requests are built by `previewBody` from the same state, which
+  // is how the email that arrives is the email that was on screen. That
+  // the component passes the *same mode* to both is asserted in
+  // `src/app/admin/communications/email-templates/contract.test.ts` —
+  // it is a property of the call sites, not of this function.
+
+  test('current mode carries the unsaved drafts', () => {
+    const body = previewBody(detail(), 'effective', { heading: 'Unsaved' }, {})
     assert.deepEqual(body.drafts, { heading: 'Unsaved' })
+  })
+
+  test('default mode drops them, so the test matches the default preview', () => {
+    const body = previewBody(detail(), 'default', { heading: 'Unsaved' }, {})
+    assert.deepEqual(body.drafts, {})
+  })
+
+  test('the variant selection travels with either mode', () => {
+    for (const mode of ['effective', 'default'] as const) {
+      const body = previewBody(detail(), mode, {},
+                               { booking_source: 'added_by_creator' })
+      assert.deepEqual(body.variant, { booking_source: 'added_by_creator' })
+    }
   })
 
   test('there is no recipient anywhere in the request', () => {

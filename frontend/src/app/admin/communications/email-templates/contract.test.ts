@@ -56,6 +56,24 @@ describe('the test-send control', () => {
   })
 })
 
+describe('a test send is the email on screen', () => {
+  test('the preview and the test send are built from the same state', () => {
+    const src = readFileSync(join(HERE, 'TemplateDetailView.tsx'), 'utf8')
+    const calls = [...src.matchAll(/previewBody\(([^)]*)\)/g)].map((m) => m[1])
+
+    // Two call sites: the preview request and the test-send request.
+    assert.equal(calls.length, 2, `expected 2 previewBody calls, got ${calls.length}`)
+    // Both must pass the live `mode` — a literal at either site is the
+    // bug this pins: the admin would be sent something other than the
+    // email they were looking at.
+    for (const args of calls) {
+      assert.match(args, /detail,\s*mode,\s*drafts,\s*selection/,
+        `previewBody(${args}) must use the live preview state`)
+    }
+    assert.equal(calls[0], calls[1])
+  })
+})
+
 describe('route protection', () => {
   test('the page checks the admin role before rendering anything', () => {
     const src = readFileSync(join(HERE, 'page.tsx'), 'utf8')
