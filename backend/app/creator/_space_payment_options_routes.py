@@ -128,6 +128,7 @@ from app.models.platform import (
 from app.models.user import User
 from app.services.schedule_validation import (
     apply_recurring_derivations,
+    apply_recurring_update_derivations,
     validate_recurring_installments_payload,
 )
 from app.services.checkout_orchestration import (
@@ -984,8 +985,10 @@ def update_commerce_payment_option_schedule(
     # FIP2 — derive Stripe cadence + total from the merged row so
     # a Creator patch that only changes ``interval`` (or only bumps
     # the per-payment amount) still keeps the two Stripe-facing
-    # columns and the stored total in sync.
-    apply_recurring_derivations(sched)
+    # columns and the stored total in sync. ``updates`` tells the
+    # helper which fields the Creator actually sent, so a stale
+    # stored total is recomputed rather than preserved.
+    apply_recurring_update_derivations(sched, supplied_fields=updates.keys())
 
     # FIP1 — validate the merged post-update state when the row is
     # (now) recurring_installments AND (now) published. Editing an

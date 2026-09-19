@@ -135,6 +135,54 @@ def apply_recurring_derivations(target: Any) -> None:
             _set_if_writable("total_amount_cents", amt * cnt)
 
 
+# Fields the recurring total is derived from. A patch that touches any
+# of these invalidates a previously-stored total.
+RECURRING_TOTAL_INPUTS: tuple[str, ...] = (
+    "installment_amount_cents",
+    "installment_count",
+)
+
+
+def apply_recurring_update_derivations(
+    target: Any, *, supplied_fields: Any,
+) -> None:
+    """Derivations for an UPDATE applied to an already-merged row.
+
+    :func:`apply_recurring_derivations` preserves a ``total_amount_cents``
+    that is already set, on the reasonable assumption that a caller who
+    supplied one meant it. That assumption holds for a create payload.
+    It does **not** hold for an update applied to an ORM row, where a
+    non-NULL total may simply be the *old stored value* — the helper
+    cannot tell "the caller sent this" apart from "this was already in
+    the database".
+
+    That gap is what made an edit from $42.00 × 10 to $37.80 × 10 fail
+    validation: the per-payment amount moved to 3780, the stored total
+    stayed at 42000, and the strict cross-check rejected the pair.
+
+    ``supplied_fields`` is the set of field names the caller actually
+    sent — ``model_dump(exclude_unset=True)`` keys — which is precisely
+    the signal the plain helper lacks:
+
+    * caller sent ``total_amount_cents`` → respect it exactly. If it
+      disagrees with amount × count, validation says so rather than
+      this helper silently overwriting the Creator's number.
+    * caller changed an input the total is derived from, without
+      sending a total → the stored total is stale; clear it so it is
+      recomputed from the merged values.
+    * caller changed neither → nothing to recompute.
+    """
+    supplied = set(supplied_fields or ())
+    if (
+        getattr(target, "schedule_type", None) == "recurring_installments"
+        and "total_amount_cents" not in supplied
+        and any(field in supplied for field in RECURRING_TOTAL_INPUTS)
+    ):
+        if hasattr(target, "total_amount_cents"):
+            target.total_amount_cents = None
+    apply_recurring_derivations(target)
+
+
 class ScheduleValidationError(ValueError):
     """Raised by :func:`validate_recurring_installments_row` on invalid input."""
 

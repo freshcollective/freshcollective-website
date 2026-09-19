@@ -223,6 +223,7 @@ from app.services.gathering_types import normalise_access_type
 from app.services.notification_service import trigger_new_step
 from app.services.schedule_validation import (
     apply_recurring_derivations,
+    apply_recurring_update_derivations,
     validate_recurring_installments_payload,
 )
 from app.spaces.schemas import SpaceSummary
@@ -8100,8 +8101,13 @@ def update_payment_option_schedule(
         else:
             setattr(sched, field, val)
 
-    # FIP2 — derive Stripe cadence + total from the merged row.
-    apply_recurring_derivations(sched)
+    # FIP2 — derive Stripe cadence + total from the merged row so
+    # a Creator patch that only changes ``interval`` (or only bumps
+    # the per-payment amount) still keeps the two Stripe-facing
+    # columns and the stored total in sync. ``updates`` tells the
+    # helper which fields the Creator actually sent, so a stale
+    # stored total is recomputed rather than preserved.
+    apply_recurring_update_derivations(sched, supplied_fields=updates.keys())
 
     # FIP1 — validate the merged post-update state when the row is
     # (now) published. Draft rows may remain incomplete so Creators
