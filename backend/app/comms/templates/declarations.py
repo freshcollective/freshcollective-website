@@ -114,6 +114,10 @@ declare(TemplateDeclaration(
         EditableSlot("greeting", "Greeting", "Hey friend,", multiline=False,
                      help_text="Deliberately not personalised — see the note "
                                "on greetings in the code."),
+        EditableSlot("preheader", "Inbox preview line",
+                     "Your account is ready.", multiline=False, max_length=160,
+                     help_text="The one-line summary shown next to the "
+                               "subject in an inbox list."),
         EditableSlot("body.opening", "Opening",
                      "Welcome to Fresh Collective. Your account is ready."),
         EditableSlot("body.reassurance", "Reassurance",
@@ -142,6 +146,13 @@ declare(TemplateDeclaration(
         EditableSlot("heading", "Heading", "Confirm your email",
                      multiline=False),
         EditableSlot("greeting", "Greeting", "Hey friend,", multiline=False),
+        EditableSlot("preheader", "Inbox preview line",
+                     "Confirm your email address so we know we can reach you "
+                     "when it matters.",
+                     multiline=False, max_length=160,
+                     help_text="Deliberately tighter than the body — this is "
+                               "the line shown next to the subject in an "
+                               "inbox list."),
         EditableSlot("body.welcome", "Welcome line",
                      "Welcome to Fresh Collective 🌿"),
         EditableSlot("body.why", "Why we're asking",

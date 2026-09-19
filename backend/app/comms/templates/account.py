@@ -144,13 +144,9 @@ class EmailVerificationRequestedEmailTemplate:
             f"{signoff}"
         )
         body_html = render_email_shell(
-            # Deliberately a tighter line than the body — this is the
-            # inbox preview, not the first paragraph. Not a slot in
-            # this phase.
-            preheader=(
-                "Confirm your email address so we know we can reach you "
-                "when it matters."
-            ),
+            # Deliberately tighter than the body — this is the inbox
+            # preview, not the first paragraph.
+            preheader=r.text("preheader"),
             heading=r.text("heading"),
             greeting=greeting,
             body_paragraphs=[welcome, why, expiry],
@@ -218,7 +214,7 @@ class WelcomeAfterSignupEmailTemplate:
             f"{signoff}"
         )
         body_html = render_email_shell(
-            preheader="Your account is ready.",
+            preheader=r.text("preheader"),
             heading=r.text("heading"),
             greeting=greeting,
             body_paragraphs=[opening, reassurance],

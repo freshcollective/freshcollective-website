@@ -417,21 +417,20 @@ class TestPreview:
     def test_renders_defaults_when_no_draft_is_supplied(self, admin_client):
         r = admin_client.post(
             f"/api/admin/communications/email-templates/{WELCOME}/preview",
-            json={"overrides": {}},
+            json={},
         )
         assert r.status_code == 200
         body = r.json()
         assert body["subject"] == "Welcome to Fresh Collective"
         assert body["html"].lstrip().startswith("<!DOCTYPE html>")
-        assert body["classification"] == EDITABLE
-        assert body["is_live"] is True
+        assert body["mode"] == "effective"
 
     def test_preview_matches_the_real_renderer(self, admin_client):
         """The whole point — a preview that can disagree with a send is
         worse than none."""
         r = admin_client.post(
             f"/api/admin/communications/email-templates/{WELCOME}/preview",
-            json={"overrides": {}},
+            json={},
         )
         real = _render("account.welcome_after_signup", db=None,
                        ctx={**SAMPLE, "next_url": "https://example.test/dashboard"})
@@ -440,14 +439,14 @@ class TestPreview:
     def test_draft_override_appears_in_the_preview(self, admin_client):
         r = admin_client.post(
             f"/api/admin/communications/email-templates/{WELCOME}/preview",
-            json={"overrides": {"heading": "A warm welcome"}},
+            json={"drafts": {"heading": "A warm welcome"}},
         )
         assert "A warm welcome" in r.json()["html"]
 
     def test_invalid_draft_is_reported_and_not_rendered(self, admin_client):
         r = admin_client.post(
             f"/api/admin/communications/email-templates/{WELCOME}/preview",
-            json={"overrides": {"heading": "Hi <b>there</b>"}},
+            json={"drafts": {"heading": "Hi <b>there</b>"}},
         )
         body = r.json()
         assert "heading" in body["errors"]
@@ -467,22 +466,24 @@ class TestPreview:
         assert "Set up your Collective" in fresh
         assert "Open Creator Studio" in returning
 
-    def test_exposes_merge_fields_and_locked_notes(self, admin_client):
+    def test_returns_effective_slot_values(self, admin_client):
+        """Template metadata (merge fields, locked notes, classification)
+        lives on the detail endpoint — see the Phase B suite. Preview
+        returns the render plus the values it used."""
         r = admin_client.post(
             f"/api/admin/communications/email-templates/{BOOKING}/preview",
             json={},
         ).json()
-        names = {f["name"] for f in r["merge_fields"]}
-        assert {"gathering_name", "collective_name", "gathering_when"} <= names
-        assert any("generated" in n for n in r["locked_notes"])
+        decl = get_declaration(BOOKING)
+        assert set(r["effective_slots"]) == {s.slot_id for s in decl.slots}
 
-    def test_system_template_exposes_no_slots(self, admin_client):
+    def test_system_template_previews_but_has_no_slots(self, admin_client):
         r = admin_client.post(
             f"/api/admin/communications/email-templates/{RESET}/preview",
             json={},
         ).json()
-        assert r["classification"] == SYSTEM
-        assert r["slots"] == []
+        assert r["effective_slots"] == {}
+        assert r["html"].lstrip().startswith("<!DOCTYPE html>")
 
     def test_unknown_template_is_404(self, admin_client):
         r = admin_client.post(
@@ -494,7 +495,7 @@ class TestPreview:
         before = db.query(CommunicationTemplateOverride).count()
         admin_client.post(
             f"/api/admin/communications/email-templates/{WELCOME}/preview",
-            json={"overrides": {"heading": "A warm welcome"}},
+            json={"drafts": {"heading": "A warm welcome"}},
         )
         assert db.query(CommunicationTemplateOverride).count() == before
         # And the real render is untouched by the preview.
