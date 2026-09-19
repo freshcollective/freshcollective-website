@@ -238,6 +238,14 @@ class TemplateDeclaration:
     # Preview-only controls for templates that branch. Empty for the
     # majority, which render one shape and expose no control at all.
     preview_variants: tuple[PreviewVariant, ...] = ()
+    # Internal engineering diagnostics. Declared so the inventory in
+    # this module stays the complete list of every template that can
+    # render, but withheld from World Management: an admin has no
+    # copy to write for a developer's provider probe, and showing it
+    # beside real member emails invites the question of whether it is
+    # one. Internal declarations are read-only by construction —
+    # ``declare`` refuses to pair the flag with editable slots.
+    internal: bool = False
 
     @property
     def subject_slot(self) -> EditableSlot | None:
@@ -310,6 +318,11 @@ def declare(decl: TemplateDeclaration) -> TemplateDeclaration:
             f"{decl.template_key}: system-controlled templates must declare "
             "no editable slots — an undeclared slot is unreachable, which is "
             "the whole guarantee"
+        )
+    if decl.internal and decl.classification != SYSTEM:
+        raise ValueError(
+            f"{decl.template_key}: an internal template is not admin-managed "
+            "and must be system-controlled"
         )
     seen: set[str] = set()
     known = set(decl.field_names())
@@ -395,9 +408,24 @@ def get_declaration(template_key: str) -> TemplateDeclaration | None:
 
 
 def all_declarations() -> tuple[TemplateDeclaration, ...]:
+    """Every declaration, internal ones included. This is the parity
+    surface: the set of templates that can render at all."""
     return tuple(
         sorted(_DECLARATIONS.values(), key=lambda d: (d.category, d.display_name))
     )
+
+
+def admin_declarations() -> tuple[TemplateDeclaration, ...]:
+    """The World Management inventory — every email a Fresh Collective
+    admin manages, and nothing else."""
+    return tuple(d for d in all_declarations() if not d.internal)
+
+
+def is_admin_managed(template_key: str) -> bool:
+    """False for an unknown key and for internal diagnostics alike, so
+    the admin API can answer both with one 404."""
+    decl = _DECLARATIONS.get(template_key)
+    return decl is not None and not decl.internal
 
 
 def reset_declarations() -> None:
@@ -681,9 +709,11 @@ __all__ = [
     "SlotResolver",
     "SlotValidationError",
     "TemplateDeclaration",
+    "admin_declarations",
     "all_declarations",
     "declare",
     "get_declaration",
+    "is_admin_managed",
     "load_overrides",
     "preview_overrides",
     "reset_declarations",

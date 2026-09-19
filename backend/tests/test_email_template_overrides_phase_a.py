@@ -543,11 +543,15 @@ class TestPermissions:
 
 class TestDeliveryUnchanged:
     def test_booking_confirmations_remain_transactional(self):
+        """Editing copy does not touch delivery. The booking receipts
+        that were locked before this feature are still locked; the
+        complete audited list is pinned in
+        ``test_transactional_delivery_classification.py``."""
         from app.comms.registry import TRANSACTIONAL_EVENT_TYPES
-        assert TRANSACTIONAL_EVENT_TYPES == {
+        assert {
             "gathering.booking.confirmed",
             "gathering.multi_booking.confirmed",
-        }
+        } <= TRANSACTIONAL_EVENT_TYPES
 
     def test_editable_copy_does_not_change_the_preferences_footer(self):
         """Locked categories still omit the Stay Connected link; unlocked

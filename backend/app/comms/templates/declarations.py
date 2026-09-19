@@ -632,6 +632,7 @@ declare(TemplateDeclaration(
 def _system(
     key: str, event: str, name: str, audience: str, why: str,
     variants: tuple[PreviewVariant, ...] = (),
+    internal: bool = False,
 ) -> None:
     declare(TemplateDeclaration(
         template_key=key, event_type=event, display_name=name,
@@ -639,7 +640,7 @@ def _system(
             ("purchase.", "payment.", "access.", "creator.subscription"),
         ) else CATEGORY_ACCOUNT_LABEL,
         audience=audience, classification=SYSTEM, locked_notes=(why,),
-        preview_variants=variants,
+        preview_variants=variants, internal=internal,
     ))
 
 
@@ -712,10 +713,16 @@ _system(
     "States that members' existing purchases are untouched — the single "
     "most costly sentence in the system to get wrong.",
 )
+# Internal. Declared here so this file stays the complete inventory of
+# everything that can render, and withheld from World Management so the
+# admin inventory stays the emails an admin actually manages. The
+# diagnostic itself is untouched: same event, same resolver, same
+# unbranded template, same dev-only endpoint.
 _system(
     "diagnostics.provider_probe.email_transactional",
     "diagnostics.provider_probe", "Provider probe (internal)",
     "Internal diagnostics only",
     "A developer tool, deliberately unbranded so it cannot be mistaken for "
     "a member email.",
+    internal=True,
 )

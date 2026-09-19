@@ -204,24 +204,28 @@ def process_one(
         )
 
     # ── 1b. Transactional override ───────────────────────────────────
-    # A booking receipt is a record of an action and of the access it
-    # granted, not optional community noise. These events ignore the
-    # member's *category* preference so a broad "quieten Gatherings"
-    # cannot silence a confirmation for something they just booked.
+    # A security message, a receipt, a money- or access-state
+    # notification, or news that something the member booked has
+    # changed. None of those is optional community noise, so these
+    # events ignore the member's *category* preference: a broad
+    # "quieten Gatherings" cannot silence a confirmation for something
+    # they just booked, and no preference can strand someone outside
+    # their own account.
     #
-    # Scope is deliberately narrow — see TRANSACTIONAL_EVENT_TYPES.
-    # Reminders, cancellations and every other gathering event keep
+    # Scope is the audited list in TRANSACTIONAL_EVENT_TYPES.
+    # Reminders, community notifications and the welcome email keep
     # obeying the member's preference exactly as before.
     #
-    # Forcing IMMEDIATE as well as the lock matters: the Gatherings
-    # category is NOT locked, so a member may legitimately have set it
-    # to a digest cadence. A receipt routed into tomorrow's digest is
-    # not a receipt.
+    # Forcing IMMEDIATE as well as the lock matters: Gatherings is NOT
+    # a locked category, so a member may legitimately have set it to a
+    # digest cadence. A receipt routed into tomorrow's digest is not a
+    # receipt.
     #
     # Everything downstream still applies. Consent gates (step 2) and
     # hard-bounce / complaint suppression (step 3) both run after this
     # point and are untouched — a suppressed address stays suppressed.
-    if is_transactional_event(event.event_type):
+    transactional = is_transactional_event(event.event_type)
+    if transactional:
         is_locked = True
         pref_priority = PRIORITY_IMMEDIATE
 
@@ -298,6 +302,10 @@ def process_one(
             )
 
     # ── 4. Priority resolution + rate limit ─────────────────────────
+    # The rate-limit downgrade is skipped for transactional events for
+    # the same reason the digest branch is: a cap designed to stop an
+    # inbox filling with optional notifications must not be the thing
+    # that turns a refund confirmation into a digest line.
     final_priority = resolve_priority(
         db,
         user_id=recipient.user_id,
@@ -306,6 +314,7 @@ def process_one(
         preferred_priority=pref_priority,
         delivery_mode=delivery_mode,
         now=now,
+        exempt_from_rate_limit=transactional,
     )
 
     # ── 5. Digest branch ─────────────────────────────────────────────
@@ -334,8 +343,15 @@ def process_one(
         return DecisionOutcome(channel=channel, digest_item_id=item.id)
 
     # ── 6. Quiet hours (immediate email/push only) ───────────────────
+    # Quiet hours protect a member from being interrupted by messages
+    # they did not ask for. Every transactional event is either the
+    # direct result of something the member just did or a change to
+    # their money or access that they need in order to act — a
+    # password reset held until 7am is a reset the member cannot use,
+    # and a grace deadline is not kinder for arriving later. So the
+    # window is not applied to them.
     scheduled_for: datetime | None = None
-    if final_priority == PRIORITY_IMMEDIATE:
+    if final_priority == PRIORITY_IMMEDIATE and not transactional:
         qh = evaluate_quiet_hours(
             db, user_id=recipient.user_id, channel=channel, now=now,
         )

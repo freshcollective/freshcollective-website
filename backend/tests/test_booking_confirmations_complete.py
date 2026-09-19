@@ -134,17 +134,23 @@ def _recipient(user) -> ResolvedRecipient:
 
 
 class TestTransactionalLock:
-    def test_only_booking_confirmations_are_locked(self):
-        """Scope guard — reminders, cancellations and community events
-        must never be dragged in."""
-        assert TRANSACTIONAL_EVENT_TYPES == {SINGLE, MULTI}
+    def test_booking_confirmations_are_locked(self):
+        """Both confirmations stay locked, and the optional half of the
+        Gatherings category stays optional.
+
+        The complete audited list lives in
+        ``test_transactional_delivery_classification.py``; what matters
+        here is that the two booking receipts are on it and that
+        locking them never reached the reminders.
+        """
         assert is_transactional_event(SINGLE)
         assert is_transactional_event(MULTI)
-        for other in (
-            REMINDER, "gathering.reminder.1h", "gathering.cancelled",
+        assert {SINGLE, MULTI} <= TRANSACTIONAL_EVENT_TYPES
+        for optional in (
+            REMINDER, "gathering.reminder.1h",
             "community.post.published", "pathway.published",
         ):
-            assert not is_transactional_event(other), other
+            assert not is_transactional_event(optional), optional
 
     @pytest.mark.parametrize("event_type", [SINGLE, MULTI])
     def test_silencing_gatherings_cannot_suppress_a_confirmation(

@@ -39,6 +39,7 @@ BOOKING = "gathering.booking.confirmed.email_transactional"
 PURCHASE = "purchase.completed.email_transactional"
 RESET_TPL = "account.password_reset_requested.email_transactional"
 DARK = "dm.message.sent.email_transactional"
+REMINDER_TPL = "gathering.reminder.24h.email_transactional"
 
 
 @pytest.fixture
@@ -108,9 +109,11 @@ class TestList:
     def test_transactional_delivery_is_reported_as_information(self, client):
         by_key = {t["template_key"]: t for t in client.get(BASE).json()}
         assert by_key[BOOKING]["is_transactional"] is True
-        assert by_key[WELCOME]["is_transactional"] is False
-        # Delivery lock and content editability are independent.
+        assert by_key[REMINDER_TPL]["is_transactional"] is False
+        # Delivery lock and content editability are independent — these
+        # two are both fully editable and differ only on delivery.
         assert by_key[BOOKING]["editable"] is True
+        assert by_key[REMINDER_TPL]["editable"] is True
 
     def test_customised_state_and_count(self, client, db, admin):
         assert all(not t["customised"] for t in client.get(BASE).json())
@@ -548,12 +551,33 @@ class TestRegression:
         assert "Thanks so much." in p.body_html
         assert "AUD 37.80" in p.body_html          # generated, unreachable
 
-    def test_transactional_lock_unchanged(self):
+    def test_editing_copy_cannot_move_an_email_between_delivery_classes(
+        self, client,
+    ):
+        """The editor writes copy and nothing else. The complete
+        delivery list is audited in
+        ``test_transactional_delivery_classification.py``; here it only
+        has to survive a save untouched."""
         from app.comms.registry import TRANSACTIONAL_EVENT_TYPES
-        assert TRANSACTIONAL_EVENT_TYPES == {
+        before = set(TRANSACTIONAL_EVENT_TYPES)
+        assert {
             "gathering.booking.confirmed",
             "gathering.multi_booking.confirmed",
+        } <= before
+
+        reported = {
+            t["template_key"]: t["is_transactional"]
+            for t in client.get(BASE).json()
         }
+        r = client.put(f"{BASE}/{WELCOME}",
+                       json={"overrides": {"heading": "A warm welcome"}})
+        assert r.status_code == 200
+
+        assert set(TRANSACTIONAL_EVENT_TYPES) == before
+        assert {
+            t["template_key"]: t["is_transactional"]
+            for t in client.get(BASE).json()
+        } == reported
 
     def test_preference_footer_policy_unchanged_by_editing(self, client, db):
         client.put(f"{BASE}/{WELCOME}", json={"overrides": {"heading": "X"}})

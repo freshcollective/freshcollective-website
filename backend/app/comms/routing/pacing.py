@@ -125,6 +125,7 @@ def resolve_priority(
     preferred_priority: str,
     delivery_mode: str,
     now: datetime | None = None,
+    exempt_from_rate_limit: bool = False,
 ) -> str:
     """Return the final priority for a would-be intent.
 
@@ -137,6 +138,14 @@ def resolve_priority(
       :data:`IMMEDIATE_EMAIL_CAP_PER_CATEGORY_PER_DAY` immediate
       emails today in this category.
     * Digest priorities stay as-is.
+
+    ``exempt_from_rate_limit`` skips the downgrade. The cap exists to
+    stop an inbox filling with optional notifications; a transactional
+    email is not one, and a member who buys three things and hits a
+    payment problem on the same day has a category count that says
+    nothing about whether they should receive their refund
+    confirmation. The caller (see ``routing/decision.py``) sets this
+    only for :data:`app.comms.registry.TRANSACTIONAL_EVENT_TYPES`.
     """
     if preferred_priority == PRIORITY_SILENT:
         return PRIORITY_SILENT
@@ -149,6 +158,8 @@ def resolve_priority(
     # Immediate — apply rate limit only to email channels (rate limits
     # exist to prevent inbox flood; in-app has no equivalent stress).
     if channel not in (CHANNEL_EMAIL_TRANSACTIONAL, CHANNEL_EMAIL_MARKETING):
+        return PRIORITY_IMMEDIATE
+    if exempt_from_rate_limit:
         return PRIORITY_IMMEDIATE
 
     when = (now or _now_utc_aware()).astimezone(UTC).replace(tzinfo=None)

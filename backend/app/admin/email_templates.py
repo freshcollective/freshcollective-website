@@ -32,13 +32,18 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_admin_user
 from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL
-from app.comms.registry import is_transactional_event
+from app.comms.preferences import locked_categories_for_channel
+from app.comms.registry import (
+    category_for_topic,
+    get_event_definition,
+    is_transactional_event,
+)
 from app.comms.rollout import is_event_live
 from app.comms.routing.resolver import ResolvedRecipient
 from app.comms.templates.editable import (
     SYSTEM,
     TemplateDeclaration,
-    all_declarations,
+    admin_declarations,
     get_declaration,
     preview_overrides,
     substitute,
@@ -248,8 +253,15 @@ class TestSendResponse(BaseModel):
 
 
 def _require(template_key: str) -> TemplateDeclaration:
+    """The declaration behind a template key, or a 404.
+
+    An internal diagnostic answers the same 404 as a key that does not
+    exist. Excluding it from the list alone would leave it reachable by
+    anyone who typed the key, and "absent from World Management" should
+    mean absent from every endpoint World Management is built on.
+    """
     decl = get_declaration(template_key)
-    if decl is None:
+    if decl is None or decl.internal:
         raise HTTPException(status_code=404, detail="Unknown email template.")
     return decl
 
@@ -265,6 +277,33 @@ def _require_editable(decl: TemplateDeclaration) -> None:
         )
 
 
+def _locked_email_categories(db: Session) -> frozenset[str]:
+    return locked_categories_for_channel(db, CHANNEL_EMAIL_TRANSACTIONAL)
+
+
+def _is_transactional(
+    decl: TemplateDeclaration, locked_categories: frozenset[str],
+) -> bool:
+    """Whether a member can switch this email off — which is the only
+    thing the admin surface claims when it says "Transactional".
+
+    Two mechanisms can take the choice away and the admin needs the
+    answer, not the mechanism. An audited event-level lock
+    (``TRANSACTIONAL_EVENT_TYPES``) is one; a locked (category,
+    channel) default seeded in the database is the other, and it is
+    what currently makes the welcome email undroppable even though a
+    welcome is not a receipt. Reporting only the first would leave the
+    list saying "a member can turn this off" about emails no member
+    can turn off.
+    """
+    if is_transactional_event(decl.event_type):
+        return True
+    definition = get_event_definition(decl.event_type)
+    if definition is None:  # pragma: no cover — declarations mirror the registry
+        return False
+    return category_for_topic(definition.topic) in locked_categories
+
+
 def _stored(db: Session, template_key: str) -> dict[str, CommunicationTemplateOverride]:
     rows = (
         db.query(CommunicationTemplateOverride)
@@ -274,7 +313,13 @@ def _stored(db: Session, template_key: str) -> dict[str, CommunicationTemplateOv
     return {r.slot_id: r for r in rows}
 
 
-def _detail(db: Session, decl: TemplateDeclaration) -> TemplateDetail:
+def _detail(
+    db: Session,
+    decl: TemplateDeclaration,
+    locked_categories: frozenset[str] | None = None,
+) -> TemplateDetail:
+    if locked_categories is None:
+        locked_categories = _locked_email_categories(db)
     rows = _stored(db, decl.template_key)
     slots: list[SlotOut] = []
     for s in decl.slots:
@@ -306,7 +351,7 @@ def _detail(db: Session, decl: TemplateDeclaration) -> TemplateDetail:
         classification=decl.classification,
         editable=decl.is_editable,
         subject_editable=decl.subject_editable,
-        is_transactional=is_transactional_event(decl.event_type),
+        is_transactional=_is_transactional(decl, locked_categories),
         is_live=is_event_live(decl.event_type),
         customised=bool(rows),
         slots=slots,
@@ -404,15 +449,18 @@ def list_email_templates(
     db: Session = Depends(get_db),
     _: User = Depends(get_admin_user),
 ) -> list[TemplateListItem]:
-    """Every email template that currently sends.
+    """Every email template that currently sends to a member.
 
-    Templates whose topic is not live are excluded — an admin polishing
-    copy nobody receives is wasted effort, and the exclusion is computed
-    from rollout config rather than a hand-maintained list, so they
-    appear here automatically if their topic is ever switched on.
+    Two exclusions, both computed rather than hand-maintained.
+    Templates whose topic is not live are left out — an admin polishing
+    copy nobody receives is wasted effort, and they appear here
+    automatically if their topic is ever switched on. Internal
+    diagnostics are left out because they are not member emails and
+    nobody writes copy for them.
     """
     out: list[TemplateListItem] = []
-    for decl in all_declarations():
+    locked_categories = _locked_email_categories(db)
+    for decl in admin_declarations():
         if not is_event_live(decl.event_type):
             continue
         rows = _stored(db, decl.template_key)
@@ -429,7 +477,7 @@ def list_email_templates(
             classification=decl.classification,
             editable=decl.is_editable,
             subject_editable=decl.subject_editable,
-            is_transactional=is_transactional_event(decl.event_type),
+            is_transactional=_is_transactional(decl, locked_categories),
             customised=bool(rows),
             overridden_slot_count=len(rows),
             has_stale_default=stale,

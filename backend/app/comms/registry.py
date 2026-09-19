@@ -198,21 +198,33 @@ _BY_TYPE: dict[str, EventDefinition] = {d.event_type: d for d in _EVENT_DEFINITI
 
 
 # ---------------------------------------------------------------------------
-# Transactional events
+# Transactional events — the delivery lock
 # ---------------------------------------------------------------------------
 #
-# A handful of events are records of an action the member took (or that
-# was taken on their behalf) and of the access it granted. They are
-# receipts, not community noise, and a member must not be able to
-# silence one by turning down a broad category they *do* otherwise want
-# to control.
+# Membership is decided by one question, asked of the *recipient*:
 #
-# Locking at the event level rather than the category level is
-# deliberate. ``communication_channel_defaults.is_locked`` locks a whole
-# (category, channel) pair, which would drag gathering reminders,
-# cancellations and every other gathering communication along with it.
-# The Gatherings category must stay member-controllable; only these
-# specific events opt out.
+#     Can they opt out of this email without losing a security
+#     message, a receipt, a money- or access-state notification, or a
+#     material change to something they booked or bought?
+#
+# When the answer is no, the event is listed here and its delivery
+# stops depending on a preference. This is a statement about reach,
+# and it is deliberately separate from whether an admin may edit the
+# copy: ``gathering.cancelled`` is fully editable and fully locked,
+# ``account.welcome_after_signup`` is editable and not locked.
+#
+# Why the lock lives at the event level rather than the category
+# level. ``communication_channel_defaults.is_locked`` locks a whole
+# (category, channel) pair. Locking Gatherings that way to protect a
+# cancellation notice would drag reminders along with it, and a
+# reminder is exactly the kind of message a member should be able to
+# quieten. The Account and Purchases categories happen to be locked
+# already, so several of the events below are belt-and-braces there —
+# but a category lock is a seed row that a future migration could
+# reasonably revisit, and the guarantee these emails need should not
+# rest on that. Listing them makes the promise explicit, survives a
+# category-policy change, and is what the World Management inventory
+# reads to tell an admin whether a member can switch an email off.
 #
 # What the lock does NOT do — see ``routing/decision.py``:
 #   * it does not bypass hard-bounce or complaint suppression;
@@ -221,14 +233,71 @@ _BY_TYPE: dict[str, EventDefinition] = {d.event_type: d for d in _EVENT_DEFINITI
 #     ``set_preference`` still accepts overrides for Gatherings and
 #     those overrides still govern every other gathering event.
 TRANSACTIONAL_EVENT_TYPES: frozenset[str] = frozenset({
+    # ── Security and account entry ───────────────────────────────────
+    # The member is mid-flow and waiting. A preference cannot be
+    # allowed to strand someone outside their own account.
+    "account.email_verification_requested",
+    "account.password_reset_requested",
+    # The recipient is a prospective member who usually has no account
+    # and therefore no preferences at all. The preference the pipeline
+    # would consult belongs to the *inviter* (see
+    # ``routing/resolvers/collective.py``, which threads the inviter's
+    # user_id through because the pipeline needs a real one) — so
+    # without this lock a creator quietening their own Account email
+    # would silence invitations addressed to other people, and a
+    # digest cadence on the inviter would divert an invitation into
+    # the inviter's own digest, where the invitee would never see it.
+    "collective.invitation.sent",
+
+    # ── Gatherings ───────────────────────────────────────────────────
+    # Receipts for something the member just booked, and the one
+    # message that tells them a thing they booked is not happening.
+    # Reminders stay preference-controlled.
     "gathering.booking.confirmed",
     "gathering.multi_booking.confirmed",
+    "gathering.cancelled",
+
+    # ── Member money and access ──────────────────────────────────────
+    # Purchase receipts, refund confirmations, and every transition of
+    # the payment-plan lifecycle. Each states what was charged or what
+    # access the member now has; several state a deadline the member
+    # must act on.
+    "purchase.completed",
+    "purchase.refunded",
+    "purchase.first_payment_failed",
+    "purchase.plan_completed",
+    "payment.instalment_failed",
+    "payment.recovered",
+    "access.suspended",
+
+    # ── Creator plan billing ─────────────────────────────────────────
+    # The creator's own subscription state: activated, failing,
+    # recovered, ending, ended. Money and access, addressed to the
+    # person whose money and access it is.
+    "creator.plan_activated",
+    "creator.subscription.payment_failed",
+    "creator.subscription.recovered",
+    "creator.subscription.cancellation_scheduled",
+    "creator.subscription.cancelled",
 })
 
 
+# A typo here would fail silently — the event would simply never match
+# and an essential email would stay preference-controlled. Catch it at
+# import instead.
+_UNREGISTERED_TRANSACTIONAL = TRANSACTIONAL_EVENT_TYPES - set(_BY_TYPE)
+if _UNREGISTERED_TRANSACTIONAL:  # pragma: no cover — import-time guard
+    raise RuntimeError(
+        "TRANSACTIONAL_EVENT_TYPES names unregistered event types: "
+        + ", ".join(sorted(_UNREGISTERED_TRANSACTIONAL))
+    )
+
+
 def is_transactional_event(event_type: str) -> bool:
-    """True when this event is a receipt the member cannot opt out of
-    through ordinary category preferences."""
+    """True when this event is one the member cannot opt out of through
+    ordinary category preferences — a security message, a receipt, a
+    money- or access-state notification, or a material change to
+    something they booked or bought."""
     return event_type in TRANSACTIONAL_EVENT_TYPES
 
 

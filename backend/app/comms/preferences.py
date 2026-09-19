@@ -130,6 +130,26 @@ def _load_channel_default(
     ).scalar_one_or_none()
 
 
+def locked_categories_for_channel(
+    db: Session, channel: ChannelType,
+) -> frozenset[str]:
+    """Categories whose default is locked for this channel.
+
+    A locked (category, channel) pair cannot be silenced by a member at
+    all — ``set_preference`` refuses the write and
+    :func:`get_effective_preference` reports ``is_locked``. Read as a
+    set in one query so a caller classifying a whole inventory does not
+    issue one lookup per row.
+    """
+    rows = db.execute(
+        select(CommunicationChannelDefault.category_key).where(
+            CommunicationChannelDefault.channel == channel,
+            CommunicationChannelDefault.is_locked.is_(True),
+        )
+    ).scalars().all()
+    return frozenset(rows)
+
+
 def get_effective_preference(
     db: Session,
     *,
