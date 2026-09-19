@@ -55,18 +55,20 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     EventDefinition("account.created",                    TOPIC_ACCOUNT,   PRIORITY_SILENT),
     # Fires once per new signup, after the User row is committed. Only
     # emit site: ``auth/routes.py::signup`` (and the same helper reused
-    # by ``purchases/routes.py::claim_with_signup``). Preference-locked
-    # by CATEGORY_ACCOUNT — the inbox greeting is transactional, not
-    # something a first-time user can (or should) have suppressed.
+    # by ``purchases/routes.py::claim_with_signup``). Deliberately NOT
+    # in TRANSACTIONAL_EVENT_TYPES: a greeting is not a security
+    # message, a receipt or an access-state change, so a member who
+    # would rather not have one may say so. Default-enabled, so one
+    # still arrives unless they do.
     EventDefinition("account.welcome_after_signup",       TOPIC_ACCOUNT,   PRIORITY_IMMEDIATE),
     # SEC-009 — the sole email a new unverified account receives at
     # signup. Warm + welcoming, primary CTA "verify your email".
     # The existing ``account.welcome_after_signup`` above fires
     # AFTER successful verification so a new account gets exactly
     # two account emails across its lifetime: verify → welcome.
-    # Preference-locked by CATEGORY_ACCOUNT for the same reason as
-    # welcome — a first-time user cannot (and should not) have this
-    # suppressed.
+    # Event-locked (TRANSACTIONAL_EVENT_TYPES) — an account that
+    # cannot confirm itself is an account nobody can use, so no
+    # preference reaches this one.
     EventDefinition("account.email_verification_requested", TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
     EventDefinition("account.password_reset_requested",   TOPIC_SECURITY,  PRIORITY_IMMEDIATE),
     EventDefinition("account.password_reset_completed",   TOPIC_SECURITY,  PRIORITY_IMMEDIATE),
@@ -82,7 +84,9 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # this is an entry/account transactional email whose delivery must
     # not be preference-gated by the *inviter's* CATEGORY_COMMUNITY
     # preferences (the invitee is external and typically has no user
-    # record yet). CATEGORY_ACCOUNT is preference-locked-immediate.
+    # record yet). Event-locked as well — see the note beside
+    # ``collective.invitation.sent`` in TRANSACTIONAL_EVENT_TYPES for
+    # why the inviter's preference must not reach it.
     EventDefinition("collective.invitation.sent",         TOPIC_ACCOUNT,            PRIORITY_IMMEDIATE),
 
     # Community
@@ -160,17 +164,19 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # Creator platform-plan activation (Fresh Collective Creator /
     # Creator Portfolio tiers). Registered under TOPIC_ACCOUNT rather
     # than TOPIC_SUBSCRIPTIONS because this is a transactional
-    # lifecycle email that must not be preference-gated — CATEGORY_ACCOUNT
-    # is default-enabled + locked-immediate, matching invitation and
-    # welcome semantics. Emitted from ``creator/plan_activation.py``
+    # lifecycle email that must not be preference-gated — it is
+    # event-locked in TRANSACTIONAL_EVENT_TYPES, matching the creator
+    # subscription emails below. Emitted from ``creator/plan_activation.py``
     # for genuine inactive→active transitions only (the idempotent
     # no-op path returns ``was_noop=True`` and the emit site skips).
     EventDefinition("creator.plan_activated",             TOPIC_ACCOUNT,            PRIORITY_IMMEDIATE),
 
     # Creator monthly Stripe subscription lifecycle. Same TOPIC_ACCOUNT
-    # + immediate priority as plan_activated — every one of these is
-    # a "your billing state has changed" transactional message that
-    # must not be preference-gated. Emitted from the creator-billing
+    # + immediate priority as plan_activated, and event-locked for the
+    # same reason — every one of these is a "your billing state has
+    # changed" message that must not be preference-gated, and the
+    # Account category no longer locks anything on its behalf.
+    # Emitted from the creator-billing
     # webhook handlers (see ``app/webhooks/creator_billing_handlers.py``).
     EventDefinition("creator.subscription.payment_failed",         TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
     EventDefinition("creator.subscription.recovered",              TOPIC_ACCOUNT, PRIORITY_IMMEDIATE),
@@ -218,13 +224,16 @@ _BY_TYPE: dict[str, EventDefinition] = {d.event_type: d for d in _EVENT_DEFINITI
 # (category, channel) pair. Locking Gatherings that way to protect a
 # cancellation notice would drag reminders along with it, and a
 # reminder is exactly the kind of message a member should be able to
-# quieten. The Account and Purchases categories happen to be locked
-# already, so several of the events below are belt-and-braces there —
-# but a category lock is a seed row that a future migration could
-# reasonably revisit, and the guarantee these emails need should not
-# rest on that. Listing them makes the promise explicit, survives a
-# category-policy change, and is what the World Management inventory
-# reads to tell an admin whether a member can switch an email off.
+# quieten. The same reasoning emptied the Account category lock:
+# migration 133 removed it precisely because every Account email that
+# needed protecting is named below, and the one that did not — the
+# welcome note — should not have been swept up. Purchases remains a
+# locked category, so its events are belt-and-braces there; that lock
+# is a seed row a future migration could reasonably revisit, and the
+# guarantee these emails need should not rest on it. Listing them
+# makes the promise explicit, survives a category-policy change, and
+# is what the World Management inventory reads to tell an admin
+# whether a member can switch an email off.
 #
 # What the lock does NOT do — see ``routing/decision.py``:
 #   * it does not bypass hard-bounce or complaint suppression;

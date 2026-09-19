@@ -110,8 +110,9 @@ class TestList:
         by_key = {t["template_key"]: t for t in client.get(BASE).json()}
         assert by_key[BOOKING]["is_transactional"] is True
         assert by_key[REMINDER_TPL]["is_transactional"] is False
-        # Delivery lock and content editability are independent — these
-        # two are both fully editable and differ only on delivery.
+        assert by_key[WELCOME]["is_transactional"] is False
+        # Delivery lock and content editability are independent — the
+        # first two are both fully editable and differ only on delivery.
         assert by_key[BOOKING]["editable"] is True
         assert by_key[REMINDER_TPL]["editable"] is True
 

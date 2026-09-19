@@ -25,12 +25,19 @@ Differences from the legacy renderer, all intentional:
 * **Explicit greeting slot.** The greeting is a first-class argument
   rather than the caller's first body paragraph, so a template's
   greeting policy is visible at the call site and directly testable.
-* **Conditional preferences link.** Locked categories (``account``,
-  ``purchases`` — see ``communication_channel_defaults.is_locked``)
-  cannot be turned off by a member, so offering them a preferences
-  link would be dishonest. Those templates pass
+* **Conditional preferences link.** An email a member cannot turn off
+  should not offer them a link to turn it off, so those templates pass
   ``show_preferences_link=False`` and get a sender-identifying footer
-  without the invitation to manage something they cannot manage.
+  instead. Each template states its own answer rather than deriving
+  one, because the reason differs: Purchases is a locked category
+  (``communication_channel_defaults.is_locked``), while the essential
+  Account emails are locked per event in
+  ``app.comms.registry.TRANSACTIONAL_EVENT_TYPES``.
+
+  One known gap, deliberately left for a copy pass:
+  ``account.welcome_after_signup`` became preference-controlled in
+  migration 133 but still omits the link, so a member who can now
+  decline the welcome email is not told so in it.
 
 Escaping boundary
 -----------------

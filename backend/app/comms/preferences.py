@@ -29,8 +29,16 @@ Locked defaults
 
 If the channel default has ``is_locked=True``, the member cannot
 override — ``set_preference`` raises :class:`LockedPreferenceError`.
-This preserves the platform's non-negotiable duty of care for
-Account, Purchases and Safety in-app and email notifications.
+This preserves the platform's non-negotiable duty of care where a
+whole category genuinely warrants it: Account, Purchases and Safety
+in-app, and Purchases email.
+
+Account *email* is not locked (migration 133). Individual essential
+Account emails — verification, password reset, invitation, creator
+plan and subscription state — carry their own event-level locks in
+``app.comms.registry.TRANSACTIONAL_EVENT_TYPES``, which the decision
+pipeline applies after this resolver runs. Locking the category as
+well would only have taken the welcome email away from the member.
 
 Consent
 -------

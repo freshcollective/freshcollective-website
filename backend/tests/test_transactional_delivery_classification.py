@@ -98,9 +98,9 @@ AUDITED: dict[str, str] = {
     # inviter. See the note in ``registry.py``.
     "collective.invitation.sent":                    LOCKED,
     # Not a receipt and not a security message — a greeting. The
-    # member could safely miss it, so the event itself is not locked.
-    # (It is nonetheless undroppable today because the Account
-    # category default is locked; the admin list reports that truth.)
+    # member could safely miss it, so the event is not locked and,
+    # since migration 133 removed the Account category lock, nothing
+    # else locks it either. Declining a welcome is now possible.
     "account.welcome_after_signup":                  PREFERENCE,
 
     # ── Gatherings ───────────────────────────────────────────────────
@@ -429,19 +429,17 @@ class TestOptionalEmailsStayOptional:
         ).state == STATE_RECORDED
         assert _was_delivered(db, _decide(db, user, "gathering.cancelled"))
 
-    def test_locked_categories_still_refuse_a_member_override(
-        self, db, make_user,
-    ):
-        """Unchanged by this work: Account and Purchases were locked
-        categories before it and still are."""
+    def test_purchases_email_is_still_a_locked_category(self, db, make_user):
+        """Untouched by the Account unlock — every Purchases email is
+        event-locked anyway, and narrowing that category is a separate
+        decision nobody has made."""
         user = make_user()
-        for category in ("account", "purchases"):
-            with pytest.raises(LockedPreferenceError):
-                set_preference(
-                    db, user_id=user.id, category_key=category,
-                    channel=CHANNEL_EMAIL_TRANSACTIONAL,
-                    priority=Priority.SILENT,
-                )
+        with pytest.raises(LockedPreferenceError):
+            set_preference(
+                db, user_id=user.id, category_key="purchases",
+                channel=CHANNEL_EMAIL_TRANSACTIONAL,
+                priority=Priority.SILENT,
+            )
 
 
 # ===========================================================================
@@ -570,3 +568,176 @@ class TestContentEditabilityUnchanged:
         for d in admin_declarations():
             if d.classification == "system":
                 assert d.slots == (), d.template_key
+
+
+# ===========================================================================
+# 7. The Account category lock is gone, and nothing leant on it
+# ===========================================================================
+#
+# Migration 133 removed ``is_locked`` from (account, email_transactional).
+# The category lock had become the only thing standing between a member
+# and a welcome email they might not want, while every Account email
+# that genuinely cannot be declined had already been named in
+# TRANSACTIONAL_EVENT_TYPES. These tests are the proof that the second
+# half of that sentence is true — that the event locks, not the
+# category row, are what keep the essential ones arriving.
+
+ACCOUNT_LOCKED_EMAILS = [
+    "account.email_verification_requested",
+    "account.password_reset_requested",
+    "collective.invitation.sent",
+    "creator.plan_activated",
+    "creator.subscription.payment_failed",
+    "creator.subscription.recovered",
+    "creator.subscription.cancellation_scheduled",
+    "creator.subscription.cancelled",
+]
+
+WELCOME = "account.welcome_after_signup"
+WELCOME_TPL = "account.welcome_after_signup.email_transactional"
+
+
+def _decline_account_email(db, user) -> None:
+    """Silence Account email through the member-facing API.
+
+    Deliberately not ``_silence`` — that helper unlocks the category
+    first, and the whole point here is that no unlocking is needed any
+    more. If this raises, the migration has not taken effect.
+    """
+    set_preference(
+        db, user_id=user.id, category_key="account",
+        channel=CHANNEL_EMAIL_TRANSACTIONAL, priority=Priority.SILENT,
+    )
+    db.flush()
+
+
+class TestAccountCategoryIsUnlocked:
+    def test_the_seed_row_is_no_longer_locked(self, db):
+        row = db.execute(
+            select(CommunicationChannelDefault).where(
+                CommunicationChannelDefault.category_key == "account",
+                CommunicationChannelDefault.channel
+                == CHANNEL_EMAIL_TRANSACTIONAL,
+            )
+        ).scalar_one()
+        assert row.is_locked is False
+        assert row.default_enabled is True, (
+            "a member who says nothing must still receive Account email"
+        )
+
+    def test_account_in_app_is_still_locked(self, db, make_user):
+        """Scope guard. Migration 133 touched one row. An in-app notice
+        interrupts nobody and its duty-of-care argument is unchanged."""
+        user = make_user()
+        with pytest.raises(LockedPreferenceError):
+            set_preference(
+                db, user_id=user.id, category_key="account",
+                channel="in_app", priority=Priority.SILENT,
+            )
+
+    def test_a_member_can_decline_the_welcome_email(self, db, make_user):
+        """The mismatch this whole change exists to fix."""
+        user = make_user()
+        _decline_account_email(db, user)
+        outcome = _decide(db, user, WELCOME)
+        intent = db.get(CommunicationIntent, outcome.intent_id)
+        assert intent is not None
+        assert intent.state == STATE_RECORDED, (
+            "a member who silenced Account email still received the welcome"
+        )
+
+    def test_the_welcome_still_arrives_by_default(self, db, make_user):
+        """Unlocking restored a choice; it did not change the default."""
+        user = make_user()
+        assert _was_delivered(db, _decide(db, user, WELCOME))
+
+    @pytest.mark.parametrize("event_type", ACCOUNT_LOCKED_EMAILS)
+    def test_the_same_silence_cannot_reach_an_essential_account_email(
+        self, db, make_user, event_type,
+    ):
+        """Verification, password reset, invitation, creator plan
+        activation and the whole creator-subscription lifecycle. The
+        member has silenced the category these live in and every one of
+        them still goes out, because the lock that matters is on the
+        event."""
+        user = make_user()
+        _decline_account_email(db, user)
+        assert _was_delivered(db, _decide(db, user, event_type)), event_type
+
+    def test_that_list_is_every_locked_account_email(self):
+        """So a new essential Account email cannot be added without
+        appearing in the test above."""
+        assert set(ACCOUNT_LOCKED_EMAILS) == {
+            e for e in LOCKED_EVENTS if _category_of(e) == "account"
+        }
+
+    def test_all_eighteen_locks_survive(self):
+        assert len(TRANSACTIONAL_EVENT_TYPES) == 18
+        assert set(TRANSACTIONAL_EVENT_TYPES) == set(LOCKED_EVENTS)
+
+    @pytest.mark.parametrize("event_type", ACCOUNT_LOCKED_EMAILS)
+    def test_bounce_suppression_still_wins_for_account_emails(
+        self, db, make_user, event_type,
+    ):
+        """Unlocking the category must not have opened a path around
+        deliverability safety."""
+        user = make_user()
+        record_suppression(
+            db, address_type="email", address=user.email,
+            reason="bounced", source_provider="resend",
+        )
+        db.flush()
+        outcome = _decide(db, user, event_type)
+        assert outcome.suppression_reason == "bounced", event_type
+
+    def test_quiet_hours_and_the_daily_cap_still_do_not_touch_them(
+        self, db, make_user,
+    ):
+        """The two bypasses added with the event locks are unaffected —
+        they keyed off the event, never off the category."""
+        user = make_user()
+        update_member_settings(
+            db, user_id=user.id, timezone="UTC",
+            quiet_hours_start_local=time(0, 0),
+            quiet_hours_end_local=time(23, 59),
+        )
+        db.flush()
+        with patch(
+            "app.comms.routing.pacing."
+            "IMMEDIATE_EMAIL_CAP_PER_CATEGORY_PER_DAY", 0,
+        ):
+            outcome = _decide(db, user, "account.password_reset_requested")
+        assert outcome.digest_item_id is None
+        assert db.get(
+            CommunicationIntent, outcome.intent_id,
+        ).scheduled_for is None
+
+
+class TestWorldManagementReflectsTheUnlock:
+    def test_welcome_is_reported_as_preference_controlled(self, client):
+        by_key = {t["template_key"]: t for t in client.get(BASE).json()}
+        assert by_key[WELCOME_TPL]["is_transactional"] is False
+
+    @pytest.mark.parametrize("event_type", ACCOUNT_LOCKED_EMAILS)
+    def test_essential_account_emails_are_still_reported_transactional(
+        self, client, event_type,
+    ):
+        key = f"{event_type}.email_transactional"
+        by_key = {t["template_key"]: t for t in client.get(BASE).json()}
+        assert by_key[key]["is_transactional"] is True, key
+
+    def test_the_detail_view_agrees_with_the_list(self, client):
+        assert client.get(
+            f"{BASE}/{WELCOME_TPL}",
+        ).json()["is_transactional"] is False
+
+    def test_nothing_else_moved(self, client):
+        """Every other live template keeps the classification the audit
+        gave it."""
+        by_event = {
+            t["template_key"].removesuffix(".email_transactional"):
+                t["is_transactional"]
+            for t in client.get(BASE).json()
+        }
+        for event_type, expected in by_event.items():
+            assert expected is (AUDITED[event_type] == LOCKED), event_type
