@@ -666,3 +666,93 @@ class PurchaseRefundedInAppTemplate:
             ),
             metadata={"notification_type": "purchase_refunded"},
         )
+
+
+# ---------------------------------------------------------------------------
+# purchase.first_payment_failed — the plan never started
+# ---------------------------------------------------------------------------
+#
+# Tone note. This must not read like the dunning email
+# (``payment.instalment_failed``), which reassures a member that their
+# access continues. Here nothing started: no access, no charge, no
+# retry pending. The member's only route forward is to try the offer
+# again, which Rule D has already unblocked for them.
+
+
+_EVENT_FIRST_PAYMENT_FAILED = "purchase.first_payment_failed"
+
+
+@template_for(_EVENT_FIRST_PAYMENT_FAILED, CHANNEL_EMAIL_TRANSACTIONAL)
+class FirstPaymentFailedEmailTemplate:
+    key = "purchase.first_payment_failed.email_transactional"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx        = recipient.template_context
+        greeting   = _greeting(ctx.get("first_name"))
+        experience = (ctx.get("experience_name") or "").strip() or "your payment plan"
+        retry_url  = ctx.get("retry_url") or ""
+
+        subject = "Your payment didn't go through"
+
+        opening = (
+            f"We couldn't process the first payment for {experience}, so "
+            "your payment plan hasn't started."
+        )
+        # The three reassurances, stated plainly. "You haven't been
+        # charged" is the one members most need and most doubt.
+        state = (
+            "No access has been activated and you haven't been charged."
+        )
+        # Never promise an automatic retry — FIP4A cancels the schedule,
+        # so nothing further will happen on its own.
+        next_step = (
+            "Whenever you're ready, you can go back to the offer and start "
+            "the plan again."
+        )
+
+        body_text = (
+            f"{greeting}\n\n{opening}\n\n{state}\n\n{next_step}"
+            + (f"\n\nTry payment again:\n{retry_url}" if retry_url else "")
+        )
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            greeting=greeting,
+            body_paragraphs=[opening, state, next_step],
+            action=("Try payment again", retry_url) if retry_url else None,
+            show_preferences_link=_SHOW_PREFS,
+        )
+        return RenderedPayload(
+            to="",
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text,
+            metadata={"notification_type": "first_payment_failed"},
+        )
+
+
+@template_for(_EVENT_FIRST_PAYMENT_FAILED, CHANNEL_IN_APP)
+class FirstPaymentFailedInAppTemplate:
+    key = "purchase.first_payment_failed.in_app"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx        = recipient.template_context
+        experience = (ctx.get("experience_name") or "").strip() or "your payment plan"
+        return RenderedPayload(
+            to="",
+            subject=f"Payment didn't go through — {experience}",
+            body_text=(
+                "Your payment plan hasn't started and you haven't been "
+                "charged. You can try again when you're ready."
+            ),
+            metadata={
+                "notification_type": "first_payment_failed",
+                "url": ctx.get("retry_url"),
+            },
+        )

@@ -203,3 +203,37 @@ class PurchaseRefundedResolver:
                 },
             ),
         ]
+
+
+@resolver_for("purchase.first_payment_failed")
+class FirstPaymentFailedResolver:
+    """The would-be buyer is the single recipient. Their plan never
+    started, so there is nothing to reference but the offer they tried
+    to buy."""
+
+    event_type = "purchase.first_payment_failed"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        if not event.actor_user_id:
+            return []
+        p = event.payload or {}
+        return [
+            ResolvedRecipient(
+                user_id=event.actor_user_id,
+                role_in_event="buyer",
+                human_reason=(
+                    "The first payment for a plan you started could not be "
+                    "processed."
+                ),
+                template_context={
+                    "first_name":            p.get("first_name") or "",
+                    "experience_name":       p.get("experience_name") or "",
+                    "retry_url":             p.get("retry_url") or "",
+                    "amount_cents":          p.get("amount_cents"),
+                    "currency":              (p.get("currency") or "").upper(),
+                    "installments_expected": p.get("installments_expected"),
+                },
+            ),
+        ]

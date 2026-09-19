@@ -423,6 +423,7 @@ def _do_setup_completed(
             db, plan=plan,
             reason="first_payment_failed",
             note=f"initial invoice status={final_status!r} after Invoice.pay",
+            invoice_id=invoice_id,
         )
         return
 
@@ -441,6 +442,7 @@ def _terminate_plan_on_first_payment_failure(
     plan: PurchasePlan,
     reason: str,
     note: str | None,
+    invoice_id: str | None = None,
 ) -> None:
     """First-payment-failure cleanup — PROVIDER-FIRST semantics.
 
@@ -504,11 +506,52 @@ def _terminate_plan_on_first_payment_failure(
     if note:
         plan.cancelled_reason = f"{reason}: {note}"[:250]
     plan.updated_at = now
+
+    # Comms — tell the member their plan did not start. Emitted here,
+    # in the shared helper, so BOTH entry points are covered: the
+    # synchronous card decline during ``Invoice.pay`` and the
+    # asynchronous ``invoice.payment_failed`` webhook. The
+    # already-failed guard at the top of this function returns before
+    # reaching here, so a replay cannot re-emit; the plan-scoped
+    # dedupe key is the second guard.
+    # Wrapped end-to-end, not just inside the emit helper: the lookups
+    # below are ordinary queries that could raise, and they sit between
+    # the plan mutation and the commit. A comms problem must never
+    # strand a plan whose provider schedule is already cancelled.
+    comms_event = None
+    try:
+        from app.services import purchase_lifecycle_emit as _r3
+        from app.models.payment_option import PaymentOption as _PaymentOption
+        from app.models.user import User as _User
+        payment_option = (
+            db.query(_PaymentOption)
+            .filter(_PaymentOption.id == plan.payment_option_id)
+            .first()
+            if plan.payment_option_id else None
+        )
+        member = db.query(_User).filter(_User.id == plan.member_user_id).first()
+        if member is not None:
+            comms_event = _r3.emit_first_payment_failed(
+                db, user=member, plan=plan, payment_option=payment_option,
+                invoice_id=invoice_id,
+            )
+    except Exception:
+        logger.exception(
+            "FIP4A terminate: first-payment-failed comms raised for plan=%s "
+            "— termination proceeds regardless", plan.id,
+        )
+        comms_event = None
+
     db.commit()
     logger.info(
         "FIP4A terminate: plan=%s → failed after provider cleanup confirmed "
         "(reason=%s)", plan.id, plan.cancelled_reason,
     )
+    if comms_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, comms_event, "purchase.first_payment_failed",
+        )
 
 
 # ---------------------------------------------------------------------------

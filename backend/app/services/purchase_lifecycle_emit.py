@@ -224,6 +224,62 @@ def emit_instalment_failed(
 
 
 @_safe_emit
+def emit_first_payment_failed(
+    db: Session,
+    *,
+    user: User,
+    plan: PurchasePlan,
+    payment_option: PaymentOption | None,
+    invoice_id: str | None = None,
+) -> "CommunicationEvent | None":
+    """Emit when the FIRST instalment is declined and the plan is
+    terminated (FIP4A).
+
+    Deliberately not ``payment.instalment_failed``: that event tells a
+    member their access continues during a grace window. Neither
+    applies here — the plan never started, no access was granted, and
+    the provider schedule has been cancelled, so there is no retry to
+    wait for.
+
+    Dedupe is keyed on the plan, not the invoice. A plan fails its
+    first payment at most once in its lifetime — the termination helper
+    marks it ``failed`` and its entry guard short-circuits every
+    subsequent delivery. Keying on the invoice would be weaker: the
+    synchronous card-decline path has no invoice id to key on (the
+    exception is raised before one is returned), and a later webhook
+    quoting a different invoice for the same dead plan would earn a
+    second email. ``invoice_id`` is carried in the payload for
+    traceability only.
+    """
+    from app.comms import Source, emit as comms_emit
+    ctx = resolve_context(db, user=user, payment_option=payment_option)
+    payload = {
+        "first_name":            ctx.first_name,
+        "experience_name":       ctx.experience_name,
+        # The existing offer page — the member starts again from there.
+        # Rule D is unblocked by the termination, so a fresh plan is
+        # immediately allowed. No repair flow is linked: a ``failed``
+        # plan is not repair-eligible.
+        "retry_url":             ctx.member_url,
+        "amount_cents":          plan.installment_amount_cents,
+        "currency":              plan.currency,
+        "installments_expected": plan.installments_expected,
+        "invoice_id":            invoice_id,
+    }
+    return comms_emit(
+        db,
+        event_type="purchase.first_payment_failed",
+        source_type=Source.FRESH_COLLECTIVE,
+        actor_user_id=user.id,
+        subject_type="purchase_plan",
+        subject_id=plan.id,
+        context={"plan_id": plan.id},
+        payload=payload,
+        dedupe_key=f"first_payment_failed:{plan.id}",
+    )
+
+
+@_safe_emit
 def emit_access_suspended(
     db: Session,
     *,

@@ -485,8 +485,16 @@ def handle_invoice_failed_for_plan(
       * If the plan is ``suspended`` — leave the plan suspended;
         record the failure via an inserted failed-status txn so
         the ledger reflects reality.
+      * If the plan is ``pending_setup`` — this is the FIRST
+        instalment failing, so the plan never started. FIP4A
+        semantics apply: cancel the provider SubscriptionSchedule,
+        mark the plan ``failed``, grant no access, and unblock
+        Rule D so the member can start a fresh plan. No grace
+        window — that policy is for members who already have live
+        access. A ``purchase.first_payment_failed`` communication
+        is emitted from the shared termination helper.
       * If the plan is ``completed`` / ``cancelled`` / ``failed``
-        / ``pending_setup`` — refuse (log + skip).
+        — refuse (log + skip).
     """
     # Ledger: create a failed-status PaymentTransaction for the
     # invoice IF we haven't already. Guarded by the natural-key
@@ -578,6 +586,7 @@ def handle_invoice_failed_for_plan(
             db, plan=plan,
             reason="first_payment_failed",
             note=f"invoice {invoice_id} failed while plan was pending_setup",
+            invoice_id=invoice_id,
         )
         logger.warning(
             "FIP4A first-invoice fail (async): plan=%s → failed on invoice=%s; "

@@ -147,6 +147,16 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # by a second partial produces two events, and a duplicate webhook
     # delivery produces none.
     EventDefinition("purchase.refunded",                  TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
+    # FIP4A — the very first instalment of a payment plan was declined,
+    # so the plan never started. Distinct from
+    # ``payment.instalment_failed``, which tells a member with LIVE
+    # access that a later payment failed and their access continues
+    # during grace. Here the opposite is true: nothing started, no
+    # access was granted, nothing was charged, and the provider
+    # schedule has been cancelled. Emitted from the shared termination
+    # helper so both the synchronous card-decline and the asynchronous
+    # ``invoice.payment_failed`` path are covered.
+    EventDefinition("purchase.first_payment_failed",      TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
     # Creator platform-plan activation (Fresh Collective Creator /
     # Creator Portfolio tiers). Registered under TOPIC_ACCOUNT rather
     # than TOPIC_SUBSCRIPTIONS because this is a transactional
