@@ -332,6 +332,8 @@ export function PaymentOptionSelector({
             useFinitePlanSuccessPage={
               selectedSchedule?.schedule_type === 'recurring_installments'
             }
+            schedule={selectedSchedule ?? null}
+            optionName={selectedOption?.name ?? null}
           />
           <p className="text-center text-[11px] leading-relaxed text-black">
             Secure checkout via Stripe. You&rsquo;ll be redirected to complete

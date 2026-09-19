@@ -112,18 +112,22 @@ def compose_setup_disclosure(
     count       = plan.installments_expected
     remaining   = count - 1
 
-    # Singular/plural for the "followed by N …" clause.
+    # Singular/plural for the "followed by N …" clause. FIP1
+    # validation requires count >= 2, so ``remaining`` is at least 1.
     if remaining == 1:
         followup = f"1 {cadence} payment of {per_payment}"
     else:
         followup = f"{remaining} {cadence} payments of {per_payment}"
 
+    # Commitment first. Stripe's setup-mode page shows no amount and
+    # labels its button "Save", so this message is the only place on
+    # that page where the money appears — burying it behind the option
+    # name (as the previous wording did) let a member read the page as
+    # "save a card" rather than "start a paid plan".
     return (
-        f"{option_name} — {per_payment} {cadence} × {count} payments "
-        f"({total} total). "
-        f"By saving your payment details, you authorise Fresh Collective "
-        f"to start this payment plan. "
-        f"Your first {per_payment} payment will be charged after setup, "
-        f"followed by {followup}. "
-        f"Access begins after the first payment succeeds."
+        f"You're starting a {count}-payment plan. "
+        f"{per_payment} will be charged immediately after setup, "
+        f"followed by {followup} ({total} total). "
+        f"Access begins after the first payment succeeds. "
+        f"This plan is for {option_name}."
     )

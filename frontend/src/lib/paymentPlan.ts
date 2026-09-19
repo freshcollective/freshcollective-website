@@ -192,3 +192,64 @@ export function scheduleCtaLabel(schedule: AnyPaymentSchedule): string {
   }
   return 'Continue to checkout'
 }
+
+
+/** Structured copy for the pre-Stripe confirmation step.
+ *
+ * Stripe's setup-mode page cannot show an amount — it has no line
+ * items, so it renders a bare card form with a "Save" button. That
+ * makes Fresh Collective's own screen the last place a member sees
+ * the commitment stated plainly before they hand over a card, so
+ * these strings carry real weight.
+ *
+ * Returns ``null`` for anything that is not a finite payment plan
+ * with the figures needed to state the commitment honestly — the
+ * caller then skips the confirmation step rather than showing a
+ * half-filled one. */
+export interface PlanConfirmationCopy {
+  /** e.g. "A$37.80 charged after setup" */
+  firstCharge: string
+  /** e.g. "Then 9 weekly payments of A$37.80" */
+  thenLine: string
+  /** e.g. "A$378 total" */
+  totalLine: string
+  /** The per-payment amount on its own, for emphasis. */
+  amount: string
+  /** Number of payments in the whole plan. */
+  count: number
+}
+
+export function planConfirmationCopy(
+  schedule: AnyPaymentSchedule,
+): PlanConfirmationCopy | null {
+  if (schedule.schedule_type !== 'recurring_installments') return null
+
+  const amountCents = schedule.installment_amount_cents
+  const count = schedule.installment_count
+  if (amountCents == null || count == null || count < 1) return null
+
+  const amount = formatMoney(amountCents, schedule.currency)
+  const cadence = cadenceAdjective(schedule.interval)
+  const remaining = count - 1
+
+  // The total the schedule was saved with, when present; otherwise
+  // derived. Never shown as a guess — if neither is available the
+  // line is the per-payment figure alone.
+  const totalCents = schedule.total_amount_cents ?? amountCents * count
+  const totalLine = `${formatMoney(totalCents, schedule.currency)} total`
+
+  const thenLine =
+    remaining === 0
+      ? 'This is the only payment.'
+      : remaining === 1
+        ? `Then 1 ${cadence} payment of ${amount}`
+        : `Then ${remaining} ${cadence} payments of ${amount}`
+
+  return {
+    firstCharge: `${amount} charged after setup`,
+    thenLine,
+    totalLine,
+    amount,
+    count,
+  }
+}

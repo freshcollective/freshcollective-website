@@ -6,6 +6,11 @@ import {
   paletteHex,
   type CollectivePaletteMeta,
 } from '@/lib/collectivePalette'
+import PaymentPlanConfirmDialog from '@/components/checkout/PaymentPlanConfirmDialog'
+import {
+  planConfirmationCopy,
+  type AnyPaymentSchedule,
+} from '@/lib/paymentPlan'
 
 /**
  * Kick off a unified Payment Option purchase for a Gathering Series.
@@ -29,13 +34,18 @@ import {
  */
 export default function SeriesPurchaseButton({
   spaceSlug, seriesSlug, paymentOptionId, paymentOptionScheduleId, label,
-  palette,
+  palette, schedule, optionName,
 }: {
   spaceSlug: string
   seriesSlug: string
   paymentOptionId: string
   paymentOptionScheduleId: string
   label: string
+  /** The selected schedule. When it is a finite payment plan, the
+   *  member sees a confirmation step before the Stripe redirect —
+   *  Stripe's setup-mode page cannot show the amount itself. */
+  schedule?: AnyPaymentSchedule | null
+  optionName?: string | null
   /** Optional Collective palette — button uses the primary hex
    *  so the CTA feels branded to the Collective. Falls back to
    *  the platform teal when the Space has no palette hydrated. */
@@ -43,8 +53,22 @@ export default function SeriesPurchaseButton({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
 
-  async function handleClick() {
+  // Only finite plans get the extra step. Pay-in-full goes straight
+  // through — Stripe shows the amount for those itself.
+  const needsConfirm = schedule != null && planConfirmationCopy(schedule) != null
+
+  function handleClick() {
+    if (needsConfirm) {
+      setError(null)
+      setConfirming(true)
+      return
+    }
+    void startCheckout()
+  }
+
+  async function startCheckout() {
     setBusy(true)
     setError(null)
     try {
@@ -70,6 +94,7 @@ export default function SeriesPurchaseButton({
     } catch (err) {
       setError(String((err as Error)?.message ?? err))
       setBusy(false)
+      setConfirming(false)
     }
   }
 
@@ -89,6 +114,16 @@ export default function SeriesPurchaseButton({
         <p className="rounded-md bg-red-50 px-2 py-1 text-center text-[11px] text-red-700">
           {error}
         </p>
+      )}
+      {confirming && schedule && (
+        <PaymentPlanConfirmDialog
+          schedule={schedule}
+          optionName={optionName}
+          busy={busy}
+          accentHex={bg}
+          onConfirm={() => { void startCheckout() }}
+          onCancel={() => setConfirming(false)}
+        />
       )}
     </div>
   )

@@ -330,6 +330,8 @@ function ScheduleChoice({
         paymentOptionScheduleId={schedule.id}
         label={ctaLabel}
         palette={palette}
+        schedule={schedule}
+        optionName={optionName}
       />
     </div>
   )

@@ -19,6 +19,7 @@ import {
   scheduleKindLabel,
   scheduleShortDescription,
   scheduleTotalLine,
+  planConfirmationCopy,
 } from './paymentPlan.ts'
 
 const fin = (overrides = {}) => ({
@@ -145,5 +146,105 @@ describe('scheduleCtaLabel', () => {
   })
   test('pay-in-full → "Pay $X"', () => {
     assert.equal(scheduleCtaLabel(paif()), 'Pay $600')
+  })
+})
+
+
+/**
+ * Pre-Stripe confirmation copy.
+ *
+ * Stripe's setup-mode page cannot show an amount, so these strings
+ * are the last plain statement of the commitment a member sees
+ * before handing over a card. Every figure must come from the
+ * schedule — nothing hard-coded to any Payment Option.
+ */
+describe('planConfirmationCopy', () => {
+  test('reports the reported EMBODY plan correctly', () => {
+    const copy = planConfirmationCopy(
+      fin({
+        installment_amount_cents: 3780,
+        installment_count: 10,
+        total_amount_cents: 37800,
+        interval: 'week',
+      }),
+    )
+    assert.ok(copy)
+    assert.equal(copy.firstCharge, '$37.80 charged after setup')
+    assert.equal(copy.thenLine, 'Then 9 weekly payments of $37.80')
+    assert.equal(copy.totalLine, '$378 total')
+    assert.equal(copy.count, 10)
+  })
+
+  test('singularises the follow-up for a two-payment plan', () => {
+    const copy = planConfirmationCopy(
+      fin({
+        installment_amount_cents: 3780,
+        installment_count: 2,
+        total_amount_cents: 7560,
+      }),
+    )
+    assert.ok(copy)
+    assert.equal(copy.thenLine, 'Then 1 weekly payment of $37.80')
+  })
+
+  test('uses the schedule cadence, not a fixed word', () => {
+    const fortnightly = planConfirmationCopy(
+      fin({ interval: 'fortnight', installment_count: 5 }),
+    )
+    const monthly = planConfirmationCopy(
+      fin({ interval: 'month', installment_count: 6 }),
+    )
+    assert.ok(fortnightly && monthly)
+    assert.match(fortnightly.thenLine, /fortnightly payments/)
+    assert.match(monthly.thenLine, /monthly payments/)
+  })
+
+  test('derives the total when the schedule has none stored', () => {
+    const copy = planConfirmationCopy(
+      fin({
+        installment_amount_cents: 3780,
+        installment_count: 10,
+        total_amount_cents: null,
+      }),
+    )
+    assert.ok(copy)
+    assert.equal(copy.totalLine, '$378 total')
+  })
+
+  test('prefers the stored total over a derived one', () => {
+    // A stored total that disagrees is a data problem, not something
+    // this helper should paper over by silently recomputing.
+    const copy = planConfirmationCopy(
+      fin({
+        installment_amount_cents: 2000,
+        installment_count: 3,
+        total_amount_cents: 5900,
+      }),
+    )
+    assert.ok(copy)
+    assert.equal(copy.totalLine, '$59 total')
+  })
+
+  test('respects the schedule currency', () => {
+    const copy = planConfirmationCopy(
+      fin({ currency: 'GBP', installment_amount_cents: 1000, installment_count: 4, total_amount_cents: 4000 }),
+    )
+    assert.ok(copy)
+    assert.match(copy.firstCharge, /GBP 10 charged after setup/)
+  })
+
+  test('returns null for pay-in-full', () => {
+    assert.equal(planConfirmationCopy(paif()), null)
+  })
+
+  test('returns null when the figures are incomplete', () => {
+    assert.equal(
+      planConfirmationCopy(fin({ installment_amount_cents: null })),
+      null,
+    )
+    assert.equal(
+      planConfirmationCopy(fin({ installment_count: null })),
+      null,
+    )
   })
 })

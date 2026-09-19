@@ -4,6 +4,11 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import PaymentPlanConfirmDialog from '@/components/checkout/PaymentPlanConfirmDialog'
+import {
+  planConfirmationCopy,
+  type AnyPaymentSchedule,
+} from '@/lib/paymentPlan'
 
 interface CheckoutButtonProps {
   pathwayId: string
@@ -17,6 +22,11 @@ interface CheckoutButtonProps {
    *  branch says "Payment received", which is a lie during a
    *  ``mode=setup`` Checkout Session. */
   useFinitePlanSuccessPage?: boolean
+  /** Selected schedule. A finite payment plan gets a confirmation
+   *  step before the Stripe redirect, because Stripe's setup-mode
+   *  page shows no amount and labels its button "Save". */
+  schedule?: AnyPaymentSchedule | null
+  optionName?: string | null
 }
 
 export function CheckoutButton({
@@ -26,10 +36,13 @@ export function CheckoutButton({
   label = 'Unlock pathway',
   isAuthenticated = true,
   useFinitePlanSuccessPage = false,
+  schedule,
+  optionName,
 }: CheckoutButtonProps) {
   const pathname = usePathname()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState(false)
 
   // For anonymous visitors on single-price pathways, show auth CTAs
   if (!isAuthenticated) {
@@ -53,7 +66,19 @@ export function CheckoutButton({
     )
   }
 
-  async function handleClick() {
+  // Only finite plans get the extra step.
+  const needsConfirm = schedule != null && planConfirmationCopy(schedule) != null
+
+  function handleClick() {
+    if (needsConfirm) {
+      setError(null)
+      setConfirming(true)
+      return
+    }
+    void startCheckout()
+  }
+
+  async function startCheckout() {
     setLoading(true)
     setError(null)
     try {
@@ -100,6 +125,7 @@ export function CheckoutButton({
       setError('Could not start checkout. Please check your connection and try again.')
     } finally {
       setLoading(false)
+      setConfirming(false)
     }
   }
 
@@ -116,6 +142,15 @@ export function CheckoutButton({
       </button>
       {error && (
         <p className="text-center text-[12px] text-red-500">{error}</p>
+      )}
+      {confirming && schedule && (
+        <PaymentPlanConfirmDialog
+          schedule={schedule}
+          optionName={optionName}
+          busy={loading}
+          onConfirm={() => { void startCheckout() }}
+          onCancel={() => setConfirming(false)}
+        />
       )}
     </div>
   )

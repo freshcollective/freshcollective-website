@@ -50,21 +50,17 @@ class TestCadenceVariants:
             currency="AUD",
         )
         text = compose_setup_disclosure(plan=plan, option_name="FIP2 Test Plan")
-        # Header sentence.
-        assert text.startswith(
-            "FIP2 Test Plan — A$20 weekly × 3 payments (A$60 total)."
-        )
-        # Authorisation clause.
-        assert (
-            "By saving your payment details, you authorise Fresh Collective "
-            "to start this payment plan."
-        ) in text
-        # First-payment clause.
-        assert "Your first A$20 payment will be charged after setup," in text
-        # Follow-up clause — plural (count-1 = 2).
-        assert "followed by 2 weekly payments of A$20." in text
+        # Commitment first. Stripe's setup page shows no amount and
+        # labels its button "Save", so the money must lead.
+        assert text.startswith("You're starting a 3-payment plan.")
+        # First-payment clause — "immediately", not a vague "after setup".
+        assert "A$20 will be charged immediately after setup," in text
+        # Follow-up clause — plural (count-1 = 2) — and the total.
+        assert "followed by 2 weekly payments of A$20 (A$60 total)." in text
         # Access clause.
-        assert text.endswith("Access begins after the first payment succeeds.")
+        assert "Access begins after the first payment succeeds." in text
+        # The Payment Option is still identified, just no longer first.
+        assert text.endswith("This plan is for FIP2 Test Plan.")
 
     def test_fortnightly_five_payments(self):
         plan = _FakePlan(
@@ -76,11 +72,10 @@ class TestCadenceVariants:
             currency="AUD",
         )
         text = compose_setup_disclosure(plan=plan, option_name="Term Pass")
-        assert text.startswith(
-            "Term Pass — A$80 fortnightly × 5 payments (A$400 total)."
-        )
-        assert "Your first A$80 payment will be charged after setup," in text
-        assert "followed by 4 fortnightly payments of A$80." in text
+        assert text.startswith("You're starting a 5-payment plan.")
+        assert "A$80 will be charged immediately after setup," in text
+        assert "followed by 4 fortnightly payments of A$80 (A$400 total)." in text
+        assert text.endswith("This plan is for Term Pass.")
 
     def test_monthly_six_payments(self):
         plan = _FakePlan(
@@ -92,11 +87,10 @@ class TestCadenceVariants:
             currency="AUD",
         )
         text = compose_setup_disclosure(plan=plan, option_name="Retreat")
-        assert text.startswith(
-            "Retreat — A$100 monthly × 6 payments (A$600 total)."
-        )
-        assert "Your first A$100 payment will be charged after setup," in text
-        assert "followed by 5 monthly payments of A$100." in text
+        assert text.startswith("You're starting a 6-payment plan.")
+        assert "A$100 will be charged immediately after setup," in text
+        assert "followed by 5 monthly payments of A$100 (A$600 total)." in text
+        assert text.endswith("This plan is for Retreat.")
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +109,7 @@ class TestSingularPlural:
             stripe_interval_count=1,
         )
         text = compose_setup_disclosure(plan=plan, option_name="Two-Step")
-        assert "followed by 1 weekly payment of A$50." in text
+        assert "followed by 1 weekly payment of A$50 (A$100 total)." in text
         assert "1 weekly payments" not in text  # never plural
 
     def test_three_payments_uses_plural_followup(self):
@@ -127,7 +121,7 @@ class TestSingularPlural:
             stripe_interval_count=1,
         )
         text = compose_setup_disclosure(plan=plan, option_name="Three-Step")
-        assert "followed by 2 weekly payments of A$50." in text
+        assert "followed by 2 weekly payments of A$50 (A$150 total)." in text
 
 
 # ---------------------------------------------------------------------------
@@ -280,3 +274,71 @@ class TestCustomTextPassedToStripe:
         assert expected_adverb in message
         assert expected_followup in message
         assert "Access begins after the first payment succeeds." in message
+
+
+# ---------------------------------------------------------------------------
+# Commitment-first structure
+# ---------------------------------------------------------------------------
+
+
+class TestCommitmentLeadsTheDisclosure:
+    """Stripe's ``mode='setup'`` page has no line items, so it shows no
+    amount and its button reads "Save". This message is the only place
+    on that page where the money appears. A member reported reading the
+    page as "save a card" rather than "start a paid plan", so the
+    commitment now leads.
+    """
+
+    def _text(self, **over):
+        fields = dict(
+            installment_amount_cents=3780,
+            installments_expected=10,
+            total_expected_cents=37800,
+            stripe_interval="week",
+            stripe_interval_count=1,
+            currency="AUD",
+        )
+        fields.update(over)
+        return compose_setup_disclosure(
+            plan=_FakePlan(**fields), option_name="EMBODY — All sessions",
+        )
+
+    def test_the_reported_plan_reads_correctly(self):
+        assert self._text() == (
+            "You're starting a 10-payment plan. "
+            "A$37.80 will be charged immediately after setup, "
+            "followed by 9 weekly payments of A$37.80 (A$378 total). "
+            "Access begins after the first payment succeeds. "
+            "This plan is for EMBODY — All sessions."
+        )
+
+    def test_the_first_sentence_states_the_commitment(self):
+        """Not the option name, not a greeting — the plan itself."""
+        first = self._text().split(". ")[0]
+        assert first == "You're starting a 10-payment plan"
+
+    def test_the_amount_appears_before_the_option_name(self):
+        text = self._text()
+        assert text.index("A$37.80") < text.index("EMBODY")
+
+    def test_the_word_save_is_not_used_to_describe_the_action(self):
+        """The old wording said "By saving your payment details…",
+        echoing Stripe's button and reinforcing the exact
+        misreading."""
+        assert "saving your payment details" not in self._text()
+
+    def test_immediacy_is_explicit(self):
+        """"after setup" alone let a member imagine a later charge."""
+        assert "charged immediately after setup" in self._text()
+
+    def test_total_is_always_present(self):
+        for count, total in ((2, 7560), (5, 18900), (10, 37800)):
+            text = self._text(
+                installments_expected=count, total_expected_cents=total,
+            )
+            assert "total)" in text
+
+    def test_option_name_is_still_identified(self):
+        """Stripe shows nothing else about what is being bought, so
+        dropping the name entirely would leave the page anonymous."""
+        assert "EMBODY — All sessions" in self._text()
