@@ -39,6 +39,10 @@ from app.comms.templates import messages        # noqa: F401
 from app.comms.templates import pathways        # noqa: F401
 from app.comms.templates import purchases       # noqa: F401
 
+# Admin-editable copy declarations — import last so every template
+# module is registered before declarations reference their keys.
+from app.comms.templates import declarations    # noqa: F401
+
 
 __all__ = [
     "Template",

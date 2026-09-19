@@ -1,0 +1,583 @@
+"""What each email exposes to the World Management copy editor.
+
+Every ``email_transactional`` template appears here exactly once, so the
+admin list is the whole inventory and nothing is silently absent.
+System-controlled templates are declared with **no slots at all** —
+that is the guarantee, not a flag: an undeclared slot has no field, no
+endpoint and no storage through which it could be reached.
+
+Two conventions worth knowing before adding to this file.
+
+**Defaults are templated strings, not f-strings.** A default may
+contain ``{{merge_fields}}`` and is substituted by exactly the same
+code path an override takes. A preview therefore cannot diverge from a
+real send, and "reset to default" restores something that renders
+identically to what shipped.
+
+**Computed sentences are not slots.** Anything that pluralises, formats
+money, formats a date, or assembles a list stays in the template as
+code. Those are the sentences whose correctness depends on the data
+rather than on taste, and a slot is the wrong shape for them — there is
+no way for an admin to write one string that stays true across "1
+session" and "8 sessions". Where that leaves a template with only a few
+editable slots, it is classified ``PARTIAL`` and the locked notes say
+why.
+"""
+
+from __future__ import annotations
+
+from app.comms.templates.editable import (
+    CATEGORY_ACCOUNT_LABEL,
+    CATEGORY_COMMUNITY_LABEL,
+    CATEGORY_GATHERINGS_LABEL,
+    CATEGORY_MONEY_LABEL,
+    EDITABLE,
+    PARTIAL,
+    SYSTEM,
+    EditableSlot,
+    MergeField,
+    TemplateDeclaration,
+    declare,
+)
+
+
+# ---------------------------------------------------------------------------
+# Shared merge fields
+# ---------------------------------------------------------------------------
+
+F_COLLECTIVE = MergeField(
+    "collective_name", "collective_name", "Still Water",
+    "The Collective this relates to.",
+)
+F_GATHERING = MergeField(
+    "gathering_name", "gathering_title", "Morning Sit",
+    "The gathering's title.",
+)
+F_GATHERING_WHEN = MergeField(
+    "gathering_when", "gathering_starts_at", "Friday 19 September at 9:00am",
+    "Start time, already written in the Collective's timezone.",
+)
+F_INVITER = MergeField(
+    "inviter_name", "inviter_name", "Sarah",
+    "The creator who sent the invitation.",
+)
+F_PLAN = MergeField(
+    "plan_label", "plan_name", "Creator Portfolio",
+    "The creator-facing plan name.",
+)
+F_COMMENTER = MergeField(
+    "commenter_name", "commenter_name", "Sarah", "Who replied.",
+)
+F_POST_TITLE = MergeField(
+    "post_title", "post_title", "On stillness", "The post replied to.",
+)
+F_EXCERPT = MergeField(
+    "excerpt", "excerpt", "A quiet thought.",
+    "A short extract of what was written.",
+)
+F_PATHWAY = MergeField(
+    "pathway_name", "pathway_title", "Beginning", "The pathway's title.",
+)
+F_SENDER = MergeField(
+    "sender_name", "sender_name", "Sarah", "Who sent the message.",
+)
+F_EXPERIENCE = MergeField(
+    "purchase_name", "experience_name", "Life in Alignment",
+    "What was bought.",
+)
+
+
+# ---------------------------------------------------------------------------
+# Account
+# ---------------------------------------------------------------------------
+#
+# Note on greetings. ``Hey friend,`` is a deliberate product decision:
+# these two emails greet a brand-new account identically rather than
+# echoing ``users.name``, which is unvalidated free text. The merge
+# field for a member's name is therefore **not** offered here — making
+# it available would let an override re-introduce the "Hi Creator"
+# defect the greeting was changed to prevent.
+
+declare(TemplateDeclaration(
+    template_key="account.welcome_after_signup.email_transactional",
+    event_type="account.welcome_after_signup",
+    display_name="Welcome to Fresh Collective",
+    category=CATEGORY_ACCOUNT_LABEL,
+    audience="A new member, after they verify their email",
+    classification=EDITABLE,
+    merge_fields=(),
+    slots=(
+        EditableSlot("subject", "Subject", "Welcome to Fresh Collective",
+                     multiline=False, max_length=120),
+        EditableSlot("heading", "Heading", "Welcome to Fresh Collective",
+                     multiline=False),
+        EditableSlot("greeting", "Greeting", "Hey friend,", multiline=False,
+                     help_text="Deliberately not personalised — see the note "
+                               "on greetings in the code."),
+        EditableSlot("body.opening", "Opening",
+                     "Welcome to Fresh Collective. Your account is ready."),
+        EditableSlot("body.reassurance", "Reassurance",
+                     "Fresh Collective is a calm, structured place to gather, "
+                     "learn, and stay connected. Take your time — there's no "
+                     "rush."),
+        EditableSlot("cta_label", "Button label", "Sign in", multiline=False),
+        EditableSlot("signoff", "Sign-off", "We're glad you're here.",
+                     multiline=False),
+    ),
+    locked_notes=("The sign-in link is generated by Fresh Collective.",),
+))
+
+declare(TemplateDeclaration(
+    template_key="account.email_verification_requested.email_transactional",
+    event_type="account.email_verification_requested",
+    display_name="Confirm your email",
+    category=CATEGORY_ACCOUNT_LABEL,
+    audience="Every new account, at signup",
+    classification=PARTIAL,
+    merge_fields=(),
+    slots=(
+        EditableSlot("subject", "Subject",
+                     "Welcome to Fresh Collective — confirm your email",
+                     multiline=False, max_length=120),
+        EditableSlot("heading", "Heading", "Confirm your email",
+                     multiline=False),
+        EditableSlot("greeting", "Greeting", "Hey friend,", multiline=False),
+        EditableSlot("body.welcome", "Welcome line",
+                     "Welcome to Fresh Collective 🌿"),
+        EditableSlot("body.why", "Why we're asking",
+                     "One quick thing before you start joining in: confirm "
+                     "your email address so we know we can reach you when it "
+                     "matters."),
+        EditableSlot("cta_label", "Button label", "Verify my email",
+                     multiline=False),
+        EditableSlot("signoff", "Sign-off", "See you inside.",
+                     multiline=False),
+    ),
+    locked_notes=(
+        "The 24-hour expiry sentence is fixed — it states how the link "
+        "actually behaves.",
+        "The verification link is generated by Fresh Collective.",
+    ),
+))
+
+declare(TemplateDeclaration(
+    template_key="creator.plan_activated.email_transactional",
+    event_type="creator.plan_activated",
+    display_name="Creator plan is active",
+    category=CATEGORY_ACCOUNT_LABEL,
+    audience="A creator whose plan has just activated",
+    classification=EDITABLE,
+    merge_fields=(F_PLAN,),
+    slots=(
+        EditableSlot("subject", "Subject",
+                     "Your Fresh Collective Creator plan is active",
+                     multiline=False, max_length=120),
+        EditableSlot("heading", "Heading",
+                     "Your Fresh Collective Creator plan is active",
+                     multiline=False),
+        EditableSlot("body.activation", "Activation line",
+                     "Your Fresh Collective {{plan_label}} plan is now active.",
+                     required_fields=("plan_label",)),
+        EditableSlot("body.fresh_creator", "Body — first-time creator",
+                     "Let’s set up your first Collective — the shape it takes, "
+                     "where it lives in the world, and who you want to gather. "
+                     "Fresh Collective walks you through it, one gentle step "
+                     "at a time.",
+                     help_text="Shown to a creator who has not yet built a "
+                               "Collective."),
+        EditableSlot("body.returning_creator", "Body — returning creator",
+                     "Your Creator Studio is ready. From here you can publish "
+                     "pathways, plan Gatherings, and invite the people you "
+                     "want to gather.",
+                     help_text="Shown to a creator who is already set up."),
+        EditableSlot("cta_label.fresh_creator", "Button — first-time creator",
+                     "Set up your Collective", multiline=False),
+        EditableSlot("cta_label.returning_creator",
+                     "Button — returning creator", "Open Creator Studio",
+                     multiline=False),
+        EditableSlot("signoff", "Sign-off",
+                     "Take your time — Fresh Collective is built for depth, "
+                     "not speed."),
+    ),
+    locked_notes=(
+        "The greeting uses the creator's own name and is generated.",
+        "The Creator Studio link is generated by Fresh Collective.",
+    ),
+))
+
+declare(TemplateDeclaration(
+    template_key="collective.invitation.sent.email_transactional",
+    event_type="collective.invitation.sent",
+    display_name="Collective invitation",
+    category=CATEGORY_ACCOUNT_LABEL,
+    audience="Someone invited to a Collective — usually with no account yet",
+    classification=EDITABLE,
+    merge_fields=(F_INVITER, F_COLLECTIVE),
+    slots=(
+        EditableSlot("subject", "Subject",
+                     "{{inviter_name}} invited you to {{collective_name}}",
+                     multiline=False, max_length=120,
+                     required_fields=("collective_name",)),
+        EditableSlot("heading", "Heading",
+                     "{{inviter_name}} invited you to {{collective_name}}",
+                     multiline=False, required_fields=("collective_name",)),
+        EditableSlot("body.opening", "Opening",
+                     "{{inviter_name}} has invited you to join "
+                     "{{collective_name}} on Fresh Collective — a place to "
+                     "gather, learn together, and stay connected.",
+                     required_fields=("collective_name",)),
+        EditableSlot("body.instruction", "Instruction",
+                     "Follow the link below to accept the invitation and set "
+                     "up your account."),
+        EditableSlot("cta_label", "Button label", "Accept invitation",
+                     multiline=False),
+    ),
+    locked_notes=("The invitation link is generated and unique to this person.",),
+))
+
+
+# ---------------------------------------------------------------------------
+# Gatherings
+# ---------------------------------------------------------------------------
+
+declare(TemplateDeclaration(
+    template_key="gathering.booking.confirmed.email_transactional",
+    event_type="gathering.booking.confirmed",
+    display_name="Booking confirmed",
+    category=CATEGORY_GATHERINGS_LABEL,
+    audience="A member who booked, or was added to, one gathering",
+    classification=EDITABLE,
+    merge_fields=(F_GATHERING, F_COLLECTIVE, F_GATHERING_WHEN),
+    slots=(
+        EditableSlot("subject", "Subject", "Booked: {{gathering_name}}",
+                     multiline=False, max_length=120,
+                     required_fields=("gathering_name",)),
+        EditableSlot("heading", "Heading", "Booked: {{gathering_name}}",
+                     multiline=False, required_fields=("gathering_name",)),
+        EditableSlot("body.self_booked", "Body — member booked themselves",
+                     "You're booked for {{gathering_name}} in "
+                     "{{collective_name}}, starting {{gathering_when}}.",
+                     required_fields=("gathering_name", "gathering_when")),
+        EditableSlot("body.added_by_creator", "Body — added by a caretaker",
+                     "You've been added to {{gathering_name}} in "
+                     "{{collective_name}}, starting {{gathering_when}}.",
+                     required_fields=("gathering_name", "gathering_when"),
+                     help_text="Must not imply the member booked it "
+                               "themselves."),
+        EditableSlot("body.reminder_promise", "Reminder promise",
+                     "We'll send a reminder closer to the time."),
+        EditableSlot("cta_label", "Button label", "View the gathering",
+                     multiline=False),
+    ),
+    locked_notes=(
+        "The gathering link is generated.",
+        "Delivery is transactional — a member cannot switch this off. That "
+        "is separate from the copy and is not editable here.",
+    ),
+))
+
+declare(TemplateDeclaration(
+    template_key="gathering.multi_booking.confirmed.email_transactional",
+    event_type="gathering.multi_booking.confirmed",
+    display_name="Series / multi-booking confirmed",
+    category=CATEGORY_GATHERINGS_LABEL,
+    audience="A member who booked several gatherings in one action",
+    classification=PARTIAL,
+    merge_fields=(F_COLLECTIVE,),
+    slots=(
+        EditableSlot("body.closing", "Closing line",
+                     "We'll send a reminder before each one."),
+        EditableSlot("cta_label", "Button label", "View the schedule",
+                     multiline=False),
+    ),
+    locked_notes=(
+        "The subject, heading and opening sentence change shape with the "
+        "number of sessions ('1 session' vs '8 sessions') and are generated.",
+        "The date range and the schedule extract are generated.",
+    ),
+))
+
+declare(TemplateDeclaration(
+    template_key="gathering.reminder.24h.email_transactional",
+    event_type="gathering.reminder.24h",
+    display_name="Gathering reminder",
+    category=CATEGORY_GATHERINGS_LABEL,
+    audience="A member with a confirmed booking, a day ahead",
+    classification=EDITABLE,
+    merge_fields=(F_GATHERING, F_COLLECTIVE, F_GATHERING_WHEN),
+    slots=(
+        EditableSlot("subject", "Subject", "Tomorrow: {{gathering_name}}",
+                     multiline=False, max_length=120,
+                     required_fields=("gathering_name",)),
+        EditableSlot("heading", "Heading", "Tomorrow: {{gathering_name}}",
+                     multiline=False, required_fields=("gathering_name",)),
+        EditableSlot("body.opening", "Opening",
+                     "{{gathering_name}} is coming up {{gathering_when}}.",
+                     required_fields=("gathering_name",)),
+        EditableSlot("body.reassurance", "Reassurance",
+                     "Your place is booked — we look forward to seeing you."),
+        EditableSlot("cta_label", "Button label", "View the gathering",
+                     multiline=False),
+    ),
+    locked_notes=(
+        "The 'It's part of {Collective}' sentence is added automatically when "
+        "a Collective name is available.",
+        "The gathering link is generated.",
+    ),
+))
+
+declare(TemplateDeclaration(
+    template_key="gathering.cancelled.email_transactional",
+    event_type="gathering.cancelled",
+    display_name="Gathering cancelled",
+    category=CATEGORY_GATHERINGS_LABEL,
+    audience="Attendees whose booking was released",
+    classification=EDITABLE,
+    merge_fields=(F_GATHERING, F_COLLECTIVE),
+    slots=(
+        EditableSlot("subject", "Subject", "Cancelled: {{gathering_name}}",
+                     multiline=False, max_length=120,
+                     required_fields=("gathering_name",)),
+        EditableSlot("heading", "Heading", "Cancelled: {{gathering_name}}",
+                     multiline=False, required_fields=("gathering_name",)),
+        EditableSlot("body.released", "Place released",
+                     "Your place has been released and there\u2019s nothing "
+                     "you need to do."),
+        EditableSlot("body.ticketed", "If a ticket was paid for",
+                     "If you paid for a ticket, any refund will be confirmed "
+                     "separately by email.",
+                     help_text="Only shown when the booking used a paid "
+                               "ticket."),
+    ),
+    locked_notes=(
+        "The opening sentence names the gathering and who cancelled it, and "
+        "the 'It was due to take place…' sentence carries the original time. "
+        "Both are generated.",
+    ),
+))
+
+
+# ---------------------------------------------------------------------------
+# Community
+# ---------------------------------------------------------------------------
+
+declare(TemplateDeclaration(
+    template_key="community.post.published.email_transactional",
+    event_type="community.post.published",
+    display_name="New conversation",
+    category=CATEGORY_COMMUNITY_LABEL,
+    audience="Every active member of the Collective",
+    classification=EDITABLE,
+    merge_fields=(F_COLLECTIVE, F_EXCERPT),
+    slots=(
+        EditableSlot("subject", "Subject",
+                     "New conversation in {{collective_name}}",
+                     multiline=False, max_length=120,
+                     required_fields=("collective_name",)),
+        EditableSlot("heading", "Heading",
+                     "New conversation in {{collective_name}}",
+                     multiline=False, required_fields=("collective_name",)),
+        EditableSlot("body.opening", "Opening",
+                     "Someone started a new conversation in "
+                     "{{collective_name}}.",
+                     required_fields=("collective_name",)),
+        EditableSlot("body.closing", "Closing",
+                     "Open Fresh Collective to read and reply."),
+    ),
+    locked_notes=("The extract of the post is generated.",),
+))
+
+declare(TemplateDeclaration(
+    template_key="community.comment.created.email_transactional",
+    event_type="community.comment.created",
+    display_name="New reply on your post",
+    category=CATEGORY_COMMUNITY_LABEL,
+    audience="The author of the post",
+    classification=EDITABLE,
+    merge_fields=(F_COMMENTER, F_POST_TITLE),
+    slots=(
+        EditableSlot("subject", "Subject", "New reply on your post",
+                     multiline=False, max_length=120),
+        EditableSlot("heading", "Heading", "New reply on your post",
+                     multiline=False),
+        EditableSlot("body.opening", "Opening",
+                     '{{commenter_name}} replied to "{{post_title}}" on '
+                     "Fresh Collective.",
+                     required_fields=("commenter_name", "post_title")),
+        EditableSlot("cta_label", "Button label", "Open the conversation",
+                     multiline=False),
+    ),
+    locked_notes=("The link to the conversation is generated.",),
+))
+
+# Not currently live — ``pathways`` and ``direct_messages`` are absent
+# from COMMS_LIVE_TOPICS, so nothing is sent. Declared so the inventory
+# is complete and so they appear in the editor automatically if and
+# when their topic goes live; the admin surface filters on live status
+# rather than on a hand-maintained list.
+
+declare(TemplateDeclaration(
+    template_key="pathway.published.email_transactional",
+    event_type="pathway.published",
+    display_name="New pathway published",
+    category=CATEGORY_COMMUNITY_LABEL,
+    audience="Every active member of the Collective",
+    classification=EDITABLE,
+    merge_fields=(F_COLLECTIVE, F_PATHWAY),
+    slots=(
+        EditableSlot("subject", "Subject",
+                     "New pathway in {{collective_name}}: {{pathway_name}}",
+                     multiline=False, max_length=120,
+                     required_fields=("pathway_name",)),
+        EditableSlot("heading", "Heading",
+                     "New pathway in {{collective_name}}: {{pathway_name}}",
+                     multiline=False, required_fields=("pathway_name",)),
+        EditableSlot("body.opening", "Opening",
+                     "A new pathway is available in {{collective_name}}: "
+                     "{{pathway_name}}.",
+                     required_fields=("pathway_name",)),
+        EditableSlot("body.closing", "Closing",
+                     "Open Fresh Collective to explore."),
+    ),
+))
+
+declare(TemplateDeclaration(
+    template_key="dm.message.sent.email_transactional",
+    event_type="dm.message.sent",
+    display_name="Direct message received",
+    category=CATEGORY_COMMUNITY_LABEL,
+    audience="The recipient of a direct message",
+    classification=EDITABLE,
+    merge_fields=(F_SENDER, F_EXCERPT),
+    slots=(
+        EditableSlot("subject", "Subject",
+                     "{{sender_name}} sent you a message",
+                     multiline=False, max_length=120,
+                     required_fields=("sender_name",)),
+        EditableSlot("heading", "Heading",
+                     "{{sender_name}} sent you a message",
+                     multiline=False, required_fields=("sender_name",)),
+        EditableSlot("body.opening", "Opening",
+                     "{{sender_name}} sent you a message on Fresh Collective.",
+                     required_fields=("sender_name",)),
+        EditableSlot("body.closing", "Closing",
+                     "Open Fresh Collective to reply."),
+    ),
+))
+
+
+# ---------------------------------------------------------------------------
+# Purchases & billing
+# ---------------------------------------------------------------------------
+
+declare(TemplateDeclaration(
+    template_key="purchase.completed.email_transactional",
+    event_type="purchase.completed",
+    display_name="Purchase confirmed",
+    category=CATEGORY_MONEY_LABEL,
+    audience="A member who completed a purchase or started a payment plan",
+    classification=PARTIAL,
+    merge_fields=(F_EXPERIENCE,),
+    slots=(
+        EditableSlot("signoff", "Sign-off",
+                     "Take your time — Fresh Collective is built for depth, "
+                     "not speed."),
+    ),
+    locked_notes=(
+        "The amount, the instalment progress ('Payment 1 of 6') and the "
+        "access statement are generated and state what the member actually "
+        "paid for.",
+        "The subject and heading change shape between a single payment and a "
+        "payment plan.",
+        "The link to the purchase is generated.",
+    ),
+))
+
+
+# System-controlled. No slots, by design — an undeclared slot has no
+# field, no endpoint and no storage. Listed so the admin inventory is
+# complete and the restraint reads as deliberate rather than as an
+# omission.
+
+def _system(key: str, event: str, name: str, audience: str, why: str) -> None:
+    declare(TemplateDeclaration(
+        template_key=key, event_type=event, display_name=name,
+        category=CATEGORY_MONEY_LABEL if key.startswith(
+            ("purchase.", "payment.", "access.", "creator.subscription"),
+        ) else CATEGORY_ACCOUNT_LABEL,
+        audience=audience, classification=SYSTEM, locked_notes=(why,),
+    ))
+
+
+_system(
+    "account.password_reset_requested.email_transactional",
+    "account.password_reset_requested", "Reset your password",
+    "An account holder who asked to reset their password",
+    "An editable password-reset email is a phishing template with a Save "
+    "button. Nothing here is editable.",
+)
+_system(
+    "payment.instalment_failed.email_transactional",
+    "payment.instalment_failed", "Payment problem",
+    "A member whose scheduled payment failed",
+    "States a grace deadline and an access promise that must match the "
+    "billing engine exactly.",
+)
+_system(
+    "access.suspended.email_transactional", "access.suspended",
+    "Access paused", "A member whose grace window elapsed",
+    "States an access state and what happens next.",
+)
+_system(
+    "payment.recovered.email_transactional", "payment.recovered",
+    "Payment fixed", "A member whose overdue payment was recovered",
+    "States an access state and instalment progress.",
+)
+_system(
+    "purchase.plan_completed.email_transactional", "purchase.plan_completed",
+    "Payment plan complete", "A member who finished a payment plan",
+    "States totals and a carefully-worded access promise.",
+)
+_system(
+    "purchase.refunded.email_transactional", "purchase.refunded",
+    "Refund processed", "A member whose refund settled",
+    "States a refunded amount and who controls settlement timing.",
+)
+_system(
+    "purchase.first_payment_failed.email_transactional",
+    "purchase.first_payment_failed", "First payment didn't go through",
+    "A member whose plan never started",
+    "States that nothing was charged and no access was granted.",
+)
+_system(
+    "creator.subscription.payment_failed.email_transactional",
+    "creator.subscription.payment_failed", "Creator plan payment problem",
+    "A creator whose subscription payment failed",
+    "States the grace deadline and that the plan is still active.",
+)
+_system(
+    "creator.subscription.recovered.email_transactional",
+    "creator.subscription.recovered", "Creator plan payment received",
+    "A creator whose payment recovered",
+    "States a billing state.",
+)
+_system(
+    "creator.subscription.cancellation_scheduled.email_transactional",
+    "creator.subscription.cancellation_scheduled",
+    "Creator plan scheduled to end", "A creator who scheduled a cancellation",
+    "States an end date and exactly what keeps working until then.",
+)
+_system(
+    "creator.subscription.cancelled.email_transactional",
+    "creator.subscription.cancelled", "Creator plan ended",
+    "A creator whose plan has ended",
+    "States that members' existing purchases are untouched — the single "
+    "most costly sentence in the system to get wrong.",
+)
+_system(
+    "diagnostics.provider_probe.email_transactional",
+    "diagnostics.provider_probe", "Provider probe (internal)",
+    "Internal diagnostics only",
+    "A developer tool, deliberately unbranded so it cannot be mistaken for "
+    "a member email.",
+)

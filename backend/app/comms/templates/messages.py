@@ -9,6 +9,7 @@ from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
 from app.comms.templates.base import render_email_shell
+from app.comms.templates.editable import resolver_for
 from app.comms.templates.registry import template_for
 
 
@@ -46,22 +47,20 @@ class DirectMessageEmailTemplate:
     ) -> RenderedPayload:
         sender = recipient.template_context.get("sender_name") or "A member"
         excerpt = (recipient.template_context.get("excerpt") or "").strip()
-        subject = f"{sender} sent you a message"
-        opening = f"{sender} sent you a message on Fresh Collective."
+        r = resolver_for(db, self.key, recipient.template_context)
+        subject = r.text("subject")
+        opening = r.text("body.opening")
+        closing = r.text("body.closing")
         body_text = (
             f"{opening}\n\n"
             + (excerpt + "\n\n" if excerpt else "")
-            + "Open Fresh Collective to reply."
+            + closing
         )
         # No CTA: this event's template_context carries no thread URL.
         body_html = render_email_shell(
             preheader=opening,
-            heading=subject,
-            body_paragraphs=[
-                opening,
-                excerpt,
-                "Open Fresh Collective to reply.",
-            ],
+            heading=r.text("heading"),
+            body_paragraphs=[opening, excerpt, closing],
         )
         return RenderedPayload(
             to="",

@@ -9,6 +9,7 @@ from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
 from app.comms.templates.base import render_email_shell
+from app.comms.templates.editable import resolver_for
 from app.comms.templates.registry import template_for
 
 
@@ -53,27 +54,29 @@ class BookingConfirmedEmailTemplate:
         added      = bool(ctx.get("added_by_creator"))
         url        = (ctx.get("gathering_url") or "").strip()
 
-        subject = f"Booked: {title}"
+        r = resolver_for(db, self.key, {
+            **ctx,
+            "gathering_title": title,
+            "collective_name": collective,
+            "gathering_starts_at": starts_at,
+        })
+        subject = r.text("subject")
         # Never tell someone they reserved a place they did not reserve.
-        opening = (
-            f"You've been added to {title} in {collective}, starting "
-            f"{starts_at}."
-            if added else
-            f"You're booked for {title} in {collective}, starting {starts_at}."
+        opening = r.text(
+            "body.added_by_creator" if added else "body.self_booked",
         )
+        promise = r.text("body.reminder_promise")
+        cta = r.text("cta_label")
         body_text = (
             f"{opening}\n\n"
-            "We'll send a reminder closer to the time."
-            + (f"\n\nView the gathering:\n{url}" if url else "")
+            f"{promise}"
+            + (f"\n\n{cta}:\n{url}" if url else "")
         )
         body_html = render_email_shell(
             preheader=opening,
-            heading=subject,
-            body_paragraphs=[
-                opening,
-                "We'll send a reminder closer to the time.",
-            ],
-            action=("View the gathering", url) if url else None,
+            heading=r.text("heading"),
+            body_paragraphs=[opening, promise],
+            action=(cta, url) if url else None,
         )
         return RenderedPayload(
             to="",
@@ -120,36 +123,36 @@ class GatheringCancelledEmailTemplate:
         starts_at  = (ctx.get("gathering_starts_at") or "").strip()
         ticketed   = bool(ctx.get("was_ticketed"))
 
-        subject = f"Cancelled: {title}"
 
+        r = resolver_for(db, self.key, {
+            **ctx, "gathering_title": title, "collective_name": collective,
+        })
+        subject = r.text("subject")
+        # Generated: names the gathering and who cancelled it.
         opening = (
             f"{title} has been cancelled"
             + (f" by {collective}." if collective else ".")
         )
+        released = r.text("body.released")
         when = (
-            f"It was due to take place {starts_at}. Your place has been "
-            "released and there\u2019s nothing you need to do."
-            if starts_at else
-            "Your place has been released and there\u2019s nothing you need to do."
+            f"It was due to take place {starts_at}. {released}"
+            if starts_at else released
         )
 
         paragraphs = [opening, when]
         # Only say anything about money when a ticket was actually paid
         # for. Refunds are handled separately and confirmed by their own
         # email, so this promises nothing about timing or amount.
+        ticket_note = r.text("body.ticketed")
         if ticketed:
-            paragraphs.append(
-                "If you paid for a ticket, any refund will be confirmed "
-                "separately by email."
-            )
+            paragraphs.append(ticket_note)
 
         body_text = f"{opening}\n\n{when}" + (
-            "\n\nIf you paid for a ticket, any refund will be confirmed "
-            "separately by email." if ticketed else ""
+            f"\n\n{ticket_note}" if ticketed else ""
         )
         body_html = render_email_shell(
             preheader=opening,
-            heading=subject,
+            heading=r.text("heading"),
             body_paragraphs=paragraphs,
         )
         return RenderedPayload(
@@ -205,27 +208,32 @@ class GatheringReminder24hEmailTemplate:
         collective = (ctx.get("collective_name") or "").strip()
         url        = (ctx.get("gathering_url") or "").strip()
 
-        subject = f"Tomorrow: {title}"
+        r = resolver_for(db, self.key, {
+            **ctx, "gathering_title": title, "collective_name": collective,
+            "gathering_starts_at": when,
+        })
+        subject = r.text("subject")
 
         opening = (
-            f"{title} is coming up {when}."
+            r.text("body.opening")
             if when else f"{title} is coming up tomorrow."
         )
         if collective:
             opening += f" It\u2019s part of {collective}."
 
-        paragraphs = [opening, "Your place is booked \u2014 we look forward to seeing you."]
+        reassurance = r.text("body.reassurance")
+        cta = r.text("cta_label")
+        paragraphs = [opening, reassurance]
 
         body_text = (
-            f"{opening}\n\nYour place is booked \u2014 we look forward to "
-            "seeing you."
-            + (f"\n\nView the gathering:\n{url}" if url else "")
+            f"{opening}\n\n{reassurance}"
+            + (f"\n\n{cta}:\n{url}" if url else "")
         )
         body_html = render_email_shell(
             preheader=opening,
-            heading=subject,
+            heading=r.text("heading"),
             body_paragraphs=paragraphs,
-            action=("View the gathering", url) if url else None,
+            action=(cta, url) if url else None,
         )
         return RenderedPayload(
             to="",
@@ -333,16 +341,17 @@ class MultiBookingConfirmedEmailTemplate:
                     f"{'session' if remaining == 1 else 'sessions'}."
                 )
 
-        paragraphs.append("We'll send a reminder before each one.")
+        r = resolver_for(db, self.key, ctx)
+        paragraphs.append(r.text("body.closing"))
 
         body_text = "\n\n".join(p for p in paragraphs if p) + (
-            f"\n\nView the schedule:\n{url}" if url else ""
+            f"\n\n{r.text('cta_label')}:\n{url}" if url else ""
         )
         body_html = render_email_shell(
             preheader=opening,
             heading=subject,
             body_paragraphs=paragraphs,
-            action=("View the schedule", url) if url else None,
+            action=(r.text("cta_label"), url) if url else None,
         )
         return RenderedPayload(
             to="",

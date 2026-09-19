@@ -18,6 +18,7 @@ from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
 from app.comms.templates.base import render_email_shell
+from app.comms.templates.editable import resolver_for
 from app.comms.templates.registry import template_for
 
 
@@ -133,18 +134,18 @@ class PurchaseCompletedEmailTemplate:
             f"{first_line}\n\n"
             f"{middle_line}\n\n"
             f"{cta_label}:\n{member_url}\n\n"
-            "Take your time — Fresh Collective is built for depth, not speed."
+            f"{resolver_for(db, self.key, ctx).text('signoff')}"
         )
+        # Only the sign-off is editable here. The amount, the instalment
+        # progress and the access statement are generated facts.
+        signoff = resolver_for(db, self.key, ctx).text("signoff")
         body_html = render_email_shell(
             preheader=first_line,
             heading=subject,
             greeting=greeting,
             body_paragraphs=[first_line, middle_line],
             action=(cta_label, member_url),
-            signoff=(
-                "Take your time — Fresh Collective is built for depth, "
-                "not speed."
-            ),
+            signoff=signoff,
             show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(

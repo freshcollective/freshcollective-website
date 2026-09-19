@@ -9,6 +9,7 @@ from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
 from app.comms.templates.base import render_email_shell
+from app.comms.templates.editable import resolver_for
 from app.comms.templates.registry import template_for
 from app.services.creator_plan_labels import creator_facing_plan_label
 
@@ -118,36 +119,43 @@ class EmailVerificationRequestedEmailTemplate:
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
     ) -> RenderedPayload:
         ctx = recipient.template_context
-        greeting = FRIEND_GREETING
         verify_url = ctx.get("verify_url") or ""
+        r = resolver_for(db, self.key, ctx)
 
-        subject = "Welcome to Fresh Collective — confirm your email"
+        greeting = r.text("greeting")
+        subject = r.text("subject")
+        welcome = r.text("body.welcome")
+        why = r.text("body.why")
+        cta = r.text("cta_label")
+        signoff = r.text("signoff")
+        # Locked: the expiry sentence states how the link actually
+        # behaves, so it is not an editable slot.
+        expiry = (
+            "This link is good for 24 hours. If it expires you can request "
+            "a fresh one from your dashboard."
+        )
+
         body_text = (
             f"{greeting}\n\n"
-            "Welcome to Fresh Collective 🌿\n\n"
-            "One quick thing before you start joining in: confirm your "
-            "email address so we know we can reach you when it matters.\n\n"
-            f"Verify my email:\n{verify_url}\n\n"
-            "This link is good for 24 hours. If it expires you can request "
-            "a fresh one from your dashboard.\n\n"
-            "See you inside."
+            f"{welcome}\n\n"
+            f"{why}\n\n"
+            f"{cta}:\n{verify_url}\n\n"
+            f"{expiry}\n\n"
+            f"{signoff}"
         )
         body_html = render_email_shell(
+            # Deliberately a tighter line than the body — this is the
+            # inbox preview, not the first paragraph. Not a slot in
+            # this phase.
             preheader=(
                 "Confirm your email address so we know we can reach you "
                 "when it matters."
             ),
-            heading="Confirm your email",
+            heading=r.text("heading"),
             greeting=greeting,
-            body_paragraphs=[
-                "Welcome to Fresh Collective 🌿",
-                "One quick thing before you start joining in: confirm your "
-                "email address so we know we can reach you when it matters.",
-                "This link is good for 24 hours. If it expires you can "
-                "request a fresh one from your dashboard.",
-            ],
-            action=("Verify my email", verify_url),
-            signoff="See you inside.",
+            body_paragraphs=[welcome, why, expiry],
+            action=(cta, verify_url),
+            signoff=signoff,
             show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
@@ -192,30 +200,30 @@ class WelcomeAfterSignupEmailTemplate:
         self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
     ) -> RenderedPayload:
         ctx = recipient.template_context
-        greeting = FRIEND_GREETING
         next_url = ctx.get("next_url") or ""
+        r = resolver_for(db, self.key, ctx)
 
-        subject = "Welcome to Fresh Collective"
+        greeting = r.text("greeting")
+        subject = r.text("subject")
+        opening = r.text("body.opening")
+        reassurance = r.text("body.reassurance")
+        cta = r.text("cta_label")
+        signoff = r.text("signoff")
+
         body_text = (
             f"{greeting}\n\n"
-            "Welcome to Fresh Collective. Your account is ready.\n\n"
-            "Fresh Collective is a calm, structured place to gather, learn, "
-            "and stay connected. Take your time — there's no rush.\n\n"
-            f"When you're ready, sign in here:\n{next_url}\n\n"
-            "We're glad you're here."
+            f"{opening}\n\n"
+            f"{reassurance}\n\n"
+            f"When you're ready, {cta.lower()} here:\n{next_url}\n\n"
+            f"{signoff}"
         )
         body_html = render_email_shell(
             preheader="Your account is ready.",
-            heading="Welcome to Fresh Collective",
+            heading=r.text("heading"),
             greeting=greeting,
-            body_paragraphs=[
-                "Welcome to Fresh Collective. Your account is ready.",
-                "Fresh Collective is a calm, structured place to gather, "
-                "learn, and stay connected. Take your time — there's no "
-                "rush.",
-            ],
-            action=("Sign in", next_url),
-            signoff="We're glad you're here.",
+            body_paragraphs=[opening, reassurance],
+            action=(cta, next_url),
+            signoff=signoff,
             show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(
@@ -274,51 +282,43 @@ class CreatorPlanActivatedEmailTemplate:
         next_url = ctx.get("next_url") or ""
         is_fresh_creator = bool(ctx.get("is_fresh_creator"))
 
+        # The creator-facing plan label is resolved above and handed to
+        # the resolver, so an override using {{plan_label}} can never
+        # surface the internal name.
+        r = resolver_for(db, self.key, {**ctx, "plan_name": plan_name})
+        signoff = r.text("signoff")
+
         # Subject unchanged across both variants — same event, same
         # transactional promise ("your plan is active").
-        subject = "Your Fresh Collective Creator plan is active"
+        subject = r.text("subject")
 
         # Body + CTA branch on onboarding state. Fresh Creators get
         # oriented toward setting up their first Collective (which is
         # what /creator-onboarding leads into); already-onboarded
         # Creators are pointed straight at Creator Studio.
         if is_fresh_creator:
-            supporting_line = (
-                "Let’s set up your first Collective — the shape it takes, "
-                "where it lives in the world, and who you want to gather. "
-                "Fresh Collective walks you through it, one gentle step at a "
-                "time."
-            )
-            cta_label = "Set up your Collective"
+            supporting_line = r.text("body.fresh_creator")
+            cta_label = r.text("cta_label.fresh_creator")
         else:
-            supporting_line = (
-                "Your Creator Studio is ready. From here you can publish "
-                "pathways, plan Gatherings, and invite the people you want "
-                "to gather."
-            )
-            cta_label = "Open Creator Studio"
+            supporting_line = r.text("body.returning_creator")
+            cta_label = r.text("cta_label.returning_creator")
 
-        activation_line = (
-            f"Your Fresh Collective {plan_name} plan is now active."
-        )
+        activation_line = r.text("body.activation")
 
         body_text = (
             f"{greeting}\n\n"
             f"{activation_line}\n\n"
             f"{supporting_line}\n\n"
             f"{cta_label}:\n{next_url}\n\n"
-            "Take your time — Fresh Collective is built for depth, not speed."
+            f"{signoff}"
         )
         body_html = render_email_shell(
             preheader=activation_line,
-            heading=subject,
+            heading=r.text("heading"),
             greeting=greeting,
             body_paragraphs=[activation_line, supporting_line],
             action=(cta_label, next_url),
-            signoff=(
-                "Take your time — Fresh Collective is built for depth, "
-                "not speed."
-            ),
+            signoff=r.text("signoff"),
             show_preferences_link=_SHOW_PREFS,
         )
         return RenderedPayload(

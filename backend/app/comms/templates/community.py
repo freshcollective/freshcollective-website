@@ -9,6 +9,7 @@ from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
 from app.comms.templates.base import render_email_shell
+from app.comms.templates.editable import resolver_for
 from app.comms.templates.registry import template_for
 
 
@@ -50,23 +51,21 @@ class NewPostEmailTemplate:
     ) -> RenderedPayload:
         collective = recipient.template_context.get("collective_name") or "your collective"
         excerpt = (recipient.template_context.get("excerpt") or "").strip()
-        subject = f"New conversation in {collective}"
-        opening = f"Someone started a new conversation in {collective}."
+        r = resolver_for(db, self.key, recipient.template_context)
+        subject = r.text("subject")
+        opening = r.text("body.opening")
+        closing = r.text("body.closing")
         body_text = (
             f"{opening}\n\n"
             + (excerpt + "\n\n" if excerpt else "")
-            + "Open Fresh Collective to read and reply."
+            + closing
         )
         # No CTA: this event's template_context carries no post URL.
         # An empty excerpt is dropped by the shell.
         body_html = render_email_shell(
             preheader=opening,
-            heading=subject,
-            body_paragraphs=[
-                opening,
-                excerpt,
-                "Open Fresh Collective to read and reply.",
-            ],
+            heading=r.text("heading"),
+            body_paragraphs=[opening, excerpt, closing],
         )
         return RenderedPayload(
             to="",
@@ -119,10 +118,10 @@ class CommentCreatedEmailTemplate:
         post_title = ctx.get("post_title") or "your post"
         view_url = ctx.get("view_url") or ""
 
-        subject = "New reply on your post"
-        opening = (
-            f'{commenter} replied to "{post_title}" on Fresh Collective.'
-        )
+        r = resolver_for(db, self.key, ctx)
+        subject = r.text("subject")
+        opening = r.text("body.opening")
+        cta = r.text("cta_label")
         body_text = (
             f"{opening}\n\n"
             "Open the conversation to read and respond:\n"
@@ -130,9 +129,9 @@ class CommentCreatedEmailTemplate:
         )
         body_html = render_email_shell(
             preheader=opening,
-            heading=subject,
+            heading=r.text("heading"),
             body_paragraphs=[opening],
-            action=("Open the conversation", view_url),
+            action=(cta, view_url),
         )
         return RenderedPayload(
             to="",

@@ -21,6 +21,7 @@ from app.activities.routes import router as activities_router
 from app.client.routes import router as client_router
 from app.admin.routes import router as admin_router
 from app.admin.access_revocation import router as admin_access_revocation_router
+from app.admin.email_templates import router as admin_email_templates_router
 from app.admin.plan_cancellation import router as admin_plan_cancellation_router
 from app.admin.payout_batch_routes import router as admin_payout_batch_router
 from app.creator.refund_routes import router as creator_refund_router
@@ -233,6 +234,7 @@ app.include_router(comms_admin_router)
 app.include_router(comms_member_router)
 app.include_router(comms_internal_router)
 app.include_router(comms_webhook_router)
+app.include_router(admin_email_templates_router)
 
 
 # ---------------------------------------------------------------------------
