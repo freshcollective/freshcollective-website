@@ -2747,11 +2747,29 @@ class Location(Base):
 # schema changes.
 
 class PlatformArtwork(Base):
+    """One row per named artwork slot the platform owns.
+
+    Two vocabularies share this table, kept apart by their key prefix:
+    the World Artwork slots in ``app/admin/platform_artwork.py``, and
+    the Fresh Collective brand roles in ``app/brand/roles.py``, whose
+    keys all begin ``brand_``. One table, one storage bucket, one
+    public URL prefix — deliberately not a second asset system.
+    """
+
     __tablename__ = "platform_artwork"
 
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Who last replaced this artwork. Nullable because every row that
+    # existed before the column did has no answer, and because artwork
+    # cleared by an admin who has since been deleted should lose the
+    # attribution rather than the artwork (ON DELETE SET NULL).
+    updated_by_user_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False),
         server_default=func.now(),

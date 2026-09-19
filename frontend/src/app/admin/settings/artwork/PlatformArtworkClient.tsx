@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useRef, useState } from 'react'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import type { PlatformArtworkItem } from '@/lib/serverApi'
@@ -359,6 +360,37 @@ export default function PlatformArtworkClient({ initialItems }: Props) {
           The shared imagery that brings Fresh Collective and its many places to life.
         </p>
       </header>
+
+      {/* The Fresh Collective brand is artwork too, but it answers to
+          different rules — approved defaults, fixed roles, assets that
+          have to survive a 16px browser tab — so it has its own section
+          rather than another row in this list. */}
+      <Link
+        href="/admin/settings/artwork/brand"
+        className="mb-12 block rounded-2xl bg-white px-6 py-5 transition-all hover:-translate-y-0.5 md:px-8"
+        style={{
+          border: '1px solid rgba(12, 24, 38, 0.08)',
+          boxShadow: '0 1px 3px rgba(12, 24, 38, 0.04)',
+        }}
+      >
+        <div className="flex items-center justify-between gap-6">
+          <div>
+            <p className="text-[15px] font-semibold" style={{ color: '#0C1826' }}>
+              Fresh Collective Brand
+            </p>
+            <p
+              className="mt-1.5 max-w-[520px] text-[13.5px] leading-relaxed"
+              style={{ color: 'rgba(12, 24, 38, 0.62)' }}
+            >
+              The logo itself — every version of it, and each job it does
+              across the site, the browser tab and the emails we send.
+            </p>
+          </div>
+          <span className="shrink-0 text-[18px]" style={{ color: '#38A09E' }}>
+            →
+          </span>
+        </div>
+      </Link>
 
       <div className="space-y-14">
         {groupItems(items).map((group) => (

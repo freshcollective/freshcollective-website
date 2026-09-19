@@ -32,6 +32,10 @@ from app.admin.community_care.routes import router as admin_community_care_route
 from app.community_care.routes import router as community_care_router
 from app.admin.world_guide.routes import router as admin_world_guide_router
 from app.world_guide.routes import router as world_guide_router
+from app.admin.brand_assets import (
+    admin_router as admin_brand_assets_router,
+    public_router as public_brand_assets_router,
+)
 from app.admin.platform_artwork import (
     admin_router as admin_platform_artwork_router,
     public_router as public_platform_artwork_router,
@@ -207,6 +211,8 @@ app.include_router(admin_world_guide_router)
 app.include_router(world_guide_router)
 app.include_router(admin_platform_artwork_router)
 app.include_router(public_platform_artwork_router)
+app.include_router(admin_brand_assets_router)
+app.include_router(public_brand_assets_router)
 app.include_router(sales_router)
 app.include_router(spaces_router)
 app.include_router(me_router)

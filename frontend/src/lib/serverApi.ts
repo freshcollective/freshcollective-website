@@ -8,6 +8,7 @@ import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, Activity
 // lives in ``@/lib/activeSpaceCookie`` because the proxy middleware also
 // needs it and cannot import from a module that pulls in ``next/headers``.
 import { ACTIVE_SPACE_COOKIE } from './activeSpaceCookie'
+import type { BrandAssetGroup } from '@/lib/brandAssets'
 export { ACTIVE_SPACE_COOKIE }
 
 async function fetchWithSession(path: string): Promise<Response> {
@@ -458,6 +459,8 @@ export const getMotherWorldOverview = cache(async (): Promise<MotherWorldOvervie
 // (not by any Atlas Location). Managed from /admin/settings/artwork.
 // ---------------------------------------------------------------------------
 
+export type { BrandAsset, BrandAssetGroup } from '@/lib/brandAssets'
+
 export interface PlatformArtworkItem {
   key: string
   title: string
@@ -472,6 +475,14 @@ export interface PublicPlatformArtwork {
   image_url: string | null
   thumbnail_url: string | null
 }
+
+export const getAdminBrandAssets = cache(
+  async (): Promise<BrandAssetGroup[]> => {
+    const res = await fetchWithSession('/api/admin/brand-assets')
+    if (!res.ok) return []
+    return res.json()
+  },
+)
 
 export const getAdminPlatformArtwork = cache(async (): Promise<PlatformArtworkItem[]> => {
   const res = await fetchWithSession('/api/admin/platform-artwork')
