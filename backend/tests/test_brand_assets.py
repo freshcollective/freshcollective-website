@@ -51,17 +51,11 @@ PUBLIC_BASE = "/api/brand-assets"
 WITH_DEFAULT = [r for r in ROLE_ORDER if BRAND_ASSET_ROLES[r].default_path]
 WITHOUT_DEFAULT = [r for r in ROLE_ORDER if not BRAND_ASSET_ROLES[r].default_path]
 
-# Roles with no approved artwork yet. Spelled out rather than derived
-# so that supplying one becomes a deliberate edit here, visible in
-# review, instead of a silent change in a list.
-#
-# ``logo_on_teal`` is the non-obvious one. The approved system asks for
-# a WHITE wordmark on teal; every asset in the repo draws it in gold.
-# The gradient teal lockup that looks like a match is the
-# marketing/hero treatment, and pointing this role at it because the
-# backgrounds rhyme would redefine what the role means.
+# Roles with no approved artwork yet — the compact and system assets,
+# and only those. Spelled out rather than derived so that supplying one
+# becomes a deliberate edit here, visible in review, instead of a
+# silent change in a list.
 EXPECTED_MISSING = [
-    "logo_on_teal",
     "compact_light_mark",
     "compact_dark_mark",
     "favicon_app_icon",
@@ -626,8 +620,14 @@ APPROVED_CONTENT: dict[str, dict[str, str]] = {
     "alternate_light_logo": {
         "background": "white_flat", "dragonfly": "teal", "wordmark": "gold",
     },
+    # The distinguishing feature is the WHITE wordmark. Its sibling on
+    # the teal gradient sets the wordmark in gold and is a different
+    # role; swapping them is the mistake this table exists to catch.
+    "logo_on_teal": {
+        "background": "teal_flat", "dragonfly": "white", "wordmark": "white",
+    },
     "logo_on_navy": {
-        "background": "transparent", "dragonfly": "white", "wordmark": "gold",
+        "background": "navy_flat", "dragonfly": "white", "wordmark": "gold",
     },
     "marketing_hero_logo": {
         "background": "teal_gradient", "dragonfly": "white", "wordmark": "gold",
@@ -648,23 +648,47 @@ class TestApprovedArtworkContent:
             r for r in ROLE_ORDER if BRAND_ASSET_ROLES[r].default_path
         }
 
-    def test_the_marketing_lockup_is_the_gradient_one(self):
-        """The Phase A error, pinned. ``…transparent-teal.png`` reads
-        like the marketing asset and is not: teal wordmark, no
-        background."""
-        assert "square-teal" in BRAND_ASSET_ROLES["marketing_hero_logo"].default_path
-        other = _analyse("fresh-collective-logo-transparent-teal.png")
-        assert other["wordmark"] == "teal"
-        assert other["background"] == "transparent"
-        assert other != APPROVED_CONTENT["marketing_hero_logo"]
+    def test_the_two_teal_treatments_are_not_interchangeable(self):
+        """The error this whole suite exists to prevent. Both roles put
+        a white dragonfly on teal; they differ in the wordmark and in
+        whether the background is flat or a gradient. Reading the
+        filename gets this wrong, and an earlier pass did."""
+        flat = _analyse(
+            BRAND_ASSET_ROLES["logo_on_teal"].default_path.removeprefix("/brand/"),
+        )
+        gradient = _analyse(
+            BRAND_ASSET_ROLES["marketing_hero_logo"]
+            .default_path.removeprefix("/brand/"),
+        )
+        assert flat["wordmark"] == "white"
+        assert gradient["wordmark"] == "gold"
+        assert flat["background"] == "teal_flat"
+        assert gradient["background"] == "teal_gradient"
+        assert flat != gradient
 
-    def test_no_bundled_asset_could_satisfy_logo_on_teal(self):
-        """``logo_on_teal`` wants a WHITE wordmark. Nothing in the repo
-        has one, which is why the role is missing rather than filled
-        with the nearest-looking file."""
-        assert BRAND_ASSET_ROLES["logo_on_teal"].default_path is None
-        for path in sorted(BRAND_DIR.glob("*.png")):
-            assert _analyse(path.name)["wordmark"] != "white", path.name
+    def test_every_full_logo_role_is_filled(self):
+        """The five full-logo roles all have approved artwork; only the
+        compact and system roles are outstanding."""
+        full = [
+            r for r in ROLE_ORDER
+            if BRAND_ASSET_ROLES[r].group == "full_logos"
+        ]
+        assert len(full) == 5
+        for role in full:
+            assert BRAND_ASSET_ROLES[role].default_path, role
+            assert role not in EXPECTED_MISSING
+
+    def test_each_role_has_a_distinct_visual_identity(self):
+        """No two roles may resolve to artwork that reads the same.
+        Identical content across two roles means one of them is filled
+        with something that merely resembles what it needs."""
+        seen: dict[tuple, str] = {}
+        for role, expected in APPROVED_CONTENT.items():
+            signature = tuple(sorted(expected.items()))
+            assert signature not in seen, (
+                f"{role} and {seen.get(signature)} describe the same artwork"
+            )
+            seen[signature] = role
 
     def test_no_two_roles_share_one_asset(self):
         """A shared default would mean two roles are the same job, or

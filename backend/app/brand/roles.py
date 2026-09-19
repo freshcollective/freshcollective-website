@@ -17,25 +17,21 @@ Every role resolves to exactly one of:
 * **missing** — no upload and no bundled default.
 
 ``missing`` is a real, reportable state rather than an accident, and
-five roles are in it today.
+four roles are in it today — all of them compact or system assets.
+Fresh Collective has no compact artwork yet: only the full stacked
+lockups, whose wordmark is 3% of the canvas height and becomes an
+illegible smudge below about 120px wide. The tempting move is to point
+those roles at a full lockup anyway and let CSS crop it. That produces
+a logo nobody approved, drawn by a bounding box.
 
-Four are the compact and system assets. Fresh Collective has no
-compact artwork yet — only the full stacked lockups, whose wordmark is
-3% of the canvas height and becomes an illegible smudge below about
-120px wide. The tempting move is to point those roles at the square
-lockup anyway and let CSS crop it. That produces a logo nobody
-approved, drawn by a bounding box.
-
-The fifth is ``logo_on_teal``, and it is missing for a different and
-more interesting reason: the approved system specifies a **white**
-wordmark on teal, and every asset in the repo draws the wordmark in
-gold. The gradient teal lockup that looks like a match is
-``marketing_hero_logo`` — same background family, different wordmark
-colour, different job. Filling one role with the other because the
-backgrounds rhyme would quietly redefine the brand system, so it stays
-missing until the white-wordmark artwork arrives. Every default below
-was verified by reading the pixels, not the filename; see
-``tests/test_brand_assets.py::TestApprovedArtworkContent``.
+All five full-logo roles are filled by artwork supplied directly by
+Lindsey. Every one of the defaults below was identified by reading its
+pixels rather than its filename — background kind, dragonfly colour,
+wordmark colour — and that identification is pinned as a test, not a
+comment: see ``tests/test_brand_assets.py::TestApprovedArtworkContent``.
+It is pinned because trusting a filename is exactly how an earlier
+pass mapped the marketing lockup to a file whose wordmark is the wrong
+colour.
 
 Why the defaults are paths, not rows
 ------------------------------------
@@ -167,7 +163,7 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         recommended="Square lockup · at least 500 × 500px · PNG or WebP · transparency welcome",
         content_types=FORMATS_TRANSPARENT,
         min_width=400, min_height=400,
-        default_path="/brand/fresh-collective-logo-navy-gold-white.png",
+        default_path="/brand/fresh-collective-logo-navy-gold-on-white.png",
     ),
     BrandAssetRole(
         role="alternate_light_logo",
@@ -182,7 +178,7 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         recommended="Square lockup · at least 500 × 500px · PNG or WebP · transparency welcome",
         content_types=FORMATS_TRANSPARENT,
         min_width=400, min_height=400,
-        default_path="/brand/fresh-collective-logo-teal-gold-white.png",
+        default_path="/brand/fresh-collective-logo-teal-gold-on-white.png",
     ),
     BrandAssetRole(
         role="logo_on_teal",
@@ -195,36 +191,28 @@ _ROLES: tuple[BrandAssetRole, ...] = (
             "be too much, such as a solid teal band or a partner "
             "placement."
         ),
-        recommended="Square · at least 500 × 500px · PNG or WebP · teal background and WHITE wordmark",
+        recommended="Square · at least 500 × 500px · PNG or WebP · flat teal background, WHITE wordmark",
         content_types=FORMATS_FLAT,
         min_width=400, min_height=400,
         aspect=SQUARE,
-        default_path=None,
-        missing_note=(
-            "No approved artwork with a white wordmark exists. The "
-            "gradient teal lockup in the repo draws the wordmark in "
-            "gold, which is the marketing/hero treatment rather than "
-            "this one — using it here would silently change what this "
-            "role means. Needs the teal lockup with FRESH COLLECTIVE "
-            "set in white."
-        ),
+        default_path="/brand/fresh-collective-logo-white-on-teal.png",
     ),
     BrandAssetRole(
         role="logo_on_navy",
         title="Dark / navy background",
         group=GROUP_FULL_LOGOS,
         intended_use=(
-            "White dragonfly, gold wordmark — for deep navy and other "
-            "dark surfaces. The artwork is transparent rather than "
-            "navy-backed, so it takes the colour of whatever it is "
-            "placed on and works across the whole dark range. It is "
-            "invisible on white, so never use it as a general-purpose "
-            "logo."
+            "The lockup on its own flat navy panel — white dragonfly, "
+            "gold wordmark. The dressier of the two single-colour "
+            "backgrounds; use it where the brand should feel formal "
+            "and self-contained rather than borrowing the page's dark "
+            "surface."
         ),
-        recommended="Square lockup · at least 500 × 500px · PNG or WebP with transparency",
-        content_types=FORMATS_TRANSPARENT,
+        recommended="Square · at least 500 × 500px · PNG or WebP · flat navy background",
+        content_types=FORMATS_FLAT,
         min_width=400, min_height=400,
-        default_path="/brand/fresh-collective-logo-transparent-gold.png",
+        aspect=SQUARE,
+        default_path="/brand/fresh-collective-logo-white-gold-on-navy.png",
     ),
     BrandAssetRole(
         role="marketing_hero_logo",
@@ -242,7 +230,7 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         content_types=FORMATS_FLAT,
         min_width=400, min_height=400,
         aspect=SQUARE,
-        default_path="/brand/fresh-collective-logo-square-teal.png",
+        default_path="/brand/fresh-collective-logo-white-gold-on-teal-gradient.png",
     ),
 
     # ── Compact / system assets ──────────────────────────────────────

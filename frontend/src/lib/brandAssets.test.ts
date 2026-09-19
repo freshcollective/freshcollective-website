@@ -46,15 +46,16 @@ describe('preview surface', () => {
   test('white-on-transparent artwork previews on a dark surface', () => {
     // The defect this prevents: previewing a white dragonfly on a white
     // card, which shows an empty box and looks like a broken upload.
-    assert.equal(previewSurface('logo_on_navy'), 'dark')
+    // Only the compact dark mark is transparent now — the full logos
+    // all carry their own background.
     assert.equal(previewSurface('compact_dark_mark'), 'dark')
   })
 
   test('artwork carrying its own background gets neither card colour', () => {
-    // Both teal treatments bake their background in — the marketing
-    // lockup sits on a deep teal gradient, so a navy card behind it
-    // would misrepresent it.
+    // Flat teal, flat navy and the teal gradient are all part of the
+    // artwork; a card colour behind any of them would misrepresent it.
     assert.equal(previewSurface('logo_on_teal'), 'own')
+    assert.equal(previewSurface('logo_on_navy'), 'own')
     assert.equal(previewSurface('marketing_hero_logo'), 'own')
     assert.equal(previewSurface('favicon_app_icon'), 'own')
   })

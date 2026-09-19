@@ -60,10 +60,10 @@ export type PreviewSurface = 'light' | 'dark' | 'own'
 const PREVIEW_SURFACE: Record<string, PreviewSurface> = {
   primary_light_logo: 'light',
   alternate_light_logo: 'light',
-  // Both teal treatments carry their own panel, so neither a light nor
-  // a dark card should be visible behind them.
+  // All three of these bake their own background in — flat teal, flat
+  // navy, teal gradient — so no card colour should show behind them.
   logo_on_teal: 'own',
-  logo_on_navy: 'dark',
+  logo_on_navy: 'own',
   marketing_hero_logo: 'own',
   compact_light_mark: 'light',
   compact_dark_mark: 'dark',
