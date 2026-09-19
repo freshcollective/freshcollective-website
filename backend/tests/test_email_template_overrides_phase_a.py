@@ -457,11 +457,11 @@ class TestPreview:
         key = "creator.plan_activated.email_transactional"
         fresh = admin_client.post(
             f"/api/admin/communications/email-templates/{key}/preview",
-            json={"variant": {"is_fresh_creator": True}},
+            json={"variant": {"creator_state": "fresh"}},
         ).json()["html"]
         returning = admin_client.post(
             f"/api/admin/communications/email-templates/{key}/preview",
-            json={"variant": {"is_fresh_creator": False}},
+            json={"variant": {"creator_state": "returning"}},
         ).json()["html"]
         assert "Set up your Collective" in fresh
         assert "Open Creator Studio" in returning

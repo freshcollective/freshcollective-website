@@ -375,9 +375,9 @@ class TestPreview:
     def test_variant_switch(self, client):
         key = "creator.plan_activated.email_transactional"
         fresh = client.post(f"{BASE}/{key}/preview",
-                            json={"variant": {"is_fresh_creator": True}}).json()
+                            json={"variant": {"creator_state": "fresh"}}).json()
         ret = client.post(f"{BASE}/{key}/preview",
-                          json={"variant": {"is_fresh_creator": False}}).json()
+                          json={"variant": {"creator_state": "returning"}}).json()
         assert "Set up your Collective" in fresh["html"]
         assert "Open Creator Studio" in ret["html"]
 

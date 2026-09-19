@@ -145,6 +145,77 @@ SUBJECT_SLOT_ID = "subject"
 
 
 # ---------------------------------------------------------------------------
+# Preview variants
+# ---------------------------------------------------------------------------
+#
+# Several templates render materially different copy depending on the
+# situation that produced them — the same event, two shapes. An admin
+# editing that copy needs to see both, so a declaration names its
+# variants explicitly.
+#
+# Three things this deliberately is not:
+#
+# * **Not inferred.** An earlier draft guessed at variants by matching
+#   substrings in slot ids. That made the admin UI depend on a naming
+#   convention nothing enforced: rename ``body.fresh_creator`` and a
+#   control silently disappears. A branch in a template is a product
+#   fact and is stated as one.
+# * **Not editable.** A variant has no slot, no override row and no
+#   save path. It selects sample context for a render; it is not copy.
+# * **Not business state.** The overlay lands on the fabricated preview
+#   context only. Nothing here can reach a real row: the values are
+#   fixed at import, chosen by the declaration rather than the caller,
+#   and the only code that applies them builds throwaway sample data.
+#
+# The request carries a variant *id* and an option *value*, both
+# resolved against the declaration. A caller therefore cannot inject an
+# arbitrary context key at all — the closed enumeration is the point.
+
+
+@dataclass(frozen=True)
+class PreviewVariantOption:
+    """One selectable state of a preview variant.
+
+    ``context`` is the overlay applied to the sample context. Keys are
+    internal ``template_context`` keys the template branches on; they
+    are never merge fields and never reach storage.
+    """
+
+    value: str
+    label: str
+    context: Mapping[str, Any]
+    is_default: bool = False
+
+
+@dataclass(frozen=True)
+class PreviewVariant:
+    """A product control shown above the preview.
+
+    ``label`` is what the admin reads ("Booking source"), not the
+    internal flag it happens to set. The UI renders labels; the
+    internal key never surfaces.
+    """
+
+    variant_id: str
+    label: str
+    options: tuple[PreviewVariantOption, ...]
+    help_text: str = ""
+
+    @property
+    def default_option(self) -> PreviewVariantOption:
+        for o in self.options:
+            if o.is_default:
+                return o
+        return self.options[0]
+
+    def option(self, value: str) -> PreviewVariantOption | None:
+        for o in self.options:
+            if o.value == value:
+                return o
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Template declarations
 # ---------------------------------------------------------------------------
 
@@ -164,6 +235,9 @@ class TemplateDeclaration:
     # Notes rendered in the editor beside the locked items, so an admin
     # can see what the system owns rather than hunting for a field.
     locked_notes: tuple[str, ...] = ()
+    # Preview-only controls for templates that branch. Empty for the
+    # majority, which render one shape and expose no control at all.
+    preview_variants: tuple[PreviewVariant, ...] = ()
 
     @property
     def subject_slot(self) -> EditableSlot | None:
@@ -185,6 +259,39 @@ class TemplateDeclaration:
 
     def field_names(self) -> tuple[str, ...]:
         return tuple(f.name for f in self.merge_fields)
+
+    def variant(self, variant_id: str) -> PreviewVariant | None:
+        for v in self.preview_variants:
+            if v.variant_id == variant_id:
+                return v
+        return None
+
+    def variant_context(
+        self, selection: Mapping[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Sample-context overlay for a variant selection.
+
+        Every declared variant contributes, falling back to its default
+        option, so the overlay is complete whatever the caller sent.
+        An unknown variant id or option value raises ``KeyError`` — the
+        API turns that into a 400 rather than quietly previewing
+        something the admin did not ask for.
+        """
+        chosen = dict(selection or {})
+        overlay: dict[str, Any] = {}
+        for v in self.preview_variants:
+            value = chosen.pop(v.variant_id, None)
+            option = v.default_option if value is None else v.option(value)
+            if option is None:
+                raise KeyError(
+                    f"{v.variant_id!r} has no option {value!r}"
+                )
+            overlay.update(option.context)
+        if chosen:
+            raise KeyError(
+                f"unknown preview variant(s): {', '.join(sorted(chosen))}"
+            )
+        return overlay
 
 
 _DECLARATIONS: dict[str, TemplateDeclaration] = {}
@@ -224,8 +331,63 @@ def declare(decl: TemplateDeclaration) -> TemplateDeclaration:
                     f"{decl.template_key}.{s.slot_id}: required field "
                     f"{req!r} is not in the merge-field whitelist"
                 )
+    _validate_variants(decl)
     _DECLARATIONS[decl.template_key] = decl
     return decl
+
+
+def _validate_variants(decl: TemplateDeclaration) -> None:
+    """Structural checks on preview variants, at import.
+
+    The important one is the last: a variant may not write a merge
+    field's source key. Merge fields carry the sample values an admin
+    reads while editing, and a variant that quietly rewrote one would
+    make the preview disagree with the field list beside it.
+    """
+    source_keys = {f.source_key for f in decl.merge_fields}
+    slot_ids = {s.slot_id for s in decl.slots}
+    seen_ids: set[str] = set()
+    for v in decl.preview_variants:
+        if v.variant_id in seen_ids:
+            raise ValueError(
+                f"{decl.template_key}: duplicate preview variant "
+                f"{v.variant_id!r}"
+            )
+        seen_ids.add(v.variant_id)
+        if v.variant_id in slot_ids:
+            raise ValueError(
+                f"{decl.template_key}: preview variant {v.variant_id!r} "
+                "collides with a slot id — a variant is not editable copy"
+            )
+        if len(v.options) < 2:
+            raise ValueError(
+                f"{decl.template_key}.{v.variant_id}: a variant with fewer "
+                "than two options is not a choice"
+            )
+        if sum(1 for o in v.options if o.is_default) > 1:
+            raise ValueError(
+                f"{decl.template_key}.{v.variant_id}: more than one default "
+                "option"
+            )
+        seen_values: set[str] = set()
+        for o in v.options:
+            if o.value in seen_values:
+                raise ValueError(
+                    f"{decl.template_key}.{v.variant_id}: duplicate option "
+                    f"{o.value!r}"
+                )
+            seen_values.add(o.value)
+            if not o.context:
+                raise ValueError(
+                    f"{decl.template_key}.{v.variant_id}.{o.value}: an option "
+                    "that changes no context changes no preview"
+                )
+            for key in o.context:
+                if key in source_keys:
+                    raise ValueError(
+                        f"{decl.template_key}.{v.variant_id}.{o.value}: may "
+                        f"not set {key!r}, which is a merge field's source"
+                    )
 
 
 def get_declaration(template_key: str) -> TemplateDeclaration | None:

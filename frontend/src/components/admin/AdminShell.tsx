@@ -41,6 +41,14 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
+    // What the world says to the people in it. One page today; the
+    // section exists so the next comms surface has an obvious home.
+    label: '✉️ COMMUNICATIONS',
+    items: [
+      { href: '/admin/communications/email-templates', label: 'Email Templates' },
+    ],
+  },
+  {
     label: '🤝 CARE',
     items: [
       { href: '/admin/moderation',  label: 'Community Care' },

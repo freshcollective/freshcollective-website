@@ -141,6 +141,26 @@ class MergeFieldOut(BaseModel):
     description: str
 
 
+class PreviewVariantOptionOut(BaseModel):
+    value: str
+    label: str
+    is_default: bool
+
+
+class PreviewVariantOut(BaseModel):
+    """A preview-only control, described in product terms.
+
+    The internal context key each option sets is deliberately absent
+    from the response. The UI has no use for it, and leaving it out
+    means no client can come to depend on a flag name.
+    """
+
+    variant_id: str
+    label: str
+    help_text: str
+    options: list[PreviewVariantOptionOut]
+
+
 class SlotOut(BaseModel):
     slot_id: str
     label: str
@@ -170,7 +190,7 @@ class TemplateDetail(BaseModel):
     slots: list[SlotOut]
     merge_fields: list[MergeFieldOut]
     locked_notes: list[str]
-    variant_flags: list[str]
+    preview_variants: list[PreviewVariantOut]
 
 
 class SaveRequest(BaseModel):
@@ -185,7 +205,10 @@ class PreviewRequest(BaseModel):
 
     mode: str = Field(default="effective", pattern="^(effective|default)$")
     drafts: dict[str, str] = Field(default_factory=dict)
-    variant: dict[str, bool] = Field(default_factory=dict)
+    # ``{variant_id: option_value}``, both resolved against the
+    # declaration. A closed enumeration rather than free context keys —
+    # the caller selects a declared state and cannot name one itself.
+    variant: dict[str, str] = Field(default_factory=dict)
 
 
 class PreviewResponse(BaseModel):
@@ -265,12 +288,6 @@ def _detail(db: Session, decl: TemplateDeclaration) -> TemplateDetail:
                 row and row.default_fingerprint != s.fingerprint()
             ),
         ))
-    # Flags the editor can toggle to preview each copy variant.
-    variant_flags = sorted({
-        f for f in ("is_fresh_creator", "added_by_creator")
-        if any(f in s.slot_id or f.split("_")[-1] in s.slot_id
-               for s in decl.slots)
-    })
     return TemplateDetail(
         template_key=decl.template_key,
         event_type=decl.event_type,
@@ -289,14 +306,28 @@ def _detail(db: Session, decl: TemplateDeclaration) -> TemplateDetail:
             for f in decl.merge_fields
         ],
         locked_notes=list(decl.locked_notes),
-        variant_flags=variant_flags,
+        preview_variants=[
+            PreviewVariantOut(
+                variant_id=v.variant_id,
+                label=v.label,
+                help_text=v.help_text,
+                options=[
+                    PreviewVariantOptionOut(
+                        value=o.value, label=o.label,
+                        is_default=(o is v.default_option),
+                    )
+                    for o in v.options
+                ],
+            )
+            for v in decl.preview_variants
+        ],
     )
 
 
 def _render(
     decl: TemplateDeclaration,
     overrides: dict[str, str],
-    variant: dict[str, bool],
+    variant: dict[str, str],
 ) -> tuple[str, str, str]:
     """Render through the canonical template and shell."""
     template = get_template_for(decl.event_type, CHANNEL_EMAIL_TRANSACTIONAL)
@@ -306,7 +337,12 @@ def _render(
             detail=f"No renderer registered for {decl.event_type}.",
         )
     ctx = sample_context(decl)
-    ctx.update({k: bool(v) for k, v in variant.items()})
+    # The overlay comes from the declaration, never from the request
+    # body. The request only names which declared option it wants.
+    try:
+        ctx.update(decl.variant_context(variant))
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc.args[0])) from exc
     recipient = ResolvedRecipient(
         user_id="preview", role_in_event="preview",
         human_reason="Preview — not a real send.",
