@@ -4286,6 +4286,12 @@ def cancel_event(
     return _event_to_dict(event, booked_count)
 
 
+from app.services.gathering_booking_emit import (  # noqa: E402
+    emit_booking_confirmed,
+    emit_multi_booking_confirmed,
+)
+
+
 def _emit_gathering_cancelled(
     db,
     *,
@@ -4536,6 +4542,12 @@ def manual_book_member(
             access_pass_to_charge.used_credits += 1
         db.commit()
         db.refresh(booking)
+
+    # Comms — the member did not click Reserve; a caretaker added them.
+    # Reuses the single-gathering confirmation with
+    # ``added_by_creator`` so the copy says so rather than implying
+    # they booked it themselves.
+    emit_booking_confirmed(db, booking=booking, added_by_creator=True)
 
     return {
         "booking_id": booking.id,
@@ -8809,6 +8821,33 @@ def book_recurring_sessions(
             "remaining_credits": remaining,
             "credits_per_week": ap.credits_per_week,
         }
+
+    # Comms — ONE message for the whole action, never one per session.
+    # A single booked session reads better as an ordinary "you've been
+    # added" confirmation than as a one-line summary, so it takes the
+    # single-gathering template; two or more take the summary.
+    created = [
+        db.query(EventBooking).filter(EventBooking.id == item["booking_id"]).first()
+        for item in booked_list
+    ]
+    created = [b for b in created if b is not None]
+    if len(created) == 1:
+        emit_booking_confirmed(db, booking=created[0], added_by_creator=True)
+    elif len(created) > 1:
+        import hashlib
+        digest = hashlib.sha256(
+            "|".join(sorted(b.id for b in created)).encode()
+        ).hexdigest()[:16]
+        emit_multi_booking_confirmed(
+            db,
+            user_id=body.user_id,
+            bookings=created,
+            space=space,
+            scope=f"recurring:{digest}",
+            operation_at=now,
+            series=None,
+            added_by_creator=True,
+        )
 
     return RecurringBookingResponse(
         booked=[RecurringBookingItem(**item) for item in booked_list],

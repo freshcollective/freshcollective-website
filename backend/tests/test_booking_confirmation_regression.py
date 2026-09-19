@@ -343,21 +343,50 @@ class TestNoSpuriousEmails:
 # ---------------------------------------------------------------------------
 
 
-class TestUnwiredPathsStillSilent:
-    """Series, creator-manual and creator-recurring booking have never
-    sent a confirmation. This fix deliberately does not change that;
-    these assertions document the baseline so the additive follow-up
-    has something explicit to flip."""
+class TestPreviouslyUnwiredPathsNowEmit:
+    """Series, creator-manual and creator-recurring booking never sent a
+    confirmation before. The follow-up wired all three; this is the
+    flipped form of the baseline this class used to assert.
 
-    @pytest.mark.parametrize("fn_name,module", [
-        ("book_series", "app.spaces.routes"),
-        ("manual_book_member", "app.creator.routes"),
-        ("book_recurring_sessions", "app.creator.routes"),
+    Each is checked against the emit it should use — the single-gathering
+    confirmation for a one-gathering action, the multi-booking summary
+    for an action that books several at once. Substring matching is
+    deliberately exact: ``emit_multi_booking_confirmed`` does not contain
+    ``emit_booking_confirmed(``, so the two cannot be confused.
+    """
+
+    @pytest.mark.parametrize("fn_name,module,expected_emit", [
+        # One action, many gatherings → one summary.
+        ("book_series", "app.spaces.routes", "emit_multi_booking_confirmed("),
+        # One action, one gathering → ordinary confirmation, attributed.
+        ("manual_book_member", "app.creator.routes", "emit_booking_confirmed("),
+        # One action, N gatherings → summary, or the single template
+        # when N == 1. Both appear in the source.
+        ("book_recurring_sessions", "app.creator.routes",
+         "emit_multi_booking_confirmed("),
     ])
-    def test_path_does_not_yet_emit(self, fn_name, module):
+    def test_path_now_emits(self, fn_name, module, expected_emit):
         import importlib
         import inspect
         mod = importlib.import_module(module)
         src = inspect.getsource(getattr(mod, fn_name))
-        assert "emit_booking_confirmed" not in src
+        assert expected_emit in src
+        # The legacy member-confirmation trigger stays retired.
         assert "trigger_booking_confirmed" not in src
+
+    def test_creator_paths_attribute_the_booking_correctly(self):
+        """A member added by a caretaker must not be told they booked
+        it themselves."""
+        import inspect
+        from app.creator import routes as creator_routes
+        for fn_name in ("manual_book_member", "book_recurring_sessions"):
+            src = inspect.getsource(getattr(creator_routes, fn_name))
+            assert "added_by_creator=True" in src, fn_name
+
+    def test_series_booking_stays_a_single_summary(self):
+        """Guard against a future refactor looping the single-gathering
+        emit over occurrences."""
+        import inspect
+        from app.spaces import routes as space_routes
+        src = inspect.getsource(space_routes.book_series)
+        assert src.count("emit_multi_booking_confirmed(") == 1

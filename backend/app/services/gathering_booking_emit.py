@@ -66,6 +66,7 @@ def emit_booking_confirmed(
     db: Session,
     *,
     booking: EventBooking,
+    added_by_creator: bool = False,
     background_tasks: Any = None,
 ) -> "CommunicationEvent | None":
     """Emit ``gathering.booking.confirmed`` for a confirmed booking.
@@ -128,6 +129,12 @@ def emit_booking_confirmed(
                 "gathering_starts_at": format_local_start(event, space),
                 "collective_name":     space.name,
                 "gathering_id":        event.id,
+                "gathering_url":       _gathering_url(space, event),
+                # True when a creator added this member rather than the
+                # member reserving a place themselves. The template
+                # changes one sentence; it must never tell someone they
+                # booked something they did not.
+                "added_by_creator":    added_by_creator,
             },
             dedupe_key=_dedupe_key(booking),
         )
@@ -143,4 +150,133 @@ def emit_booking_confirmed(
         return None
 
 
-__all__ = ["emit_booking_confirmed"]
+def _gathering_url(space: Space, event: Event) -> str:
+    """Existing member-facing gathering page — no new route is added
+    for the email."""
+    from app.core.config import settings
+    if not getattr(space, "slug", None):
+        return ""
+    base = settings.frontend_origin.rstrip("/")
+    return f"{base}/spaces/{space.slug}/events/{event.id}"
+
+
+def _series_url(space: Space, series: Any) -> str:
+    """Existing member-facing Series page, when the bookings belong to
+    a real ``EventSeries``."""
+    from app.core.config import settings
+    if series is None or not getattr(series, "slug", None):
+        return ""
+    if not getattr(space, "slug", None):
+        return ""
+    base = settings.frontend_origin.rstrip("/")
+    return f"{base}/spaces/{space.slug}/gathering-series/{series.slug}"
+
+
+def _multi_dedupe_key(user_id: str, scope: str, operation_at) -> str:
+    """One email per booking *operation*, not per child booking.
+
+    ``operation_at`` is the single ``now`` the route stamped on every
+    booking it created, so the whole batch collapses to one key. A
+    genuinely separate later operation carries a different timestamp
+    and earns its own summary.
+    """
+    stamp = operation_at.isoformat() if operation_at else "none"
+    return f"multi_booking:{user_id}:{scope}:{stamp}"
+
+
+def emit_multi_booking_confirmed(
+    db: Session,
+    *,
+    user_id: str,
+    bookings: list[EventBooking],
+    space: Space,
+    scope: str,
+    operation_at: Any,
+    series: Any = None,
+    added_by_creator: bool = False,
+    background_tasks: Any = None,
+) -> "CommunicationEvent | None":
+    """One summary confirmation for a batch of gatherings booked by a
+    single action.
+
+    Used by member Series booking and by creator recurring booking.
+    Callers pass only the bookings they actually created or
+    reactivated — already-booked and skipped occurrences are not the
+    member's news.
+
+    ``scope`` is a stable identifier for what was booked (a series id,
+    or a digest of the booking ids) and feeds the dedupe key.
+    """
+    try:
+        if not bookings:
+            return None
+
+        from app.comms import Source, emit as comms_emit
+        from app.comms.rollout import schedule_routing_if_needed
+        from app.services.gathering_reminders import format_local_start
+
+        events = (
+            db.query(Event)
+            .filter(Event.id.in_([b.event_id for b in bookings]))
+            .order_by(Event.starts_at)
+            .all()
+        )
+        if not events:
+            return None
+
+        # A short schedule extract, not the whole run — three lines is
+        # enough to recognise what was booked without the email
+        # becoming a timetable.
+        preview = [
+            {"title": e.title, "when": format_local_start(e, space)}
+            for e in events[:3]
+        ]
+
+        series_title = (
+            getattr(series, "title", None)
+            or next((e.recurrence_label for e in events if e.recurrence_label), None)
+            or ""
+        )
+        cta_url = _series_url(space, series) or _gathering_url(space, events[0])
+
+        ev = comms_emit(
+            db,
+            event_type="gathering.multi_booking.confirmed",
+            source_type=Source.COLLECTIVE,
+            source_id=space.id,
+            actor_user_id=user_id,
+            subject_type="gathering_series" if series is not None else "space",
+            subject_id=getattr(series, "id", None) or space.id,
+            context={
+                "space_id":        space.id,
+                "collective_name": space.name,
+                "booking_ids":     [b.id for b in bookings],
+            },
+            payload={
+                "booker_id":        user_id,
+                "collective_name":  space.name,
+                "series_title":     series_title,
+                "session_count":    len(events),
+                "first_starts_at":  format_local_start(events[0], space),
+                "last_starts_at":   format_local_start(events[-1], space),
+                "schedule_preview": preview,
+                "cta_url":          cta_url,
+                "added_by_creator": added_by_creator,
+            },
+            dedupe_key=_multi_dedupe_key(user_id, scope, operation_at),
+        )
+        db.commit()
+        schedule_routing_if_needed(
+            background_tasks, ev, "gathering.multi_booking.confirmed",
+        )
+        return ev
+    except Exception:
+        logger.exception(
+            "multi_booking_confirmed emit failed for user %s (%d bookings) "
+            "— the bookings themselves are unaffected",
+            user_id, len(bookings or []),
+        )
+        return None
+
+
+__all__ = ["emit_booking_confirmed", "emit_multi_booking_confirmed"]

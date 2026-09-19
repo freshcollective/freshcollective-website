@@ -33,6 +33,8 @@ class BookingConfirmedResolver:
                     "gathering_starts_at": payload.get("gathering_starts_at"),
                     "collective_name": (event.context or {}).get("collective_name"),
                     "gathering_id": event.subject_id,
+                    "gathering_url": payload.get("gathering_url") or "",
+                    "added_by_creator": bool(payload.get("added_by_creator")),
                 },
             ),
         ]
@@ -101,6 +103,44 @@ class GatheringReminder24hResolver:
                     "gathering_when":  payload.get("gathering_when") or "",
                     "collective_name": payload.get("collective_name") or "",
                     "gathering_url":   payload.get("gathering_url") or "",
+                },
+            ),
+        ]
+
+
+@resolver_for("gathering.multi_booking.confirmed")
+class MultiBookingConfirmedResolver:
+    """Single recipient — the member whose bookings were created. One
+    summary per booking action, never one per occurrence."""
+
+    event_type = "gathering.multi_booking.confirmed"
+
+    def resolve(
+        self, db: Session, event: CommunicationEvent,
+    ) -> list[ResolvedRecipient]:
+        payload = event.payload or {}
+        user_id = payload.get("booker_id") or event.actor_user_id
+        if not user_id:
+            return []
+        added_by_creator = bool(payload.get("added_by_creator"))
+        return [
+            ResolvedRecipient(
+                user_id=user_id,
+                role_in_event="attendee",
+                human_reason=(
+                    "A caretaker booked these gatherings for you."
+                    if added_by_creator else
+                    "You booked these gatherings."
+                ),
+                template_context={
+                    "collective_name":  payload.get("collective_name") or "",
+                    "series_title":     payload.get("series_title") or "",
+                    "session_count":    payload.get("session_count") or 0,
+                    "first_starts_at":  payload.get("first_starts_at") or "",
+                    "last_starts_at":   payload.get("last_starts_at") or "",
+                    "schedule_preview": payload.get("schedule_preview") or [],
+                    "cta_url":          payload.get("cta_url") or "",
+                    "added_by_creator": added_by_creator,
                 },
             ),
         ]

@@ -88,7 +88,10 @@ from app.spaces.schemas import (
 
 from app.models.platform import EventSeries as _EventSeriesModel  # noqa: E402
 from app.models.platform import PathwayStepManualRelease  # noqa: E402
-from app.services.gathering_booking_emit import emit_booking_confirmed  # noqa: E402
+from app.services.gathering_booking_emit import (  # noqa: E402
+    emit_booking_confirmed,
+    emit_multi_booking_confirmed,
+)
 from app.services.notification_service import trigger_event_booking_creator  # noqa: E402
 from app.services import channel_permissions as channel_perms  # noqa: E402
 
@@ -2547,6 +2550,7 @@ def get_event(
 def book_series(
     slug: str,
     series_id: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> SeriesBookingResponse:
@@ -2598,6 +2602,7 @@ def book_series(
 
     booked = 0
     already_booked = 0
+    created_bookings: list[EventBooking] = []
     skipped_full = 0
     skipped_closed = 0
 
@@ -2618,17 +2623,49 @@ def book_series(
             existing.status = BookingStatus.confirmed
             existing.booked_at = now
             existing.cancelled_at = None
+            created_bookings.append(existing)
         else:
-            db.add(EventBooking(
+            fresh = EventBooking(
                 id=str(uuid.uuid4()),
                 event_id=e.id,
                 user_id=current_user.id,
                 status=BookingStatus.confirmed,
                 booked_at=now,
-            ))
+            )
+            db.add(fresh)
+            created_bookings.append(fresh)
         booked += 1
 
     db.commit()
+
+    # Comms — ONE summary for the whole action. Booking a Series creates
+    # one EventBooking per occurrence; emailing each would be a flood
+    # for a single click. Only the bookings actually created or
+    # reactivated are reported — already-booked and skipped occurrences
+    # are not news to the member.
+    if created_bookings:
+        series_row = None
+        series_fk = next(
+            (e.series_id for e in events if getattr(e, "series_id", None)), None,
+        )
+        if series_fk:
+            series_row = (
+                db.query(_EventSeriesModel)
+            .filter(_EventSeriesModel.id == series_fk)
+            .first()
+            )
+        emit_multi_booking_confirmed(
+            db,
+            user_id=current_user.id,
+            bookings=created_bookings,
+            space=space,
+            scope=f"series:{series_id}",
+            operation_at=now,
+            series=series_row,
+            added_by_creator=False,
+            background_tasks=background_tasks,
+        )
+
     return SeriesBookingResponse(
         booked=booked,
         already_booked=already_booked,

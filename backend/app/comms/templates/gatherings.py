@@ -49,17 +49,23 @@ class BookingConfirmedEmailTemplate:
         title = _title(recipient)
         starts_at = recipient.template_context.get("gathering_starts_at") or "the scheduled time"
         collective = recipient.template_context.get("collective_name") or "the collective"
+        ctx        = recipient.template_context
+        added      = bool(ctx.get("added_by_creator"))
+        url        = (ctx.get("gathering_url") or "").strip()
+
         subject = f"Booked: {title}"
+        # Never tell someone they reserved a place they did not reserve.
         opening = (
+            f"You've been added to {title} in {collective}, starting "
+            f"{starts_at}."
+            if added else
             f"You're booked for {title} in {collective}, starting {starts_at}."
         )
         body_text = (
             f"{opening}\n\n"
             "We'll send a reminder closer to the time."
+            + (f"\n\nView the gathering:\n{url}" if url else "")
         )
-        # No CTA: the booking resolver's template_context carries no URL
-        # to link to. Adding one is a resolver change, which is out of
-        # scope for a rendering-only migration.
         body_html = render_email_shell(
             preheader=opening,
             heading=subject,
@@ -67,6 +73,7 @@ class BookingConfirmedEmailTemplate:
                 opening,
                 "We'll send a reminder closer to the time.",
             ],
+            action=("View the gathering", url) if url else None,
         )
         return RenderedPayload(
             to="",
@@ -249,5 +256,123 @@ class GatheringReminder24hInAppTemplate:
             metadata={
                 "notification_type": "gathering_reminder_24h",
                 "url": ctx.get("gathering_url"),
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# gathering.multi_booking.confirmed — one action, several gatherings
+# ---------------------------------------------------------------------------
+#
+# Booking a Series, or a creator adding a member to a run of recurring
+# sessions, creates one EventBooking per occurrence. Sending one email
+# each would be a mailbox flood for a single click, so this is the one
+# summary that stands in for all of them. The schedule extract is
+# capped deliberately — enough to recognise what was booked, not a
+# reproduction of the timetable.
+
+
+_EVENT_MULTI_BOOKING = "gathering.multi_booking.confirmed"
+
+
+@template_for(_EVENT_MULTI_BOOKING, CHANNEL_EMAIL_TRANSACTIONAL)
+class MultiBookingConfirmedEmailTemplate:
+    key = "gathering.multi_booking.confirmed.email_transactional"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx        = recipient.template_context
+        collective = (ctx.get("collective_name") or "").strip()
+        series     = (ctx.get("series_title") or "").strip()
+        count      = int(ctx.get("session_count") or 0)
+        first      = (ctx.get("first_starts_at") or "").strip()
+        last       = (ctx.get("last_starts_at") or "").strip()
+        preview    = ctx.get("schedule_preview") or []
+        url        = (ctx.get("cta_url") or "").strip()
+        added      = bool(ctx.get("added_by_creator"))
+
+        what = series or "a run of gatherings"
+        sessions = "session" if count == 1 else "sessions"
+
+        subject = (
+            f"Booked: {series}" if series
+            else f"Booked: {count} {sessions}"
+        )
+
+        opening = (
+            f"You've been added to {what}"
+            if added else
+            f"You're booked for {what}"
+        )
+        if collective:
+            opening += f" in {collective}"
+        opening += f" — {count} {sessions} in total."
+
+        # A date range only says something when there is more than one.
+        if count > 1 and first and last:
+            span = f"Running from {first} through to {last}."
+        elif first:
+            span = f"Starting {first}."
+        else:
+            span = ""
+
+        paragraphs = [opening, span]
+
+        if preview:
+            shown = [
+                f"{item.get('title', '')} — {item.get('when', '')}".strip(" —")
+                for item in preview[:3]
+            ]
+            paragraphs.append("  •  ".join(s for s in shown if s))
+            if count > len(preview):
+                remaining = count - len(preview)
+                paragraphs.append(
+                    f"…and {remaining} more "
+                    f"{'session' if remaining == 1 else 'sessions'}."
+                )
+
+        paragraphs.append("We'll send a reminder before each one.")
+
+        body_text = "\n\n".join(p for p in paragraphs if p) + (
+            f"\n\nView the schedule:\n{url}" if url else ""
+        )
+        body_html = render_email_shell(
+            preheader=opening,
+            heading=subject,
+            body_paragraphs=paragraphs,
+            action=("View the schedule", url) if url else None,
+        )
+        return RenderedPayload(
+            to="",
+            subject=subject,
+            body_html=body_html,
+            body_text=body_text,
+            metadata={"notification_type": "multi_booking_confirmed"},
+        )
+
+
+@template_for(_EVENT_MULTI_BOOKING, CHANNEL_IN_APP)
+class MultiBookingConfirmedInAppTemplate:
+    key = "gathering.multi_booking.confirmed.in_app"
+    version = "v1"
+
+    def render(
+        self, db: Session, event: CommunicationEvent, recipient: ResolvedRecipient,
+    ) -> RenderedPayload:
+        ctx    = recipient.template_context
+        series = (ctx.get("series_title") or "").strip()
+        count  = int(ctx.get("session_count") or 0)
+        sessions = "session" if count == 1 else "sessions"
+        return RenderedPayload(
+            to="",
+            subject=(
+                f"Booked: {series}" if series else f"Booked: {count} {sessions}"
+            ),
+            body_text=f"{count} {sessions} added to your schedule.",
+            metadata={
+                "notification_type": "multi_booking_confirmed",
+                "url": ctx.get("cta_url"),
             },
         )

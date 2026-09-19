@@ -54,6 +54,7 @@ from app.comms.routing.pacing import (
 )
 from app.comms.routing.provider_map import get_provider_for
 from app.comms.routing.resolver import ResolvedRecipient
+from app.comms.registry import is_transactional_event
 from app.comms.suppressions import is_address_suppressed
 
 
@@ -201,6 +202,28 @@ def process_one(
             channel=channel,
             skipped_reason="channel_not_supported_by_category",
         )
+
+    # ── 1b. Transactional override ───────────────────────────────────
+    # A booking receipt is a record of an action and of the access it
+    # granted, not optional community noise. These events ignore the
+    # member's *category* preference so a broad "quieten Gatherings"
+    # cannot silence a confirmation for something they just booked.
+    #
+    # Scope is deliberately narrow — see TRANSACTIONAL_EVENT_TYPES.
+    # Reminders, cancellations and every other gathering event keep
+    # obeying the member's preference exactly as before.
+    #
+    # Forcing IMMEDIATE as well as the lock matters: the Gatherings
+    # category is NOT locked, so a member may legitimately have set it
+    # to a digest cadence. A receipt routed into tomorrow's digest is
+    # not a receipt.
+    #
+    # Everything downstream still applies. Consent gates (step 2) and
+    # hard-bounce / complaint suppression (step 3) both run after this
+    # point and are untouched — a suppressed address stays suppressed.
+    if is_transactional_event(event.event_type):
+        is_locked = True
+        pref_priority = PRIORITY_IMMEDIATE
 
     if pref_priority == PRIORITY_SILENT and not is_locked:
         # Member has silenced this — create a silent recorded intent

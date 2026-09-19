@@ -98,6 +98,11 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     EventDefinition("gathering.reminder.24h",             TOPIC_GATHERINGS,         PRIORITY_SCHEDULED),
     EventDefinition("gathering.reminder.1h",              TOPIC_GATHERINGS,         PRIORITY_SCHEDULED),
     EventDefinition("gathering.cancelled",                TOPIC_GATHERINGS,         PRIORITY_IMMEDIATE),
+    # One member action (or one creator action) that books SEVERAL
+    # gatherings at once — booking a whole Series, or a creator adding a
+    # member to a run of recurring sessions. One summary email, never
+    # one per occurrence. See ``services/gathering_booking_emit.py``.
+    EventDefinition("gathering.multi_booking.confirmed",  TOPIC_GATHERINGS,         PRIORITY_IMMEDIATE),
 
     # Pathways
     EventDefinition("pathway.published",                  TOPIC_PATHWAYS,           PRIORITY_IMMEDIATE),
@@ -180,6 +185,41 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
 
 
 _BY_TYPE: dict[str, EventDefinition] = {d.event_type: d for d in _EVENT_DEFINITIONS}
+
+
+# ---------------------------------------------------------------------------
+# Transactional events
+# ---------------------------------------------------------------------------
+#
+# A handful of events are records of an action the member took (or that
+# was taken on their behalf) and of the access it granted. They are
+# receipts, not community noise, and a member must not be able to
+# silence one by turning down a broad category they *do* otherwise want
+# to control.
+#
+# Locking at the event level rather than the category level is
+# deliberate. ``communication_channel_defaults.is_locked`` locks a whole
+# (category, channel) pair, which would drag gathering reminders,
+# cancellations and every other gathering communication along with it.
+# The Gatherings category must stay member-controllable; only these
+# specific events opt out.
+#
+# What the lock does NOT do — see ``routing/decision.py``:
+#   * it does not bypass hard-bounce or complaint suppression;
+#   * it does not bypass the consent gates;
+#   * it does not make the category itself locked, so
+#     ``set_preference`` still accepts overrides for Gatherings and
+#     those overrides still govern every other gathering event.
+TRANSACTIONAL_EVENT_TYPES: frozenset[str] = frozenset({
+    "gathering.booking.confirmed",
+    "gathering.multi_booking.confirmed",
+})
+
+
+def is_transactional_event(event_type: str) -> bool:
+    """True when this event is a receipt the member cannot opt out of
+    through ordinary category preferences."""
+    return event_type in TRANSACTIONAL_EVENT_TYPES
 
 
 def get_event_definition(event_type: str) -> EventDefinition | None:
