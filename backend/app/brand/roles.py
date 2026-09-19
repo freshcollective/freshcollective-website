@@ -16,15 +16,26 @@ Every role resolves to exactly one of:
   the repo, which is what ships.
 * **missing** — no upload and no bundled default.
 
-``missing`` is a real, reportable state rather than an accident. Four
-roles are in it today: the two compact marks, the favicon and the
-social share image. Fresh Collective has no compact artwork yet — only
-the full stacked lockups, whose wordmark is 3% of the canvas height and
-becomes an illegible smudge below about 120px wide. The tempting move
-is to point those roles at the square lockup anyway and let CSS crop
-it. That produces a logo nobody approved, drawn by a bounding box.
-Saying "missing" is the honest answer and it keeps the gap visible in
-World Management until proper derived artwork is supplied.
+``missing`` is a real, reportable state rather than an accident, and
+five roles are in it today.
+
+Four are the compact and system assets. Fresh Collective has no
+compact artwork yet — only the full stacked lockups, whose wordmark is
+3% of the canvas height and becomes an illegible smudge below about
+120px wide. The tempting move is to point those roles at the square
+lockup anyway and let CSS crop it. That produces a logo nobody
+approved, drawn by a bounding box.
+
+The fifth is ``logo_on_teal``, and it is missing for a different and
+more interesting reason: the approved system specifies a **white**
+wordmark on teal, and every asset in the repo draws the wordmark in
+gold. The gradient teal lockup that looks like a match is
+``marketing_hero_logo`` — same background family, different wordmark
+colour, different job. Filling one role with the other because the
+backgrounds rhyme would quietly redefine the brand system, so it stays
+missing until the white-wordmark artwork arrives. Every default below
+was verified by reading the pixels, not the filename; see
+``tests/test_brand_assets.py::TestApprovedArtworkContent``.
 
 Why the defaults are paths, not rows
 ------------------------------------
@@ -148,9 +159,12 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         intended_use=(
             "The default Fresh Collective logo. Navy dragonfly, gold "
             "wordmark. Use it anywhere the background is white or light "
-            "— the auth cards, documents, anything printed."
+            "— the auth cards, documents, anything printed. The current "
+            "artwork carries a flat white background rather than "
+            "transparency, so it sits on white and near-white only; a "
+            "transparent replacement would widen where it can be used."
         ),
-        recommended="Square lockup · at least 500 × 500px · PNG or WebP with transparency",
+        recommended="Square lockup · at least 500 × 500px · PNG or WebP · transparency welcome",
         content_types=FORMATS_TRANSPARENT,
         min_width=400, min_height=400,
         default_path="/brand/fresh-collective-logo-navy-gold-white.png",
@@ -162,9 +176,10 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         intended_use=(
             "The teal-dragonfly version of the same lockup, for light "
             "surfaces where the navy reads too heavy or sits beside "
-            "other navy elements."
+            "other navy elements. Like the primary, the current artwork "
+            "has a flat white background rather than transparency."
         ),
-        recommended="Square lockup · at least 500 × 500px · PNG or WebP with transparency",
+        recommended="Square lockup · at least 500 × 500px · PNG or WebP · transparency welcome",
         content_types=FORMATS_TRANSPARENT,
         min_width=400, min_height=400,
         default_path="/brand/fresh-collective-logo-teal-gold-white.png",
@@ -174,24 +189,37 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         title="Teal background",
         group=GROUP_FULL_LOGOS,
         intended_use=(
-            "The lockup presented on its own teal gradient panel — white "
-            "dragonfly, gold wordmark. Use it where the logo needs to "
-            "carry its own background rather than borrow the page's."
+            "The lockup on a teal panel with the wordmark in white — the "
+            "flatter, quieter of the two teal treatments. Use it where "
+            "the logo needs to carry its own background and gold would "
+            "be too much, such as a solid teal band or a partner "
+            "placement."
         ),
-        recommended="Square · at least 500 × 500px · PNG or WebP · background is part of the artwork",
+        recommended="Square · at least 500 × 500px · PNG or WebP · teal background and WHITE wordmark",
         content_types=FORMATS_FLAT,
         min_width=400, min_height=400,
         aspect=SQUARE,
-        default_path="/brand/fresh-collective-logo-square-teal.png",
+        default_path=None,
+        missing_note=(
+            "No approved artwork with a white wordmark exists. The "
+            "gradient teal lockup in the repo draws the wordmark in "
+            "gold, which is the marketing/hero treatment rather than "
+            "this one — using it here would silently change what this "
+            "role means. Needs the teal lockup with FRESH COLLECTIVE "
+            "set in white."
+        ),
     ),
     BrandAssetRole(
         role="logo_on_navy",
         title="Dark / navy background",
         group=GROUP_FULL_LOGOS,
         intended_use=(
-            "White dragonfly, gold wordmark, transparent background — "
-            "for deep navy and other dark surfaces. It is invisible on "
-            "white, so never use it as a general-purpose logo."
+            "White dragonfly, gold wordmark — for deep navy and other "
+            "dark surfaces. The artwork is transparent rather than "
+            "navy-backed, so it takes the colour of whatever it is "
+            "placed on and works across the whole dark range. It is "
+            "invisible on white, so never use it as a general-purpose "
+            "logo."
         ),
         recommended="Square lockup · at least 500 × 500px · PNG or WebP with transparency",
         content_types=FORMATS_TRANSPARENT,
@@ -203,15 +231,18 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         title="Marketing / hero",
         group=GROUP_FULL_LOGOS,
         intended_use=(
-            "White dragonfly with the teal wordmark, transparent "
-            "background. The quieter of the two dark-surface lockups — "
-            "for campaign artwork and hero imagery where gold would "
-            "compete with the photograph behind it."
+            "The full lockup on its own deep teal gradient — white "
+            "dragonfly, gold wordmark, the background running from teal "
+            "at the top to near-navy at the foot. The most complete "
+            "statement of the brand, for campaign artwork, hero "
+            "placements and anywhere the logo needs to hold a space by "
+            "itself."
         ),
-        recommended="Square lockup · at least 500 × 500px · PNG or WebP with transparency",
-        content_types=FORMATS_TRANSPARENT,
+        recommended="Square · at least 500 × 500px · PNG or WebP · gradient background is part of the artwork",
+        content_types=FORMATS_FLAT,
         min_width=400, min_height=400,
-        default_path="/brand/fresh-collective-logo-transparent-teal.png",
+        aspect=SQUARE,
+        default_path="/brand/fresh-collective-logo-square-teal.png",
     ),
 
     # ── Compact / system assets ──────────────────────────────────────

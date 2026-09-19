@@ -15,6 +15,7 @@ tests, and every upload here is a few hundred bytes of Pillow output.
 from __future__ import annotations
 
 import io
+import pathlib
 import uuid
 from datetime import datetime
 
@@ -50,10 +51,17 @@ PUBLIC_BASE = "/api/brand-assets"
 WITH_DEFAULT = [r for r in ROLE_ORDER if BRAND_ASSET_ROLES[r].default_path]
 WITHOUT_DEFAULT = [r for r in ROLE_ORDER if not BRAND_ASSET_ROLES[r].default_path]
 
-# The four compact/system roles have no approved artwork yet. Spelled
-# out rather than derived so that supplying one becomes a deliberate
-# edit here, visible in review, instead of a silent change in a list.
+# Roles with no approved artwork yet. Spelled out rather than derived
+# so that supplying one becomes a deliberate edit here, visible in
+# review, instead of a silent change in a list.
+#
+# ``logo_on_teal`` is the non-obvious one. The approved system asks for
+# a WHITE wordmark on teal; every asset in the repo draws it in gold.
+# The gradient teal lockup that looks like a match is the
+# marketing/hero treatment, and pointing this role at it because the
+# backgrounds rhyme would redefine what the role means.
 EXPECTED_MISSING = [
+    "logo_on_teal",
     "compact_light_mark",
     "compact_dark_mark",
     "favicon_app_icon",
@@ -521,3 +529,156 @@ class TestAdminSurface:
         _upload(client, "primary_light_logo", _png(), "l.png", "image/png")
         keys = {i["key"] for i in client.get("/api/admin/platform-artwork").json()}
         assert not any(k.startswith("brand_") for k in keys)
+
+# ===========================================================================
+# 8. The bundled defaults are verified by their pixels, not their names
+# ===========================================================================
+#
+# A filename is a claim; the pixels are the fact. Phase A mapped
+# ``marketing_hero_logo`` to ``…transparent-teal.png`` on the strength
+# of its name and got it wrong — that file draws the wordmark in teal
+# on a transparent canvas, while the approved marketing treatment is
+# the gold wordmark on a deep teal gradient. These tests read each
+# bundled default and assert what it actually contains, so a future
+# re-point to a visually different file fails here rather than shipping.
+
+BRAND_DIR = (
+    pathlib.Path(__file__).resolve().parent.parent.parent
+    / "frontend" / "public" / "brand"
+)
+
+# Artwork geometry, measured from the files: the symbol occupies
+# roughly y94–410 and the wordmark sits in a thin band beneath it.
+SYMBOL_BAND = (94, 410)
+WORDMARK_BAND = (418, 440)
+
+
+def _classify(rgb: tuple[int, int, int]) -> str:
+    r, g, b = rgb
+    hi, lo = max(rgb), min(rgb)
+    if hi > 225 and (hi - lo) < 28:
+        return "white"
+    if r > 140 and g > 105 and b < 130 and (r - b) > 50:
+        return "gold"
+    if (b > r + 20 or g > r + 20) and g > 70:
+        return "teal"
+    if b >= r and hi < 140:
+        return "navy"
+    return "other"
+
+
+def _analyse(filename: str) -> dict:
+    """Background kind plus the dominant ink colour in each band.
+
+    Transparent artwork is composited on navy first, because white ink
+    on a white matte is the exact mistake this is guarding against.
+    Background is sampled per row from the left margin, which the
+    artwork never reaches, so a gradient does not read as ink.
+    """
+    from PIL import Image
+
+    img = Image.open(BRAND_DIR / filename).convert("RGBA")
+    width, height = img.size
+    transparent = img.getchannel("A").load()[2, 2] == 0
+
+    if transparent:
+        flat = Image.alpha_composite(
+            Image.new("RGBA", img.size, (12, 24, 38, 255)), img,
+        ).convert("RGB")
+    else:
+        flat = img.convert("RGB")
+    px = flat.load()
+
+    if transparent:
+        background = "transparent"
+    else:
+        top, bottom = px[4, int(height * 0.02)], px[4, int(height * 0.98)]
+        drift = sum(abs(u - v) for u, v in zip(top, bottom))
+        background = (
+            f"{_classify(top)}_gradient" if drift > 30 else f"{_classify(top)}_flat"
+        )
+
+    def dominant(y0: int, y1: int) -> str:
+        counts: dict[str, int] = {}
+        for y in range(y0, y1):
+            row_bg = px[4, y]
+            for x in range(width):
+                pixel = px[x, y]
+                if sum(abs(u - v) for u, v in zip(pixel, row_bg)) < 90:
+                    continue
+                key = _classify(pixel)
+                counts[key] = counts.get(key, 0) + 1
+        counts.pop("other", None)
+        return max(counts, key=counts.__getitem__) if counts else "none"
+
+    return {
+        "background": background,
+        "dragonfly": dominant(*SYMBOL_BAND),
+        "wordmark": dominant(*WORDMARK_BAND),
+    }
+
+
+# The approved brand system, as content rather than as filenames.
+APPROVED_CONTENT: dict[str, dict[str, str]] = {
+    "primary_light_logo": {
+        "background": "white_flat", "dragonfly": "navy", "wordmark": "gold",
+    },
+    "alternate_light_logo": {
+        "background": "white_flat", "dragonfly": "teal", "wordmark": "gold",
+    },
+    "logo_on_navy": {
+        "background": "transparent", "dragonfly": "white", "wordmark": "gold",
+    },
+    "marketing_hero_logo": {
+        "background": "teal_gradient", "dragonfly": "white", "wordmark": "gold",
+    },
+}
+
+
+class TestApprovedArtworkContent:
+    @pytest.mark.parametrize("role", sorted(APPROVED_CONTENT))
+    def test_the_bundled_default_contains_the_approved_artwork(self, role):
+        default = BRAND_ASSET_ROLES[role].default_path
+        assert default, f"{role} lost its approved default"
+        assert _analyse(default.removeprefix("/brand/")) == APPROVED_CONTENT[role]
+
+    def test_every_default_backed_role_is_content_verified(self):
+        """No role may hold a bundled default that nothing above checks."""
+        assert set(APPROVED_CONTENT) == {
+            r for r in ROLE_ORDER if BRAND_ASSET_ROLES[r].default_path
+        }
+
+    def test_the_marketing_lockup_is_the_gradient_one(self):
+        """The Phase A error, pinned. ``…transparent-teal.png`` reads
+        like the marketing asset and is not: teal wordmark, no
+        background."""
+        assert "square-teal" in BRAND_ASSET_ROLES["marketing_hero_logo"].default_path
+        other = _analyse("fresh-collective-logo-transparent-teal.png")
+        assert other["wordmark"] == "teal"
+        assert other["background"] == "transparent"
+        assert other != APPROVED_CONTENT["marketing_hero_logo"]
+
+    def test_no_bundled_asset_could_satisfy_logo_on_teal(self):
+        """``logo_on_teal`` wants a WHITE wordmark. Nothing in the repo
+        has one, which is why the role is missing rather than filled
+        with the nearest-looking file."""
+        assert BRAND_ASSET_ROLES["logo_on_teal"].default_path is None
+        for path in sorted(BRAND_DIR.glob("*.png")):
+            assert _analyse(path.name)["wordmark"] != "white", path.name
+
+    def test_no_two_roles_share_one_asset(self):
+        """A shared default would mean two roles are the same job, or
+        one of them is filled with something that only resembles it."""
+        defaults = [
+            BRAND_ASSET_ROLES[r].default_path
+            for r in ROLE_ORDER
+            if BRAND_ASSET_ROLES[r].default_path
+        ]
+        assert len(defaults) == len(set(defaults))
+
+    def test_every_bundled_default_actually_exists_on_disk(self):
+        for role in ROLE_ORDER:
+            default = BRAND_ASSET_ROLES[role].default_path
+            if default is None:
+                continue
+            assert (BRAND_DIR / default.removeprefix("/brand/")).is_file(), role

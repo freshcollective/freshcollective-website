@@ -72,10 +72,11 @@ export default function BrandAssetsClient({ initialGroups }: Props) {
                 {missing} {missing === 1 ? 'role is' : 'roles are'} still
                 awaiting approved artwork.
               </strong>{' '}
-              Nothing stands in for them. The compact marks in particular
-              cannot be made by shrinking a full logo — its wordmark
-              disappears below about 120px wide — so those places keep
-              their current appearance until proper artwork is supplied.
+              Nothing stands in for them, and nothing should: the nearest
+              existing file is the wrong artwork, not a smaller version
+              of the right one. Each row below says what is outstanding
+              and why. Those places keep their current appearance until
+              approved artwork is supplied here.
             </p>
           </div>
         )}
