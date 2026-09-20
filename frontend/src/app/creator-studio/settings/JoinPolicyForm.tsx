@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 
 import { apiUrl } from '@/lib/api'
+import {
+  joiningOptionPriceLabel,
+  purchasabilityWarning,
+} from '@/lib/joiningOptionPrice'
 import type { JoinPolicy } from '@/types/platform'
 
 /**
@@ -20,22 +24,38 @@ import type { JoinPolicy } from '@/types/platform'
  * succeed inside one button is worse than two honest buttons.
  */
 
+interface OptionSchedule {
+  id: string
+  name: string
+  schedule_type: string
+  status: string
+  total_amount_cents: number | null
+  installment_amount_cents: number | null
+  installment_count: number | null
+  interval: string | null
+  currency: string
+  /** The backend's answer, not ours. A surface must never re-decide
+   *  what checkout will accept. */
+  is_member_checkoutable: boolean
+}
+
 interface OptionRow {
   id: string
   name: string
   status: string
   is_joining_option: boolean
   payment_type: string
-  override_total_cents: number | null
-  calculated_total_cents: number | null
   currency: string
-}
-
-function priceLabel(o: OptionRow): string {
-  const cents = o.override_total_cents ?? o.calculated_total_cents
-  if (cents == null) return 'No price set'
-  if (cents === 0) return 'Free'
-  return `$${(cents / 100).toLocaleString('en-AU')} ${o.currency}`
+  /** Every published payment method for this Option. This is where
+   *  the price actually lives. */
+  schedules: OptionSchedule[]
+  /** Option-level fallback for the rare shape with no usable
+   *  schedule. Derived from the legacy columns server-side. */
+  effective_price_cents: number | null
+  /** 'ready' | 'configured_not_yet_checkoutable' | 'needs_attention'
+   *  | 'draft' | 'archived', with the reasons behind it. */
+  purchasability: string
+  purchasability_notes: string[]
 }
 
 export default function JoinPolicyForm({ slug }: { slug: string }) {
@@ -228,8 +248,13 @@ export default function JoinPolicyForm({ slug }: { slug: string }) {
                           {option.name}
                         </p>
                         <p className="mt-0.5 text-[12.5px] text-black">
-                          {priceLabel(option)}
+                          {joiningOptionPriceLabel(option)}
                         </p>
+                        {purchasabilityWarning(option) && (
+                          <p className="mt-1 text-[12px] leading-snug text-amber-700">
+                            {purchasabilityWarning(option)}
+                          </p>
+                        )}
                       </label>
                     </li>
                   ))}
