@@ -51,13 +51,30 @@ function countryName(code: string): string {
  *      A "View all" reveal exposes anything further out. Omitted when
  *      nothing sits inside the 30-day window.
  */
-export default function PlaceDetailView({ place }: { place: PublicPlaceDetail }) {
+export default function PlaceDetailView({
+  place,
+  joinedSlugs = [],
+  isLoggedIn = false,
+}: {
+  place: PublicPlaceDetail
+  /** Slugs of Collectives the viewer already belongs to, resolved on
+   *  the server. Empty for a signed-out visitor, who made no
+   *  membership request to find that out. */
+  joinedSlugs?: string[]
+  /** Whether there is a session — not the same as having joined
+   *  something, and not inferable from ``joinedSlugs``. */
+  isLoggedIn?: boolean
+}) {
   return (
     <article>
       <PlaceHero place={place} />
 
       <div className="mx-auto w-full max-w-6xl px-6 md:px-10">
-        <CollectivesSection place={place} />
+        <CollectivesSection
+          place={place}
+          joinedSlugs={joinedSlugs}
+          isLoggedIn={isLoggedIn}
+        />
         <GatheringsSection place={place} />
       </div>
     </article>
@@ -152,7 +169,12 @@ function PlaceHero({ place }: { place: PublicPlaceDetail }) {
 // Collectives — reuses the Explore Collectives card visual.
 // ---------------------------------------------------------------------------
 
-function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
+function CollectivesSection({
+  place, joinedSlugs, isLoggedIn,
+}: { place: PublicPlaceDetail; joinedSlugs: string[]; isLoggedIn: boolean }) {
+  // Same rule as Explore: a card takes a member into the Collective
+  // and everyone else to the page that explains it.
+  const joined  = new Set(joinedSlugs)
   const count    = place.collectives.length
   const isSolo   = count === 1
   const heading  = isSolo
@@ -189,8 +211,8 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
               <CollectiveCard
                 key={place.collectives[0].id}
                 space={toSpaceWithMeta(place.collectives[0])}
-                isJoined={false}
-                isLoggedIn={false}
+                isJoined={joined.has(place.collectives[0].slug)}
+                isLoggedIn={isLoggedIn}
               />
               <p
                 className="mt-3 text-[13.5px] italic leading-relaxed text-navy-500"
@@ -209,8 +231,8 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
             <CollectiveCard
               key={c.id}
               space={toSpaceWithMeta(c)}
-              isJoined={false}
-              isLoggedIn={false}
+              isJoined={joined.has(c.slug)}
+              isLoggedIn={isLoggedIn}
             />
           ))}
         </div>

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { resolveMediaUrl } from '@/lib/api'
+import { collectiveCardHref } from '@/lib/collectiveDestination'
 import { formatCollectivePricingSummary } from '@/lib/pricing'
 import type { SpaceWithMeta } from './spaceMeta'
 
@@ -39,9 +40,7 @@ export default function CollectiveCard({
       ?? space.cover_image_url,
   )
   const hasImage = Boolean(resolvedImageUrl)
-  const href = space.isReal
-    ? (isJoined ? `/spaces/${space.slug}` : `/spaces/${space.slug}/about`)
-    : '/signup'
+  const href = collectiveCardHref(space, isJoined)
 
   const titleColor = hasImage ? '#FFFFFF' : (cs.isDark ? '#FFFFFF' : '#152236')
   const taglineColor = hasImage
