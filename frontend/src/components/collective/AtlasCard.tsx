@@ -64,12 +64,16 @@ export function AtlasArtwork({
 }
 
 export function AtlasCardBody({
-  name, description, meta, cta,
+  name, description, meta, cta, themeMeta = false,
 }: {
   name: string
   description?: string | null
   meta?: string | null
   cta: string
+  /** Tint the small meta line with the active Collective accent.
+   *  Opt-in so the dashboard — which sits outside any Collective
+   *  theme — keeps its neutral grey. */
+  themeMeta?: boolean
 }) {
   return (
     <div className="px-6 pt-5 pb-6">
@@ -91,12 +95,19 @@ export function AtlasCardBody({
         </p>
       )}
       <div className="mt-4 flex items-baseline justify-between gap-3">
-        <p className="text-[12px]" style={{ color: 'rgba(12, 24, 38, 0.50)' }}>
+        <p
+          className="text-[12px]"
+          style={{
+            color: themeMeta
+              ? 'var(--fc-accent-ink, rgba(12, 24, 38, 0.50))'
+              : 'rgba(12, 24, 38, 0.50)',
+          }}
+        >
           {meta ?? '\u00A0'}
         </p>
         <span
           className="text-[12px] font-semibold transition-colors"
-          style={{ color: 'var(--fc-accent, #38A09E)' }}
+          style={{ color: 'var(--fc-accent-ink, var(--fc-accent, #38A09E))' }}
         >
           {cta}
         </span>

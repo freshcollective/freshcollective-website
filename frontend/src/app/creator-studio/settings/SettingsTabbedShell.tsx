@@ -9,6 +9,7 @@ import CollectiveSettingsForm from './CollectiveSettingsForm'
 import DangerZone from './DangerZone'
 import GuidancePanelForm from './GuidancePanelForm'
 import OperatingDetailsForm from './OperatingDetailsForm'
+import CollectiveHomeForm from './CollectiveHomeForm'
 
 export type SettingsTab = 'place' | 'details' | 'visibility' | 'pricing' | 'about' | 'members'
 
@@ -152,7 +153,13 @@ export default function SettingsTabbedShell({
 
       {/* Member Hub tab — GuidancePanelForm with its own save flow. */}
       {tab === 'members' && (
-        <GuidancePanelForm space={spaceDetail} />
+        <div className="space-y-8">
+          {/* The Home editor sits above the guidance panel because it
+              decides what a member meets first; the guidance panel
+              refines what they read once inside. */}
+          <CollectiveHomeForm slug={spaceDetail.slug} />
+          <GuidancePanelForm space={spaceDetail} />
+        </div>
       )}
 
       {/* Main settings form — kept mounted so in-flight field state

@@ -261,6 +261,40 @@ export function darkenHex(hex: string, amount: number): string {
 }
 
 
+/**
+ * The darkest-hue-preserving version of a palette hex that is still
+ * legible as small text on white.
+ *
+ * Palette primaries are chosen to look good as *surfaces*, and several
+ * of the seeded ones — Sunrise #D97A3F, Snow & Sky #A0B4C4 — sit at
+ * 2–3:1 against white, well under the 4.5:1 WCAG AA needs for body and
+ * label text. Tinting text with the raw palette hex therefore makes
+ * some Collectives quietly unreadable.
+ *
+ * Rather than abandoning the tint, this darkens the hue step by step
+ * and stops at the first shade that clears the ratio: a palette that
+ * is already legible comes back untouched, and one that is not comes
+ * back as a deeper version of its own colour rather than as neutral
+ * grey. Returns near-black if even black-adjacent shades of the hue
+ * cannot get there, which no real hue does.
+ */
+export function readableOnWhite(hex: string, minRatio = 4.5): string {
+  const parsed = _parseHex(hex)
+  if (!parsed) return '#0f172a'
+
+  for (let step = 0; step <= 20; step += 1) {
+    const shade = step === 0 ? hex : darkenHex(hex, step * 0.05)
+    const p = _parseHex(shade)
+    if (!p) break
+    const l = _relativeLuminance(p.r, p.g, p.b)
+    // White's relative luminance is 1.0, so the ratio is (1 + 0.05) /
+    // (L + 0.05).
+    if (1.05 / (l + 0.05) >= minRatio) return shade
+  }
+  return '#0f172a'
+}
+
+
 function _toHex2(n: number): string {
   return n.toString(16).padStart(2, '0')
 }

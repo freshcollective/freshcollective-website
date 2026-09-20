@@ -1,7 +1,12 @@
 import { notFound, redirect } from 'next/navigation'
 
 import CollectiveHome from '@/components/collective/CollectiveHome'
-import { getSpace, getMyMemberships } from '@/lib/serverApi'
+import {
+  buildPlatformArtLookup,
+  getMyMemberships,
+  getPublicPlatformArtwork,
+  getSpace,
+} from '@/lib/serverApi'
 import type { SpaceMembership } from '@/types/platform'
 
 interface Props {
@@ -36,10 +41,20 @@ interface Props {
 export default async function SpacePage({ params }: Props) {
   const { slug } = await params
 
-  const [space, memberships]: [
+  // Platform artwork is fetched alongside, not after: each Home tile
+  // falls back to the Fresh Collective image already authored for that
+  // member area, so the default Home is art-directed before a creator
+  // configures anything. The call is cached and shared with the rest
+  // of the request.
+  const [space, memberships, artwork]: [
     Awaited<ReturnType<typeof getSpace>>,
     SpaceMembership[],
-  ] = await Promise.all([getSpace(slug), getMyMemberships()])
+    Awaited<ReturnType<typeof getPublicPlatformArtwork>>,
+  ] = await Promise.all([
+    getSpace(slug),
+    getMyMemberships(),
+    getPublicPlatformArtwork(),
+  ])
 
   // The layout above also 404s on a missing Collective; repeated here
   // because this page reads ``space`` before the layout's guard can
@@ -49,5 +64,10 @@ export default async function SpacePage({ params }: Props) {
   const isMember = memberships.some((m) => m.space_slug === slug)
   if (!isMember) redirect(`/spaces/${slug}/about`)
 
-  return <CollectiveHome space={space} />
+  return (
+    <CollectiveHome
+      space={space}
+      platformArtwork={buildPlatformArtLookup(artwork)}
+    />
+  )
 }

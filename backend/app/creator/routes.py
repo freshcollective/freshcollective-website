@@ -202,6 +202,7 @@ from app.models.platform import (
 )
 from app.models.purchase_plan import PurchasePlan
 from app.models.user import User
+from app.spaces import home_config as home_config_module
 from app.services.banner_image_validator import (
     BannerImageValidationError,
     validate_banner_image_url,
@@ -1834,6 +1835,96 @@ def delete_space(
 
     db.delete(space)
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Collective Home configuration
+# ---------------------------------------------------------------------------
+
+
+class HomeTileConfigIn(BaseModel):
+    """One tile as the editor sends it. Every field optional so a
+    client can save a partial change without restating the rest."""
+
+    key: str
+    visible: bool = True
+    image_url: str | None = None
+    description: str | None = None
+
+
+class HomeConfigIn(BaseModel):
+    tiles: list[HomeTileConfigIn] | None = None
+
+
+class HomeConfigOut(BaseModel):
+    """Everything the editor needs, from one request.
+
+    ``available_keys`` is the tile vocabulary the platform permits for
+    this Collective — Members drops out when the member directory is
+    switched off. It is sent rather than inferred because the editor
+    must not offer a control that cannot take effect, and the client
+    should not have to re-derive a privacy rule the server owns.
+
+    ``home_tiles`` is what the member Home will actually render, so a
+    creator can see the result of a setting they cannot change here.
+    """
+
+    home_config: dict | None
+    home_tiles: list[dict]
+    available_keys: list[str]
+
+
+def _home_config_out(space: Space) -> HomeConfigOut:
+    return HomeConfigOut(
+        home_config=space.home_config,
+        home_tiles=home_config_module.resolve(
+            space.home_config, show_member_directory=space.show_member_directory,
+        ),
+        available_keys=[
+            key for key in home_config_module.TILE_KEYS
+            if key != "members" or space.show_member_directory
+        ],
+    )
+
+
+@router.get("/spaces/{slug}/home-config", response_model=HomeConfigOut)
+def get_home_config(
+    slug: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> HomeConfigOut:
+    space = _get_managed_space(slug, current_user, db)
+    return _home_config_out(space)
+
+
+@router.put("/spaces/{slug}/home-config", response_model=HomeConfigOut)
+def update_home_config(
+    slug: str,
+    body: HomeConfigIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_verified_creator_user),
+) -> HomeConfigOut:
+    """Replace this Collective's Home configuration.
+
+    A whole-document PUT rather than a patch: the configuration is one
+    ordered list, and merging a partial order into a stored one has no
+    unambiguous meaning.
+
+    ``_get_managed_space`` is the authorisation — the owner or a
+    creator/moderator of this Collective. A member cannot reach it, and
+    a platform administrator gets no automatic rights over someone
+    else's Collective here, which is the standing Creator Studio rule.
+    """
+    space = _get_managed_space(slug, current_user, db)
+    try:
+        cleaned = home_config_module.validate(body.model_dump())
+    except home_config_module.HomeConfigError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    space.home_config = cleaned
+    db.commit()
+    db.refresh(space)
+    return _home_config_out(space)
 
 
 @router.post("/spaces/{slug}/cover", response_model=SpaceDetail)

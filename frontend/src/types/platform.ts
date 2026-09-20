@@ -58,6 +58,9 @@ export interface SpaceResponse {
    *  filtered for learner-role viewers. */
   /** Upcoming gatherings a member can still attend — published,
    *  active, future. Zero is a real answer the Home states plainly. */
+  /** Home tiles already resolved server-side: creator order and
+   *  overrides over the platform defaults, privacy settings applied. */
+  home_tiles?: { key: string; image_url?: string | null; description?: string | null }[]
   upcoming_gathering_count?: number
   next_gathering_starts_at?: string | null
   learner_count: number

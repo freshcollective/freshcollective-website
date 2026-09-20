@@ -94,7 +94,13 @@ export default async function SpaceLayout({ children, params }: Props) {
         atmosphereLabels={space.atmosphere_labels ?? []}
       />
 
-      <SpaceNav spaceSlug={slug} spaceName={space.name} isMember={isMember} unreadMessageCount={unreadMessageCount} />
+      <SpaceNav
+        spaceSlug={slug}
+        spaceName={space.name}
+        isMember={isMember}
+        unreadMessageCount={unreadMessageCount}
+        showMemberDirectory={space.show_member_directory ?? true}
+      />
 
       <div className="flex-1 py-10 pb-24 md:pb-10">
         <div className="mx-auto max-w-6xl px-6 md:px-10">

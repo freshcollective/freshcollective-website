@@ -255,6 +255,12 @@ class Space(Base):
     landscape_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     atmosphere_keys: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     colour_story_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Creator configuration for the member Collective Home — tile
+    # order, visibility, imagery and copy overrides. NULL means "never
+    # configured", which is a complete answer: the Home renders its
+    # platform defaults. See ``app/spaces/home_config.py`` for the
+    # shape and why it is JSON rather than columns or a table.
+    home_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     element_keys: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # The heart of the collective, in one sentence — set during Build Your
     # Place. Guides future design and AI assistance, not member-facing copy.

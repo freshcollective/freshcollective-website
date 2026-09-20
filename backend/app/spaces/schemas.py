@@ -90,6 +90,12 @@ class SpaceResponse(BaseModel):
     # and the client says "No upcoming gatherings" rather than hiding
     # the destination — the Home is an orientation hub, so a real
     # member area stays visible whether or not it is busy today.
+    # The member Home's tile list, already resolved: creator order and
+    # overrides laid over the platform defaults, with anything the
+    # platform has switched off removed. Resolved server-side so the
+    # client cannot render a tile a privacy setting forbids, and so a
+    # Collective configured before a tile type existed still gets it.
+    home_tiles: list[dict] = []
     upcoming_gathering_count: int = 0
     next_gathering_starts_at: datetime | None = None
     learner_count: int = 0

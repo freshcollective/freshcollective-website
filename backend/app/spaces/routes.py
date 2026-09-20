@@ -41,6 +41,7 @@ from app.models.platform import (
     StepResource,
 )
 from app.models.user import User
+from app.spaces import home_config
 from app.spaces.schemas import (
     AccessRequestOut,
     CompleteStepRequest,
@@ -993,6 +994,10 @@ def get_space(
 
     resp = SpaceResponse.model_validate(space)
     return resp.model_copy(update={
+        "home_tiles": home_config.resolve(
+            space.home_config,
+            show_member_directory=space.show_member_directory,
+        ),
         "upcoming_gathering_count": int(upcoming_gathering_count),
         "next_gathering_starts_at": next_gathering_starts_at,
         "learner_count": learner_count,

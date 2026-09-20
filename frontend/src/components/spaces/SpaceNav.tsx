@@ -15,6 +15,12 @@ interface SpaceNavProps {
   spaceName: string
   isMember: boolean
   unreadMessageCount?: number
+  /** ``Space.show_member_directory``. When a Collective has closed its
+   *  directory the Members tab is not offered, so the tab bar and the
+   *  Collective Home agree about which doorways exist. Defaults to
+   *  ``true`` so a caller that has not loaded the Space yet keeps the
+   *  long-standing behaviour. */
+  showMemberDirectory?: boolean
 }
 
 /**
@@ -26,7 +32,10 @@ interface SpaceNavProps {
  * page listing every collective the member belongs to — so this
  * component no longer needs any modal state or launcher.
  */
-export default function SpaceNav({ spaceSlug, spaceName: _spaceName, isMember, unreadMessageCount = 0 }: SpaceNavProps) {
+export default function SpaceNav({
+  spaceSlug, spaceName: _spaceName, isMember,
+  unreadMessageCount = 0, showMemberDirectory = true,
+}: SpaceNavProps) {
   const pathname = usePathname()
   const base = `/spaces/${spaceSlug}`
 
@@ -43,7 +52,7 @@ export default function SpaceNav({ spaceSlug, spaceName: _spaceName, isMember, u
     { label: 'Gatherings', href: `${base}/events`,    icon: '◷' },
     { label: 'Members',    href: `${base}/members`,   icon: '◉' },
     { label: 'About',     href: `${base}/about`,    icon: '◇' },
-  ]
+  ].filter((tab) => tab.label !== 'Members' || showMemberDirectory)
 
   function isActive(tab: Tab): boolean {
     if (tab.alsoActiveOn?.test(pathname)) return true
