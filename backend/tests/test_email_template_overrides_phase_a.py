@@ -232,8 +232,13 @@ class TestMergeFields:
             "gathering.booking.confirmed",
             ctx={**SAMPLE, "gathering_title": '<img src=x onerror="a">'},
         )
-        assert "<img" not in p.body_html
+        # The shell carries exactly one real image — the brand logo —
+        # so "no <img at all" is no longer the right assertion. What
+        # must hold is that the injected tag did not become one.
+        assert "<img src=x" not in p.body_html
         assert "&lt;img" in p.body_html
+        assert p.body_html.count("<img") == 1
+        assert 'alt="Fresh Collective"' in p.body_html
 
 
 # ===========================================================================

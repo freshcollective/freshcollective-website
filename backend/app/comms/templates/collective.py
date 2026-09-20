@@ -57,6 +57,7 @@ class InvitationSentEmailTemplate:
         # No preferences link: the invitee usually has no account yet, so
         # there are no preferences for them to manage.
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=r.text("heading"),
             body_paragraphs=[opening, instruction],

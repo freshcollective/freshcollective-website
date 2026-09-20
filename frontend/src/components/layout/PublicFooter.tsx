@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import Container from './Container'
+import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 export default function PublicFooter() {
   return (
@@ -16,19 +17,8 @@ export default function PublicFooter() {
         <div className="grid gap-10 md:grid-cols-[1fr_auto] md:items-start">
 
           <div>
-            <div className="mb-4 flex items-center gap-2.5">
-              <div
-                className="flex h-6 w-6 items-center justify-center rounded-md"
-                style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
-              >
-                <div className="h-[10px] w-[10px] rounded-sm bg-white" style={{ opacity: 0.92 }} />
-              </div>
-              <span
-                className="text-[15px] font-semibold tracking-[-0.02em]"
-                style={{ color: '#FFFFFF' }}
-              >
-                Fresh Collective
-              </span>
+            <div className="mb-4">
+              <BrandLockup tone="dark" markSize={24} />
             </div>
             <p
               className="max-w-[300px] text-[14px] leading-[1.78]"

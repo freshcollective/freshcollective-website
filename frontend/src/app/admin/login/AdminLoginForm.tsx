@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
+import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 /** Only accept safe absolute-path redirects; default to /admin. */
 function getSafeAdminRedirect(next?: string): string {
@@ -87,23 +88,11 @@ export default function AdminLoginForm({ nextUrl }: Props) {
         boxShadow: '0 10px 30px rgba(12, 24, 38, 0.06), 0 2px 6px rgba(12, 24, 38, 0.03)',
       }}
     >
-      {/* Brand — matches the admin sidebar mark rather than the
-          consumer-facing wordmark used at /login. */}
-      <div className="mb-6 flex items-center gap-2.5">
-        <span
-          aria-hidden="true"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-500"
-        >
-          <span className="h-3 w-3 rounded-sm bg-white" />
-        </span>
-        <div>
-          <div className="text-[13px] font-semibold leading-none" style={{ color: '#0F172A' }}>
-            Fresh Collective
-          </div>
-          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-600">
-            World Management
-          </div>
-        </div>
+      {/* Brand — the sidebar treatment rather than the member-facing
+          full logo, so signing in to World Management looks like
+          arriving at the thing you are signing in to. */}
+      <div className="mb-6">
+        <BrandLockup tone="light" sublabel="World Management" />
       </div>
 
       <div className="mb-6">

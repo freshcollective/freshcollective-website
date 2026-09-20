@@ -9,6 +9,7 @@ import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, Activity
 // needs it and cannot import from a module that pulls in ``next/headers``.
 import { ACTIVE_SPACE_COOKIE } from './activeSpaceCookie'
 import type { BrandAssetGroup } from '@/lib/brandAssets'
+import type { BrandOverrides, BrandRole } from '@/lib/brand'
 export { ACTIVE_SPACE_COOKIE }
 
 async function fetchWithSession(path: string): Promise<Response> {
@@ -475,6 +476,43 @@ export interface PublicPlatformArtwork {
   image_url: string | null
   thumbnail_url: string | null
 }
+
+/**
+ * Admin brand overrides for the whole app, resolved once per request.
+ *
+ * Deliberately NOT a ``fetchWithSession`` call. This endpoint is
+ * public, so skipping the cookie keeps the request cacheable and — far
+ * more importantly — keeps pages that are statically rendered today
+ * from becoming dynamic just because their chrome carries a logo. The
+ * 60-second revalidate is generous for artwork that changes a handful
+ * of times a year, and a failure returns ``{}`` so every surface falls
+ * back to the approved bundled defaults rather than to nothing.
+ */
+export const getBrandOverrides = cache(async (): Promise<BrandOverrides> => {
+  try {
+    const res = await fetch(apiUrl('/api/brand-assets'), {
+      next: { revalidate: 60 },
+    })
+    if (!res.ok) return {}
+    const rows = (await res.json()) as Array<{
+      role: string
+      source: string
+      image_url: string | null
+    }>
+    const out: BrandOverrides = {}
+    for (const row of rows) {
+      // Only an admin upload is an override. A row reporting the
+      // bundled default carries the same path the client already
+      // knows, and a missing role must stay missing.
+      if (row.source === 'custom' && row.image_url) {
+        out[row.role as BrandRole] = row.image_url
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+})
 
 export const getAdminBrandAssets = cache(
   async (): Promise<BrandAssetGroup[]> => {

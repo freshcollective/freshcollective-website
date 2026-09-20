@@ -58,6 +58,7 @@ class DirectMessageEmailTemplate:
         )
         # No CTA: this event's template_context carries no thread URL.
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=r.text("heading"),
             body_paragraphs=[opening, excerpt, closing],

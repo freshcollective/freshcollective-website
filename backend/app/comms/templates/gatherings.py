@@ -73,6 +73,7 @@ class BookingConfirmedEmailTemplate:
             + (f"\n\n{cta}:\n{url}" if url else "")
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=r.text("heading"),
             body_paragraphs=[opening, promise],
@@ -151,6 +152,7 @@ class GatheringCancelledEmailTemplate:
             f"\n\n{ticket_note}" if ticketed else ""
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=r.text("heading"),
             body_paragraphs=paragraphs,
@@ -230,6 +232,7 @@ class GatheringReminder24hEmailTemplate:
             + (f"\n\n{cta}:\n{url}" if url else "")
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=r.text("heading"),
             body_paragraphs=paragraphs,
@@ -348,6 +351,7 @@ class MultiBookingConfirmedEmailTemplate:
             f"\n\n{r.text('cta_label')}:\n{url}" if url else ""
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             body_paragraphs=paragraphs,

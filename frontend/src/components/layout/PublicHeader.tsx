@@ -7,6 +7,7 @@ import NotificationBell from './NotificationBell'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
 import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
+import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 interface MeResponse {
   id: string
@@ -49,7 +50,18 @@ function peerNavItems(discoveryOn: boolean): Array<{ href: string; label: string
   return items
 }
 
-export default async function PublicHeader({ overlay = false }: { overlay?: boolean }) {
+export default async function PublicHeader({
+  overlay = false,
+  brand = true,
+}: {
+  overlay?: boolean
+  /** Set false where the page already carries a prominent Fresh
+   *  Collective logo of its own — the auth cards. Two brand elements
+   *  stacked on one screen reads as a mistake whichever artwork each
+   *  one uses, so the card keeps the logo (and the link home with it)
+   *  and the header keeps the navigation. */
+  brand?: boolean
+}) {
   const user = await getCurrentUser()
   const discoveryOn = isDiscoveryPillarEnabled()
   const centreNav   = peerNavItems(discoveryOn)
@@ -67,20 +79,9 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
       >
         <Container className="flex h-14 items-center justify-between gap-8">
 
-          <Link href="/" className="group flex shrink-0 items-center gap-2.5">
-            <div
-              className="flex h-7 w-7 items-center justify-center rounded-lg"
-              style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)', opacity: 0.90 }}
-            >
-              <div className="h-3 w-3 rounded-sm bg-white" style={{ opacity: 0.92 }} />
-            </div>
-            <span
-              className="text-[15px] font-semibold tracking-[-0.02em] transition-opacity group-hover:opacity-60"
-              style={{ color: '#FFFFFF' }}
-            >
-              Fresh Collective
-            </span>
-          </Link>
+          {brand
+            ? <BrandLockup tone="dark" href="/" />
+            : <span className="shrink-0" aria-hidden="true" />}
 
           <nav aria-label="Main" className="hidden flex-1 items-center justify-center gap-8 md:flex">
             {centreNav.map(({ href, label }) => (
@@ -142,18 +143,9 @@ export default async function PublicHeader({ overlay = false }: { overlay?: bool
     >
       <Container className="flex h-16 items-center justify-between gap-8">
 
-        {/* Wordmark */}
-        <Link href="/" className="group flex shrink-0 items-center gap-2.5">
-          <div
-            className="flex h-7 w-7 items-center justify-center rounded-lg"
-            style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
-          >
-            <div className="h-3 w-3 rounded-sm bg-white" style={{ opacity: 0.92 }} />
-          </div>
-          <span className="text-[15px] font-semibold tracking-[-0.02em] text-navy-950 transition-opacity group-hover:opacity-60">
-            Fresh Collective
-          </span>
-        </Link>
+        {brand
+          ? <BrandLockup tone="light" href="/" />
+          : <span className="shrink-0" aria-hidden="true" />}
 
         {/* Nav — desktop */}
         <nav aria-label="Main" className="hidden flex-1 items-center justify-center gap-8 md:flex">

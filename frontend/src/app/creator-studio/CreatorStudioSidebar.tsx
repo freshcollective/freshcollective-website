@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import LogoutButton from '@/components/layout/LogoutButton'
 import { apiUrl } from '@/lib/api'
+import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 /**
  * Creator Studio Sidebar — navigation only.
@@ -200,21 +201,7 @@ export default function CreatorStudioSidebar({
         className="flex items-center gap-2.5 px-5 py-4"
         style={{ borderBottom: '1px solid #E2E8F0' }}
       >
-        <span
-          aria-hidden="true"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
-          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
-        >
-          <span className="h-3 w-3 rounded-sm bg-white/95" />
-        </span>
-        <div>
-          <div className="text-[13px] font-semibold leading-none" style={{ color: '#0F172A' }}>
-            Fresh Collective
-          </div>
-          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Creator Studio
-          </div>
-        </div>
+        <BrandLockup tone="light" sublabel="Creator Studio" />
       </div>
 
       {/* ── Back to Your World ── prominent exit to Member Your World.

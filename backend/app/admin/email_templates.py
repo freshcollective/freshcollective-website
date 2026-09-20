@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_admin_user
 from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL
 from app.comms.preferences import locked_categories_for_channel
+from app.brand.email import email_logo_url, preview_brand_logo
 from app.comms.registry import (
     category_for_topic,
     get_event_definition,
@@ -382,6 +383,7 @@ def _render(
     decl: TemplateDeclaration,
     overrides: dict[str, str],
     variant: dict[str, str],
+    brand_logo_url: str | None = None,
 ) -> tuple[str, str, str]:
     """Render through the canonical template and shell."""
     template = get_template_for(decl.event_type, CHANNEL_EMAIL_TRANSACTIONAL)
@@ -402,7 +404,11 @@ def _render(
         human_reason="Preview — not a real send.",
         template_context=ctx,
     )
-    with preview_overrides({decl.template_key: overrides}):
+    # The brand header resolves off a session the preview does not
+    # have, so the caller hands in the URL it resolved. Same template,
+    # same shell, same logo a real send would carry.
+    with preview_overrides({decl.template_key: overrides}), \
+            preview_brand_logo(brand_logo_url):
         payload = template.render(None, None, recipient)
     return payload.subject, payload.body_html or "", payload.body_text or ""
 
@@ -635,7 +641,9 @@ def preview_email_template(
     """Render one email. Read-only — writes nothing, sends nothing."""
     decl = _require(template_key)
     effective, errors = _resolve_for_preview(db, decl, body)
-    subject, html, text = _render(decl, effective, body.variant)
+    subject, html, text = _render(
+        decl, effective, body.variant, email_logo_url(db),
+    )
     return PreviewResponse(
         template_key=decl.template_key,
         mode=body.mode,
@@ -704,7 +712,9 @@ def test_send_email_template(
     if errors:
         raise HTTPException(status_code=422, detail={"errors": errors})
 
-    subject, html, text = _render(decl, effective, body.variant)
+    subject, html, text = _render(
+        decl, effective, body.variant, email_logo_url(db),
+    )
 
     # Marked as a test at render time, never by editing a slot — the
     # stored copy and the code defaults are untouched by this. This is

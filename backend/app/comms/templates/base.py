@@ -58,10 +58,11 @@ one primary call to action.
 from __future__ import annotations
 
 import html as _html
-from typing import Protocol, Sequence
+from typing import Any, Protocol, Sequence
 
 from sqlalchemy.orm import Session
 
+from app.brand.email import brand_header_html
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
@@ -144,6 +145,8 @@ def render_email_shell(
     action: tuple[str, str] | None = None,   # (label, url)
     signoff: str | None = None,
     show_preferences_link: bool = True,
+    db: Any = None,
+    brand_logo_url: str | None = None,
 ) -> str:
     """Wrap plain-text content in the Fresh Collective email shell.
 
@@ -153,6 +156,12 @@ def render_email_shell(
 
     ``show_preferences_link`` controls only the preferences sentence.
     The sender-identifying footer is always rendered.
+
+    ``db`` is threaded through only so the brand header can resolve an
+    admin-uploaded logo; passing ``None`` yields the approved bundled
+    artwork, which is the correct answer for previews and tests rather
+    than a degraded one. ``brand_logo_url`` short-circuits that lookup
+    for callers that have already resolved it.
     """
     safe_preheader = _esc_text(preheader)
     safe_heading   = _esc_text(heading)
@@ -240,6 +249,8 @@ def render_email_shell(
                 </a>.
               </p>'''
 
+    brand_header = brand_header_html(db, brand_logo_url)
+
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -265,29 +276,9 @@ def render_email_shell(
                       border-radius:20px;overflow:hidden;
                       border:1px solid {_BORDER};">
 
-          <!-- Brand mark -->
-          <tr>
-            <td align="center" style="padding:36px 40px 8px 40px;">
-              <table role="presentation" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="background:{_ACCENT_GRADIENT};width:32px;
-                             height:32px;border-radius:8px;
-                             vertical-align:middle;" align="center">
-                    <div style="width:12px;height:12px;background:#FFFFFF;
-                                border-radius:2px;margin:0 auto;"></div>
-                  </td>
-                  <td style="padding-left:10px;vertical-align:middle;">
-                    <span style="font-size:15px;font-weight:600;
-                                 color:{_INK_HEADING};
-                                 font-family:{_FONT_STACK_SANS};
-                                 letter-spacing:-0.01em;">
-                      Fresh Collective
-                    </span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+          <!-- Brand — see app/brand/email.py; shared with the
+               legacy renderer so the two cannot drift. -->
+          {brand_header}
 
           <!-- Heading -->
           <tr>

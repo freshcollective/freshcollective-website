@@ -426,7 +426,8 @@ class TestReminderCopy:
         html = _render(
             gathering_title='<img src=x onerror="alert(1)">',
         ).body_html
-        assert "<img" not in html
+        assert "<img src=x" not in html
+        assert html.count("<img") == 1      # the brand logo, and only it
         assert "&lt;img src=x" in html
 
 

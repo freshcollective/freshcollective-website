@@ -66,6 +66,7 @@ class PasswordResetRequestedEmailTemplate:
             "If you didn't request this, you can safely ignore this message."
         )
         body_html = render_email_shell(
+            db=db,
             preheader="You asked to reset your password.",
             heading="Reset your password",
             body_paragraphs=[
@@ -144,6 +145,7 @@ class EmailVerificationRequestedEmailTemplate:
             f"{signoff}"
         )
         body_html = render_email_shell(
+            db=db,
             # Deliberately tighter than the body — this is the inbox
             # preview, not the first paragraph.
             preheader=r.text("preheader"),
@@ -214,6 +216,7 @@ class WelcomeAfterSignupEmailTemplate:
             f"{signoff}"
         )
         body_html = render_email_shell(
+            db=db,
             preheader=r.text("preheader"),
             heading=r.text("heading"),
             greeting=greeting,
@@ -309,6 +312,7 @@ class CreatorPlanActivatedEmailTemplate:
             f"{signoff}"
         )
         body_html = render_email_shell(
+            db=db,
             preheader=activation_line,
             heading=r.text("heading"),
             greeting=greeting,

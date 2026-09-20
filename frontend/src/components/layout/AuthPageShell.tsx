@@ -41,7 +41,11 @@ export default async function AuthPageShell({
       <AuthPageBackground imageUrl={backgroundUrl} />
 
       {/* ─────── Transparent overlay header ─────── */}
-      <PublicHeader overlay />
+      {/* No brand in the header: the card below carries the full
+          approved logo, and that logo is the link home. One Fresh
+          Collective element per screen. Navigation and the log
+          in / join actions stay exactly as they were. */}
+      <PublicHeader overlay brand={false} />
 
       {/* ─────── Two-column content ─────── */}
       <main className="relative z-10 flex flex-1 items-center px-6 pt-28 pb-16 md:px-10 md:pt-32 md:pb-24">

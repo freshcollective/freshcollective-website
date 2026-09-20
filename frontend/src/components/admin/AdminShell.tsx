@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 interface NavItem {
   href: string
@@ -85,15 +86,9 @@ function SidebarContent({
 
   return (
     <div className="flex h-full flex-col bg-white">
-      {/* Logo */}
-      <div className="flex items-center gap-2.5 px-4 py-4" style={{ borderBottom: '1px solid #E2E8F0' }}>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-500">
-          <div className="h-3 w-3 rounded-sm bg-white" />
-        </div>
-        <div>
-          <div className="text-[13px] font-bold text-[#0F172A] leading-none">Fresh Collective</div>
-          <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-teal-600">World Management</div>
-        </div>
+      {/* Brand */}
+      <div className="px-4 py-4" style={{ borderBottom: '1px solid #E2E8F0' }}>
+        <BrandLockup tone="light" sublabel="World Management" />
       </div>
 
       {/* Nav */}

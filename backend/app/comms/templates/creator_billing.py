@@ -113,6 +113,7 @@ class CreatorSubscriptionPaymentFailedEmailTemplate:
             "we’ll keep trying."
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             greeting=greeting,
@@ -191,6 +192,7 @@ class CreatorSubscriptionRecoveredEmailTemplate:
             f"View billing:\n{billing_url}"
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             greeting=greeting,
@@ -266,6 +268,7 @@ class CreatorSubscriptionCancellationScheduledEmailTemplate:
             f"Manage billing:\n{billing_url}"
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             greeting=greeting,
@@ -347,6 +350,7 @@ class CreatorSubscriptionCancelledEmailTemplate:
             "Thank you for building with Fresh Collective."
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             greeting=greeting,

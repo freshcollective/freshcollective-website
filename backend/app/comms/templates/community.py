@@ -63,6 +63,7 @@ class NewPostEmailTemplate:
         # No CTA: this event's template_context carries no post URL.
         # An empty excerpt is dropped by the shell.
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=r.text("heading"),
             body_paragraphs=[opening, excerpt, closing],
@@ -128,6 +129,7 @@ class CommentCreatedEmailTemplate:
             f"{view_url}"
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=r.text("heading"),
             body_paragraphs=[opening],

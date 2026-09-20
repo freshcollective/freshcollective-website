@@ -192,6 +192,14 @@ def resolve_all(db: Session) -> list[BrandAssetResolution]:
     return out
 
 
+def bundled_default_public_url(role: str) -> str | None:
+    """Absolute URL of a role's approved bundled artwork, with no
+    database involved. The fallback an email uses when there is no
+    admin upload — or when there is one and it is not safe to send."""
+    default = get_role(role).default_path
+    return _absolute_for_default(default) if default else None
+
+
 def resolve_for_email(db: Session, role: str) -> str | None:
     """The URL to put in an ``<img src>`` in an email, or ``None``.
 

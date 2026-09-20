@@ -25,6 +25,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Button from '@/components/ui/Button'
 import { PasswordInput } from '@/components/ui/PasswordInput'
+import { FreshCollectiveLogo } from '@/components/brand/FreshCollectiveBrand'
 
 interface Props {
   /** Where to navigate on submit. Must already carry `preview=true` and
@@ -55,12 +56,7 @@ export default function PrototypeSignupForm({ nextHref, heading, subheading }: P
       }}
     >
       <div className="mb-6 flex justify-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/fresh-collective-logo-navy-gold-white.png"
-          alt="Fresh Collective"
-          style={{ height: '44px', width: 'auto' }}
-        />
+        <FreshCollectiveLogo role="primary_light_logo" href="/" />
       </div>
 
       <div className="mb-6 text-center">

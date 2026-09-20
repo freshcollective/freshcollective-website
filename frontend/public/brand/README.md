@@ -24,21 +24,27 @@ different roles and are not interchangeable.
 Roles are defined in `backend/app/brand/roles.py`; nothing reads this
 directory by filename except that module.
 
-## Superseded
+## Superseded — unreferenced, safe to delete
 
-These predate the approved set and are kept only until Phase B
-repoints the three `<img>` tags that still name the first one
-(`AuthCard.tsx`, `SignupForm.tsx`, `PrototypeSignupForm.tsx`). No role
-resolves to any of them.
+As of Phase B **nothing in the codebase names any of these**. Every
+surface resolves artwork through `backend/app/brand/roles.py` and
+`frontend/src/lib/brand.ts`, and both name only the five files above.
+
+They are still on disk because deleting brand artwork is its own
+decision, not a side-effect of a rendering change. Remove them in a
+dedicated cleanup once you are satisfied nothing outside this repo
+(a newsletter, a slide deck, a saved link) depends on the URL.
 
 - `fresh-collective-logo-navy-gold-white.png` — byte-identical to
-  `…-navy-gold-on-white.png`; still referenced by three components.
+  `…-navy-gold-on-white.png`. Was named by AuthCard, SignupForm and
+  PrototypeSignupForm until Phase B moved them onto the shared
+  component.
 - `fresh-collective-logo-teal-gold-white.png` — byte-identical to
   `…-teal-gold-on-white.png`.
 - `fresh-collective-logo-square-teal.png` — byte-identical to
   `…-white-gold-on-teal-gradient.png`.
 - `fresh-collective-logo-transparent-gold.png` — white dragonfly, gold
-  wordmark, transparent. Not part of the approved set; the navy role
+  wordmark, transparent. Not part of the approved set; `logo_on_navy`
   now uses navy-backed artwork.
 - `fresh-collective-logo-transparent-teal.png` — white dragonfly, teal
   wordmark, transparent. Matches no approved role.

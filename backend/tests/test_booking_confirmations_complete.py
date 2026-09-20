@@ -548,8 +548,11 @@ class TestMultiBookingCopy:
             MULTI, collective_name='<img src=x onerror="alert(1)">',
             series_title="Spring", session_count=2,
         ).body_html
-        assert "<img" not in html
+        # One real <img> in the document: the brand logo in the shell
+        # header. The injected one stayed text.
+        assert "<img src=x" not in html
         assert "&lt;img src=x" in html
+        assert html.count("<img") == 1
 
     def test_cta_url_is_intact(self):
         url = "https://fc.test/spaces/sw/gathering-series/spring-term"

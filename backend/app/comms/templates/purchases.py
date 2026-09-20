@@ -140,6 +140,7 @@ class PurchaseCompletedEmailTemplate:
         # progress and the access statement are generated facts.
         signoff = resolver_for(db, self.key, ctx).text("signoff")
         body_html = render_email_shell(
+            db=db,
             preheader=first_line,
             heading=subject,
             greeting=greeting,
@@ -239,6 +240,7 @@ class PaymentInstalmentFailedEmailTemplate:
             "— we’ll keep trying."
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             greeting=greeting,
@@ -339,6 +341,7 @@ class AccessSuspendedEmailTemplate:
             f"{promise}"
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             # Paragraph order mirrors body_text exactly, so the
@@ -431,6 +434,7 @@ class PaymentRecoveredEmailTemplate:
             f"Open {experience}:\n{member_url}"
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             greeting=greeting,
@@ -524,6 +528,7 @@ class PurchasePlanCompletedEmailTemplate:
             "Thank you for being part of Fresh Collective."
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             greeting=greeting,
@@ -631,6 +636,7 @@ class PurchaseRefundedEmailTemplate:
             f"{greeting}\n\n{opening}\n\n{scope}\n\n{timing}"
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             greeting=greeting,
@@ -719,6 +725,7 @@ class FirstPaymentFailedEmailTemplate:
             + (f"\n\nTry payment again:\n{retry_url}" if retry_url else "")
         )
         body_html = render_email_shell(
+            db=db,
             preheader=opening,
             heading=subject,
             greeting=greeting,

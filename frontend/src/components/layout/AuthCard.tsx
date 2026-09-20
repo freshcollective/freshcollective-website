@@ -19,6 +19,7 @@
  */
 
 import Link from 'next/link'
+import { FreshCollectiveLogo } from '@/components/brand/FreshCollectiveBrand'
 
 const CARD_SHADOW =
   '0 24px 60px rgba(5, 11, 20, 0.35), 0 2px 8px rgba(5, 11, 20, 0.20)'
@@ -50,14 +51,12 @@ export default function AuthCard({
       className="w-full max-w-[440px] rounded-2xl bg-white p-8 md:p-10"
       style={{ boxShadow: CARD_SHADOW }}
     >
-      {/* Brand mark — full wordmark, centered and given room to breathe. */}
+      {/* The full approved lockup, at a size where FRESH COLLECTIVE is
+          actually readable — the old 44px treatment printed the
+          wordmark at 1.3px. It links home, which is why the header
+          above no longer carries a brand element of its own. */}
       <div className="mb-7 flex justify-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/fresh-collective-logo-navy-gold-white.png"
-          alt="Fresh Collective"
-          style={{ height: '44px', width: 'auto' }}
-        />
+        <FreshCollectiveLogo role="primary_light_logo" href="/" />
       </div>
 
       {title != null && (

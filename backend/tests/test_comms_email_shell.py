@@ -217,7 +217,13 @@ class TestShell:
         # The angle brackets are gone, so no tag is ever formed. The
         # quoted attribute text survives as inert body text, which is
         # correct — quotes carry no meaning in element content.
-        assert "<img" not in html
+        # The shell header carries exactly one real image — the
+        # approved brand logo — so "no <img anywhere" is no longer
+        # the right shape. What must hold is that the injected tag
+        # never formed and that no second image appeared.
+        assert "<img src=x" not in html
+        assert html.count("<img") == 1
+        assert 'alt="Fresh Collective"' in html
         # Escaped once, not twice.
         assert "&lt;img src=x" in html
         assert "&amp;lt;" not in html
@@ -358,7 +364,9 @@ class TestUserContentIsEscaped:
         self, event_type, ctx, field,
     ):
         html = _render(event_type, **ctx).body_html
-        assert "<img" not in html, f"{event_type}.{field} not escaped"
+        # One <img> in the document: the brand logo in the shell header.
+        assert "<img src=x" not in html, f"{event_type}.{field} not escaped"
+        assert html.count("<img") == 1, f"{event_type}.{field} added an image"
         assert "&lt;img src=x" in html, f"{event_type}.{field} lost its value"
 
     def test_ampersands_are_not_double_escaped(self):

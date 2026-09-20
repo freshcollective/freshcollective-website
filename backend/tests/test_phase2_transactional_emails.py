@@ -713,7 +713,9 @@ class TestNewTemplatesEscapeUserContent:
     ])
     def test_markup_cannot_be_injected(self, event_type, ctx, field):
         html = _render(event_type, **ctx).body_html
-        assert "<img" not in html, f"{event_type}.{field} not escaped"
+        # One <img> in the document: the brand logo in the shell header.
+        assert "<img src=x" not in html, f"{event_type}.{field} not escaped"
+        assert html.count("<img") == 1, f"{event_type}.{field} added an image"
         assert "&lt;img src=x" in html, f"{event_type}.{field} lost its value"
 
     def test_ampersands_are_not_double_escaped(self):

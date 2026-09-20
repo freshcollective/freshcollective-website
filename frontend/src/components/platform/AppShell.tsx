@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from './utils'
+import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 /**
  * Fresh Collective AppShell
@@ -316,9 +317,13 @@ function AppShellNavLink({
 }
 
 /**
- * AppShellBrand — a minimal wordmark composition that pairs the standard
- * Fresh Collective teal square glyph with a label. Areas may substitute their own
- * brand element by passing anything into the shell's `brand` prop.
+ * AppShellBrand — the shell's brand slot.
+ *
+ * Previously drew its own teal square glyph and was imported by
+ * nothing. It now delegates to the shared ``BrandLockup`` so the one
+ * remaining reason to keep it — that a shell area can drop it straight
+ * into the ``brand`` prop — holds without it owning any artwork of its
+ * own.
  */
 export function AppShellBrand({
   href = '/', label = 'Fresh Collective', overlay = false,
@@ -327,35 +332,7 @@ export function AppShellBrand({
   label?: string
   overlay?: boolean
 }) {
-  const textColour = overlay
-    ? 'text-[color:var(--fc-ink-inverse)]'
-    : 'text-[color:var(--fc-ink-heading)]'
   return (
-    <Link
-      href={href}
-      className={cn(
-        'group inline-flex items-center gap-2.5',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--fc-accent-500)]/40 focus-visible:ring-offset-2 rounded-[var(--fc-radius-sm)]',
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className="flex h-7 w-7 items-center justify-center rounded-[var(--fc-radius-md)]"
-        style={{ background: 'var(--fc-accent-gradient)' }}
-      >
-        <span
-          className="h-3 w-3 rounded-[3px] bg-[color:var(--fc-ink-inverse)]"
-          style={{ opacity: 0.92 }}
-        />
-      </span>
-      <span
-        className={cn(
-          'text-[15px] font-[var(--fc-fw-semibold)] tracking-[-0.02em] transition-opacity group-hover:opacity-80',
-          textColour,
-        )}
-      >
-        {label}
-      </span>
-    </Link>
+    <BrandLockup tone={overlay ? 'dark' : 'light'} href={href} label={label} />
   )
 }

@@ -30,6 +30,8 @@ from __future__ import annotations
 import html as _html
 
 from app.core.config import settings
+from typing import Any
+from app.brand.email import brand_header_html
 
 # ---------------------------------------------------------------------------
 # Palette + text tokens — mirror the platform's editorial styling so
@@ -71,6 +73,8 @@ def render_email(
     action: tuple[str, str] | None = None,   # (label, url)
     eyebrow: str | None = None,              # optional small label above the heading
     signoff: str | None = None,              # optional italic single-line signoff
+    db: Any = None,
+    brand_logo_url: str | None = None,
 ) -> str:
     """Produce the Fresh Collective email shell.
 
@@ -150,6 +154,8 @@ def render_email(
 
     prefs_url = _html.escape(_preferences_url(), quote=True)
 
+    brand_header = brand_header_html(db, brand_logo_url)
+
     return f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -175,29 +181,11 @@ def render_email(
                       border-radius:20px;overflow:hidden;
                       border:1px solid {_BORDER};">
 
-          <!-- Brand mark -->
-          <tr>
-            <td align="center" style="padding:36px 40px 8px 40px;">
-              <table role="presentation" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="background:{_ACCENT_GRADIENT};width:32px;
-                             height:32px;border-radius:8px;
-                             vertical-align:middle;" align="center">
-                    <div style="width:12px;height:12px;background:#FFFFFF;
-                                border-radius:2px;margin:0 auto;"></div>
-                  </td>
-                  <td style="padding-left:10px;vertical-align:middle;">
-                    <span style="font-size:15px;font-weight:600;
-                                 color:{_INK_HEADING};
-                                 font-family:{_FONT_STACK_SANS};
-                                 letter-spacing:-0.01em;">
-                      Fresh Collective
-                    </span>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
+          <!-- Brand — the same header the comms shell renders, from
+               app/brand/email.py. Twinned by import rather than by
+               copying, which is how the two stayed identical before
+               and is now the only way they can. -->
+          {brand_header}
 
           <!-- Heading + optional eyebrow -->
           <tr>

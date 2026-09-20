@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Button from '@/components/ui/Button'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
+import { FreshCollectiveLogo } from '@/components/brand/FreshCollectiveBrand'
 
 function getSafeRedirect(next?: string): string {
   // Default post-signup destination is Your World. The Fresh Collective
@@ -99,14 +100,9 @@ export default function SignupForm({
         boxShadow: '0 24px 60px rgba(5, 11, 20, 0.35), 0 2px 8px rgba(5, 11, 20, 0.20)',
       }}
     >
-      {/* Brand mark — matches the login card exactly. */}
+      {/* Matches the login card exactly — same component, same role. */}
       <div className="mb-7 flex justify-center">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/brand/fresh-collective-logo-navy-gold-white.png"
-          alt="Fresh Collective"
-          style={{ height: '44px', width: 'auto' }}
-        />
+        <FreshCollectiveLogo role="primary_light_logo" href="/" />
       </div>
 
       <div className="mb-7 text-center">

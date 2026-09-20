@@ -25,6 +25,7 @@ import LogoutButton from './LogoutButton'
 import NotificationBell from './NotificationBell'
 import Avatar from '@/components/ui/Avatar'
 import { apiUrl } from '@/lib/api'
+import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 interface Props {
   /** Minimal user info needed by the shell. */
@@ -87,18 +88,8 @@ export default function WorldHeader({ user, discoveryOn }: Props) {
       }}
     >
       <Container className="flex h-16 items-center justify-between gap-8">
-        {/* Wordmark → Your World */}
-        <Link href="/dashboard" className="group flex shrink-0 items-center gap-2.5">
-          <div
-            className="flex h-7 w-7 items-center justify-center rounded-lg"
-            style={{ background: 'linear-gradient(135deg, #38A09E, #55B8B6)' }}
-          >
-            <div className="h-3 w-3 rounded-sm bg-white" style={{ opacity: 0.92 }} />
-          </div>
-          <span className="text-[15px] font-semibold tracking-[-0.02em] text-navy-950 transition-opacity group-hover:opacity-60">
-            Fresh Collective
-          </span>
-        </Link>
+        {/* Brand → Your World */}
+        <BrandLockup tone="light" href="/dashboard" />
 
         {/* Desktop nav — peer destinations with active state */}
         <nav aria-label="Member" className="hidden flex-1 items-center justify-center gap-8 md:flex">
