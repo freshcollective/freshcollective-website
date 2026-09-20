@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import { resolveMediaUrl } from '@/lib/api'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import type { CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
-import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from './AtlasCard'
+import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from '@/components/collective/AtlasCard'
 
 /**
  * Dashboard card for a collective the current user owns.

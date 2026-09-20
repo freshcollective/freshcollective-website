@@ -56,6 +56,10 @@ export interface SpaceResponse {
    *  these for sidebar/stats displays — do NOT derive counts from
    *  the ``/api/spaces/{slug}/members`` list, which is privacy-
    *  filtered for learner-role viewers. */
+  /** Upcoming gatherings a member can still attend — published,
+   *  active, future. Zero is a real answer the Home states plainly. */
+  upcoming_gathering_count?: number
+  next_gathering_starts_at?: string | null
   learner_count: number
   leader_count: number
   /** Atlas v1.2 — the collective's assigned Location (hydrated by the

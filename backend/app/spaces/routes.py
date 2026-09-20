@@ -974,8 +974,27 @@ def get_space(
         # Preserve the creator-authored order and drop any keys that no
         # longer resolve (e.g. an atmosphere_option was archived).
         atmo_labels = [name_by_key[k] for k in atmo_keys if k in name_by_key]
+    # Upcoming-gathering signals for the member Home. Same eligibility
+    # the member Gatherings list uses for what is still attendable:
+    # published, active, future. One COUNT and one MIN rather than
+    # loading rows the Home would only measure and discard.
+    _gathering_window = [
+        Event.space_id == space.id,
+        Event.is_published.is_(True),
+        Event.status == "active",
+        Event.starts_at > datetime.utcnow(),
+    ]
+    upcoming_gathering_count = (
+        db.query(func.count(Event.id)).filter(*_gathering_window).scalar() or 0
+    )
+    next_gathering_starts_at = (
+        db.query(func.min(Event.starts_at)).filter(*_gathering_window).scalar()
+    )
+
     resp = SpaceResponse.model_validate(space)
     return resp.model_copy(update={
+        "upcoming_gathering_count": int(upcoming_gathering_count),
+        "next_gathering_starts_at": next_gathering_starts_at,
         "learner_count": learner_count,
         "leader_count": leader_count,
         "location": location_dict,

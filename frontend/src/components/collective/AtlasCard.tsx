@@ -1,11 +1,21 @@
 /**
- * Shared card primitives for the member dashboard.
+ * Shared card primitives for member surfaces.
  *
- * The dashboard uses one iconic card grammar (3:2 artwork + serif name +
- * italic tagline + meta + CTA) across every section: the collectives you
- * belong to, the collectives you created, Explore Collectives, and the
- * Creator Studio tile. Keeping the pieces in one file means any future
- * refinement to card chrome happens in one place, not four.
+ * One iconic card grammar — 3:2 artwork + serif name + italic tagline +
+ * meta + CTA — used by every section of the member dashboard (the
+ * collectives you belong to, the ones you created, Explore Collectives,
+ * the Creator Studio tile) and by the Collective Home. Keeping the
+ * pieces in one file means a refinement to card chrome happens once,
+ * not five times.
+ *
+ * Lives under ``components/collective/`` rather than beside the
+ * dashboard because it is no longer the dashboard's alone.
+ *
+ * Colour: the CTA reads ``var(--fc-accent)``, so inside a Collective
+ * (where ``CollectiveThemeProvider`` is mounted) it takes that
+ * Collective's palette, and everywhere else it falls back to Fresh
+ * Collective teal. Fresh Collective provides the structure; the
+ * Collective provides the personality.
  */
 
 // The Atlas card treatment — border + soft shadow used by every card on
@@ -16,12 +26,14 @@ export const ATLAS_CARD_STYLE: React.CSSProperties = {
 }
 
 export function AtlasArtwork({
-  url, fallbackBg, alt, overlay,
+  url, fallbackBg, alt, overlay, priority = false,
 }: {
   url: string | null
   fallbackBg: string
   alt: string
   overlay?: React.ReactNode
+  /** Skip lazy-loading for artwork that is above the fold. */
+  priority?: boolean
 }) {
   return (
     <div
@@ -33,6 +45,14 @@ export function AtlasArtwork({
         <img
           src={url}
           alt={alt}
+          // The wrapper fixes a 3:2 box, so the intrinsic size only has
+          // to carry that ratio — it stops the browser reserving zero
+          // height before the bytes arrive, which is where the layout
+          // shift came from.
+          width={1200}
+          height={800}
+          loading={priority ? undefined : 'lazy'}
+          decoding="async"
           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
         />
       ) : (
@@ -54,7 +74,10 @@ export function AtlasCardBody({
   return (
     <div className="px-6 pt-5 pb-6">
       <h3
-        className="font-serif text-[20px] leading-tight"
+        // Clamped for the same reason the description is: one long
+        // Collective name must not push a card taller than its
+        // neighbours and stagger the grid.
+        className="line-clamp-2 font-serif text-[20px] leading-tight"
         style={{ color: '#0C1826' }}
       >
         {name}
@@ -73,7 +96,7 @@ export function AtlasCardBody({
         </p>
         <span
           className="text-[12px] font-semibold transition-colors"
-          style={{ color: '#38A09E' }}
+          style={{ color: 'var(--fc-accent, #38A09E)' }}
         >
           {cta}
         </span>

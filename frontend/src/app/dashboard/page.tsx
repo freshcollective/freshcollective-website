@@ -15,7 +15,7 @@ import {
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureFlags'
 import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary, UserProfile } from '@/types/platform'
-import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from './AtlasCard'
+import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from '@/components/collective/AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
 import RecentMomentsSection from './RecentMomentsSection'
 import VerifyEmailBanner from '@/components/settings/VerifyEmailBanner'
@@ -710,7 +710,10 @@ function CollectiveCard({
 
   return (
     <Link
-      href={`/spaces/${card.membership.space_slug}/community`}
+      // The Collective's front door, not one room inside it. A member
+        // arriving from Your World should land on the Home that
+        // orients them, and choose Conversations from there.
+        href={`/spaces/${card.membership.space_slug}`}
       className="group block overflow-hidden rounded-2xl bg-white transition-all"
       style={ATLAS_CARD_STYLE}
     >

@@ -79,6 +79,19 @@ class SpaceResponse(BaseModel):
     # rows from ordinary members when ``show_member_directory=False``
     # and would silently render an incorrect "0 members" in the
     # shared Collective sidebar for every learner-role viewer.
+    # Cheap orientation signals for the member Collective Home. Two
+    # aggregates, computed alongside the member counts that were
+    # already here — a Home that had to fetch its own gathering list to
+    # print "12 upcoming" would pull a page of event rows to render one
+    # number.
+    #
+    # Both describe what a member can still attend: published, active,
+    # future. ``next_gathering_starts_at`` is None when the count is 0,
+    # and the client says "No upcoming gatherings" rather than hiding
+    # the destination — the Home is an orientation hub, so a real
+    # member area stays visible whether or not it is busy today.
+    upcoming_gathering_count: int = 0
+    next_gathering_starts_at: datetime | None = None
     learner_count: int = 0
     leader_count: int = 0
     # Atlas v1.2 identity fields — Location provides artwork, Colour Palette
