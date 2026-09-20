@@ -13,6 +13,7 @@ import { contrastText, darkenHex } from '@/lib/collectivePalette'
 import { extractSessionTheme } from '@/lib/gatheringTitle'
 import type {
   PublicPlaceDetail,
+  PublicPlaceSeries,
   PublicPlaceGathering,
 } from '@/lib/physicalLocations/types'
 
@@ -229,16 +230,44 @@ function CollectivesSection({ place }: { place: PublicPlaceDetail }) {
 // The underlying data isn't filtered — only its presentation.
 // ---------------------------------------------------------------------------
 
+/** One row of the mixed "what's coming up" list. A Series and a
+ *  standalone Gathering render as different cards but sort on the
+ *  same key: when the next occurrence is. */
+type SectionEntry =
+  | { kind: 'series'; key: string; sortAt: number; series: PublicPlaceSeries }
+  | { kind: 'gathering'; key: string; sortAt: number; gathering: PublicPlaceGathering }
+
+
 function GatheringsSection({ place }: { place: PublicPlaceDetail }) {
   const [showAll, setShowAll] = useState(false)
 
-  const gatherings = place.upcoming_gatherings
-  if (gatherings.length === 0) return null
+  // A Series stands in for all of its upcoming occurrences, so the
+  // section is a mixed list: one card per Series, one per Gathering
+  // that belongs to no Series. Both sort on the same key — when the
+  // next occurrence is — so a weekly Series starting Tuesday sits
+  // ahead of a one-off on Friday rather than in a separate block.
+  const entries: SectionEntry[] = [
+    ...place.upcoming_series.map((series) => ({
+      kind: 'series' as const,
+      key: `series-${series.id}`,
+      sortAt: new Date(series.first_starts_at).getTime(),
+      series,
+    })),
+    ...place.upcoming_gatherings.map((gathering) => ({
+      kind: 'gathering' as const,
+      key: `gathering-${gathering.id}`,
+      sortAt: new Date(gathering.starts_at).getTime(),
+      gathering,
+    })),
+  ].sort((a, b) => a.sortAt - b.sortAt)
+
+  if (entries.length === 0) return null
 
   const cutoff = Date.now() + GATHERINGS_WINDOW_DAYS * 24 * 60 * 60 * 1000
-  const withinWindow = gatherings.filter(
-    (g) => new Date(g.starts_at).getTime() <= cutoff,
-  )
+  // A Series enters the window on its next occurrence, the same test a
+  // standalone Gathering gets — a term running all quarter belongs in
+  // "what's on soon" if its next session is soon.
+  const withinWindow = entries.filter((e) => e.sortAt <= cutoff)
 
   // Calm empty state: no gatherings inside the 30-day window. Rather
   // than announce "none coming up" and colour the page with absence,
@@ -247,11 +276,11 @@ function GatheringsSection({ place }: { place: PublicPlaceDetail }) {
   if (withinWindow.length === 0) return null
 
   const hasMore =
-    gatherings.length > withinWindow.length
+    entries.length > withinWindow.length
     || withinWindow.length > GATHERINGS_INITIAL_LIMIT
 
   const cards = showAll
-    ? gatherings
+    ? entries
     : withinWindow.slice(0, GATHERINGS_INITIAL_LIMIT)
 
   return (
@@ -284,9 +313,13 @@ function GatheringsSection({ place }: { place: PublicPlaceDetail }) {
       </div>
 
       <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {cards.map((g) => (
-          <GatheringCard key={g.id} gathering={g} />
-        ))}
+        {cards.map((entry) =>
+          entry.kind === 'series' ? (
+            <SeriesCard key={entry.key} series={entry.series} />
+          ) : (
+            <GatheringCard key={entry.key} gathering={entry.gathering} />
+          ),
+        )}
       </ul>
 
       {!showAll && hasMore && (
@@ -343,6 +376,106 @@ const FORMAT_META: Record<
  * so they read as a visual family; different Collectives form
  * naturally distinct bands without any legend.
  */
+/**
+ * A Gathering Series, as one card.
+ *
+ * Deliberately the same shell as ``GatheringCard`` — same rounded
+ * border, same hover, same two bands, same Collective-coloured
+ * identity header — because a Series and a Gathering are peers in this
+ * list and a second card system would make them look like different
+ * kinds of thing. Only the body differs: a Series answers "when does
+ * this run and how often", a Gathering answers "when is this one".
+ *
+ * Links to the member-facing Series page, which the server only ever
+ * groups under when the Series is published, so this cannot lead to a
+ * 404.
+ */
+function SeriesCard({ series }: { series: PublicPlaceSeries }) {
+  const first = new Date(series.first_starts_at)
+  const last = new Date(series.last_starts_at)
+  const sameYear = first.getFullYear() === last.getFullYear()
+  const rangeStr =
+    first.toLocaleDateString(undefined, {
+      day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }),
+    })
+    + ' – '
+    + last.toLocaleDateString(undefined, {
+      day: 'numeric', month: 'short', year: 'numeric',
+    })
+
+  const headerHex = series.collective_primary_colour ?? NEUTRAL_HEX
+  const headerTop = darkenHex(headerHex, HEADER_GRADIENT_DARKEN)
+  const headerFg = contrastText(headerHex)
+  const format = series.attendance_format
+    ? FORMAT_META[series.attendance_format] ?? FORMAT_META.in_person
+    : null
+  const showVenue = series.attendance_format !== 'online' && !!series.venue_name
+
+  return (
+    <li>
+      <Link
+        href={`/spaces/${series.space_slug}/gathering-series/${series.slug}`}
+        className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(12,24,38,0.04)] transition-shadow hover:shadow-[0_10px_28px_rgba(12,24,38,0.09)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/50 focus-visible:ring-offset-2"
+      >
+        <div
+          className="flex min-h-[128px] flex-col justify-center gap-2 px-6 py-7"
+          style={{
+            backgroundImage: `linear-gradient(180deg, ${headerTop} 0%, ${headerHex} 100%)`,
+            color: headerFg,
+          }}
+        >
+          <p className="font-serif text-[22px] leading-tight">{series.title}</p>
+          <p
+            className="text-[11px] font-semibold uppercase tracking-[0.14em]"
+            style={{ opacity: 0.85 }}
+          >
+            {series.space_name}
+          </p>
+        </div>
+
+        <div
+          className="flex flex-1 flex-col gap-2 px-6 py-5"
+          style={{ color: CHARCOAL }}
+        >
+          <p className="font-serif text-[17px] leading-tight">
+            {rangeStr}
+          </p>
+          {series.schedule_summary && (
+            <p className="text-[13px]" style={{ opacity: 0.72 }}>
+              {series.schedule_summary}
+            </p>
+          )}
+          <p className="text-[13px]" style={{ opacity: 0.72 }}>
+            {series.occurrence_count === 1
+              ? '1 upcoming session'
+              : `${series.occurrence_count} upcoming sessions`}
+          </p>
+          {format && (
+            <div className="mt-1">
+              <span
+                className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11.5px] font-medium"
+                style={{ color: CHARCOAL }}
+              >
+                <span aria-hidden="true">{format.icon}</span>
+                {format.label}
+              </span>
+            </div>
+          )}
+          {showVenue && (
+            <p
+              className="mt-0.5 text-[12px] leading-snug"
+              style={{ color: CHARCOAL, opacity: 0.6 }}
+            >
+              {series.venue_name}
+            </p>
+          )}
+        </div>
+      </Link>
+    </li>
+  )
+}
+
+
 function GatheringCard({ gathering }: { gathering: PublicPlaceGathering }) {
   const start   = new Date(gathering.starts_at)
   const dateStr = start.toLocaleDateString(undefined, {

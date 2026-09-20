@@ -84,6 +84,37 @@ export interface PublicPlaceGathering {
   collective_accent_colour: string | null
 }
 
+/** One member-facing Gathering Series standing in for its upcoming
+ *  occurrences on a Place page.
+ *
+ *  Grouped server-side by ``Event.series_id`` — semantic membership —
+ *  never by ``recurrence_series_id``, which only records that rows
+ *  were bulk-created together. EMBODY's Term 4 is one Series but three
+ *  recurrence batches, so grouping by provenance would produce three
+ *  meaningless cards.
+ *
+ *  Every field describes the *eligible* upcoming occurrences only, so
+ *  a Series can never widen what the page shows. */
+export interface PublicPlaceSeries {
+  id: string
+  slug: string
+  title: string
+  space_slug: string
+  space_name: string
+  first_starts_at: string
+  last_starts_at: string
+  occurrence_count: number
+  /** "Mon & Thu 6pm · Sat 9am", in the Collective's timezone. Null
+   *  when the pattern is too irregular to summarise. */
+  schedule_summary: string | null
+  gathering_type: string | null
+  attendance_format: 'online' | 'in_person' | 'hybrid' | null
+  venue_name: string | null
+  cover_image_url: string | null
+  collective_primary_colour: string | null
+  collective_accent_colour: string | null
+}
+
 /** Full public detail for a single active Physical Location — the
  *  payload behind ``/discover-places/[slug]``. Bundles the location's
  *  own fields, the Collectives that live here (in the same
@@ -91,6 +122,7 @@ export interface PublicPlaceGathering {
  *  component renders), and upcoming member-eligible Gatherings. */
 export interface PublicPlaceDetail extends PublicPlaceSummary {
   collectives: import('@/types/platform').PublicSpaceCard[]
+  upcoming_series: PublicPlaceSeries[]
   upcoming_gatherings: PublicPlaceGathering[]
 }
 

@@ -1063,3 +1063,318 @@ class TestCollectivePlaceLifecycle:
 
         detail = get_place("melbourne", db=db)
         assert [c.slug for c in detail.collectives] == ["visible-coll"]
+
+
+# ---------------------------------------------------------------------------
+# Series grouping on the Place detail page
+# ---------------------------------------------------------------------------
+#
+# EMBODY's Term 4 is thirty eligible occurrences. Rendered individually
+# they were thirty near-identical cards. Grouping collapses them to one
+# card per member-facing Series — and the thing that must not break in
+# the process is eligibility: a Series may only ever stand in for
+# occurrences a visitor was already allowed to see.
+
+
+class TestSeriesGrouping:
+    @staticmethod
+    def _series(db, space, *, title="Term 4", slug="term-4", status="published"):
+        from datetime import datetime, timedelta
+        from app.models.platform import EventSeries
+        row = EventSeries(
+            id=f"es_{uuid.uuid4().hex[:12]}",
+            space_id=space.id,
+            slug=slug,
+            title=title,
+            starts_at=datetime.utcnow(),
+            ends_at=datetime.utcnow() + timedelta(days=90),
+            status=status,
+        )
+        db.add(row)
+        db.flush()
+        return row
+
+    @staticmethod
+    def _linked_place(db, make_space, slug="series-place"):
+        from app.models.place import SpacePlace
+        p = _place(slug=slug, name=slug.replace("-", " ").title())
+        db.add(p)
+        db.flush()
+        space = make_space(is_public=True)
+        db.add(SpacePlace(space_id=space.id, place_id=p.id))
+        db.flush()
+        return p, space
+
+    def test_many_occurrences_of_one_series_become_one_card(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        from datetime import datetime, timedelta
+        p, space = self._linked_place(db, make_space, "one-series")
+        series = self._series(db, space)
+        base = datetime.utcnow() + timedelta(days=3)
+        for i in range(6):
+            make_event(
+                space=space, title=f"Session {i}",
+                starts_at=base + timedelta(days=7 * i),
+                ends_at=base + timedelta(days=7 * i, hours=1),
+                is_public=True, series_id=series.id,
+            )
+        db.flush()
+
+        detail = get_place(p.slug, db=db)
+        assert len(detail.upcoming_series) == 1
+        assert detail.upcoming_gatherings == [], (
+            "occurrences of a grouped Series must not also render individually"
+        )
+        card = detail.upcoming_series[0]
+        assert card.title == "Term 4"
+        assert card.slug == "term-4"
+        assert card.occurrence_count == 6
+        assert card.first_starts_at < card.last_starts_at
+        assert card.space_slug == space.slug
+
+    def test_two_series_produce_two_cards(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        from datetime import datetime, timedelta
+        p, space = self._linked_place(db, make_space, "two-series")
+        a = self._series(db, space, title="Mornings", slug="mornings")
+        b = self._series(db, space, title="Evenings", slug="evenings")
+        base = datetime.utcnow() + timedelta(days=2)
+        for series, offset in ((a, 0), (b, 1)):
+            for i in range(3):
+                make_event(
+                    space=space, title=f"{series.title} {i}",
+                    starts_at=base + timedelta(days=offset + 7 * i),
+                    ends_at=base + timedelta(days=offset + 7 * i, hours=1),
+                    is_public=True, series_id=series.id,
+                )
+        db.flush()
+
+        detail = get_place(p.slug, db=db)
+        assert {s.title for s in detail.upcoming_series} == {"Mornings", "Evenings"}
+        assert detail.upcoming_gatherings == []
+
+    def test_a_standalone_gathering_still_renders_individually(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        from datetime import datetime, timedelta
+        p, space = self._linked_place(db, make_space, "standalone-only")
+        soon = datetime.utcnow() + timedelta(days=5)
+        make_event(
+            space=space, title="One Off", starts_at=soon,
+            ends_at=soon + timedelta(hours=1), is_public=True,
+        )
+        db.flush()
+
+        detail = get_place(p.slug, db=db)
+        assert detail.upcoming_series == []
+        assert [g.title for g in detail.upcoming_gatherings] == ["One Off"]
+
+    def test_a_mixed_place_returns_both(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        from datetime import datetime, timedelta
+        p, space = self._linked_place(db, make_space, "mixed")
+        series = self._series(db, space)
+        base = datetime.utcnow() + timedelta(days=4)
+        for i in range(3):
+            make_event(
+                space=space, title=f"Term session {i}",
+                starts_at=base + timedelta(days=7 * i),
+                ends_at=base + timedelta(days=7 * i, hours=1),
+                is_public=True, series_id=series.id,
+            )
+        make_event(
+            space=space, title="Solstice One-Off",
+            starts_at=base + timedelta(days=2),
+            ends_at=base + timedelta(days=2, hours=1), is_public=True,
+        )
+        db.flush()
+
+        detail = get_place(p.slug, db=db)
+        assert len(detail.upcoming_series) == 1
+        assert [g.title for g in detail.upcoming_gatherings] == ["Solstice One-Off"]
+
+    def test_ineligible_occurrences_never_leak_through_a_series(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        """The grouping must not become a way around the Place rules.
+        Only eligible occurrences may shape the card."""
+        from datetime import datetime, timedelta
+        p, space = self._linked_place(db, make_space, "leaky")
+        series = self._series(db, space)
+        base = datetime.utcnow() + timedelta(days=3)
+
+        # Two eligible.
+        for i in range(2):
+            make_event(
+                space=space, title=f"Open {i}",
+                starts_at=base + timedelta(days=7 * i),
+                ends_at=base + timedelta(days=7 * i, hours=1),
+                is_public=True, series_id=series.id,
+            )
+        # Private, unpublished, cancelled and past — none may count.
+        make_event(
+            space=space, title="Private", starts_at=base + timedelta(days=30),
+            ends_at=base + timedelta(days=30, hours=1),
+            is_public=False, booking_access_type="included_with_collective",
+            series_id=series.id,
+        )
+        make_event(
+            space=space, title="Unpublished", starts_at=base + timedelta(days=40),
+            ends_at=base + timedelta(days=40, hours=1),
+            is_public=True, is_published=False, series_id=series.id,
+        )
+        make_event(
+            space=space, title="Cancelled", starts_at=base + timedelta(days=50),
+            ends_at=base + timedelta(days=50, hours=1),
+            is_public=True, status="cancelled", series_id=series.id,
+        )
+        make_event(
+            space=space, title="Past",
+            starts_at=datetime.utcnow() - timedelta(days=2),
+            ends_at=datetime.utcnow() - timedelta(days=2) + timedelta(hours=1),
+            is_public=True, series_id=series.id,
+        )
+        db.flush()
+
+        [card] = get_place(p.slug, db=db).upcoming_series
+        assert card.occurrence_count == 2, (
+            "the card counted occurrences a visitor may not see"
+        )
+        # The window must close on the last ELIGIBLE occurrence, not on
+        # the private one 30 days out.
+        assert card.last_starts_at < base + timedelta(days=29)
+
+    def test_a_series_with_no_eligible_occurrences_does_not_render(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        from datetime import datetime, timedelta
+        p, space = self._linked_place(db, make_space, "all-private")
+        series = self._series(db, space)
+        base = datetime.utcnow() + timedelta(days=3)
+        for i in range(3):
+            make_event(
+                space=space, title=f"Hidden {i}",
+                starts_at=base + timedelta(days=7 * i),
+                ends_at=base + timedelta(days=7 * i, hours=1),
+                is_public=False, booking_access_type="included_with_collective",
+                series_id=series.id,
+            )
+        db.flush()
+
+        detail = get_place(p.slug, db=db)
+        assert detail.upcoming_series == []
+        assert detail.upcoming_gatherings == []
+
+    def test_an_unpublished_series_does_not_group_its_occurrences(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        """The member-facing Series page 404s on a draft Series, so a
+        card linking to one would lead nowhere. The occurrences are
+        still eligible in their own right and render individually."""
+        from datetime import datetime, timedelta
+        p, space = self._linked_place(db, make_space, "draft-series")
+        series = self._series(db, space, slug="draft-term", status="draft")
+        base = datetime.utcnow() + timedelta(days=3)
+        for i in range(2):
+            make_event(
+                space=space, title=f"Draft session {i}",
+                starts_at=base + timedelta(days=7 * i),
+                ends_at=base + timedelta(days=7 * i, hours=1),
+                is_public=True, series_id=series.id,
+            )
+        db.flush()
+
+        detail = get_place(p.slug, db=db)
+        assert detail.upcoming_series == []
+        assert len(detail.upcoming_gatherings) == 2
+
+    def test_series_are_ordered_by_next_eligible_occurrence(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        from datetime import datetime, timedelta
+        p, space = self._linked_place(db, make_space, "ordering")
+        later = self._series(db, space, title="Later", slug="later")
+        sooner = self._series(db, space, title="Sooner", slug="sooner")
+        base = datetime.utcnow() + timedelta(days=2)
+        make_event(
+            space=space, title="L", starts_at=base + timedelta(days=20),
+            ends_at=base + timedelta(days=20, hours=1),
+            is_public=True, series_id=later.id,
+        )
+        make_event(
+            space=space, title="S", starts_at=base,
+            ends_at=base + timedelta(hours=1),
+            is_public=True, series_id=sooner.id,
+        )
+        db.flush()
+
+        titles = [s.title for s in get_place(p.slug, db=db).upcoming_series]
+        assert titles == ["Sooner", "Later"]
+
+    def test_the_card_links_to_the_member_facing_series(
+        self, db, discovery_enabled, make_space, make_event,
+    ):
+        """slug + space_slug are what the client builds
+        /spaces/{space}/gathering-series/{series} from."""
+        from datetime import datetime, timedelta
+        p, space = self._linked_place(db, make_space, "linking")
+        series = self._series(db, space, title="Term 4 2026", slug="term-4-2026")
+        soon = datetime.utcnow() + timedelta(days=3)
+        make_event(
+            space=space, title="S1", starts_at=soon,
+            ends_at=soon + timedelta(hours=1),
+            is_public=True, series_id=series.id,
+        )
+        db.flush()
+
+        [card] = get_place(p.slug, db=db).upcoming_series
+        assert card.slug == "term-4-2026"
+        assert card.space_slug == space.slug
+
+
+class TestScheduleSummary:
+    def test_it_reads_as_a_weekly_pattern(self):
+        from datetime import datetime
+        from app.places.routes import schedule_summary
+        # EMBODY Term 4's real shape: Mon/Thu 07:00 UTC, Sat 22:00 UTC.
+        starts = [
+            datetime(2026, 10, 5, 7, 0), datetime(2026, 10, 8, 7, 0),
+            datetime(2026, 10, 9, 22, 0), datetime(2026, 10, 12, 7, 0),
+        ]
+        assert schedule_summary(starts, "Australia/Melbourne") == (
+            "Mon & Thu 6pm · Sat 9am"
+        )
+
+    def test_times_are_the_collectives_not_the_viewers(self):
+        from datetime import datetime
+        from app.places.routes import schedule_summary
+        starts = [datetime(2026, 10, 5, 7, 0)]
+        melbourne = schedule_summary(starts, "Australia/Melbourne")
+        london = schedule_summary(starts, "Europe/London")
+        assert melbourne != london
+        assert melbourne == "Mon 6pm"
+
+    def test_minutes_appear_only_when_they_matter(self):
+        from datetime import datetime
+        from app.places.routes import schedule_summary
+        assert schedule_summary([datetime(2026, 10, 5, 7, 30)],
+                                "Australia/Melbourne") == "Mon 6:30pm"
+
+    def test_an_irregular_pattern_is_not_summarised(self):
+        from datetime import datetime
+        from app.places.routes import schedule_summary
+        starts = [
+            datetime(2026, 10, 5, 1, 0), datetime(2026, 10, 6, 3, 0),
+            datetime(2026, 10, 7, 5, 0), datetime(2026, 10, 8, 7, 0),
+        ]
+        assert schedule_summary(starts, "Australia/Melbourne") is None
+
+    def test_no_occurrences_and_bad_timezone_degrade_quietly(self):
+        from datetime import datetime
+        from app.places.routes import schedule_summary
+        assert schedule_summary([], "Australia/Melbourne") is None
+        # A bad tz string must not take a Place page down.
+        assert schedule_summary([datetime(2026, 10, 5, 7, 0)], "Not/AZone")

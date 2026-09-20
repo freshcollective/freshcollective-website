@@ -29,7 +29,8 @@ from __future__ import annotations
 
 import math
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -40,7 +41,7 @@ from app.auth.dependencies import get_creator_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.place import Place, SpacePlace
-from app.models.platform import Event, Space, SpaceStatus
+from app.models.platform import Event, EventSeries, Space, SpaceStatus
 from app.models.user import User
 from app.spaces.schemas import PublicSpaceCard
 from app.services.location_providers import (
@@ -89,6 +90,52 @@ class PlaceSummary(BaseModel):
     themes: list[str]
     collective_count: int
     upcoming_gathering_count: int
+
+
+class PlaceSeries(BaseModel):
+    """One member-facing Gathering Series, standing in for all of its
+    upcoming occurrences on a Place page.
+
+    EMBODY's Term 4 is thirty sessions. Rendered individually they were
+    thirty near-identical cards reading "Mondays - Term 4",
+    "Thursdays - Term 4" — activity presented as noise. One card that
+    says what the Series is, when it runs and how often it meets is the
+    same information, legible.
+
+    Grouping is by ``Event.series_id`` — the semantic membership the
+    model documents — never by ``recurrence_series_id``, which only
+    records that some rows were bulk-created together. EMBODY's Term 4
+    is one Series but three recurrence batches (Mondays, Thursdays,
+    Saturdays); grouping by provenance would have produced three cards
+    that mean nothing to a member.
+
+    Every field is derived from the *eligible* occurrences only, so a
+    Series can never widen what a Place page shows. See
+    ``get_place`` for the eligibility rule.
+    """
+
+    id: str
+    slug: str
+    title: str
+    space_slug: str
+    space_name: str
+    # First and last eligible upcoming occurrence — the window a
+    # visitor can actually still join, not the Series' own declared
+    # window, which may have started in the past.
+    first_starts_at: datetime
+    last_starts_at: datetime
+    occurrence_count: int
+    # "Mon & Thu 6pm · Sat 9am", in the Collective's timezone. None
+    # when the pattern is too irregular to summarise.
+    schedule_summary: str | None
+    # Taken from the earliest eligible occurrence; a Series that mixes
+    # formats or venues is described by the one a visitor meets first.
+    gathering_type: str | None
+    attendance_format: str | None
+    venue_name: str | None
+    cover_image_url: str | None
+    collective_primary_colour: str | None
+    collective_accent_colour: str | None
 
 
 class PlaceGathering(BaseModel):
@@ -152,6 +199,13 @@ class PlaceDetail(BaseModel):
     collective_count: int
     upcoming_gathering_count: int
     collectives: list[PublicSpaceCard]
+    # Series first, then the gatherings that belong to no Series. The
+    # client merges the two and sorts by next occurrence; they are
+    # returned separately because they render as different cards and
+    # because the split is a server-side decision — a Series only
+    # groups when it is published, so a card can never link to a page
+    # that 404s.
+    upcoming_series: list[PlaceSeries]
     upcoming_gatherings: list[PlaceGathering]
 
 
@@ -225,6 +279,79 @@ def _ensure_discovery_flag_on() -> None:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Discovery is not yet enabled on this deployment.",
         )
+
+
+# ---------------------------------------------------------------------------
+# Series schedule summary
+# ---------------------------------------------------------------------------
+
+# Weekday order for rendering, Monday first.
+_WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+# Above this many distinct time-of-day groups the summary stops being a
+# summary. A Series that meets at five different times is better
+# described by its own Schedule page than by a string on a card.
+_MAX_SCHEDULE_GROUPS = 3
+
+# Safety bound on how many upcoming occurrences one Place page scans to
+# build its Series summaries. Far above real volumes; present so a data
+# accident cannot turn a page render into an unbounded query.
+_MAX_UPCOMING_SCANNED = 500
+
+# How many individual (series-less) Gatherings a Place page lists.
+# Series collapse to one card each, so this bounds only the long tail.
+_MAX_STANDALONE_SHOWN = 20
+
+
+def _time_label(moment: datetime) -> str:
+    """``6pm`` / ``9:30am`` — minutes only when they carry information."""
+    hour = moment.hour % 12 or 12
+    suffix = "am" if moment.hour < 12 else "pm"
+    if moment.minute:
+        return f"{hour}:{moment.minute:02d}{suffix}"
+    return f"{hour}{suffix}"
+
+
+def schedule_summary(starts: list[datetime], timezone_name: str | None) -> str | None:
+    """A compact "when does this meet" line, e.g. ``Mon & Thu 6pm · Sat 9am``.
+
+    Built from the eligible occurrences themselves rather than from a
+    stored recurrence rule, because the eligible set is what the member
+    will actually be able to attend — a cancelled Monday does not
+    belong in the pattern.
+
+    Times are rendered in the **Collective's** timezone. A Gathering in
+    South Croydon reads "6pm" to everyone, which is what the Collective
+    means by it, rather than shifting for whoever is looking.
+
+    Returns ``None`` when there is nothing useful to say: no
+    occurrences, or so many distinct times that the line would be
+    longer than the card.
+    """
+    if not starts:
+        return None
+    try:
+        tz = ZoneInfo(timezone_name or "UTC")
+    except Exception:  # noqa: BLE001 — a bad tz string must not break a page
+        tz = ZoneInfo("UTC")
+
+    # starts_at is stored naive-UTC throughout this codebase.
+    local = [s.replace(tzinfo=UTC).astimezone(tz) for s in starts]
+
+    by_time: dict[str, set[int]] = {}
+    for moment in local:
+        by_time.setdefault(_time_label(moment), set()).add(moment.weekday())
+    if len(by_time) > _MAX_SCHEDULE_GROUPS:
+        return None
+
+    # Order groups by their earliest weekday so the line reads
+    # chronologically across the week.
+    groups = sorted(by_time.items(), key=lambda kv: min(kv[1]))
+    parts = []
+    for label, weekdays in groups:
+        names = " & ".join(_WEEKDAYS[d] for d in sorted(weekdays))
+        parts.append(f"{names} {label}")
+    return " · ".join(parts)
 
 
 def _slugify(name: str, country_code: str) -> str:
@@ -468,6 +595,7 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
     # up on the paid Gathering surface for anyone). The same rule the
     # Space events endpoint applies for anonymous callers.
     gatherings: list[PlaceGathering] = []
+    upcoming_series: list[PlaceSeries] = []
     if linked_spaces:
         space_by_id = {s.id: s for s in linked_spaces}
         # Per-Collective palette hexes so each Gathering card can inherit
@@ -492,6 +620,11 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
             for s in linked_spaces
         }
         now = datetime.utcnow()
+        # Every eligible upcoming occurrence, not a page of them: the
+        # Series summaries below (window, count, schedule) are only
+        # true if they see the whole set. The cap is a safety bound far
+        # above any real Place — EMBODY's busiest term is ~30 — so that
+        # a data accident cannot turn this into an unbounded scan.
         event_rows = db.execute(
             select(Event)
             .where(
@@ -502,8 +635,63 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
                 (Event.is_public.is_(True)) | (Event.booking_access_type == "paid_separately"),
             )
             .order_by(Event.starts_at)
-            .limit(20)
+            .limit(_MAX_UPCOMING_SCANNED)
         ).scalars().all()
+
+        # Which Series may legitimately stand in for their occurrences.
+        # Only published ones: the member-facing Series page 404s on
+        # anything else (see ``_get_published_series``), so grouping
+        # under a draft or archived Series would hand a visitor a card
+        # that leads nowhere. Occurrences of an unpublished Series stay
+        # eligible in their own right and simply render individually.
+        series_ids = {e.series_id for e in event_rows if e.series_id}
+        published_series: dict[str, EventSeries] = {}
+        if series_ids:
+            published_series = {
+                row.id: row
+                for row in db.execute(
+                    select(EventSeries).where(
+                        EventSeries.id.in_(series_ids),
+                        EventSeries.status == "published",
+                    )
+                ).scalars().all()
+            }
+
+        grouped: dict[str, list[Event]] = {}
+        standalone: list[Event] = []
+        for e in event_rows:
+            if e.series_id and e.series_id in published_series:
+                grouped.setdefault(e.series_id, []).append(e)
+            else:
+                standalone.append(e)
+
+        for series_id, occurrences in grouped.items():
+            series = published_series[series_id]
+            # ``event_rows`` is ordered by starts_at, so the first
+            # occurrence is the soonest and the last is the furthest out.
+            first, last = occurrences[0], occurrences[-1]
+            space = space_by_id[first.space_id]
+            upcoming_series.append(PlaceSeries(
+                id=series.id,
+                slug=series.slug,
+                title=series.title,
+                space_slug=space.slug,
+                space_name=space.name,
+                first_starts_at=first.starts_at,
+                last_starts_at=last.starts_at,
+                occurrence_count=len(occurrences),
+                schedule_summary=schedule_summary(
+                    [o.starts_at for o in occurrences], space.timezone,
+                ),
+                gathering_type=first.gathering_type,
+                attendance_format=first.attendance_format,
+                venue_name=first.venue_name,
+                cover_image_url=series.cover_image_url,
+                collective_primary_colour=palette_by_space.get(space.id, (None, None))[0],
+                collective_accent_colour=palette_by_space.get(space.id, (None, None))[1],
+            ))
+        upcoming_series.sort(key=lambda x: x.first_starts_at)
+
         gatherings = [
             PlaceGathering(
                 id=e.id,
@@ -526,7 +714,7 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
                 collective_primary_colour=palette_by_space.get(e.space_id, (None, None))[0],
                 collective_accent_colour=palette_by_space.get(e.space_id, (None, None))[1],
             )
-            for e in event_rows
+            for e in standalone[:_MAX_STANDALONE_SHOWN]
         ]
 
     # Aggregate themes + counts identical to the list endpoint so the
@@ -561,6 +749,7 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
         collective_count=len(linked_spaces),
         upcoming_gathering_count=int(upcoming_all_count),
         collectives=collectives,
+        upcoming_series=upcoming_series,
         upcoming_gatherings=gatherings,
     )
 
