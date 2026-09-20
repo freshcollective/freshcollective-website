@@ -860,6 +860,9 @@ export interface CreatorEvent {
   gathering_type: string
   attendance_format: 'online' | 'in_person' | 'hybrid'
   venue_name: string | null
+  /** Public location label — the only location a viewer who has
+   *  not booked ever sees. See app/spaces/venue_projection.py. */
+  venue_locality: string | null
   venue_address: string | null
   access_instructions: string | null
   booking_access_type: string

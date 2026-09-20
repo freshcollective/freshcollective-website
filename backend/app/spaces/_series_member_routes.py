@@ -70,6 +70,7 @@ from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.payment_option import PaymentOption
 from app.models.payment_option_grant import PaymentOptionGrant
 from app.spaces.purchase_schedule_view import schedule_view
+from app.spaces import venue_projection
 from app.spaces import area_access
 from app.spaces import area_policies
 from app.models.payment_option_schedule import PaymentOptionSchedule
@@ -643,8 +644,9 @@ def _gathering_summary(
         ends_at=ev.ends_at,
         location_type=ev.location_type.value if hasattr(ev.location_type, "value") else str(ev.location_type),
         attendance_format=getattr(ev, "attendance_format", None),
-        venue_name=getattr(ev, "venue_name", None),
-        venue_locality=getattr(ev, "venue_locality", None),
+        # One public venue rule, shared with the Gathering page and
+        # Discover Places — locality first, never the address.
+        **venue_projection.public_venue_fields(ev),
         thumbnail_url=ev.thumbnail_url,
         booking_access_type=(
             ev.booking_access_type.value if hasattr(ev.booking_access_type, "value")

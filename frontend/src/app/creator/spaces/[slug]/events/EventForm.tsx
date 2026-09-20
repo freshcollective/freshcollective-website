@@ -144,6 +144,7 @@ export default function EventForm({
   const [attendanceFormat, setAttendanceFormat] = useState<'online' | 'in_person' | 'hybrid'>(
     (event?.attendance_format as 'online' | 'in_person' | 'hybrid' | undefined) ?? 'online'
   )
+  const [venueLocality, setVenueLocality] = useState(event?.venue_locality ?? '')
   const [venueName, setVenueName] = useState(event?.venue_name ?? '')
   const [venueAddress, setVenueAddress] = useState(event?.venue_address ?? '')
   const [accessInstructions, setAccessInstructions] = useState(event?.access_instructions ?? '')
@@ -347,6 +348,7 @@ export default function EventForm({
         // Gatherings 2.0 vocabulary — see `lib/gatheringTypes.ts`.
         gathering_type: gatheringType,
         attendance_format: attendanceFormat,
+        venue_locality: venueLocality || null,
         venue_name: venueName || null,
         venue_address: venueAddress || null,
         access_instructions: accessInstructions || null,
@@ -707,6 +709,39 @@ export default function EventForm({
 
         {(attendanceFormat === 'in_person' || attendanceFormat === 'hybrid') && (
           <>
+            {/* Public location — the only location field anyone can
+                see before they have booked. It exists so a creator is
+                not forced to choose between telling visitors nothing
+                and putting the venue in a public field: until this
+                was offered, the venue name was the only place to put
+                "South Croydon", and it went out to everyone. */}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-navy-800">
+                Public location
+              </label>
+              <input
+                value={venueLocality}
+                onChange={(e) => setVenueLocality(e.target.value)}
+                placeholder="e.g. South Croydon, Victoria"
+                className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
+              />
+              <p className="mt-1 text-[12px] leading-relaxed text-black">
+                Shown publicly so people know roughly where this gathering
+                takes place. A suburb and state is usually enough — never a
+                street address.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-1 text-[13px] font-semibold text-navy-900">
+                Venue and attendee details
+              </p>
+              <p className="mb-3 text-[12px] leading-relaxed text-black">
+                Only shared with people who are entitled to receive attendance
+                details — confirmed attendees and the people running this
+                collective.
+              </p>
+              <div className="space-y-4">
             <div>
               <label className="mb-1.5 block text-sm font-medium text-navy-800">Venue name</label>
               <input
@@ -715,6 +750,10 @@ export default function EventForm({
                 placeholder="e.g. The Studio, King Street"
                 className="w-full rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
               />
+              <p className="mt-1 text-[12px] leading-relaxed text-black">
+                Shown publicly when no public location is set above, so keep it
+                free of private detail.
+              </p>
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-navy-800">Venue address</label>
@@ -725,6 +764,8 @@ export default function EventForm({
                 placeholder="Full address — shown only to registered attendees."
                 className="w-full resize-none rounded-lg border border-border bg-white px-4 py-2.5 text-sm text-navy-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-navy-300"
               />
+            </div>
+              </div>
             </div>
           </>
         )}

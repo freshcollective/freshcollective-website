@@ -44,6 +44,7 @@ from app.models.user import User
 from app.spaces import home_config
 from app.spaces import join_policy
 from app.spaces import joining_doors
+from app.spaces import venue_projection
 from app.spaces import area_access
 from app.spaces import area_policies
 from app.spaces.schemas import (
@@ -2614,7 +2615,10 @@ def get_event(
         # controlled column since migration 114 — always exposed.
         # The full ``venue_address`` above stays behind the attendee
         # gate; the two fields are independent.
-        "venue_locality": getattr(event, 'venue_locality', None),
+        # Public half, shared rule: locality first, never the
+        # address. The sensitive fields above and below keep their
+        # own attendee gate.
+        **venue_projection.public_venue_fields(event),
         "access_instructions": getattr(event, 'access_instructions', None) if show_sensitive else None,
         "host_name": (
             (db.query(User.name).filter(User.id == event.created_by_id).scalar() or '').strip() or None

@@ -43,6 +43,7 @@ from app.core.database import get_db
 from app.models.place import Place, SpacePlace
 from app.models.platform import Event, EventSeries, Space, SpaceStatus
 from app.spaces import area_policies
+from app.spaces import venue_projection
 from app.models.user import User
 from app.spaces.schemas import PublicSpaceCard
 from app.services.location_providers import (
@@ -722,7 +723,7 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
                 ),
                 gathering_type=first.gathering_type,
                 attendance_format=first.attendance_format,
-                venue_name=first.venue_name,
+                venue_name=venue_projection.public_venue_label(first),
                 cover_image_url=series.cover_image_url,
                 collective_primary_colour=palette_by_space.get(space.id, (None, None))[0],
                 collective_accent_colour=palette_by_space.get(space.id, (None, None))[1],
@@ -739,10 +740,10 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
                 ends_at=e.ends_at,
                 gathering_type=e.gathering_type,
                 attendance_format=e.attendance_format,
-                # venue_name is the coarse locality (e.g. "Private
-                # residence · South Croydon"); the full address stays
-                # gated on the Gathering's own detail page.
-                venue_name=e.venue_name,
+                # Locality first, ``venue_name`` only as the
+                # already-public fallback, never the address — one
+                # rule, shared with the Gathering and Series pages.
+                venue_name=venue_projection.public_venue_label(e),
                 booking_access_type=e.booking_access_type,
                 capacity=e.capacity,
                 ticket_price_cents=e.ticket_price_cents,
