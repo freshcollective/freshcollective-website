@@ -1149,6 +1149,9 @@ export interface PublicSpaceCard {
   location_hero_artwork_url?: string | null
   location_thumbnail_artwork_url?: string | null
   min_paid_pathway_price_cents: number | null
+  /** How someone becomes a member. Authoritative over
+   *  `pricing_type` for any statement about joining. */
+  join_policy?: JoinPolicy
 }
 
 export interface SpaceInvitation {

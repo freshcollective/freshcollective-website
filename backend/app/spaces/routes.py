@@ -457,6 +457,7 @@ def hydrate_public_space_cards(
             pathway_count=pathway_counts.get(s.id, 0),
             member_count=member_counts.get(s.id, 0),
             creator_name=creator_names.get(s.creator_id) if s.creator_id else None,
+            join_policy=join_policy.resolve(s.join_policy),
             has_upcoming_event=s.id in upcoming_event_space_ids,
             themes=s.themes or [],
             pricing_type=s.pricing_type or 'free',

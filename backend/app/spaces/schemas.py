@@ -552,6 +552,11 @@ class PublicSpaceCard(BaseModel):
     pricing_amount_cents: int | None = None
     pricing_currency: str = 'AUD'
     pricing_note: str | None = None
+    # How someone becomes a member. ``pricing_type`` above describes
+    # price display and cannot answer this — a Collective may be
+    # marked 'free' and still require a purchase to join. Explore
+    # cards say "Free to join", so they need the real rule.
+    join_policy: str = 'open'
     has_paid_internal_content: bool = False
     included_access_summary: str | None = None
     paid_content_summary: str | None = None

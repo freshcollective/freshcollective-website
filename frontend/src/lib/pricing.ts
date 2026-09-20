@@ -1,10 +1,35 @@
-import type { PricingType } from '@/types/platform'
+import type { JoinPolicy, PricingType } from '@/types/platform'
 
 interface PricingSource {
   pricing_type: PricingType
   pricing_amount_cents: number | null
   pricing_currency: string
   pricing_note?: string | null
+  /**
+   * How someone actually becomes a member. Authoritative over
+   * ``pricing_type`` for any statement about *joining*.
+   *
+   * The two answer different questions and can legitimately disagree:
+   * EMBODY is ``pricing_type: 'free'`` — it charges nothing for
+   * membership itself — while ``join_policy: 'purchase_required'``,
+   * because membership only arrives attached to a term purchase. The
+   * About page said "Free to join" and "Membership comes with your
+   * first purchase" in the same column until this was threaded
+   * through.
+   *
+   * Optional and defaulting to ``open`` so every caller that has not
+   * hydrated it keeps today's behaviour exactly.
+   */
+  join_policy?: JoinPolicy | null
+}
+
+/** The joining claim, when the policy overrides whatever the pricing
+ *  fields would have said. ``null`` means "pricing_type still tells
+ *  the truth here". */
+function joinPolicyLabel(space: PricingSource): string | null {
+  return space.join_policy === 'purchase_required'
+    ? 'Membership comes with a purchase'
+    : null
 }
 
 interface FullPricingSource extends PricingSource {
@@ -40,6 +65,9 @@ function inlineCase(s: string): string {
 
 /** The join-cost label only — answers "What does it cost to join this collective?" */
 export function formatCollectiveAccessLabel(space: PricingSource): string {
+  const policyLabel = joinPolicyLabel(space)
+  if (policyLabel) return policyLabel
+
   const { pricing_type, pricing_amount_cents, pricing_currency } = space
   const currency = pricing_currency || 'AUD'
 
@@ -79,6 +107,13 @@ export function formatCollectivePricingSummary(space: FullPricingSource): string
   } = space
   const currency = pricing_currency || 'AUD'
   const accessLabel = formatCollectiveAccessLabel(space)
+
+  // A purchase-required Collective has already said the important
+  // thing. Appending "· pathways from $X" would read as a second,
+  // competing price for the same doorway.
+  if (joinPolicyLabel(space)) {
+    return accessLabel
+  }
 
   if (pricing_type === 'invite_only' || pricing_type === 'coming_soon') {
     return accessLabel
