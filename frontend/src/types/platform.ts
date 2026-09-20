@@ -995,16 +995,33 @@ export interface StepResource {
 
 export type JoinPolicy = 'open' | 'purchase_required'
 
+export interface JoiningOptionSchedule {
+  id: string
+  name: string
+  schedule_type: string
+  total_amount_cents: number
+  installment_amount_cents: number | null
+  installment_count: number | null
+  interval: string | null
+  currency: string
+  is_member_checkoutable: boolean
+}
+
 export interface JoiningOption {
   id: string
   name: string
   description: string | null
   buyer_note: string | null
+  /** Headline figure only. The commitment lives on `schedules`. */
   price_cents: number | null
   currency: string
   payment_type: string
   term_start_date: string | null
   term_end_date: string | null
+  /** Published, checkoutable ways to pay. The checkout endpoint
+   *  requires the chosen schedule's id, so a door without these
+   *  cannot complete a purchase. */
+  schedules: JoiningOptionSchedule[]
 }
 
 export type PricingType = 'free' | 'paid_one_time' | 'paid_monthly' | 'paid_annual' | 'invite_only' | 'coming_soon'

@@ -7723,6 +7723,10 @@ def _option_to_dict(opt: PaymentOption) -> dict:
         "attaches_to_kind": opt.attaches_to_kind,
         "attaches_to_id": opt.attaches_to_id,
         "grants_pathway_id": opt.grants_pathway_id,
+        # Without this the response schema's default (False) filled in
+        # and Creator Studio could never show a nomination that was
+        # actually stored — the checkbox unticked itself on reload.
+        "is_joining_option": bool(opt.is_joining_option),
         "name": opt.name,
         "description": opt.description,
         "payment_type": opt.payment_type.value if hasattr(opt.payment_type, "value") else str(opt.payment_type),

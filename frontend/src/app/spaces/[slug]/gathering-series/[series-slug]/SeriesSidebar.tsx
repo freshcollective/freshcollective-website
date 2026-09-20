@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import SeriesPurchaseButton from './SeriesPurchaseButton'
+import ScheduleChoice from '@/components/commerce/ScheduleChoice'
 import {
   paletteHex,
   rgbaFromHex,
@@ -266,9 +266,8 @@ function CompactOptionCard({
             key={s.id}
             optionName={option.name}
             schedule={s}
-            spaceSlug={spaceSlug}
-            seriesSlug={seriesSlug}
             paymentOptionId={option.id}
+            returnBase={`/spaces/${spaceSlug}/gathering-series/${seriesSlug}`}
             palette={palette}
             withDivider={i > 0}
           />
@@ -278,61 +277,3 @@ function CompactOptionCard({
   )
 }
 
-/** One purchasable payment method inside a Payment Option. Renders
- *  as "Method label · price line" over the top of the CTA button.
- *  When multiple methods exist ("Pay in full" and "$20/week × 10")
- *  they stack with a soft divider so the member scans them as
- *  siblings under the same Option (Awaken). */
-function ScheduleChoice({
-  optionName, schedule, spaceSlug, seriesSlug, paymentOptionId,
-  palette, withDivider,
-}: {
-  optionName: string
-  schedule: SidebarPaymentSchedule
-  spaceSlug: string
-  seriesSlug: string
-  paymentOptionId: string
-  palette: CollectivePaletteMeta | null
-  withDivider: boolean
-}) {
-  const primary = paletteHex('primary', palette) ?? '#0f766e'
-  const line = rgbaFromHex(primary, 0.16)
-
-  const kindLabel = scheduleKindLabel(schedule)
-  const shortDesc = scheduleShortDescription(schedule)
-  const totalLine = scheduleTotalLine(schedule)
-  const ctaLabel =
-    schedule.schedule_type === 'recurring_installments'
-      ? `Start payment plan · ${optionName}`
-      : `Join with ${optionName}`
-
-  return (
-    <div style={withDivider ? { borderTop: `1px solid ${line}`, paddingTop: 12 } : undefined}>
-      <div className="mb-2">
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[12px] font-medium text-navy-900">
-            {kindLabel}
-          </span>
-          <span className="shrink-0 text-[13px] font-semibold text-navy-900">
-            {shortDesc}
-          </span>
-        </div>
-        {totalLine && (
-          <p className="mt-0.5 text-right text-[11px] text-slate-500">
-            {totalLine}
-          </p>
-        )}
-      </div>
-      <SeriesPurchaseButton
-        spaceSlug={spaceSlug}
-        seriesSlug={seriesSlug}
-        paymentOptionId={paymentOptionId}
-        paymentOptionScheduleId={schedule.id}
-        label={ctaLabel}
-        palette={palette}
-        schedule={schedule}
-        optionName={optionName}
-      />
-    </div>
-  )
-}

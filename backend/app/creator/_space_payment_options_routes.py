@@ -657,6 +657,11 @@ def update_commerce_payment_option(
         "name", "description", "payment_type", "status", "currency",
         "buyer_note", "internal_note",
         "calculated_total_cents", "override_total_cents",
+        # Whether this Option is offered as a way into a
+        # purchase-required Collective. Omitting it from this set
+        # meant every nomination was silently discarded: the PATCH
+        # returned 200, the checkbox ticked, and nothing was written.
+        "is_joining_option",
     }
     for field, val in updates.items():
         if field not in editable:

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { apiUrl } from '@/lib/api'
 import { isPaidPricingType } from '@/lib/pricing'
 import JoiningDoors from './JoiningDoors'
+import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import type { JoinPolicy, JoiningOption, PricingType } from '@/types/platform'
 
 type CTAState = 'idle' | 'loading' | 'joined' | 'requested' | 'error'
@@ -27,6 +28,8 @@ interface Props {
   /** Published, creator-nominated doors. Only consulted when the
    *  policy is purchase_required. */
   joiningOptions?: JoiningOption[]
+  /** Collective palette, so the purchase CTAs feel like this place. */
+  palette?: CollectivePaletteMeta | null
 }
 
 export default function SpaceAboutCTA({
@@ -41,6 +44,7 @@ export default function SpaceAboutCTA({
   autoGrantRole,
   joinPolicy = 'open',
   joiningOptions = [],
+  palette = null,
 }: Props) {
   const router = useRouter()
   const [state, setState] = useState<CTAState>('idle')
@@ -125,6 +129,26 @@ export default function SpaceAboutCTA({
     )
   }
 
+  // Purchase-required: there is no free door, for anyone. Checked
+  // before the signed-out branch below — that one offers "Join
+  // collective", which promises free membership this Collective does
+  // not have — and before the pricing_type branches, which are
+  // display strings while this is the server-enforced policy.
+  //
+  // Deliberately after the member / manager / pending-invite states
+  // above: someone who is already inside is not shown a door.
+  if (joinPolicy === 'purchase_required') {
+    return (
+      <JoiningDoors
+        slug={slug}
+        options={joiningOptions}
+        isLoggedIn={isLoggedIn}
+        isMember={isMember}
+        palette={palette}
+      />
+    )
+  }
+
   // Not logged in
   if (!isLoggedIn) {
     return (
@@ -158,16 +182,6 @@ export default function SpaceAboutCTA({
           Sign in to accept
         </Link>
       </div>
-    )
-  }
-
-  // Purchase-required: there is no free door. Checked before the
-  // pricing_type branches below because pricing_type is a display
-  // string, while this is the server-enforced policy — POST /join
-  // refuses regardless of what is rendered here.
-  if (joinPolicy === 'purchase_required') {
-    return (
-      <JoiningDoors slug={slug} options={joiningOptions} isLoggedIn={isLoggedIn} />
     )
   }
 

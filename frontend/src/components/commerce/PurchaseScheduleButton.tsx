@@ -13,12 +13,24 @@ import {
 } from '@/lib/paymentPlan'
 
 /**
- * Kick off a unified Payment Option purchase for a Gathering Series.
+ * Kick off a unified Payment Option purchase.
+ *
+ * One button, two entry points: the Gathering Series sidebar and the
+ * Collective joining doors on a purchase-required About page. They are
+ * the same purchase — the same Payment Option, the same schedule, the
+ * same fulfilment — reached from different places, so they must not be
+ * two implementations. The only thing that differs is where the buyer
+ * comes back to, which is why ``returnBase`` is a prop.
  *
  * Calls ``POST /api/checkout`` with:
  *   payment_option_id, payment_option_schedule_id,
- *   success_url = current Series URL + ?checkout=success,
- *   cancel_url  = current Series URL + ?checkout=cancel.
+ *   success_url = returnBase + ?checkout=success,
+ *   cancel_url  = returnBase + ?checkout=cancel.
+ *
+ * ``payment_option_schedule_id`` is required by the endpoint. A caller
+ * that offers an Option without naming a schedule gets a 422 before
+ * any business logic runs — which is exactly how the first joining
+ * door was written.
  *
  * The backend handles both paths:
  *   * Paid options → returns a Stripe-hosted checkout URL; we
@@ -32,12 +44,13 @@ import {
  * actively holds the same Payment Option (409). We surface the
  * detail message inline rather than silently swallowing.
  */
-export default function SeriesPurchaseButton({
-  spaceSlug, seriesSlug, paymentOptionId, paymentOptionScheduleId, label,
+export default function PurchaseScheduleButton({
+  returnBase, paymentOptionId, paymentOptionScheduleId, label,
   palette, schedule, optionName,
 }: {
-  spaceSlug: string
-  seriesSlug: string
+  /** Path the buyer returns to, e.g. ``/spaces/embody/about``.
+   *  ``?checkout=success`` / ``?checkout=cancel`` are appended. */
+  returnBase: string
   paymentOptionId: string
   paymentOptionScheduleId: string
   label: string
@@ -72,8 +85,7 @@ export default function SeriesPurchaseButton({
     setBusy(true)
     setError(null)
     try {
-      const origin = window.location.origin
-      const base = `${origin}/spaces/${spaceSlug}/gathering-series/${seriesSlug}`
+      const base = `${window.location.origin}${returnBase}`
       const res = await fetch(apiUrl('/api/checkout'), {
         method: 'POST',
         credentials: 'include',

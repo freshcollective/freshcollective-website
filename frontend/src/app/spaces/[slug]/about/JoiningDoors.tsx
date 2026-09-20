@@ -1,48 +1,50 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
 
-import { apiUrl } from '@/lib/api'
+import ScheduleChoice from '@/components/commerce/ScheduleChoice'
+import { scheduleShortDescription } from '@/lib/paymentPlan'
+import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import type { JoiningOption } from '@/types/platform'
 
 /**
  * Ways into a Collective that cannot be joined for free.
  *
- * Each option leads into the same ``POST /api/checkout`` every other
- * purchase on the platform uses — the one that creates the Stripe
- * session, records the transaction, grants whatever the option's
- * grants say, and brings the buyer into the Collective. Deliberately
- * not ``/checkout/member``, which is a prototype that takes no money
- * and grants nothing.
+ * Each option renders the same schedule choices the Gathering Series
+ * sidebar shows, through the same components, into the same
+ * ``POST /api/checkout``. The joining door is another entry point into
+ * an existing purchase, not a second commerce flow: buying a term here
+ * grants exactly what that Payment Option grants, and brings the buyer
+ * into the Collective on the way.
  *
- * Buying here is not a separate "membership purchase". It is the
- * ordinary purchase of a term, a pathway or a pass, which happens to
- * be the door: one payment, one fulfilment, membership and access
- * together.
+ * Prices come from the Option's published, checkoutable schedules —
+ * never from its ``override_total_cents`` / ``calculated_total_cents``,
+ * which are authoring fields and are routinely empty on real Options.
+ * The first version of this file read those and showed "No price set"
+ * on three perfectly healthy $180–$378 options.
  */
 
-function formatPrice(cents: number | null, currency: string): string | null {
-  if (cents == null) return null
-  if (cents === 0) return 'Free'
-  return `$${(cents / 100).toLocaleString('en-AU', {
-    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
-    maximumFractionDigits: 2,
-  })} ${currency}`
+function priceSummary(option: JoiningOption): string | null {
+  const buyable = (option.schedules ?? []).filter((s) => s.is_member_checkoutable)
+  if (buyable.length === 0) return null
+  return buyable.map(scheduleShortDescription).filter(Boolean).join(' or ')
 }
 
 export default function JoiningDoors({
   slug,
   options,
   isLoggedIn,
+  isMember = false,
+  palette = null,
 }: {
   slug: string
   options: JoiningOption[]
   isLoggedIn: boolean
+  /** A member reaching this page should not be told to join again;
+   *  the same options remain purchasable to them. */
+  isMember?: boolean
+  palette?: CollectivePaletteMeta | null
 }) {
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
   // No doors is a real answer, never a reason to fall back to a free
   // join. The creator has either not nominated an option yet or has
   // unpublished the ones they had; a visitor should be told plainly
@@ -60,93 +62,92 @@ export default function JoiningDoors({
     )
   }
 
+  const returnBase = `/spaces/${slug}/about`
+
+  // Signed out: show the real commitment before asking for an
+  // account. Sending someone to a login screen that promised "join"
+  // and then revealing a price is the wrong order to learn it in.
   if (!isLoggedIn) {
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
+        <p className="text-[13px] leading-relaxed text-black">
+          Membership comes with your first purchase — there is no separate
+          joining step.
+        </p>
+        <ul className="space-y-2 p-0">
+          {options.map((option) => {
+            const summary = priceSummary(option)
+            return (
+              <li
+                key={option.id}
+                className="rounded-xl border border-slate-200 px-3.5 py-2.5"
+              >
+                <p className="text-[13px] font-semibold text-navy-900">
+                  {option.name}
+                </p>
+                {summary && (
+                  <p className="mt-0.5 text-[12.5px] text-black">{summary}</p>
+                )}
+              </li>
+            )
+          })}
+        </ul>
         <Link
           href={`/login?next=/spaces/${slug}/about`}
           className="rounded-xl px-4 py-2.5 text-center text-[13px] font-semibold text-white"
           style={{ background: 'var(--fc-accent, #38A09E)' }}
         >
-          Sign in to join
+          Sign in to continue
         </Link>
-        <p className="text-center text-[12px] text-black">
-          Membership comes with your first purchase.
-        </p>
       </div>
     )
   }
 
-  async function startCheckout(optionId: string) {
-    setBusyId(optionId)
-    setError(null)
-    try {
-      const base = `${window.location.origin}/spaces/${slug}/about`
-      const res = await fetch(apiUrl('/api/checkout'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          payment_option_id: optionId,
-          success_url: `${base}?checkout=success`,
-          cancel_url: `${base}?checkout=cancel`,
-        }),
-      })
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(
-          typeof body.detail === 'string'
-            ? body.detail
-            : `Could not start checkout (${res.status})`,
-        )
-      }
-      const data = (await res.json()) as { checkout_url: string }
-      window.location.href = data.checkout_url
-    } catch (err) {
-      setError(String((err as Error)?.message ?? err))
-      setBusyId(null)
-    }
-  }
-
   return (
-    <div className="flex flex-col gap-2">
-      {options.map((option) => {
-        const price = formatPrice(option.price_cents, option.currency)
-        return (
-          <button
-            key={option.id}
-            type="button"
-            disabled={busyId !== null}
-            onClick={() => void startCheckout(option.id)}
-            className="flex w-full flex-col items-stretch gap-0.5 rounded-xl px-4 py-2.5 text-left transition-opacity hover:opacity-90 disabled:opacity-60"
-            style={{ background: 'var(--fc-accent, #38A09E)' }}
-          >
-            <span className="flex items-center justify-between gap-3">
-              <span className="text-[13px] font-semibold text-white">
-                {busyId === option.id ? 'Starting…' : option.name}
-              </span>
-              {price && (
-                <span className="shrink-0 text-[13px] font-semibold text-white">
-                  {price}
-                </span>
-              )}
-            </span>
-            {option.buyer_note && (
-              <span className="text-[11.5px] leading-snug text-white/85">
-                {option.buyer_note}
-              </span>
-            )}
-          </button>
-        )
-      })}
-      <p className="text-center text-[12px] text-black">
-        Joining happens with your purchase — no separate step.
-      </p>
-      {error && (
-        <p className="rounded-md bg-red-50 px-2 py-1 text-center text-[11px] text-red-700">
-          {error}
+    <div className="flex flex-col gap-4">
+      {!isMember && (
+        <p className="text-[13px] leading-relaxed text-black">
+          Membership comes with your purchase — there is no separate joining
+          step.
         </p>
       )}
+      {options.map((option) => {
+        const buyable = (option.schedules ?? []).filter(
+          (s) => s.is_member_checkoutable,
+        )
+        if (buyable.length === 0) return null
+        return (
+          <div key={option.id}>
+            <p className="text-[13.5px] font-semibold text-navy-900">
+              {option.name}
+            </p>
+            {option.buyer_note && (
+              <p className="mt-0.5 text-[12.5px] leading-snug text-black">
+                {option.buyer_note}
+              </p>
+            )}
+            <div className="mt-3 space-y-3">
+              {buyable.map((schedule, i) => (
+                <ScheduleChoice
+                  key={schedule.id}
+                  optionName={option.name}
+                  schedule={schedule}
+                  paymentOptionId={option.id}
+                  returnBase={returnBase}
+                  palette={palette}
+                  withDivider={i > 0}
+                  // A member is buying, not joining — they are already in.
+                  ctaLabel={isMember
+                    ? (schedule.schedule_type === 'recurring_installments'
+                        ? `Start payment plan · ${option.name}`
+                        : `Purchase ${option.name}`)
+                    : undefined}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

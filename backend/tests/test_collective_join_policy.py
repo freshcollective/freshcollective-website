@@ -51,6 +51,21 @@ def membership(db, space, user):
     )
 
 
+def add_pay_in_full(db, option, cents=45000):
+    """A published pay-in-full schedule — what makes an Option
+    genuinely purchasable. An Option without one cannot complete
+    checkout, so the joining doors withhold it."""
+    from app.models.payment_option_schedule import PaymentOptionSchedule
+    sched = PaymentOptionSchedule(
+        id=str(uuid.uuid4()), payment_option_id=option.id,
+        name="Pay in full", schedule_type="pay_in_full", status="published",
+        total_amount_cents=cents, currency="AUD", position=0,
+    )
+    db.add(sched)
+    db.flush()
+    return sched
+
+
 def make_option(db, space, **over):
     opt = PaymentOption(
         id=f"po_{uuid.uuid4().hex[:16]}",
@@ -327,10 +342,19 @@ class TestPurchaseMembership:
 class TestJoiningDoors:
     def test_a_nominated_published_option_is_offered(self, db, make_space):
         space = make_space(is_public=True, join_policy="purchase_required")
-        make_option(db, space, is_joining_option=True, name="Term 4 — 2x week")
+        opt = make_option(db, space, is_joining_option=True, name="Term 4 — 2x week")
+        add_pay_in_full(db, opt)
         doors = list_joining_doors(db, space)
         assert [d["name"] for d in doors] == ["Term 4 — 2x week"]
         assert doors[0]["price_cents"] == 45000
+
+    def test_an_option_that_cannot_complete_checkout_is_withheld(self, db, make_space):
+        """Nominated and published, but with no published schedule —
+        the checkout endpoint requires one, so the button could only
+        fail. Better to show no door than a broken one."""
+        space = make_space(is_public=True, join_policy="purchase_required")
+        make_option(db, space, is_joining_option=True, name="Unpriced")
+        assert list_joining_doors(db, space) == []
 
     def test_an_option_the_creator_did_not_nominate_is_not_a_door(self, db, make_space):
         """A Collective sells many things; only some are ways in."""
@@ -397,7 +421,8 @@ class TestTheSpacePayload:
         self, client, db, make_space,
     ):
         space = make_space(is_public=True, join_policy="purchase_required")
-        make_option(db, space, is_joining_option=True, name="Term 4")
+        opt = make_option(db, space, is_joining_option=True, name="Term 4")
+        add_pay_in_full(db, opt)
         db.flush()
         app.dependency_overrides[get_optional_user] = lambda: None
         body = client.get(f"/api/spaces/{space.slug}").json()

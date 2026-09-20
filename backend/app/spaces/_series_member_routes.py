@@ -69,6 +69,7 @@ from app.creator.schemas import AboutBlockResponse
 from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.payment_option import PaymentOption
 from app.models.payment_option_grant import PaymentOptionGrant
+from app.spaces.purchase_schedule_view import schedule_view
 from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     BookingStatus,
@@ -822,23 +823,11 @@ def list_member_series_payment_options(
             allowance_per_week=allowance_per_week,
             allowance_total=allowance_total,
             included_titles=po.included_titles,
+            # Shared projection — the Collective joining doors render
+            # the same shape with the same client component, so the
+            # two surfaces cannot drift on what a price means.
             schedules=[
-                MemberPaymentOptionScheduleOut(
-                    id=s.id,
-                    name=s.name,
-                    schedule_type=s.schedule_type,
-                    total_amount_cents=s.total_amount_cents or 0,
-                    installment_amount_cents=s.installment_amount_cents,
-                    installment_count=s.installment_count,
-                    # Prefer human ``interval`` when set; fall back to
-                    # ``stripe_interval`` so the frontend's
-                    # ``humanCadence`` helper produces "weekly" /
-                    # "fortnightly" / "monthly" rather than the generic
-                    # "recurring" fallback.
-                    interval=s.interval or s.stripe_interval,
-                    currency=s.currency or "AUD",
-                    is_member_checkoutable=_schedule_is_member_checkoutable(s, po.option),
-                )
+                MemberPaymentOptionScheduleOut(**schedule_view(s, po.option))
                 for s in po.schedules
             ],
             viewer_holds_this_option=po.option.id in held_option_ids,
