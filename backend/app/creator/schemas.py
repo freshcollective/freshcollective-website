@@ -98,6 +98,11 @@ class SpaceUpdateRequest(BaseModel):
     guidance_focus_body: str | None = None
     guidance_links_title: str | None = None
     guidance_links_body: str | None = None
+    # Member directory. A member-experience decision, deliberately not
+    # in the auto-managed lock list with access and pricing: World
+    # Builders gets to answer "can members see each other" for itself
+    # like every other Collective.
+    show_member_directory: bool | None = None
     # Place & Feel — Discovery pillar. See
     # docs/foundations/discovery-connection-belonging-location-model.md.
     # connection_style is one of 'online' | 'in_person' | 'both';
@@ -193,6 +198,9 @@ class SpaceDetail(BaseModel):
     guidance_focus_body: str | None = None
     guidance_links_title: str | None = None
     guidance_links_body: str | None = None
+    # Whether learners can see each other. Read here so the Collective
+    # Home settings tab can render the toggle without a second fetch.
+    show_member_directory: bool = False
     # Atlas v1.2 identity fields — Location provides artwork, Colour Palette
     # drives the collective's visual interface, atmosphere + identity + welcome
     # personalise the experience. Legacy collectives (created before v1.2)

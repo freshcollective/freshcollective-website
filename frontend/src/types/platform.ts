@@ -723,6 +723,10 @@ export interface CreatorSpaceDetail extends GuidancePanel {
   included_access_summary: string | null
   paid_content_summary: string | null
   derived_has_paid_internal_content: boolean
+  /** Whether learners can see each other. Edited on the Collective
+   *  Home settings tab; enforced server-side for the Members tile,
+   *  the Members nav tab, the directory itself and Recognition. */
+  show_member_directory: boolean
   // Atlas v1.2 identity fields — hydrated by the creator space detail response.
   location_id?: string | null
   location?: {

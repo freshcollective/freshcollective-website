@@ -16,10 +16,9 @@ import {
 /**
  * Collective Home editor — tile order, visibility, imagery and copy.
  *
- * Lives in the Member Hub tab of Collective Settings, whose helper
- * text already reads "Choose what members see when they enter this
- * collective". That was the least surprising place for it; no new
- * settings area was invented.
+ * Lives in the Collective Home tab of Collective Settings, below the
+ * member-directory setting that decides whether a Members tile may be
+ * offered at all. No new settings area was invented for it.
  *
  * Ordering uses the ↑ / ↓ buttons the platform already uses in the
  * Offer Page editor and the pathway Step list. Drag-and-drop would be
@@ -43,6 +42,11 @@ interface TileState {
 
 interface Props {
   slug: string
+  /** Bumped by the settings tab when the member-directory setting
+   *  saves. Refetching is how the Members row appears or disappears
+   *  without a page reload — the server owns which tiles may be
+   *  offered, so the client asks again rather than guessing. */
+  reloadKey?: number
 }
 
 /** Stored rows first in their saved order, then every remaining tile
@@ -69,7 +73,7 @@ function seedRows(
   ]
 }
 
-export default function CollectiveHomeForm({ slug }: Props) {
+export default function CollectiveHomeForm({ slug, reloadKey = 0 }: Props) {
   const [tiles, setTiles] = useState<TileState[]>([])
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -95,7 +99,14 @@ export default function CollectiveHomeForm({ slug }: Props) {
           available_keys: TileKey[]
         }
         if (cancelled) return
-        setTiles(seedRows(data.available_keys, data.home_config?.tiles ?? []))
+        // Re-seed from whatever is on screen rather than from storage,
+        // so unsaved edits survive a directory toggle; only the set of
+        // permitted tiles changes under them. First load has nothing on
+        // screen yet and falls back to the stored configuration.
+        setTiles((prev) => seedRows(
+          data.available_keys,
+          prev.length > 0 ? prev : (data.home_config?.tiles ?? []),
+        ))
       } catch {
         if (!cancelled) {
           setTiles(seedRows(DEFAULT_TILE_ORDER, []))
@@ -106,7 +117,7 @@ export default function CollectiveHomeForm({ slug }: Props) {
       }
     })()
     return () => { cancelled = true }
-  }, [slug])
+  }, [slug, reloadKey])
 
   const move = useCallback((index: number, delta: number) => {
     setTiles((prev) => {

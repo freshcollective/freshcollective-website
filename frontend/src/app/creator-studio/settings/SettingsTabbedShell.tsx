@@ -6,10 +6,9 @@ import type { BuildYourCollectiveOptions } from '@/lib/build-your-collective/typ
 import type { CreatorSpaceDetail } from '@/types/platform'
 import CollectiveHomePanelSafe from '../assets/CollectiveHomePanelSafe'
 import CollectiveSettingsForm from './CollectiveSettingsForm'
+import CollectiveHomeTab from './CollectiveHomeTab'
 import DangerZone from './DangerZone'
-import GuidancePanelForm from './GuidancePanelForm'
 import OperatingDetailsForm from './OperatingDetailsForm'
-import CollectiveHomeForm from './CollectiveHomeForm'
 
 export type SettingsTab = 'place' | 'details' | 'visibility' | 'pricing' | 'about' | 'members'
 
@@ -21,7 +20,11 @@ const TAB_ORDER: { key: SettingsTab; label: string; helper?: string }[] = [
   { key: 'visibility', label: 'Visibility',   helper: 'Who can find and join this collective.' },
   { key: 'pricing',    label: 'Pricing',      helper: 'What people will understand about the cost before joining.' },
   { key: 'about',      label: 'About Page',   helper: 'This is the public page people see before joining your collective. Use it to explain what the collective is, who it is for and what people can expect.' },
-  { key: 'members',    label: 'Member Hub',   helper: 'Choose what members see when they enter this collective.' },
+  // Key stays ``members``: no page links to ``?tab=members``, so a
+  // rename would buy nothing and cost every bookmark. Only the label
+  // was wrong — the tab is about the Home a member arrives on, not the
+  // sidebar panel the old name pointed at.
+  { key: 'members',    label: 'Collective Home', helper: 'What members arrive on, and what they can reach from here.' },
 ]
 
 function isValidTab(v: string | null): v is SettingsTab {
@@ -49,7 +52,8 @@ interface Props {
  *  - Details / Visibility / Pricing / About: routed through the single
  *    ``CollectiveSettingsForm`` (kept mounted so in-flight state
  *    survives tab switches).
- *  - Member Hub: ``GuidancePanelForm`` renders here with its own save.
+ *  - Collective Home: ``CollectiveHomeTab`` — member directory, Home
+ *    tiles and sidebar guidance, each with its own save.
  *  - Artwork: ``CollectiveHomePanel`` (presentational — links out to
  *    the collective builder for actual editing).
  */
@@ -151,16 +155,10 @@ export default function SettingsTabbedShell({
         </div>
       )}
 
-      {/* Member Hub tab — GuidancePanelForm with its own save flow. */}
-      {tab === 'members' && (
-        <div className="space-y-8">
-          {/* The Home editor sits above the guidance panel because it
-              decides what a member meets first; the guidance panel
-              refines what they read once inside. */}
-          <CollectiveHomeForm slug={spaceDetail.slug} />
-          <GuidancePanelForm space={spaceDetail} />
-        </div>
-      )}
+      {/* Collective Home tab — directory, Home tiles, sidebar
+          guidance. Each section saves itself; see CollectiveHomeTab
+          for why they are in that order. */}
+      {tab === 'members' && <CollectiveHomeTab space={spaceDetail} />}
 
       {/* Main settings form — kept mounted so in-flight field state
           survives tab switches. Internally conditional on `tab` prop. */}

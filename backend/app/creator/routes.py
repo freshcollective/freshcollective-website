@@ -1467,6 +1467,12 @@ def update_space(
         space.guidance_links_title = body.guidance_links_title.strip() or None
     if body.guidance_links_body is not None:
         space.guidance_links_body = body.guidance_links_body.strip() or None
+    if body.show_member_directory is not None:
+        # Privacy, so it is written here and nowhere else. The Home
+        # configuration deliberately cannot reach this field — see
+        # app/spaces/home_config.resolve, which drops the Members tile
+        # whatever the stored configuration says.
+        space.show_member_directory = body.show_member_directory
 
     # ---- Place & Feel — Discovery pillar ------------------------------
     # Resolve and link the Geographic Location on save (drafts

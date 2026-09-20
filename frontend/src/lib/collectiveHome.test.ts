@@ -400,9 +400,11 @@ describe('the Home editor', () => {
   const read = (p: string) => readFileSync(join(SRC, p), 'utf8')
   const form = () => read('app/creator-studio/settings/CollectiveHomeForm.tsx')
 
-  test('it lives in Creator Studio settings, beside the other member-hub controls', () => {
+  test('it lives on the Collective Home settings tab', () => {
     const shell = read('app/creator-studio/settings/SettingsTabbedShell.tsx')
-    assert.ok(shell.includes('<CollectiveHomeForm'))
+    assert.ok(shell.includes('<CollectiveHomeTab'))
+    const tab = read('app/creator-studio/settings/CollectiveHomeTab.tsx')
+    assert.ok(tab.includes('<CollectiveHomeForm'))
   })
 
   test('ordering uses the existing move up / move down pattern', () => {
@@ -516,5 +518,173 @@ describe('the tab bar and the Home agree', () => {
   test('a caller that has not loaded the Space keeps the old behaviour', () => {
     const nav = read('components/spaces/SpaceNav.tsx')
     assert.ok(nav.includes('showMemberDirectory = true'), 'defaults to showing the tab')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The Collective Home settings tab
+// ---------------------------------------------------------------------------
+
+describe('the settings tab says what it is', () => {
+  const read = (p: string) => readFileSync(join(SRC, p), 'utf8')
+  const shell = () => read('app/creator-studio/settings/SettingsTabbedShell.tsx')
+
+  test('the tab is called Collective Home', () => {
+    const src = shell()
+    assert.match(src, /label: 'Collective Home'/)
+    assert.ok(!/label: 'Member Hub'/.test(src))
+  })
+
+  test('the URL key is untouched, so existing links keep working', () => {
+    // Renaming the key would have been churn for nothing: no page in
+    // the app links to ?tab=members.
+    const src = shell()
+    assert.match(src, /key: 'members'/)
+    assert.ok(src.includes("v === 'members'"), 'still a valid tab param')
+  })
+
+  test('the tab renders the three sections in arrival order', () => {
+    const tab = read('app/creator-studio/settings/CollectiveHomeTab.tsx')
+    const order = ['MemberDirectoryForm', 'CollectiveHomeForm', 'GuidancePanelForm']
+      .map((c) => tab.indexOf(`<${c}`))
+    assert.ok(order.every((i) => i > 0), 'all three render')
+    assert.deepEqual([...order].sort((a, b) => a - b), order, 'directory → tiles → sidebar')
+  })
+
+  test('"Member Hub" survives only where it names the member-side renderer', () => {
+    // The phrase still means something real — the Important panel —
+    // so it stays there. What it must not do is name a Creator Studio
+    // tab that no longer carries it.
+    for (const f of [
+      'app/creator-studio/settings/SettingsTabbedShell.tsx',
+      'app/creator-studio/settings/CollectiveHomeForm.tsx',
+    ]) {
+      assert.ok(!read(f).includes('Member Hub'), f)
+    }
+    assert.ok(read('components/spaces/ImportantPanel.tsx').includes('Member Hub'))
+  })
+})
+
+describe('the member directory control', () => {
+  const read = (p: string) => readFileSync(join(SRC, p), 'utf8')
+  const form = () => read('app/creator-studio/settings/MemberDirectoryForm.tsx')
+
+  test('it saves through the Space endpoint, not the Home configuration', () => {
+    // Privacy belongs to the Space. Routing it through home-config
+    // would put a privacy rule inside a layout document.
+    const src = form()
+    assert.match(src, /method: 'PATCH'/)
+    assert.match(src, /\/api\/creator\/spaces\/\$\{space\.slug\}`\)/)
+    assert.ok(!src.includes('home-config'))
+    assert.match(src, /show_member_directory: next/)
+  })
+
+  test('it is a real switch, not a styled div', () => {
+    assert.ok(form().includes('<Switch'))
+  })
+
+  test('the copy names every consequence a creator cannot otherwise see', () => {
+    const src = form()
+    for (const [what, pattern] of [
+      ['navigation', /navigation/i],
+      ['the Home tile', /Members tile/i],
+      ['who members can see', /see the other people here/i],
+      ['Recognition', /recognise people as sharing/i],
+    ] as const) {
+      assert.match(src, pattern, `copy should mention ${what}`)
+    }
+  })
+
+  test('a failed save rolls the switch back', () => {
+    // A privacy control must never sit in a state the server has not
+    // agreed to.
+    assert.match(form(), /catch \{\s*setEnabled\(!next\)/)
+  })
+
+  test('saving tells the Home editor to refetch', () => {
+    assert.ok(form().includes('onSaved?.(next)'))
+    const tab = read('app/creator-studio/settings/CollectiveHomeTab.tsx')
+    assert.ok(tab.includes('setDirectoryVersion'))
+    assert.ok(tab.includes('reloadKey={directoryVersion}'))
+  })
+
+  test('the Home editor reloads on that signal and keeps unsaved edits', () => {
+    const src = read('app/creator-studio/settings/CollectiveHomeForm.tsx')
+    assert.ok(src.includes('}, [slug, reloadKey])'), 'refetches when the key changes')
+    assert.ok(src.includes('prev.length > 0 ? prev :'), 'reseeds from what is on screen')
+  })
+
+  test('the editor asks the server which tiles it may offer', () => {
+    // Not a client-side branch on show_member_directory: one rule,
+    // one owner.
+    const src = read('app/creator-studio/settings/CollectiveHomeForm.tsx')
+    assert.ok(src.includes('available_keys'))
+    assert.ok(!src.includes('show_member_directory'))
+  })
+})
+
+describe('sidebar guidance', () => {
+  const read = (p: string) => readFileSync(join(SRC, p), 'utf8')
+  const form = () => read('app/creator-studio/settings/GuidancePanelForm.tsx')
+
+  test('it is named for where it appears', () => {
+    const src = form()
+    assert.match(src, /Sidebar guidance/)
+    assert.match(src, /Conversations,\s*\n?\s*Gatherings and Pathways/)
+    assert.match(src, /does not appear on the Collective Home/)
+  })
+
+  test('Welcome and Notes are still editable', () => {
+    const src = form()
+    assert.ok(src.includes("bodyKey: 'guidance_start_body'"))
+    assert.ok(src.includes("bodyKey: 'guidance_links_body'"))
+    assert.ok(src.includes('<SimpleRichTextEditor'))
+  })
+
+  test('the dead This week editor is gone', () => {
+    // The phrase survives in the note explaining why the column
+    // stays; what must not survive is a field a creator can type into.
+    const src = form()
+    assert.ok(!/label: 'This week'/.test(src), 'no section')
+    assert.ok(!src.includes('autoPopulated'), 'not even a disabled one')
+    assert.ok(!/bodyKey: 'guidance_focus_body'/.test(src), 'no editor bound to it')
+  })
+
+  test('the retired columns are never sent, so their contents survive', () => {
+    // The endpoint applies only the fields it receives. Omission is
+    // the preservation mechanism.
+    const src = form()
+    // Anchored to the end of the line: a third member added to the
+    // union is exactly how a retired column creeps back in.
+    assert.match(src, /^type BodyKey = 'guidance_start_body' \| 'guidance_links_body'$/m)
+    for (const retired of [
+      'guidance_focus_body', 'guidance_focus_title',
+      'guidance_start_title', 'guidance_links_title',
+    ]) {
+      // Named once in the preservation note, never as a form field.
+      const asField = new RegExp(`${retired}:\\s*space\\.`)
+      assert.ok(!asField.test(src), `${retired} is still read into form state`)
+    }
+    assert.ok(src.includes('PRESERVED_UNUSED_COLUMNS'), 'and the reason is written down')
+  })
+})
+
+describe('the member-side sidebar', () => {
+  const panel = () => readFileSync(join(SRC, 'components/spaces/ImportantPanel.tsx'), 'utf8')
+
+  test('empty Notes is omitted rather than announced', () => {
+    const src = panel()
+    assert.ok(src.includes('notesHasContent'))
+    assert.match(src, /\.\.\.\(notesHasContent/)
+  })
+
+  test('Welcome keeps its empty state', () => {
+    // Its absence would read as a fault; Notes is plainly optional.
+    assert.ok(panel().includes('Nothing added yet.'))
+    assert.match(panel(), /\{ title: 'Welcome',\s+body: welcomeBody, authorable: true\s+\}/)
+  })
+
+  test('This week is still driven by live Gatherings, not by stored text', () => {
+    assert.match(panel(), /\{ title: 'This week', body: null, override: focusOverride/)
   })
 })

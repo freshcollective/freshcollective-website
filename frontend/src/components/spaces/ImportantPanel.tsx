@@ -212,10 +212,23 @@ export function ImportantPanelContent({
   focusOverride,
   className,
 }: ContentProps) {
+  const notesDoc = tryParseDoc(notesBody ?? null)
+  const notesHasContent = notesDoc ? docHasContent(notesDoc) : !!notesBody?.trim()
+
   const sections: SectionConfig[] = [
     { title: 'Welcome',   body: welcomeBody, authorable: true  },
+    // "This week" is never creator-authored — it is a live list of the
+    // next seven days' Gatherings, passed in as ``focusOverride``. The
+    // ``guidance_focus_body`` column still exists and still holds text
+    // on at least one Collective; nothing reads it, deliberately.
     { title: 'This week', body: null, override: focusOverride, authorable: false },
-    { title: 'Notes',     body: notesBody,   authorable: true  },
+    // Notes is dropped entirely when empty rather than printing
+    // "Nothing added yet." under a heading. Welcome keeps its empty
+    // state: it is the section a member expects to find, so its
+    // absence would read as a fault rather than a choice.
+    ...(notesHasContent
+      ? [{ title: 'Notes', body: notesBody, authorable: true } as SectionConfig]
+      : []),
   ]
 
   return (
