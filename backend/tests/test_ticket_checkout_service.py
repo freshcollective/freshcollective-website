@@ -477,9 +477,20 @@ class TestAccessScope:
         assert [r[0] for r in rows] == [space_owner_event.id]
         assert other_event.id not in [r[0] for r in rows]
 
-    def test_pass_does_not_create_space_membership(
+    def test_pass_creates_space_membership(
         self, db, make_event, make_user,
     ):
+        """Buying a seat brings the buyer into the Collective.
+
+        This test previously asserted the opposite. The standalone
+        ticket path was the one purchase on the platform that left its
+        buyer a non-member, which a purchase-required Collective would
+        experience as selling a Gathering to someone who then could not
+        enter it. What this class actually guards — that a ticket
+        grants nothing *else* — is unchanged and still covered by the
+        sibling tests: one AccessPassEvent row, no pathway entitlement,
+        no access to other Gatherings.
+        """
         event = make_event()
         buyer = make_user()
         offer = gt.load_and_validate_offer(db, event.space.slug, event.id)
@@ -491,10 +502,13 @@ class TestAccessScope:
             payer_user_id=buyer.id, stripe_amount_total=2500, stripe_currency="AUD",
             stripe_payment_intent_id="pi", stripe_charge_id=None,
         )
-        n = db.execute(text(
-            "SELECT COUNT(*) FROM space_memberships WHERE user_id=:u AND space_id=:s"
-        ), {"u": buyer.id, "s": event.space.id}).scalar_one()
-        assert n == 0
+        row = db.execute(text(
+            "SELECT status, source FROM space_memberships "
+            "WHERE user_id=:u AND space_id=:s"
+        ), {"u": buyer.id, "s": event.space.id}).all()
+        assert len(row) == 1, "exactly one membership row, never a duplicate"
+        assert row[0][0] == "active"
+        assert row[0][1] == "ticket_purchase", "provenance records how they arrived"
 
     def test_pass_does_not_grant_pathway_entitlement(
         self, db, make_event, make_user,

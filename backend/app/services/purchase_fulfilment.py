@@ -99,6 +99,7 @@ from app.models.platform import (
     SpaceMembership,
 )
 from app.services import access_grant_records as _agr
+from app.services import membership_grant as _membership_grant
 
 
 logger = logging.getLogger(__name__)
@@ -912,32 +913,29 @@ def _auto_join_membership(
     space_id: str,
     now: datetime,
 ) -> bool:
-    """Create a ``learner`` ``SpaceMembership`` if the buyer isn't
-    already a member. Returns ``True`` when a row was created."""
-    existing = (
-        db.query(SpaceMembership)
-        .filter(
-            SpaceMembership.space_id == space_id,
-            SpaceMembership.user_id == payer_user_id,
-        )
-        .first()
-    )
-    if existing:
-        return False
-    db.add(SpaceMembership(
-        id=str(uuid4()),
-        space_id=space_id,
+    """Make the buyer a member. Returns ``True`` when the membership
+    changed (created or reactivated).
+
+    Delegates to ``services.membership_grant`` so the standalone
+    Gathering-ticket path — which fulfils outside this module — reaches
+    the same answer. The behaviour change from the original inline
+    version is reactivation: a ``removed`` row whose ``source`` shows
+    the person joined or bought their own way in is restored rather
+    than silently leaving a paying buyer outside the Collective they
+    just paid to enter.
+    """
+    outcome = _membership_grant.ensure_membership_for_purchase(
+        db,
         user_id=payer_user_id,
-        role="learner",
-        status="active",
-        source="purchase",
-        joined_at=now,
-    ))
-    logger.info(
-        "purchase_fulfilment: auto-joined user=%s as learner in space=%s",
-        payer_user_id, space_id,
+        space_id=space_id,
+        now=now,
     )
-    return True
+    if outcome.skipped_reason:
+        logger.info(
+            "purchase_fulfilment: membership unchanged user=%s space=%s reason=%s",
+            payer_user_id, space_id, outcome.skipped_reason,
+        )
+    return outcome.changed
 
 
 def _apply_access_pass(

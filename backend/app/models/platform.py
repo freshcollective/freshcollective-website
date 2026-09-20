@@ -309,6 +309,12 @@ class Space(Base):
     guidance_focus_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     guidance_links_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     guidance_links_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # How people get in. 'open' (default, and what every Collective
+    # did before migration 136) or 'purchase_required'. See
+    # app/spaces/join_policy.py — free joining stays first-class.
+    join_policy: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="open", server_default="open"
+    )
     # Member directory — False (default): learners see count only; True: all members visible
     show_member_directory: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"

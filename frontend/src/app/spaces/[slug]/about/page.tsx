@@ -393,6 +393,8 @@ export default async function SpaceAboutPage({ params }: Props) {
                 canManage={canManage}
                 pricingType={space.pricing_type}
                 autoGrantRole={space.auto_grant_role ?? null}
+                joinPolicy={space.join_policy ?? 'open'}
+                joiningOptions={space.joining_options ?? []}
               />
             </div>
           </div>

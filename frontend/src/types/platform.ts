@@ -54,6 +54,12 @@ export interface SpaceResponse {
   show_member_directory: boolean
   /** Public attribution — who leads this Collective. */
   creator_name?: string | null
+  /** 'open' | 'purchase_required'. Free joining is the default. */
+  join_policy?: JoinPolicy
+  /** Published, creator-nominated ways in. Empty on an open
+   *  Collective, and empty on a purchase-required one whose creator
+   *  has nominated none — which means "closed", never "free". */
+  joining_options?: JoiningOption[]
   /** Authoritative counts injected by the ``get_space`` endpoint. Use
    *  these for sidebar/stats displays — do NOT derive counts from
    *  the ``/api/spaces/{slug}/members`` list, which is privacy-
@@ -985,6 +991,20 @@ export interface StepResource {
   position: number
   is_downloadable: boolean
   created_at: string
+}
+
+export type JoinPolicy = 'open' | 'purchase_required'
+
+export interface JoiningOption {
+  id: string
+  name: string
+  description: string | null
+  buyer_note: string | null
+  price_cents: number | null
+  currency: string
+  payment_type: string
+  term_start_date: string | null
+  term_end_date: string | null
 }
 
 export type PricingType = 'free' | 'paid_one_time' | 'paid_monthly' | 'paid_annual' | 'invite_only' | 'coming_soon'

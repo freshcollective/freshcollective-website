@@ -103,6 +103,9 @@ class SpaceUpdateRequest(BaseModel):
     # Builders gets to answer "can members see each other" for itself
     # like every other Collective.
     show_member_directory: bool | None = None
+    # 'open' | 'purchase_required'. Validated strictly in the route —
+    # an unknown value must not quietly widen or close a door.
+    join_policy: str | None = None
     # Place & Feel — Discovery pillar. See
     # docs/foundations/discovery-connection-belonging-location-model.md.
     # connection_style is one of 'online' | 'in_person' | 'both';
@@ -201,6 +204,7 @@ class SpaceDetail(BaseModel):
     # Whether learners can see each other. Read here so the Collective
     # Home settings tab can render the toggle without a second fetch.
     show_member_directory: bool = False
+    join_policy: str = "open"
     # Atlas v1.2 identity fields — Location provides artwork, Colour Palette
     # drives the collective's visual interface, atmosphere + identity + welcome
     # personalise the experience. Legacy collectives (created before v1.2)
@@ -2208,6 +2212,11 @@ class PaymentOptionUpdateRequest(BaseModel):
     buyer_note: str | None = None
     internal_note: str | None = None
     grants_pathway_id: str | None = None
+    # Offer this Option as a way into a purchase-required Collective.
+    # Nomination is allowed at any status; only published Options are
+    # ever presented to a visitor (see the public joining-doors
+    # projection), so a creator can prepare a door before opening it.
+    is_joining_option: bool | None = None
 
     @field_validator("payment_type")
     @classmethod
@@ -2228,6 +2237,7 @@ class PaymentOptionResponse(BaseModel):
     model_config = {"from_attributes": True}
     id: str
     space_id: str
+    is_joining_option: bool = False
     pathway_id: str | None
     # Polymorphic attachment (migration 105). Frontend reads these to
     # distinguish pathway-attached vs series-attached options.

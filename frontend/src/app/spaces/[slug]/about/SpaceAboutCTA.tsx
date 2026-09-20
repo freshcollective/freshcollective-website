@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiUrl } from '@/lib/api'
 import { isPaidPricingType } from '@/lib/pricing'
-import type { PricingType } from '@/types/platform'
+import JoiningDoors from './JoiningDoors'
+import type { JoinPolicy, JoiningOption, PricingType } from '@/types/platform'
 
 type CTAState = 'idle' | 'loading' | 'joined' | 'requested' | 'error'
 
@@ -21,6 +22,11 @@ interface Props {
   /** When set, membership is auto-managed by Fresh Collective. Non-members
    *  see a soft restricted state — no join button, no self-service CTA. */
   autoGrantRole?: string | null
+  /** 'open' keeps the free Join action exactly as it was. */
+  joinPolicy?: JoinPolicy
+  /** Published, creator-nominated doors. Only consulted when the
+   *  policy is purchase_required. */
+  joiningOptions?: JoiningOption[]
 }
 
 export default function SpaceAboutCTA({
@@ -33,6 +39,8 @@ export default function SpaceAboutCTA({
   canManage,
   pricingType,
   autoGrantRole,
+  joinPolicy = 'open',
+  joiningOptions = [],
 }: Props) {
   const router = useRouter()
   const [state, setState] = useState<CTAState>('idle')
@@ -150,6 +158,16 @@ export default function SpaceAboutCTA({
           Sign in to accept
         </Link>
       </div>
+    )
+  }
+
+  // Purchase-required: there is no free door. Checked before the
+  // pricing_type branches below because pricing_type is a display
+  // string, while this is the server-enforced policy — POST /join
+  // refuses regardless of what is rendered here.
+  if (joinPolicy === 'purchase_required') {
+    return (
+      <JoiningDoors slug={slug} options={joiningOptions} isLoggedIn={isLoggedIn} />
     )
   }
 

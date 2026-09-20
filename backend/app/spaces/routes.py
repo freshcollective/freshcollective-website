@@ -42,6 +42,8 @@ from app.models.platform import (
 )
 from app.models.user import User
 from app.spaces import home_config
+from app.spaces import join_policy
+from app.spaces import joining_doors
 from app.spaces.schemas import (
     AccessRequestOut,
     CompleteStepRequest,
@@ -988,6 +990,8 @@ def get_space(
     resp = SpaceResponse.model_validate(space)
     return resp.model_copy(update={
         "creator_name": creator_name,
+        "join_policy": join_policy.resolve(space.join_policy),
+        "joining_options": joining_doors.list_joining_doors(db, space),
         "home_tiles": home_config.resolve(
             space.home_config,
             show_member_directory=space.show_member_directory,
@@ -1091,6 +1095,22 @@ def join_space(
     if not space.is_public:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="This collective is private. Request access instead.")
+
+    # Purchase-required Collectives have no free door. Enforced here
+    # rather than by hiding the button: the endpoint is the boundary,
+    # and a hidden button is a suggestion. The code is stable so the
+    # client can branch on it without reading the sentence.
+    if not join_policy.allows_free_join(space.join_policy):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": join_policy.REASON_PURCHASE_REQUIRED,
+                "message": (
+                    "Membership of this collective comes with a purchase. "
+                    "Choose an option to join."
+                ),
+            },
+        )
 
     existing = (
         db.query(SpaceMembership)

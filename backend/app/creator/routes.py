@@ -1467,6 +1467,14 @@ def update_space(
         space.guidance_links_title = body.guidance_links_title.strip() or None
     if body.guidance_links_body is not None:
         space.guidance_links_body = body.guidance_links_body.strip() or None
+    if body.join_policy is not None:
+        from app.spaces import join_policy as _join_policy
+        try:
+            space.join_policy = _join_policy.validate(body.join_policy)
+        except _join_policy.JoinPolicyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+            ) from exc
     if body.show_member_directory is not None:
         # Privacy, so it is written here and nowhere else. The Home
         # configuration deliberately cannot reach this field — see

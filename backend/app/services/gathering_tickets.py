@@ -62,6 +62,7 @@ from app.models.payment import (
 )
 from app.models.platform import BookingStatus, Event, EventBooking, Space
 from app.models.user import User
+from app.services import membership_grant as _membership_grant
 from app.services.ticket_pricing import (
     SUPPORTED_CURRENCIES,
     TicketPricingError,
@@ -467,8 +468,9 @@ def fulfil_ticket_purchase(
       5. Convert to confirmed; clear hold_expires_at.
       6. Insert the event_ticket AccessPass, source=one_time_purchase.
          Link back to the booking (booking.access_pass_id).
-      7. Mark the transaction succeeded; record payment_intent + charge.
-      8. Caller commits.
+      7. Create or reactivate the buyer's Collective membership.
+      8. Mark the transaction succeeded; record payment_intent + charge.
+      9. Caller commits.
 
     Any failure aborts the transaction without side effects (Postgres
     rolls back). The caller — the webhook — will then return non-2xx
@@ -577,7 +579,27 @@ def fulfil_ticket_purchase(
 
     booking.access_pass_id = access_pass.id
 
-    # 7. Mark transaction succeeded + record Stripe refs
+    # 7. Membership — buying a seat brings you into the Collective, the
+    # same as every other purchase. This path used to be the exception:
+    # it minted the booking and the pass and left the buyer a
+    # non-member, so a purchase-required Collective could sell a
+    # Gathering to someone who then could not enter. Same session, same
+    # transaction as the booking above — it lands or it doesn't,
+    # together with the seat it accompanies.
+    membership_outcome = _membership_grant.ensure_membership_for_purchase(
+        db,
+        user_id=payer_user_id,
+        space_id=txn_obj.space_id,
+        now=datetime.utcnow(),
+        source="ticket_purchase",
+    )
+    if membership_outcome.skipped_reason:
+        logger.info(
+            "gathering_tickets: membership unchanged user=%s space=%s reason=%s",
+            payer_user_id, txn_obj.space_id, membership_outcome.skipped_reason,
+        )
+
+    # 8. Mark transaction succeeded + record Stripe refs
     txn_obj.status = PaymentTransactionStatus.succeeded
     if stripe_payment_intent_id and not txn_obj.provider_payment_intent_id:
         txn_obj.provider_payment_intent_id = stripe_payment_intent_id

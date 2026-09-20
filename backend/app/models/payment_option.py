@@ -18,7 +18,7 @@ import enum
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Enum as SAEnum, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -105,6 +105,15 @@ class PaymentOption(Base):
     # Notes
     buyer_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     internal_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Offered as a way *into* a purchase-required Collective. Does not
+    # change what the Option grants — every purchase already creates
+    # membership — only whether a visitor is shown this Option as a
+    # door. Default False so flipping a Collective to
+    # purchase_required presents the doors its creator chose.
+    is_joining_option: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     position: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"

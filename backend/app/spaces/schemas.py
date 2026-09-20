@@ -100,6 +100,15 @@ class SpaceResponse(BaseModel):
     # public About page can print "Led by …" without reading the
     # member directory, which is member-only.
     creator_name: str | None = None
+    # 'open' | 'purchase_required'. Drives which call to action the
+    # public About page offers.
+    join_policy: str = "open"
+    # The Options a visitor may buy to get in, when the policy is
+    # purchase_required. Published + creator-nominated only; empty on
+    # an open Collective, and empty on a purchase-required one whose
+    # creator has not nominated any — which the About page must render
+    # as "not open right now", never as a free door.
+    joining_options: list[dict] = []
     home_tiles: list[dict] = []
     upcoming_gathering_count: int = 0
     next_gathering_starts_at: datetime | None = None

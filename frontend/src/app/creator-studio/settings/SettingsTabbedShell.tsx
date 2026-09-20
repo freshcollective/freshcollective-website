@@ -8,6 +8,7 @@ import CollectiveHomePanelSafe from '../assets/CollectiveHomePanelSafe'
 import CollectiveSettingsForm from './CollectiveSettingsForm'
 import CollectiveHomeTab from './CollectiveHomeTab'
 import DangerZone from './DangerZone'
+import JoinPolicyForm from './JoinPolicyForm'
 import OperatingDetailsForm from './OperatingDetailsForm'
 
 export type SettingsTab = 'place' | 'details' | 'visibility' | 'pricing' | 'about' | 'members'
@@ -17,7 +18,7 @@ const DEFAULT_TAB: SettingsTab = 'place'
 const TAB_ORDER: { key: SettingsTab; label: string; helper?: string }[] = [
   { key: 'place',      label: 'Place & Feel', helper: 'How do you want your place to feel? Island, atmosphere and colour palette.' },
   { key: 'details',    label: 'Details',      helper: 'The name, tagline, description and operating details that define this collective.' },
-  { key: 'visibility', label: 'Visibility',   helper: 'Who can find and join this collective.' },
+  { key: 'visibility', label: 'Access & Visibility', helper: 'Who can find this collective, and how they get in.' },
   { key: 'pricing',    label: 'Pricing',      helper: 'What people will understand about the cost before joining.' },
   { key: 'about',      label: 'About Page',   helper: 'This is the public page people see before joining your collective. Use it to explain what the collective is, who it is for and what people can expect.' },
   // Key stays ``members``: no page links to ``?tab=members``, so a
@@ -159,6 +160,17 @@ export default function SettingsTabbedShell({
           guidance. Each section saves itself; see CollectiveHomeTab
           for why they are in that order. */}
       {tab === 'members' && <CollectiveHomeTab space={spaceDetail} />}
+
+      {/* Access & Visibility — joining policy and its doors. Its own
+          save, because nominating doors writes to each Payment Option
+          while the policy writes to the Space; one button over two
+          endpoints could half-succeed. Auto-managed Collectives are
+          excluded: their membership is computed, not chosen. */}
+      {tab === 'visibility' && !spaceDetail.auto_grant_role && (
+        <div className="mb-5">
+          <JoinPolicyForm slug={spaceDetail.slug} />
+        </div>
+      )}
 
       {/* Main settings form — kept mounted so in-flight field state
           survives tab switches. Internally conditional on `tab` prop. */}
