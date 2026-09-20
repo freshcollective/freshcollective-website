@@ -51,6 +51,34 @@ wing detail separates — which is what `CHROME_MARK_PX` in
 `frontend/src/lib/brand.ts` is set to. Anything smaller wants a
 heavier-stroke mark drawn for the size, not a smaller copy of this one.
 
+## App icon — composed, not designed separately
+
+| File | Where | Role |
+|---|---|---|
+| `fresh-collective-app-icon.png` | here, 512px | `favicon_app_icon` |
+| `../../src/app/favicon.ico` | Next.js file convention, 16/32/48 | browser tab |
+| `../../src/app/icon.png` | Next.js file convention, 512px | modern browsers |
+| `../../src/app/apple-icon.png` | Next.js file convention, 180px | iOS home screen |
+
+All four come from one composition: the white dragonfly from
+`fresh-collective-mark-white-on-transparent.png` on the teal that
+`fresh-collective-logo-white-on-teal.png` already puts behind it, with
+6% margin and no wordmark. Generate with
+`cd backend && .venv/bin/python scripts/compose_app_icon.py`.
+
+The three files under `src/app/` exist because Next.js resolves icons
+from the filesystem at build time and cannot ask the database what the
+brand is. They are not a second design — a test regenerates and
+compares them against the same composition. An admin override of
+`favicon_app_icon` changes every runtime surface immediately and the
+browser tab at the next deploy.
+
+At 16px the hairline linework resolves to a soft winged silhouette
+rather than a readable dragonfly. That is the stroke's limit, not the
+composition's: teal was chosen over navy and 6% over 14% precisely
+because they hold up best there. Only a heavier-stroke redraw would do
+better, and that is a design decision rather than a build step.
+
 ## Superseded — unreferenced, safe to delete
 
 As of Phase B **nothing in the codebase names any of these**. Every

@@ -77,11 +77,17 @@ export default async function PublicHeader({
         className="absolute top-0 left-0 right-0 z-50 py-5"
         style={{ background: 'transparent' }}
       >
+        {/* With the brand suppressed the left slot is empty, so a nav
+            centred in "whatever space is left" drifts left by half the
+            width of the auth controls. Giving all three slots an equal
+            share makes the middle one a true third of the container,
+            which is centred on the page by construction — no measured
+            offset to keep in sync with the buttons beside it. */}
         <Container className="flex h-14 items-center justify-between gap-8">
 
           {brand
             ? <BrandLockup tone="dark" href="/" />
-            : <span className="shrink-0" aria-hidden="true" />}
+            : <span className="flex-1" aria-hidden="true" />}
 
           <nav aria-label="Main" className="hidden flex-1 items-center justify-center gap-8 md:flex">
             {centreNav.map(({ href, label }) => (
@@ -96,7 +102,11 @@ export default async function PublicHeader({
             ))}
           </nav>
 
-          <div className="hidden shrink-0 items-center gap-4 md:flex">
+          <div
+            className={`hidden items-center gap-4 md:flex ${
+              brand ? 'shrink-0' : 'flex-1 justify-end'
+            }`}
+          >
             {user ? (
               <>
                 {showYourWorldOnRight && (

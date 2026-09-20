@@ -51,16 +51,13 @@ PUBLIC_BASE = "/api/brand-assets"
 WITH_DEFAULT = [r for r in ROLE_ORDER if BRAND_ASSET_ROLES[r].default_path]
 WITHOUT_DEFAULT = [r for r in ROLE_ORDER if not BRAND_ASSET_ROLES[r].default_path]
 
-# Roles with no approved artwork yet. The compact marks were filled by
-# derivation from the approved lockups (see
-# ``scripts/derive_compact_marks.py``); what remains needs composition
-# rather than a logo — margins and a background for the app icon, a
-# landscape crop for the share card — and neither is made by resizing
-# something else. Spelled out rather than derived so that supplying one
+# Roles with no approved artwork yet. The compact marks were derived
+# from the approved lockups and the app icon composed from the compact
+# mark; what remains is the share card, which is a landscape
+# composition no square lockup can be resized into. Spelled out rather than derived so that supplying one
 # becomes a deliberate edit here, visible in review, instead of a
 # silent change in a list.
 EXPECTED_MISSING = [
-    "favicon_app_icon",
     "social_share_image",
 ]
 
@@ -214,8 +211,8 @@ class TestResolution:
     def test_reset_on_a_role_with_no_default_returns_it_to_missing(
         self, db, client,
     ):
-        role = "favicon_app_icon"
-        _upload(client, role, _png(512, 512), "icon.png", "image/png")
+        role = "social_share_image"
+        _upload(client, role, _jpeg(1200, 630), "card.jpg", "image/jpeg")
         assert resolve(db, role).source == SOURCE_CUSTOM
 
         assert client.delete(f"{ADMIN_BASE}/{role}").status_code == 200
@@ -653,7 +650,9 @@ class TestApprovedArtworkContent:
     def test_every_default_backed_role_is_content_verified(self):
         """No role may hold a bundled default that nothing checks —
         either by content here, or by derivation below."""
-        derived = {"compact_light_mark", "compact_dark_mark"}
+        derived = {
+            "compact_light_mark", "compact_dark_mark", "favicon_app_icon",
+        }
         assert set(APPROVED_CONTENT) | derived == {
             r for r in ROLE_ORDER if BRAND_ASSET_ROLES[r].default_path
         }
@@ -827,3 +826,146 @@ class TestCompactMarkDerivation:
             for role in ("compact_light_mark", "compact_dark_mark")
         )
         assert ImageChops.difference(a, b).getextrema()[1] == 0
+
+
+# ===========================================================================
+# 10. The app icon is composed from approved parts, and the browser
+#     tab shows the same thing
+# ===========================================================================
+
+
+APP_DIR = (
+    pathlib.Path(__file__).resolve().parent.parent.parent
+    / "frontend" / "src" / "app"
+)
+
+
+def _icon_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "compose_app_icon",
+        pathlib.Path(__file__).resolve().parent.parent
+        / "scripts" / "compose_app_icon.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestAppIcon:
+    def test_the_role_default_matches_a_fresh_composition(self):
+        from PIL import Image, ImageChops
+
+        module = _icon_module()
+        fresh = module.compose(module.ROLE_ASSET_PX)
+        committed = Image.open(
+            BRAND_DIR / BRAND_ASSET_ROLES["favicon_app_icon"]
+            .default_path.removeprefix("/brand/")
+        ).convert("RGBA")
+        assert committed.size == fresh.size
+        assert max(
+            hi for _lo, hi in ImageChops.difference(committed, fresh).getextrema()
+        ) == 0
+
+    def test_its_background_is_the_approved_teal(self):
+        """Not a teal chosen for the icon — the one the approved
+        white-on-teal lockup already puts behind this same dragonfly."""
+        from PIL import Image
+
+        approved = Image.open(
+            BRAND_DIR / "fresh-collective-logo-white-on-teal.png"
+        ).convert("RGB").load()[2, 2]
+        icon = Image.open(
+            BRAND_DIR / "fresh-collective-app-icon.png"
+        ).convert("RGB").load()[2, 2]
+        assert icon == approved == _icon_module().TEAL
+
+    def test_it_carries_no_wordmark(self):
+        from PIL import Image
+
+        img = Image.open(BRAND_DIR / "fresh-collective-app-icon.png").convert("RGB")
+        px = img.load()
+        for y in range(0, img.size[1], 3):
+            for x in range(0, img.size[0], 3):
+                r, g, b = px[x, y]
+                assert not (r > 140 and g > 105 and b < 130 and (r - b) > 50), (
+                    "the app icon contains wordmark gold"
+                )
+
+    def test_it_is_square_and_fully_opaque(self):
+        from PIL import Image
+
+        img = Image.open(BRAND_DIR / "fresh-collective-app-icon.png").convert("RGBA")
+        assert img.size[0] == img.size[1]
+        assert img.getchannel("A").getextrema() == (255, 255), (
+            "an app icon needs its own background — transparency would "
+            "show whatever the operating system puts behind it"
+        )
+
+    def test_the_static_next_icons_match_the_same_composition(self):
+        """Next.js reads these from disk at build time, so they cannot
+        ask the resolver what the brand is. They must at least be the
+        same composition rather than a second design."""
+        from PIL import Image, ImageChops
+
+        module = _icon_module()
+        for filename, size in (
+            ("icon.png", module.ROLE_ASSET_PX),
+            ("apple-icon.png", module.APPLE_PX),
+        ):
+            committed = Image.open(APP_DIR / filename).convert("RGBA")
+            assert committed.size == (size, size), filename
+            diff = ImageChops.difference(committed, module.compose(size))
+            assert max(hi for _lo, hi in diff.getextrema()) == 0, filename
+
+    def test_the_favicon_carries_every_browser_size(self):
+        from PIL import Image
+
+        module = _icon_module()
+        ico = Image.open(APP_DIR / "favicon.ico")
+        assert sorted(ico.ico.sizes()) == [(s, s) for s in module.ICO_SIZES]
+
+    def test_the_default_next_js_icon_is_gone(self):
+        """The scaffold icon — a black circle with a white triangle —
+        shipped in every tab until now. The tab must be Fresh
+        Collective teal."""
+        from PIL import Image
+
+        module = _icon_module()
+        for size in module.ICO_SIZES:
+            ico = Image.open(APP_DIR / "favicon.ico")
+            ico.size = (size, size)
+            ico.load()
+            corner = ico.convert("RGB").load()[1, 1]
+            # Within a couple of levels: the ICO container round-trips
+            # colour through its own encoding and lands a channel off
+            # by one, which is an encoder artefact rather than a
+            # different colour.
+            assert all(abs(a - b) <= 2 for a, b in zip(corner, module.TEAL)), (
+                f"favicon.ico at {size}px has a {corner} corner — the "
+                "Fresh Collective icon is teal edge to edge"
+            )
+
+    def test_the_dragonfly_survives_the_smallest_sizes(self):
+        """Not a legibility claim — a presence one. At 16px the mark
+        resolves to a soft silhouette rather than a readable dragonfly,
+        which is the hairline's limit and not something composition can
+        fix. What must hold is that there is a mark there at all."""
+        from PIL import Image
+
+        module = _icon_module()
+        for size in module.ICO_SIZES:
+            icon = module.compose(size).convert("RGB")
+            px = icon.load()
+            lighter = sum(
+                1
+                for y in range(size)
+                for x in range(size)
+                if sum(px[x, y]) > sum(module.TEAL) + 60
+            )
+            coverage = lighter / (size * size)
+            assert coverage > 0.05, (
+                f"at {size}px only {coverage:.1%} of the icon is mark — "
+                "the dragonfly has washed out entirely"
+            )

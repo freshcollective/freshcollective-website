@@ -49,7 +49,7 @@ export const BUNDLED_DEFAULTS: Record<BrandRole, string | null> = {
   marketing_hero_logo: '/brand/fresh-collective-logo-white-gold-on-teal-gradient.png',
   compact_light_mark: '/brand/fresh-collective-mark-navy-on-transparent.png',
   compact_dark_mark: '/brand/fresh-collective-mark-white-on-transparent.png',
-  favicon_app_icon: null,
+  favicon_app_icon: '/brand/fresh-collective-app-icon.png',
   social_share_image: null,
 }
 

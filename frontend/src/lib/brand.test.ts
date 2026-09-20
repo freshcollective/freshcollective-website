@@ -39,7 +39,7 @@ describe('resolution order', () => {
   })
 
   test('a role with no approved artwork resolves to null', () => {
-    for (const role of ['favicon_app_icon', 'social_share_image'] as const) {
+    for (const role of ['social_share_image'] as const) {
       assert.equal(resolveBrandUrl(role), null, role)
     }
   })
@@ -71,9 +71,9 @@ describe('the placeholder is unreachable', () => {
     }
   })
 
-  test('only the favicon and share card are still unfilled', () => {
+  test('only the share card is still unfilled', () => {
     const empty = BRAND_ROLES.filter((r) => BUNDLED_DEFAULTS[r] === null)
-    assert.deepEqual(empty, ['favicon_app_icon', 'social_share_image'])
+    assert.deepEqual(empty, ['social_share_image'])
   })
 
   test('no two roles share the same artwork', () => {

@@ -247,7 +247,7 @@ class TestCompactMarksAreMissingHonestly:
 
     def test_the_roles_that_remain_missing_say_so_on_both_sides(self):
         source = (FRONTEND_SRC / "lib/brand.ts").read_text()
-        for role in ("favicon_app_icon", "social_share_image"):
+        for role in ("social_share_image",):
             assert re.search(rf"{role}:\s*null", source), role
             assert BRAND_ASSET_ROLES[role].default_path is None, role
 

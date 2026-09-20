@@ -9,6 +9,17 @@ export const metadata: Metadata = {
   description: "A membership-based transformation platform for women.",
 };
 
+// Icons are resolved by Next.js from the files beside this one —
+// ``favicon.ico``, ``icon.png`` and ``apple-icon.png`` — because the
+// framework reads them from the filesystem at build time and cannot
+// ask the database what the brand currently is. They are not a second
+// design: ``backend/scripts/compose_app_icon.py`` generates all three
+// from the same composition as the ``favicon_app_icon`` brand role,
+// and a test regenerates and compares them. An admin override of that
+// role therefore changes every runtime surface immediately and the
+// browser tab at the next deploy; the two cannot drift apart in what
+// they depict, only in when they update.
+
 export default async function RootLayout({
   children,
 }: Readonly<{

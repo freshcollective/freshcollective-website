@@ -17,9 +17,17 @@ Every role resolves to exactly one of:
 * **missing** — no upload and no bundled default.
 
 ``missing`` is a real, reportable state rather than an accident, and
-two roles are in it today: the favicon and the social share image.
-Both need a composition rather than a logo — margins, a background,
-a landscape crop — and neither is made by resizing something else.
+one role is in it today: the social share image. It needs a landscape
+composition rather than a logo, and no square lockup can be made into
+one by resizing.
+
+The app icon is filled, and like the compact marks it is composed from
+approved parts rather than designed: the white dragonfly on the teal
+that the approved white-on-teal lockup already puts behind it, squared
+up, wordmark gone. ``scripts/compose_app_icon.py`` builds it, along
+with the static ``favicon.ico``, ``icon.png`` and ``apple-icon.png``
+that Next.js resolves at build time — all from that one composition,
+so the browser tab and this role cannot disagree.
 
 The two compact marks are filled, and by derivation rather than by
 drawing. ``scripts/derive_compact_marks.py`` recovers the dragonfly
@@ -291,14 +299,7 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         content_types=FORMATS_FLAT,
         min_width=256, min_height=256,
         aspect=SQUARE,
-        default_path=None,
-        missing_note=(
-            "The teal square lockup is the closest existing asset, but "
-            "at 16–32px its wordmark is noise rather than a word, and an "
-            "app icon is the one place a smudge is most visible. Needs "
-            "the compact mark on the teal panel, with margins. Until "
-            "then the site still serves the default Next.js icon."
-        ),
+        default_path="/brand/fresh-collective-app-icon.png",
         requires_public_url=True,
     ),
     BrandAssetRole(
