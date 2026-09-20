@@ -58,8 +58,34 @@ function formatAmount(cents: number, currency: string): string {
   return `$${amount} ${currency || 'AUD'}`
 }
 
-/** Lowercase the first character for inline embedding, e.g. "Free to join · paid pathways…" */
+/** True for a letter in upper case. Non-letters are neither, which
+ *  is what makes "3 sessions" and "$20 passes" fall through
+ *  untouched. */
+function isUpper(ch: string): boolean {
+  return ch !== '' && ch !== ch.toLowerCase() && ch === ch.toUpperCase()
+}
+
+/**
+ * Lower-case the first character for inline embedding, e.g.
+ * "Free to join · paid pathways available".
+ *
+ * Unless the summary opens on an acronym or a styled proper name,
+ * which two leading capitals reliably signal. Lower-casing
+ * unconditionally turned a creator's "EMBODY term access…" into
+ * "eMBODY term access…" on the public Explore card and About row —
+ * their own Collective's name, misspelt by us, on the page that
+ * introduces it.
+ *
+ *   "Paid pathways available"  → "paid pathways available"
+ *   "EMBODY term access"       → "EMBODY term access"
+ *   "AI resources available"   → "AI resources available"
+ *
+ * Two capitals rather than one, because a single leading capital is
+ * ordinary sentence case and lower-casing it is the whole point of
+ * this helper.
+ */
 function inlineCase(s: string): string {
+  if (isUpper(s.charAt(0)) && isUpper(s.charAt(1))) return s
   return s.charAt(0).toLowerCase() + s.slice(1)
 }
 

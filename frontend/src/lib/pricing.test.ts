@@ -89,15 +89,12 @@ describe('an open Collective is untouched', () => {
     assert.match(summary, /term access and in-person session bookings are paid separately$/)
   })
 
-  test('the suffix lower-cases its first letter, acronyms included', () => {
-    // Pinning existing behaviour, not endorsing it: `inlineCase`
-    // lower-cases unconditionally, so a creator's "EMBODY term
-    // access…" renders as "eMBODY term access…". Pre-existing and
-    // untouched here — changing it would rewrite public copy that
-    // nobody asked me to rewrite. Reported separately.
+  test("an acronym in the suffix keeps its capitals", () => {
+    // A creator's own Collective name, misspelt by us, on the page
+    // that introduces it.
     assert.match(
       formatCollectivePricingSummary(openCollective),
-      /· eMBODY term access/,
+      /· EMBODY term access/,
     )
   })
 
@@ -164,5 +161,52 @@ describe('every surface that states the joining cost', () => {
     }
     assert.match(src, /min_paid_pathway_price_cents/)
     assert.match(src, /paid_content_summary/)
+  })
+})
+
+
+describe('the inline suffix, character by character', () => {
+  /** The suffix is only reachable through the summary, so drive it
+   *  from there rather than exporting a private helper for tests. */
+  const suffixFor = (paid_content_summary: string) =>
+    formatCollectivePricingSummary({
+      ...openCollective, paid_content_summary,
+    }).replace('Free to join · ', '')
+
+  test('ordinary sentence case is lower-cased, as it always was', () => {
+    assert.equal(suffixFor('Paid pathways available'), 'paid pathways available')
+    assert.equal(suffixFor('Term passes sold separately'), 'term passes sold separately')
+  })
+
+  test('two leading capitals mean an acronym or proper name — left alone', () => {
+    assert.equal(suffixFor('EMBODY term access'), 'EMBODY term access')
+    assert.equal(suffixFor('AI resources available'), 'AI resources available')
+    assert.equal(suffixFor('NHS-funded places'), 'NHS-funded places')
+  })
+
+  test('a single leading capital is still ordinary sentence case', () => {
+    // The distinction the rule turns on: one capital is a sentence,
+    // two is a name.
+    assert.equal(suffixFor('Access sold separately'), 'access sold separately')
+    assert.equal(suffixFor('A few paid extras'), 'a few paid extras')
+  })
+
+  test('copy that already starts lower-case is unchanged', () => {
+    assert.equal(suffixFor('paid pathways available'), 'paid pathways available')
+  })
+
+  test('a non-letter opening is left exactly as written', () => {
+    assert.equal(suffixFor('3 paid pathways'), '3 paid pathways')
+    assert.equal(suffixFor('$20 term passes'), '$20 term passes')
+    assert.equal(suffixFor('“Deep Dive” sold separately'), '“Deep Dive” sold separately')
+  })
+
+  test('a one-character summary does not crash', () => {
+    assert.equal(suffixFor('X'), 'x')
+  })
+
+  test('accented capitals count as capitals', () => {
+    assert.equal(suffixFor('ÉCOLE sessions'), 'ÉCOLE sessions')
+    assert.equal(suffixFor('Élan sessions'), 'élan sessions')
   })
 })
