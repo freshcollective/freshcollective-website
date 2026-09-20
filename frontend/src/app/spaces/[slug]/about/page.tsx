@@ -1,6 +1,11 @@
 import { getSpace, getSpaceMembers, getMe, getSpaceEvents, getMySpaceAccess } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
 import { formatCollectiveAccessLabel, formatCollectivePricingSummary } from '@/lib/pricing'
+import {
+  additionalPaidTitles,
+  buildJoiningAccessSummary,
+  listPhrase,
+} from '@/lib/joiningAccessSummary'
 import { formatGatheringDate } from '@/lib/dateTime'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
@@ -72,6 +77,25 @@ export default async function SpaceAboutPage({ params }: Props) {
     .filter((p) => (p.access_type === 'one_time' || p.access_type === 'subscription') && p.status === 'active' && p.price_cents != null && p.price_cents > 0)
     .map((p) => p.price_cents as number)
   const minPaidPathwayPriceCents = paidPathwayCents.length > 0 ? Math.min(...paidPathwayCents) : null
+
+  // A purchase-required Collective sells entry and content in one
+  // transaction, so its Access card describes one purchase.
+  const isPurchaseRequired = (space.join_policy ?? 'open') === 'purchase_required'
+  const joiningOptions = space.joining_options ?? []
+  const joiningSummary = isPurchaseRequired
+    ? buildJoiningAccessSummary(space.name, joiningOptions)
+    : null
+  // "Paid separately" is honest only when something really is sold on
+  // top of the joining purchase.
+  const additionalPaid = isPurchaseRequired
+    ? additionalPaidTitles(
+        space.pathways
+          .filter((p) => (p.access_type === 'one_time' || p.access_type === 'subscription')
+            && p.status === 'active')
+          .map((p) => p.title),
+        joiningSummary?.includedTitles ?? [],
+      )
+    : []
 
   // Paid-separately copy — priority: creator summary > derived price > generic
   const paidSeparatelyCopy = space.paid_content_summary?.trim()
@@ -356,7 +380,51 @@ export default async function SpaceAboutPage({ params }: Props) {
                 <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-black">Access</p>
                 <p className="text-[15px] font-semibold text-navy-900">{formatCollectiveAccessLabel(space)}</p>
 
-                {effectiveHasPaidContent ? (
+                {isPurchaseRequired ? (
+                  /* A joining purchase is one purchase. Describing it
+                     as "included / paid separately" — the shape of a
+                     free Collective with paid content inside — told
+                     visitors they had to pay twice. What the purchase
+                     grants is derived from the nominated options' own
+                     grant rows, so the page cannot claim one thing
+                     while fulfilment does another. */
+                  <div className="mt-2 space-y-1.5">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-black">
+                        Your purchase includes
+                      </p>
+                      <p className="text-[12px] text-black">
+                        {joiningSummary?.sentence
+                          ?? `Your purchase brings you into ${space.name}.`}
+                      </p>
+                      {joiningSummary?.allowanceNote && (
+                        <p className="mt-1 text-[12px] text-black">
+                          {joiningSummary.allowanceNote}
+                        </p>
+                      )}
+                      {/* Creator copy for what comes with membership
+                          itself — community, updates, resources. Kept
+                          beneath the derived list as support, never as
+                          the authority on what was bought. */}
+                      {space.included_access_summary?.trim() && (
+                        <p className="mt-1 text-[12px] text-black">
+                          {space.included_access_summary.trim()}
+                        </p>
+                      )}
+                    </div>
+                    {/* Only when something genuinely is sold on top. */}
+                    {additionalPaid.length > 0 && (
+                      <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-black">
+                          Also available separately
+                        </p>
+                        <p className="text-[12px] text-black">
+                          {listPhrase(additionalPaid)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : effectiveHasPaidContent ? (
                   <div className="mt-2 space-y-1.5">
                     <div>
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-black">Included</p>

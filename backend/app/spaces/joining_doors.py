@@ -35,7 +35,8 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.models.payment_option import PaymentOption, PaymentOptionStatus
-from app.models.platform import Space
+from app.models.payment_option_grant import PaymentOptionGrant
+from app.models.platform import EventSeries, Pathway, Space
 from app.spaces import join_policy
 from app.spaces.purchase_schedule_view import (
     headline_price_cents,
@@ -62,9 +63,39 @@ def list_joining_doors(db: Session, space: Space) -> list[dict]:
     if not options:
         return []
 
-    schedules_by_option = published_schedules_by_option(
-        db, [o.id for o in options],
-    )
+    option_ids = [o.id for o in options]
+    schedules_by_option = published_schedules_by_option(db, option_ids)
+
+    # What each door actually grants, read from the same
+    # ``PaymentOptionGrant`` rows fulfilment uses. The About page
+    # describes the purchase from these rather than from the
+    # creator-authored "included / paid separately" summaries, which
+    # describe the older shape — free membership with paid content
+    # inside — and say the opposite of what a joining purchase does.
+    grants_by_option: dict[str, list[PaymentOptionGrant]] = {}
+    if option_ids:
+        for g in (
+            db.query(PaymentOptionGrant)
+            .filter(PaymentOptionGrant.payment_option_id.in_(option_ids))
+            .order_by(PaymentOptionGrant.position)
+            .all()
+        ):
+            grants_by_option.setdefault(g.payment_option_id, []).append(g)
+
+    series_titles: dict[str, str] = {}
+    pathway_titles: dict[str, str] = {}
+    series_ids = {g.series_id for gs in grants_by_option.values() for g in gs if g.series_id}
+    pathway_ids = {g.pathway_id for gs in grants_by_option.values() for g in gs if g.pathway_id}
+    if series_ids:
+        series_titles = dict(
+            db.query(EventSeries.id, EventSeries.title)
+            .filter(EventSeries.id.in_(series_ids)).all()
+        )
+    if pathway_ids:
+        pathway_titles = dict(
+            db.query(Pathway.id, Pathway.title)
+            .filter(Pathway.id.in_(pathway_ids)).all()
+        )
 
     doors: list[dict] = []
     for opt in options:
@@ -100,5 +131,25 @@ def list_joining_doors(db: Session, space: Space) -> list[dict]:
             # CTA per schedule and sends the chosen schedule's id to
             # the checkout endpoint, which requires it.
             "schedules": buyable,
+            # What buying this brings, in the creator's own titles.
+            "included_titles": [
+                t for t in (
+                    series_titles.get(g.series_id) if g.series_id
+                    else pathway_titles.get(g.pathway_id) if g.pathway_id
+                    else None
+                    for g in grants_by_option.get(opt.id, [])
+                ) if t
+            ],
+            # Session allowance from the Series grant, where there is
+            # one. Lets the summary say honestly that bookings differ
+            # between options instead of implying one flat entitlement.
+            "sessions_per_week": next(
+                (g.sessions_per_week for g in grants_by_option.get(opt.id, [])
+                 if g.grant_kind == "event_series"), None,
+            ),
+            "sessions_total": next(
+                (g.total_sessions for g in grants_by_option.get(opt.id, [])
+                 if g.grant_kind == "event_series"), None,
+            ),
         })
     return doors

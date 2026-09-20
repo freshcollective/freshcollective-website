@@ -1032,6 +1032,12 @@ export interface JoiningOption {
    *  requires the chosen schedule's id, so a door without these
    *  cannot complete a purchase. */
   schedules: JoiningOptionSchedule[]
+  /** What buying this grants, from the option's own grant rows —
+   *  the same rows fulfilment reads. */
+  included_titles?: string[]
+  /** Session allowance from the Series grant, where there is one. */
+  sessions_per_week?: number | null
+  sessions_total?: number | null
 }
 
 export type PricingType = 'free' | 'paid_one_time' | 'paid_monthly' | 'paid_annual' | 'invite_only' | 'coming_soon'

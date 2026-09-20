@@ -351,3 +351,56 @@ class TestTheCheckoutGate:
         assert {s["schedule_type"] for s in door["schedules"]} == {
             "pay_in_full", "recurring_installments",
         }
+
+
+class TestDoorsDescribeWhatTheyGrant:
+    """The About page tells a visitor what their purchase brings. It
+    must read that from the same grant rows fulfilment does, or the
+    page and the purchase drift — which is how the card came to
+    advertise a second payment that did not exist."""
+
+    def test_a_door_carries_its_grant_titles(self, client, db, embody_like):
+        from app.spaces.joining_doors import list_joining_doors
+        embody_like["option"].is_joining_option = True
+        db.flush()
+        door = list_joining_doors(db, embody_like["space"])[0]
+        assert door["included_titles"] == ["Term 4 2026", "In-Person Sessions"]
+
+    def test_a_door_carries_its_session_allowance(self, db, embody_like):
+        from app.spaces.joining_doors import list_joining_doors
+        embody_like["option"].is_joining_option = True
+        db.flush()
+        door = list_joining_doors(db, embody_like["space"])[0]
+        assert door["sessions_per_week"] == 1
+        assert door["sessions_total"] == 10
+
+    def test_titles_come_from_grants_not_from_the_creator_summaries(
+        self, db, embody_like,
+    ):
+        """``paid_content_summary`` describes the old shape — free
+        membership, paid content inside — and must not be what the
+        joining purchase is described by."""
+        from app.spaces.joining_doors import list_joining_doors
+        space = embody_like["space"]
+        space.paid_content_summary = "Term access is paid separately"
+        space.included_access_summary = "Community and updates"
+        embody_like["option"].is_joining_option = True
+        db.flush()
+        door = list_joining_doors(db, space)[0]
+        assert "Term 4 2026" in door["included_titles"]
+        assert "paid separately" not in " ".join(door["included_titles"]).lower()
+
+    def test_a_door_with_no_grants_reports_an_empty_list_not_an_error(
+        self, db, embody_like,
+    ):
+        from app.models.payment_option_grant import PaymentOptionGrant
+        from app.spaces.joining_doors import list_joining_doors
+        option = embody_like["option"]
+        option.is_joining_option = True
+        db.query(PaymentOptionGrant).filter(
+            PaymentOptionGrant.payment_option_id == option.id,
+        ).delete()
+        db.flush()
+        door = list_joining_doors(db, embody_like["space"])[0]
+        assert door["included_titles"] == []
+        assert door["sessions_per_week"] is None
