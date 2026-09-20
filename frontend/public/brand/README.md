@@ -24,6 +24,33 @@ different roles and are not interchangeable.
 Roles are defined in `backend/app/brand/roles.py`; nothing reads this
 directory by filename except that module.
 
+## Compact marks — derived, not drawn
+
+| File | Background | Symbol | Role |
+|---|---|---|---|
+| `fresh-collective-mark-navy-on-transparent.png` | transparent | navy | `compact_light_mark` |
+| `fresh-collective-mark-white-on-transparent.png` | transparent | white | `compact_dark_mark` |
+
+These are the dragonfly and broken circle from the approved lockups
+above, with the FRESH COLLECTIVE wordmark cropped away. Nothing was
+redrawn, re-traced or recoloured: `backend/scripts/derive_compact_marks.py`
+recovers each drawing's own alpha by un-compositing its flat
+background, crops to the symbol and pads to a square, with no
+resampling at any point. Recompositing the result onto the original
+background reproduces the source to within 1/255.
+
+Regenerate with `cd backend && .venv/bin/python scripts/derive_compact_marks.py`.
+`tests/test_brand_assets.py::TestCompactMarkDerivation` re-runs the
+derivation and compares, so these files cannot drift from the artwork
+they came from.
+
+**They need room.** The stroke is 1.34% of the mark's width, so a 24px
+box renders it at 0.32 CSS pixels and the dragonfly dissolves into a
+grey haze. Measured on screen, 32px is the floor and 36px is where the
+wing detail separates — which is what `CHROME_MARK_PX` in
+`frontend/src/lib/brand.ts` is set to. Anything smaller wants a
+heavier-stroke mark drawn for the size, not a smaller copy of this one.
+
 ## Superseded — unreferenced, safe to delete
 
 As of Phase B **nothing in the codebase names any of these**. Every

@@ -72,12 +72,21 @@ from app.brand.resolver import bundled_default_public_url, resolve_for_email
 # not a hunt through two renderers.
 EMAIL_HEADER_ROLE = "primary_light_logo"
 
-# Rendered size, chosen from the artwork rather than the layout. The
-# wordmark is 3% of the canvas height, so 240px gives a 7.2px cap
-# height — readable. The 32px placeholder it replaces would have given
-# 1px, which is the whole reason the old header needed live text beside
-# it to say who the email was from.
-EMAIL_LOGO_PX = 240
+# Rendered size. Chosen by rendering the real shell at 140, 168, 200
+# and 240 and looking at all four: 240 read as an illustration rather
+# than a letterhead — the dragonfly was larger than the heading and
+# pushed the call to action down the card — while 140 lost the
+# wordmark. 200 is where the logo reads as the sender rather than as
+# the subject. On a 560px card that is 36% of the width, and with the
+# artwork's own 33% margin the visible lockup is about 24% — the
+# proportion a brand header usually takes.
+#
+# The wordmark is 3% of the canvas, so 200px puts its cap height at
+# 6px: comfortable on the retina displays most mail is read on, and
+# legible at 1x. The 32px placeholder this replaced would have given
+# 1px, which is why the old header needed live text beside it to say
+# who the email was from.
+EMAIL_LOGO_PX = 200
 
 _FONT_STACK_SANS = (
     "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', "

@@ -17,12 +17,18 @@ Every role resolves to exactly one of:
 * **missing** — no upload and no bundled default.
 
 ``missing`` is a real, reportable state rather than an accident, and
-four roles are in it today — all of them compact or system assets.
-Fresh Collective has no compact artwork yet: only the full stacked
-lockups, whose wordmark is 3% of the canvas height and becomes an
-illegible smudge below about 120px wide. The tempting move is to point
-those roles at a full lockup anyway and let CSS crop it. That produces
-a logo nobody approved, drawn by a bounding box.
+two roles are in it today: the favicon and the social share image.
+Both need a composition rather than a logo — margins, a background,
+a landscape crop — and neither is made by resizing something else.
+
+The two compact marks are filled, and by derivation rather than by
+drawing. ``scripts/derive_compact_marks.py`` recovers the dragonfly
+from the approved lockups by un-compositing their flat background,
+crops away the FRESH COLLECTIVE wordmark and pads the result to a
+square, with no resampling at any point. It is the same symbol, the
+same pixels; only the wordmark and the background are gone. A test
+re-runs the derivation and compares, so the marks cannot drift from
+the artwork they came from.
 
 All five full-logo roles are filled by artwork supplied directly by
 Lindsey. Every one of the defaults below was identified by reading its
@@ -251,14 +257,7 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         content_types=FORMATS_TRANSPARENT,
         min_width=128, min_height=128,
         aspect=SQUARE,
-        default_path=None,
-        missing_note=(
-            "Fresh Collective has no compact mark yet. The full lockups "
-            "cannot stand in: their wordmark is 3% of the canvas height "
-            "and disappears below about 120px wide, and cropping one "
-            "down to the dragonfly would invent artwork nobody approved. "
-            "A drawn-for-small-sizes mark is needed."
-        ),
+        default_path="/brand/fresh-collective-mark-navy-on-transparent.png",
         requires_public_url=True,
     ),
     BrandAssetRole(
@@ -274,11 +273,7 @@ _ROLES: tuple[BrandAssetRole, ...] = (
         content_types=FORMATS_TRANSPARENT,
         min_width=128, min_height=128,
         aspect=SQUARE,
-        default_path=None,
-        missing_note=(
-            "Awaiting the same compact artwork as the light mark, in "
-            "white."
-        ),
+        default_path="/brand/fresh-collective-mark-white-on-transparent.png",
         requires_public_url=True,
     ),
     BrandAssetRole(

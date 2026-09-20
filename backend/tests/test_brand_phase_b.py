@@ -240,15 +240,27 @@ class TestAuthPagesDoNotDoubleBrand:
 
 
 class TestCompactMarksAreMissingHonestly:
-    def test_the_compact_roles_are_still_missing(self):
+    def test_the_compact_roles_are_now_filled_by_derivation(self):
         for role in ("compact_light_mark", "compact_dark_mark"):
-            assert BRAND_ASSET_ROLES[role].default_path is None
+            assert BRAND_ASSET_ROLES[role].default_path, role
+            assert "-mark-" in BRAND_ASSET_ROLES[role].default_path, role
 
-    def test_the_frontend_agrees_they_are_missing(self):
+    def test_the_roles_that_remain_missing_say_so_on_both_sides(self):
         source = (FRONTEND_SRC / "lib/brand.ts").read_text()
-        for role in ("compact_light_mark", "compact_dark_mark",
-                     "favicon_app_icon", "social_share_image"):
+        for role in ("favicon_app_icon", "social_share_image"):
             assert re.search(rf"{role}:\s*null", source), role
+            assert BRAND_ASSET_ROLES[role].default_path is None, role
+
+    def test_the_chrome_size_clears_the_measured_legibility_floor(self):
+        """The mark's stroke is 1.34% of its width, so a 24px box
+        renders it at 0.32px and the browser turns it into grey haze.
+        The size the chrome uses has to sit above the floor that
+        finding established."""
+        source = (FRONTEND_SRC / "lib/brand.ts").read_text()
+        chrome = int(re.search(r"CHROME_MARK_PX = (\d+)", source).group(1))
+        floor = int(re.search(r"MIN_LEGIBLE_MARK_PX = (\d+)", source).group(1))
+        assert chrome >= floor
+        assert floor >= 32
 
     def test_the_lockup_renders_no_image_when_the_mark_is_missing(self):
         """The whole point: with no compact artwork the lockup is live
@@ -351,7 +363,16 @@ class TestEmailHeader:
         assert "background-image" not in html
 
     def test_the_rendered_size_makes_the_wordmark_readable(self):
-        assert EMAIL_LOGO_PX * (15 / 500) >= 7.0
+        """6px of cap height — 12 device pixels at 2x. The figure comes
+        from rendering the shell at 140/168/200/240 and comparing, not
+        from a rule of thumb: 140 lost the wordmark, 240 read as an
+        illustration rather than a letterhead."""
+        cap = EMAIL_LOGO_PX * (15 / 500)
+        assert cap >= 6.0, cap
+        assert EMAIL_LOGO_PX <= 220, (
+            "above ~220 the lockup stops being a header and starts "
+            "being the subject of the email"
+        )
 
     def test_an_admin_upload_reaches_the_email(self, db, client):
         client.post(

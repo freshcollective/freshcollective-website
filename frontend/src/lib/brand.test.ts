@@ -4,7 +4,9 @@ import assert from 'node:assert/strict'
 import {
   BRAND_ROLES,
   BUNDLED_DEFAULTS,
+  CHROME_MARK_PX,
   FULL_LOGO_INTRINSIC,
+  MIN_LEGIBLE_MARK_PX,
   MIN_LEGIBLE_FULL_LOGO_PX,
   compactRoleFor,
   resolveBrandUrl,
@@ -37,10 +39,14 @@ describe('resolution order', () => {
   })
 
   test('a role with no approved artwork resolves to null', () => {
-    for (const role of ['compact_light_mark', 'compact_dark_mark',
-      'favicon_app_icon', 'social_share_image'] as const) {
+    for (const role of ['favicon_app_icon', 'social_share_image'] as const) {
       assert.equal(resolveBrandUrl(role), null, role)
     }
+  })
+
+  test('the compact marks now resolve to the derived artwork', () => {
+    assert.match(resolveBrandUrl('compact_light_mark') ?? '', /-mark-navy-/)
+    assert.match(resolveBrandUrl('compact_dark_mark') ?? '', /-mark-white-/)
   })
 
   test('an upload fills a missing role without any other change', () => {
@@ -65,15 +71,9 @@ describe('the placeholder is unreachable', () => {
     }
   })
 
-  test('the five full-logo roles are filled and the four system roles are not', () => {
-    const filled = BRAND_ROLES.filter((r) => BUNDLED_DEFAULTS[r] !== null)
-    assert.deepEqual(filled, [
-      'primary_light_logo',
-      'alternate_light_logo',
-      'logo_on_teal',
-      'logo_on_navy',
-      'marketing_hero_logo',
-    ])
+  test('only the favicon and share card are still unfilled', () => {
+    const empty = BRAND_ROLES.filter((r) => BUNDLED_DEFAULTS[r] === null)
+    assert.deepEqual(empty, ['favicon_app_icon', 'social_share_image'])
   })
 
   test('no two roles share the same artwork', () => {
@@ -88,9 +88,11 @@ describe('compact marks by tone', () => {
     assert.equal(compactRoleFor('dark'), 'compact_dark_mark')
   })
 
-  test('both are unfilled today, so chrome must cope with null', () => {
-    assert.equal(resolveBrandUrl(compactRoleFor('light')), null)
-    assert.equal(resolveBrandUrl(compactRoleFor('dark')), null)
+  test('each tone resolves to its own derived mark', () => {
+    assert.notEqual(
+      resolveBrandUrl(compactRoleFor('light')),
+      resolveBrandUrl(compactRoleFor('dark')),
+    )
   })
 })
 
@@ -101,11 +103,21 @@ describe('artwork geometry', () => {
   })
 
   test('the sizes the product uses clear the legibility floor', () => {
-    assert.ok(wordmarkCapHeight(MIN_LEGIBLE_FULL_LOGO_PX) >= 6.9)
+    assert.ok(wordmarkCapHeight(MIN_LEGIBLE_FULL_LOGO_PX) >= 6.0)
     assert.ok(wordmarkCapHeight(256) >= 7.5)
   })
 
   test('intrinsic size matches the approved artwork', () => {
     assert.equal(FULL_LOGO_INTRINSIC, 500)
+  })
+})
+
+describe('compact mark sizing', () => {
+  test('chrome renders the mark above the measured legibility floor', () => {
+    // At 24px the stroke lands at 0.32 CSS pixels and the dragonfly
+    // becomes a grey smudge. 32px is the floor; 36px is where the wing
+    // detail separates.
+    assert.ok(CHROME_MARK_PX >= MIN_LEGIBLE_MARK_PX)
+    assert.ok(MIN_LEGIBLE_MARK_PX >= 32)
   })
 })

@@ -51,13 +51,15 @@ PUBLIC_BASE = "/api/brand-assets"
 WITH_DEFAULT = [r for r in ROLE_ORDER if BRAND_ASSET_ROLES[r].default_path]
 WITHOUT_DEFAULT = [r for r in ROLE_ORDER if not BRAND_ASSET_ROLES[r].default_path]
 
-# Roles with no approved artwork yet — the compact and system assets,
-# and only those. Spelled out rather than derived so that supplying one
+# Roles with no approved artwork yet. The compact marks were filled by
+# derivation from the approved lockups (see
+# ``scripts/derive_compact_marks.py``); what remains needs composition
+# rather than a logo — margins and a background for the app icon, a
+# landscape crop for the share card — and neither is made by resizing
+# something else. Spelled out rather than derived so that supplying one
 # becomes a deliberate edit here, visible in review, instead of a
 # silent change in a list.
 EXPECTED_MISSING = [
-    "compact_light_mark",
-    "compact_dark_mark",
     "favicon_app_icon",
     "social_share_image",
 ]
@@ -212,8 +214,8 @@ class TestResolution:
     def test_reset_on_a_role_with_no_default_returns_it_to_missing(
         self, db, client,
     ):
-        role = "compact_light_mark"
-        _upload(client, role, _png(256, 256), "mark.png", "image/png")
+        role = "favicon_app_icon"
+        _upload(client, role, _png(512, 512), "icon.png", "image/png")
         assert resolve(db, role).source == SOURCE_CUSTOM
 
         assert client.delete(f"{ADMIN_BASE}/{role}").status_code == 200
@@ -613,6 +615,12 @@ def _analyse(filename: str) -> dict:
 
 
 # The approved brand system, as content rather than as filenames.
+# The two compact marks are excluded here on purpose: they are a
+# symbol with no wordmark on a transparent canvas, so the three-way
+# background / dragonfly / wordmark description does not fit them.
+# They are verified instead by re-running their derivation — a
+# stronger check, since it compares against the approved source rather
+# than against a description of it. See TestCompactMarkDerivation.
 APPROVED_CONTENT: dict[str, dict[str, str]] = {
     "primary_light_logo": {
         "background": "white_flat", "dragonfly": "navy", "wordmark": "gold",
@@ -643,8 +651,10 @@ class TestApprovedArtworkContent:
         assert _analyse(default.removeprefix("/brand/")) == APPROVED_CONTENT[role]
 
     def test_every_default_backed_role_is_content_verified(self):
-        """No role may hold a bundled default that nothing above checks."""
-        assert set(APPROVED_CONTENT) == {
+        """No role may hold a bundled default that nothing checks —
+        either by content here, or by derivation below."""
+        derived = {"compact_light_mark", "compact_dark_mark"}
+        assert set(APPROVED_CONTENT) | derived == {
             r for r in ROLE_ORDER if BRAND_ASSET_ROLES[r].default_path
         }
 
@@ -706,3 +716,114 @@ class TestApprovedArtworkContent:
             if default is None:
                 continue
             assert (BRAND_DIR / default.removeprefix("/brand/")).is_file(), role
+
+
+# ===========================================================================
+# 9. The compact marks are the approved symbol, not new artwork
+# ===========================================================================
+#
+# These were derived rather than drawn: the dragonfly un-composited out
+# of the approved lockups, the wordmark cropped away, padded to a
+# square, with no resampling. The strongest way to assert that is to
+# run the derivation again and compare — which also means the script
+# and the committed files can never drift apart.
+
+
+class TestCompactMarkDerivation:
+    def test_the_committed_marks_match_a_fresh_derivation(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "derive_compact_marks",
+            pathlib.Path(__file__).resolve().parent.parent
+            / "scripts" / "derive_compact_marks.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        from PIL import Image, ImageChops
+
+        for derivation in module.DERIVATIONS:
+            fresh, _symbol, _box = module.build(derivation)
+            committed = Image.open(BRAND_DIR / derivation.output).convert("RGBA")
+            assert committed.size == fresh.size, derivation.role
+            diff = ImageChops.difference(committed, fresh)
+            assert max(hi for _lo, hi in diff.getextrema()) == 0, (
+                f"{derivation.output} is not what the derivation produces — "
+                "it has been edited by hand or generated another way"
+            )
+
+    def test_the_symbol_survived_the_extraction_unaltered(self):
+        """Recomposite each mark onto the background it came from and
+        compare with the source. A repainted, re-traced or resampled
+        dragonfly would not come back."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "derive_compact_marks",
+            pathlib.Path(__file__).resolve().parent.parent
+            / "scripts" / "derive_compact_marks.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        for derivation in module.DERIVATIONS:
+            _square, symbol, box = module.build(derivation)
+            worst = module.verify(derivation, symbol, box)
+            assert worst <= 2, f"{derivation.role}: worst difference {worst}/255"
+
+    @pytest.mark.parametrize("role,stroke", [
+        ("compact_light_mark", (44, 50, 89)),
+        ("compact_dark_mark", (255, 255, 255)),
+    ])
+    def test_each_mark_is_transparent_and_single_coloured(self, role, stroke):
+        from PIL import Image
+
+        path = BRAND_ASSET_ROLES[role].default_path.removeprefix("/brand/")
+        img = Image.open(BRAND_DIR / path).convert("RGBA")
+        px = img.load()
+        width, height = img.size
+
+        assert width == height, "compact marks must be square"
+        assert px[1, 1][3] == 0, "the background must be transparent"
+
+        for y in range(0, height, 3):
+            for x in range(0, width, 3):
+                r, g, b, a = px[x, y]
+                if a == 0:
+                    continue
+                assert (r, g, b) == stroke, (
+                    f"{role} contains a colour other than its stroke at "
+                    f"({x},{y}): {(r, g, b)}"
+                )
+
+    def test_the_wordmark_was_removed(self):
+        """The whole point of a compact mark. The lockups set FRESH
+        COLLECTIVE in gold; neither mark may contain a gold pixel."""
+        from PIL import Image
+
+        for role in ("compact_light_mark", "compact_dark_mark"):
+            path = BRAND_ASSET_ROLES[role].default_path.removeprefix("/brand/")
+            img = Image.open(BRAND_DIR / path).convert("RGBA")
+            px = img.load()
+            for y in range(0, img.size[1], 2):
+                for x in range(0, img.size[0], 2):
+                    r, g, b, a = px[x, y]
+                    if a == 0:
+                        continue
+                    is_gold = r > 140 and g > 105 and b < 130 and (r - b) > 50
+                    assert not is_gold, f"{role} still contains wordmark gold"
+
+    def test_both_marks_are_the_same_drawing(self):
+        """Same symbol, two colourways — so their alpha channels are
+        identical. If one were redrawn this would not hold."""
+        from PIL import Image, ImageChops
+
+        a, b = (
+            Image.open(
+                BRAND_DIR
+                / BRAND_ASSET_ROLES[role].default_path.removeprefix("/brand/")
+            ).getchannel("A")
+            for role in ("compact_light_mark", "compact_dark_mark")
+        )
+        assert ImageChops.difference(a, b).getextrema()[1] == 0

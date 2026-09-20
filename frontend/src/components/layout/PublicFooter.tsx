@@ -18,7 +18,7 @@ export default function PublicFooter() {
 
           <div>
             <div className="mb-4">
-              <BrandLockup tone="dark" markSize={24} />
+              <BrandLockup tone="dark" markSize={32} />
             </div>
             <p
               className="max-w-[300px] text-[14px] leading-[1.78]"

@@ -47,8 +47,8 @@ export const BUNDLED_DEFAULTS: Record<BrandRole, string | null> = {
   logo_on_teal: '/brand/fresh-collective-logo-white-on-teal.png',
   logo_on_navy: '/brand/fresh-collective-logo-white-gold-on-navy.png',
   marketing_hero_logo: '/brand/fresh-collective-logo-white-gold-on-teal-gradient.png',
-  compact_light_mark: null,
-  compact_dark_mark: null,
+  compact_light_mark: '/brand/fresh-collective-mark-navy-on-transparent.png',
+  compact_dark_mark: '/brand/fresh-collective-mark-white-on-transparent.png',
   favicon_app_icon: null,
   social_share_image: null,
 }
@@ -64,6 +64,22 @@ export function resolveBrandUrl(
   if (override) return override
   return BUNDLED_DEFAULTS[role] ?? null
 }
+
+/**
+ * The compact marks are the approved dragonfly with the wordmark
+ * cropped away — a fine-line drawing whose stroke is 1.34% of its
+ * width. At a 24px box that stroke lands at 0.32 CSS pixels and the
+ * browser averages it into a grey haze; the mark stops reading as a
+ * dragonfly at all. Measured on screen, 32px is the floor and 36px is
+ * where the wing detail separates cleanly. CHROME_MARK_PX is that
+ * finding, written down.
+ */
+export const CHROME_MARK_PX = 36
+
+/** The smallest box at which the compact mark still resolves. Below
+ *  this the honest options are live text or a heavier-stroke mark
+ *  drawn for the size — not a smaller copy of this one. */
+export const MIN_LEGIBLE_MARK_PX = 32
 
 /**
  * Surface tone: whether the brand is sitting on a light background or
@@ -96,10 +112,14 @@ export function wordmarkCapHeight(renderedPx: number): number {
 }
 
 /**
- * Smallest box at which the wordmark is genuinely readable. Below
- * roughly 7px of cap height letterspaced caps stop resolving, and
- * 7 / (15/500) ≈ 233px. Sizes in the product are chosen against this,
- * and anything asked to be smaller should use a compact mark instead —
- * or, until one exists, live text.
+ * Smallest box at which the wordmark is genuinely readable.
+ *
+ * This started as a rule of thumb — 7px of cap height, so 233px — and
+ * was then checked by rendering the real email shell at 140, 168, 200
+ * and 240 and looking at all four. 140 loses the wordmark. 200 reads
+ * cleanly at 6px of cap height, which is 12 device pixels on the
+ * retina displays most of this is read on. The measured answer is
+ * therefore 200, not 233, and it is the measured one that belongs
+ * here. Anything smaller should use a compact mark instead.
  */
-export const MIN_LEGIBLE_FULL_LOGO_PX = 233
+export const MIN_LEGIBLE_FULL_LOGO_PX = 200

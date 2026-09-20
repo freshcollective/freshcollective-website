@@ -4,6 +4,7 @@ import Link from 'next/link'
 
 import {
   FULL_LOGO_INTRINSIC,
+  CHROME_MARK_PX,
   compactRoleFor,
   resolveBrandUrl,
   type BrandRole,
@@ -103,7 +104,7 @@ export function BrandLockup({
   href,
   label = 'Fresh Collective',
   sublabel,
-  markSize = 28,
+  markSize = CHROME_MARK_PX,
   className = '',
 }: {
   tone?: BrandTone
