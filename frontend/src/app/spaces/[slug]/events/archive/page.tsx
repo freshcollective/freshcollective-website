@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { getSpace, getSpaceEvents } from '@/lib/serverApi'
+import { requireArea } from '@/lib/areaAccess'
 import ArchivedGatheringsList from '@/components/spaces/ArchivedGatheringsList'
 import type { EventSummary, SpaceResponse } from '@/types/platform'
 
@@ -23,6 +24,10 @@ export default async function SpaceEventsArchivePage({ params }: Props) {
     getSpaceEvents(slug, 'archive'),
   ]) as [SpaceResponse | null, EventSummary[]]
 
+
+  // A child of the gatherings area — never more reachable than the
+  // doorway it sits behind.
+  requireArea(space, 'gatherings')
   const timezone = space?.timezone ?? 'Australia/Melbourne'
 
   return (

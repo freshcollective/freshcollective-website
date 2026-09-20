@@ -106,6 +106,10 @@ class SpaceUpdateRequest(BaseModel):
     # 'open' | 'purchase_required'. Validated strictly in the route —
     # an unknown value must not quietly widen or close a door.
     join_policy: str | None = None
+    # {"areas": {"gatherings": "public", ...}} — validated strictly in
+    # the route. Unknown areas are ignored; an invalid policy for a
+    # known area is refused rather than reinterpreted.
+    area_policies: dict | None = None
     # Place & Feel — Discovery pillar. See
     # docs/foundations/discovery-connection-belonging-location-model.md.
     # connection_style is one of 'online' | 'in_person' | 'both';
@@ -205,6 +209,18 @@ class SpaceDetail(BaseModel):
     # Home settings tab can render the toggle without a second fetch.
     show_member_directory: bool = False
     join_policy: str = "open"
+    # Every area's effective policy, defaults filled in — so the panel
+    # shows what is actually in force even when nothing is stored.
+    #
+    # Typed loosely because this field shadows the ORM column of the
+    # same name, which holds the *stored* ``{"areas": {...}}`` document
+    # or NULL. ``model_validate`` reads that shape; the route then
+    # overwrites it with the resolved flat map. Keeping the name is
+    # worth the loose annotation — the panel reads
+    # ``area_policies.gatherings`` and nothing else would read as well.
+    area_policies: dict | None = None
+    # Which of those a creator may change, and to what.
+    area_policy_options: dict[str, list[str]] = {}
     # Atlas v1.2 identity fields — Location provides artwork, Colour Palette
     # drives the collective's visual interface, atmosphere + identity + welcome
     # personalise the experience. Legacy collectives (created before v1.2)

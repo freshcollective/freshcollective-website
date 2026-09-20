@@ -155,6 +155,7 @@ def validate(raw: Any) -> dict[str, Any] | None:
 
 def resolve(
     stored: Any, *, show_member_directory: bool,
+    reachable_areas: set[str] | frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     """The tile list the member Home should render.
 
@@ -183,6 +184,13 @@ def resolve(
         entry = configured.get(key, {})
         visible = bool(entry.get("visible", True))
         # The platform's own switch is not overridable by configuration.
+        # Area policy decides which doorways exist for this viewer.
+        # The Home must not offer a tile whose route and API will
+        # refuse — the nav and the tiles read the same resolved set so
+        # they cannot disagree. ``None`` means "not supplied", which
+        # keeps every existing caller behaving as before.
+        if reachable_areas is not None and key not in reachable_areas:
+            continue
         if key == "members" and not show_member_directory:
             continue
         if not visible:

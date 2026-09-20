@@ -263,6 +263,17 @@ def _space_detail_response(space: Space, db: Session) -> dict:
     from app.models.platform import Location, ColourStory
     from app.models.place import Place, SpacePlace
     data = SpaceDetail.model_validate(space).model_dump()
+    # Resolved rather than raw: the panel must show the policy actually
+    # in force, which for an unconfigured Collective is the platform
+    # default, not an empty object. ``area_policy_options`` tells the
+    # panel which areas to offer and with which choices, so the
+    # vocabulary lives in one place instead of being retyped in TSX.
+    from app.spaces import area_policies as _area_policies
+    data["area_policies"] = _area_policies.resolve_policies(space.area_policies)
+    data["area_policy_options"] = {
+        area: list(_area_policies.AREA_ALLOWED[area])
+        for area in _area_policies.CONFIGURABLE_AREAS
+    }
     data['derived_has_paid_internal_content'] = _derived_has_paid_content(space.id, db)
     data['location_id'] = space.location_id
     data['atmosphere_keys'] = list(space.atmosphere_keys or [])
@@ -1467,6 +1478,14 @@ def update_space(
         space.guidance_links_title = body.guidance_links_title.strip() or None
     if body.guidance_links_body is not None:
         space.guidance_links_body = body.guidance_links_body.strip() or None
+    if body.area_policies is not None:
+        from app.spaces import area_policies as _area_policies
+        try:
+            space.area_policies = _area_policies.validate(body.area_policies)
+        except _area_policies.AreaPolicyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+            ) from exc
     if body.join_policy is not None:
         from app.spaces import join_policy as _join_policy
         try:

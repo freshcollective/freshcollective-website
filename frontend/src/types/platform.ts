@@ -56,6 +56,10 @@ export interface SpaceResponse {
   creator_name?: string | null
   /** 'open' | 'purchase_required'. Free joining is the default. */
   join_policy?: JoinPolicy
+  /** Areas this viewer may reach, resolved server-side. The single
+   *  source for nav, Home tiles and route guards — never recomputed
+   *  in a component. */
+  area_access?: CollectiveArea[]
   /** Published, creator-nominated ways in. Empty on an open
    *  Collective, and empty on a purchase-required one whose creator
    *  has nominated none — which means "closed", never "free". */
@@ -994,6 +998,12 @@ export interface StepResource {
 }
 
 export type JoinPolicy = 'open' | 'purchase_required'
+
+export type CollectiveArea =
+  | 'about' | 'home' | 'gatherings' | 'pathways'
+  | 'conversations' | 'members' | 'messages'
+
+export type AreaPolicy = 'public' | 'members' | 'active_access'
 
 export interface JoiningOptionSchedule {
   id: string

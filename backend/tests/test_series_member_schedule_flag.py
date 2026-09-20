@@ -117,7 +117,7 @@ def _make_schedule(
 
 class TestMemberSeriesScheduleFlag:
     def test_pay_in_full_is_member_checkoutable_true(self, db, make_space):
-        space = make_space()
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         series = _make_series(db, space)
         opt = _make_option_with_series_grant(db, space, series, name="Awaken")
         _make_schedule(db, opt, name="Pay in full", schedule_type="pay_in_full")
@@ -139,7 +139,7 @@ class TestMemberSeriesScheduleFlag:
     def test_recurring_instalments_returned_but_not_checkoutable(
         self, db, make_space,
     ):
-        space = make_space()
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         series = _make_series(db, space)
         opt = _make_option_with_series_grant(db, space, series, name="Awaken")
         _make_schedule(db, opt, name="Pay in full", schedule_type="pay_in_full")
@@ -169,7 +169,7 @@ class TestMemberSeriesScheduleFlag:
         assert r.interval == "week"
 
     def test_draft_schedule_hidden(self, db, make_space):
-        space = make_space()
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         series = _make_series(db, space)
         opt = _make_option_with_series_grant(db, space, series, name="Awaken")
         _make_schedule(db, opt, name="Pay in full", schedule_type="pay_in_full")
@@ -192,7 +192,7 @@ class TestMemberSeriesScheduleFlag:
         assert [s.schedule_type for s in out[0].schedules] == ["pay_in_full"]
 
     def test_option_hidden_when_only_schedule_is_recurring(self, db, make_space):
-        space = make_space()
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         series = _make_series(db, space)
         opt = _make_option_with_series_grant(db, space, series, name="Plan-only")
         _make_schedule(

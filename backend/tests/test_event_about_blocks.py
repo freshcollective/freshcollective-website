@@ -61,7 +61,7 @@ class TestEventAboutBlockCRUD:
         # Fetch the auto-created creator user for the fixture Space
         # via its ``creator_id`` so subsequent auth-scoped calls see
         # the same person.
-        space = make_space()
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         from app.models.user import User
         creator = db.query(User).filter(User.id == space.creator_id).first()
         event = _make_event(db, space)
@@ -125,7 +125,7 @@ class TestEventAboutBlockCRUD:
         self, db: Session, make_user, make_space,
     ) -> None:
         """A block written for Event A must not leak into Event B."""
-        space = make_space()
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         from app.models.user import User
         creator = db.query(User).filter(User.id == space.creator_id).first()
 
@@ -158,8 +158,8 @@ class TestEventAboutBlockCRUD:
     def test_404_for_event_in_another_space(
         self, db: Session, make_space,
     ) -> None:
-        space_a = make_space()
-        space_b = make_space()
+        space_a = make_space(area_policies={"areas": {"gatherings": "public"}}, )
+        space_b = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         from app.models.user import User
         creator_a = db.query(User).filter(User.id == space_a.creator_id).first()
         # Event lives in space_b.
@@ -180,7 +180,7 @@ class TestMemberSideEventAboutBlocks:
         from app.models.user import User
         from app.spaces._series_member_routes import get_member_event_about_blocks
 
-        space = make_space()
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         creator = db.query(User).filter(User.id == space.creator_id).first()
         event = _make_event(db, space)
         event.is_public = True
@@ -206,7 +206,7 @@ class TestMemberSideEventAboutBlocks:
     ) -> None:
         from app.spaces._series_member_routes import get_member_event_about_blocks
 
-        space = make_space()
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         event = _make_event(db, space)
         event.is_public = False
         db.flush()

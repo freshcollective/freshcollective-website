@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Response
 from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session, selectinload
 
@@ -44,6 +44,8 @@ from app.models.user import User
 from app.spaces import home_config
 from app.spaces import join_policy
 from app.spaces import joining_doors
+from app.spaces import area_access
+from app.spaces import area_policies
 from app.spaces.schemas import (
     AccessRequestOut,
     CompleteStepRequest,
@@ -886,7 +888,29 @@ def list_spaces(
     )
 
 
-@router.get("/{slug}", response_model=SpaceResponse)
+
+
+def _private_no_store(response: Response) -> None:
+    """Mark a viewer-specific payload uncacheable.
+
+    ``/api/spaces/{slug}`` now differs between a visitor, a member and
+    an entitled member — ``area_access`` and ``home_tiles`` are
+    resolved per viewer. One person's set of open doorways must never
+    be served to another from a shared cache.
+
+    A route dependency rather than a ``Response`` parameter so the
+    handler stays an ordinary function that tests and internal callers
+    can invoke directly.
+    """
+    response.headers["Cache-Control"] = "private, max-age=0, no-store"
+    response.headers["Vary"] = "Cookie"
+
+
+@router.get(
+    "/{slug}",
+    response_model=SpaceResponse,
+    dependencies=[Depends(_private_no_store)],
+)
 def get_space(
     slug: str,
     db: Session = Depends(get_db),
@@ -988,14 +1012,26 @@ def get_space(
         )
         creator_name = creator_row[0] if creator_row else None
 
+    # One resolution per request, reused by the tiles below and
+    # returned so the client's nav and Home render from the same
+    # answer instead of each deciding for itself.
+    areas = area_access.resolve_area_access(db, space, current_user)
+
+    # This payload is now viewer-specific: ``area_access``,
+    # ``home_tiles`` and the counts differ between a visitor, a member
+    # and an entitled member. It must never land in a shared cache
+    # where one person's resolved doorways could be served to another.
+
     resp = SpaceResponse.model_validate(space)
     return resp.model_copy(update={
+        "area_access": sorted(areas.reachable),
         "creator_name": creator_name,
         "join_policy": join_policy.resolve(space.join_policy),
         "joining_options": joining_doors.list_joining_doors(db, space),
         "home_tiles": home_config.resolve(
             space.home_config,
             show_member_directory=space.show_member_directory,
+            reachable_areas=areas.reachable,
         ),
         "upcoming_gathering_count": int(upcoming_gathering_count),
         "next_gathering_starts_at": next_gathering_starts_at,
@@ -1286,6 +1322,11 @@ def list_pathways(
     current_user: "User | None" = Depends(get_optional_user),
 ) -> list[PathwaySummary]:
     space = _get_space_visible_to(slug, db, current_user)
+    # The Pathways doorway only. Individual Pathway about / offer /
+    # checkout pages stay reachable regardless — a person must be able
+    # to get to the page where access is bought without already
+    # holding it.
+    area_access.require_area(db, space, current_user, area_policies.AREA_PATHWAYS)
     # SEC-005-E — manager visibility (see draft/archived pathways) now
     # requires admin, ownership, or active creator/moderator membership.
     # ``is_caretaker`` centralises this predicate and returns False for
@@ -1453,6 +1494,9 @@ def list_events(
     space = _get_space_or_404(slug, db)
 
     scope = scope if scope in ("upcoming", "archive") else "upcoming"
+    # Area policy decides whether this doorway answers at all. What a
+    # member may then *book* inside it is unchanged — see book_event.
+    area_access.require_area(db, space, current_user, area_policies.AREA_GATHERINGS)
 
     # Determine if caller is a member (affects event visibility and booking access)
     is_member = False
@@ -2355,6 +2399,9 @@ def get_event(
 ) -> dict:
     """Return a single published event by ID within a space, with booking state."""
     space = _get_space_or_404(slug, db)
+    # A child of the Gatherings area — never more reachable than the
+    # list it belongs to, or the list becomes a formality.
+    area_access.require_area(db, space, current_user, area_policies.AREA_GATHERINGS)
     event = (
         db.query(Event)
         .filter(

@@ -8,6 +8,8 @@ from app.models.platform import CreatorProfile, Space, SpaceMembership, SpaceRol
 from app.models.user import User
 from app.members.schemas import MemberProfile, PublicProfile
 from app.services.space_viewer import require_space_viewer
+from app.spaces.area_access import require_area
+from app.spaces.area_policies import AREA_MEMBERS
 
 members_router = APIRouter(prefix="/api/spaces", tags=["members"])
 profiles_router = APIRouter(prefix="/api/profile", tags=["profiles"])
@@ -55,6 +57,12 @@ def list_members(
     """
     space = _get_space_or_404(slug, db)
     viewer = require_space_viewer(db, current_user, space)
+    # Area policy on top of membership: a Collective may restrict the
+    # directory doorway to members holding active access. It can never
+    # *open* it — ``show_member_directory`` still decides whether the
+    # area exists at all, and ``resolve_area_access`` drops it when
+    # that is off regardless of policy.
+    require_area(db, space, current_user, AREA_MEMBERS)
 
     # Leaders administer the Collective, so the directory setting —
     # which exists to stop learners browsing each other — does not

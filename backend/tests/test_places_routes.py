@@ -242,8 +242,8 @@ class TestList:
         db.add(p)
         db.flush()
 
-        s1 = make_space(themes=["Wellbeing", "Movement"])
-        s2 = make_space(themes=["Movement", "Leadership"])
+        s1 = make_space(area_policies={"areas": {"gatherings": "public"}}, themes=["Wellbeing", "Movement"])
+        s2 = make_space(area_policies={"areas": {"gatherings": "public"}}, themes=["Movement", "Leadership"])
         db.add(SpacePlace(space_id=s1.id, place_id=p.id))
         db.add(SpacePlace(space_id=s2.id, place_id=p.id))
         db.flush()
@@ -261,9 +261,9 @@ class TestList:
         db.add(p)
         db.flush()
 
-        active   = make_space(themes=["Wellbeing"])
-        drafted  = make_space(status="draft",    themes=["Should not count"])
-        archived = make_space(status="archived", themes=["Also not counted"])
+        active   = make_space(area_policies={"areas": {"gatherings": "public"}}, themes=["Wellbeing"])
+        drafted  = make_space(area_policies={"areas": {"gatherings": "public"}}, status="draft",    themes=["Should not count"])
+        archived = make_space(area_policies={"areas": {"gatherings": "public"}}, status="archived", themes=["Also not counted"])
         db.add(SpacePlace(space_id=active.id,   place_id=p.id))
         db.add(SpacePlace(space_id=drafted.id,  place_id=p.id))
         db.add(SpacePlace(space_id=archived.id, place_id=p.id))
@@ -282,7 +282,7 @@ class TestList:
         db.add(p)
         db.flush()
 
-        space = make_space()
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, )
         db.add(SpacePlace(space_id=space.id, place_id=p.id))
         db.flush()
 
@@ -364,17 +364,17 @@ class TestGetPlace:
         db.flush()
 
         # Public + active + no auto_grant_role — should appear.
-        included = make_space(
+        included = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             slug="included-coll", name="Included",
             is_public=True, themes=["Wellbeing"],
         )
         # Private space — must not appear on the public detail.
-        private = make_space(
+        private = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             slug="private-coll", name="Private",
             is_public=False, themes=["Should not appear"],
         )
         # Draft — must not appear.
-        drafted = make_space(
+        drafted = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             slug="drafted-coll", name="Drafted",
             status="draft", is_public=True, themes=["Also skipped"],
         )
@@ -400,7 +400,7 @@ class TestGetPlace:
         db.add(p)
         db.flush()
 
-        space = make_space(is_public=True)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, is_public=True)
         db.add(SpacePlace(space_id=space.id, place_id=p.id))
         db.flush()
 
@@ -464,8 +464,8 @@ class TestGetPlace:
 
         # Two collectives, only one with a palette assigned; the second
         # exercises the null-fallback path.
-        with_palette = make_space(is_public=True, colour_story_key="earth-and-moss")
-        without_palette = make_space(is_public=True)
+        with_palette = make_space(area_policies={"areas": {"gatherings": "public"}}, is_public=True, colour_story_key="earth-and-moss")
+        without_palette = make_space(area_policies={"areas": {"gatherings": "public"}}, is_public=True)
         db.add_all([
             SpacePlace(space_id=with_palette.id,    place_id=p.id),
             SpacePlace(space_id=without_palette.id, place_id=p.id),
@@ -502,7 +502,7 @@ class TestGetPlace:
         p = _place(slug="private-venue", name="Private Venue")
         db.add(p)
         db.flush()
-        space = make_space(is_public=True)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, is_public=True)
         db.add(SpacePlace(space_id=space.id, place_id=p.id))
         db.flush()
 
@@ -898,7 +898,7 @@ class TestCollectivePlaceLifecycle:
         db.flush()
         melb = db.query(Place).filter(Place.slug == "melbourne").one()
         creator = make_user(role="creator")
-        space = make_space(
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             creator=creator, slug="in-person-coll", name="In Person Coll",
             is_public=True, connection_style="online",
         )
@@ -926,7 +926,7 @@ class TestCollectivePlaceLifecycle:
         db.flush()
         melb = db.query(Place).filter(Place.slug == "melbourne").one()
         creator = make_user(role="creator")
-        space = make_space(
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             creator=creator, slug="hybrid-coll", name="Hybrid Coll",
             is_public=True, connection_style="online",
         )
@@ -953,7 +953,7 @@ class TestCollectivePlaceLifecycle:
         db.add(self._melbourne())
         db.flush()
         creator = make_user(role="creator")
-        make_space(
+        make_space(area_policies={"areas": {"gatherings": "public"}}, 
             creator=creator, slug="online-coll", name="Online Coll",
             is_public=True, connection_style="online",
         )
@@ -970,7 +970,7 @@ class TestCollectivePlaceLifecycle:
         db.flush()
         melb = db.query(Place).filter(Place.slug == "melbourne").one()
         creator = make_user(role="creator")
-        space = make_space(
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             creator=creator, slug="fickle-coll", name="Fickle Coll",
             is_public=True, connection_style="in_person",
         )
@@ -997,7 +997,7 @@ class TestCollectivePlaceLifecycle:
         db.flush()
         melb = db.query(Place).filter(Place.slug == "melbourne").one()
         creator = make_user(role="creator")
-        space = make_space(
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             creator=creator, slug="stable-coll", name="Stable Coll",
             is_public=True, connection_style="online",
         )
@@ -1032,24 +1032,24 @@ class TestCollectivePlaceLifecycle:
         melb = db.query(Place).filter(Place.slug == "melbourne").one()
 
         # Visible baseline — a public active Collective linked to Melbourne.
-        visible = make_space(
+        visible = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             slug="visible-coll", name="Visible",
             is_public=True, status="active",
         )
         # Private (public=False) — should not appear.
-        private = make_space(
+        private = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             slug="private-coll", name="Private",
             is_public=False, status="active",
         )
         # Draft — should not appear.
-        drafted = make_space(
+        drafted = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             slug="drafted-coll", name="Drafted",
             is_public=True, status="draft",
         )
         # Archived (implemented as status='archived' in the enum).
         # The public query filters on ``SpaceStatus.active``, so any
         # non-active status is excluded. We assert that here.
-        archived = make_space(
+        archived = make_space(area_policies={"areas": {"gatherings": "public"}}, 
             slug="archived-coll", name="Archived",
             is_public=True, status="archived",
         )
@@ -1100,7 +1100,7 @@ class TestSeriesGrouping:
         p = _place(slug=slug, name=slug.replace("-", " ").title())
         db.add(p)
         db.flush()
-        space = make_space(is_public=True)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, is_public=True)
         db.add(SpacePlace(space_id=space.id, place_id=p.id))
         db.flush()
         return p, space

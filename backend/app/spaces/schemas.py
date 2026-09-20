@@ -109,6 +109,12 @@ class SpaceResponse(BaseModel):
     # creator has not nominated any — which the About page must render
     # as "not open right now", never as a free door.
     joining_options: list[dict] = []
+    # Which areas this viewer may reach. Viewer-specific — see the
+    # cache note on the endpoint. Deliberately only the resolved set,
+    # not the policy map: the member client needs to know what it may
+    # show, not why. Creator Studio reads the policies from the
+    # creator endpoint, where they are being edited.
+    area_access: list[str] = []
     home_tiles: list[dict] = []
     upcoming_gathering_count: int = 0
     next_gathering_starts_at: datetime | None = None

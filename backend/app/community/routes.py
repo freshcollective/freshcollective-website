@@ -64,6 +64,8 @@ from app.services.notification_service import (
     trigger_new_post,
     trigger_reply_to_comment,
 )
+from app.spaces import area_access
+from app.spaces import area_policies
 from app.services.scheduled_publisher import publish_due_posts
 from app.services.channel_permissions import (
     accessible_channels_for_user,
@@ -275,6 +277,7 @@ def list_community_posts(
     transitions them. When `channel` is omitted, the Space's default
     Common Room is used."""
     space = _get_space_or_404(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_CONVERSATIONS)
 
     # Resolve + authorise the Channel.
     target = _get_channel_by_slug_or_default(space, channel, db)
@@ -364,6 +367,7 @@ def get_community_post(
     current_user: User = Depends(get_current_user),
 ) -> PostDetail:
     space = _get_space_or_404(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_CONVERSATIONS)
     post = (
         db.query(CommunityPost)
         .options(
@@ -863,6 +867,7 @@ def search_space_members(
     narrowed to users who can access that Channel — a user must never be
     mentionable into a conversation they cannot open."""
     space = _get_space_or_404(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_CONVERSATIONS)
 
     # Channel scope (mention autocomplete). Absent → treat as if the
     # caller is in the default Common Room so open-Channel behaviour
@@ -924,6 +929,7 @@ def search_community(
     scheduled posts remain excluded; archived-Channel content surfaces
     for authorised viewers with an Archived flag on the row."""
     space = _get_space_or_404(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_CONVERSATIONS)
     q_stripped = q.strip()
     if not q_stripped:
         return SearchResponse(query="", total=0, hits=[])

@@ -100,6 +100,7 @@ export default async function SpaceLayout({ children, params }: Props) {
         isMember={isMember}
         unreadMessageCount={unreadMessageCount}
         showMemberDirectory={space.show_member_directory ?? true}
+        reachableAreas={space.area_access}
       />
 
       <div className="flex-1 py-10 pb-24 md:pb-10">

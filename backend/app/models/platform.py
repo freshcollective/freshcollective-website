@@ -309,6 +309,11 @@ class Space(Base):
     guidance_focus_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     guidance_links_title: Mapped[str | None] = mapped_column(Text, nullable=True)
     guidance_links_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Which areas each kind of viewer may reach. NULL means never
+    # configured, which resolves to the platform defaults — see
+    # app/spaces/area_policies.py. The doorway only; individual
+    # Pathway/Series/Gathering entitlement is unchanged.
+    area_policies: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # How people get in. 'open' (default, and what every Collective
     # did before migration 136) or 'purchase_required'. See
     # app/spaces/join_policy.py — free joining stays first-class.

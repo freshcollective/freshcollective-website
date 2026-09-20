@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getCommunityPost, getSpaceMembers, getMe } from '@/lib/serverApi'
+import { getCommunityPost, getSpace, getSpaceMembers, getMe } from '@/lib/serverApi'
+import { requireArea } from '@/lib/areaAccess'
 import PostTypeTag from '@/components/community/PostTypeTag'
 import ReactionBar from '@/components/community/ReactionBar'
 import ModerationMenu from '@/components/community/ModerationMenu'
@@ -80,16 +81,22 @@ interface MemberLite {
 
 export default async function PostDetailPage({ params }: Props) {
   const { slug, postId } = await params
-  const [post, members, me]: [
+  const [post, members, me, space]: [
     PostDetail | null,
     MemberLite[],
     { id: string; role: string } | null,
+    Awaited<ReturnType<typeof getSpace>>,
   ] = await Promise.all([
     getCommunityPost(slug, postId),
     getSpaceMembers(slug),
     getMe(),
+    getSpace(slug),
   ])
 
+
+  // A child of the conversations area — never more reachable than the
+  // doorway it sits behind.
+  requireArea(space, 'conversations')
   if (!post) notFound()
 
   const canModerate = !!(me && (

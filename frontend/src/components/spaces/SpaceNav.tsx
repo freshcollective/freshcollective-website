@@ -21,6 +21,11 @@ interface SpaceNavProps {
    *  ``true`` so a caller that has not loaded the Space yet keeps the
    *  long-standing behaviour. */
   showMemberDirectory?: boolean
+  /** Areas this viewer may reach, from ``SpaceResponse.area_access``.
+   *  The server resolved it; the tab bar renders it and decides
+   *  nothing of its own. Undefined means "not supplied" and keeps the
+   *  previous behaviour for any caller that has not threaded it. */
+  reachableAreas?: string[]
 }
 
 /**
@@ -32,9 +37,18 @@ interface SpaceNavProps {
  * page listing every collective the member belongs to — so this
  * component no longer needs any modal state or launcher.
  */
+/** Tab label → the area whose policy governs it. */
+const AREA_FOR_TAB: Record<string, string> = {
+  Conversations: 'conversations',
+  Pathways: 'pathways',
+  Gatherings: 'gatherings',
+  Members: 'members',
+  About: 'about',
+}
+
 export default function SpaceNav({
   spaceSlug, spaceName: _spaceName, isMember,
-  unreadMessageCount = 0, showMemberDirectory = true,
+  unreadMessageCount = 0, showMemberDirectory = true, reachableAreas,
 }: SpaceNavProps) {
   const pathname = usePathname()
   const base = `/spaces/${spaceSlug}`
@@ -52,7 +66,14 @@ export default function SpaceNav({
     { label: 'Gatherings', href: `${base}/events`,    icon: '◷' },
     { label: 'Members',    href: `${base}/members`,   icon: '◉' },
     { label: 'About',     href: `${base}/about`,    icon: '◇' },
-  ].filter((tab) => tab.label !== 'Members' || showMemberDirectory)
+  ]
+    .filter((tab) => tab.label !== 'Members' || showMemberDirectory)
+    // Area policy decides which doorways exist for this viewer. The
+    // server already answered; hiding a tab whose route would 404 is
+    // the whole point, and computing it again here is how the tab bar
+    // and the Home came to disagree about Members.
+    .filter((tab) => reachableAreas === undefined
+      || reachableAreas.includes(AREA_FOR_TAB[tab.label] ?? ''))
 
   function isActive(tab: Tab): boolean {
     if (tab.alsoActiveOn?.test(pathname)) return true

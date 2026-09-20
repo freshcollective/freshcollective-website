@@ -8,6 +8,7 @@ import CollectiveHomePanelSafe from '../assets/CollectiveHomePanelSafe'
 import CollectiveSettingsForm from './CollectiveSettingsForm'
 import CollectiveHomeTab from './CollectiveHomeTab'
 import DangerZone from './DangerZone'
+import AreaPolicyForm from './AreaPolicyForm'
 import JoinPolicyForm from './JoinPolicyForm'
 import OperatingDetailsForm from './OperatingDetailsForm'
 
@@ -167,8 +168,9 @@ export default function SettingsTabbedShell({
           endpoints could half-succeed. Auto-managed Collectives are
           excluded: their membership is computed, not chosen. */}
       {tab === 'visibility' && !spaceDetail.auto_grant_role && (
-        <div className="mb-5">
+        <div className="mb-5 space-y-5">
           <JoinPolicyForm slug={spaceDetail.slug} />
+          <AreaPolicyForm slug={spaceDetail.slug} />
         </div>
       )}
 

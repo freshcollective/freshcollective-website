@@ -82,9 +82,32 @@ describe('isProtectedRoute', () => {
     assert.equal(isProtectedRoute('/spaces/foo/pathways/bar/checkout'), false)
   })
 
-  test('/spaces private sub-routes are protected', () => {
-    assert.equal(isProtectedRoute('/spaces/foo/pathways/bar'), true)
-    assert.equal(isProtectedRoute('/spaces/foo/pathways/bar/steps/1'), true)
+  test('Collective routes are not decided here any more', () => {
+    // The proxy sees only a URL shape, and since area policies the
+    // answer depends on the Collective — /spaces/x/events is public
+    // for one and members-only for another. Each page resolves its
+    // own access server-side and 404s; a second authority guessing
+    // from the path is how the tab bar and the Home came to disagree.
+    for (const path of [
+      '/spaces/foo/pathways/bar',
+      '/spaces/foo/pathways/bar/steps/1',
+      '/spaces/foo/events',
+      '/spaces/foo/community',
+      '/spaces/foo/members',
+      '/spaces/foo/messages',
+    ]) {
+      assert.equal(isProtectedRoute(path), false, path)
+    }
+  })
+
+  test('unconditionally private roots keep their proxy guard', () => {
+    // Where a URL's shape really is the whole answer.
+    for (const path of [
+      '/dashboard', '/admin/users', '/creator-studio/settings',
+      '/settings/stay-connected', '/profile', '/onboarding',
+    ]) {
+      assert.equal(isProtectedRoute(path), true, path)
+    }
   })
 })
 

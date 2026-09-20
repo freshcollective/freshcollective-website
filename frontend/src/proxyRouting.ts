@@ -12,23 +12,32 @@
  *   protected-prefix matching so the admin door is always reachable.
  */
 
-// Public /spaces routes:
-//   /spaces                                         — browse
-//   /spaces/[slug]                                  — redirects to /pathways
-//   /spaces/[slug]/about                            — space about page
-//   /spaces/[slug]/pathways                         — pathway list (public)
-//   /spaces/[slug]/pathways/[pathway-slug]/about    — pathway about page
-//   /spaces/[slug]/pathways/[pathway-slug]/checkout — checkout entry (option selection)
-// Everything else under /spaces requires authentication.
-function isSpacesRouteProtected(pathname: string): boolean {
-  const segments = pathname.split('/').filter(Boolean)
-  if (segments.length <= 1) return false
-  if (segments.length === 2) return false
-  if (segments[2] === 'about') return false
-  if (segments[2] === 'pathways' && segments.length === 3) return false
-  if (segments[2] === 'pathways' && segments.length >= 5 && segments[4] === 'about') return false
-  if (segments[2] === 'pathways' && segments.length >= 5 && segments[4] === 'checkout') return false
-  return true
+/**
+ * Collective routes are no longer gated here.
+ *
+ * The proxy sees only the shape of a URL. Since migration 137 the
+ * answer depends on the Collective: one may publish its Gatherings to
+ * everyone while another keeps them for members holding active
+ * access, and ``/spaces/x/events`` looks identical in both. A
+ * path-shape allowlist cannot express that, and while it tried, it
+ * was wrong in both directions at once — it sent signed-out visitors
+ * to /login for Gatherings the API served anonymously, and let
+ * ``/pathways`` through for Collectives that wanted it closed.
+ *
+ * Two authorities deciding one question is the failure mode this
+ * codebase keeps rediscovering, so there is now one: every Collective
+ * page resolves its own area access server-side via
+ * ``SpaceResponse.area_access`` and calls ``notFound()``, and every
+ * API endpoint behind it refuses independently. Both answer 404
+ * rather than redirecting, so a refusal never confirms that an area
+ * exists — and nothing paints before disappearing.
+ *
+ * Unconditionally-private roots (/dashboard, /admin, /creator*,
+ * /settings, /profile, /onboarding) keep their proxy protection,
+ * where a URL's shape really is the whole answer.
+ */
+function isSpacesRouteProtected(_pathname: string): boolean {
+  return false
 }
 
 /**

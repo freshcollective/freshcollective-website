@@ -120,7 +120,7 @@ class TestReorderEndpoint:
         self, db, client, make_user, make_space,
     ):
         creator = make_user(role="creator")
-        space = make_space(creator=creator)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator)
         a = _make_option(db, space, name="A", position=0)
         b = _make_option(db, space, name="B", position=1)
         c = _make_option(db, space, name="C", position=2)
@@ -143,7 +143,7 @@ class TestReorderEndpoint:
         self, db, client, make_user, make_space,
     ):
         creator = make_user(role="creator")
-        space = make_space(creator=creator)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator)
         a = _make_option(db, space, name="A", position=0)
         b = _make_option(db, space, name="B", position=1)
         c = _make_option(db, space, name="C", position=2)
@@ -165,7 +165,7 @@ class TestReorderEndpoint:
         self, db, client, make_user, make_space,
     ):
         creator = make_user(role="creator")
-        space = make_space(creator=creator)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator)
         a = _make_option(db, space, name="A", position=0)
         b = _make_option(db, space, name="B", position=1)
         db.commit()
@@ -184,7 +184,7 @@ class TestReorderEndpoint:
     ):
         creator_a = make_user(role="creator")
         creator_b = make_user(role="creator")
-        space = make_space(creator=creator_a)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator_a)
         a = _make_option(db, space, name="A", position=0)
         b = _make_option(db, space, name="B", position=1)
         db.commit()
@@ -206,7 +206,7 @@ class TestReorderEndpoint:
         self, db, client, make_user, make_space,
     ):
         creator = make_user(role="creator")
-        space = make_space(creator=creator)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator)
         a = _make_option(db, space, name="A", position=0)
         b = _make_option(db, space, name="B", position=1)
         db.commit()
@@ -224,8 +224,8 @@ class TestReorderEndpoint:
     ):
         creator_a = make_user(role="creator")
         creator_b = make_user(role="creator")
-        space_a = make_space(creator=creator_a)
-        space_b = make_space(creator=creator_b)
+        space_a = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator_a)
+        space_b = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator_b)
         a1 = _make_option(db, space_a, name="A1", position=0)
         a2 = _make_option(db, space_a, name="A2", position=1)
         # Foreign option — belongs to a completely different Collective.
@@ -249,7 +249,7 @@ class TestReorderEndpoint:
         self, db, client, make_user, make_space,
     ):
         creator = make_user(role="creator")
-        space = make_space(creator=creator)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator)
         a = _make_option(db, space, name="A", position=0)
         _b = _make_option(db, space, name="B", position=1)
         db.commit()
@@ -266,7 +266,7 @@ class TestReorderEndpoint:
         self, db, client, make_user, make_space,
     ):
         creator = make_user(role="creator")
-        space = make_space(creator=creator)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator)
         a = _make_option(db, space, name="A", position=0)
         b = _make_option(db, space, name="B", position=1)
         archived = _make_option(
@@ -296,7 +296,7 @@ class TestMemberSeriesOrdering:
     ):
         creator = make_user(role="creator")
         member = make_user(role="user")
-        space = make_space(creator=creator)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator)
         series = _make_series(db, space)
 
         # Create in "wrong" position order to ensure the endpoint
@@ -323,7 +323,7 @@ class TestMemberSeriesOrdering:
     ):
         creator = make_user(role="creator")
         member = make_user(role="user")
-        space = make_space(creator=creator)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator)
         series = _make_series(db, space)
 
         a = _make_option(db, space, name="A", position=0)
@@ -356,7 +356,7 @@ class TestMemberSeriesOrdering:
         # calls ``max(position) + 1`` on insert, so a new option
         # should never land ahead of existing ones.
         creator = make_user(role="creator")
-        space = make_space(creator=creator)
+        space = make_space(area_policies={"areas": {"gatherings": "public"}}, creator=creator)
         _make_option(db, space, name="Existing1", position=0)
         _make_option(db, space, name="Existing2", position=1)
         db.commit()

@@ -6,6 +6,7 @@ import {
   getSpaceGatheringSeriesAboutBlocks,
   getSpaceGatheringSeriesPaymentOptions,
 } from '@/lib/serverApi'
+import { requireArea } from '@/lib/areaAccess'
 import { resolveMediaUrl } from '@/lib/api'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
@@ -122,7 +123,7 @@ export default async function MemberGatheringSeriesPage({ params }: Props) {
     SeriesDetail | null,
     PathwayAboutBlock[],
     PaymentOptionOut[],
-    { colour_palette?: CollectivePaletteMeta | null; timezone?: string | null } | null,
+    Awaited<ReturnType<typeof getSpace>>,
   ] = await Promise.all([
     getSpaceGatheringSeriesDetail(slug, seriesSlug),
     getSpaceGatheringSeriesAboutBlocks(slug, seriesSlug),
@@ -130,6 +131,10 @@ export default async function MemberGatheringSeriesPage({ params }: Props) {
     getSpace(slug),
   ])
 
+
+  // A child of the gatherings area — never more reachable than the
+  // doorway it sits behind.
+  requireArea(space, 'gatherings')
   if (!detail) notFound()
 
   const collectivePalette: CollectivePaletteMeta | null = space?.colour_palette ?? null

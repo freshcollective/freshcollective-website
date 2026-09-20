@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getSpace, getSpaceEvent, getSpaceEventAboutBlocks, getMe } from '@/lib/serverApi'
+import { requireArea } from '@/lib/areaAccess'
 import { resolveMediaUrl } from '@/lib/api'
 import type { EventDetail, PathwayAboutBlock } from '@/types/platform'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
@@ -229,6 +230,10 @@ export default async function EventDetailPage({ params }: Props) {
     getMe(),
   ])
 
+
+  // A child of the gatherings area — never more reachable than the
+  // doorway it sits behind.
+  requireArea(space, 'gatherings')
   if (!event) notFound()
 
   const isAuthenticated = !!me

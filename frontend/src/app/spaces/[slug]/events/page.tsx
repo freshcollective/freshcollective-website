@@ -7,6 +7,7 @@ import {
   getMyPasses,
   getSpaceGatheringSeries,
 } from '@/lib/serverApi'
+import { requireArea } from '@/lib/areaAccess'
 import MemberGatheringsGrid from '@/components/spaces/MemberGatheringsGrid'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
 import type { EventSummary, MemberProfile, SpaceResponse, SpaceAccessStatus, AccessPassSummary } from '@/types/platform'
@@ -44,6 +45,11 @@ export default async function SpaceEventsPage({ params }: Props) {
     SpaceResponse | null, EventSummary[], EventSummary[], MemberProfile[],
     SpaceAccessStatus | null, SeriesSummary[],
   ]
+
+  // Area policy decides whether this doorway opens. The API
+  // refuses independently; this stops the page shell rendering at
+  // all, so nothing paints and then vanishes.
+  requireArea(space, 'gatherings')
 
   const hasArchive = pastEvents.length > 0
 

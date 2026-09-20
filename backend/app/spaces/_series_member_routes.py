@@ -70,6 +70,8 @@ from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.payment_option import PaymentOption
 from app.models.payment_option_grant import PaymentOptionGrant
 from app.spaces.purchase_schedule_view import schedule_view
+from app.spaces import area_access
+from app.spaces import area_policies
 from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import (
     BookingStatus,
@@ -542,6 +544,7 @@ def list_member_gathering_series(
     populated on the detail endpoint.
     """
     space = _get_space(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_GATHERINGS)
     now = datetime.utcnow()
 
     series_rows = (
@@ -668,6 +671,7 @@ def get_member_gathering_series(
     """Full member detail for a Series — identity + access +
     upcoming Gatherings + past Gatherings (compact)."""
     space = _get_space(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_GATHERINGS)
     series = _get_published_series(space, series_slug, db)
     now = datetime.utcnow()
 
@@ -756,6 +760,7 @@ def get_member_series_about_blocks(
     presentational, no member-only content lives here today.
     """
     space = _get_space(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_GATHERINGS)
     series = _get_published_series(space, series_slug, db)
     from sqlalchemy.orm import selectinload
     return (
@@ -787,6 +792,7 @@ def list_member_series_payment_options(
     Series. See ``_member_purchasable_options_for_series`` for
     the exact filter."""
     space = _get_space(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_GATHERINGS)
     series = _get_published_series(space, series_slug, db)
     now = datetime.utcnow()
 
@@ -860,6 +866,7 @@ def get_member_event_about_blocks(
     public-ish paid or public Events are readable to anyone with the
     URL. Content itself is presentational — no attendee-gated fields."""
     space = _get_space(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_GATHERINGS)
     event = (
         db.query(Event)
         .filter(

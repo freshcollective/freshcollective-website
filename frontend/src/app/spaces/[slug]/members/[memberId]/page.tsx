@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getPublicProfile, getSpaceMembers } from '@/lib/serverApi'
+import { getPublicProfile, getSpace, getSpaceMembers } from '@/lib/serverApi'
+import { requireArea } from '@/lib/areaAccess'
 import Avatar from '@/components/ui/Avatar'
 import type { PublicProfile, MemberProfile } from '@/types/platform'
 
@@ -21,11 +22,16 @@ function formatDate(iso: string, opts: Intl.DateTimeFormatOptions = { month: 'lo
 export default async function MemberProfilePage({ params }: Props) {
   const { slug, memberId } = await params
 
-  const [profile, allMembers] = await Promise.all([
+  const [profile, allMembers, space] = await Promise.all([
     getPublicProfile(memberId) as Promise<PublicProfile | null>,
     getSpaceMembers(slug) as Promise<MemberProfile[]>,
+    getSpace(slug),
   ])
 
+
+  // A child of the members area — never more reachable than the
+  // doorway it sits behind.
+  requireArea(space, 'members')
   if (!profile) notFound()
 
   const spaceMember = allMembers.find((m) => m.id === memberId)

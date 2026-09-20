@@ -1,4 +1,5 @@
 import { getMe, getSpace, getSpaceMembers } from '@/lib/serverApi'
+import { requireArea } from '@/lib/areaAccess'
 import MembersView from '@/components/spaces/MembersView'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
 import type { MemberProfile, SpaceResponse } from '@/types/platform'
@@ -14,6 +15,11 @@ export default async function SpaceMembersPage({ params }: Props) {
     getSpaceMembers(slug),
     getSpace(slug) as Promise<SpaceResponse | null>,
   ])
+
+  // Area policy decides whether this doorway opens. The API
+  // refuses independently; this stops the page shell rendering at
+  // all, so nothing paints and then vanishes.
+  requireArea(space, 'members')
   const typedMembers = members as MemberProfile[]
 
   const leaders = typedMembers.filter(

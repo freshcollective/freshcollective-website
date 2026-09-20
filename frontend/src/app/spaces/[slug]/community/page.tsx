@@ -1,4 +1,5 @@
 import { getCommunityFeed, getMemberChannels, getSpace, getSpaceMembers, getMe, type ChannelSummaryLite } from '@/lib/serverApi'
+import { requireArea } from '@/lib/areaAccess'
 import CommunityFeed from '@/components/community/CommunityFeed'
 import ChannelSelector from '@/components/community/ChannelSelector'
 import ChannelHeader from '@/components/community/ChannelHeader'
@@ -20,6 +21,11 @@ export default async function SpaceCommunityPage({ params, searchParams }: Props
     getMe() as Promise<{ id: string; role: string } | null>,
     getMemberChannels(slug),
   ])
+
+  // Area policy decides whether this doorway opens. The API
+  // refuses independently; this stops the page shell rendering at
+  // all, so nothing paints and then vanishes.
+  requireArea(space, 'conversations')
 
   // Pick the active Channel from the URL, falling back to the
   // system Common Room (or the first accessible Channel if — impossibly —

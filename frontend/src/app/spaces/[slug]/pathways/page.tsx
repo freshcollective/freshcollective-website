@@ -1,4 +1,5 @@
 import { getSpace, getSpaceMembers, getSpacePathways, getMe } from '@/lib/serverApi'
+import { requireArea } from '@/lib/areaAccess'
 import PathwayCard from '@/components/spaces/PathwayCard'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
 import type { MemberProfile, PathwaySummary, SpaceResponse, UserProfile } from '@/types/platform'
@@ -15,6 +16,11 @@ export default async function SpacePathwaysPage({ params }: Props) {
     getSpaceMembers(slug),
     getMe(),
   ])
+
+  // Area policy decides whether this doorway opens. The API
+  // refuses independently; this stops the page shell rendering at
+  // all, so nothing paints and then vanishes.
+  requireArea(space, 'pathways')
   const isAuthenticated = user !== null
 
   const active = pathways.filter((p) => p.status === 'active')

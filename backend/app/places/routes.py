@@ -42,6 +42,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.place import Place, SpacePlace
 from app.models.platform import Event, EventSeries, Space, SpaceStatus
+from app.spaces import area_policies
 from app.models.user import User
 from app.spaces.schemas import PublicSpaceCard
 from app.services.location_providers import (
@@ -465,6 +466,25 @@ def _resolve_slug(db: Session, base_slug: str) -> str:
 # ---------------------------------------------------------------------------
 
 @router.get("", response_model=list[PlaceSummary])
+
+def _space_gatherings_are_public():
+    """SQL mirror of ``area_policies.resolve_policies(...)['gatherings']
+    == 'public'``.
+
+    The default is ``members``, so a Collective that has never
+    configured its areas — ``area_policies IS NULL`` — is *not* public
+    here. Expressed in SQL rather than Python because this runs inside
+    an aggregate over every Place at once; ``area_policies.py`` stays
+    the authority on what the values mean, and this must be kept in
+    step with it. One shape, checked by test.
+    """
+    from sqlalchemy import text as _text
+    return _text(
+        "spaces.area_policies IS NOT NULL "
+        "AND spaces.area_policies -> 'areas' ->> 'gatherings' = 'public'"
+    )
+
+
 def list_places(db: Session = Depends(get_db)) -> list[PlaceSummary]:
     """List every active Place with a small activity summary.
 
@@ -520,6 +540,10 @@ def list_places(db: Session = Depends(get_db)) -> list[PlaceSummary]:
     # Upcoming published gatherings per Place — Events on linked
     # active Collectives with ``starts_at`` in the future.
     now = datetime.utcnow()
+    # Counted the same way the detail page lists them, or the card
+    # advertises "6 upcoming gatherings" for a Place whose Gatherings
+    # are all behind a members-only door — a number that is itself a
+    # disclosure, and a promise the next click cannot keep.
     gather_rows = db.execute(
         select(SpacePlace.place_id, func.count(Event.id))
         .join(Space, Space.id == SpacePlace.space_id)
@@ -529,6 +553,7 @@ def list_places(db: Session = Depends(get_db)) -> list[PlaceSummary]:
             Space.status == SpaceStatus.active,
             Event.is_published.is_(True),
             Event.starts_at > now,
+            _space_gatherings_are_public(),
         )
         .group_by(SpacePlace.place_id)
     ).all()
@@ -596,8 +621,20 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
     # Space events endpoint applies for anonymous callers.
     gatherings: list[PlaceGathering] = []
     upcoming_series: list[PlaceSeries] = []
-    if linked_spaces:
-        space_by_id = {s.id: s for s in linked_spaces}
+    # Discover Places is an anonymous public surface, so it may only
+    # show Gatherings from Collectives whose Gatherings area is public.
+    # Without this it is a back door: a Collective that set Gatherings
+    # to members-only would still have its schedule listed here, which
+    # is exactly the leak the area policy exists to close. Resolved in
+    # Python from a column already loaded — no extra query.
+    gatherings_public_spaces = [
+        sp for sp in linked_spaces
+        if area_policies.resolve_policies(sp.area_policies).get(
+            area_policies.AREA_GATHERINGS,
+        ) == area_policies.POLICY_PUBLIC
+    ]
+    if gatherings_public_spaces:
+        space_by_id = {sp.id: sp for sp in gatherings_public_spaces}
         # Per-Collective palette hexes so each Gathering card can inherit
         # its parent Collective's personality. One aggregate lookup keyed
         # by ``colour_story_key`` — avoids N+1 for pages where several
