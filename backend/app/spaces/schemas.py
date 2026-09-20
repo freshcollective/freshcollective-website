@@ -95,6 +95,11 @@ class SpaceResponse(BaseModel):
     # platform has switched off removed. Resolved server-side so the
     # client cannot render a tile a privacy setting forbids, and so a
     # Collective configured before a tile type existed still gets it.
+    # Who leads this Collective. Already published on
+    # ``PublicSpaceCard`` for the Explore list; repeated here so the
+    # public About page can print "Led by …" without reading the
+    # member directory, which is member-only.
+    creator_name: str | None = None
     home_tiles: list[dict] = []
     upcoming_gathering_count: int = 0
     next_gathering_starts_at: datetime | None = None

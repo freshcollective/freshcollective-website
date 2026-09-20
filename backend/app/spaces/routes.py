@@ -569,25 +569,11 @@ def _get_member_space(slug: str, current_user: "User", db: Session) -> Space:
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
 
-    # Platform admin — preserved cross-Collective oversight.
-    if current_user.role == "admin":
-        return space
-
-    # Space owner.
-    if space.creator_id == current_user.id:
-        return space
-
-    # Active membership (any role).
-    membership = (
-        db.query(SpaceMembership.id)
-        .filter(
-            SpaceMembership.user_id == current_user.id,
-            SpaceMembership.space_id == space.id,
-            SpaceMembership.status == "active",
-        )
-        .first()
-    )
-    if membership is not None:
+    # The rule itself lives in ``services.space_viewer`` so the members
+    # directory enforces the same one rather than its own variant —
+    # which is how that endpoint came to answer anonymous callers.
+    from app.services.space_viewer import resolve_space_viewer
+    if resolve_space_viewer(db, current_user, space).qualifies:
         return space
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Space not found.")
@@ -992,8 +978,16 @@ def get_space(
         db.query(func.min(Event.starts_at)).filter(*_gathering_window).scalar()
     )
 
+    creator_name = None
+    if space.creator_id:
+        creator_row = (
+            db.query(User.name).filter(User.id == space.creator_id).first()
+        )
+        creator_name = creator_row[0] if creator_row else None
+
     resp = SpaceResponse.model_validate(space)
     return resp.model_copy(update={
+        "creator_name": creator_name,
         "home_tiles": home_config.resolve(
             space.home_config,
             show_member_directory=space.show_member_directory,

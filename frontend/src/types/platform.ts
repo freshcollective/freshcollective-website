@@ -52,6 +52,8 @@ export interface SpaceResponse {
   guidance_links_title: string | null
   guidance_links_body: string | null
   show_member_directory: boolean
+  /** Public attribution — who leads this Collective. */
+  creator_name?: string | null
   /** Authoritative counts injected by the ``get_space`` endpoint. Use
    *  these for sidebar/stats displays — do NOT derive counts from
    *  the ``/api/spaces/{slug}/members`` list, which is privacy-

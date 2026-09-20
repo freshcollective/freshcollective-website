@@ -37,8 +37,10 @@ export default async function SpaceAboutPage({ params }: Props) {
   const memberCount    = learnerCount + leaderCount
   const pathwayCount   = space.pathways?.length ?? 0
   const gatheringCount = events.length
-  const spaceCreators  = members.filter((m) => m.space_role === 'creator')
-  const creatorName    = spaceCreators[0]?.display_name ?? null
+  // From the Space payload, not the member directory: the directory is
+  // member-only, and "Led by …" is public attribution that a visitor
+  // deciding whether to join should still see.
+  const creatorName    = space.creator_name ?? null
 
   const currentUserMember = me ? members.find((m) => m.id === me.id) : null
   const isSpaceMember     = !!currentUserMember

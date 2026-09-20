@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models.platform import CreatorProfile, Space, SpaceMembership, SpaceMembershipStatus, SpaceRole
+from app.models.platform import CreatorProfile, Space, SpaceMembership, SpaceRole
 from app.models.user import User
 from app.members.schemas import MemberProfile, PublicProfile
+from app.services.space_viewer import require_space_viewer
 
 members_router = APIRouter(prefix="/api/spaces", tags=["members"])
 profiles_router = APIRouter(prefix="/api/profile", tags=["profiles"])
@@ -39,35 +40,30 @@ def list_members(
 ) -> list[MemberProfile]:
     """Return active Space members — creators/moderators first, then learners.
 
-    When show_member_directory=False and the caller is a learner, only
-    creators and moderators are returned (learners remain hidden).
+    Member-only. A signed-out visitor, or a signed-in person who
+    belongs to some other Collective, is told the Collective does not
+    exist rather than handed its membership list.
+
+    Previously this answered any caller and applied directory privacy
+    only when ``caller_role == "learner"``. An anonymous caller has no
+    role, so the check silently passed them through and any public
+    Collective's full membership — learner rows included, directory
+    switched off or not — was readable without signing in.
+
+    Inside the Collective the existing rule is unchanged: with
+    ``show_member_directory=False`` a learner sees only leaders.
     """
     space = _get_space_or_404(slug, db)
-    if not space.is_public and current_user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
+    viewer = require_space_viewer(db, current_user, space)
 
-    # Determine the caller's role to apply directory privacy
-    caller_role: str | None = None
-    if current_user:
-        caller_membership = (
-            db.query(SpaceMembership)
-            .filter(
-                SpaceMembership.user_id == current_user.id,
-                SpaceMembership.space_id == space.id,
-                SpaceMembership.status == SpaceMembershipStatus.active,
-            )
-            .first()
-        )
-        if caller_membership:
-            caller_role = (
-                caller_membership.role.value
-                if hasattr(caller_membership.role, "value")
-                else str(caller_membership.role)
-            )
-
+    # Leaders administer the Collective, so the directory setting —
+    # which exists to stop learners browsing each other — does not
+    # apply to them. Phrased as "not a leader" rather than "is a
+    # learner" so anyone without a recognised inside role is treated
+    # as an outsider by default.
     hide_learners = (
-        not getattr(space, 'show_member_directory', True)
-        and caller_role == "learner"
+        not getattr(space, "show_member_directory", True)
+        and not viewer.is_leader
     )
 
     membership_filter = [
