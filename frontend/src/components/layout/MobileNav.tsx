@@ -11,6 +11,7 @@ interface Props {
   // PublicHeader so this client component doesn't have to read
   // process.env directly (keeps the flag surface in one place).
   discoveryOn: boolean
+  waysToConnectOn: boolean
   dark?: boolean
 }
 
@@ -19,17 +20,18 @@ interface Props {
 // The peer nav is the marketing surface; "Your World" is kept out of
 // it deliberately (authenticated utility, surfaced separately below
 // as an account destination for signed-in visitors).
-function peerNavItems(discoveryOn: boolean): Array<{ href: string; label: string }> {
+function peerNavItems(
+  discoveryOn: boolean, waysToConnectOn: boolean,
+): Array<{ href: string; label: string }> {
   const items: Array<{ href: string; label: string }> = []
   items.push({ href: '/spaces', label: 'Explore Collectives' })
-  if (discoveryOn) {
-    items.push({ href: '/discover-places', label: 'Discover Places' })
-    items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
-  }
+  // One flag each — see lib/featureFlags.ts.
+  if (discoveryOn) items.push({ href: '/discover-places', label: 'Discover Places' })
+  if (waysToConnectOn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
   return items
 }
 
-export default function MobileNav({ isLoggedIn, discoveryOn, dark }: Props) {
+export default function MobileNav({ isLoggedIn, discoveryOn, waysToConnectOn, dark }: Props) {
   const [open, setOpen] = useState(false)
   const pathname = usePathname()
   const router = useRouter()
@@ -98,7 +100,7 @@ export default function MobileNav({ isLoggedIn, discoveryOn, dark }: Props) {
             style={{ background: '#0C1826', borderBottom: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 16px 48px rgba(0,0,0,0.50)' }}>
 
             <nav className="mb-5 space-y-0.5">
-              {peerNavItems(discoveryOn).map(({ href, label }) => (
+              {peerNavItems(discoveryOn, waysToConnectOn).map(({ href, label }) => (
                 <Link
                   key={href}
                   href={href}

@@ -13,7 +13,7 @@ import {
   getSpaceEvents,
 } from '@/lib/serverApi'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
-import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
+import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureFlags'
 import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary, UserProfile } from '@/types/platform'
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from './AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
@@ -213,6 +213,7 @@ export default async function DashboardPage() {
   const publicBySlug = new Map(publicSpaces.map((s) => [s.slug, s]))
   const { soon, hasMore } = filterUpcoming(cards)
   const discoveryOn = isDiscoveryPillarEnabled()
+  const waysToConnectOn = isWaysToConnectEnabled()
 
   return (
     <div className="min-h-screen" style={{ background: '#FAFAF8' }}>
@@ -379,8 +380,12 @@ export default async function DashboardPage() {
               which reads better at 2-across so the single card
               sits alongside a neighbour rather than centre-heavy in
               a 3-column layout. */}
+          {/* The wider grid means "there are extra pillar cards", and
+              each flag now contributes one independently. With both
+              off the 2-across layout still avoids stranding a lone
+              card in a 3-column row. */}
           <div className={
-            discoveryOn
+            discoveryOn || waysToConnectOn
               ? FULL_WIDTH_CARD_GRID
               : 'grid gap-8 sm:grid-cols-2'
           }>
@@ -393,14 +398,14 @@ export default async function DashboardPage() {
               artUrl={exploreArt?.thumbnail_url ?? exploreArt?.image_url ?? null}
             />
             {discoveryOn && (
-              <>
-                <DiscoverPlacesCard
-                  artUrl={discoverPlacesArt?.thumbnail_url ?? discoverPlacesArt?.image_url ?? null}
-                />
-                <WaysToConnectCard
-                  artUrl={waysToConnectArt?.thumbnail_url ?? waysToConnectArt?.image_url ?? null}
-                />
-              </>
+              <DiscoverPlacesCard
+                artUrl={discoverPlacesArt?.thumbnail_url ?? discoverPlacesArt?.image_url ?? null}
+              />
+            )}
+            {waysToConnectOn && (
+              <WaysToConnectCard
+                artUrl={waysToConnectArt?.thumbnail_url ?? waysToConnectArt?.image_url ?? null}
+              />
             )}
           </div>
         </Section>

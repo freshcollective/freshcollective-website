@@ -8,6 +8,20 @@ GET /api/uploads/platform-artwork/{file_path:path}
     public R2 origin (``R2_PUBLIC_BASE_URL``). In filesystem mode it
     serves the local file directly.
 
+GET /api/uploads/place-artwork/{file_path:path}
+    Also publicly readable, for the same reason: Discover Places is an
+    unauthenticated surface and a Place's hero artwork is curated,
+    member-facing imagery with nothing private in it.
+
+    It differs from platform artwork in *where the bytes live*. These
+    objects were written to the PRIVATE bucket and stay there — moving
+    them would mean a data migration and would break every
+    ``hero_artwork_url`` already stored. So this route reads publicly
+    from a private object by issuing the same short-lived pre-signed
+    redirect the auth-gated route uses. The grant is read-only and
+    expires in minutes; writes (upload, delete, edit) remain behind
+    the admin API and are untouched.
+
 GET /api/uploads/{file_path:path}
     All other uploads (avatars, cover images, resources, atlas artwork,
     community images, etc.) require a signed-in user AND per-namespace
@@ -113,8 +127,17 @@ def _redirect_to_public_r2(key: str) -> RedirectResponse:
 
 
 def _redirect_to_presigned_r2(key: str) -> RedirectResponse:
-    """Private-bucket redirect via a short-lived pre-signed URL. Called
-    only after the auth-gated route has verified the user's session."""
+    """Private-bucket redirect via a short-lived pre-signed URL.
+
+    Two callers, and the difference matters. ``serve_upload`` calls it
+    after verifying the session and the per-namespace rule, so the
+    grant follows an authorisation decision. ``serve_public_place_artwork``
+    calls it with no session at all, because Place artwork is public
+    content that happens to be stored privately — the namespace itself
+    is the authorisation decision, made once, here in the route table
+    rather than per request.
+
+    Either way the URL is read-only and expires in minutes."""
     assert settings.r2_bucket_private is not None
     # Attribute lookup at call time (via the module reference) so tests
     # that monkeypatch ``storage_module._r2_client`` are observed here.
@@ -146,6 +169,30 @@ def serve_public_upload(file_path: str):
     key = f"platform-artwork/{file_path}"
     if settings.is_r2_enabled:
         return _redirect_to_public_r2(key)
+    return _serve_from_filesystem(key)
+
+
+@uploads_router.get("/place-artwork/{file_path:path}")
+def serve_public_place_artwork(file_path: str):
+    """Public read for curated Place hero artwork.
+
+    Declared before the catch-all so it wins the route match; without
+    it these keys fall through to ``serve_upload``, where
+    ``place-artwork`` is not in the dispatch table and is therefore
+    default-denied — which is exactly what happened before this route
+    existed: 401 for anonymous visitors and 403 for everyone else,
+    including administrators, so the artwork rendered nowhere at all.
+
+    Only reads are opened up. Uploading, replacing and deleting Place
+    artwork still go through the admin API in
+    ``app/admin/physical_locations.py`` behind ``get_admin_user``.
+    """
+    _reject_traversal(file_path)
+    key = f"place-artwork/{file_path}"
+    if settings.is_r2_enabled:
+        # Presigned rather than a public-origin redirect: the bytes are
+        # in the private bucket and stay there.
+        return _redirect_to_presigned_r2(key)
     return _serve_from_filesystem(key)
 
 

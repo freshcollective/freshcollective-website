@@ -147,7 +147,16 @@ services:
     envVars:
       - key: NODE_VERSION
         value: "24.15.0"
+      # Discover Places. Build-time inlined by Next.js, so flipping it
+      # requires a rebuild of fc-web, not just a restart. The backend
+      # sibling DISCOVERY_PILLAR_ENABLED on fc-api must be turned on
+      # first, or the page renders and every /api/places call 503s.
       - key: NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED
+        value: "false"
+      # Ways to Connect, gated separately since it has no
+      # recommendation service behind it yet. Same build-time
+      # semantics. No backend flag — the surface makes no API calls.
+      - key: NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED
         value: "false"
       # Server-side proxy target — not exposed to the browser.
       # SEC-010 Step 1: routes BFF traffic over Render's private

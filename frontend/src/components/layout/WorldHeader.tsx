@@ -35,6 +35,7 @@ interface Props {
   }
   /** Mirrors the backend's discovery_pillar_enabled flag. */
   discoveryOn: boolean
+  waysToConnectOn: boolean
 }
 
 interface NavItem {
@@ -47,15 +48,14 @@ interface NavItem {
  * docs/foundations/discovery-connection-belonging-v1.1.md.
  * Your World is always first for signed-in visitors.
  */
-function peerNavItems(discoveryOn: boolean): NavItem[] {
+function peerNavItems(discoveryOn: boolean, waysToConnectOn: boolean): NavItem[] {
   const items: NavItem[] = [
     { href: '/dashboard', label: 'Your World' },
     { href: '/spaces',    label: 'Explore Collectives' },
   ]
-  if (discoveryOn) {
-    items.push({ href: '/discover-places', label: 'Discover Places' })
-    items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
-  }
+  // One flag each — see lib/featureFlags.ts.
+  if (discoveryOn) items.push({ href: '/discover-places', label: 'Discover Places' })
+  if (waysToConnectOn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
   return items
 }
 
@@ -74,9 +74,9 @@ function isActive(pathname: string, href: string): boolean {
   return false
 }
 
-export default function WorldHeader({ user, discoveryOn }: Props) {
+export default function WorldHeader({ user, discoveryOn, waysToConnectOn }: Props) {
   const pathname = usePathname() ?? ''
-  const items = peerNavItems(discoveryOn)
+  const items = peerNavItems(discoveryOn, waysToConnectOn)
   const displayName = user.name ?? 'Member'
 
   return (

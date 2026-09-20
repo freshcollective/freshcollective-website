@@ -2,7 +2,7 @@ import { ReactNode } from 'react'
 import { cookies } from 'next/headers'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
-import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
+import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureFlags'
 import PublicHeader from './PublicHeader'
 import PublicFooter from './PublicFooter'
 import WorldHeader from './WorldHeader'
@@ -82,7 +82,11 @@ export default async function SiteShell({
   return (
     <>
       {useWorld && user
-        ? <WorldHeader user={{ name: user.name, role: user.role }} discoveryOn={isDiscoveryPillarEnabled()} />
+        ? <WorldHeader
+            user={{ name: user.name, role: user.role }}
+            discoveryOn={isDiscoveryPillarEnabled()}
+            waysToConnectOn={isWaysToConnectEnabled()}
+          />
         : <PublicHeader />}
       <main className="flex-1">{children}</main>
       {!noFooter && <PublicFooter />}

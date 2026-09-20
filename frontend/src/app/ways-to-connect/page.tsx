@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
-import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
+import { isWaysToConnectEnabled } from '@/lib/featureFlags'
 import WaysToConnectPrototype from './_prototype/WaysToConnectPrototype'
 
 export const metadata: Metadata = {
@@ -17,12 +17,14 @@ export const metadata: Metadata = {
  * level so the prototype only owns its own interactive content.
  *
  * The flag gate is unchanged: when
- * NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED is off, this route 404s.
+ * NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED is off, this route 404s.
+ * Gated separately from Discover Places: this surface has no
+ * recommendation service behind it yet.
  *
  * See docs/foundations/discovery-connection-belonging-ways-to-connect.md.
  */
 export default function WaysToConnectPage() {
-  if (!isDiscoveryPillarEnabled()) notFound()
+  if (!isWaysToConnectEnabled()) notFound()
 
   return (
     <SiteShell>

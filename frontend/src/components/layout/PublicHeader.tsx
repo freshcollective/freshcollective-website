@@ -6,7 +6,7 @@ import MobileNav from './MobileNav'
 import NotificationBell from './NotificationBell'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
-import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
+import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureFlags'
 import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 interface MeResponse {
@@ -40,13 +40,14 @@ async function getCurrentUser(): Promise<MeResponse | null> {
 // either logged-out OR logged-in visitors; it is an authenticated
 // utility, surfaced on the right-side auth cluster instead so it
 // reads as an account destination, not a marketing concept.
-function peerNavItems(discoveryOn: boolean): Array<{ href: string; label: string }> {
+function peerNavItems(
+  discoveryOn: boolean, waysToConnectOn: boolean,
+): Array<{ href: string; label: string }> {
   const items: Array<{ href: string; label: string }> = []
   items.push({ href: '/spaces', label: 'Explore Collectives' })
-  if (discoveryOn) {
-    items.push({ href: '/discover-places', label: 'Discover Places' })
-    items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
-  }
+  // One flag each: a nav entry must never outlive the route behind it.
+  if (discoveryOn) items.push({ href: '/discover-places', label: 'Discover Places' })
+  if (waysToConnectOn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
   return items
 }
 
@@ -64,7 +65,8 @@ export default async function PublicHeader({
 }) {
   const user = await getCurrentUser()
   const discoveryOn = isDiscoveryPillarEnabled()
-  const centreNav   = peerNavItems(discoveryOn)
+  const waysToConnectOn = isWaysToConnectEnabled()
+  const centreNav   = peerNavItems(discoveryOn, waysToConnectOn)
   // "Your World" is the authenticated account entry point — always
   // available to signed-in visitors on the right-side auth cluster,
   // regardless of whether the Discovery pillar is on. Signed-out
@@ -136,7 +138,7 @@ export default async function PublicHeader({
             )}
           </div>
 
-          <MobileNav isLoggedIn={!!user} discoveryOn={discoveryOn} dark />
+          <MobileNav isLoggedIn={!!user} discoveryOn={discoveryOn} waysToConnectOn={waysToConnectOn} dark />
 
         </Container>
       </header>
@@ -210,7 +212,7 @@ export default async function PublicHeader({
         </div>
 
         {/* Mobile nav — hamburger defaults to dark (navy) for light header */}
-        <MobileNav isLoggedIn={!!user} discoveryOn={discoveryOn} />
+        <MobileNav isLoggedIn={!!user} discoveryOn={discoveryOn} waysToConnectOn={waysToConnectOn} />
 
       </Container>
     </header>

@@ -260,6 +260,13 @@ def _authorise_media(user: User, file_path: str, db: Session) -> None:
 
 # Prefix → resolver. Order doesn't matter — we match on the exact first
 # path segment. Anything not in this table is default-deny.
+#
+# Two namespaces are deliberately absent because they never reach this
+# function: ``platform-artwork`` and ``place-artwork`` are matched by
+# their own public routes in ``app/uploads/routes.py``, declared ahead
+# of the catch-all. Adding either here would have no effect; removing
+# their routes would silently default-deny them, which is the bug that
+# made Place artwork unrenderable before those routes existed.
 _DISPATCH = {
     "avatars":          _authorise_avatar,
     "covers":           _authorise_space_cover,

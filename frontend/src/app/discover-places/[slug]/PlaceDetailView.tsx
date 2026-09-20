@@ -80,10 +80,19 @@ function PlaceHero({ place }: { place: PublicPlaceDetail }) {
             role={place.artwork_alt_text ? 'img' : undefined}
             aria-label={place.artwork_alt_text ?? undefined}
             aria-hidden={place.artwork_alt_text ? undefined : 'true'}
-            className="absolute inset-0 h-full w-full bg-cover"
+            className="absolute inset-0 h-full w-full"
+            // The atmospheric gradient is layered UNDERNEATH the
+            // artwork in one shorthand rather than swapped in by an
+            // onError handler: a CSS background cannot report a load
+            // failure, so a 403 or a deleted object would otherwise
+            // leave a blank band. With both layers declared, a missing
+            // image simply reveals the fallback that a Place without
+            // artwork already shows.
             style={{
-              backgroundImage: `url("${artworkUrl}")`,
-              backgroundPosition: `${focalX * 100}% ${focalY * 100}%`,
+              background: [
+                `url("${artworkUrl}") ${focalX * 100}% ${focalY * 100}% / cover no-repeat`,
+                atmosphereBackground(atmosphereForSlug(place.slug, false)),
+              ].join(', '),
             }}
           />
         ) : (

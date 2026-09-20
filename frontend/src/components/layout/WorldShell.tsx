@@ -2,7 +2,7 @@ import { ReactNode } from 'react'
 import { cookies } from 'next/headers'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
-import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
+import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureFlags'
 import WorldHeader from './WorldHeader'
 
 /**
@@ -51,6 +51,7 @@ async function getCurrentUser(): Promise<MeResponse | null> {
 export default async function WorldShell({ children }: { children: ReactNode }) {
   const user = await getCurrentUser()
   const discoveryOn = isDiscoveryPillarEnabled()
+  const waysToConnectOn = isWaysToConnectEnabled()
 
   // If the visitor is not authenticated, WorldShell renders no chrome.
   // Auth-guarded layouts (dashboard/layout.tsx etc.) already redirect
@@ -65,6 +66,7 @@ export default async function WorldShell({ children }: { children: ReactNode }) 
       <WorldHeader
         user={{ name: user.name, role: user.role }}
         discoveryOn={discoveryOn}
+        waysToConnectOn={waysToConnectOn}
       />
       <main className="flex-1">{children}</main>
     </>
