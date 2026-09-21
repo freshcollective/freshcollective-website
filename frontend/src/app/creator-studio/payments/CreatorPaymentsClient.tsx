@@ -1,5 +1,7 @@
 'use client'
 
+import type { CreatorPlanCardView } from '@/lib/creatorPlanCard'
+
 import { useEffect, useState } from 'react'
 import { apiUrl } from '@/lib/api'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
@@ -232,6 +234,7 @@ function SummaryCard({
 //  authored in ``/creator-studio/payment-options``.)
 
 export default function CreatorPaymentsClient({
+  planCard,
   feeBasisPoints,
   currency,
   stripeEnabled,
@@ -244,6 +247,7 @@ export default function CreatorPaymentsClient({
   headerLocation,
   headerCoverImageUrl,
 }: {
+  planCard: CreatorPlanCardView
   feeBasisPoints: number
   currency: string
   stripeEnabled: boolean
@@ -481,24 +485,39 @@ export default function CreatorPaymentsClient({
               {spaceOwnerIsViewer ? 'Your creator plan' : 'Creator plan'}
             </p>
             <p className="font-serif text-[1.1rem] font-semibold text-[#0F172A]">
-              Founding Creator Access
+              {planCard.planName ?? 'No creator plan'}
             </p>
             <div className="mt-3 flex flex-wrap gap-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Trial</p>
-                <p className="text-[14px] font-semibold text-[#0F172A]">14 days free</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Then</p>
-                <p className="text-[14px] font-semibold text-[#0F172A]">$19 / month</p>
-              </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Transaction fee</p>
-                <p className="text-[14px] font-semibold text-[#0F172A]">{feeDisplay} per sale</p>
-              </div>
+              {planCard.trialLabel && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Trial</p>
+                  <p className="text-[14px] font-semibold text-[#0F172A]">{planCard.trialLabel}</p>
+                </div>
+              )}
+              {planCard.priceLabel && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-black">
+                    {planCard.trialLabel ? 'Then' : 'Plan'}
+                  </p>
+                  <p className="text-[14px] font-semibold text-[#0F172A]">{planCard.priceLabel}</p>
+                </div>
+              )}
+              {planCard.feeLabel && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-black">Transaction fee</p>
+                  <p className="text-[14px] font-semibold text-[#0F172A]">{planCard.feeLabel} per sale</p>
+                </div>
+              )}
             </div>
+            {planCard.statusNote && (
+              <p className="mt-3 text-[12px] font-medium" style={{ color: '#92400E' }}>
+                {planCard.statusNote}
+              </p>
+            )}
             <p className="mt-3 text-[12px]" style={{ color: '#000000' }}>
-              No hidden fees. The transaction fee covers payment processing and platform infrastructure.
+              {planCard.isUnknown
+                ? 'No creator plan is currently assigned to this account.'
+                : 'No hidden fees. The transaction fee covers payment processing and platform infrastructure.'}
             </p>
           </>
         )}

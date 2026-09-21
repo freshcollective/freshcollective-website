@@ -4,6 +4,7 @@ import {
   getCreatorSpace,
   getSpaceBillingContext,
 } from '@/lib/serverApi'
+import { buildCreatorPlanCard } from '@/lib/creatorPlanCard'
 import type { CreatorSpaceDetail } from '@/types/platform'
 import CreatorPaymentsClient from './CreatorPaymentsClient'
 
@@ -47,6 +48,11 @@ export default async function CreatorPaymentsPage() {
 
   return (
     <CreatorPaymentsClient
+      planCard={buildCreatorPlanCard(
+        billing?.current_plan ?? null,
+        billing?.subscription ?? null,
+        feeBasisPoints,
+      )}
       feeBasisPoints={feeBasisPoints}
       currency={currency}
       stripeEnabled={stripeEnabled}
