@@ -462,12 +462,6 @@ def _resolve_slug(db: Session, base_slug: str) -> str:
         n += 1
 
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
-@router.get("", response_model=list[PlaceSummary])
-
 def _space_gatherings_are_public():
     """SQL mirror of ``area_policies.resolve_policies(...)['gatherings']
     == 'public'``.
@@ -486,6 +480,11 @@ def _space_gatherings_are_public():
     )
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@router.get("", response_model=list[PlaceSummary])
 def list_places(db: Session = Depends(get_db)) -> list[PlaceSummary]:
     """List every active Place with a small activity summary.
 
