@@ -462,6 +462,21 @@ def _resolve_slug(db: Session, base_slug: str) -> str:
         n += 1
 
 
+def _collective_is_publicly_listable():
+    """The Collectives a public Place surface may draw from.
+
+    Exactly the set ``linked_spaces`` selects on the detail page:
+    active, public, and not platform-managed. The count used to omit
+    the last two, so a private or auto-managed Collective's Gatherings
+    could be tallied on a card that would never show them.
+    """
+    return (
+        Space.status == SpaceStatus.active,
+        Space.is_public.is_(True),
+        Space.auto_grant_role.is_(None),
+    )
+
+
 def _space_gatherings_are_public():
     """SQL mirror of ``area_policies.resolve_policies(...)['gatherings']
     == 'public'``.
@@ -479,6 +494,33 @@ def _space_gatherings_are_public():
         "AND spaces.area_policies -> 'areas' ->> 'gatherings' = 'public'"
     )
 
+
+def public_gathering_filters(now: datetime):
+    """Which Gatherings a public Place surface may show — or count.
+
+    One definition, used by the card's number and by the detail page's
+    list, because the number on a card is a promise about what the next
+    click contains. The two drifted apart when the area-policy filter
+    was added to the count alone: the count kept tallying Gatherings
+    that were cancelled, archived, unpublished-to-the-public, or owned
+    by a Collective the page would not list, and Melbourne advertised
+    33 above a page showing 30.
+
+    Series grouping is deliberately *not* part of this. The detail page
+    collapses thirty Term 4 occurrences into one card; the count still
+    says thirty, because it counts Gatherings rather than cards.
+
+    Caller supplies ``now`` so a single request measures both halves
+    against one instant.
+    """
+    return (
+        Event.is_published.is_(True),
+        Event.starts_at > now,
+        Event.status == "active",
+        # Paid-separately tickets are sold to the public even when the
+        # Gathering is not flagged public, so they count as visible.
+        (Event.is_public.is_(True)) | (Event.booking_access_type == "paid_separately"),
+    )
 
 # ---------------------------------------------------------------------------
 # Routes
@@ -550,9 +592,8 @@ def list_places(db: Session = Depends(get_db)) -> list[PlaceSummary]:
         .join(Event, Event.space_id == Space.id)
         .where(
             SpacePlace.place_id.in_(place_ids),
-            Space.status == SpaceStatus.active,
-            Event.is_published.is_(True),
-            Event.starts_at > now,
+            *_collective_is_publicly_listable(),
+            *public_gathering_filters(now),
             _space_gatherings_are_public(),
         )
         .group_by(SpacePlace.place_id)
@@ -666,10 +707,7 @@ def get_place(slug: str, db: Session = Depends(get_db)) -> PlaceDetail:
             select(Event)
             .where(
                 Event.space_id.in_(list(space_by_id.keys())),
-                Event.is_published.is_(True),
-                Event.starts_at > now,
-                Event.status == "active",
-                (Event.is_public.is_(True)) | (Event.booking_access_type == "paid_separately"),
+                *public_gathering_filters(now),
             )
             .order_by(Event.starts_at)
             .limit(_MAX_UPCOMING_SCANNED)
