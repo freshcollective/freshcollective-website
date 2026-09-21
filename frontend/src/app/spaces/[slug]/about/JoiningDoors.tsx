@@ -100,6 +100,18 @@ export default function JoiningDoors({
         >
           Sign in to continue
         </Link>
+        {/* Before the account, not after it. Someone weighing up a
+            purchase should be able to read what it commits them to
+            without signing up first to find out. */}
+        <p className="text-[12px] leading-relaxed text-black">
+          <Link href={wgHref(WG_DOC.MEMBERSHIP_TERMS)} className="underline hover:opacity-80">
+            Membership Terms
+          </Link>
+          {' · '}
+          <Link href={wgHref(WG_DOC.PAYMENT_POLICY)} className="underline hover:opacity-80">
+            Payment, Refund &amp; Cancellation Policy
+          </Link>
+        </p>
       </div>
     )
   }

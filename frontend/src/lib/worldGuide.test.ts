@@ -178,6 +178,15 @@ describe('governance appears where it is relevant', () => {
     })
   }
 
+  test('the join surface shows them before the account, not after', () => {
+    // Someone weighing a purchase should not have to sign up to find
+    // out what it commits them to.
+    const src = read('app/spaces/[slug]/about/JoiningDoors.tsx')
+    const signedOut = src.slice(src.indexOf('if (!isLoggedIn)'), src.indexOf('return (\n    <div className="flex flex-col gap-4">'))
+    assert.match(signedOut, /wgHref\(WG_DOC\.MEMBERSHIP_TERMS\)/)
+    assert.match(signedOut, /wgHref\(WG_DOC\.PAYMENT_POLICY\)/)
+  })
+
   test('settings offers a route to the World Guide', () => {
     assert.match(read('components/settings/SettingsNav.tsx'), /href: '\/world-guide'/)
   })
