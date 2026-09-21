@@ -1,5 +1,8 @@
 'use client'
 
+import Link from 'next/link'
+import { WG_DOC, wgHref } from '@/lib/worldGuide'
+
 import { forwardRef, useImperativeHandle, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
@@ -436,6 +439,14 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
             : (publishMode === 'later' ? 'Schedule' : 'Share')}
         </button>
       </div>
+      {/* Where someone is about to post, rather than on every
+          Conversation page. One quiet line, no legal block. */}
+      <p className="mt-3 text-[11.5px]" style={{ color: '#718096' }}>
+        Posts here follow our{' '}
+        <Link href={wgHref(WG_DOC.COMMUNITY_GUIDELINES)} className="underline hover:opacity-80">
+          Community Guidelines
+        </Link>.
+      </p>
     </form>
   )
 })

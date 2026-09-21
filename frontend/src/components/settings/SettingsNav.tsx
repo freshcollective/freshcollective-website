@@ -8,6 +8,10 @@ const NAV_ITEMS = [
   { label: 'Membership', href: '/settings/membership' },
   { label: 'Stay Connected', href: '/settings/stay-connected' },
   { label: 'Security', href: '/settings/security' },
+  // The one place in settings someone looks for "how does this
+  // work / what did I agree to". Links out to the public directory
+  // rather than duplicating any of it here.
+  { label: 'World Guide', href: '/world-guide' },
 ]
 
 export default function SettingsNav() {

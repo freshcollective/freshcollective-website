@@ -1,5 +1,9 @@
 'use client'
 
+import Link from 'next/link'
+
+import { WG_DOC, wgHref } from '@/lib/worldGuide'
+
 /**
  * Pre-Stripe confirmation for a finite payment plan.
  *
@@ -137,6 +141,18 @@ export default function PaymentPlanConfirmDialog({
             {busy ? 'Starting…' : 'Continue to payment details'}
           </button>
         </div>
+        {/* The policy that governs what they are about to commit to,
+            on the screen where they commit. Informational only — it
+            adds no step and touches nothing about the purchase. */}
+        <p className="mt-3 text-center text-[11.5px]" style={{ color: '#64748B' }}>
+          <Link href={wgHref(WG_DOC.PAYMENT_POLICY)} className="underline hover:opacity-80">
+            Payment, Refund &amp; Cancellation Policy
+          </Link>
+          {' · '}
+          <Link href={wgHref(WG_DOC.TERMS_OF_USE)} className="underline hover:opacity-80">
+            Terms of Use
+          </Link>
+        </p>
       </div>
     </div>
   )

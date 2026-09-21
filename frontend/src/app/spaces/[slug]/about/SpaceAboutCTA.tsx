@@ -222,6 +222,10 @@ export default function SpaceAboutCTA({
 
   // Public collective — join flow
   if (isPublic) {
+    // Membership Terms sit beside the action they apply to. Subtle,
+    // and only on the surface where someone is about to become a
+    // member — not on every page of the Collective.
+
     if (state === 'joined') {
       return (
         <div

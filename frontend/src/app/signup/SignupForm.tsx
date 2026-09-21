@@ -6,6 +6,7 @@ import Link from 'next/link'
 import Button from '@/components/ui/Button'
 import { PasswordInput } from '@/components/ui/PasswordInput'
 import { apiUrl, extractErrorMessage } from '@/lib/api'
+import { WG_DOC, wgHref } from '@/lib/worldGuide'
 import { FreshCollectiveLogo } from '@/components/brand/FreshCollectiveBrand'
 
 function getSafeRedirect(next?: string): string {
@@ -187,6 +188,24 @@ export default function SignupForm({
           />
           <p className="mt-1.5 text-xs" style={{ color: '#718096' }}>Minimum 8 characters.</p>
         </div>
+
+        {/* Acceptance in the wording the page already uses, rather
+            than a checkbox. There was no acceptance language here at
+            all, and no existing consent pattern to extend — adding a
+            required tick would be inventing a ceremony, while saying
+            nothing leaves people agreeing to documents they were
+            never shown. The 18+ line is here for the same reason: it
+            is the entry point where the requirement is true. */}
+        <p className="text-xs leading-relaxed" style={{ color: '#718096' }}>
+          By creating an account you confirm you are 18 or over and agree to our{' '}
+          <Link href={wgHref(WG_DOC.TERMS_OF_USE)} className="underline hover:opacity-80">
+            Terms of Use
+          </Link>{' '}
+          and{' '}
+          <Link href={wgHref(WG_DOC.PRIVACY_POLICY)} className="underline hover:opacity-80">
+            Privacy Policy
+          </Link>.
+        </p>
 
         <Button type="submit" variant="primary" size="md" className="w-full" disabled={loading}>
           {loading ? (

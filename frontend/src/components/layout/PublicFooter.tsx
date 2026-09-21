@@ -1,4 +1,6 @@
 import Link from 'next/link'
+
+import { WG_DOC, wgHref } from '@/lib/worldGuide'
 import Container from './Container'
 import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
@@ -40,6 +42,31 @@ export default function PublicFooter() {
                 href={href}
                 className="text-[13px] transition-colors hover:text-white"
                 style={{ color: '#FFFFFF' }}
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
+
+          {/* Governance — the four documents someone actually reaches
+              for from a footer. The other five live one click away on
+              the World Guide; listing all nine here would bury the
+              ones people need. */}
+          <nav
+            aria-label="Governance and help"
+            className="flex flex-wrap gap-x-8 gap-y-2.5"
+          >
+            {[
+              { href: '/world-guide',            label: 'World Guide' },
+              { href: wgHref(WG_DOC.TERMS_OF_USE),   label: 'Terms of Use' },
+              { href: wgHref(WG_DOC.PRIVACY_POLICY), label: 'Privacy Policy' },
+              { href: wgHref(WG_DOC.PAYMENT_POLICY), label: 'Payments & Refunds' },
+            ].map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                className="text-[13px] transition-colors hover:text-white"
+                style={{ color: 'rgba(255,255,255,0.72)' }}
               >
                 {label}
               </Link>

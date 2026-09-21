@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { apiUrl } from '@/lib/api'
-import { CATEGORY_LABEL, WG, type PublicDocumentCard } from '@/lib/worldGuide'
+import { WG, groupIntoSections, type PublicDocumentCard } from '@/lib/worldGuide'
 
 /**
  * /world-guide — public landing.
@@ -34,16 +34,10 @@ async function loadDocuments(): Promise<PublicDocumentCard[]> {
 
 export default async function WorldGuideLandingPage() {
   const cards = await loadDocuments()
-  const grouped: Record<string, PublicDocumentCard[]> = {}
-  for (const c of cards) {
-    if (!grouped[c.category]) grouped[c.category] = []
-    grouped[c.category].push(c)
-  }
-  // Preferred display order — governance first, then members, creators, platform, other.
-  const order = ['governance', 'members', 'creators', 'platform', 'other']
-  const groups = order
-    .filter((k) => grouped[k]?.length)
-    .map((k) => [k, grouped[k]] as const)
+  // Grouped by what a reader is trying to do rather than by the
+  // stored category, and without a card pointing at this very page.
+  // See ``groupIntoSections``.
+  const groups = groupIntoSections(cards)
 
   return (
     <main style={{ background: WG.pageBg, minHeight: '100vh' }}>
@@ -82,14 +76,14 @@ export default async function WorldGuideLandingPage() {
           </section>
         ) : (
           <div className="space-y-14">
-            {groups.map(([category, items]) => (
-              <section key={category}>
+            {groups.map(({ key, label, items }) => (
+              <section key={key}>
                 <div className="mb-6 flex items-baseline gap-3">
                   <h2
                     className="font-serif text-[24px] leading-tight md:text-[28px]"
                     style={{ color: WG.inkStrong }}
                   >
-                    {CATEGORY_LABEL[category] ?? category}
+                    {label}
                   </h2>
                   <div className="h-px flex-1" style={{ background: 'rgba(15,23,42,0.10)' }} />
                 </div>

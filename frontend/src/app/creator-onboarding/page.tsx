@@ -1,4 +1,6 @@
 import type { Metadata } from 'next'
+import Link from 'next/link'
+import { WG_DOC, wgHref } from '@/lib/worldGuide'
 import { redirect } from 'next/navigation'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
@@ -136,6 +138,18 @@ export default async function CreatorOnboardingPage() {
             <div className="mt-8">
               <CreatorOnboardingCTA />
             </div>
+            {/* What a creator is agreeing to work under, before
+                they start — links, not a new acceptance step. */}
+            <p className="mt-10 text-center text-[12px]" style={{ color: '#718096' }}>
+              Creating here is covered by our{' '}
+              <Link href={wgHref(WG_DOC.CREATOR_AGREEMENT)} className="underline hover:opacity-80">
+                Creator Agreement
+              </Link>{' '}
+              and{' '}
+              <Link href={wgHref(WG_DOC.TERMS_OF_USE)} className="underline hover:opacity-80">
+                Terms of Use
+              </Link>.
+            </p>
           </div>
         </Container>
       </section>

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import ScheduleChoice from '@/components/commerce/ScheduleChoice'
 import { scheduleShortDescription } from '@/lib/paymentPlan'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
+import { WG_DOC, wgHref } from '@/lib/worldGuide'
 import type { JoiningOption } from '@/types/platform'
 
 /**
@@ -111,6 +112,18 @@ export default function JoiningDoors({
           step.
         </p>
       )}
+      {/* The two documents a purchase actually commits someone to,
+          as plain links rather than a second consent ceremony on top
+          of Stripe's own. */}
+      <p className="text-[12px] leading-relaxed text-black">
+        <Link href={wgHref(WG_DOC.MEMBERSHIP_TERMS)} className="underline hover:opacity-80">
+          Membership Terms
+        </Link>
+        {' · '}
+        <Link href={wgHref(WG_DOC.PAYMENT_POLICY)} className="underline hover:opacity-80">
+          Payment, Refund &amp; Cancellation Policy
+        </Link>
+      </p>
       {options.map((option) => {
         const buyable = (option.schedules ?? []).filter(
           (s) => s.is_member_checkoutable,

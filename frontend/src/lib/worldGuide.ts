@@ -566,3 +566,122 @@ export function renderMarkdown(text: string): string {
   }
   return html.join('\n')
 }
+
+// ---------------------------------------------------------------------------
+// Directory sections
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical slugs, so contextual links across the product point at one
+ * route each rather than at hand-typed strings that drift.
+ *
+ * ``TERMS_OF_USE`` is ``term-of-use`` — singular — because that is the
+ * slug the record was created with and deep links already use it.
+ * The *title* on the record is being corrected in World Management;
+ * the slug stays, since changing it would break every link already
+ * sent.
+ */
+export const WG_DOC = {
+  WORLD_GUIDE: 'world-guide',
+  GLOSSARY: 'glossary',
+  OUR_PHILOSOPHY: 'our-philosophy',
+  TERMS_OF_USE: 'term-of-use',
+  PRIVACY_POLICY: 'privacy-policy',
+  COMMUNITY_GUIDELINES: 'community-guidelines',
+  PAYMENT_POLICY: 'payment-refund-and-cancellation-policy',
+  MEMBERSHIP_TERMS: 'membership-terms',
+  CREATOR_AGREEMENT: 'creator-agreement',
+} as const
+
+/** The public route for a document. One function, so no surface
+ *  hand-builds a path or reaches for an admin route by mistake. */
+export function wgHref(slug: string): string {
+  return `/world-guide/${slug}`
+}
+
+/**
+ * How the directory groups documents.
+ *
+ * Grouped by what a reader is trying to do, not by the stored
+ * ``category``. The stored vocabulary — governance / members /
+ * creators / platform / other — puts the Glossary and Our Philosophy
+ * in "governance" beside the Terms of Use, which is true of their
+ * provenance and unhelpful to someone deciding what to read.
+ *
+ * Slugs first, category as the fallback, so a document added later
+ * still lands somewhere sensible without an edit here.
+ */
+export const WG_SECTIONS: { key: string; label: string; slugs: string[] }[] = [
+  {
+    key: 'how-it-works',
+    label: 'How Fresh Collective works',
+    slugs: [WG_DOC.GLOSSARY, WG_DOC.OUR_PHILOSOPHY],
+  },
+  {
+    key: 'using',
+    label: 'Using Fresh Collective',
+    slugs: [
+      WG_DOC.TERMS_OF_USE,
+      WG_DOC.PRIVACY_POLICY,
+      WG_DOC.COMMUNITY_GUIDELINES,
+      WG_DOC.PAYMENT_POLICY,
+    ],
+  },
+  { key: 'members',  label: 'Members',  slugs: [WG_DOC.MEMBERSHIP_TERMS] },
+  { key: 'creators', label: 'Creators', slugs: [WG_DOC.CREATOR_AGREEMENT] },
+]
+
+/** Category → section, for documents the map above has not heard of. */
+const SECTION_FOR_CATEGORY: Record<string, string> = {
+  members: 'members',
+  creators: 'creators',
+  governance: 'using',
+  platform: 'how-it-works',
+  other: 'how-it-works',
+}
+
+export interface WorldGuideSection {
+  key: string
+  label: string
+  items: PublicDocumentCard[]
+}
+
+/**
+ * Group the directory, in reading order.
+ *
+ * The World Guide itself is omitted: the reader is standing on it, and
+ * a card pointing at the page you are already on is furniture.
+ */
+export function groupIntoSections(
+  cards: PublicDocumentCard[],
+): WorldGuideSection[] {
+  const bySection = new Map<string, PublicDocumentCard[]>()
+  const place = (key: string, card: PublicDocumentCard) => {
+    const list = bySection.get(key) ?? []
+    list.push(card)
+    bySection.set(key, list)
+  }
+
+  for (const card of cards) {
+    if (card.slug === WG_DOC.WORLD_GUIDE) continue
+    const named = WG_SECTIONS.find((s) => s.slugs.includes(card.slug))
+    place(named?.key ?? SECTION_FOR_CATEGORY[card.category] ?? 'how-it-works', card)
+  }
+
+  return WG_SECTIONS
+    .map((section) => ({
+      key: section.key,
+      label: section.label,
+      // Named documents keep the order written above; anything that
+      // arrived by category falls in after them, alphabetically.
+      items: (bySection.get(section.key) ?? []).slice().sort((a, b) => {
+        const ai = section.slugs.indexOf(a.slug)
+        const bi = section.slugs.indexOf(b.slug)
+        if (ai !== -1 && bi !== -1) return ai - bi
+        if (ai !== -1) return -1
+        if (bi !== -1) return 1
+        return a.title.localeCompare(b.title)
+      }),
+    }))
+    .filter((section) => section.items.length > 0)
+}
