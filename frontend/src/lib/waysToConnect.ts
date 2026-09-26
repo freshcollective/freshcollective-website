@@ -126,10 +126,11 @@ function joinNaturally(parts: string[]): string {
  *   Sarah
  *   Sarah and James
  *   Sarah, James and Maya
- *   Sarah and another person
+ *   Sarah, James, Maya and 2 other people
+ *   Sarah and someone else
  *   Sarah and 2 other people
- *   another person
- *   3 other people
+ *   someone else
+ *   3 people
  *
  * Returns an empty string for an empty group; callers render nothing
  * rather than a sentence about nobody.
@@ -139,11 +140,22 @@ export function describePeople(people: PersonRef[]): string {
 
   if (others === 0) return joinNaturally(names)
 
-  // "other" only makes sense once somebody has been named. Standing
-  // alone, unnamed people are simply the people who were there.
-  const othersPhrase = names.length > 0
-    ? (others === 1 ? 'another person' : `${others} other people`)
-    : (others === 1 ? 'one other person' : `${others} people`)
+  // One unnamed person is "someone else" either way. Counting a
+  // single person — "one other person" — is how a form describes a
+  // headcount, not how anyone describes company; "someone else" is
+  // the same fact said the way it would be said out loud.
+  //
+  // Past one, a number is the honest thing: nobody can picture "some
+  // other people", and we have nothing truer to offer than how many.
+  // "other" only earns its place once somebody has been named —
+  // standing alone, unnamed people are simply the people who were
+  // there.
+  const othersPhrase =
+    others === 1
+      ? 'someone else'
+      : names.length > 0
+        ? `${others} other people`
+        : `${others} people`
 
   return joinNaturally([...names, othersPhrase])
 }

@@ -104,10 +104,14 @@ describe('describePeople — named members', () => {
 })
 
 describe('describePeople — unnamed members', () => {
-  test('a single unnamed person is not called "Member"', () => {
+  test('a single unnamed person is "someone else", not a headcount', () => {
     const out = describePeople([unnamed('u1')])
+    assert.equal(out, 'someone else')
     assert.ok(!out.includes('Member'), out)
-    assert.equal(out, 'one other person')
+    // "one other person" counts a person the way a form would. The
+    // fact is identical; only one of them sounds like company.
+    assert.ok(!out.includes('one other person'))
+    assert.ok(!/\b1\b/.test(out), 'never a numeral for a single person')
   })
 
   test('several unnamed people collapse to a count, never repeated labels', () => {
@@ -117,18 +121,33 @@ describe('describePeople — unnamed members', () => {
     assert.ok(!/null|undefined/.test(out))
   })
 
+  test('two unnamed people alone are counted, not softened', () => {
+    assert.equal(describePeople([unnamed('a'), unnamed('b')]), '2 people')
+  })
+
   test('one named plus one unnamed', () => {
     assert.equal(
       describePeople([named('Sarah'), unnamed('u1')]),
-      'Sarah and another person',
+      'Sarah and someone else',
     )
   })
 
-  test('one named plus several unnamed', () => {
+  test('one named plus several unnamed keeps the number', () => {
     assert.equal(
       describePeople([named('Sarah'), unnamed('u1'), unnamed('u2')]),
       'Sarah and 2 other people',
     )
+  })
+
+  test('the softened phrase applies only to exactly one person', () => {
+    // Past one, a number is the honest thing — "some other people"
+    // is vaguer than we need to be.
+    for (const n of [2, 3, 5]) {
+      const group = Array.from({ length: n }, (_, i) => unnamed(`u${i}`))
+      const out = describePeople([named('Sarah'), ...group])
+      assert.equal(out, `Sarah and ${n} other people`)
+      assert.ok(!out.includes('someone else'), out)
+    }
   })
 
   test('two named plus several unnamed', () => {
@@ -140,7 +159,7 @@ describe('describePeople — unnamed members', () => {
 
   test('a blank or whitespace name counts as unnamed', () => {
     const blank: PersonRef = { id: 'u1', display_name: '   ', avatar_url: null }
-    assert.equal(describePeople([named('Sarah'), blank]), 'Sarah and another person')
+    assert.equal(describePeople([named('Sarah'), blank]), 'Sarah and someone else')
   })
 
   test('an empty group describes nobody', () => {
@@ -196,6 +215,21 @@ describe('gathering sentences', () => {
     )
   })
 
+  test('a single unnamed companion reads as company, not a count', () => {
+    assert.equal(
+      gatheringSentence(gathering([unnamed('u1')]), 'here'),
+      'You’ll be here with someone else.',
+    )
+    assert.equal(
+      gatheringSentence(gathering([named('Sarah'), unnamed('u1')]), 'here'),
+      'You’ll be here with Sarah and someone else.',
+    )
+    assert.equal(
+      gatheringSentence(gathering([unnamed('u1')], 'attended'), 'here'),
+      'You were here with someone else.',
+    )
+  })
+
   test('nobody to name produces no sentence at all', () => {
     assert.equal(gatheringSentence(gathering([])), '')
   })
@@ -216,10 +250,21 @@ describe('pathway sentences', () => {
     )
   })
 
-  test('unnamed walkers are counted', () => {
+  test('a single unnamed walker is someone else', () => {
+    assert.equal(
+      pathwaySentence(pathway([unnamed('a')])),
+      'You’re moving through this with someone else.',
+    )
     assert.equal(
       pathwaySentence(pathway([named('Emma'), unnamed('a')])),
-      'You’re moving through this with Emma and another person.',
+      'You’re moving through this with Emma and someone else.',
+    )
+  })
+
+  test('several unnamed walkers are counted', () => {
+    assert.equal(
+      pathwaySentence(pathway([named('Emma'), unnamed('a'), unnamed('b')])),
+      'You’re moving through this with Emma and 2 other people.',
     )
   })
 })
