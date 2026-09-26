@@ -101,6 +101,10 @@ Privacy & eligibility rules baked in from the beginning:
     progress counts as having started a Pathway — a draft reflection
     creates a StepProgress row too, and private drafting must not make
     a member visible to anyone.
+  * A member who has switched off ``ways_to_connect_enabled`` is out
+    of Recognition entirely and in both directions: they are surfaced
+    to nobody and nobody is surfaced to them. Enforced here rather
+    than at a route so every future caller inherits it.
 
 Every predicate is applied to both people, so ``between(a, b)`` and
 ``between(b, a)`` derive the same evidence by construction. The
@@ -287,7 +291,7 @@ class RecognitionService:
         other  = db.get(User, other_user_id)
         if viewer is None or other is None:
             return Recognition(other_user_id=other_user_id)
-        if not _account_eligible(viewer) or not _account_eligible(other):
+        if not _recognition_eligible(viewer) or not _recognition_eligible(other):
             return Recognition(other_user_id=other_user_id)
 
         visible_space_ids = _spaces_where_both_are_visible_members(
@@ -341,7 +345,7 @@ class RecognitionService:
         now = now or datetime.utcnow()
 
         viewer = db.get(User, user_id)
-        if viewer is None or not _account_eligible(viewer):
+        if viewer is None or not _recognition_eligible(viewer):
             return []
 
         candidate_ids = _visible_co_member_user_ids(db, user_id)
@@ -368,6 +372,23 @@ def _account_eligible(user: User) -> bool:
     terminal.
     """
     return not (is_user_suspended(user) or is_user_cancelled(user))
+
+
+def _recognition_eligible(user: User) -> bool:
+    """Whether this person takes part in Recognition at all.
+
+    Two independent reasons someone may not: Fresh Collective has
+    stepped them back from the community (suspended / cancelled), or
+    they have switched themselves off. Both are absolute and both are
+    symmetric — ``between`` applies this to each person, so one
+    ineligible party empties the result for both.
+
+    The single place this question is answered. ``for_user`` needs no
+    separate candidate filter: an opted-out candidate produces an
+    empty Recognition through ``between`` and is dropped with the
+    other empties.
+    """
+    return _account_eligible(user) and user.ways_to_connect_enabled
 
 
 def _spaces_where_both_are_visible_members(

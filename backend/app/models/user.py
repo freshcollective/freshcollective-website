@@ -1,7 +1,17 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+    true,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -120,6 +130,27 @@ class User(Base):
         ForeignKey("places.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+
+    # ---- Discovery, Connection & Belonging — Recognition participation -----
+    # "Include me in Ways to Connect". The member's own switch, and the
+    # only member-level control Recognition has. Symmetric by design:
+    # off means they are neither surfaced to anyone nor shown anyone.
+    #
+    # Not to be confused with the deployment feature flag of a similar
+    # name (``NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED`` /
+    # ``DISCOVERY_PILLAR_ENABLED``), which decides whether the surface
+    # exists at all. This column decides whether one person takes part
+    # in it. Both must be true for a member to see anything.
+    #
+    # Boolean, not nullable, defaulting true: every existing account
+    # stays opted in, and there is no third "hasn't decided" state to
+    # interpret differently from "yes" at read time.
+    ways_to_connect_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=true(),
     )
 
     __table_args__ = (

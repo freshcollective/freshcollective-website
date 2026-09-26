@@ -272,6 +272,7 @@ def _profile_response(user: User, cp: "CreatorProfile | None") -> ProfileRespons
         has_completed_onboarding=user.onboarding_completed_at is not None,
         has_completed_creator_onboarding=user.creator_onboarded_at is not None,
         interests=interests,
+        ways_to_connect_enabled=user.ways_to_connect_enabled,
         email_verified_at=(
             user.email_verified_at.isoformat()
             if user.email_verified_at is not None
@@ -297,6 +298,11 @@ async def update_me(
 ) -> ProfileResponse:
     if payload.name is not None:
         current_user.name = payload.name
+
+    # Applied on "is not None" because switching the setting *off* is
+    # the whole point — a truthiness check would silently ignore it.
+    if payload.ways_to_connect_enabled is not None:
+        current_user.ways_to_connect_enabled = payload.ways_to_connect_enabled
 
     cp = db.query(CreatorProfile).filter(CreatorProfile.user_id == current_user.id).first()
 

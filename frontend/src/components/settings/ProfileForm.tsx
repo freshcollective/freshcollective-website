@@ -18,6 +18,9 @@ export default function ProfileForm({ profile }: Props) {
   const [tagline, setTagline] = useState(profile.profile_tagline ?? '')
   const [bio, setBio]         = useState(profile.bio ?? '')
   const [isPublic, setIsPublic] = useState(profile.is_public)
+  const [waysToConnect, setWaysToConnect] = useState(
+    profile.ways_to_connect_enabled
+  )
   const [saving, setSaving]   = useState(false)
   const [saved, setSaved]     = useState(false)
   const [error, setError]     = useState<string | null>(null)
@@ -74,6 +77,7 @@ export default function ProfileForm({ profile }: Props) {
           bio: bio.trim() || null,
           profile_tagline: tagline.trim() || null,
           is_public: isPublic,
+          ways_to_connect_enabled: waysToConnect,
         }),
       })
       if (!res.ok) {
@@ -218,6 +222,42 @@ export default function ProfileForm({ profile }: Props) {
               className={[
                 'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
                 isPublic ? 'translate-x-4' : 'translate-x-0.5',
+              ].join(' ')}
+            />
+          </button>
+        </div>
+
+        {/* Recognition participation. Saved by the same submit as the
+            rest of this form — one Save, one request, the pattern the
+            member already knows from the toggle above. The copy names
+            both directions because the setting works both ways. */}
+        <div className="flex items-start gap-3 rounded-xl border border-border bg-white px-5 py-4">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-navy-800">
+              Include me in Ways to Connect
+            </p>
+            <p className="text-xs text-black">
+              When this is on, Fresh Collective may show you people you
+              genuinely share Gatherings or Pathways with, and may show
+              you to them. Turning it off removes you from Ways to
+              Connect in both directions.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={waysToConnect}
+            aria-label="Include me in Ways to Connect"
+            onClick={() => setWaysToConnect(!waysToConnect)}
+            className={[
+              'relative mt-0.5 h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-teal-300 focus:ring-offset-1',
+              waysToConnect ? 'bg-teal-500' : 'bg-slate-200',
+            ].join(' ')}
+          >
+            <span
+              className={[
+                'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
+                waysToConnect ? 'translate-x-4' : 'translate-x-0.5',
               ].join(' ')}
             />
           </button>

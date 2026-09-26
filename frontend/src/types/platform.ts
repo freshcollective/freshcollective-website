@@ -650,6 +650,11 @@ export interface UserProfile {
   has_completed_onboarding: boolean
   has_completed_creator_onboarding: boolean
   interests: string[]
+  /** "Include me in Ways to Connect" — the member's own switch over
+   *  Recognition. Symmetric: off means they are shown to nobody and
+   *  nobody is shown to them. Unrelated to the deployment feature
+   *  flag that decides whether the surface exists at all. */
+  ways_to_connect_enabled: boolean
   // SEC-009 — null = unverified. Frontend surfaces a verification
   // banner + resend action when this is null.
   email_verified_at: string | null

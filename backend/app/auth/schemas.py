@@ -70,6 +70,9 @@ class UpdateProfileRequest(BaseModel):
     display_name: str | None = None
     profile_tagline: str | None = None
     is_public: bool | None = None
+    # None means "not supplied" — False is a real value here, so this
+    # field is applied on ``is not None`` rather than truthiness.
+    ways_to_connect_enabled: bool | None = None
 
     @field_validator("name")
     @classmethod
@@ -163,5 +166,6 @@ class ProfileResponse(BaseModel):
     has_completed_onboarding: bool
     has_completed_creator_onboarding: bool
     interests: list[str]
+    ways_to_connect_enabled: bool
     # SEC-009 — null = unverified.
     email_verified_at: str | None = None

@@ -1093,6 +1093,159 @@ class TestCollectiveGate:
 
 
 # ---------------------------------------------------------------------------
+# The member's own switch — "Include me in Ways to Connect"
+# ---------------------------------------------------------------------------
+
+def _pair_sharing_a_gathering(db, make_user, make_space, make_event, **user_kw):
+    """Two members of a visible Collective booked onto the same
+    upcoming Gathering — the simplest thing that is a Recognition."""
+    alice = make_user(**user_kw.pop("alice", {}))
+    bob = make_user(**user_kw.pop("bob", {}))
+    space = _visible_space(make_space)
+    _add_membership(db, alice, space)
+    _add_membership(db, bob, space)
+    ev = _upcoming_event(make_event, space)
+    _add_booking(db, alice, ev)
+    _add_booking(db, bob, ev)
+    return alice, bob
+
+
+def _pair_sharing_a_pathway(db, make_user, make_space, **user_kw):
+    alice = make_user(**user_kw.pop("alice", {}))
+    bob = make_user(**user_kw.pop("bob", {}))
+    space = _visible_space(make_space)
+    _add_membership(db, alice, space)
+    _add_membership(db, bob, space)
+    pw = _add_pathway(db, space)
+    step = _add_step(db, pw)
+    _start_pathway(db, alice, pw, step)
+    _start_pathway(db, bob, pw, step)
+    return alice, bob
+
+
+class TestWaysToConnectOptOut:
+    def test_both_opted_in_behaves_normally(
+        self, db, make_user, make_space, make_event
+    ):
+        """The baseline the rest of this class is measured against."""
+        alice, bob = _pair_sharing_a_gathering(db, make_user, make_space, make_event)
+
+        assert _between(db, alice, bob).is_empty is False
+
+    def test_viewer_opted_out_sees_nothing(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = _pair_sharing_a_gathering(
+            db, make_user, make_space, make_event,
+            alice={"ways_to_connect_enabled": False},
+        )
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_other_opted_out_is_not_surfaced(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = _pair_sharing_a_gathering(
+            db, make_user, make_space, make_event,
+            bob={"ways_to_connect_enabled": False},
+        )
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_opting_out_is_symmetric(
+        self, db, make_user, make_space, make_event
+    ):
+        """One person switching off empties the result for both of
+        them. Recognition is a shared fact, so there is no direction in
+        which it survives."""
+        alice, bob = _pair_sharing_a_gathering(
+            db, make_user, make_space, make_event,
+            bob={"ways_to_connect_enabled": False},
+        )
+
+        assert _between(db, alice, bob).is_empty is True
+        assert _between(db, bob, alice).is_empty is True
+
+    def test_it_applies_to_pathway_evidence_too(self, db, make_user, make_space):
+        """Not a Gathering-specific guard — it is checked before any
+        derivation runs."""
+        alice, bob = _pair_sharing_a_pathway(
+            db, make_user, make_space,
+            bob={"ways_to_connect_enabled": False},
+        )
+
+        assert _between(db, alice, bob).is_empty is True
+        assert _between(db, bob, alice).is_empty is True
+
+    def test_switching_off_removes_recognition_on_the_next_read(
+        self, db, make_user, make_space, make_event
+    ):
+        """Derived, not stored: nothing to clean up, and the change is
+        visible the moment anyone looks again."""
+        alice, bob = _pair_sharing_a_gathering(db, make_user, make_space, make_event)
+        assert _between(db, alice, bob).is_empty is False
+
+        bob.ways_to_connect_enabled = False
+        db.flush()
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_switching_back_on_restores_it(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = _pair_sharing_a_gathering(
+            db, make_user, make_space, make_event,
+            bob={"ways_to_connect_enabled": False},
+        )
+        assert _between(db, alice, bob).is_empty is True
+
+        bob.ways_to_connect_enabled = True
+        db.flush()
+
+        assert _between(db, alice, bob).is_empty is False
+
+    def test_for_user_is_empty_for_an_opted_out_viewer(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = _pair_sharing_a_gathering(
+            db, make_user, make_space, make_event,
+            alice={"ways_to_connect_enabled": False},
+        )
+
+        assert RecognitionService.for_user(db, alice.id, now=NOW) == []
+
+    def test_for_user_drops_an_opted_out_candidate(
+        self, db, make_user, make_space, make_event
+    ):
+        """Bob and Carol both share the Gathering with Alice. Only
+        Carol still takes part."""
+        alice, bob, carol = make_user(), make_user(
+            ways_to_connect_enabled=False
+        ), make_user()
+        space = _visible_space(make_space)
+        ev = _upcoming_event(make_event, space)
+        for user in (alice, bob, carol):
+            _add_membership(db, user, space)
+            _add_booking(db, user, ev)
+
+        results = RecognitionService.for_user(db, alice.id, now=NOW)
+
+        assert {r.other_user_id for r in results} == {carol.id}
+
+    def test_an_opted_out_member_sees_nobody_and_is_seen_by_nobody(
+        self, db, make_user, make_space, make_event
+    ):
+        """Both halves of the symmetry through the list entry point."""
+        alice, bob = _pair_sharing_a_gathering(
+            db, make_user, make_space, make_event,
+            bob={"ways_to_connect_enabled": False},
+        )
+
+        assert RecognitionService.for_user(db, bob.id, now=NOW) == []
+        assert RecognitionService.for_user(db, alice.id, now=NOW) == []
+
+
+# ---------------------------------------------------------------------------
 # Symmetry — structural, but pinned rather than trusted
 # ---------------------------------------------------------------------------
 
