@@ -153,9 +153,10 @@ services:
       # first, or the page renders and every /api/places call 503s.
       - key: NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED
         value: "false"
-      # Ways to Connect, gated separately since it has no
-      # recommendation service behind it yet. Same build-time
-      # semantics. No backend flag — the surface makes no API calls.
+      # Ways to Connect, gated separately from Discover Places. Same
+      # build-time semantics. Its backend sibling
+      # WAYS_TO_CONNECT_ENABLED on fc-api must be turned on first, or
+      # the page renders and GET /api/ways-to-connect 503s.
       - key: NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED
         value: "false"
       # Server-side proxy target — not exposed to the browser.
@@ -243,6 +244,11 @@ services:
       - key: CREATOR_PLAN_GUARD_ENABLED
         sync: false
       - key: DISCOVERY_PILLAR_ENABLED
+        value: "false"
+      # Ways to Connect's read API. Off until the surface is ready;
+      # the application default is False either way (see
+      # ``backend/app/core/config.py:ways_to_connect_enabled``).
+      - key: WAYS_TO_CONNECT_ENABLED
         value: "false"
       - key: COMMUNITY_CARE_ENABLED
         value: "false"

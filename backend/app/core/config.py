@@ -268,6 +268,17 @@ class Settings(BaseSettings):
     # See docs/foundations/discovery-connection-belonging-v1.1.md.
     discovery_pillar_enabled: bool = False
 
+    # Ways to Connect — gated separately from Discover Places. The two
+    # shipped behind one flag because they were built as one pillar;
+    # they are not ready at the same time, and turning the pillar on
+    # to launch Discover Places must not publish Recognition as a side
+    # effect. Mirrors the frontend's NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED,
+    # which is a separate deployment control — the API refuses while
+    # this is False regardless of what the web app believes.
+    # Not to be confused with users.ways_to_connect_enabled, which is
+    # one member's participation rather than the surface's existence.
+    ways_to_connect_enabled: bool = False
+
     # Location autocomplete provider for the Place & Feel picker.
     # Currently only 'nominatim' (OpenStreetMap) is supported. The
     # provider abstraction (app/services/location_providers) lets a

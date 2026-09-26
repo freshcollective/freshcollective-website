@@ -1477,6 +1477,295 @@ class TestForUser:
 
 
 # ---------------------------------------------------------------------------
+# Batched for_user — parity with the pairwise derivation, and a query
+# count that does not follow the size of the Collective
+# ---------------------------------------------------------------------------
+
+def _count_statements(db):
+    """Context manager counting SQL statements on the session's bind.
+
+    Counts what is actually sent to the database, so a lazy load
+    inside the derivation is caught the same as a deliberate query.
+    """
+    from contextlib import contextmanager
+    from sqlalchemy import event
+
+    @contextmanager
+    def _counter():
+        bind = db.get_bind()
+        seen: list[str] = []
+
+        def _on_execute(conn, cursor, statement, params, context, executemany):
+            seen.append(statement)
+
+        event.listen(bind, "before_cursor_execute", _on_execute)
+        try:
+            yield seen
+        finally:
+            event.remove(bind, "before_cursor_execute", _on_execute)
+
+    return _counter()
+
+
+def _rich_fixture(db, make_user, make_space, make_event):
+    """One viewer and one peer of every kind the rules distinguish.
+
+    Everything hangs off a single visible Collective so the privacy
+    boundary is constant and the only variable is the evidence.
+    """
+    space = _visible_space(make_space, name="The Grove")
+    viewer = make_user()
+    _add_membership(db, viewer, space)
+
+    peers = {}
+
+    def _peer(key, **user_kw):
+        u = make_user(**user_kw)
+        _add_membership(db, u, space)
+        peers[key] = u
+        return u
+
+    # Upcoming Gathering together.
+    upcoming_peer = _peer("upcoming")
+    soon = _upcoming_event(make_event, space, days_ahead=5, title="Next Tuesday")
+    _add_booking(db, viewer, soon)
+    _add_booking(db, upcoming_peer, soon)
+
+    # One attended past Gathering, inside the recent window.
+    attended_peer = _peer("attended")
+    recent = _past_event(make_event, space, days_ago=10, title="Ten days ago")
+    _both_attended(db, viewer, attended_peer, recent)
+
+    # Repeated co-attendance, both older than the single-occurrence
+    # window — kept because there are two of them.
+    repeat_peer = _peer("repeated")
+    for days in (RECENT_ATTENDANCE_DAYS + 20, RECENT_ATTENDANCE_DAYS + 60):
+        _both_attended(
+            db, viewer, repeat_peer,
+            _past_event(make_event, space, days_ago=days, title=f"Circle {days}"),
+        )
+
+    # Shared Pathway, both genuinely started.
+    pathway_peer = _peer("pathway")
+    pw = _add_pathway(db, space, title="Life in Alignment")
+    step = _add_step(db, pw)
+    _start_pathway(db, viewer, pw, step)
+    _start_pathway(db, pathway_peer, pw, step)
+
+    # Collective-only — a candidate, never a recognition.
+    _peer("collective_only")
+
+    # Opted out of Ways to Connect.
+    opted_out = _peer("opted_out", ways_to_connect_enabled=False)
+    oo_ev = _upcoming_event(make_event, space, days_ahead=6)
+    _add_booking(db, viewer, oo_ev)
+    _add_booking(db, opted_out, oo_ev)
+
+    # Suspended, and cancelled.
+    for key, kw in (
+        ("suspended", {"suspended_at": datetime.utcnow()}),
+        ("cancelled", {"cancelled_at": datetime.utcnow()}),
+    ):
+        u = _peer(key, **kw)
+        ev = _upcoming_event(make_event, space, days_ahead=6)
+        _add_booking(db, viewer, ev)
+        _add_booking(db, u, ev)
+
+    # Marked absent at a finalised Gathering.
+    no_show = _peer("no_show")
+    ns = _past_event(make_event, space, days_ago=8)
+    _add_booking(db, viewer, ns, attendance="attended")
+    _add_booking(db, no_show, ns, attendance="no_show")
+
+    # Both present, but the creator never finished the roster.
+    unfinalised = _peer("unfinalised")
+    uf = _past_event(make_event, space, days_ago=8, finalised=False)
+    _both_attended(db, viewer, unfinalised, uf)
+
+    # Booked together on a Gathering that has been cancelled.
+    inactive = _peer("inactive_event")
+    dead = _upcoming_event(make_event, space, days_ahead=9, status="cancelled")
+    _add_booking(db, viewer, dead)
+    _add_booking(db, inactive, dead)
+
+    # A single co-attendance that has aged out.
+    expired = _peer("expired")
+    _both_attended(
+        db, viewer, expired,
+        _past_event(make_event, space, days_ago=RECENT_ATTENDANCE_DAYS + 30),
+    )
+
+    db.flush()
+    return viewer, peers
+
+
+class TestBatchedParity:
+    """``for_user`` must be ``between`` for everyone, not a second
+    opinion about what counts."""
+
+    def test_matches_pairwise_derivation_across_a_mixed_fixture(
+        self, db, make_user, make_space, make_event
+    ):
+        viewer, peers = _rich_fixture(db, make_user, make_space, make_event)
+
+        batched = RecognitionService.for_user(db, viewer.id, now=NOW)
+
+        pairwise = []
+        for peer in peers.values():
+            r = RecognitionService.between(db, viewer.id, peer.id, now=NOW)
+            if not r.is_empty:
+                pairwise.append(r)
+        pairwise.sort(key=lambda r: r.other_user_id)
+
+        assert [r.other_user_id for r in batched] == [
+            r.other_user_id for r in pairwise
+        ]
+        for got, want in zip(batched, pairwise):
+            assert _evidence_fingerprint(got) == _evidence_fingerprint(want)
+
+    def test_only_the_peers_with_real_evidence_survive(
+        self, db, make_user, make_space, make_event
+    ):
+        viewer, peers = _rich_fixture(db, make_user, make_space, make_event)
+
+        got = {r.other_user_id for r in RecognitionService.for_user(db, viewer.id, now=NOW)}
+
+        assert got == {
+            peers["upcoming"].id,
+            peers["attended"].id,
+            peers["repeated"].id,
+            peers["pathway"].id,
+        }
+        for excluded in (
+            "collective_only", "opted_out", "suspended", "cancelled",
+            "no_show", "unfinalised", "inactive_event", "expired",
+        ):
+            assert peers[excluded].id not in got, excluded
+
+    def test_evidence_detail_survives_batching(
+        self, db, make_user, make_space, make_event
+    ):
+        viewer, peers = _rich_fixture(db, make_user, make_space, make_event)
+        by_peer = {
+            r.other_user_id: r
+            for r in RecognitionService.for_user(db, viewer.id, now=NOW)
+        }
+
+        up = by_peer[peers["upcoming"].id]
+        assert [g.title for g in up.gatherings] == ["Next Tuesday"]
+        assert up.gatherings[0].basis is SharedGatheringBasis.UPCOMING
+
+        at = by_peer[peers["attended"].id]
+        assert at.gatherings[0].basis is SharedGatheringBasis.ATTENDED
+
+        assert len(by_peer[peers["repeated"].id].gatherings) == 2
+
+        pw = by_peer[peers["pathway"].id]
+        assert [p.title for p in pw.pathways] == ["Life in Alignment"]
+
+    def test_collective_context_rides_along(
+        self, db, make_user, make_space, make_event
+    ):
+        viewer, peers = _rich_fixture(db, make_user, make_space, make_event)
+        by_peer = {
+            r.other_user_id: r
+            for r in RecognitionService.for_user(db, viewer.id, now=NOW)
+        }
+
+        assert [c.name for c in by_peer[peers["pathway"].id].collectives] == [
+            "The Grove"
+        ]
+
+    def test_results_stay_sorted_by_peer(
+        self, db, make_user, make_space, make_event
+    ):
+        viewer, _ = _rich_fixture(db, make_user, make_space, make_event)
+        ids = [r.other_user_id for r in RecognitionService.for_user(db, viewer.id, now=NOW)]
+        assert ids == sorted(ids)
+
+    def test_a_peer_who_left_the_collective_is_not_recognised(
+        self, db, make_user, make_space, make_event
+    ):
+        """The visible-space set belongs to the viewer. A peer holding
+        a booking in a Collective they have since left must not be
+        surfaced through it — the batched joins check their membership
+        rather than inheriting the viewer's."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        membership = _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+        assert len(RecognitionService.for_user(db, alice.id, now=NOW)) == 1
+
+        membership.status = SpaceMembershipStatus.removed
+        db.flush()
+
+        assert RecognitionService.for_user(db, alice.id, now=NOW) == []
+        assert _between(db, alice, bob).is_empty is True
+
+
+class TestBatchedQueryCount:
+    """The reason this path exists at all."""
+
+    def _collective_of(self, db, make_user, make_space, make_event, *, peers):
+        space = _visible_space(make_space)
+        viewer = make_user()
+        _add_membership(db, viewer, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, viewer, ev)
+        for _ in range(peers):
+            u = make_user()
+            _add_membership(db, u, space)
+            _add_booking(db, u, ev)
+        db.flush()
+        return viewer
+
+    def test_query_count_does_not_follow_member_count(
+        self, db, make_user, make_space, make_event
+    ):
+        small = self._collective_of(db, make_user, make_space, make_event, peers=3)
+        large = self._collective_of(db, make_user, make_space, make_event, peers=60)
+
+        with _count_statements(db) as small_sql:
+            small_results = RecognitionService.for_user(db, small.id, now=NOW)
+        with _count_statements(db) as large_sql:
+            large_results = RecognitionService.for_user(db, large.id, now=NOW)
+
+        assert len(small_results) == 3
+        assert len(large_results) == 60
+
+        # Twenty times the people. The statement count must not move
+        # with them — a small constant difference would still be a
+        # per-candidate query in disguise.
+        assert len(large_sql) == len(small_sql), (
+            f"query count grew with membership: "
+            f"{len(small_sql)} for 3 peers, {len(large_sql)} for 60"
+        )
+        # Bounded well below the candidate count either way. The exact
+        # number is deliberately not pinned — this guards against N+1
+        # returning, not against a future sixth or seventh statement.
+        assert len(large_sql) < 20, f"unexpectedly many statements: {len(large_sql)}"
+
+    def test_an_empty_result_is_cheap(
+        self, db, make_user, make_space, make_event
+    ):
+        """An opted-out viewer must not pay for a derivation."""
+        alice = make_user(ways_to_connect_enabled=False)
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        for _ in range(10):
+            _add_membership(db, make_user(), space)
+        db.flush()
+
+        with _count_statements(db) as sql:
+            assert RecognitionService.for_user(db, alice.id, now=NOW) == []
+
+        assert len(sql) <= 2, f"expected an early exit, saw {len(sql)} statements"
+
+
+# ---------------------------------------------------------------------------
 # Result shape — focused objects, not ORM rows
 # ---------------------------------------------------------------------------
 

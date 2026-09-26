@@ -22,6 +22,15 @@ facts Recognition is derived from:
     _shared_started_pathways(...)
     _active_shared_memberships(...)
 
+``between`` is the readable pairwise derivation and the definition of
+what Recognition means. ``for_user`` answers the same question for
+every peer at once with a fixed number of set-based queries, because
+one derivation per candidate would make a member of a large
+Collective expensive to serve. The two must agree exactly — the
+parity tests hold them to it, peer by peer, across a mixed fixture.
+The ``_peer_*`` helpers below are the batched mirrors of the pairwise
+ones directly above them; a change to one is a change to both.
+
 Nothing is stored. Every call is a fresh read against the current
 platform state so recognitions reflect the world as it is right now
 (a person leaves a Collective, the Recognition disappears from the
@@ -337,24 +346,73 @@ class RecognitionService:
         list order is stable (sorted by ``other_user_id``) so callers
         can rely on it.
 
-        Fans out one ``between`` call per candidate, so query volume
-        grows with the size of the viewer's Collectives. Acceptable
-        while this service has no caller; it must be batched before
-        anything serves it over HTTP.
+        Derived with a fixed number of set-based queries rather than
+        one ``between`` call per candidate: the viewer's own eligible
+        substrate is gathered once, and every peer is joined against
+        it in a single pass per evidence type. Query count is a
+        constant — it does not move when a Collective grows from three
+        members to three thousand.
+
+        The result is identical to calling ``between`` for each
+        candidate and discarding the empties. That equivalence is the
+        contract, and ``TestBatchedParity`` enforces it rather than
+        trusting it.
         """
         now = now or datetime.utcnow()
 
-        viewer = db.get(User, user_id)
+        viewer = db.get(User, user_id)                                   # 1
         if viewer is None or not _recognition_eligible(viewer):
             return []
 
-        candidate_ids = _visible_co_member_user_ids(db, user_id)
+        visible_space_ids = _viewer_visible_space_ids(db, user_id)       # 2
+        if not visible_space_ids:
+            return []
+
+        # Peer -> the visible Collectives they share with the viewer.
+        # This is the pairwise ``_spaces_where_both_are_visible_members``
+        # computed for everyone at once, and it doubles as the
+        # candidate set.
+        shared_spaces = _peer_shared_space_ids(db, user_id, visible_space_ids)  # 3
+        if not shared_spaces:
+            return []
+
+        eligible = _eligible_peer_ids(db, set(shared_spaces))            # 4
+        if not eligible:
+            return []
+
+        collectives_by_id = _collectives_by_id(db, visible_space_ids)    # 5
+
+        pathways = _peer_shared_started_pathways(
+            db, user_id, eligible, visible_space_ids
+        )                                                                 # 6
+        upcoming = _peer_upcoming_shared_bookings(
+            db, user_id, eligible, visible_space_ids, now
+        )                                                                 # 7
+        attended = _peer_shared_attended_gatherings(
+            db, user_id, eligible, visible_space_ids, now
+        )                                                                 # 8
 
         results: list[Recognition] = []
-        for other_id in sorted(candidate_ids):
-            recog = cls.between(db, user_id, other_id, now=now)
-            if not recog.is_empty:
-                results.append(recog)
+        for other_id in sorted(eligible):
+            peer_pathways   = pathways.get(other_id, ())
+            peer_gatherings = upcoming.get(other_id, ()) + attended.get(other_id, ())
+            if not (peer_pathways or peer_gatherings):
+                # Co-membership alone. A candidate, never a recognition.
+                continue
+            results.append(
+                Recognition(
+                    other_user_id=other_id,
+                    collectives=tuple(
+                        collectives_by_id[sid]
+                        for sid in sorted(
+                            shared_spaces[other_id],
+                            key=lambda s: collectives_by_id[s].name,
+                        )
+                    ),
+                    pathways=peer_pathways,
+                    gatherings=peer_gatherings,
+                )
+            )
         return results
 
 
@@ -417,34 +475,282 @@ def _spaces_where_both_are_visible_members(
     return {row[0] for row in db.execute(stmt).all()}
 
 
-def _visible_co_member_user_ids(db: Session, user_id: str) -> set[str]:
-    """User ids of every other person who shares at least one visible
-    Collective (active + not closed + directory on) with this user."""
-    my_membership    = SpaceMembership.__table__.alias("my_membership")
-    other_membership = SpaceMembership.__table__.alias("other_membership")
+# ---------------------------------------------------------------------------
+# Batched mirrors, used only by ``for_user``. Each one answers, for
+# every peer at once, exactly what its pairwise sibling answers for
+# one. They exist because a derivation per candidate does not survive
+# contact with a large Collective, not because the rules differ — the
+# rules are identical, and the parity tests say so.
+#
+# Every one of them is bounded: a single statement whose cost grows
+# with the amount of evidence, never with the number of candidates.
+# ---------------------------------------------------------------------------
 
+def _viewer_visible_space_ids(db: Session, viewer_id: str) -> set[str]:
+    """Collectives the viewer is an active member of that are visible
+    (active status, not closed, member directory on).
+
+    The half of ``_spaces_where_both_are_visible_members`` that does
+    not depend on who the other person is. Peers are intersected
+    against it in ``_peer_shared_space_ids``.
+    """
     stmt = (
-        select(other_membership.c.user_id)
-        .select_from(my_membership)
-        .join(Space, Space.id == my_membership.c.space_id)
-        .join(
-            other_membership,
-            and_(
-                other_membership.c.space_id == my_membership.c.space_id,
-                other_membership.c.user_id  != user_id,
-            ),
-        )
+        select(Space.id)
+        .join(SpaceMembership, SpaceMembership.space_id == Space.id)
         .where(
-            my_membership.c.user_id == user_id,
-            my_membership.c.status  == SpaceMembershipStatus.active,
-            other_membership.c.status == SpaceMembershipStatus.active,
-            Space.status              == "active",
+            SpaceMembership.user_id == viewer_id,
+            SpaceMembership.status  == SpaceMembershipStatus.active,
+            Space.status            == "active",
             Space.closed_at.is_(None),
             Space.show_member_directory.is_(True),
         )
-        .distinct()
     )
     return {row[0] for row in db.execute(stmt).all()}
+
+
+def _peer_shared_space_ids(
+    db: Session, viewer_id: str, visible_space_ids: set[str]
+) -> dict[str, set[str]]:
+    """For every other active member of the viewer's visible
+    Collectives: which of those Collectives they share.
+
+    Equivalent to running ``_spaces_where_both_are_visible_members``
+    against each peer, in one statement. The keys are the candidate
+    set; the values are the context a recognition carries.
+    """
+    if not visible_space_ids:
+        return {}
+
+    stmt = (
+        select(SpaceMembership.user_id, SpaceMembership.space_id)
+        .where(
+            SpaceMembership.space_id.in_(visible_space_ids),
+            SpaceMembership.status  == SpaceMembershipStatus.active,
+            SpaceMembership.user_id != viewer_id,
+        )
+    )
+    shared: dict[str, set[str]] = {}
+    for peer_id, space_id in db.execute(stmt).all():
+        shared.setdefault(peer_id, set()).add(space_id)
+    return shared
+
+
+def _eligible_peer_ids(db: Session, candidate_ids: set[str]) -> set[str]:
+    """Candidates who actually take part in Recognition.
+
+    Suspension is a time comparison rather than a column test, so the
+    rows are loaded and put through ``_recognition_eligible`` — the
+    same predicate ``between`` applies, not a re-expression of it in
+    SQL that could drift from it.
+    """
+    if not candidate_ids:
+        return set()
+
+    rows = db.execute(
+        select(User).where(User.id.in_(candidate_ids))
+    ).scalars().all()
+    return {u.id for u in rows if _recognition_eligible(u)}
+
+
+def _collectives_by_id(
+    db: Session, space_ids: set[str]
+) -> dict[str, SharedCollective]:
+    """Every visible Collective the viewer belongs to, as result
+    objects, keyed for assembly."""
+    if not space_ids:
+        return {}
+    rows = db.execute(
+        select(Space.id, Space.slug, Space.name).where(Space.id.in_(space_ids))
+    ).all()
+    return {
+        r.id: SharedCollective(collective_id=r.id, slug=r.slug, name=r.name)
+        for r in rows
+    }
+
+
+def _peer_shared_started_pathways(
+    db: Session,
+    viewer_id: str,
+    peer_ids: set[str],
+    visible_space_ids: set[str],
+) -> dict[str, tuple[SharedPathway, ...]]:
+    """Batched ``_shared_started_pathways``.
+
+    The peer's membership of the Collective is joined in rather than
+    assumed: the visible-space set belongs to the *viewer*, and a peer
+    who holds an enrolment in a Collective they have since left must
+    not be recognised through it.
+    """
+    if not peer_ids or not visible_space_ids:
+        return {}
+
+    viewer_enrolment = Enrollment.__table__.alias("viewer_enrolment")
+    other_enrolment  = Enrollment.__table__.alias("other_enrolment")
+    other_membership = SpaceMembership.__table__.alias("other_membership")
+
+    stmt = (
+        select(
+            other_enrolment.c.user_id,
+            Pathway.id,
+            Pathway.slug,
+            Pathway.title,
+            Pathway.space_id,
+        )
+        .join(viewer_enrolment, viewer_enrolment.c.pathway_id == Pathway.id)
+        .join(other_enrolment,  other_enrolment.c.pathway_id  == Pathway.id)
+        .join(
+            other_membership,
+            and_(
+                other_membership.c.space_id == Pathway.space_id,
+                other_membership.c.user_id  == other_enrolment.c.user_id,
+                other_membership.c.status   == SpaceMembershipStatus.active,
+            ),
+        )
+        .where(
+            viewer_enrolment.c.user_id == viewer_id,
+            viewer_enrolment.c.status  == EnrollmentStatus.active,
+            other_enrolment.c.user_id.in_(peer_ids),
+            other_enrolment.c.status   == EnrollmentStatus.active,
+            Pathway.space_id.in_(visible_space_ids),
+            _started_pathway_exists(viewer_id),
+            _started_pathway_exists(other_enrolment.c.user_id),
+        )
+        .order_by(other_enrolment.c.user_id, Pathway.title)
+    )
+
+    out: dict[str, list[SharedPathway]] = {}
+    for peer_id, pid, slug, title, space_id in db.execute(stmt).all():
+        out.setdefault(peer_id, []).append(
+            SharedPathway(
+                pathway_id=pid, slug=slug, title=title, collective_id=space_id
+            )
+        )
+    return {k: tuple(v) for k, v in out.items()}
+
+
+def _peer_upcoming_shared_bookings(
+    db: Session,
+    viewer_id: str,
+    peer_ids: set[str],
+    visible_space_ids: set[str],
+    now: datetime,
+) -> dict[str, tuple[SharedGathering, ...]]:
+    """Batched ``_upcoming_shared_bookings``. Soonest first per peer."""
+    if not peer_ids or not visible_space_ids:
+        return {}
+
+    viewer_booking   = EventBooking.__table__.alias("viewer_booking")
+    other_booking    = EventBooking.__table__.alias("other_booking")
+    other_membership = SpaceMembership.__table__.alias("other_membership")
+
+    stmt = (
+        select(
+            other_booking.c.user_id,
+            Event.id,
+            Event.title,
+            Event.starts_at,
+            Event.space_id,
+            Event.recurrence_series_id,
+            Event.series_id,
+        )
+        .join(viewer_booking, viewer_booking.c.event_id == Event.id)
+        .join(other_booking,  other_booking.c.event_id  == Event.id)
+        .join(
+            other_membership,
+            and_(
+                other_membership.c.space_id == Event.space_id,
+                other_membership.c.user_id  == other_booking.c.user_id,
+                other_membership.c.status   == SpaceMembershipStatus.active,
+            ),
+        )
+        .where(
+            viewer_booking.c.user_id == viewer_id,
+            viewer_booking.c.status  == BookingStatus.confirmed,
+            other_booking.c.user_id.in_(peer_ids),
+            other_booking.c.status   == BookingStatus.confirmed,
+            Event.space_id.in_(visible_space_ids),
+            Event.status == _EVENT_ACTIVE,
+            Event.starts_at > now,
+        )
+        .order_by(other_booking.c.user_id, Event.starts_at)
+    )
+
+    out: dict[str, list[SharedGathering]] = {}
+    for row in db.execute(stmt).all():
+        out.setdefault(row[0], []).append(
+            _shared_gathering(row, SharedGatheringBasis.UPCOMING)
+        )
+    return {k: tuple(v) for k, v in out.items()}
+
+
+def _peer_shared_attended_gatherings(
+    db: Session,
+    viewer_id: str,
+    peer_ids: set[str],
+    visible_space_ids: set[str],
+    now: datetime,
+) -> dict[str, tuple[SharedGathering, ...]]:
+    """Batched ``_shared_attended_gatherings``, decay included.
+
+    The decay rule is per *pair*, so it is applied per peer after the
+    single query returns — same arithmetic as the pairwise version,
+    run over each peer's own rows.
+    """
+    if not peer_ids or not visible_space_ids:
+        return {}
+
+    viewer_booking   = EventBooking.__table__.alias("viewer_booking")
+    other_booking    = EventBooking.__table__.alias("other_booking")
+    other_membership = SpaceMembership.__table__.alias("other_membership")
+
+    stmt = (
+        select(
+            other_booking.c.user_id,
+            Event.id,
+            Event.title,
+            Event.starts_at,
+            Event.space_id,
+            Event.recurrence_series_id,
+            Event.series_id,
+        )
+        .join(viewer_booking, viewer_booking.c.event_id == Event.id)
+        .join(other_booking,  other_booking.c.event_id  == Event.id)
+        .join(
+            other_membership,
+            and_(
+                other_membership.c.space_id == Event.space_id,
+                other_membership.c.user_id  == other_booking.c.user_id,
+                other_membership.c.status   == SpaceMembershipStatus.active,
+            ),
+        )
+        .where(
+            viewer_booking.c.user_id == viewer_id,
+            viewer_booking.c.attendance_status == _ATTENDED,
+            other_booking.c.user_id.in_(peer_ids),
+            other_booking.c.attendance_status == _ATTENDED,
+            Event.space_id.in_(visible_space_ids),
+            Event.attendance_completed_at.is_not(None),
+            Event.starts_at <= now,
+            Event.starts_at >= now - timedelta(days=REPEATED_ATTENDANCE_DAYS),
+        )
+        .order_by(other_booking.c.user_id, Event.starts_at.desc())
+    )
+
+    by_peer: dict[str, list] = {}
+    for row in db.execute(stmt).all():
+        by_peer.setdefault(row[0], []).append(row)
+
+    recent_cutoff = now - timedelta(days=RECENT_ATTENDANCE_DAYS)
+    out: dict[str, tuple[SharedGathering, ...]] = {}
+    for peer_id, rows in by_peer.items():
+        if len(rows) < REPEATED_ATTENDANCE_MIN:
+            rows = [r for r in rows if r.starts_at >= recent_cutoff]
+        kept = tuple(
+            _shared_gathering(r, SharedGatheringBasis.ATTENDED) for r in rows
+        )
+        if kept:
+            out[peer_id] = kept
+    return out
 
 
 def _active_shared_memberships(
@@ -468,9 +774,15 @@ def _active_shared_memberships(
     )
 
 
-def _started_pathway_exists(user_id: str):
+def _started_pathway_exists(user_id):
     """Correlated EXISTS: has this user completed at least one step of
     the Pathway in the enclosing query?
+
+    ``user_id`` may be a literal (the pairwise path, where we know who
+    we are asking about) or a column expression (the batched path,
+    where the peer is whichever row the outer query is on). Both
+    produce the same predicate; there is deliberately not a second
+    copy of this rule for the batched case.
 
     Completed, not merely recorded. A StepProgress row is also written
     when a member saves a *draft* reflection, with ``completed_at``
