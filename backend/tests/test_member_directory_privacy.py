@@ -13,6 +13,7 @@ learner/leader privacy is unchanged.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,7 +21,8 @@ from fastapi.testclient import TestClient
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
 from app.main import app
-from app.models.platform import SpaceMembership
+from app.models.platform import BookingStatus, EventBooking, SpaceMembership
+from app.services.recognition_service import RecognitionService
 
 
 @pytest.fixture
@@ -249,11 +251,50 @@ class TestTheSharedPredicate:
 
 
 class TestRecognitionUnchanged:
-    def test_recognition_still_filters_on_the_directory_flag(self):
-        """This fix must not widen or narrow what Recognition surfaces."""
-        from pathlib import Path
-        src = Path("app/services/recognition_service.py").read_text()
-        assert src.count("Space.show_member_directory.is_(True)") == 2
+    """Recognition reads the same directory switch this endpoint does.
+
+    Asserted through the service's behaviour rather than its source
+    text: a count of a query fragment breaks whenever the file is
+    refactored and passes whenever someone adds a fragment that does
+    nothing. What matters is that flipping the switch off stops
+    Recognition surfacing the pair.
+    """
+
+    def _pair_sharing_a_gathering(self, db, make_user, make_space, make_event,
+                                  *, directory_on):
+        alice, bob = make_user(role="user"), make_user(role="user")
+        space = make_space(show_member_directory=directory_on)
+        join(db, alice, space)
+        join(db, bob, space)
+        event = make_event(
+            space=space,
+            starts_at=datetime.utcnow() + timedelta(days=7),
+            ends_at=datetime.utcnow() + timedelta(days=7, hours=1),
+        )
+        for user in (alice, bob):
+            db.add(EventBooking(
+                id=str(uuid.uuid4()), event_id=event.id, user_id=user.id,
+                status=BookingStatus.confirmed,
+            ))
+        db.flush()
+        return alice, bob
+
+    def test_recognition_surfaces_the_pair_while_the_directory_is_open(
+        self, db, make_user, make_space, make_event,
+    ):
+        alice, bob = self._pair_sharing_a_gathering(
+            db, make_user, make_space, make_event, directory_on=True,
+        )
+        assert not RecognitionService.between(db, alice.id, bob.id).is_empty
+
+    def test_recognition_goes_silent_when_the_directory_is_closed(
+        self, db, make_user, make_space, make_event,
+    ):
+        alice, bob = self._pair_sharing_a_gathering(
+            db, make_user, make_space, make_event, directory_on=False,
+        )
+        assert RecognitionService.between(db, alice.id, bob.id).is_empty
+        assert RecognitionService.for_user(db, alice.id) == []
 
 
 class TestOtherMemberSurfaces:

@@ -180,13 +180,49 @@ class TestWhatTheSwitchReaches:
         opened = client.get(f"{url}/home-config").json()["available_keys"]
         assert "members" in opened
 
-    def test_recognition_still_excludes_closed_collectives(self):
-        """Not a behaviour change — a guard. Recognition treats a closed
-        directory as "do not surface this co-membership", and giving
-        creators a switch must not quietly widen that."""
-        from pathlib import Path
-        src = Path("app/services/recognition_service.py").read_text()
-        assert src.count("Space.show_member_directory.is_(True)") == 2
+    def test_recognition_goes_silent_when_a_creator_closes_the_directory(
+        self, db, make_space, make_user, make_event,
+    ):
+        """Giving creators a switch must not quietly widen what
+        Recognition surfaces. Pinned through the service's behaviour
+        rather than its source text, so a refactor of the query does
+        not read as a regression.
+        """
+        import uuid
+        from datetime import datetime, timedelta
+
+        from app.models.platform import (
+            BookingStatus,
+            EventBooking,
+            SpaceMembership,
+        )
+        from app.services.recognition_service import RecognitionService
+
+        space = make_space(show_member_directory=True)
+        alice, bob = make_user(role="user"), make_user(role="user")
+        for user in (alice, bob):
+            db.add(SpaceMembership(
+                id=str(uuid.uuid4()), user_id=user.id, space_id=space.id,
+                role="learner", status="active",
+            ))
+        event = make_event(
+            space=space,
+            starts_at=datetime.utcnow() + timedelta(days=7),
+            ends_at=datetime.utcnow() + timedelta(days=7, hours=1),
+        )
+        for user in (alice, bob):
+            db.add(EventBooking(
+                id=str(uuid.uuid4()), event_id=event.id, user_id=user.id,
+                status=BookingStatus.confirmed,
+            ))
+        db.flush()
+
+        assert not RecognitionService.between(db, alice.id, bob.id).is_empty
+
+        space.show_member_directory = False
+        db.flush()
+
+        assert RecognitionService.between(db, alice.id, bob.id).is_empty
 
 
 class TestGuidanceColumnsSurvive:

@@ -3,12 +3,17 @@ Tests for ``RecognitionService`` — the Discovery, Connection & Belonging
 pillar's derivation of what two people share at read time.
 
 The service reads current platform state; there is no stored graph. So
-the tests build the substrate (memberships, enrolments, bookings) with
-small inline helpers and assert what recognitions come out.
+the tests build the substrate (memberships, enrolments, bookings,
+attendance, step progress) with small inline helpers and assert what
+recognitions come out.
 
 Every privacy / eligibility rule the service enforces has at least one
 dedicated test — the whole point of the service existing is that
 callers can trust these guards without re-implementing them.
+
+Time is injected rather than mocked. ``NOW`` below is the clock every
+test derives its fixtures and assertions from, so window behaviour is
+deterministic and readable on the page.
 """
 
 from __future__ import annotations
@@ -28,17 +33,26 @@ from app.models.platform import (
     EventBooking,
     Pathway,
     PathwayStatus,
+    PathwayStep,
     SpaceMembership,
     SpaceMembershipStatus,
     SpaceRole,
+    StepProgress,
 )
 from app.services.recognition_service import (
+    RECENT_ATTENDANCE_DAYS,
+    REPEATED_ATTENDANCE_DAYS,
     Recognition,
     RecognitionService,
     SharedCollective,
     SharedGathering,
+    SharedGatheringBasis,
     SharedPathway,
 )
+
+
+#: The clock every test in this file reasons against.
+NOW = datetime(2026, 6, 1, 12, 0, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +98,20 @@ def _add_pathway(db, space, *, title="A Pathway", slug=None, status=PathwayStatu
     return row
 
 
+def _add_step(db, pathway, *, position=0, title="A Step"):
+    row = PathwayStep(
+        id=_uid("pst"),
+        pathway_id=pathway.id,
+        slug=f"step-{uuid.uuid4().hex[:8]}",
+        title=title,
+        position=position,
+        content_type="text",
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
 def _add_enrolment(db, user, pathway, *, status=EnrollmentStatus.active):
     row = Enrollment(
         id=_uid("en"),
@@ -96,16 +124,82 @@ def _add_enrolment(db, user, pathway, *, status=EnrollmentStatus.active):
     return row
 
 
-def _add_booking(db, user, event, *, status=BookingStatus.confirmed):
+def _complete_step(db, user, step, *, completed_at=None):
+    """A genuinely completed step — what 'started the Pathway' means."""
+    row = StepProgress(
+        id=_uid("sp"),
+        user_id=user.id,
+        step_id=step.id,
+        completed_at=completed_at or NOW - timedelta(days=1),
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _draft_reflection(db, user, step):
+    """A StepProgress row written by saving a *draft* reflection:
+    ``completed_at`` stays NULL. Private journalling — must never make
+    someone recognisable."""
+    row = StepProgress(
+        id=_uid("sp"),
+        user_id=user.id,
+        step_id=step.id,
+        completed_at=None,
+        reflection_text="a private draft",
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _start_pathway(db, user, pathway, step):
+    """Enrol a user and have them genuinely begin the Pathway."""
+    _add_enrolment(db, user, pathway)
+    _complete_step(db, user, step)
+
+
+def _add_booking(db, user, event, *, status=BookingStatus.confirmed, attendance=None):
     row = EventBooking(
         id=_uid("bk"),
         event_id=event.id,
         user_id=user.id,
         status=status,
+        attendance_status=attendance,
     )
     db.add(row)
     db.flush()
     return row
+
+
+def _upcoming_event(make_event, space, *, days_ahead=7, **overrides):
+    return make_event(
+        space=space,
+        starts_at=NOW + timedelta(days=days_ahead),
+        ends_at=NOW + timedelta(days=days_ahead, hours=1),
+        **overrides,
+    )
+
+
+def _past_event(make_event, space, *, days_ago, finalised=True, **overrides):
+    ev = make_event(
+        space=space,
+        starts_at=NOW - timedelta(days=days_ago),
+        ends_at=NOW - timedelta(days=days_ago) + timedelta(hours=1),
+        **overrides,
+    )
+    if finalised:
+        ev.attendance_completed_at = NOW - timedelta(days=days_ago) + timedelta(hours=2)
+    return ev
+
+
+def _both_attended(db, a, b, event):
+    _add_booking(db, a, event, attendance="attended")
+    _add_booking(db, b, event, attendance="attended")
+
+
+def _between(db, a, b, *, now=NOW):
+    return RecognitionService.between(db, a.id, b.id, now=now)
 
 
 # ---------------------------------------------------------------------------
@@ -117,10 +211,38 @@ class TestRecognitionShape:
         r = Recognition(other_user_id="u1")
         assert r.is_empty is True
 
-    def test_recognition_with_a_collective_is_not_empty(self):
+    def test_a_collective_alone_does_not_make_a_recognition_non_empty(self):
+        """Co-membership is the boundary that makes Recognition
+        permissible, not evidence worth surfacing."""
         r = Recognition(
             other_user_id="u1",
             collectives=(SharedCollective(collective_id="s1", slug="s", name="S"),),
+        )
+        assert r.is_empty is True
+
+    def test_a_pathway_makes_a_recognition_non_empty(self):
+        r = Recognition(
+            other_user_id="u1",
+            pathways=(
+                SharedPathway(
+                    pathway_id="p1", slug="p", title="P", collective_id="s1"
+                ),
+            ),
+        )
+        assert r.is_empty is False
+
+    def test_a_gathering_makes_a_recognition_non_empty(self):
+        r = Recognition(
+            other_user_id="u1",
+            gatherings=(
+                SharedGathering(
+                    gathering_id="e1",
+                    title="E",
+                    starts_at=NOW,
+                    collective_id="s1",
+                    basis=SharedGatheringBasis.UPCOMING,
+                ),
+            ),
         )
         assert r.is_empty is False
 
@@ -131,186 +253,618 @@ class TestRecognitionShape:
 
 
 # ---------------------------------------------------------------------------
-# RecognitionService.between — happy paths
+# Shared Collective is the boundary, never the evidence
 # ---------------------------------------------------------------------------
 
-class TestBetweenHappyPaths:
-    def test_two_users_share_one_collective(self, db, make_user, make_space):
+class TestCollectiveIsBoundaryNotEvidence:
+    def test_shared_collective_alone_yields_no_recognition(
+        self, db, make_user, make_space
+    ):
         alice, bob = make_user(), make_user()
         space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
+        r = _between(db, alice, bob)
 
-        assert r.other_user_id == bob.id
-        assert len(r.collectives) == 1
-        assert r.collectives[0].collective_id == space.id
-        assert r.collectives[0].slug == space.slug
-        assert r.collectives[0].name == space.name
+        assert r.is_empty is True
         assert r.pathways == ()
         assert r.gatherings == ()
 
-    def test_shared_pathway_is_surfaced(self, db, make_user, make_space):
+    def test_collective_size_is_irrelevant(self, db, make_user, make_space):
+        """No threshold exists. A two-person Collective is as
+        insufficient as a two-hundred-person one."""
         alice, bob = make_user(), make_user()
         space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
-        pw = _add_pathway(db, space, title="REAL Journey")
-        _add_enrolment(db, alice, pw)
-        _add_enrolment(db, bob, pw)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
+        assert _between(db, alice, bob).is_empty is True
 
-        assert len(r.pathways) == 1
-        assert r.pathways[0].pathway_id == pw.id
-        assert r.pathways[0].title == "REAL Journey"
-        assert r.pathways[0].collective_id == space.id
-
-    def test_shared_gathering_is_surfaced(self, db, make_user, make_space, make_event):
+    def test_collective_rides_along_as_context_when_evidence_exists(
+        self, db, make_user, make_space, make_event
+    ):
         alice, bob = make_user(), make_user()
-        space = _visible_space(make_space)
+        space = _visible_space(make_space, name="The Grove")
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
-        ev = make_event(space=space, title="Thursday circle")
+        ev = _upcoming_event(make_event, space)
         _add_booking(db, alice, ev)
         _add_booking(db, bob, ev)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
+        r = _between(db, alice, bob)
 
-        assert len(r.gatherings) == 1
-        assert r.gatherings[0].gathering_id == ev.id
-        assert r.gatherings[0].title == "Thursday circle"
+        assert r.is_empty is False
+        assert [c.name for c in r.collectives] == ["The Grove"]
+        assert r.gatherings[0].collective_id == space.id
 
-    def test_multiple_collectives_are_sorted_by_name(self, db, make_user, make_space):
+    def test_multiple_collectives_are_sorted_by_name(
+        self, db, make_user, make_space, make_event
+    ):
         alice, bob = make_user(), make_user()
         s_b = _visible_space(make_space, name="B Space")
         s_a = _visible_space(make_space, name="A Space")
         for s in (s_a, s_b):
             _add_membership(db, alice, s)
             _add_membership(db, bob, s)
+        ev = _upcoming_event(make_event, s_a)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
+        r = _between(db, alice, bob)
 
         assert [c.name for c in r.collectives] == ["A Space", "B Space"]
 
 
 # ---------------------------------------------------------------------------
-# RecognitionService.between — privacy guards
+# Upcoming Gatherings — a shared confirmed booking, until it starts
 # ---------------------------------------------------------------------------
 
-class TestBetweenPrivacyGuards:
-    def test_same_user_returns_empty(self, db, make_user, make_space):
-        alice = make_user()
-        space = _visible_space(make_space)
-        _add_membership(db, alice, space)
-
-        r = RecognitionService.between(db, alice.id, alice.id)
-        assert r.is_empty
-
-    def test_suspended_viewer_returns_empty(self, db, make_user, make_space):
-        alice = make_user(suspended_at=datetime.utcnow())
-        bob = make_user()
+class TestUpcomingGatherings:
+    def test_both_confirmed_on_an_upcoming_gathering(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
         space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space, title="Thursday circle")
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
 
-        assert RecognitionService.between(db, alice.id, bob.id).is_empty
+        r = _between(db, alice, bob)
 
-    def test_suspended_other_returns_empty(self, db, make_user, make_space):
-        alice = make_user()
-        bob = make_user(suspended_at=datetime.utcnow())
+        assert len(r.gatherings) == 1
+        assert r.gatherings[0].gathering_id == ev.id
+        assert r.gatherings[0].title == "Thursday circle"
+        assert r.gatherings[0].basis is SharedGatheringBasis.UPCOMING
+
+    def test_one_confirmed_one_cancelled_yields_nothing(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
         space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev, status=BookingStatus.cancelled)
 
-        assert RecognitionService.between(db, alice.id, bob.id).is_empty
+        assert _between(db, alice, bob).gatherings == ()
 
-    def test_cancelled_account_returns_empty(self, db, make_user, make_space):
-        alice = make_user()
-        bob = make_user(cancelled_at=datetime.utcnow())
+    def test_one_confirmed_one_pending_payment_yields_nothing(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
         space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev, status=BookingStatus.pending_payment)
 
-        assert RecognitionService.between(db, alice.id, bob.id).is_empty
+        assert _between(db, alice, bob).gatherings == ()
 
-    def test_suspended_until_in_past_does_not_exclude(self, db, make_user, make_space):
-        # Auto-lift already fired.
-        alice = make_user(
-            suspended_at=datetime.utcnow() - timedelta(days=10),
-            suspended_until=datetime.utcnow() - timedelta(days=1),
+    def test_only_one_person_booked_yields_nothing(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+
+        assert _between(db, alice, bob).gatherings == ()
+
+    def test_booking_stops_being_evidence_once_the_gathering_starts(
+        self, db, make_user, make_space, make_event
+    ):
+        """The same substrate, read from two different clocks. Before it
+        starts, a shared booking is a shared intention. Afterwards, only
+        attendance can say whether anything was shared — and attendance
+        was never finalised here."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space, days_ahead=3)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        before = _between(db, alice, bob, now=NOW)
+        after = _between(db, alice, bob, now=NOW + timedelta(days=4))
+
+        assert len(before.gatherings) == 1
+        assert after.gatherings == ()
+        assert after.is_empty is True
+
+    def test_a_cancelled_upcoming_gathering_yields_nothing(
+        self, db, make_user, make_space, make_event
+    ):
+        """Two people holding bookings for something that is not
+        happening are not about to share anything."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space, status="cancelled")
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        r = _between(db, alice, bob)
+
+        assert r.gatherings == ()
+        assert r.is_empty is True
+
+    def test_an_archived_upcoming_gathering_yields_nothing(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space, status="archived")
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert _between(db, alice, bob).gatherings == ()
+
+    def test_cancelling_the_gathering_withdraws_the_recognition(
+        self, db, make_user, make_space, make_event
+    ):
+        """Derived, not stored: the recognition is there while the
+        Gathering is on and gone on the next read once it is not."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert len(_between(db, alice, bob).gatherings) == 1
+
+        ev.status = "cancelled"
+        db.flush()
+
+        assert _between(db, alice, bob).gatherings == ()
+
+    def test_upcoming_gatherings_are_soonest_first(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        far = _upcoming_event(make_event, space, days_ahead=30, title="Far")
+        near = _upcoming_event(make_event, space, days_ahead=2, title="Near")
+        for ev in (far, near):
+            _add_booking(db, alice, ev)
+            _add_booking(db, bob, ev)
+
+        r = _between(db, alice, bob)
+
+        assert [g.title for g in r.gatherings] == ["Near", "Far"]
+
+
+# ---------------------------------------------------------------------------
+# Past Gatherings — attendance, finalised, never inferred
+# ---------------------------------------------------------------------------
+
+class TestPastAttendedGatherings:
+    def test_finalised_and_both_attended_yields_recognition(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=10, title="Last Tuesday")
+        _both_attended(db, alice, bob, ev)
+
+        r = _between(db, alice, bob)
+
+        assert len(r.gatherings) == 1
+        assert r.gatherings[0].gathering_id == ev.id
+        assert r.gatherings[0].basis is SharedGatheringBasis.ATTENDED
+
+    def test_attended_plus_no_show_yields_nothing(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=10)
+        _add_booking(db, alice, ev, attendance="attended")
+        _add_booking(db, bob, ev, attendance="no_show")
+
+        assert _between(db, alice, bob).gatherings == ()
+
+    def test_both_no_show_yields_nothing(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=10)
+        _add_booking(db, alice, ev, attendance="no_show")
+        _add_booking(db, bob, ev, attendance="no_show")
+
+        assert _between(db, alice, bob).gatherings == ()
+
+    def test_unfinalised_attendance_is_never_inferred(
+        self, db, make_user, make_space, make_event
+    ):
+        """Both booked, both even marked attended — but the creator
+        never finished the roster, so the marks are provisional and we
+        do not claim a shared experience from them."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=10, finalised=False)
+        _both_attended(db, alice, bob, ev)
+
+        assert _between(db, alice, bob).gatherings == ()
+
+    def test_unfinalised_booking_only_is_not_evidence(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=10, finalised=False)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_pending_attendance_is_not_attendance(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=10)
+        _add_booking(db, alice, ev, attendance="attended")
+        _add_booking(db, bob, ev, attendance="pending")
+
+        assert _between(db, alice, bob).gatherings == ()
+
+    def test_a_later_cancelled_booking_does_not_erase_real_attendance(
+        self, db, make_user, make_space, make_event
+    ):
+        """Refunds, credits and administrative cancellations happen
+        after the fact. None of them mean the person was not there."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=10, title="The one they came to")
+        _add_booking(db, alice, ev, attendance="attended")
+        _add_booking(
+            db, bob, ev,
+            status=BookingStatus.cancelled,
+            attendance="attended",
         )
-        bob = make_user()
+
+        r = _between(db, alice, bob)
+
+        assert len(r.gatherings) == 1
+        assert r.gatherings[0].title == "The one they came to"
+        assert r.gatherings[0].basis is SharedGatheringBasis.ATTENDED
+
+    def test_attendance_outranks_booking_status_on_both_sides(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
         space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=10)
+        for user in (alice, bob):
+            _add_booking(
+                db, user, ev,
+                status=BookingStatus.cancelled,
+                attendance="attended",
+            )
 
-        r = RecognitionService.between(db, alice.id, bob.id)
-        assert len(r.collectives) == 1
+        assert len(_between(db, alice, bob).gatherings) == 1
 
-    def test_missing_user_returns_empty(self, db, make_user):
-        alice = make_user()
-        assert RecognitionService.between(db, alice.id, "nonexistent").is_empty
-
-
-class TestBetweenSubstrateGuards:
-    def test_paused_membership_excluded(self, db, make_user, make_space):
+    def test_a_cancelled_booking_without_attendance_still_yields_nothing(
+        self, db, make_user, make_space, make_event
+    ):
+        """The relaxation is about the attendance mark outranking the
+        booking — not about dropping the requirement for a mark."""
         alice, bob = make_user(), make_user()
         space = _visible_space(make_space)
-        _add_membership(db, alice, space)
-        _add_membership(db, bob, space, status=SpaceMembershipStatus.paused)
-
-        assert RecognitionService.between(db, alice.id, bob.id).is_empty
-
-    def test_removed_membership_excluded(self, db, make_user, make_space):
-        alice, bob = make_user(), make_user()
-        space = _visible_space(make_space)
-        _add_membership(db, alice, space)
-        _add_membership(db, bob, space, status=SpaceMembershipStatus.removed)
-
-        assert RecognitionService.between(db, alice.id, bob.id).is_empty
-
-    def test_directory_hidden_collective_excluded(self, db, make_user, make_space):
-        # show_member_directory=False is the creator saying "learners
-        # can't see each other" — Recognition must honour that.
-        alice, bob = make_user(), make_user()
-        space = make_space(show_member_directory=False)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=10)
+        _add_booking(db, alice, ev, attendance="attended")
+        _add_booking(db, bob, ev, status=BookingStatus.cancelled)
 
-        assert RecognitionService.between(db, alice.id, bob.id).is_empty
+        assert _between(db, alice, bob).gatherings == ()
 
-    def test_directory_hidden_collective_also_hides_its_pathways(
+    def test_recurrence_linkage_is_preserved_for_later_phrasing(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        series = _uid("rs")
+        ev = _past_event(
+            make_event, space, days_ago=10, recurrence_series_id=series
+        )
+        _both_attended(db, alice, bob, ev)
+
+        r = _between(db, alice, bob)
+
+        assert r.gatherings[0].recurrence_series_id == series
+
+
+# ---------------------------------------------------------------------------
+# Past co-attendance decay
+# ---------------------------------------------------------------------------
+
+class TestAttendanceRecency:
+    def test_single_attendance_inside_the_recent_window_survives(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=RECENT_ATTENDANCE_DAYS - 5)
+        _both_attended(db, alice, bob, ev)
+
+        assert len(_between(db, alice, bob).gatherings) == 1
+
+    def test_single_attendance_outside_the_recent_window_drops(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _past_event(make_event, space, days_ago=RECENT_ATTENDANCE_DAYS + 5)
+        _both_attended(db, alice, bob, ev)
+
+        r = _between(db, alice, bob)
+
+        assert r.gatherings == ()
+        assert r.is_empty is True
+
+    def test_repeated_attendance_survives_the_single_attendance_window(
+        self, db, make_user, make_space, make_event
+    ):
+        """Two shared attendances, both older than the single-occurrence
+        window. A pattern, not a coincidence — so both stand."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        for days in (RECENT_ATTENDANCE_DAYS + 10, RECENT_ATTENDANCE_DAYS + 40):
+            _both_attended(
+                db, alice, bob, _past_event(make_event, space, days_ago=days)
+            )
+
+        r = _between(db, alice, bob)
+
+        assert len(r.gatherings) == 2
+        assert all(g.basis is SharedGatheringBasis.ATTENDED for g in r.gatherings)
+
+    def test_repeated_attendance_drops_outside_the_extended_window(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        for days in (REPEATED_ATTENDANCE_DAYS + 10, REPEATED_ATTENDANCE_DAYS + 40):
+            _both_attended(
+                db, alice, bob, _past_event(make_event, space, days_ago=days)
+            )
+
+        r = _between(db, alice, bob)
+
+        assert r.gatherings == ()
+        assert r.is_empty is True
+
+    def test_one_inside_extended_window_alone_still_needs_recency(
+        self, db, make_user, make_space, make_event
+    ):
+        """One attendance inside the extended window but outside the
+        recent one, plus one that has already aged out entirely. Only
+        one qualifies as repeated evidence, so the recent-window rule
+        applies to it and nothing survives."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        _both_attended(
+            db, alice, bob,
+            _past_event(make_event, space, days_ago=RECENT_ATTENDANCE_DAYS + 30),
+        )
+        _both_attended(
+            db, alice, bob,
+            _past_event(make_event, space, days_ago=REPEATED_ATTENDANCE_DAYS + 30),
+        )
+
+        assert _between(db, alice, bob).gatherings == ()
+
+    def test_attended_gatherings_are_most_recent_first(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        _both_attended(
+            db, alice, bob,
+            _past_event(make_event, space, days_ago=60, title="Older"),
+        )
+        _both_attended(
+            db, alice, bob,
+            _past_event(make_event, space, days_ago=5, title="Newer"),
+        )
+
+        r = _between(db, alice, bob)
+
+        assert [g.title for g in r.gatherings] == ["Newer", "Older"]
+
+    def test_upcoming_precede_attended(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        soon = _upcoming_event(make_event, space, days_ahead=3, title="Soon")
+        _add_booking(db, alice, soon)
+        _add_booking(db, bob, soon)
+        _both_attended(
+            db, alice, bob,
+            _past_event(make_event, space, days_ago=5, title="Recent"),
+        )
+
+        r = _between(db, alice, bob)
+
+        assert [g.title for g in r.gatherings] == ["Soon", "Recent"]
+        assert r.gatherings[0].basis is SharedGatheringBasis.UPCOMING
+        assert r.gatherings[1].basis is SharedGatheringBasis.ATTENDED
+
+
+# ---------------------------------------------------------------------------
+# Pathways — a deliberate shared commitment, once both have begun
+# ---------------------------------------------------------------------------
+
+class TestSharedPathways:
+    def test_both_enrolled_and_both_started(self, db, make_user, make_space):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        pw = _add_pathway(db, space, title="REAL Journey")
+        step = _add_step(db, pw)
+        _start_pathway(db, alice, pw, step)
+        _start_pathway(db, bob, pw, step)
+
+        r = _between(db, alice, bob)
+
+        assert len(r.pathways) == 1
+        assert r.pathways[0].pathway_id == pw.id
+        assert r.pathways[0].title == "REAL Journey"
+        assert r.pathways[0].collective_id == space.id
+
+    def test_enrolled_but_neither_started_yields_nothing(
         self, db, make_user, make_space
     ):
         alice, bob = make_user(), make_user()
-        space = make_space(show_member_directory=False)
+        space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
         pw = _add_pathway(db, space)
+        _add_step(db, pw)
         _add_enrolment(db, alice, pw)
         _add_enrolment(db, bob, pw)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
+        r = _between(db, alice, bob)
+
         assert r.pathways == ()
+        assert r.is_empty is True
 
-    def test_archived_collective_excluded(self, db, make_user, make_space):
+    def test_only_one_started_yields_nothing(self, db, make_user, make_space):
         alice, bob = make_user(), make_user()
-        space = _visible_space(make_space, status="archived")
+        space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        step = _add_step(db, pw)
+        _start_pathway(db, alice, pw, step)
+        _add_enrolment(db, bob, pw)
 
-        assert RecognitionService.between(db, alice.id, bob.id).is_empty
+        assert _between(db, alice, bob).pathways == ()
 
-    def test_closed_collective_excluded(self, db, make_user, make_space):
-        # Community Care Stage 2D terminal outcome. The Collective is over.
+    def test_each_may_have_started_a_different_step(
+        self, db, make_user, make_space
+    ):
+        """'Started' is about the Pathway, not about walking in step."""
         alice, bob = make_user(), make_user()
-        space = _visible_space(make_space, closed_at=datetime.utcnow())
+        space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        first = _add_step(db, pw, position=0)
+        second = _add_step(db, pw, position=1)
+        _add_enrolment(db, alice, pw)
+        _complete_step(db, alice, first)
+        _add_enrolment(db, bob, pw)
+        _complete_step(db, bob, second)
 
-        assert RecognitionService.between(db, alice.id, bob.id).is_empty
+        assert len(_between(db, alice, bob).pathways) == 1
+
+    def test_progress_in_a_different_pathway_does_not_count(
+        self, db, make_user, make_space
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        shared = _add_pathway(db, space, title="Shared")
+        _add_step(db, shared)
+        other = _add_pathway(db, space, title="Other")
+        other_step = _add_step(db, other)
+        _add_enrolment(db, alice, shared)
+        _add_enrolment(db, bob, shared)
+        # Both have completed a step — but in the wrong Pathway.
+        _complete_step(db, alice, other_step)
+        _complete_step(db, bob, other_step)
+
+        assert _between(db, alice, bob).pathways == ()
+
+    def test_a_draft_reflection_is_not_a_start(self, db, make_user, make_space):
+        """Saving a private draft writes a StepProgress row with
+        ``completed_at`` NULL. Private journalling must never be the
+        thing that makes a member visible to someone else."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        step = _add_step(db, pw)
+        _add_enrolment(db, alice, pw)
+        _complete_step(db, alice, step)
+        _add_enrolment(db, bob, pw)
+        _draft_reflection(db, bob, step)
+
+        assert _between(db, alice, bob).pathways == ()
 
     def test_paused_enrolment_excluded(self, db, make_user, make_space):
         alice, bob = make_user(), make_user()
@@ -318,39 +872,332 @@ class TestBetweenSubstrateGuards:
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
         pw = _add_pathway(db, space)
-        _add_enrolment(db, alice, pw)
+        step = _add_step(db, pw)
+        _start_pathway(db, alice, pw, step)
         _add_enrolment(db, bob, pw, status=EnrollmentStatus.paused)
+        _complete_step(db, bob, step)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
-        assert r.pathways == ()
-        # Underlying collective still shared, so the collective row survives.
-        assert len(r.collectives) == 1
+        assert _between(db, alice, bob).pathways == ()
 
-    def test_cancelled_booking_excluded(self, db, make_user, make_space, make_event):
+    def test_completed_enrolment_excluded(self, db, make_user, make_space):
         alice, bob = make_user(), make_user()
         space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
-        ev = make_event(space=space)
-        _add_booking(db, alice, ev)
-        _add_booking(db, bob, ev, status=BookingStatus.cancelled)
+        pw = _add_pathway(db, space)
+        step = _add_step(db, pw)
+        _start_pathway(db, alice, pw, step)
+        _add_enrolment(db, bob, pw, status=EnrollmentStatus.completed)
+        _complete_step(db, bob, step)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
+        assert _between(db, alice, bob).pathways == ()
+
+    def test_a_started_pathway_does_not_expire_with_inactivity(
+        self, db, make_user, make_space
+    ):
+        """No 90-day activity window. Both began it long ago, neither
+        has touched it since, both enrolments are still active — the
+        shared Pathway stands."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        step = _add_step(db, pw)
+        long_ago = NOW - timedelta(days=400)
+        _add_enrolment(db, alice, pw)
+        _complete_step(db, alice, step, completed_at=long_ago)
+        _add_enrolment(db, bob, pw)
+        _complete_step(db, bob, step, completed_at=long_ago)
+
+        r = _between(db, alice, bob, now=NOW)
+
+        assert len(r.pathways) == 1
+
+
+# ---------------------------------------------------------------------------
+# Privacy guards — account state
+# ---------------------------------------------------------------------------
+
+class TestAccountGuards:
+    def test_same_user_returns_empty(self, db, make_user, make_space):
+        alice = make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+
+        r = RecognitionService.between(db, alice.id, alice.id, now=NOW)
+        assert r.is_empty is True
+
+    def test_suspended_viewer_returns_empty(
+        self, db, make_user, make_space, make_event
+    ):
+        alice = make_user(suspended_at=datetime.utcnow())
+        bob = make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_suspended_other_returns_empty(
+        self, db, make_user, make_space, make_event
+    ):
+        alice = make_user()
+        bob = make_user(suspended_at=datetime.utcnow())
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_cancelled_account_returns_empty(
+        self, db, make_user, make_space, make_event
+    ):
+        alice = make_user()
+        bob = make_user(cancelled_at=datetime.utcnow())
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_suspended_until_in_past_does_not_exclude(
+        self, db, make_user, make_space, make_event
+    ):
+        alice = make_user()
+        bob = make_user(
+            suspended_at=datetime.utcnow() - timedelta(days=10),
+            suspended_until=datetime.utcnow() - timedelta(days=1),
+        )
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert _between(db, alice, bob).is_empty is False
+
+    def test_missing_user_returns_empty(self, db, make_user):
+        alice = make_user()
+        r = RecognitionService.between(db, alice.id, "nobody", now=NOW)
+        assert r.is_empty is True
+
+
+# ---------------------------------------------------------------------------
+# Privacy guards — the Collective gate suppresses everything under it
+# ---------------------------------------------------------------------------
+
+class TestCollectiveGate:
+    def _pair_with_everything(self, db, make_user, make_space, make_event, space):
+        """Two members of ``space`` sharing a Pathway and both an
+        upcoming and an attended Gathering — the maximal substrate, so a
+        guard that suppresses it is suppressing everything."""
+        alice, bob = make_user(), make_user()
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        step = _add_step(db, pw)
+        _start_pathway(db, alice, pw, step)
+        _start_pathway(db, bob, pw, step)
+        soon = _upcoming_event(make_event, space)
+        _add_booking(db, alice, soon)
+        _add_booking(db, bob, soon)
+        _both_attended(
+            db, alice, bob, _past_event(make_event, space, days_ago=5)
+        )
+        return alice, bob
+
+    def test_baseline_is_rich(self, db, make_user, make_space, make_event):
+        """Guards the guards: if this ever stops producing evidence, the
+        suppression tests below would pass for the wrong reason."""
+        space = _visible_space(make_space)
+        alice, bob = self._pair_with_everything(
+            db, make_user, make_space, make_event, space
+        )
+
+        r = _between(db, alice, bob)
+
+        assert len(r.pathways) == 1
+        assert len(r.gatherings) == 2
+
+    def test_directory_hidden_collective_suppresses_everything(
+        self, db, make_user, make_space, make_event
+    ):
+        space = make_space(show_member_directory=False)
+        alice, bob = self._pair_with_everything(
+            db, make_user, make_space, make_event, space
+        )
+
+        r = _between(db, alice, bob)
+
+        assert r.is_empty is True
+        assert r.collectives == ()
+        assert r.pathways == ()
         assert r.gatherings == ()
 
-    def test_pending_payment_booking_excluded(
+    def test_archived_collective_suppresses_everything(
+        self, db, make_user, make_space, make_event
+    ):
+        space = _visible_space(make_space, status="archived")
+        alice, bob = self._pair_with_everything(
+            db, make_user, make_space, make_event, space
+        )
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_closed_collective_suppresses_everything(
+        self, db, make_user, make_space, make_event
+    ):
+        space = _visible_space(make_space, closed_at=datetime.utcnow())
+        alice, bob = self._pair_with_everything(
+            db, make_user, make_space, make_event, space
+        )
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_paused_membership_suppresses_everything(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space, status=SpaceMembershipStatus.paused)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert _between(db, alice, bob).is_empty is True
+
+    def test_removed_membership_suppresses_everything(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space, status=SpaceMembershipStatus.removed)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert _between(db, alice, bob).is_empty is True
+
+
+# ---------------------------------------------------------------------------
+# Symmetry — structural, but pinned rather than trusted
+# ---------------------------------------------------------------------------
+
+def _evidence_fingerprint(r: Recognition):
+    """Everything about a Recognition except whose point of view it is."""
+    return (
+        sorted(c.collective_id for c in r.collectives),
+        sorted(p.pathway_id for p in r.pathways),
+        sorted((g.gathering_id, g.basis) for g in r.gatherings),
+    )
+
+
+class TestSymmetry:
+    def test_upcoming_gathering_is_symmetric(
         self, db, make_user, make_space, make_event
     ):
         alice, bob = make_user(), make_user()
         space = _visible_space(make_space)
         _add_membership(db, alice, space)
         _add_membership(db, bob, space)
-        ev = make_event(space=space)
+        ev = _upcoming_event(make_event, space)
         _add_booking(db, alice, ev)
-        _add_booking(db, bob, ev, status=BookingStatus.pending_payment)
+        _add_booking(db, bob, ev)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
-        assert r.gatherings == ()
+        forward = _between(db, alice, bob)
+        backward = _between(db, bob, alice)
+
+        assert forward.other_user_id == bob.id
+        assert backward.other_user_id == alice.id
+        assert _evidence_fingerprint(forward) == _evidence_fingerprint(backward)
+
+    def test_attended_gathering_is_symmetric(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        _both_attended(
+            db, alice, bob, _past_event(make_event, space, days_ago=10)
+        )
+
+        assert _evidence_fingerprint(_between(db, alice, bob)) == (
+            _evidence_fingerprint(_between(db, bob, alice))
+        )
+
+    def test_repeated_attendance_is_symmetric(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        for days in (RECENT_ATTENDANCE_DAYS + 10, RECENT_ATTENDANCE_DAYS + 40):
+            _both_attended(
+                db, alice, bob, _past_event(make_event, space, days_ago=days)
+            )
+
+        assert _evidence_fingerprint(_between(db, alice, bob)) == (
+            _evidence_fingerprint(_between(db, bob, alice))
+        )
+
+    def test_pathway_is_symmetric(self, db, make_user, make_space):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        step = _add_step(db, pw)
+        _start_pathway(db, alice, pw, step)
+        _start_pathway(db, bob, pw, step)
+
+        assert _evidence_fingerprint(_between(db, alice, bob)) == (
+            _evidence_fingerprint(_between(db, bob, alice))
+        )
+
+    def test_asymmetric_substrate_is_symmetrically_empty(
+        self, db, make_user, make_space
+    ):
+        """Only one side has started. Neither direction may surface it."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        step = _add_step(db, pw)
+        _start_pathway(db, alice, pw, step)
+        _add_enrolment(db, bob, pw)
+
+        assert _between(db, alice, bob).is_empty is True
+        assert _between(db, bob, alice).is_empty is True
+
+    def test_collective_gate_is_symmetric(
+        self, db, make_user, make_space, make_event
+    ):
+        alice, bob = make_user(), make_user()
+        space = make_space(show_member_directory=False)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        ev = _upcoming_event(make_event, space)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert _between(db, alice, bob).is_empty is True
+        assert _between(db, bob, alice).is_empty is True
 
 
 # ---------------------------------------------------------------------------
@@ -361,70 +1208,119 @@ class TestForUser:
     def test_returns_empty_when_no_co_members(self, db, make_user, make_space):
         alice = make_user()
         _add_membership(db, alice, _visible_space(make_space))
-        assert RecognitionService.for_user(db, alice.id) == []
+        assert RecognitionService.for_user(db, alice.id, now=NOW) == []
 
-    def test_returns_one_recognition_per_other_user(
+    def test_co_membership_alone_yields_no_results(
         self, db, make_user, make_space
     ):
-        alice = make_user()
-        bob, carol = make_user(), make_user()
+        """Co-members are candidates, not recognitions."""
+        alice, bob = make_user(), make_user()
         s = _visible_space(make_space)
         _add_membership(db, alice, s)
         _add_membership(db, bob, s)
-        _add_membership(db, carol, s)
 
-        results = RecognitionService.for_user(db, alice.id)
+        assert RecognitionService.for_user(db, alice.id, now=NOW) == []
 
-        others = {r.other_user_id for r in results}
-        assert others == {bob.id, carol.id}
+    def test_returns_one_recognition_per_other_user_with_evidence(
+        self, db, make_user, make_space, make_event
+    ):
+        alice = make_user()
+        bob, carol, dave = make_user(), make_user(), make_user()
+        s = _visible_space(make_space)
+        for u in (alice, bob, carol, dave):
+            _add_membership(db, u, s)
+        ev = _upcoming_event(make_event, s)
+        for u in (alice, bob, carol):
+            _add_booking(db, u, ev)
+        # dave is a co-member with no shared evidence.
+
+        results = RecognitionService.for_user(db, alice.id, now=NOW)
+
+        assert {r.other_user_id for r in results} == {bob.id, carol.id}
         assert all(not r.is_empty for r in results)
 
     def test_excludes_suspended_other_from_results(
-        self, db, make_user, make_space
+        self, db, make_user, make_space, make_event
     ):
         alice = make_user()
         bob = make_user()
         carol = make_user(suspended_at=datetime.utcnow())
         s = _visible_space(make_space)
-        _add_membership(db, alice, s)
-        _add_membership(db, bob, s)
-        _add_membership(db, carol, s)
+        for u in (alice, bob, carol):
+            _add_membership(db, u, s)
+        ev = _upcoming_event(make_event, s)
+        for u in (alice, bob, carol):
+            _add_booking(db, u, ev)
 
-        results = RecognitionService.for_user(db, alice.id)
+        results = RecognitionService.for_user(db, alice.id, now=NOW)
         assert {r.other_user_id for r in results} == {bob.id}
 
-    def test_suspended_viewer_returns_empty_list(self, db, make_user, make_space):
+    def test_suspended_viewer_returns_empty_list(
+        self, db, make_user, make_space, make_event
+    ):
         alice = make_user(suspended_at=datetime.utcnow())
         bob = make_user()
         s = _visible_space(make_space)
         _add_membership(db, alice, s)
         _add_membership(db, bob, s)
+        ev = _upcoming_event(make_event, s)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
 
-        assert RecognitionService.for_user(db, alice.id) == []
+        assert RecognitionService.for_user(db, alice.id, now=NOW) == []
 
     def test_directory_hidden_collective_yields_no_candidates(
-        self, db, make_user, make_space
+        self, db, make_user, make_space, make_event
     ):
         alice, bob = make_user(), make_user()
         s = make_space(show_member_directory=False)
         _add_membership(db, alice, s)
         _add_membership(db, bob, s)
+        ev = _upcoming_event(make_event, s)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
 
-        assert RecognitionService.for_user(db, alice.id) == []
+        assert RecognitionService.for_user(db, alice.id, now=NOW) == []
 
     def test_results_are_sorted_by_other_user_id(
-        self, db, make_user, make_space
+        self, db, make_user, make_space, make_event
     ):
         alice = make_user()
         # Force a predictable order regardless of insertion order.
         others = [make_user(id=f"u_{c}") for c in ("cccc", "aaaa", "bbbb")]
         s = _visible_space(make_space)
         _add_membership(db, alice, s)
+        ev = _upcoming_event(make_event, s)
+        _add_booking(db, alice, ev)
         for u in others:
             _add_membership(db, u, s)
+            _add_booking(db, u, ev)
 
-        result_ids = [r.other_user_id for r in RecognitionService.for_user(db, alice.id)]
+        result_ids = [
+            r.other_user_id
+            for r in RecognitionService.for_user(db, alice.id, now=NOW)
+        ]
         assert result_ids == sorted(result_ids)
+        assert len(result_ids) == 3
+
+    def test_now_is_threaded_through_to_the_windows(
+        self, db, make_user, make_space, make_event
+    ):
+        """The same substrate read from a later clock loses the
+        upcoming Gathering — proof ``for_user`` does not quietly fall
+        back to the wall clock."""
+        alice, bob = make_user(), make_user()
+        s = _visible_space(make_space)
+        _add_membership(db, alice, s)
+        _add_membership(db, bob, s)
+        ev = _upcoming_event(make_event, s, days_ahead=3)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
+
+        assert len(RecognitionService.for_user(db, alice.id, now=NOW)) == 1
+        assert RecognitionService.for_user(
+            db, alice.id, now=NOW + timedelta(days=4)
+        ) == []
 
 
 # ---------------------------------------------------------------------------
@@ -433,14 +1329,17 @@ class TestForUser:
 
 class TestResultShape:
     def test_collectives_are_shared_collective_dataclass(
-        self, db, make_user, make_space
+        self, db, make_user, make_space, make_event
     ):
         alice, bob = make_user(), make_user()
         s = _visible_space(make_space)
         _add_membership(db, alice, s)
         _add_membership(db, bob, s)
+        ev = _upcoming_event(make_event, s)
+        _add_booking(db, alice, ev)
+        _add_booking(db, bob, ev)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
+        r = _between(db, alice, bob)
         assert isinstance(r.collectives[0], SharedCollective)
         # No ORM leakage — Space is not a SharedCollective.
         assert not hasattr(r.collectives[0], "creator_id")
@@ -453,10 +1352,11 @@ class TestResultShape:
         _add_membership(db, alice, s)
         _add_membership(db, bob, s)
         pw = _add_pathway(db, s)
-        _add_enrolment(db, alice, pw)
-        _add_enrolment(db, bob, pw)
+        step = _add_step(db, pw)
+        _start_pathway(db, alice, pw, step)
+        _start_pathway(db, bob, pw, step)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
+        r = _between(db, alice, bob)
         assert isinstance(r.pathways[0], SharedPathway)
 
     def test_gatherings_are_shared_gathering_dataclass(
@@ -466,9 +1366,35 @@ class TestResultShape:
         s = _visible_space(make_space)
         _add_membership(db, alice, s)
         _add_membership(db, bob, s)
-        ev = make_event(space=s)
+        ev = _upcoming_event(make_event, s)
         _add_booking(db, alice, ev)
         _add_booking(db, bob, ev)
 
-        r = RecognitionService.between(db, alice.id, bob.id)
+        r = _between(db, alice, bob)
         assert isinstance(r.gatherings[0], SharedGathering)
+        assert not hasattr(r.gatherings[0], "capacity")
+
+    def test_reflection_text_never_reaches_the_result(
+        self, db, make_user, make_space
+    ):
+        """Private journalling is not part of any Recognition."""
+        alice, bob = make_user(), make_user()
+        s = _visible_space(make_space)
+        _add_membership(db, alice, s)
+        _add_membership(db, bob, s)
+        pw = _add_pathway(db, s)
+        step = _add_step(db, pw)
+        _add_enrolment(db, alice, pw)
+        _add_enrolment(db, bob, pw)
+        for u in (alice, bob):
+            db.add(StepProgress(
+                id=_uid("sp"), user_id=u.id, step_id=step.id,
+                completed_at=NOW - timedelta(days=1),
+                reflection_text="deeply private",
+            ))
+        db.flush()
+
+        r = _between(db, alice, bob)
+
+        assert len(r.pathways) == 1
+        assert "deeply private" not in repr(r)
