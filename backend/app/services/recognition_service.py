@@ -208,6 +208,11 @@ class SharedCollective:
     collective_id: str
     slug: str
     name: str
+    #: IANA zone the Collective schedules in. Carried because a
+    #: Gathering's ``starts_at`` is stored naive and means nothing
+    #: without it — a caller rendering "Thursday 8 October" from the
+    #: server's own clock would be wrong for half the world.
+    timezone: str
 
 
 @dataclass(frozen=True)
@@ -560,10 +565,13 @@ def _collectives_by_id(
     if not space_ids:
         return {}
     rows = db.execute(
-        select(Space.id, Space.slug, Space.name).where(Space.id.in_(space_ids))
+        select(Space.id, Space.slug, Space.name, Space.timezone)
+        .where(Space.id.in_(space_ids))
     ).all()
     return {
-        r.id: SharedCollective(collective_id=r.id, slug=r.slug, name=r.name)
+        r.id: SharedCollective(
+            collective_id=r.id, slug=r.slug, name=r.name, timezone=r.timezone
+        )
         for r in rows
     }
 
@@ -764,12 +772,14 @@ def _active_shared_memberships(
     if not visible_space_ids:
         return ()
     rows = db.execute(
-        select(Space.id, Space.slug, Space.name)
+        select(Space.id, Space.slug, Space.name, Space.timezone)
         .where(Space.id.in_(visible_space_ids))
         .order_by(Space.name)
     ).all()
     return tuple(
-        SharedCollective(collective_id=r.id, slug=r.slug, name=r.name)
+        SharedCollective(
+            collective_id=r.id, slug=r.slug, name=r.name, timezone=r.timezone
+        )
         for r in rows
     )
 

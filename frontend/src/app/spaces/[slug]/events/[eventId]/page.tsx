@@ -7,6 +7,7 @@ import type { EventDetail, PathwayAboutBlock } from '@/types/platform'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import { countdownLabel, formatGatheringFullDate, formatGatheringTime } from '@/lib/dateTime'
 import GatheringBookingClient from '@/components/spaces/GatheringBookingClient'
+import { GatheringRecognition } from '@/components/connections/InContextRecognition'
 import GatheringTicketPurchaseClient from '@/components/spaces/GatheringTicketPurchaseClient'
 import {
   gatheringIcon, gatheringLabel, gatheringDescription,
@@ -589,6 +590,14 @@ export default async function EventDetailPage({ params }: Props) {
                 )
             }
           </section>
+
+          {/* Who else will be, or was, in the room. One quiet line
+              directly under the description, where a member is
+              already thinking about the Gathering itself. Renders
+              nothing at all unless Ways to Connect has something
+              genuinely shared to say — no heading, no empty slot,
+              no layout shift when it is absent. */}
+          <GatheringRecognition gatheringId={event.id} />
 
           {/* Access / arrival instructions — attendee-only. Kept
               as a tinted note since the content is genuinely

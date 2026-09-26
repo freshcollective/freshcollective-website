@@ -340,6 +340,23 @@ class TestResponseShape:
         assert ctx["collective"]["name"] == "EMBODY"
         assert [p["display_name"] for p in ctx["people"]] == ["Bob", "Carol"]
 
+    def test_a_gathering_context_carries_the_collectives_timezone(
+        self, client, db, flag_on, make_user, make_space, make_event
+    ):
+        """``starts_at`` is stored naive. Without the Collective's
+        zone a client would render the day from its own clock and be
+        wrong for half the world."""
+        alice, bob = make_user(), make_user(name="Bob")
+        space = _visible_space(make_space, timezone="Pacific/Auckland")
+        ev = _upcoming(make_event, space)
+        for u in (alice, bob):
+            _join(db, u, space); _book(db, u, ev)
+        as_user(alice)
+
+        ctx = client.get(URL).json()["contexts"][0]
+
+        assert ctx["collective"]["timezone"] == "Pacific/Auckland"
+
     def test_a_pathway_context_carries_its_people(
         self, client, db, flag_on, make_user, make_space
     ):
@@ -470,11 +487,13 @@ class TestNoPrivateFields:
         ):
             assert leaked not in raw, leaked
 
-    def test_a_member_without_a_name_is_not_labelled_with_their_email(
+    def test_an_unnamed_member_has_a_null_name_not_a_placeholder(
         self, client, db, flag_on, make_user, make_space, make_event
     ):
-        """The member directory's fallback uses the email local part.
-        This surface does not."""
+        """Null, not "Member". A server-side placeholder reads as
+        three strangers all called Member the moment there are three
+        of them; null lets the frontend say something true about the
+        group instead."""
         alice = make_user()
         bob = make_user(name=None, email="quietperson@example.test")
         space = _visible_space(make_space)
@@ -485,8 +504,65 @@ class TestNoPrivateFields:
 
         person = client.get(URL).json()["contexts"][0]["people"][0]
 
-        assert person["display_name"] == "Member"
-        assert "quietperson" not in client.get(URL).text
+        assert person["display_name"] is None
+
+    def test_an_unnamed_member_is_never_labelled_with_their_email(
+        self, client, db, flag_on, make_user, make_space, make_event
+    ):
+        """The member directory's fallback uses the email local part.
+        This surface does not, and must not acquire it by accident."""
+        alice = make_user()
+        bob = make_user(name=None, email="quietperson@example.test")
+        space = _visible_space(make_space)
+        ev = _upcoming(make_event, space)
+        for u in (alice, bob):
+            _join(db, u, space); _book(db, u, ev)
+        as_user(alice)
+
+        raw = client.get(URL).text
+
+        assert "quietperson" not in raw
+        assert "Member" not in raw
+
+    def test_an_unnamed_member_still_takes_part(
+        self, client, db, flag_on, make_user, make_space, make_event
+    ):
+        """No public profile required. Having no name costs a member
+        nothing here except the name."""
+        alice = make_user()
+        bob = make_user(name=None)
+        space = _visible_space(make_space)
+        ev = _upcoming(make_event, space, title="Thursday circle")
+        for u in (alice, bob):
+            _join(db, u, space); _book(db, u, ev)
+        as_user(alice)
+
+        ctx = client.get(URL).json()["contexts"][0]
+
+        assert ctx["title"] == "Thursday circle"
+        assert len(ctx["people"]) == 1
+        assert ctx["people"][0]["id"] == bob.id
+        assert ctx["people"][0]["display_name"] is None
+        assert ctx["people"][0]["avatar_url"] is None
+
+    def test_named_and_unnamed_members_appear_side_by_side(
+        self, client, db, flag_on, make_user, make_space, make_event
+    ):
+        alice = make_user()
+        named = make_user(name="Sarah")
+        unnamed_a, unnamed_b = make_user(name=None), make_user(name=None)
+        space = _visible_space(make_space)
+        ev = _upcoming(make_event, space)
+        for u in (alice, named, unnamed_a, unnamed_b):
+            _join(db, u, space); _book(db, u, ev)
+        as_user(alice)
+
+        people = client.get(URL).json()["contexts"][0]["people"]
+
+        assert len(people) == 3
+        names = [p["display_name"] for p in people]
+        assert "Sarah" in names
+        assert names.count(None) == 2
 
     def test_an_ordinary_member_has_no_avatar_and_that_is_fine(
         self, client, db, flag_on, make_user, make_space, make_event

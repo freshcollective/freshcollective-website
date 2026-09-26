@@ -3,28 +3,130 @@ import { notFound } from 'next/navigation'
 import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
 import { isWaysToConnectEnabled } from '@/lib/featureFlags'
-import WaysToConnectPrototype from './_prototype/WaysToConnectPrototype'
+import {
+  getWaysToConnect,
+  getMyMemberships,
+  getSpace,
+  getSpaceEvents,
+} from '@/lib/serverApi'
+import { groupContexts, hasAnyContext } from '@/lib/waysToConnect'
+import SharedContextGroups from '@/components/connections/SharedContextGroups'
+import WaysToConnectEmptyState, {
+  buildDoorway,
+} from '@/components/connections/WaysToConnectEmptyState'
+import WaysToConnectUnavailable from '@/components/connections/WaysToConnectUnavailable'
+import type { EventSummary, SpaceMembership } from '@/types/platform'
 
 export const metadata: Metadata = {
   title: 'Ways to Connect · Fresh Collective',
   description:
-    'A good host introducing two people at a gathering. Fresh Collective reveals the connections that already exist.',
+    'The people you genuinely share Gatherings and Pathways with, alongside the thing you shared.',
+}
+
+/** How many Collectives we look inside for the empty state's doorway.
+ *  Bounded so a member of many Collectives does not fan out a page
+ *  that, by definition, has nothing on it. */
+const DOORWAY_COLLECTIVE_LIMIT = 3
+
+/**
+ * The soonest upcoming Gathering in a Collective this member already
+ * belongs to.
+ *
+ * Only reached when Recognition is empty. Built from getters the
+ * dashboard already uses — no new endpoint — so the cost is a few
+ * cached reads on a page that would otherwise be a dead end.
+ *
+ * Returns null freely: no doorway is a fine outcome, and a generic
+ * Explore Collectives link is the honest fallback. Nothing here
+ * invents an event to point at.
+ */
+async function findDoorway() {
+  let memberships: SpaceMembership[] = []
+  try {
+    memberships = await getMyMemberships()
+  } catch {
+    return null
+  }
+
+  const active = memberships
+    .filter((m) => m.status === 'active')
+    .slice(0, DOORWAY_COLLECTIVE_LIMIT)
+  if (active.length === 0) return null
+
+  const now = Date.now()
+  const candidates = await Promise.all(
+    active.map(async (m) => {
+      try {
+        const [space, events] = await Promise.all([
+          getSpace(m.space_slug),
+          getSpaceEvents(m.space_slug) as Promise<EventSummary[]>,
+        ])
+        const timezone = space?.timezone ?? 'Australia/Melbourne'
+        return (events ?? [])
+          .filter(
+            (e) =>
+              e.status === 'active' &&
+              new Date(e.starts_at).getTime() > now,
+          )
+          .map((e) => ({
+            id: e.id,
+            title: e.title,
+            starts_at: e.starts_at,
+            spaceSlug: m.space_slug,
+            spaceName: m.space_name,
+            timezone,
+          }))
+      } catch {
+        return []
+      }
+    }),
+  )
+
+  const soonest = candidates
+    .flat()
+    .sort(
+      (a, b) =>
+        new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime(),
+    )[0]
+
+  return buildDoorway(soonest ?? null)
 }
 
 /**
- * Ways to Connect — currently hosting a design prototype behind
- * the pillar's shared PageHero. The hero is authored at the page
- * level so the prototype only owns its own interactive content.
+ * Ways to Connect — shared experience first, people second.
  *
- * The flag gate is unchanged: when
- * NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED is off, this route 404s.
- * Gated separately from Discover Places: this surface has no
- * recommendation service behind it yet.
+ * The page has four states and they are genuinely different things:
+ * contexts to show, nothing shared yet, the surface is not open, and
+ * we could not ask. The third and fourth must never be rendered as
+ * the second — "you have not crossed paths with anyone" is a claim
+ * about someone's life, and a failed request is not evidence for it.
+ *
+ * Gated by NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED; off, the route 404s.
+ * The backend carries its own flag and is not mirrored here — if the
+ * two disagree the API says so and this page renders the unavailable
+ * state rather than guessing.
  *
  * See docs/foundations/discovery-connection-belonging-ways-to-connect.md.
  */
-export default function WaysToConnectPage() {
+export default async function WaysToConnectPage() {
   if (!isWaysToConnectEnabled()) notFound()
+
+  const result = await getWaysToConnect()
+
+  let body: React.ReactNode
+  if (result.status === 'unavailable' || result.status === 'error') {
+    body = <WaysToConnectUnavailable reason={result.status} />
+  } else {
+    const grouped = groupContexts(result.data.contexts)
+    body = hasAnyContext(grouped) ? (
+      <SharedContextGroups
+        grouped={grouped}
+        truncated={result.data.truncated}
+      />
+    ) : (
+      <WaysToConnectEmptyState doorway={await findDoorway()} />
+    )
+  }
 
   return (
     <SiteShell>
@@ -32,7 +134,7 @@ export default function WaysToConnectPage() {
         title="Ways to Connect"
         supportingCopy="Meaningful connection grows through shared experiences. Fresh Collective reveals the ones that already exist — nothing more."
       />
-      <WaysToConnectPrototype />
+      {body}
     </SiteShell>
   )
 }

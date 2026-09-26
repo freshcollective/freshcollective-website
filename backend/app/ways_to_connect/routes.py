@@ -74,19 +74,25 @@ def _ensure_flag_on() -> None:
         )
 
 
-def _display_name(user: User, cp: CreatorProfile | None) -> str:
-    """What to call someone on this surface.
+def _display_name(user: User, cp: CreatorProfile | None) -> str | None:
+    """What to call someone on this surface, or None.
 
-    Deliberately *not* ``app.members.routes._display_name``, which
-    falls back to the local part of the email address. That is a
-    reasonable-looking fallback and it leaks half of somebody's email
-    to anyone who shares a Collective with them. A member who has set
-    no name is simply "Member" here; the shared context is what
-    carries the meaning, not the label.
+    A public CreatorProfile display name, else the member's own name,
+    else nothing. Two things this deliberately does not do.
+
+    It does not fall back to the local part of the email address, the
+    way ``app.members.routes._display_name`` does — that hands out
+    half of somebody's address to anyone sharing a Collective with
+    them. (Separate surface, separate fix; not changed here.)
+
+    And it does not invent a placeholder. Returning "Member" for
+    everyone unnamed reads as three strangers called Member the moment
+    there are three of them. Null says "there is no name here" and
+    lets the frontend say something true about the group instead.
     """
     if cp and cp.display_name:
         return cp.display_name
-    return user.name or "Member"
+    return user.name or None
 
 
 def _people_index(db: Session, user_ids: set[str]) -> dict[str, PersonRef]:
@@ -153,7 +159,10 @@ def _to_contexts(
         for c in recog.collectives:
             collectives.setdefault(
                 c.collective_id,
-                CollectiveRef(id=c.collective_id, slug=c.slug, name=c.name),
+                CollectiveRef(
+                    id=c.collective_id, slug=c.slug, name=c.name,
+                    timezone=c.timezone,
+                ),
             )
 
         for g in recog.gatherings:
@@ -188,8 +197,17 @@ def _to_contexts(
             entry["people"][person.id] = person
 
     def _sorted_people(entry) -> list[PersonRef]:
+        """Named people first, alphabetically, then the unnamed.
+
+        Not a ranking — a reading order. It puts the part of the list
+        a member can actually recognise at the front, which is what
+        lets a surface say "Sarah and two other people" without having
+        to reorder anything itself. Ties break on id so the order is
+        total.
+        """
         return sorted(
-            entry["people"].values(), key=lambda r: (r.display_name, r.id)
+            entry["people"].values(),
+            key=lambda r: (r.display_name is None, r.display_name or "", r.id),
         )
 
     upcoming = [

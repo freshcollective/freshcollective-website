@@ -10,6 +10,7 @@ import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, Activity
 import { ACTIVE_SPACE_COOKIE } from './activeSpaceCookie'
 import type { BrandAssetGroup } from '@/lib/brandAssets'
 import type { BrandOverrides, BrandRole } from '@/lib/brand'
+import type { WaysToConnectPayload, WaysToConnectResult } from '@/lib/waysToConnect'
 export { ACTIVE_SPACE_COOKIE }
 
 async function fetchWithSession(path: string): Promise<Response> {
@@ -326,6 +327,49 @@ export const getMyMemberships = cache(async () => {
   if (!res.ok) return []
   return res.json()
 })
+
+// ---------------------------------------------------------------------------
+// Ways to Connect
+// ---------------------------------------------------------------------------
+
+/**
+ * What the signed-in member currently shares with other people.
+ *
+ * The only getter in this file that does not fold failure into an
+ * empty array, and deliberately so. Everywhere else an empty list is
+ * a harmless "nothing to show"; here it is a *claim* — "you have not
+ * crossed paths with anyone yet" — and making that claim because a
+ * request failed would be a lie the page could not take back.
+ *
+ * Three outcomes, kept apart:
+ *
+ *   ok           the member's real contexts, possibly none
+ *   unavailable  the backend flag is off (503) — a deployment
+ *                mismatch, not a fact about this member
+ *   error        anything else; the page says so and offers a retry
+ *
+ * No caching wrapper: Recognition is derived fresh on every read by
+ * design, and ``fetchWithSession`` already opts out of Next's cache.
+ */
+export async function getWaysToConnect(): Promise<WaysToConnectResult> {
+  try {
+    const res = await fetchWithSession('/api/ways-to-connect')
+
+    // The surface is not enabled on this deployment. The member has
+    // done nothing wrong and has no state to report.
+    if (res.status === 503) return { status: 'unavailable' }
+
+    if (!res.ok) return { status: 'error' }
+
+    const data = (await res.json()) as WaysToConnectPayload
+    if (!data || !Array.isArray(data.contexts)) return { status: 'error' }
+
+    return { status: 'ok', data }
+  } catch {
+    return { status: 'error' }
+  }
+}
+
 
 // ---------------------------------------------------------------------------
 // Creator Studio

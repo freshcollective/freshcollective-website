@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 
 import CollectiveHome from '@/components/collective/CollectiveHome'
+import CollectiveRecognition from '@/components/connections/CollectiveRecognition'
 import {
   buildPlatformArtLookup,
   getMyMemberships,
@@ -65,9 +66,21 @@ export default async function SpacePage({ params }: Props) {
   if (!isMember) redirect(`/spaces/${slug}/about`)
 
   return (
-    <CollectiveHome
-      space={space}
-      platformArtwork={buildPlatformArtLookup(artwork)}
-    />
+    <>
+      <CollectiveHome
+        space={space}
+        platformArtwork={buildPlatformArtLookup(artwork)}
+      />
+      {/* Shared Gatherings and Pathways inside this Collective. Not
+          Collective-level evidence — co-membership alone still says
+          nothing — just the genuine child contexts, filtered. Renders
+          nothing when there are none, which is the common case. */}
+      <div className="mx-auto w-full max-w-[1100px] px-5 pb-16 md:px-8">
+        <CollectiveRecognition
+          collectiveId={space.id}
+          collectiveName={space.name}
+        />
+      </div>
+    </>
   )
 }

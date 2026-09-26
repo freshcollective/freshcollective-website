@@ -34,6 +34,11 @@ class CollectiveRef(BaseModel):
     id: str
     slug: str
     name: str
+    #: IANA zone the Collective schedules in. A Gathering's
+    #: ``starts_at`` is stored without one, so a client rendering a
+    #: day or a time needs this to be right rather than
+    #: approximately right.
+    timezone: str
 
 
 class PersonRef(BaseModel):
@@ -43,10 +48,20 @@ class PersonRef(BaseModel):
     on, something to call them, and a picture if one is already
     visible to this viewer.
 
-    ``avatar_url`` is null for most members and that is the ordinary
-    case, not a degraded one — an avatar exists only where someone
-    has a public CreatorProfile. A name and an initial is a complete
-    rendering.
+    ``display_name`` and ``avatar_url`` are both nullable, and both
+    being null is an ordinary state rather than a broken one. A member
+    who has set no name and has no public CreatorProfile takes part in
+    Ways to Connect exactly like anyone else; the surface is not a
+    reason to make them fill in a profile.
+
+    Null means "no name to show", not "name withheld" and not "call
+    them something generic". The frontend decides how to represent an
+    unnamed person, which it can do far better than a server that
+    would have to invent the same placeholder for everybody. There is
+    no fallback to the local part of an email address — that leaks
+    half of somebody's address to anyone sharing a Collective with
+    them. (``app.members.routes._display_name`` still does this on the
+    member directory; separate surface, separate fix.)
 
     Deliberately absent: email, bio, join date, location, other
     Collectives, any count, any score. If the viewer could not
@@ -54,7 +69,7 @@ class PersonRef(BaseModel):
     """
 
     id: str
-    display_name: str
+    display_name: str | None = None
     avatar_url: str | None = None
 
 

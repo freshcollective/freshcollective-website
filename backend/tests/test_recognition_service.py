@@ -216,7 +216,12 @@ class TestRecognitionShape:
         permissible, not evidence worth surfacing."""
         r = Recognition(
             other_user_id="u1",
-            collectives=(SharedCollective(collective_id="s1", slug="s", name="S"),),
+            collectives=(
+                SharedCollective(
+                    collective_id="s1", slug="s", name="S",
+                    timezone="Australia/Melbourne",
+                ),
+            ),
         )
         assert r.is_empty is True
 
