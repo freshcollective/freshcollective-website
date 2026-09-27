@@ -30,7 +30,7 @@ function code(relative: string): string {
 const PAGE = code('app/ways-to-connect/page.tsx')
 const PEOPLE = code('components/connections/PeopleYouveCrossed.tsx')
 const CARD_P = code('components/connections/PersonCard.tsx')
-const PORTRAIT = code('components/connections/PersonPortrait.tsx')
+const PORTRAIT = code('components/ui/MemberImage.tsx')
 const CARD = code('components/connections/SharedContextCard.tsx')  // collective page
 const EMPTY = code('components/connections/WaysToConnectEmptyState.tsx')
 const UNAVAILABLE = code('components/connections/WaysToConnectUnavailable.tsx')
@@ -133,10 +133,28 @@ describe('the destination is people-first', () => {
     }
   })
 
-  test('the portrait has exactly two states and no category colour', () => {
+  test('the portrait has no category colour', () => {
     assert.match(PORTRAIT, /WARM_STONE/)
     assert.ok(!/right-now|shared-journey|thoughtful/.test(PORTRAIT),
       'the retired intent palette must not come back')
+  })
+
+  test('the card renders the server-resolved image, not its own ladder', () => {
+    assert.match(CARD_P, /<MemberImage image=\{person\.image\}/)
+    assert.ok(
+      !/avatar_url/.test(CARD_P),
+      'the card must not reach for avatar_url — the server already chose',
+    )
+  })
+
+  test('the shared component renders what it is told', () => {
+    // Four kinds decided server-side; this only draws them.
+    assert.match(PORTRAIT, /image\.kind === 'photo'/)
+    assert.match(PORTRAIT, /image\.initial/)
+    assert.ok(
+      !/is_public|creator/i.test(PORTRAIT),
+      'visibility is a server decision, not a rendering one',
+    )
   })
 
   test('the portrait is decorative — the name carries the meaning', () => {
@@ -353,5 +371,12 @@ describe('accessibility and mobile', () => {
     const square = PORTRAIT.slice(PORTRAIT.indexOf('aspectRatio'))
     assert.match(square, /containerType: 'inline-size'/)
     assert.match(PORTRAIT, /cqw/)
+  })
+
+  test('a photo is cropped and a card is not', () => {
+    // An illustrated card is drawn for its frame; cropping it would
+    // cut the artwork.
+    assert.match(PORTRAIT, /object-cover/)
+    assert.match(PORTRAIT, /object-contain/)
   })
 })

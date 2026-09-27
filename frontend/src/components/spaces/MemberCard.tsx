@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import Avatar from '@/components/ui/Avatar'
+import MemberImage from '@/components/ui/MemberImage'
 import type { MemberProfile } from '@/types/platform'
 
 function roleLabel(role: string): string {
@@ -32,7 +32,7 @@ export default function MemberCard({ member, spaceSlug }: MemberCardProps) {
       className="group block rounded-2xl border border-border bg-white px-5 py-5 transition-all hover:-translate-y-0.5 hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.30))] hover:shadow-sm"
     >
       <div className="flex items-start gap-4">
-        <Avatar name={member.display_name} avatarUrl={member.avatar_url} size="md" />
+        <MemberImage image={member.image} rounded="rounded-full" className="h-10 w-10 shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="mb-0.5 flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-navy-800 group-hover:text-[color:var(--fc-accent,#0f766e)] transition-colors">

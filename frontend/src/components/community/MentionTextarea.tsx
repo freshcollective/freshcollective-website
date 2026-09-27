@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { apiUrl } from '@/lib/api'
+import type { MemberImage } from '@/types/platform'
 
 /**
  * MentionTextarea — a textarea that watches for `@` and pops a small
@@ -18,6 +19,8 @@ export interface MemberSuggestion {
   id: string
   display_name: string
   avatar_url?: string | null
+  /** Resolved server-side; the suggestion list renders text today. */
+  image?: MemberImage
   role: string
 }
 

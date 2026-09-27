@@ -438,6 +438,7 @@ export interface CreatorMemberDetail {
   space_role: 'learner' | 'moderator' | 'creator'
   joined_at: string
   is_creator: boolean
+  image: MemberImage
 }
 
 export interface MemberBookingItem {
@@ -465,6 +466,7 @@ export interface MemberProfile {
   bio: string | null
   profile_tagline: string | null
   is_creator: boolean
+  image: MemberImage
 }
 
 export interface MemberPathwayAccessItem {
@@ -493,6 +495,7 @@ export interface PublicProfile {
   bio: string | null
   profile_tagline: string | null
   is_creator: boolean
+  image: MemberImage
   joined_platform: string
   spaces_led: string[]
 }
@@ -635,6 +638,20 @@ export interface PathwayUnlockOption {
   id: string
   name: string
   payment_type: string
+}
+
+/**
+ * The resolved picture for a member, decided server-side.
+ *
+ * `kind` says which rung of the ladder they landed on — their own
+ * photo, the Fresh Collective card for their initial, the neutral card,
+ * or the letter alone. `initial` is present for every kind: it is the
+ * card's alt text and the client's own last resort.
+ */
+export interface MemberImage {
+  kind: 'photo' | 'alphabet' | 'neutral' | 'initial'
+  url: string | null
+  initial: string | null
 }
 
 export interface UserProfile {

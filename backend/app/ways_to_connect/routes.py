@@ -49,6 +49,7 @@ from app.services.recognition_service import (
     RecognitionService,
     SharedGatheringBasis,
 )
+from app.services.member_image import MemberCardArtwork, MemberImagePayload
 from app.ways_to_connect.schemas import (
     CollectiveRef,
     PersonRef,
@@ -101,21 +102,25 @@ def _display_name(user: User, cp: CreatorProfile | None) -> str | None:
 
 def _people_index(
     db: Session, user_ids: set[str]
-) -> dict[str, tuple[str | None, str | None]]:
-    """(display_name, avatar_url) for people the service already returned.
+) -> dict[str, tuple[str | None, CreatorProfile | None]]:
+    """(display_name, profile) for people the service already returned.
 
     Presentation only. The ids come from ``RecognitionService``, which
     has already applied every eligibility and visibility rule; nothing
-    here widens that set.
+    here widens that set. The profile row travels with the name so
+    ``member_image`` can resolve the picture — this route does not
+    decide what a member looks like.
     """
     if not user_ids:
         return {}
 
     users = db.execute(select(User).where(User.id.in_(user_ids))).scalars().all()
 
-    # Avatars come from a public CreatorProfile or not at all — the
-    # same rule the public profile endpoint applies. Most members have
-    # neither, which is the ordinary case.
+    # Filtered on ``is_public`` because a private profile must not
+    # supply a display name here either — long-standing behaviour on
+    # every member surface, unchanged. ``visible_photo_url`` applies the
+    # same rule again inside the resolver, so a row reaching it
+    # unfiltered would still be handled correctly.
     profiles = {
         cp.user_id: cp
         for cp in db.execute(
@@ -126,20 +131,14 @@ def _people_index(
         ).scalars().all()
     }
 
-    out: dict[str, tuple[str | None, str | None]] = {}
-    for u in users:
-        cp = profiles.get(u.id)
-        out[u.id] = (
-            _display_name(u, cp),
-            cp.avatar_url if cp else None,
-        )
-    return out
+    return {u.id: (_display_name(u, profiles.get(u.id)), profiles.get(u.id)) for u in users}
 
 
 def _to_person(
     recognition: Recognition,
     name: str | None,
-    avatar_url: str | None,
+    profile: CreatorProfile | None,
+    artwork: MemberCardArtwork,
 ) -> PersonRef:
     """One Recognition as the person it has always been about."""
     shared: list[SharedGatheringRef | SharedPathwayRef] = []
@@ -179,10 +178,14 @@ def _to_person(
             )
         )
 
+    image = MemberImagePayload.resolve(
+        display_name=name, profile=profile, artwork=artwork
+    )
     return PersonRef(
         id=recognition.other_user_id,
         display_name=name,
-        avatar_url=avatar_url,
+        avatar_url=image.url if image.kind == "photo" else None,
+        image=image,
         collectives=[
             CollectiveRef(
                 id=c.collective_id, slug=c.slug, name=c.name, timezone=c.timezone
@@ -228,6 +231,7 @@ def get_ways_to_connect(
     # people and nobody worth introducing. The in-context lines still
     # name them where they are; the destination stays quiet.
     nameable = [r for r in recognitions if index.get(r.other_user_id, (None, None))[0]]
+    artwork = MemberCardArtwork.load(db)
     featured = select_people(nameable, now=now, limit=MAX_PEOPLE)
     featured_ids = [r.other_user_id for r in featured]
     featured_set = set(featured_ids)
@@ -239,7 +243,8 @@ def get_ways_to_connect(
     ordered = ordered[:MAX_PEOPLE_IN_PAYLOAD]
 
     people = [
-        _to_person(r, *index.get(r.other_user_id, (None, None))) for r in ordered
+        _to_person(r, *index.get(r.other_user_id, (None, None)), artwork)
+        for r in ordered
     ]
 
     return WaysToConnectResponse(

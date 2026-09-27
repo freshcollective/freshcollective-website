@@ -205,7 +205,10 @@ export default function ProfileForm({ profile }: Props) {
           <div className="flex-1">
             <p className="text-sm font-medium text-navy-800">Public profile</p>
             <p className="text-xs text-black">
-              Let other members see your name and bio in the member directory.
+              Let other members see your name, profile photo and bio.
+              When this is off your photo stays private, and Fresh
+              Collective shows an illustrated card for your initial
+              instead.
             </p>
           </div>
           <button

@@ -22,6 +22,8 @@
  * offered as a card, because a card introduces somebody.
  */
 
+import type { MemberImage } from '@/types/platform'
+
 /** A Collective, as context on a shared experience. */
 export interface CollectiveRef {
   id: string
@@ -71,7 +73,12 @@ export type SharedThing = SharedGatheringRef | SharedPathwayRef
 export interface PersonRef {
   id: string
   display_name: string | null
+  /** Superseded by `image`; kept until every reader has moved over. */
   avatar_url: string | null
+  /** The resolved picture — their photo, their alphabet card, or their
+   *  letter. Decided server-side so this surface and the member
+   *  directory cannot disagree about what somebody looks like. */
+  image: MemberImage
   collectives: CollectiveRef[]
   shared: SharedThing[]
 }

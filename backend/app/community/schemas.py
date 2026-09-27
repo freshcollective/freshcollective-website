@@ -1,6 +1,8 @@
 from datetime import datetime
 from pydantic import BaseModel, Field, computed_field
 
+from app.services.member_image import MemberImagePayload
+
 # Community Phase 1 — extended type vocabulary. Existing enum values
 # (`prompt`, `reflection`, `discussion`, `announcement`) stay valid so
 # legacy posts keep working.
@@ -209,6 +211,7 @@ class MemberSuggestion(BaseModel):
     display_name: str
     avatar_url: str | None = None
     role: str
+    image: MemberImagePayload
 
 
 class SearchHit(BaseModel):

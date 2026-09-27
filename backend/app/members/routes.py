@@ -7,6 +7,8 @@ from app.core.database import get_db
 from app.models.platform import CreatorProfile, Space, SpaceMembership, SpaceRole
 from app.models.user import User
 from app.members.schemas import MemberProfile, PublicProfile
+from app.services.creator_eligibility import is_eligible_creator
+from app.services.member_image import MemberCardArtwork, MemberImagePayload
 from app.services.space_viewer import require_space_viewer
 from app.spaces.area_access import require_area
 from app.spaces.area_policies import AREA_MEMBERS
@@ -95,6 +97,9 @@ def list_members(
         .all()
     )
 
+    # Loaded once for the whole directory rather than per member.
+    artwork = MemberCardArtwork.load(db)
+
     members = [
         MemberProfile(
             id=user.id,
@@ -108,7 +113,15 @@ def list_members(
             joined_at=membership.joined_at,
             bio=cp.bio if cp else None,
             profile_tagline=cp.profile_tagline if cp else None,
-            is_creator=cp is not None,
+            # Holding a profile row is not being a Creator. Every member
+            # who uploads a photo gets one, so this used to hand out
+            # Creator badges for setting a profile picture.
+            is_creator=is_eligible_creator(user),
+            image=MemberImagePayload.resolve(
+                display_name=_display_name(user, cp),
+                profile=cp,
+                artwork=artwork,
+            ),
         )
         for membership, user, cp in rows
     ]
@@ -142,14 +155,15 @@ def get_profile(
         .first()
     )
 
-    spaces_led: list[str] = []
-    if cp:
-        spaces_led = [
-            s.name
-            for s in db.query(Space.name)
-            .filter(Space.creator_id == user.id, Space.status == "active")
-            .all()
-        ]
+    # Computed from the Collectives themselves, not gated on a profile
+    # row: a Creator who never filled in a profile still leads their
+    # Collectives.
+    spaces_led = [
+        s.name
+        for s in db.query(Space.name)
+        .filter(Space.creator_id == user.id, Space.status == "active")
+        .all()
+    ]
 
     return PublicProfile(
         id=user.id,
@@ -157,7 +171,12 @@ def get_profile(
         avatar_url=cp.avatar_url if cp else None,
         bio=cp.bio if cp else None,
         profile_tagline=cp.profile_tagline if cp else None,
-        is_creator=cp is not None,
+        is_creator=is_eligible_creator(user),
         joined_platform=user.created_at,
         spaces_led=spaces_led,
+        image=MemberImagePayload.resolve(
+            display_name=_display_name(user, cp),
+            profile=cp,
+            artwork=MemberCardArtwork.load(db),
+        ),
     )

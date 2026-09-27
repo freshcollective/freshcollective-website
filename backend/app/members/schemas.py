@@ -1,5 +1,8 @@
 from datetime import datetime
+
 from pydantic import BaseModel, computed_field
+
+from app.services.member_image import MemberImagePayload
 
 
 class MemberProfile(BaseModel):
@@ -12,7 +15,8 @@ class MemberProfile(BaseModel):
     joined_at: datetime           # when they joined the Space
     bio: str | None               # from CreatorProfile (is_public only)
     profile_tagline: str | None   # short self-description
-    is_creator: bool              # has a public CreatorProfile
+    is_creator: bool              # holds the Creator role, per creator_eligibility
+    image: MemberImagePayload
 
 
 class PublicProfile(BaseModel):
@@ -26,3 +30,4 @@ class PublicProfile(BaseModel):
     is_creator: bool
     joined_platform: datetime
     spaces_led: list[str]         # names of spaces where this user is creator
+    image: MemberImagePayload

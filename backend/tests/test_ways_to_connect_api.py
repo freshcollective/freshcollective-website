@@ -779,8 +779,10 @@ class TestNoPrivateFields:
         person = client.get(URL).json()["people"][0]
 
         assert set(person.keys()) == {
-            "id", "display_name", "avatar_url", "collectives", "shared",
+            "id", "display_name", "avatar_url", "collectives", "shared", "image",
         }
+        # The resolved picture, and nothing more about the person.
+        assert set(person["image"].keys()) == {"kind", "url", "initial"}
 
     def test_nothing_private_appears_anywhere_in_the_payload(
         self, client, db, flag_on, make_user, make_space, make_event

@@ -27,7 +27,7 @@
 'use client'
 
 import { useState } from 'react'
-import PersonPortrait from './PersonPortrait'
+import MemberImage from '@/components/ui/MemberImage'
 import {
   primaryCollective,
   reasonSentence,
@@ -93,7 +93,9 @@ export default function PersonCard({
         boxShadow: '0 1px 3px rgba(12, 24, 38, 0.03)',
       }}
     >
-      <PersonPortrait name={name} avatarUrl={person.avatar_url} />
+      {/* One frame, whatever is in it: their photo, their alphabet
+          card, or their letter — resolved server-side. */}
+      <MemberImage image={person.image} className="w-full" />
 
       <div className="flex flex-1 flex-col p-5">
         <h3

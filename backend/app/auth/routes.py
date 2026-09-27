@@ -317,14 +317,23 @@ async def update_me(
 
     if profile_fields:
         if cp is None:
-            from uuid import uuid4
+            # ``creator_profiles`` is keyed on ``user_id`` and has no
+            # ``id`` column. Passing one raised a TypeError inside
+            # SQLAlchemy's constructor, so every member without a
+            # profile row got a 500 from their own settings page.
+            #
+            # ``is_public`` is set explicitly, and to False. The column's
+            # server default is true, so a row created without naming it
+            # came out public — which meant whether a member's photo and
+            # bio were visible depended on whether they uploaded before
+            # or after saving the form. Private until the member says
+            # otherwise, whatever order they do things in.
             cp = CreatorProfile(
-                id=str(uuid4()),
                 user_id=current_user.id,
                 bio=profile_fields.get("bio"),
                 display_name=profile_fields.get("display_name"),
                 profile_tagline=profile_fields.get("profile_tagline"),
-                is_public=profile_fields.get("is_public", False),
+                is_public=bool(profile_fields.get("is_public", False)),
             )
             db.add(cp)
         else:
@@ -354,8 +363,10 @@ async def upload_avatar(
 
     cp = db.query(CreatorProfile).filter(CreatorProfile.user_id == current_user.id).first()
     if cp is None:
-        from uuid import uuid4
-        cp = CreatorProfile(id=str(uuid4()), user_id=current_user.id)
+        # Same two fixes as ``update_me``: no ``id`` column exists, and
+        # the row is created private. Uploading a photo is not a
+        # decision to publish one.
+        cp = CreatorProfile(user_id=current_user.id, is_public=False)
         db.add(cp)
         db.flush()
 

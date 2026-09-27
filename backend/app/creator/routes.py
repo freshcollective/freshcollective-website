@@ -28,6 +28,7 @@ from app.community_care.shared import (
 )
 from app.core.config import settings
 from app.core.database import get_db
+from app.services.creator_eligibility import is_eligible_creator
 from app.core.storage import (
     StorageDeleteError,
     delete_file,
@@ -4800,7 +4801,9 @@ def list_creator_members(
             email=user.email,
             space_role=role,
             joined_at=membership.joined_at,
-            is_creator=cp is not None,
+            # The platform-role question, not "does this person have a
+            # profile row" — which every member with a photo now does.
+            is_creator=is_eligible_creator(user),
         ))
     result.sort(key=lambda m: {"creator": 0, "moderator": 1, "learner": 2}.get(m.space_role, 9))
     return result

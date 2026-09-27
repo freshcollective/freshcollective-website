@@ -23,6 +23,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from app.services.member_image import MemberImagePayload
+
 
 class CollectiveRef(BaseModel):
     """Where a shared experience lives.
@@ -88,6 +90,12 @@ class PersonRef(BaseModel):
     as three strangers all called Member the moment there are three of
     them. There is no fallback to the local part of an email address.
 
+    ``image`` is the resolved member picture — their own photo when one
+    is visible here, otherwise the Fresh Collective card for their
+    initial, otherwise the letter alone. Resolved by
+    ``app.services.member_image`` so this surface cannot disagree with
+    the member directory about what somebody looks like.
+
     Deliberately absent: email, bio, join date, location, other
     Collectives, any count, any score. If the viewer could not already
     learn it through the shared context, it is not here.
@@ -95,7 +103,10 @@ class PersonRef(BaseModel):
 
     id: str
     display_name: str | None = None
+    #: Retained alongside ``image`` for now so nothing that reads it
+    #: breaks mid-migration. ``image`` is the one to render.
     avatar_url: str | None = None
+    image: MemberImagePayload
     #: Collectives this pair shares. Context and privacy boundary,
     #: never on its own a reason to be here.
     collectives: list[CollectiveRef]

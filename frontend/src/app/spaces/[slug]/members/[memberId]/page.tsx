@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getPublicProfile, getSpace, getSpaceMembers } from '@/lib/serverApi'
 import { requireArea } from '@/lib/areaAccess'
-import Avatar from '@/components/ui/Avatar'
+import MemberImage from '@/components/ui/MemberImage'
 import type { PublicProfile, MemberProfile } from '@/types/platform'
 
 interface Props {
@@ -70,7 +70,7 @@ export default async function MemberProfilePage({ params }: Props) {
           >
             <div className="flex flex-col items-center text-center sm:flex-row sm:items-start sm:text-left gap-5">
               <div className="shrink-0">
-                <Avatar name={profile.display_name} avatarUrl={profile.avatar_url} size="xl" />
+                <MemberImage image={profile.image} rounded="rounded-full" className="h-20 w-20" />
               </div>
               <div className="min-w-0">
                 <div className="mb-1 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
@@ -152,7 +152,9 @@ export default async function MemberProfilePage({ params }: Props) {
           </div>
 
           {/* Collectives led — creator only */}
-          {profile.is_creator && profile.spaces_led.length > 0 && (
+          {/* Gated on leading something, not on holding the Creator
+              role: an admin who owns Collectives leads them too. */}
+          {profile.spaces_led.length > 0 && (
             <div className="overflow-hidden rounded-2xl border border-border bg-white">
               <div className="border-b border-border px-5 py-3">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black">

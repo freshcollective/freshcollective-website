@@ -21,8 +21,10 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth.dependencies import get_current_user, get_verified_current_user
 from app.core.database import get_db
+from app.services.member_image import MemberCardArtwork, MemberImagePayload
 from app.core.storage import save_media_file
 from app.models.platform import (
+    CreatorProfile,
     CommunityPost,
     CommentReaction,
     ConversationChannel,
@@ -893,11 +895,30 @@ def search_space_members(
             or_(User.name.ilike(pattern), User.email.ilike(pattern))
         )
     rows = query.order_by(User.name).limit(max(1, min(limit, 20))).all()
+
+    # One lookup for the suggestions on screen, not one per row.
+    user_ids = [u.id for u, _ in rows]
+    profiles = {
+        cp.user_id: cp
+        for cp in db.query(CreatorProfile)
+        .filter(CreatorProfile.user_id.in_(user_ids))
+        .all()
+    } if user_ids else {}
+    artwork = MemberCardArtwork.load(db)
+
     return [
         MemberSuggestion(
             id=u.id,
             display_name=u.name or u.email.split("@")[0],
-            avatar_url=getattr(u, "avatar_url", None),
+            # ``User`` has no ``avatar_url`` column, so this read was
+            # always None and these suggestions never showed a picture.
+            # Resolved properly now, through the one resolver.
+            avatar_url=None,
+            image=MemberImagePayload.resolve(
+                display_name=u.name or u.email.split("@")[0],
+                profile=profiles.get(u.id),
+                artwork=artwork,
+            ),
             role=role.value if hasattr(role, "value") else str(role),
         )
         for u, role in rows

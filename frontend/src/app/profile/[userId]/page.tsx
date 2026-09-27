@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { getPublicProfile } from '@/lib/serverApi'
-import Avatar from '@/components/ui/Avatar'
+import MemberImage from '@/components/ui/MemberImage'
 import type { PublicProfile } from '@/types/platform'
 
 interface Props {
@@ -21,8 +21,7 @@ export default async function PublicProfilePage({ params }: Props) {
   return (
     <div className="mx-auto max-w-xl py-12 px-4">
       <div className="flex flex-col items-center text-center">
-        <Avatar name={profile.display_name} avatarUrl={profile.avatar_url} size="xl" />
-
+        <MemberImage image={profile.image} rounded="rounded-full" className="h-20 w-20" />
         <div className="mt-5">
           <div className="flex items-center justify-center gap-2">
             <h1 className="font-serif text-2xl text-navy-900">{profile.display_name}</h1>
