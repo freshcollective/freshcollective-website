@@ -15,6 +15,7 @@ Member-facing  (requires active membership):
 """
 
 import re
+from collections.abc import Iterable
 from datetime import datetime
 from uuid import uuid4
 
@@ -25,8 +26,18 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user, get_verified_current_user
 from app.core.database import get_db
 from app.models.messages import DirectMessage, MessageThread
-from app.models.platform import Space, SpaceMembership, SpaceMembershipStatus, SpaceRole
+from app.models.platform import (
+    CreatorProfile,
+    Space,
+    SpaceMembership,
+    SpaceMembershipStatus,
+    SpaceRole,
+)
 from app.models.user import User
+from app.services.member_identity import (
+    NEUTRAL_DISPLAY_NAME,
+    display_name as member_display_name,
+)
 
 creator_router = APIRouter(prefix="/api/creator", tags=["messages-creator"])
 member_router  = APIRouter(prefix="/api/spaces",  tags=["messages-member"])
@@ -120,8 +131,42 @@ def _get_message_member_space(slug: str, user: User, db: Session) -> Space:
     return space
 
 
-def _user_display(user: User) -> str:
-    return user.display_name or user.name or user.email.split("@")[0]
+def _display_names(db: Session, user_ids: Iterable[str | None]) -> dict[str, str]:
+    """Names for a request's worth of people, resolved once.
+
+    The helper this replaces read ``user.display_name`` first — a column
+    ``User`` does not have. It is only ever handed ``User`` rows, so every
+    call raised ``AttributeError`` and every messages endpoint that
+    serialises a thread or a message answered 500. There were no tests
+    over this router, which is why a passing suite never noticed.
+
+    ``display_name`` lives on ``CreatorProfile``, so that is what gets
+    looked up — the intent the broken line was reaching for. Resolved in
+    one pair of queries rather than one per message, because the old
+    ``_message_out`` re-queried the sender for every message in a thread.
+    """
+    ids = {uid for uid in user_ids if uid}
+    if not ids:
+        return {}
+
+    users = db.query(User).filter(User.id.in_(ids)).all()
+    # ``is_public`` filtered, as on every other member surface: a private
+    # profile must not supply a display name here either.
+    profiles = {
+        cp.user_id: cp
+        for cp in db.query(CreatorProfile)
+        .filter(
+            CreatorProfile.user_id.in_(ids),
+            CreatorProfile.is_public.is_(True),
+        )
+        .all()
+    }
+    return {u.id: member_display_name(u, profiles.get(u.id)) for u in users}
+
+
+def _one_display_name(db: Session, user: User) -> str:
+    """The same ladder, for a single person."""
+    return _display_names(db, [user.id]).get(user.id, NEUTRAL_DISPLAY_NAME)
 
 
 def _unread_count_for(db: Session, thread_id: str, reader_id: str) -> int:
@@ -183,12 +228,13 @@ class ReplyRequest(BaseModel):
 # Serialisation helpers
 # ---------------------------------------------------------------------------
 
-def _message_out(msg: DirectMessage, db: Session) -> MessageOut:
-    sender = db.query(User).filter(User.id == msg.sender_id).first()
+def _message_out(msg: DirectMessage, names: dict[str, str]) -> MessageOut:
     return MessageOut(
         id=msg.id,
         sender_id=msg.sender_id,
-        sender_name=_user_display(sender) if sender else "Unknown",
+        # A message must name its sender, so a missing row still gets a
+        # label. It means a deleted account rather than an unnamed one.
+        sender_name=names.get(msg.sender_id, NEUTRAL_DISPLAY_NAME),
         body=msg.body,
         is_read=msg.is_read,
         created_at=msg.created_at.isoformat(),
@@ -196,36 +242,56 @@ def _message_out(msg: DirectMessage, db: Session) -> MessageOut:
 
 
 def _thread_detail(thread: MessageThread, viewer_id: str, db: Session) -> ThreadDetail:
-    creator = db.query(User).filter(User.id == thread.creator_id).first()
-    member  = db.query(User).filter(User.id == thread.member_id).first()
-    msgs = [_message_out(m, db) for m in thread.messages]
+    names = _display_names(
+        db,
+        [thread.creator_id, thread.member_id, *(m.sender_id for m in thread.messages)],
+    )
     return ThreadDetail(
         thread_id=thread.id,
         space_id=thread.space_id,
         creator_id=thread.creator_id,
-        creator_name=_user_display(creator) if creator else "Creator",
+        creator_name=names.get(thread.creator_id, NEUTRAL_DISPLAY_NAME),
         member_id=thread.member_id,
-        member_name=_user_display(member) if member else "Member",
-        messages=msgs,
+        member_name=names.get(thread.member_id, NEUTRAL_DISPLAY_NAME),
+        messages=[_message_out(m, names) for m in thread.messages],
         unread_count=_unread_count_for(db, thread.id, viewer_id),
     )
 
 
-def _thread_summary(thread: MessageThread, viewer_id: str, db: Session) -> ThreadSummary:
-    if viewer_id == thread.creator_id:
-        other_id = thread.member_id
-    else:
-        other_id = thread.creator_id
-    other = db.query(User).filter(User.id == other_id).first()
+def _thread_summary(
+    thread: MessageThread,
+    viewer_id: str,
+    db: Session,
+    names: dict[str, str] | None = None,
+) -> ThreadSummary:
+    """One row of an inbox.
+
+    ``names`` lets a list endpoint resolve every correspondent at once;
+    without it the row resolves its own.
+    """
+    other_id = thread.member_id if viewer_id == thread.creator_id else thread.creator_id
+    if names is None:
+        names = _display_names(db, [other_id])
     last_msg = thread.messages[-1] if thread.messages else None
     return ThreadSummary(
         thread_id=thread.id,
         other_user_id=other_id,
-        other_user_name=_user_display(other) if other else "Unknown",
+        other_user_name=names.get(other_id, NEUTRAL_DISPLAY_NAME),
         last_message=last_msg.body[:120] if last_msg else None,
         last_message_at=last_msg.created_at.isoformat() if last_msg else None,
         unread_count=_unread_count_for(db, thread.id, viewer_id),
     )
+
+
+def _thread_summaries(
+    threads: list[MessageThread], viewer_id: str, db: Session
+) -> list[ThreadSummary]:
+    """A whole inbox, with its correspondents resolved in one go."""
+    names = _display_names(
+        db,
+        [t.member_id if viewer_id == t.creator_id else t.creator_id for t in threads],
+    )
+    return [_thread_summary(t, viewer_id, db, names) for t in threads]
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +314,7 @@ def creator_list_threads(
         .order_by(MessageThread.updated_at.desc())
         .all()
     )
-    return [_thread_summary(t, current_user.id, db) for t in threads]
+    return _thread_summaries(threads, current_user.id, db)
 
 
 @creator_router.get("/spaces/{slug}/messages/{thread_id}", response_model=ThreadDetail)
@@ -331,7 +397,7 @@ def creator_send_message(
     db.refresh(thread)
 
     # Notify the member
-    sender_name = _user_display(current_user)
+    sender_name = _one_display_name(db, current_user)
     thread_url = f"/spaces/{slug}/messages/{thread.id}"
     background_tasks.add_task(
         _notify_direct_message,
@@ -410,7 +476,7 @@ def member_list_threads(
         .order_by(MessageThread.updated_at.desc())
         .all()
     )
-    return [_thread_summary(t, current_user.id, db) for t in threads]
+    return _thread_summaries(threads, current_user.id, db)
 
 
 @member_router.get("/{slug}/messages/{thread_id}", response_model=ThreadDetail)
@@ -466,7 +532,7 @@ def member_reply(
     db.refresh(thread)
 
     # Notify the creator
-    sender_name = _user_display(current_user)
+    sender_name = _one_display_name(db, current_user)
     background_tasks.add_task(
         _notify_direct_message,
         recipient_id=thread.creator_id,
