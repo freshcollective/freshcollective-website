@@ -14,6 +14,8 @@ import type {
   MemberProfile,
 } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
+import { collectiveTimezone } from '@/lib/collectiveTimezone'
+import { formatMomentWhen, orderGatheringsByStart } from '@/lib/collectiveOverview'
 
 /**
  * Collective Overview — the default landing after entering or switching
@@ -72,16 +74,21 @@ export default async function CreatorStudioCollectiveHome() {
   const [spaceDetail, pathways, events, members] = await Promise.all([
     getCreatorSpace(activeSummary.slug) as Promise<CreatorSpaceDetail | null>,
     getCreatorPathways(activeSummary.slug) as Promise<CreatorPathway[]>,
-    getCreatorEvents(activeSummary.slug) as Promise<CreatorEvent[]>,
+    // Scoped. Unscoped returns EVERY Gathering of every status, and the
+    // client-side filter below only checked start time — so a cancelled
+    // Gathering with a future date counted as upcoming and could even be
+    // named "Next gathering". ``scope=upcoming`` applies the canonical
+    // rule server-side: status == 'active' AND not yet ended.
+    getCreatorEvents(activeSummary.slug, 'upcoming') as Promise<CreatorEvent[]>,
     getSpaceMembers(activeSummary.slug) as Promise<MemberProfile[]>,
   ])
 
-  const now = new Date()
   const activePathways = pathways.filter((p) => p.status === 'active')
   const draftPathways = pathways.filter((p) => p.status === 'draft')
-  const upcomingEvents = events
-    .filter((e) => new Date(e.starts_at) > now)
-    .sort((a, b) => +new Date(a.starts_at) - +new Date(b.starts_at))
+  // The API has already applied status + not-yet-ended; all that remains
+  // is ordering, so "Next gathering" is the genuine earliest.
+  const upcomingEvents = orderGatheringsByStart(events)
+  const timezone = collectiveTimezone(spaceDetail)
   const memberCount = members.length
   const learnerCount = members.filter((m) => m.space_role === 'learner').length
   const isDraft = spaceDetail?.status !== 'active'
@@ -300,7 +307,7 @@ export default async function CreatorStudioCollectiveHome() {
               <ul className="space-y-2">
                 {recentMoments.map((m, i) => (
                   <li key={i}>
-                    <MomentRow moment={m} />
+                    <MomentRow moment={m} timezone={timezone} />
                   </li>
                 ))}
               </ul>
@@ -465,8 +472,12 @@ function FocusCard({
 
 function MomentRow({
   moment,
+  timezone,
 }: {
   moment: { icon: string; tint: Tint; text: string; when: string; href?: string }
+  /** The Collective's zone — a Gathering date belongs to the Collective,
+   *  not to whoever is reading the page. */
+  timezone: string
 }) {
   const interior = (
     <>
@@ -481,7 +492,7 @@ function MomentRow({
         className="shrink-0 text-[11.5px] font-medium"
         style={{ color: INK_TERTIARY }}
       >
-        {formatRelative(moment.when)}
+        {formatMomentWhen(moment.when, timezone)}
       </span>
     </>
   )
@@ -587,20 +598,4 @@ function QuickAction({
   )
 }
 
-function formatRelative(iso: string): string {
-  if (!iso) return ''
-  const then = new Date(iso).getTime()
-  if (isNaN(then)) return ''
-  const now = Date.now()
-  const diff = Math.abs(now - then)
-  const past = now > then
-  const min = 60_000
-  const hour = 60 * min
-  const day = 24 * hour
-  if (diff < min) return past ? 'just now' : 'soon'
-  if (diff < hour) return past ? `${Math.floor(diff / min)}m ago` : `in ${Math.floor(diff / min)}m`
-  if (diff < day) return past ? `${Math.floor(diff / hour)}h ago` : `in ${Math.floor(diff / hour)}h`
-  if (diff < 7 * day) return past ? `${Math.floor(diff / day)}d ago` : `in ${Math.floor(diff / day)}d`
-  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
-}
 
