@@ -289,3 +289,116 @@ class TestMemberVisibilityIsUnchanged:
         assert "Archived session" not in titles
         # A future cancelled one still does — long-standing behaviour.
         assert "Cancelled session" in titles
+
+
+# ---------------------------------------------------------------------------
+# The live EMBODY Term 4 arithmetic, reproduced
+# ---------------------------------------------------------------------------
+
+class TestTheLiveEmbodyNumbers:
+    """Production read-only verification gave exact figures. Reproducing
+    them here means the fix is pinned against the real case rather than an
+    invented one:
+
+        Term 4          28 active + 2 cancelled
+        EMBODY overall  + 1 cancelled standalone Gathering
+        Overview        31 before, 28 after
+
+    Both live cancelled occurrences kept ``is_published = true`` and their
+    Term 4 ``series_id`` — which is exactly why publication state alone
+    could not represent active status.
+    """
+
+    @pytest.fixture
+    def live_shape(self, db, make_user, make_space, make_event):
+        creator = make_user(role="creator", name="Ada Leader")
+        space = make_space(creator=creator)
+        db.add(SpaceMembership(
+            id=_uid("sm"), user_id=creator.id, space_id=space.id,
+            role=SpaceRole.creator, status=SpaceMembershipStatus.active,
+        ))
+        series = EventSeries(
+            id=_uid("es"), space_id=space.id, slug="embody-term-4-2026",
+            title="EMBODY Term 4 2026", status="published",
+            starts_at=datetime.utcnow(), ends_at=datetime.utcnow() + timedelta(days=120),
+        )
+        db.add(series)
+        db.flush()
+
+        base = datetime.utcnow() + timedelta(days=7)
+        for i in range(28):
+            make_event(space=space, title=f"Term 4 session {i + 1}",
+                       series_id=series.id,
+                       starts_at=base + timedelta(days=i),
+                       ends_at=base + timedelta(days=i, hours=1))
+        # The two live cancellations — a Saturday 9 am and a Monday 6 pm,
+        # both still published, both still on the Series.
+        for i, label in enumerate(("Sat 31 Oct", "Mon 2 Nov")):
+            make_event(space=space, title=f"Cancelled {label}",
+                       series_id=series.id, status="cancelled",
+                       is_published=True,
+                       starts_at=base + timedelta(days=40 + i),
+                       ends_at=base + timedelta(days=40 + i, hours=1))
+        # And the cancelled standalone that made up the third extra.
+        make_event(space=space, title="Test1", status="cancelled",
+                   is_published=True,
+                   starts_at=base + timedelta(days=50),
+                   ends_at=base + timedelta(days=50, hours=1))
+        db.commit()
+        return space, creator, series
+
+    def test_the_series_list_shows_28_not_30(self, db, live_shape):
+        space, creator, series = live_shape
+
+        rows = list_series_gatherings(space.slug, series.slug, db=db, current_user=creator)
+
+        assert len(rows) == 28
+        assert not [r for r in rows if r["title"].startswith("Cancelled")]
+
+    def test_the_series_count_agrees_with_the_list(self, db, live_shape):
+        space, creator, series = live_shape
+
+        rows = list_gathering_series(space.slug, db=db, current_user=creator)
+        row = next(r for r in rows if r["id"] == series.id)
+
+        assert row["gathering_count"] == 28
+
+    def test_the_overview_count_goes_31_to_28(self, db, live_shape):
+        """The three invalid extras: two cancelled Term 4 occurrences and
+        one cancelled standalone."""
+        space, creator, _series = live_shape
+
+        unscoped = list_events(space.slug, db=db, current_user=creator)
+        upcoming = list_events(space.slug, scope="upcoming", db=db, current_user=creator)
+
+        future_unscoped = [
+            e for e in unscoped if e["starts_at"] > datetime.utcnow()
+        ]
+        assert len(future_unscoped) == 31, "the old count the Overview rendered"
+        assert len(upcoming) == 28, "the corrected count"
+
+    def test_the_three_extras_are_exactly_the_cancelled_ones(self, db, live_shape):
+        space, creator, _series = live_shape
+
+        upcoming = {e["title"] for e in list_events(
+            space.slug, scope="upcoming", db=db, current_user=creator)}
+        archive = {e["title"] for e in list_events(
+            space.slug, scope="archive", db=db, current_user=creator)}
+
+        assert {"Cancelled Sat 31 Oct", "Cancelled Mon 2 Nov", "Test1"} <= archive
+        assert {"Cancelled Sat 31 Oct", "Cancelled Mon 2 Nov", "Test1"}.isdisjoint(upcoming)
+
+    def test_the_cancelled_occurrences_keep_publication_and_series(
+        self, db, live_shape,
+    ):
+        """Both live rows had ``is_published = true`` and their Term 4
+        ``series_id``. Nothing in the fix changes either."""
+        space, creator, series = live_shape
+
+        list_series_gatherings(space.slug, series.slug, db=db, current_user=creator)
+
+        for ev in db.query(Event).filter(
+            Event.series_id == series.id, Event.status == "cancelled",
+        ).all():
+            assert ev.is_published is True
+            assert ev.series_id == series.id

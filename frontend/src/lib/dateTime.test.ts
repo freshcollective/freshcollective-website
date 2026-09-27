@@ -264,3 +264,37 @@ describe('gatheringWeekdaySlot — grouping follows the Collective, not the runt
     assert.deepEqual(a, b, 'a weekly 6 pm run must not split at DST')
   })
 })
+
+
+describe('the two live cancelled Term 4 occurrences', () => {
+  // Production verification named these exactly. Both kept
+  // is_published=true, which is why the Series list needed a status
+  // filter rather than a publication check — but they still have to
+  // render in Melbourne wherever they are shown.
+
+  test('Sat 31 Oct 2026 9:00 am Melbourne rolls back a day AND a month in UTC', () => {
+    // 09:00 AEDT (+11) on Sat 31 Oct = 22:00 UTC on Fri 30 Oct.
+    const stored = '2026-10-30T22:00:00'
+    const { day, month } = formatGatheringDate(stored, MEL)
+    assert.equal(day, '31')
+    assert.equal(month, 'OCT')
+    assert.equal(formatGatheringTimeFriendly(stored, MEL), '9:00 am')
+    // Untreated, it would read as the 30th.
+    assert.equal(formatGatheringDate(stored, 'UTC').day, '30')
+  })
+
+  test('Mon 2 Nov 2026 6:00 pm Melbourne keeps its day', () => {
+    const stored = '2026-11-02T07:00:00'
+    const { day, month } = formatGatheringDate(stored, MEL)
+    assert.equal(day, '02')
+    assert.equal(month, 'NOV')
+    assert.equal(formatGatheringTimeFriendly(stored, MEL), '6:00 pm')
+  })
+
+  test('both group under their Melbourne weekday, not UTC’s', () => {
+    assert.equal(gatheringWeekdaySlot('2026-10-30T22:00:00', MEL).weekdayIndex, 6)  // Sat
+    assert.equal(gatheringWeekdaySlot('2026-11-02T07:00:00', MEL).weekdayIndex, 1)  // Mon
+    // In UTC the Saturday one would file under Friday.
+    assert.equal(gatheringWeekdaySlot('2026-10-30T22:00:00', 'UTC').weekdayIndex, 5)
+  })
+})
