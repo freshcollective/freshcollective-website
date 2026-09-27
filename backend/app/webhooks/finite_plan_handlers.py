@@ -1055,6 +1055,7 @@ def _do_invoice_succeeded(
         db.query(PaymentOption).filter(PaymentOption.id == plan.payment_option_id).first()
         if plan.payment_option_id else None
     )
+    creator_event = None
     member = db.query(_User).filter(_User.id == plan.member_user_id).first()
     if member is not None:
         comms_event = _r3.emit_purchase_completed(
@@ -1063,6 +1064,25 @@ def _do_invoice_succeeded(
             amount_cents=plan.installment_amount_cents,
             currency=plan.currency,
             plan=plan,
+        )
+        # The Collective's leaders hear about it HERE, not at checkout.
+        # A plan's checkout only captures a card; this is the
+        # ``pending_setup → active`` transition, where the first payment
+        # has actually landed and the purchased access is granted. One
+        # notification per plan — later instalments do not re-fire, for
+        # the same reason ``purchase.completed`` does not.
+        creator_event = _r3.emit_purchase_received_creator(
+            db,
+            space_id=plan.space_id,
+            buyer=member,
+            experience_name=_r3.resolve_context(
+                db, user=member, payment_option=payment_option,
+            ).experience_name,
+            payment_mode="plan",
+            amount_cents=plan.installment_amount_cents,
+            currency=plan.currency,
+            dedupe_key=f"purchase_received:plan:{plan.id}",
+            session_count=len(intent.bookings) or None,
         )
 
     db.commit()
@@ -1077,6 +1097,11 @@ def _do_invoice_succeeded(
     if comms_event is not None:
         from app.comms.rollout import schedule_routing_if_needed
         schedule_routing_if_needed(None, comms_event, "purchase.completed")
+    if creator_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, creator_event, "collective.purchase.received",
+        )
 
 
 # ---------------------------------------------------------------------------

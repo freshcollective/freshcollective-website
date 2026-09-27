@@ -480,25 +480,45 @@ def _handle_gathering_ticket_completed(
             "gathering ticket: fulfilled txn=%s booking=%s access_pass=%s",
             txn_id, outcome.booking.id, outcome.access_pass.id,
         )
-        # Notify the creator (and any moderators) that a new attendee has
-        # booked — same in-app notification hook used by the free-booking
-        # flow. Only fires on the first fulfilment (webhook re-delivery
-        # short-circuits above via already_fulfilled=True, so duplicates
-        # are impossible). Email is a graceful no-op when RESEND_API_KEY
-        # is unset.
+        # Creator-facing news of the sale goes through the shared purchase
+        # event, exactly as a Series, Pathway or Collective purchase does,
+        # so a paid Gathering does not behave differently from every other
+        # paid thing. The older in-app-only hook
+        # (``trigger_event_booking_creator``) is deliberately NOT called
+        # here any more: it would put a second notification in front of
+        # the Creator for one purchase. That hook keeps the free and
+        # creator-added booking paths, where there is no purchase to
+        # announce.
+        #
+        # Only reached on the first fulfilment — webhook re-delivery
+        # short-circuits above on ``already_fulfilled`` — and the emit's
+        # dedupe key is a second guard. Email is a graceful no-op when
+        # RESEND_API_KEY is unset.
         try:
             from app.services.gathering_booking_emit import (
                 emit_booking_confirmed,
             )
-            from app.services.notification_service import (
-                trigger_event_booking_creator,
+            from app.services.purchase_lifecycle_emit import (
+                emit_purchase_received_creator,
             )
-            trigger_event_booking_creator(event_id, payer_user_id)
-            # Comms — member booking confirmation. Only reached on first
-            # fulfilment (re-delivery short-circuits on
-            # ``already_fulfilled`` above); the emit's dedupe key is a
-            # second guard. No BackgroundTasks in a webhook, so routing
-            # dispatches synchronously.
+            from app.models.user import User as _User
+            from app.models.platform import Event as _Event
+
+            _buyer = db.query(_User).filter(_User.id == payer_user_id).first()
+            _gathering = db.query(_Event).filter(_Event.id == event_id).first()
+            if _buyer is not None and _gathering is not None:
+                emit_purchase_received_creator(
+                    db,
+                    space_id=_gathering.space_id,
+                    buyer=_buyer,
+                    experience_name=_gathering.title,
+                    payment_mode="single",
+                    amount_cents=amount_total,
+                    currency=currency,
+                    dedupe_key=f"purchase_received:txn:{txn_id}",
+                )
+            # Comms — member booking confirmation. No BackgroundTasks in a
+            # webhook, so routing dispatches synchronously.
             if outcome.booking is not None:
                 emit_booking_confirmed(db, booking=outcome.booking)
         except Exception as exc:  # noqa: BLE001 — never let notify failure block fulfilment
@@ -824,6 +844,25 @@ def _handle_checkout_completed(
                 payment_mode="single",
                 amount_cents=txn.gross_amount_cents,
                 currency=txn.currency,
+            )
+            # And the other side of it: the Collective's leaders hear that
+            # a paid signup succeeded. One per purchase — this is the
+            # fulfilment of the SALE, not of the entitlements or the
+            # bookings it fans out into, so a Term pass covering thirty
+            # Gatherings still produces exactly one. Same idempotency as
+            # above, plus a dedupe key on the transaction id.
+            _r3.emit_purchase_received_creator(
+                db,
+                space_id=space_id,
+                buyer=_member,
+                experience_name=_r3.resolve_context(
+                    db, user=_member, payment_option=payment_option,
+                ).experience_name,
+                payment_mode="single",
+                amount_cents=txn.gross_amount_cents,
+                currency=txn.currency,
+                dedupe_key=f"purchase_received:txn:{txn.id}",
+                session_count=len(resolution.intent.bookings) or None,
             )
         db.commit()
     except Exception:

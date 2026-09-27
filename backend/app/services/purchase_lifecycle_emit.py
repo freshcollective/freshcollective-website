@@ -381,3 +381,88 @@ def emit_plan_completed(
         context={"plan_id": plan.id},
         payload=payload,
     )
+
+
+# ---------------------------------------------------------------------------
+# The other side of a purchase — telling the Collective's leaders
+# ---------------------------------------------------------------------------
+
+def _money(amount_cents: int | None, currency: str | None) -> str:
+    """'A$250' / '£40'. Empty when we do not have both parts."""
+    if not amount_cents or amount_cents <= 0:
+        return ""
+    code = (currency or "AUD").upper()
+    symbol = {"AUD": "A$", "NZD": "NZ$", "USD": "US$", "GBP": "£", "EUR": "€"}.get(code)
+    whole = amount_cents / 100
+    rendered = f"{whole:,.0f}" if amount_cents % 100 == 0 else f"{whole:,.2f}"
+    return f"{symbol}{rendered}" if symbol else f"{rendered} {code}"
+
+
+@_safe_emit
+def emit_purchase_received_creator(
+    db: Session,
+    *,
+    space_id: str,
+    buyer: User,
+    experience_name: str,
+    payment_mode: str,            # 'single' | 'plan'
+    amount_cents: int | None,
+    currency: str | None,
+    dedupe_key: str,
+    session_count: int | None = None,
+) -> "CommunicationEvent | None":
+    """Tell the Collective's leaders that a paid signup succeeded.
+
+    One notification per meaningful purchase. A Term pass fans out into
+    dozens of ``EventBooking`` rows and is still one sale, so this is
+    emitted where the *purchase* is fulfilled — never per entitlement and
+    never per booking. ``session_count`` is how many Gatherings came with
+    it, for the copy; it does not multiply anything.
+
+    For a finite payment plan the caller emits at the FIRST successful
+    payment, because that is when access is actually granted — not at
+    checkout, where only a card has been captured.
+
+    ``dedupe_key`` is the transaction or plan id. The partial unique
+    index on ``(event_type, dedupe_key)`` makes a repeat emit a no-op at
+    the database level, so a Stripe redelivery cannot produce a second
+    notification even if a caller's own short-circuit is bypassed.
+
+    Recipients are resolved by ``routing/resolvers/collective.py`` —
+    owner plus active leader memberships, minus the buyer.
+    """
+    from app.comms import Source, emit as comms_emit
+    from app.models.platform import Space
+    from app.services.member_identity import display_name as member_display_name
+
+    space = db.query(Space).filter(Space.id == space_id).first()
+    if space is None:
+        return None
+
+    origin = _origin()
+    payload = {
+        "space_id":        space.id,
+        "collective_name": space.name,
+        # Through the canonical ladder: never an email local part, and
+        # "Member" when somebody has not set a name.
+        "buyer_name":      member_display_name(buyer),
+        "experience_name": experience_name or "",
+        "payment_mode":    payment_mode,
+        "amount_display":  _money(amount_cents, currency),
+        "amount_cents":    amount_cents,
+        "currency":        currency,
+        "session_count":   session_count,
+        "cta_url":         f"{origin}/creator-studio/people",
+    }
+    return comms_emit(
+        db,
+        event_type="collective.purchase.received",
+        source_type=Source.COLLECTIVE,
+        source_id=space.id,
+        actor_user_id=buyer.id,
+        subject_type="space",
+        subject_id=space.id,
+        context={"space_id": space.id},
+        payload=payload,
+        dedupe_key=dedupe_key,
+    )

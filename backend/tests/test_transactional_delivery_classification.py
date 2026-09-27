@@ -120,6 +120,11 @@ AUDITED: dict[str, str] = {
     "payment.instalment_failed":                     LOCKED,
     "payment.recovered":                             LOCKED,
     "access.suspended":                              LOCKED,
+    # The creator side of a purchase. Locked not by an event-level entry
+    # but by CATEGORY_PURCHASES' seeded (category, channel) default —
+    # the second mechanism ``_is_transactional`` accounts for. A Creator
+    # cannot switch sale notifications off today.
+    "collective.purchase.received":                  LOCKED,
 
     # ── Creator plan billing ─────────────────────────────────────────
     "creator.plan_activated":                        LOCKED,
@@ -546,6 +551,7 @@ CONTENT_CLASSIFICATION: dict[str, str] = {
     "purchase.first_payment_failed":               "system",
     "purchase.plan_completed":                     "system",
     "purchase.refunded":                           "system",
+    "collective.purchase.received":                "editable",
 }
 
 
@@ -671,8 +677,11 @@ class TestAccountCategoryIsUnlocked:
             e for e in LOCKED_EVENTS if _category_of(e) == "account"
         }
 
-    def test_all_eighteen_locks_survive(self):
-        assert len(TRANSACTIONAL_EVENT_TYPES) == 18
+    def test_every_lock_survives(self):
+        """Nineteen since ``collective.purchase.received`` — the creator
+        side of a sale — joined the money locks. The count is written out
+        so a lock cannot be added or lost without this test being read."""
+        assert len(TRANSACTIONAL_EVENT_TYPES) == 19
         assert set(TRANSACTIONAL_EVENT_TYPES) == set(LOCKED_EVENTS)
 
     @pytest.mark.parametrize("event_type", ACCOUNT_LOCKED_EMAILS)

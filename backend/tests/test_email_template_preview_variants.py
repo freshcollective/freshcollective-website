@@ -51,6 +51,7 @@ MULTI = "gathering.multi_booking.confirmed.email_transactional"
 REFUND = "purchase.refunded.email_transactional"
 RECOVERED = "payment.recovered.email_transactional"
 WELCOME = "account.welcome_after_signup.email_transactional"
+SALE = "collective.purchase.received.email_transactional"
 
 
 @pytest.fixture
@@ -131,6 +132,9 @@ _EXPECTED = {
     MULTI:      ("booking_source", {"self_booked", "added_by_creator"}),
     CANCELLED:  ("ticketing", {"paid", "free"}),
     PURCHASE:   ("payment_mode", {"plan", "single"}),
+    # The creator side of a purchase branches the same way: a
+    # plan's first payment reads differently from a single one.
+    SALE:       ("payment_mode", {"plan", "single"}),
     RECOVERED:  ("access_state", {"still_active", "was_paused"}),
     REFUND:     ("refund_scope", {"partial", "full"}),
 }

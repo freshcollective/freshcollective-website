@@ -143,6 +143,19 @@ _EVENT_DEFINITIONS: tuple[EventDefinition, ...] = (
     # ``finite_plan_lifecycle.record_later_successful_instalment``. One
     # event per plan for its whole lifetime.
     EventDefinition("purchase.plan_completed",            TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
+    # The other side of a purchase: the Collective's leaders hear that
+    # someone bought access to what they run. Emitted once per meaningful
+    # purchase, never once per entitlement or per Gathering booking — a
+    # Term pass fans out into dozens of bookings and is still one sale.
+    # See ``services/purchase_lifecycle_emit.emit_purchase_received_creator``.
+    #
+    # Event-locked, like every purchase event beside it: a sale in your
+    # own Collective is a money notification, which is what the lock is
+    # for. Worth stating the trade-off rather than leaving it implicit —
+    # a Creator cannot quieten these, so if high-volume Creators ever
+    # want that, it is a deliberate preference decision, not an
+    # oversight.
+    EventDefinition("collective.purchase.received",        TOPIC_PURCHASES,          PRIORITY_IMMEDIATE),
     # A refund Stripe has actually settled. Emitted from
     # ``webhooks/refund_handlers.py`` on ``charge.refunded``, which
     # Stripe fires only AFTER a refund succeeds — never on a refund
@@ -278,6 +291,13 @@ TRANSACTIONAL_EVENT_TYPES: frozenset[str] = frozenset({
     "payment.instalment_failed",
     "payment.recovered",
     "access.suspended",
+
+    # ── The creator side of a sale ───────────────────────────────────
+    # A Creator being told that someone bought access to what they run
+    # is the same class of fact as the member's receipt, and the reason
+    # this work exists: the first real EMBODY signup succeeded and
+    # nobody was told.
+    "collective.purchase.received",
 
     # ── Creator plan billing ─────────────────────────────────────────
     # The creator's own subscription state: activated, failing,
