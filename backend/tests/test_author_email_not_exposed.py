@@ -158,13 +158,10 @@ class TestCommunityPayloads:
         for comment in body["comments"]:
             assert set(comment["author"]) == {"id", "name", "display_name"}
 
-    # Community search is deliberately not covered here.
-    # ``GET /api/spaces/{slug}/community/search`` is unreachable: it is
-    # registered after ``/{slug}/community/{post_id}``, so FastAPI matches
-    # "search" as a post id and answers 404 "Post not found". The handler's
-    # author names were tightened along with the rest, but no test can
-    # exercise them until the route ordering is fixed — a separate defect,
-    # not folded into this one.
+    # Community search lives in ``test_community_search_route.py``. It was
+    # unreachable when this file was written — declared after
+    # ``/{slug}/community/{post_id}``, so "search" matched as a post id —
+    # and the routing fix brought its author labels under test there.
     def test_a_comment_you_write_yourself_returns_no_address(
         self, client, community
     ):

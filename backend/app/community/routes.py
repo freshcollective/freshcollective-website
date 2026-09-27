@@ -359,7 +359,176 @@ def list_community_posts(
 
 
 # ---------------------------------------------------------------------------
+# Community search
+#
+# Declared BEFORE ``/{slug}/community/{post_id}`` on purpose. FastAPI
+# matches in declaration order, so while this sat further down the file
+# the literal path ``/community/search`` was captured as a post id and the
+# endpoint answered 404 "Post not found" — to a frontend that was calling
+# it. ``search`` is the only single-segment static path under
+# ``/community/``, so this is the only ordering that matters here; keep
+# any future one above the parameterised route too.
+# ---------------------------------------------------------------------------
+
+@router.get("/{slug}/community/search", response_model=SearchResponse)
+def search_community(
+    slug: str,
+    q: str = "",
+    type: str | None = None,
+    channel: str | None = None,
+    limit: int = 30,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SearchResponse:
+    """Search conversations in the collective, scoped to Channels the
+    current user can access.
+
+    `channel` param:
+        None or 'all'  → across every accessible Channel (default)
+        <slug>         → restrict to that Channel (still access-checked)
+
+    Search never returns content from a Channel the caller cannot view;
+    scheduled posts remain excluded; archived-Channel content surfaces
+    for authorised viewers with an Archived flag on the row."""
+    space = _get_space_or_404(slug, db)
+    area_access.require_area(db, space, current_user, area_policies.AREA_CONVERSATIONS)
+    q_stripped = q.strip()
+    if not q_stripped:
+        return SearchResponse(query="", total=0, hits=[])
+    pattern = f"%{q_stripped}%"
+
+    # Resolve which Channel IDs this user is allowed to search across.
+    if channel and channel != "all":
+        target = _get_channel_by_slug_or_default(space, channel, db)
+        if not can_view_channel(current_user, target, space, db):
+            raise HTTPException(404, detail="Channel not found.")
+        allowed_channel_ids = [target.id]
+    else:
+        allowed_channel_ids = [
+            c.id for c in accessible_channels_for_user(current_user, space, db)
+        ]
+    if not allowed_channel_ids:
+        return SearchResponse(query=q_stripped, total=0, hits=[])
+
+    # ---- posts (title / body / author name) -----------------------------
+    post_query = (
+        db.query(CommunityPost, User)
+        .join(User, User.id == CommunityPost.author_id)
+        .filter(
+            CommunityPost.space_id == space.id,
+            CommunityPost.channel_id.in_(allowed_channel_ids),
+            CommunityPost.is_visible.is_(True),
+            # Scheduled posts must not surface in search until publication.
+            CommunityPost.publication_status == "published",
+        )
+    )
+    if type and type != "all":
+        try:
+            post_query = post_query.filter(CommunityPost.post_type == PostType(type))
+        except ValueError:
+            pass
+    post_query = post_query.filter(
+        or_(
+            CommunityPost.title.ilike(pattern),
+            CommunityPost.body.ilike(pattern),
+            User.name.ilike(pattern),
+        )
+    ).order_by(CommunityPost.created_at.desc()).limit(limit)
+
+    hits: list[SearchHit] = []
+    seen_posts: set[str] = set()
+    for post, author in post_query.all():
+        seen_posts.add(post.id)
+        field, source = _pick_match_field_for_post(post, author, q_stripped)
+        hits.append(SearchHit(
+            kind="post",
+            post_id=post.id,
+            post_type=_post_type_str(post.post_type),
+            post_title=post.title,
+            author_name=member_display_name(author),
+            excerpt=_make_excerpt(source, q_stripped),
+            created_at=post.created_at,
+            match_field=field,
+        ))
+
+    # ---- comments (body / author name; type filter applied to parent post) ----
+    remaining = max(0, limit - len(hits))
+    if remaining > 0:
+        comment_query = (
+            db.query(PostComment, CommunityPost, User)
+            .join(CommunityPost, CommunityPost.id == PostComment.post_id)
+            .join(User, User.id == PostComment.author_id)
+            .filter(
+                CommunityPost.space_id == space.id,
+                CommunityPost.channel_id.in_(allowed_channel_ids),
+                CommunityPost.is_visible.is_(True),
+                CommunityPost.publication_status == "published",
+                PostComment.is_visible.is_(True),
+            )
+        )
+        if type and type != "all":
+            try:
+                comment_query = comment_query.filter(CommunityPost.post_type == PostType(type))
+            except ValueError:
+                pass
+        comment_query = comment_query.filter(
+            or_(PostComment.body.ilike(pattern), User.name.ilike(pattern))
+        ).order_by(PostComment.created_at.desc()).limit(remaining)
+
+        for comment, post, author in comment_query.all():
+            hits.append(SearchHit(
+                kind="comment",
+                post_id=post.id,
+                post_type=_post_type_str(post.post_type),
+                post_title=post.title,
+                author_name=member_display_name(author),
+                excerpt=_make_excerpt(comment.body, q_stripped),
+                created_at=comment.created_at,
+                match_field="comment" if q_stripped.lower() in comment.body.lower() else "author",
+            ))
+
+    return SearchResponse(query=q_stripped, total=len(hits), hits=hits[:limit])
+
+
+def _pick_match_field_for_post(post: CommunityPost, author: User, q: str) -> tuple[str, str]:
+    """Which field the query matched, and the text to excerpt from it.
+
+    The author branch used to fall back to ``author.email``. Reaching it
+    took an ``ilike`` match that Python's ``in`` then disagreed with — a
+    collation edge rather than an everyday path — but it would have put a
+    member's whole address in a search excerpt, and the route this sits on
+    has only just become reachable. The display name is what the hit
+    renders anyway.
+    """
+    ql = q.lower()
+    if post.title and ql in post.title.lower():
+        return "title", post.title
+    if ql in post.body.lower():
+        return "body", post.body
+    return "author", member_display_name(author)
+
+
+def _make_excerpt(source: str, q: str, radius: int = 60) -> str:
+    """Return a short excerpt around the first case-insensitive match."""
+    if not source:
+        return ""
+    lower = source.lower()
+    idx = lower.find(q.lower())
+    if idx < 0:
+        return source[:2 * radius].strip()
+    start = max(0, idx - radius)
+    end = min(len(source), idx + len(q) + radius)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(source) else ""
+    return f"{prefix}{source[start:end].strip()}{suffix}"
+
+
+# ---------------------------------------------------------------------------
 # Single post with comments
+#
+# Parameterised, so it shadows every single-segment static path under
+# ``/community/`` declared after it. Anything of that shape belongs above
+# — see the search section.
 # ---------------------------------------------------------------------------
 
 @router.get("/{slug}/community/{post_id}", response_model=PostDetail)
@@ -928,154 +1097,6 @@ def search_space_members(
         )
         for u, role in rows
     ]
-
-
-# ---------------------------------------------------------------------------
-# Community search
-# ---------------------------------------------------------------------------
-
-@router.get("/{slug}/community/search", response_model=SearchResponse)
-def search_community(
-    slug: str,
-    q: str = "",
-    type: str | None = None,
-    channel: str | None = None,
-    limit: int = 30,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> SearchResponse:
-    """Search conversations in the collective, scoped to Channels the
-    current user can access.
-
-    `channel` param:
-        None or 'all'  → across every accessible Channel (default)
-        <slug>         → restrict to that Channel (still access-checked)
-
-    Search never returns content from a Channel the caller cannot view;
-    scheduled posts remain excluded; archived-Channel content surfaces
-    for authorised viewers with an Archived flag on the row."""
-    space = _get_space_or_404(slug, db)
-    area_access.require_area(db, space, current_user, area_policies.AREA_CONVERSATIONS)
-    q_stripped = q.strip()
-    if not q_stripped:
-        return SearchResponse(query="", total=0, hits=[])
-    pattern = f"%{q_stripped}%"
-
-    # Resolve which Channel IDs this user is allowed to search across.
-    if channel and channel != "all":
-        target = _get_channel_by_slug_or_default(space, channel, db)
-        if not can_view_channel(current_user, target, space, db):
-            raise HTTPException(404, detail="Channel not found.")
-        allowed_channel_ids = [target.id]
-    else:
-        allowed_channel_ids = [
-            c.id for c in accessible_channels_for_user(current_user, space, db)
-        ]
-    if not allowed_channel_ids:
-        return SearchResponse(query=q_stripped, total=0, hits=[])
-
-    # ---- posts (title / body / author name) -----------------------------
-    post_query = (
-        db.query(CommunityPost, User)
-        .join(User, User.id == CommunityPost.author_id)
-        .filter(
-            CommunityPost.space_id == space.id,
-            CommunityPost.channel_id.in_(allowed_channel_ids),
-            CommunityPost.is_visible.is_(True),
-            # Scheduled posts must not surface in search until publication.
-            CommunityPost.publication_status == "published",
-        )
-    )
-    if type and type != "all":
-        try:
-            post_query = post_query.filter(CommunityPost.post_type == PostType(type))
-        except ValueError:
-            pass
-    post_query = post_query.filter(
-        or_(
-            CommunityPost.title.ilike(pattern),
-            CommunityPost.body.ilike(pattern),
-            User.name.ilike(pattern),
-        )
-    ).order_by(CommunityPost.created_at.desc()).limit(limit)
-
-    hits: list[SearchHit] = []
-    seen_posts: set[str] = set()
-    for post, author in post_query.all():
-        seen_posts.add(post.id)
-        field, source = _pick_match_field_for_post(post, author, q_stripped)
-        hits.append(SearchHit(
-            kind="post",
-            post_id=post.id,
-            post_type=_post_type_str(post.post_type),
-            post_title=post.title,
-            author_name=member_display_name(author),
-            excerpt=_make_excerpt(source, q_stripped),
-            created_at=post.created_at,
-            match_field=field,
-        ))
-
-    # ---- comments (body / author name; type filter applied to parent post) ----
-    remaining = max(0, limit - len(hits))
-    if remaining > 0:
-        comment_query = (
-            db.query(PostComment, CommunityPost, User)
-            .join(CommunityPost, CommunityPost.id == PostComment.post_id)
-            .join(User, User.id == PostComment.author_id)
-            .filter(
-                CommunityPost.space_id == space.id,
-                CommunityPost.channel_id.in_(allowed_channel_ids),
-                CommunityPost.is_visible.is_(True),
-                CommunityPost.publication_status == "published",
-                PostComment.is_visible.is_(True),
-            )
-        )
-        if type and type != "all":
-            try:
-                comment_query = comment_query.filter(CommunityPost.post_type == PostType(type))
-            except ValueError:
-                pass
-        comment_query = comment_query.filter(
-            or_(PostComment.body.ilike(pattern), User.name.ilike(pattern))
-        ).order_by(PostComment.created_at.desc()).limit(remaining)
-
-        for comment, post, author in comment_query.all():
-            hits.append(SearchHit(
-                kind="comment",
-                post_id=post.id,
-                post_type=_post_type_str(post.post_type),
-                post_title=post.title,
-                author_name=member_display_name(author),
-                excerpt=_make_excerpt(comment.body, q_stripped),
-                created_at=comment.created_at,
-                match_field="comment" if q_stripped.lower() in comment.body.lower() else "author",
-            ))
-
-    return SearchResponse(query=q_stripped, total=len(hits), hits=hits[:limit])
-
-
-def _pick_match_field_for_post(post: CommunityPost, author: User, q: str) -> tuple[str, str]:
-    ql = q.lower()
-    if post.title and ql in post.title.lower():
-        return "title", post.title
-    if ql in post.body.lower():
-        return "body", post.body
-    return "author", author.name or author.email
-
-
-def _make_excerpt(source: str, q: str, radius: int = 60) -> str:
-    """Return a short excerpt around the first case-insensitive match."""
-    if not source:
-        return ""
-    lower = source.lower()
-    idx = lower.find(q.lower())
-    if idx < 0:
-        return source[:2 * radius].strip()
-    start = max(0, idx - radius)
-    end = min(len(source), idx + len(q) + radius)
-    prefix = "…" if start > 0 else ""
-    suffix = "…" if end < len(source) else ""
-    return f"{prefix}{source[start:end].strip()}{suffix}"
 
 
 # ---------------------------------------------------------------------------
