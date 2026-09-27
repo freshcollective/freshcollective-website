@@ -3577,7 +3577,6 @@ def list_step_comments(
             author=StepCommentAuthor(
                 id=c.author_id,
                 name=authors[c.author_id].name if c.author_id in authors else None,
-                email=authors[c.author_id].email if c.author_id in authors else "",
             ),
             created_at=c.created_at,
         )
@@ -3620,7 +3619,6 @@ def create_step_comment(
         author=StepCommentAuthor(
             id=current_user.id,
             name=current_user.name,
-            email=current_user.email,
         ),
         created_at=comment.created_at,
     )

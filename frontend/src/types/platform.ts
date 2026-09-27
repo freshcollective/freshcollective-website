@@ -503,7 +503,9 @@ export interface PublicProfile {
 export interface PostAuthor {
   id: string
   name: string | null
-  email: string
+  // No email. Every member who could read a post used to receive the
+  // author's address; ``display_name`` is what a surface renders, and
+  // the API resolves it (neutral "Member" when there is no name).
   display_name: string
 }
 

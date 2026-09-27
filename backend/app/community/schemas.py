@@ -30,15 +30,13 @@ class PostAuthor(BaseModel):
 
     id: str
     name: str | None
-    email: str
 
     @computed_field
     @property
     def display_name(self) -> str:
         # A post or comment must name its author, so this is one of the
         # surfaces that needs a neutral label rather than the option of
-        # saying nothing. It used to answer with the local part of the
-        # author's email address.
+        # saying nothing.
         return (self.name or "").strip() or NEUTRAL_DISPLAY_NAME
 
 

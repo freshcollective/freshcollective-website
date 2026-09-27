@@ -9,31 +9,15 @@
 
 import { useState } from 'react'
 import { apiUrl } from '@/lib/api'
+// The shared avatar, as the community post and comment surfaces use.
+// This file carried its own, which derived initials from the author's
+// email address — the only reason the API sent one.
+import Avatar from '@/components/ui/Avatar'
 import type { StepComment } from '@/types/platform'
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleDateString('en-AU', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function Avatar({ author }: { author: StepComment['author'] }) {
-  const initials = (author.name || author.email.split('@')[0])
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('')
-  return (
-    <div
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-      style={{
-        background: 'var(--fc-accent-soft, rgba(56,160,158,0.10))',
-        color: 'var(--fc-accent, #0f766e)',
-      }}
-      aria-hidden="true"
-    >
-      {initials}
-    </div>
-  )
 }
 
 interface Props {
@@ -144,7 +128,7 @@ export default function StepDiscussion({
         <div className="flex flex-col gap-4">
           {comments.map((comment) => (
             <div key={comment.id} className="flex gap-3">
-              <Avatar author={comment.author} />
+              <Avatar name={comment.author.display_name} size="sm" />
               <div className="min-w-0 flex-1 rounded-2xl border border-border bg-white px-4 py-3">
                 <div className="mb-1.5 flex flex-wrap items-baseline gap-2">
                   <span className="text-[13px] font-semibold text-navy-900">

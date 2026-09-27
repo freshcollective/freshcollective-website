@@ -162,7 +162,7 @@ def _get_channel_for_post(post: CommunityPost, db: Session) -> ConversationChann
 
 
 def _build_author(user: User) -> PostAuthor:
-    return PostAuthor(id=user.id, name=user.name, email=user.email)
+    return PostAuthor(id=user.id, name=user.name)
 
 
 def _build_post_reactions(post_reactions: list[PostReaction], current_user_id: str) -> list[ReactionCount]:
