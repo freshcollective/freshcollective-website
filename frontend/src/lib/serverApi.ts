@@ -2,12 +2,15 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl, resolveMediaUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MessageThreadDetail, MessageThreadSummary, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 // Re-export so existing callers keep working. The canonical definition
 // lives in ``@/lib/activeSpaceCookie`` because the proxy middleware also
 // needs it and cannot import from a module that pulls in ``next/headers``.
 import { ACTIVE_SPACE_COOKIE } from './activeSpaceCookie'
+import { extractApiErrorFromResponse } from './apiError'
+import { buildOutcome, classifyStatus } from './fetchOutcome'
+import type { FetchOutcome } from './fetchOutcome'
 import type { BrandAssetGroup } from '@/lib/brandAssets'
 import type { BrandOverrides, BrandRole } from '@/lib/brand'
 import type { WaysToConnectPayload, WaysToConnectResult } from '@/lib/waysToConnect'
@@ -1161,3 +1164,53 @@ export const getRecentActivities = cache(async (
     return { activities: [], next_before: null }
   }
 })
+
+
+// ---------------------------------------------------------------------------
+// Direct messages
+//
+// These return a ``FetchOutcome`` rather than swallowing failures into an
+// empty list or a null, which is the convention above. That convention hid
+// a real outage: the messages endpoints answered 500 for every member for
+// three weeks and the pages rendered a tidy empty inbox throughout. New
+// surfaces should prefer this shape; see ``lib/fetchOutcome``.
+// ---------------------------------------------------------------------------
+
+/** Read a JSON endpoint, keeping "empty", "missing" and "broken" apart. */
+async function loadJson<T>(path: string): Promise<FetchOutcome<T>> {
+  let res: Response
+  try {
+    res = await fetchWithSession(path)
+  } catch (err) {
+    // Never completed — no status exists, so this can only be a failure.
+    return buildOutcome<T>({
+      status: null,
+      message: err instanceof Error ? err.message : null,
+    })
+  }
+
+  if (classifyStatus(res.status) !== 'ok') {
+    return buildOutcome<T>({
+      status: res.status,
+      message: await extractApiErrorFromResponse(res),
+    })
+  }
+
+  try {
+    return buildOutcome<T>({ status: res.status, data: (await res.json()) as T })
+  } catch {
+    // A 2xx we cannot parse is broken, not empty.
+    return buildOutcome<T>({ status: res.status })
+  }
+}
+
+export const getSpaceMessageThreads = cache(async (
+  slug: string,
+): Promise<FetchOutcome<MessageThreadSummary[]>> =>
+  loadJson<MessageThreadSummary[]>(`/api/spaces/${slug}/messages`))
+
+export const getSpaceMessageThread = cache(async (
+  slug: string,
+  threadId: string,
+): Promise<FetchOutcome<MessageThreadDetail>> =>
+  loadJson<MessageThreadDetail>(`/api/spaces/${slug}/messages/${threadId}`))

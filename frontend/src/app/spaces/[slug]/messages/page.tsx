@@ -1,28 +1,10 @@
-import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { apiUrl } from '@/lib/api'
-import { SESSION_COOKIE } from '@/lib/session'
-import type { MessageThreadSummary } from '@/types/platform'
+import { failureError } from '@/lib/fetchOutcome'
+import { requireAuthenticatedUser } from '@/lib/requireAuthenticatedUser'
+import { getSpaceMessageThreads } from '@/lib/serverApi'
 
 interface Props {
   params: Promise<{ slug: string }>
-}
-
-async function getThreads(slug: string): Promise<MessageThreadSummary[]> {
-  const cookieStore = await cookies()
-  const token = cookieStore.get(SESSION_COOKIE)?.value ?? ''
-  if (!token) return []
-  try {
-    const res = await fetch(apiUrl(`/api/spaces/${slug}/messages`), {
-      headers: { Cookie: `${SESSION_COOKIE}=${token}` },
-      cache: 'no-store',
-    })
-    if (!res.ok) return []
-    return res.json()
-  } catch {
-    return []
-  }
 }
 
 function relativeTime(dateStr: string): string {
@@ -45,7 +27,19 @@ function initials(name: string): string {
 
 export default async function MessagesPage({ params }: Props) {
   const { slug } = await params
-  const threads = await getThreads(slug)
+  await requireAuthenticatedUser()
+
+  const outcome = await getSpaceMessageThreads(slug)
+  // An empty inbox is a true thing to show someone. A broken request is
+  // not, and this page used to render the two identically — which is how
+  // the messages endpoints could answer 500 for every member for three
+  // weeks without anyone being able to report it.
+  if (outcome.kind === 'failure') {
+    throw failureError(outcome, 'Loading messages')
+  }
+  // ``missing`` cannot reach here: the endpoint 404s only for a Collective
+  // the caller cannot see, and the layout above has already resolved it.
+  const threads = outcome.kind === 'ok' ? outcome.data : []
 
   return (
     <div className="max-w-2xl">

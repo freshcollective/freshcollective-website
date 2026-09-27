@@ -1,36 +1,32 @@
-import { cookies } from 'next/headers'
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { apiUrl } from '@/lib/api'
-import { SESSION_COOKIE } from '@/lib/session'
-import { getMe } from '@/lib/serverApi'
-import type { MessageThreadDetail } from '@/types/platform'
+import { failureError } from '@/lib/fetchOutcome'
+import { requireAuthenticatedUser } from '@/lib/requireAuthenticatedUser'
+import { getSpaceMessageThread } from '@/lib/serverApi'
 import MessageThreadClient from './MessageThreadClient'
 
 interface Props {
   params: Promise<{ slug: string; threadId: string }>
 }
 
-async function getThread(slug: string, threadId: string): Promise<MessageThreadDetail | null> {
-  const cookieStore = await cookies()
-  const token = cookieStore.get(SESSION_COOKIE)?.value ?? ''
-  if (!token) return null
-  try {
-    const res = await fetch(apiUrl(`/api/spaces/${slug}/messages/${threadId}`), {
-      headers: { Cookie: `${SESSION_COOKIE}=${token}` },
-      cache: 'no-store',
-    })
-    if (!res.ok) return null
-    return res.json()
-  } catch {
-    return null
-  }
-}
-
 export default async function MessageThreadPage({ params }: Props) {
   const { slug, threadId } = await params
-  const [thread, me] = await Promise.all([getThread(slug, threadId), getMe()])
-  if (!thread || !me) notFound()
+  // The established guard, rather than reading ``getMe()`` and treating a
+  // null as a missing thread — which is what this page used to do, so a
+  // failing ``/api/auth/me`` reported someone else's conversation as
+  // nonexistent.
+  const me = await requireAuthenticatedUser()
+
+  const outcome = await getSpaceMessageThread(slug, threadId)
+  // Three states, kept apart. A thread that is gone or was never yours is
+  // genuinely not found; a server that could not answer is an error, and
+  // saying "not found" about it sends the reader looking for a thread that
+  // is sitting right there.
+  if (outcome.kind === 'missing') notFound()
+  if (outcome.kind === 'failure') {
+    throw failureError(outcome, 'Loading this conversation')
+  }
+  const thread = outcome.data
 
   const otherName = me.id === thread.member_id ? thread.creator_name : thread.member_name
 

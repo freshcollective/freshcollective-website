@@ -1,14 +1,11 @@
 import { notFound } from 'next/navigation'
-import { cookies } from 'next/headers'
 import SpaceNav from '@/components/spaces/SpaceNav'
 import CollectiveSwitcher from '@/components/spaces/CollectiveSwitcher'
 import CollectiveThemeProvider from '@/components/collective/CollectiveThemeProvider'
 import CollectiveIdentityHeader from '@/components/spaces/CollectiveIdentityHeader'
 import SiteShell from '@/components/layout/SiteShell'
-import { getSpace, getMe, getMyMemberships } from '@/lib/serverApi'
-import { apiUrl } from '@/lib/api'
-import { SESSION_COOKIE } from '@/lib/session'
-import type { MessageThreadSummary, SpaceMembership, UserProfile } from '@/types/platform'
+import { getSpace, getMe, getMyMemberships, getSpaceMessageThreads } from '@/lib/serverApi'
+import type { SpaceMembership, UserProfile } from '@/types/platform'
 
 interface Props {
   children: React.ReactNode
@@ -28,21 +25,21 @@ export default async function SpaceLayout({ children, params }: Props) {
 
   const isMember = memberships.some((m) => m.space_slug === slug)
 
-  // Fetch unread message count for badge (silently ignore errors)
+  // Unread count for the Messages badge. Genuinely non-critical — a
+  // missing badge is not worth an error page — so a failure is ignored
+  // *here* on purpose. That is the one place the old swallow-everything
+  // pattern was right, and it now says so instead of looking like the
+  // pages that were wrong.
+  //
+  // Shares the request with the messages page below it: ``cache()`` dedupes
+  // within a request, so this no longer costs a second round trip, and
+  // there is one place that knows how to read this endpoint.
   let unreadMessageCount = 0
   if (isMember) {
-    try {
-      const cookieStore = await cookies()
-      const token = cookieStore.get(SESSION_COOKIE)?.value ?? ''
-      const msgRes = await fetch(apiUrl(`/api/spaces/${slug}/messages`), {
-        headers: { Cookie: `${SESSION_COOKIE}=${token}` },
-        cache: 'no-store',
-      })
-      if (msgRes.ok) {
-        const threads: MessageThreadSummary[] = await msgRes.json()
-        unreadMessageCount = threads.reduce((sum, t) => sum + t.unread_count, 0)
-      }
-    } catch { /* non-critical */ }
+    const inbox = await getSpaceMessageThreads(slug)
+    if (inbox.kind === 'ok') {
+      unreadMessageCount = inbox.data.reduce((sum, t) => sum + t.unread_count, 0)
+    }
   }
 
   // Atlas v1.2 — the chosen Colour Palette drives collective-scoped CSS
