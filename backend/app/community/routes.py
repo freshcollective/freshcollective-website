@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.auth.dependencies import get_current_user, get_verified_current_user
 from app.core.database import get_db
+from app.services.member_identity import display_name as member_display_name
 from app.services.member_image import MemberCardArtwork, MemberImagePayload
 from app.core.storage import save_media_file
 from app.models.platform import (
@@ -416,7 +417,7 @@ def get_community_post(
     ]
     # Map author_id → display name so replies can show "in reply to @name"
     # without an extra fetch per comment.
-    author_names = {c.author_id: (c.author.name or c.author.email.split("@")[0])
+    author_names = {c.author_id: member_display_name(c.author)
                     for c in visible_comments}
 
     return PostDetail(
@@ -756,7 +757,7 @@ def create_comment(
     if parent is not None:
         parent_author = db.query(User).filter(User.id == parent.author_id).first()
         if parent_author:
-            parent_author_name = parent_author.name or parent_author.email.split("@")[0]
+            parent_author_name = member_display_name(parent_author)
 
     return CommentItem(
         id=comment.id,
@@ -909,13 +910,17 @@ def search_space_members(
     return [
         MemberSuggestion(
             id=u.id,
-            display_name=u.name or u.email.split("@")[0],
+            # Mention suggestions name the member themselves, not a
+            # profile display name: the list is matched against
+            # ``User.name``, so showing something else would leave the
+            # visible label out of step with what was typed.
+            display_name=member_display_name(u),
             # ``User`` has no ``avatar_url`` column, so this read was
             # always None and these suggestions never showed a picture.
             # Resolved properly now, through the one resolver.
             avatar_url=None,
             image=MemberImagePayload.resolve(
-                display_name=u.name or u.email.split("@")[0],
+                display_name=member_display_name(u),
                 profile=profiles.get(u.id),
                 artwork=artwork,
             ),
@@ -1004,7 +1009,7 @@ def search_community(
             post_id=post.id,
             post_type=_post_type_str(post.post_type),
             post_title=post.title,
-            author_name=author.name or author.email.split("@")[0],
+            author_name=member_display_name(author),
             excerpt=_make_excerpt(source, q_stripped),
             created_at=post.created_at,
             match_field=field,
@@ -1040,7 +1045,7 @@ def search_community(
                 post_id=post.id,
                 post_type=_post_type_str(post.post_type),
                 post_title=post.title,
-                author_name=author.name or author.email.split("@")[0],
+                author_name=member_display_name(author),
                 excerpt=_make_excerpt(comment.body, q_stripped),
                 created_at=comment.created_at,
                 match_field="comment" if q_stripped.lower() in comment.body.lower() else "author",

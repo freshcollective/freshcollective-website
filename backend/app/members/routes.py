@@ -4,11 +4,17 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
-from app.models.platform import CreatorProfile, Space, SpaceMembership, SpaceRole
+from app.models.platform import CreatorProfile, Space, SpaceMembership
 from app.models.user import User
 from app.members.schemas import MemberProfile, PublicProfile
 from app.services.creator_eligibility import is_eligible_creator
+from app.services.member_identity import display_name as member_display_name
 from app.services.member_image import MemberCardArtwork, MemberImagePayload
+from app.services.member_visibility import (
+    directory_role_filter,
+    shared_visible_collective,
+    visible_collectives_led,
+)
 from app.services.space_viewer import require_space_viewer
 from app.spaces.area_access import require_area
 from app.spaces.area_policies import AREA_MEMBERS
@@ -27,9 +33,15 @@ def _get_space_or_404(slug: str, db: Session) -> Space:
 
 
 def _display_name(user: User, creator_profile: CreatorProfile | None) -> str:
-    if creator_profile and creator_profile.display_name:
-        return creator_profile.display_name
-    return user.name or user.email.split("@")[0]
+    """A name for a member surface, where one must be rendered.
+
+    Delegates to ``member_identity`` rather than deciding again. This
+    used to fall back to the local part of the member's email address,
+    which handed half of it to every caller of the directory *and* of
+    the public profile below. (Spelled out in prose rather than in code,
+    so a source-contract test can ban the expression itself.)
+    """
+    return member_display_name(user, creator_profile)
 
 
 # ---------------------------------------------------------------------------
@@ -66,22 +78,18 @@ def list_members(
     # that is off regardless of policy.
     require_area(db, space, current_user, AREA_MEMBERS)
 
-    # Leaders administer the Collective, so the directory setting —
-    # which exists to stop learners browsing each other — does not
-    # apply to them. Phrased as "not a leader" rather than "is a
-    # learner" so anyone without a recognised inside role is treated
-    # as an outsider by default.
-    hide_learners = (
-        not getattr(space, "show_member_directory", True)
-        and not viewer.is_leader
-    )
+    # The directory restriction now lives in ``member_visibility`` so
+    # the public profile endpoint can apply the same rule instead of
+    # carrying a second, looser one — which is exactly how a profile
+    # became a way around this filter.
+    visible_roles = directory_role_filter(space, viewer)
 
     membership_filter = [
         SpaceMembership.space_id == space.id,
         SpaceMembership.status == "active",
     ]
-    if hide_learners:
-        membership_filter.append(SpaceMembership.role.in_([SpaceRole.creator, SpaceRole.moderator]))
+    if visible_roles is not None:
+        membership_filter.append(SpaceMembership.role.in_(visible_roles))
 
     rows = (
         db.query(SpaceMembership, User, CreatorProfile)
@@ -141,7 +149,28 @@ def get_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> PublicProfile:
-    """Return a user's public platform profile."""
+    """Return a user's platform profile, to someone entitled to see it.
+
+    Being signed in used to be the whole rule: any authenticated account
+    could read any user id, with no shared context of any kind. That made
+    this endpoint a way around the member directory above — a learner in
+    a Collective with ``show_member_directory`` switched off could not
+    *list* their fellow learners, but could fetch each one's profile
+    directly, and ids are easy to come by from post authors, mention
+    suggestions and search results.
+
+    Three ways in, checked in order:
+
+      1. yourself;
+      2. an eligible Creator who has deliberately made their profile
+         public — that profile is their public face, and ``is_public``
+         is how they said so;
+      3. otherwise, a Collective you share where the directory itself
+         would have shown you this person.
+
+    Anything else is 404, not 403: a refusal must not confirm that the
+    account exists.
+    """
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
@@ -155,15 +184,17 @@ def get_profile(
         .first()
     )
 
-    # Computed from the Collectives themselves, not gated on a profile
-    # row: a Creator who never filled in a profile still leads their
-    # Collectives.
-    spaces_led = [
-        s.name
-        for s in db.query(Space.name)
-        .filter(Space.creator_id == user.id, Space.status == "active")
-        .all()
-    ]
+    is_self = user.id == current_user.id
+    is_creator = is_eligible_creator(user)
+    # A public profile row is the deliberate act: an ordinary member who
+    # uploads a photo gets a row too, but it is created private.
+    is_public_creator = is_creator and cp is not None
+
+    if not (is_self or is_public_creator):
+        if shared_visible_collective(db, current_user, user) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found."
+            )
 
     return PublicProfile(
         id=user.id,
@@ -171,9 +202,15 @@ def get_profile(
         avatar_url=cp.avatar_url if cp else None,
         bio=cp.bio if cp else None,
         profile_tagline=cp.profile_tagline if cp else None,
-        is_creator=is_eligible_creator(user),
-        joined_platform=user.created_at,
-        spaces_led=spaces_led,
+        is_creator=is_creator,
+        # Account age is not profile data. It was returned for everyone,
+        # which told any caller when a member signed up — nothing to do
+        # with how that member has chosen to present themselves. Kept for
+        # your own profile, where it is your own fact.
+        joined_platform=user.created_at if is_self else None,
+        # Never the ``link`` or ``private`` Collectives of a Creator whose
+        # profile you can see but whose Collectives you cannot.
+        spaces_led=visible_collectives_led(db, current_user, user),
         image=MemberImagePayload.resolve(
             display_name=_display_name(user, cp),
             profile=cp,

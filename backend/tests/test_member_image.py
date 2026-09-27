@@ -71,6 +71,23 @@ def _profile(db, user, **kw):
     return cp
 
 
+def _entitled_viewer(db, make_user, make_space, target):
+    """A signed-in viewer who may legitimately read ``target``'s profile.
+
+    These tests are about what a profile *says*, not about who may read
+    it — ``member_visibility`` decides that, and
+    ``test_member_profile_access`` pins it. They used to sign in as a bare
+    stranger, which ``GET /api/profile/{user_id}`` allowed; it does not
+    any more, so they need a genuinely shared Collective with its
+    directory open.
+    """
+    space = make_space(show_member_directory=True)
+    viewer = make_user()
+    _join(db, viewer, space)
+    _join(db, target, space)
+    return viewer
+
+
 def _join(db, user, space, role=SpaceRole.learner):
     db.add(SpaceMembership(
         id=str(uuid.uuid4()), user_id=user.id, space_id=space.id,
@@ -295,7 +312,7 @@ class TestAProfileRowIsNotCreatorhood:
         member = make_user(role="user", name="Ordinary")
         _profile(db, member, avatar_url="/api/uploads/avatars/a.png",
                  is_public=True)
-        as_user(make_user())
+        as_user(_entitled_viewer(db, make_user, make_space, member))
 
         body = client.get(f"/api/profile/{member.id}").json()
 
@@ -307,7 +324,7 @@ class TestAProfileRowIsNotCreatorhood:
     ):
         creator = make_user(role="creator", name="Real Creator")
         make_space(creator=creator, name="Their Collective")
-        as_user(make_user())
+        as_user(_entitled_viewer(db, make_user, make_space, creator))
 
         body = client.get(f"/api/profile/{creator.id}").json()
 
@@ -315,11 +332,11 @@ class TestAProfileRowIsNotCreatorhood:
         assert "Their Collective" in body["spaces_led"]
 
     def test_a_creator_whose_role_was_cancelled_is_not_one(
-        self, client, db, make_user
+        self, client, db, make_user, make_space
     ):
         from datetime import datetime
         gone = make_user(role="creator", creator_cancelled_at=datetime.utcnow())
-        as_user(make_user())
+        as_user(_entitled_viewer(db, make_user, make_space, gone))
 
         assert client.get(f"/api/profile/{gone.id}").json()["is_creator"] is False
 
@@ -330,7 +347,7 @@ class TestAProfileRowIsNotCreatorhood:
         existed, so a Creator who never filled one in led nothing."""
         creator = make_user(role="creator", name="No Profile")
         make_space(creator=creator, name="Still Theirs")
-        as_user(make_user())
+        as_user(_entitled_viewer(db, make_user, make_space, creator))
 
         body = client.get(f"/api/profile/{creator.id}").json()
 
@@ -430,13 +447,13 @@ class TestVisibilityIsOrderIndependent:
         assert res.json()["is_public"] is True
 
     def test_a_private_members_photo_is_not_shown_to_others(
-        self, client, db, make_user
+        self, client, db, make_user, make_space
     ):
         member = make_user(role="user", name="Quiet")
         as_user(member)
         client.post("/api/auth/me/avatar", files={"file": self._png()})
 
-        as_user(make_user())
+        as_user(_entitled_viewer(db, make_user, make_space, member))
         body = client.get(f"/api/profile/{member.id}").json()
 
         assert body["avatar_url"] is None
@@ -566,7 +583,7 @@ class TestTheInitialRevealsNothingExtra:
         _install_cards(db, letters=("S", "Z"), neutral=True)
         member = make_user(role="user", name="Sarah")
         _profile(db, member, display_name="Zelda", is_public=False)
-        as_user(make_user())
+        as_user(_entitled_viewer(db, make_user, make_space, member))
 
         body = client.get(f"/api/profile/{member.id}").json()
 
@@ -576,14 +593,14 @@ class TestTheInitialRevealsNothingExtra:
         assert "Zelda" not in client.get(f"/api/profile/{member.id}").text
 
     def test_a_public_profiles_display_name_does_drive_the_card(
-        self, client, db, make_user
+        self, client, db, make_user, make_space
     ):
         """The mirror: once the member has published that name, the card
         follows it, because the surface shows it."""
         _install_cards(db, letters=("S", "Z"), neutral=True)
         member = make_user(role="user", name="Sarah")
         _profile(db, member, display_name="Zelda", is_public=True)
-        as_user(make_user())
+        as_user(_entitled_viewer(db, make_user, make_space, member))
 
         body = client.get(f"/api/profile/{member.id}").json()
 
@@ -591,12 +608,12 @@ class TestTheInitialRevealsNothingExtra:
         assert body["image"]["initial"] == "Z"
 
     def test_the_initial_matches_the_rendered_name_on_the_public_profile(
-        self, client, db, make_user
+        self, client, db, make_user, make_space
     ):
         _install_cards(db, letters=tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
         member = make_user(role="user", name="Priya")
         _profile(db, member, is_public=False)
-        as_user(make_user())
+        as_user(_entitled_viewer(db, make_user, make_space, member))
 
         body = client.get(f"/api/profile/{member.id}").json()
 

@@ -496,7 +496,7 @@ export interface PublicProfile {
   profile_tagline: string | null
   is_creator: boolean
   image: MemberImage
-  joined_platform: string
+  joined_platform: string | null   // own profile only
   spaces_led: string[]
 }
 

@@ -34,9 +34,15 @@ export default async function MemberProfilePage({ params }: Props) {
   requireArea(space, 'members')
   if (!profile) notFound()
 
+  // The target has to genuinely be someone this Collective's directory
+  // shows us. Without this the page rendered any user id at all — a
+  // stranger from another Collective appeared here as a learner, because
+  // the role defaulted when the lookup missed.
   const spaceMember = allMembers.find((m) => m.id === memberId)
-  const spaceRole   = spaceMember?.space_role ?? 'learner'
-  const joinedSpace = spaceMember?.joined_at
+  if (!spaceMember) notFound()
+
+  const spaceRole   = spaceMember.space_role
+  const joinedSpace = spaceMember.joined_at
   const badge       = roleBadge(spaceRole)
   const tagline     = profile.profile_tagline?.trim() || null
 
@@ -99,9 +105,6 @@ export default async function MemberProfilePage({ params }: Props) {
                   </p>
                 )}
 
-                <p className="text-[13px]" style={{ color: '#FFFFFF' }}>
-                  Member since {formatDate(profile.joined_platform)}
-                </p>
               </div>
             </div>
           </div>

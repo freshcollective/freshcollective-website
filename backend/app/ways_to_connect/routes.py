@@ -49,6 +49,7 @@ from app.services.recognition_service import (
     RecognitionService,
     SharedGatheringBasis,
 )
+from app.services.member_identity import optional_display_name
 from app.services.member_image import MemberCardArtwork, MemberImagePayload
 from app.ways_to_connect.schemas import (
     CollectiveRef,
@@ -82,22 +83,18 @@ def _ensure_flag_on() -> None:
 def _display_name(user: User, cp: CreatorProfile | None) -> str | None:
     """What to call someone on this surface, or None.
 
-    A public CreatorProfile display name, else the member's own name,
-    else nothing. Two things this deliberately does not do.
+    Ways to Connect is the surface that may say nothing, so it takes the
+    optional end of the shared naming ladder rather than the neutral one.
+    A person with no name is dropped from the cards entirely (see the
+    ``nameable`` filter below): returning "Member" for everyone unnamed
+    reads as three strangers called Member the moment there are three of
+    them, where null says "there is no name here" and lets the frontend
+    say something true about the group instead.
 
-    It does not fall back to the local part of the email address, the
-    way ``app.members.routes._display_name`` does — that hands out
-    half of somebody's address to anyone sharing a Collective with
-    them. (Separate surface, separate fix; not changed here.)
-
-    And it does not invent a placeholder. Returning "Member" for
-    everyone unnamed reads as three strangers called Member the moment
-    there are three of them. Null says "there is no name here" and
-    lets the frontend say something true about the group instead.
+    Neither end of the ladder falls back to the local part of the email
+    address any more — ``member_identity`` explains why.
     """
-    if cp and cp.display_name:
-        return cp.display_name
-    return user.name or None
+    return optional_display_name(user, cp)
 
 
 def _people_index(

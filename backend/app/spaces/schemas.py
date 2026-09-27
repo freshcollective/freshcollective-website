@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from pydantic import BaseModel, computed_field, field_validator
+from app.services.member_identity import NEUTRAL_DISPLAY_NAME
 
 
 class StepResourceResponse(BaseModel):
@@ -639,7 +640,11 @@ class StepCommentAuthor(BaseModel):
     @computed_field
     @property
     def display_name(self) -> str:
-        return self.name or self.email.split("@")[0]
+        # A post or comment must name its author, so this is one of the
+        # surfaces that needs a neutral label rather than the option of
+        # saying nothing. It used to answer with the local part of the
+        # author's email address.
+        return (self.name or "").strip() or NEUTRAL_DISPLAY_NAME
 
 
 class StepCommentItem(BaseModel):

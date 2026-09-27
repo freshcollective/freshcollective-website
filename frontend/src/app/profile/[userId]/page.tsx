@@ -31,7 +31,11 @@ export default async function PublicProfilePage({ params }: Props) {
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs text-black">Member since {formatJoined(profile.joined_platform)}</p>
+          {/* Only ever present on your own profile — account age is not
+              something another member's profile discloses. */}
+          {profile.joined_platform && (
+            <p className="mt-1 text-xs text-black">Member since {formatJoined(profile.joined_platform)}</p>
+          )}
         </div>
 
         {profile.bio && (

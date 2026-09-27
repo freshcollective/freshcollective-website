@@ -28,6 +28,6 @@ class PublicProfile(BaseModel):
     bio: str | None
     profile_tagline: str | None   # short self-description
     is_creator: bool
-    joined_platform: datetime
+    joined_platform: datetime | None  # own profile only — account age is not profile data
     spaces_led: list[str]         # names of spaces where this user is creator
     image: MemberImagePayload
