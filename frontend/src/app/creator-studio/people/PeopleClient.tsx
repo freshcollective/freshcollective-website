@@ -2786,6 +2786,80 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
       {/* ── Collective link ── */}
       <InviteLinkCard spaceSlug={spaceSlug} isPublic={spaceIsPublic} />
 
+      {/* ── Current people ── */}
+      <section>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <SectionHeading title="Current people" count={membersList.length} />
+          <input
+            type="text"
+            placeholder="Search by name or email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
+          />
+        </div>
+
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+          {/* Member list */}
+          <div className="min-w-0 flex-1 rounded-2xl border border-border bg-white">
+            {filteredMembers.length === 0 ? (
+              <div className="px-6 py-10 text-center">
+                {membersList.length === 0 ? (
+                  <>
+                    <p className="mb-1 text-[15px] font-semibold text-navy-900">No members yet.</p>
+                    <p className="text-[13px] text-black">Add your first person to get started.</p>
+                  </>
+                ) : (
+                  <p className="text-[14px] text-black">No members match your search.</p>
+                )}
+              </div>
+            ) : (
+              <ul>
+                {filteredMembers.map((member, i) => {
+                  const isLast = i === filteredMembers.length - 1
+                  const isSelected = selectedMember?.id === member.id
+                  return (
+                    <li key={member.id}>
+                      <button
+                        onClick={() => setSelectedMember(isSelected ? null : member)}
+                        className={`w-full cursor-pointer text-left transition-colors ${!isLast ? 'border-b border-border' : ''} ${isSelected ? 'bg-teal-50/50' : 'hover:bg-teal-50/30'}`}
+                        style={isSelected ? { borderLeft: '2px solid rgba(56,160,158,0.45)' } : undefined}
+                      >
+                        <div className="flex items-center gap-4 px-5 py-4">
+                          <Avatar name={member.display_name} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[14px] font-medium text-navy-900">{member.display_name}</p>
+                            <p className="mt-0.5 truncate text-[12px] text-black">{member.email}</p>
+                          </div>
+                          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                            <RoleBadge role={member.space_role} />
+                            <span className="hidden text-[12px] text-black sm:inline">{formatDate(member.joined_at, spaceTimezone)}</span>
+                          </div>
+                        </div>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          {/* Detail panel */}
+          {selectedMember && (
+            <div className="w-full xl:w-[360px] xl:shrink-0">
+              <MemberDetailPanel
+          spaceTimezone={spaceTimezone}
+                member={selectedMember}
+                onClose={() => setSelectedMember(null)}
+                spaceSlug={spaceSlug}
+                spaceName={spaceName}
+                onMemberRemoved={handleMemberRemoved}
+              />
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* ── Access requests ── */}
       <section>
         <SectionHeading title="Access requests" count={accessRequests.length} />
@@ -2911,80 +2985,6 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
                   setManualMembersList(prev => prev.filter(m => m.id !== id))
                   setSelectedManualMember(null)
                 }}
-              />
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* ── Current people ── */}
-      <section>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <SectionHeading title="Current people" count={membersList.length} />
-          <input
-            type="text"
-            placeholder="Search by name or email…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-[14px] text-navy-900 placeholder-slate-400 outline-none transition-colors focus:border-teal-400"
-          />
-        </div>
-
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-          {/* Member list */}
-          <div className="min-w-0 flex-1 rounded-2xl border border-border bg-white">
-            {filteredMembers.length === 0 ? (
-              <div className="px-6 py-10 text-center">
-                {membersList.length === 0 ? (
-                  <>
-                    <p className="mb-1 text-[15px] font-semibold text-navy-900">No members yet.</p>
-                    <p className="text-[13px] text-black">Add your first person to get started.</p>
-                  </>
-                ) : (
-                  <p className="text-[14px] text-black">No members match your search.</p>
-                )}
-              </div>
-            ) : (
-              <ul>
-                {filteredMembers.map((member, i) => {
-                  const isLast = i === filteredMembers.length - 1
-                  const isSelected = selectedMember?.id === member.id
-                  return (
-                    <li key={member.id}>
-                      <button
-                        onClick={() => setSelectedMember(isSelected ? null : member)}
-                        className={`w-full cursor-pointer text-left transition-colors ${!isLast ? 'border-b border-border' : ''} ${isSelected ? 'bg-teal-50/50' : 'hover:bg-teal-50/30'}`}
-                        style={isSelected ? { borderLeft: '2px solid rgba(56,160,158,0.45)' } : undefined}
-                      >
-                        <div className="flex items-center gap-4 px-5 py-4">
-                          <Avatar name={member.display_name} />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-[14px] font-medium text-navy-900">{member.display_name}</p>
-                            <p className="mt-0.5 truncate text-[12px] text-black">{member.email}</p>
-                          </div>
-                          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                            <RoleBadge role={member.space_role} />
-                            <span className="hidden text-[12px] text-black sm:inline">{formatDate(member.joined_at, spaceTimezone)}</span>
-                          </div>
-                        </div>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
-
-          {/* Detail panel */}
-          {selectedMember && (
-            <div className="w-full xl:w-[360px] xl:shrink-0">
-              <MemberDetailPanel
-          spaceTimezone={spaceTimezone}
-                member={selectedMember}
-                onClose={() => setSelectedMember(null)}
-                spaceSlug={spaceSlug}
-                spaceName={spaceName}
-                onMemberRemoved={handleMemberRemoved}
               />
             </div>
           )}
