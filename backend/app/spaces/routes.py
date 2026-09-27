@@ -1545,6 +1545,13 @@ def list_events(
         # Archive contains every Gathering that no longer belongs on
         # the current schedule: past by end-time OR cancelled at any
         # time. Future cancelled rows would otherwise be invisible.
+        #
+        # Deliberately does NOT include ``archived`` the way the creator
+        # archive now does. Archiving is how a Creator takes something
+        # off the member-facing schedule; a future archived Gathering
+        # appearing in a member's archive would be new exposure, not a
+        # repair. A *past* archived one already qualifies here on
+        # ``end_marker``, which is the member-relevant history.
         scope_filters = [
             or_(end_marker <= now, Event.status == "cancelled"),
         ]

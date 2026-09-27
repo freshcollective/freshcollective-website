@@ -3706,8 +3706,25 @@ def list_events(
         if scope == "upcoming":
             query = query.filter(Event.status == "active", end_marker > now)
             query = query.order_by(Event.starts_at.asc())
-        else:  # archive — past by end-time OR cancelled at any time
-            query = query.filter(or_(end_marker <= now, Event.status == "cancelled"))
+        else:
+            # Archive — everything that no longer belongs on the current
+            # schedule: past by end-time, or cancelled, or archived, at
+            # any time. ``archived`` was missing, so a Gathering archived
+            # while still in the future fell out of BOTH scopes and became
+            # unreachable in Creator Studio: ``upcoming`` excludes
+            # non-active rows and ``archive`` only took past-or-cancelled.
+            #
+            # Widened on the creator side only. The member archive keeps
+            # its existing shape deliberately: archiving is how a Creator
+            # takes something off the member-facing schedule, so a future
+            # archived Gathering surfacing in a member's archive would be
+            # new exposure rather than a repair.
+            query = query.filter(
+                or_(
+                    end_marker <= now,
+                    Event.status.in_(["cancelled", "archived"]),
+                )
+            )
             query = query.order_by(Event.starts_at.desc())
     else:
         query = query.order_by(Event.starts_at.desc())

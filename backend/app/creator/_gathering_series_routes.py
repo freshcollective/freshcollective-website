@@ -177,9 +177,11 @@ def list_gathering_series(
     if not rows:
         return []
     ids = [s.id for s in rows]
+    # Active only, matching the list this number labels. Counting every
+    # status told a Creator "12 Gatherings" for a Series holding nine.
     ev_counts = dict(
         db.query(Event.series_id, _sqfn.count(Event.id))
-        .filter(Event.series_id.in_(ids))
+        .filter(Event.series_id.in_(ids), Event.status == "active")
         .group_by(Event.series_id)
         .all()
     )
@@ -433,9 +435,21 @@ def list_series_gatherings(
 ) -> list[dict]:
     space = _get_managed_space(slug, current_user, db)
     series = _get_gathering_series(space, series_slug, db)
+    # Active only. A cancelled occurrence stays ``is_published = True``,
+    # and this list read publication state alone — so a cancelled EMBODY
+    # session sat among its siblings wearing a PUBLISHED badge while its
+    # own page said it had been cancelled. Status and publication are
+    # separate axes; the member Series page has always applied both
+    # (``spaces/_series_member_routes.py``).
+    #
+    # Deliberately NOT fenced by time: a Series is a term, and a Creator
+    # mid-term must still see the occurrences that have already run.
+    # Nothing is deleted or detached — ``series_id``, bookings,
+    # attendance, payments and cancellation history are untouched, and
+    # the rows remain in the creator archive scope.
     events = (
         db.query(Event)
-        .filter(Event.series_id == series.id)
+        .filter(Event.series_id == series.id, Event.status == "active")
         .order_by(Event.starts_at.asc())
         .all()
     )

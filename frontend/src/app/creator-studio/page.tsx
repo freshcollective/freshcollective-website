@@ -76,16 +76,19 @@ export default async function CreatorStudioHome() {
       const [detail, pathways, events, members] = (await Promise.all([
         getCreatorSpace(summary.slug),
         getCreatorPathways(summary.slug),
-        getCreatorEvents(summary.slug),
+        // Scoped. Unscoped returns EVERY Gathering, so the Collective
+        // Overview counted cancelled and archived rows as upcoming —
+        // EMBODY read "31 upcoming gatherings". ``scope=upcoming`` is the
+        // platform's definition: active, and not yet ended.
+        getCreatorEvents(summary.slug, 'upcoming'),
         getSpaceMembers(summary.slug),
       ])) as [CreatorSpaceDetail | null, CreatorPathway[], CreatorEvent[], MemberProfile[]]
-      const now = new Date()
       return {
         summary,
         detail,
         memberCount: members.length,
         pathwayCount: pathways.filter((p) => p.status !== 'archived').length,
-        upcomingCount: events.filter((e) => new Date(e.starts_at) > now).length,
+        upcomingCount: events.length,
       }
     }),
   )
