@@ -921,6 +921,124 @@ class TestSharedPathways:
 
 
 # ---------------------------------------------------------------------------
+# Pathway crossing date — ordering only, never eligibility
+# ---------------------------------------------------------------------------
+
+class TestPathwayCrossingDate:
+    def _shared(self, db, make_user, make_space, *, viewer_days, other_days):
+        """Both started; each last moved a different number of days ago."""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        step = _add_step(db, pw)
+        _add_enrolment(db, alice, pw)
+        _complete_step(db, alice, step, completed_at=NOW - timedelta(days=viewer_days))
+        _add_enrolment(db, bob, pw)
+        _complete_step(db, bob, step, completed_at=NOW - timedelta(days=other_days))
+        return alice, bob
+
+    def test_uses_the_earlier_of_the_two_latest(self, db, make_user, make_space):
+        """The pair's shared progress is bounded by whoever moved least
+        recently. Alice was here yesterday; Bob has not moved in 100
+        days; the two of them last crossed 100 days ago."""
+        alice, bob = self._shared(db, make_user, make_space, viewer_days=1, other_days=100)
+
+        crossing = _between(db, alice, bob).pathways[0].crossing_at
+
+        assert crossing == NOW - timedelta(days=100)
+
+    def test_it_is_symmetric(self, db, make_user, make_space):
+        """Whoever is asking, the pair crossed when the slower of them
+        last moved."""
+        alice, bob = self._shared(db, make_user, make_space, viewer_days=1, other_days=100)
+
+        assert (
+            _between(db, alice, bob).pathways[0].crossing_at
+            == _between(db, bob, alice).pathways[0].crossing_at
+        )
+
+    def test_it_is_not_the_later_of_the_two(self, db, make_user, make_space):
+        alice, bob = self._shared(db, make_user, make_space, viewer_days=3, other_days=40)
+
+        crossing = _between(db, alice, bob).pathways[0].crossing_at
+
+        assert crossing != NOW - timedelta(days=3), "must not use the busier person"
+        assert crossing == NOW - timedelta(days=40)
+
+    def test_it_tracks_the_latest_step_not_the_first(
+        self, db, make_user, make_space
+    ):
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        first = _add_step(db, pw, position=0)
+        second = _add_step(db, pw, position=1)
+        for user in (alice, bob):
+            _add_enrolment(db, user, pw)
+            _complete_step(db, user, first, completed_at=NOW - timedelta(days=90))
+            _complete_step(db, user, second, completed_at=NOW - timedelta(days=5))
+
+        assert _between(db, alice, bob).pathways[0].crossing_at == (
+            NOW - timedelta(days=5)
+        )
+
+    def test_a_draft_reflection_does_not_move_the_date(
+        self, db, make_user, make_space
+    ):
+        """Private journalling is invisible to this, as to everything
+        else. Bob drafted a reflection on a later step today; the pair
+        still last crossed 50 days ago.
+
+        (``step_progress`` is unique per user+step, so the draft goes
+        on a step he has not completed — which is the real shape of
+        this anyway.)"""
+        alice, bob = make_user(), make_user()
+        space = _visible_space(make_space)
+        _add_membership(db, alice, space)
+        _add_membership(db, bob, space)
+        pw = _add_pathway(db, space)
+        done = _add_step(db, pw, position=0)
+        in_progress = _add_step(db, pw, position=1)
+        for user in (alice, bob):
+            _add_enrolment(db, user, pw)
+            _complete_step(db, user, done, completed_at=NOW - timedelta(days=50))
+        _draft_reflection(db, bob, in_progress)
+
+        assert _between(db, alice, bob).pathways[0].crossing_at == (
+            NOW - timedelta(days=50)
+        )
+
+    def test_an_ancient_crossing_is_still_eligible(
+        self, db, make_user, make_space
+    ):
+        """Ordering only. There is no recency threshold on Pathways and
+        this date must not introduce one."""
+        alice, bob = self._shared(
+            db, make_user, make_space, viewer_days=800, other_days=900
+        )
+
+        r = _between(db, alice, bob)
+
+        assert len(r.pathways) == 1
+        assert r.pathways[0].crossing_at == NOW - timedelta(days=900)
+
+    def test_batched_and_pairwise_agree_on_the_date(
+        self, db, make_user, make_space
+    ):
+        alice, bob = self._shared(db, make_user, make_space, viewer_days=2, other_days=70)
+
+        batched = RecognitionService.for_user(db, alice.id, now=NOW)[0]
+
+        assert batched.pathways[0].crossing_at == (
+            _between(db, alice, bob).pathways[0].crossing_at
+        )
+
+
+# ---------------------------------------------------------------------------
 # Privacy guards — account state
 # ---------------------------------------------------------------------------
 

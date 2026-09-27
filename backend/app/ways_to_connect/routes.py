@@ -1,9 +1,9 @@
-"""Ways to Connect — the member's own Recognition, read-only.
+"""Ways to Connect — the people the member shares something with.
 
 One endpoint:
 
-  * ``GET /api/ways-to-connect`` — what the signed-in member
-    currently shares with other people, grouped by the shared thing.
+  * ``GET /api/ways-to-connect`` — who the signed-in member has
+    genuinely crossed paths with, and what they share.
 
 Gated by ``settings.ways_to_connect_enabled``. While that is off every
 call returns 503, matching the convention set by Community Care and
@@ -12,24 +12,28 @@ discoverable by accident. Deliberately *not* ``discovery_pillar_enabled``:
 Discover Places and Ways to Connect are separate pillars now and are
 not ready at the same time.
 
-``RecognitionService`` is the only authority on who appears here. This
-module does not query memberships, bookings, enrolments or attendance,
-and it does not decide who is eligible. It asks the service what the
-viewer shares, then reads display names for the people the service
-already returned. Any future edit that reaches past the service and
-into the substrate would silently bypass the member's own
-``ways_to_connect_enabled`` setting, the suspended/cancelled guards,
-the Collective visibility gate, and every evidence rule at once.
+``RecognitionService`` is the only authority on who may appear here.
+This module does not query memberships, bookings, enrolments or
+attendance, and it does not decide who is eligible. It asks the
+service what the viewer shares, reads display names for the people
+the service already returned, and chooses which few to feature. Any
+future edit that reached past the service and into the substrate
+would silently bypass the member's own ``ways_to_connect_enabled``
+setting, the suspended/cancelled guards, the Collective visibility
+gate, and every evidence rule at once.
 
-The response inverts the service's shape on purpose. Internally
-Recognition is person-oriented, because "what do these two share?" is
-the question the rules answer. The API is experience-oriented, because
-"who else was at Thursday's circle?" is the question a member is
-actually asking, and because a person-keyed API is a directory
-wearing a different hat.
+The response is person-shaped because the question is. Internally a
+``Recognition`` is already keyed by person — the service has never
+been anything but person-first — so this route mostly gets out of its
+way. What it adds is the selection: at most three, and only people
+with two or more shared things between them. See
+``ways_to_connect/selection.py`` for why one is not enough and how the
+few are chosen without ranking anybody.
 """
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -47,22 +51,22 @@ from app.services.recognition_service import (
 )
 from app.ways_to_connect.schemas import (
     CollectiveRef,
-    GatheringContext,
-    PathwayContext,
     PersonRef,
+    SharedGatheringRef,
+    SharedPathwayRef,
     WaysToConnectResponse,
 )
+from app.ways_to_connect.selection import MAX_PEOPLE, select_people
 
 router = APIRouter(prefix="/api/ways-to-connect", tags=["ways-to-connect"])
 
 
-#: Safety bound on how many shared contexts one response carries.
-#: Not pagination — there is no second page and no cursor. A member
-#: with more shared experiences than this has an unusual amount of
-#: overlap, and the surface is meant to be readable rather than
-#: exhaustive. The cut is deterministic (see ``_ordered`` below), so
-#: the same state always yields the same response.
-MAX_CONTEXTS = 60
+#: Safety bound on how many people one response carries. Not
+#: pagination — there is no second page and no cursor. A member with
+#: more recognisable people than this has an unusual amount of
+#: overlap; the surface features three of them either way, and the
+#: tail exists only to feed the in-context lines.
+MAX_PEOPLE_IN_PAYLOAD = 60
 
 
 def _ensure_flag_on() -> None:
@@ -95,20 +99,19 @@ def _display_name(user: User, cp: CreatorProfile | None) -> str | None:
     return user.name or None
 
 
-def _people_index(db: Session, user_ids: set[str]) -> dict[str, PersonRef]:
-    """Names and avatars for people the service already returned.
+def _people_index(
+    db: Session, user_ids: set[str]
+) -> dict[str, tuple[str | None, str | None]]:
+    """(display_name, avatar_url) for people the service already returned.
 
     Presentation only. The ids come from ``RecognitionService``, which
     has already applied every eligibility and visibility rule; nothing
-    here widens that set, and passing an id the service did not
-    produce would simply render a person the caller already had.
+    here widens that set.
     """
     if not user_ids:
         return {}
 
-    users = db.execute(
-        select(User).where(User.id.in_(user_ids))
-    ).scalars().all()
+    users = db.execute(select(User).where(User.id.in_(user_ids))).scalars().all()
 
     # Avatars come from a public CreatorProfile or not at all — the
     # same rule the public profile endpoint applies. Most members have
@@ -123,129 +126,71 @@ def _people_index(db: Session, user_ids: set[str]) -> dict[str, PersonRef]:
         ).scalars().all()
     }
 
-    return {
-        u.id: PersonRef(
-            id=u.id,
-            display_name=_display_name(u, profiles.get(u.id)),
-            avatar_url=profiles[u.id].avatar_url if u.id in profiles else None,
+    out: dict[str, tuple[str | None, str | None]] = {}
+    for u in users:
+        cp = profiles.get(u.id)
+        out[u.id] = (
+            _display_name(u, cp),
+            cp.avatar_url if cp else None,
         )
-        for u in users
-    }
+    return out
 
 
-def _to_contexts(
-    recognitions: list[Recognition],
-    people: dict[str, PersonRef],
-) -> list[GatheringContext | PathwayContext]:
-    """Turn person-keyed Recognitions inside out into shared contexts.
+def _to_person(
+    recognition: Recognition,
+    name: str | None,
+    avatar_url: str | None,
+) -> PersonRef:
+    """One Recognition as the person it has always been about."""
+    shared: list[SharedGatheringRef | SharedPathwayRef] = []
 
-    One person may legitimately appear in several contexts — the same
-    people tend to show up at the same circle and on the same Pathway,
-    and collapsing that would lose the thing worth saying. What never
-    happens is the reverse: a person without a context.
-    """
-    collectives: dict[str, CollectiveRef] = {}
-    gatherings: dict[str, dict] = {}
-    pathways: dict[str, dict] = {}
+    # Nearest to now first, in both directions: the soonest thing
+    # ahead, then the most recent thing behind. A single ascending sort
+    # would list the oldest attended Gathering first, which reads as a
+    # history rather than "you were just in a room together".
+    def _nearness(g):
+        upcoming = g.basis is SharedGatheringBasis.UPCOMING
+        stamp = g.starts_at.timestamp()
+        return (not upcoming, stamp if upcoming else -stamp)
 
-    for recog in recognitions:
-        person = people.get(recog.other_user_id)
-        if person is None:
-            # The row vanished between derivation and hydration.
-            # Dropping is correct: we will not render someone we
-            # cannot name.
-            continue
-
-        for c in recog.collectives:
-            collectives.setdefault(
-                c.collective_id,
-                CollectiveRef(
-                    id=c.collective_id, slug=c.slug, name=c.name,
-                    timezone=c.timezone,
+    for g in sorted(recognition.gatherings, key=_nearness):
+        shared.append(
+            SharedGatheringRef(
+                id=g.gathering_id,
+                title=g.title,
+                starts_at=g.starts_at,
+                basis=(
+                    "upcoming"
+                    if g.basis is SharedGatheringBasis.UPCOMING
+                    else "attended"
                 ),
+                collective_id=g.collective_id,
             )
+        )
 
-        for g in recog.gatherings:
-            entry = gatherings.setdefault(
-                g.gathering_id,
-                {
-                    "id": g.gathering_id,
-                    "title": g.title,
-                    "starts_at": g.starts_at,
-                    "basis": (
-                        "upcoming"
-                        if g.basis is SharedGatheringBasis.UPCOMING
-                        else "attended"
-                    ),
-                    "collective_id": g.collective_id,
-                    "people": {},
-                },
+    for p in recognition.pathways:
+        shared.append(
+            SharedPathwayRef(
+                id=p.pathway_id,
+                slug=p.slug,
+                title=p.title,
+                collective_id=p.collective_id,
+                crossing_at=p.crossing_at,
             )
-            entry["people"][person.id] = person
+        )
 
-        for p in recog.pathways:
-            entry = pathways.setdefault(
-                p.pathway_id,
-                {
-                    "id": p.pathway_id,
-                    "slug": p.slug,
-                    "title": p.title,
-                    "collective_id": p.collective_id,
-                    "people": {},
-                },
+    return PersonRef(
+        id=recognition.other_user_id,
+        display_name=name,
+        avatar_url=avatar_url,
+        collectives=[
+            CollectiveRef(
+                id=c.collective_id, slug=c.slug, name=c.name, timezone=c.timezone
             )
-            entry["people"][person.id] = person
-
-    def _sorted_people(entry) -> list[PersonRef]:
-        """Named people first, alphabetically, then the unnamed.
-
-        Not a ranking — a reading order. It puts the part of the list
-        a member can actually recognise at the front, which is what
-        lets a surface say "Sarah and two other people" without having
-        to reorder anything itself. Ties break on id so the order is
-        total.
-        """
-        return sorted(
-            entry["people"].values(),
-            key=lambda r: (r.display_name is None, r.display_name or "", r.id),
-        )
-
-    upcoming = [
-        GatheringContext(
-            id=e["id"], title=e["title"], starts_at=e["starts_at"],
-            basis="upcoming", collective=collectives[e["collective_id"]],
-            people=_sorted_people(e),
-        )
-        for e in gatherings.values()
-        if e["basis"] == "upcoming" and e["collective_id"] in collectives
-    ]
-    attended = [
-        GatheringContext(
-            id=e["id"], title=e["title"], starts_at=e["starts_at"],
-            basis="attended", collective=collectives[e["collective_id"]],
-            people=_sorted_people(e),
-        )
-        for e in gatherings.values()
-        if e["basis"] == "attended" and e["collective_id"] in collectives
-    ]
-    walked = [
-        PathwayContext(
-            id=e["id"], slug=e["slug"], title=e["title"],
-            collective=collectives[e["collective_id"]],
-            people=_sorted_people(e),
-        )
-        for e in pathways.values()
-        if e["collective_id"] in collectives
-    ]
-
-    # Nearest to now first, then the things being walked, then what
-    # has already happened. Every tie is broken by id so the order is
-    # total and the same state always serialises identically.
-    upcoming.sort(key=lambda c: (c.starts_at, c.id))
-    attended.sort(key=lambda c: (c.starts_at, c.id), reverse=True)
-    walked.sort(key=lambda c: (c.title, c.id))
-
-    return [*upcoming, *walked, *attended]
+            for c in recognition.collectives
+        ],
+        shared=shared,
+    )
 
 
 @router.get("", response_model=WaysToConnectResponse)
@@ -253,11 +198,13 @@ def get_ways_to_connect(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> WaysToConnectResponse:
-    """What the signed-in member currently shares with other people.
+    """Who the signed-in member currently shares something with.
 
     The subject is the caller, always. There is no path, query or body
     parameter naming a member, so reading somebody else's Ways to
-    Connect has no request shape to express.
+    Connect has no request shape to express — and since the featured
+    few are chosen here rather than asked for, there is no way to
+    request a particular person either.
 
     Returns an empty list — not a 403 — when the member has switched
     off ``ways_to_connect_enabled``. Their own setting is not an
@@ -266,14 +213,37 @@ def get_ways_to_connect(
     """
     _ensure_flag_on()
 
-    recognitions = RecognitionService.for_user(db, current_user.id)
-    people = _people_index(
-        db, {r.other_user_id for r in recognitions}
-    )
-    contexts = _to_contexts(recognitions, people)
+    now = datetime.utcnow()
+    recognitions = RecognitionService.for_user(db, current_user.id, now=now)
+    index = _people_index(db, {r.other_user_id for r in recognitions})
 
-    truncated = len(contexts) > MAX_CONTEXTS
+    # Only people we can name may be featured — a card introduces
+    # somebody. Everyone else stays in the payload for the in-context
+    # lines, which count them rather than naming them.
+    #
+    # ``select_people`` then applies the two-signal threshold, so
+    # ``featured_count`` is routinely smaller than ``len(people)`` and
+    # is often zero while the payload is not: a viewer who has been in
+    # one room with three different people has three recognisable
+    # people and nobody worth introducing. The in-context lines still
+    # name them where they are; the destination stays quiet.
+    nameable = [r for r in recognitions if index.get(r.other_user_id, (None, None))[0]]
+    featured = select_people(nameable, now=now, limit=MAX_PEOPLE)
+    featured_ids = [r.other_user_id for r in featured]
+    featured_set = set(featured_ids)
+
+    ordered = featured + [
+        r for r in recognitions if r.other_user_id not in featured_set
+    ]
+    truncated = len(ordered) > MAX_PEOPLE_IN_PAYLOAD
+    ordered = ordered[:MAX_PEOPLE_IN_PAYLOAD]
+
+    people = [
+        _to_person(r, *index.get(r.other_user_id, (None, None))) for r in ordered
+    ]
+
     return WaysToConnectResponse(
-        contexts=contexts[:MAX_CONTEXTS],
+        people=people,
+        featured_count=len(featured_ids),
         truncated=truncated,
     )

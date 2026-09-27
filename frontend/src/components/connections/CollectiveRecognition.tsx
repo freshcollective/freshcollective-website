@@ -36,7 +36,7 @@ export default async function CollectiveRecognition({
   // Silent on failure: this is a grace note on somebody else's page.
   if (result.status !== 'ok') return null
 
-  const contexts = contextsInCollective(result.data.contexts, collectiveId)
+  const contexts = contextsInCollective(result.data.people, collectiveId)
   if (contexts.length === 0) return null
 
   return (

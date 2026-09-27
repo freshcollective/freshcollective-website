@@ -362,7 +362,7 @@ export async function getWaysToConnect(): Promise<WaysToConnectResult> {
     if (!res.ok) return { status: 'error' }
 
     const data = (await res.json()) as WaysToConnectPayload
-    if (!data || !Array.isArray(data.contexts)) return { status: 'error' }
+    if (!data || !Array.isArray(data.people)) return { status: 'error' }
 
     return { status: 'ok', data }
   } catch {

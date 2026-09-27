@@ -21,17 +21,21 @@ import { getWaysToConnect } from '@/lib/serverApi'
 import {
   findGatheringContext,
   findPathwayContext,
+  type PersonRef,
   type SharedContext,
 } from '@/lib/waysToConnect'
 import RecognitionNote from './RecognitionNote'
 
 async function resolve(
-  find: (contexts: SharedContext[]) => SharedContext | null,
+  find: (people: PersonRef[]) => SharedContext | null,
 ): Promise<SharedContext | null> {
   if (!isWaysToConnectEnabled()) return null
   const result = await getWaysToConnect()
   if (result.status !== 'ok') return null
-  return find(result.data.contexts)
+  // Derived from the same people the destination features, so the
+  // line here and the card there can never disagree about who is in
+  // the room.
+  return find(result.data.people)
 }
 
 /** "You'll be here with Sarah and 2 other people." */
@@ -40,7 +44,7 @@ export async function GatheringRecognition({
 }: {
   gatheringId: string
 }) {
-  const context = await resolve((cs) => findGatheringContext(cs, gatheringId))
+  const context = await resolve((people) => findGatheringContext(people, gatheringId))
   if (!context) return null
   return <RecognitionNote context={context} vantage="here" />
 }
@@ -51,7 +55,7 @@ export async function PathwayRecognition({
 }: {
   pathwayId: string
 }) {
-  const context = await resolve((cs) => findPathwayContext(cs, pathwayId))
+  const context = await resolve((people) => findPathwayContext(people, pathwayId))
   if (!context) return null
   return <RecognitionNote context={context} vantage="here" />
 }

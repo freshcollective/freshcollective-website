@@ -18,7 +18,8 @@
  * returns ``display_name: null`` rather than a placeholder precisely
  * so that three unnamed members do not render as three strangers all
  * called Member. They are counted instead, which is both truthful and
- * the way someone would actually say it out loud.
+ * the way someone would actually say it out loud — and they are never
+ * offered as a card, because a card introduces somebody.
  */
 
 /** A Collective, as context on a shared experience. */
@@ -32,48 +33,55 @@ export interface CollectiveRef {
   timezone: string
 }
 
-/** Someone the viewer genuinely shares a context with.
- *
- *  Both `display_name` and `avatar_url` are nullable and both being
- *  null is ordinary — most members have set no name and have no
- *  public creator profile. Nothing here is a score, a rank or a
- *  reason; the shared context is the reason. */
-export interface PersonRef {
-  id: string
-  display_name: string | null
-  avatar_url: string | null
-}
-
 /** `upcoming` — everyone holds a confirmed booking for something that
  *  has not happened. `attended` — the roster was finalised and
  *  everyone was marked present. The difference decides the tense. */
 export type GatheringBasis = 'upcoming' | 'attended'
 
-export interface GatheringContext {
+export interface SharedGatheringRef {
   kind: 'gathering'
   id: string
   title: string
   starts_at: string
   basis: GatheringBasis
-  collective: CollectiveRef
-  people: PersonRef[]
+  collective_id: string
 }
 
-export interface PathwayContext {
+export interface SharedPathwayRef {
   kind: 'pathway'
   id: string
   slug: string
   title: string
-  collective: CollectiveRef
-  people: PersonRef[]
+  collective_id: string
+  /** The earlier of the pair's two latest completed steps. Ordering
+   *  only — never a threshold, never a score. */
+  crossing_at: string | null
 }
 
-export type SharedContext = GatheringContext | PathwayContext
+export type SharedThing = SharedGatheringRef | SharedPathwayRef
+
+/**
+ * Someone the viewer genuinely shares something with.
+ *
+ * `display_name` and `avatar_url` are both nullable and both being
+ * null is ordinary — most members have set no name and have no public
+ * creator profile. `shared` always has at least one entry; a person
+ * with nothing shared is not recognisable and never appears.
+ */
+export interface PersonRef {
+  id: string
+  display_name: string | null
+  avatar_url: string | null
+  collectives: CollectiveRef[]
+  shared: SharedThing[]
+}
 
 export interface WaysToConnectPayload {
-  contexts: SharedContext[]
-  /** The response reached its safety bound. Not a page count, and
-   *  deliberately not a number — there is nothing to page to. */
+  /** Every recognisable person. The first `featured_count` are the
+   *  ones the destination shows today; the tail exists so the
+   *  in-context lines can count people the cards never name. */
+  people: PersonRef[]
+  featured_count: number
   truncated: boolean
 }
 
@@ -161,7 +169,7 @@ export function describePeople(people: PersonRef[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// Sentences
+// Sentences about a group of people
 // ---------------------------------------------------------------------------
 
 /** `here` on the Gathering or Pathway's own page, `there` when we are
@@ -176,50 +184,232 @@ export type Vantage = 'here' | 'there'
  * connecting or getting along.
  */
 export function gatheringSentence(
-  context: GatheringContext,
+  people: PersonRef[],
+  basis: GatheringBasis,
   vantage: Vantage = 'there',
 ): string {
-  const who = describePeople(context.people)
+  const who = describePeople(people)
   if (!who) return ''
   const place = vantage === 'here' ? 'here' : 'there'
-  return context.basis === 'upcoming'
+  return basis === 'upcoming'
     ? `You’ll be ${place} with ${who}.`
     : `You were ${place} with ${who}.`
 }
 
 /** The one line we put under a shared Pathway. Present tense: both
  *  people are still walking it. */
-export function pathwaySentence(
-  context: PathwayContext,
-  vantage: Vantage = 'there',
-): string {
-  const who = describePeople(context.people)
+export function pathwaySentence(people: PersonRef[]): string {
+  const who = describePeople(people)
   if (!who) return ''
-  return vantage === 'here'
-    ? `You’re moving through this with ${who}.`
-    : `You’re moving through this with ${who}.`
-}
-
-/** Whichever sentence fits the context. */
-export function contextSentence(
-  context: SharedContext,
-  vantage: Vantage = 'there',
-): string {
-  return context.kind === 'gathering'
-    ? gatheringSentence(context, vantage)
-    : pathwaySentence(context, vantage)
+  return `You’re moving through this with ${who}.`
 }
 
 // ---------------------------------------------------------------------------
-// Finding and grouping
+// The person card
 // ---------------------------------------------------------------------------
+
+/** The Collective a person's shared things mostly belong to — the one
+ *  the reason sentence names. Falls back to their first shared
+ *  Collective when the evidence spans several. */
+export function primaryCollective(person: PersonRef): CollectiveRef | null {
+  if (person.collectives.length === 0) return null
+  const tally = new Map<string, number>()
+  for (const thing of person.shared) {
+    tally.set(thing.collective_id, (tally.get(thing.collective_id) ?? 0) + 1)
+  }
+  let best = person.collectives[0]
+  let bestCount = -1
+  for (const c of person.collectives) {
+    const n = tally.get(c.id) ?? 0
+    if (n > bestCount) {
+      best = c
+      bestCount = n
+    }
+  }
+  return best
+}
+
+/**
+ * Why this person is on the page, in one factual sentence.
+ *
+ * It names the Collective and the *shape* of the overlap; the card
+ * lists the specific Gatherings and Pathways underneath, so repeating
+ * their titles here would say the same thing twice. Nothing in it
+ * claims a relationship — "you've both been showing up to EMBODY" is
+ * an observation about attendance, not about how anyone feels.
+ *
+ * The sentence follows the same hierarchy the server used to choose
+ * this person: what actually happened, then what is underway, then
+ * what is merely planned. So a pair with real history is never
+ * introduced by their diary — "you're both coming to EMBODY" would
+ * lead with the weakest thing we know about them and quietly bury the
+ * fact that they have already spent time together.
+ *
+ * A person reaching this function has at least two shared signals and
+ * at least one of them realised, so every branch can speak in the
+ * plural without stretching — and the "only plans" case at the bottom
+ * is unreachable for a featured person. It stays as an honest fallback
+ * rather than a throw, because a lie is worse than a sentence nobody
+ * sees.
+ */
+export function reasonSentence(person: PersonRef): string {
+  const collective = primaryCollective(person)
+  if (!collective || person.shared.length === 0) return ''
+  const where = collective.name
+
+  const attended = person.shared.filter(
+    (s): s is SharedGatheringRef => s.kind === 'gathering' && s.basis === 'attended',
+  )
+  const upcoming = person.shared.filter(
+    (s): s is SharedGatheringRef => s.kind === 'gathering' && s.basis === 'upcoming',
+  )
+  const pathways = person.shared.filter(
+    (s): s is SharedPathwayRef => s.kind === 'pathway',
+  )
+
+  // Strongest first: they have been in the same room.
+  if (attended.length >= 2) {
+    return `You’ve both been showing up to ${where}.`
+  }
+  if (attended.length === 1) {
+    // One real shared room plus something else — still led by the
+    // thing that happened, never by the thing that hasn't.
+    return pathways.length > 0
+      ? `You’ve been in the same room at ${where}, and you’re on the same path.`
+      : `You’ve both been showing up to ${where}.`
+  }
+
+  // No shared history yet, but something is genuinely underway.
+  if (pathways.length >= 2) {
+    return `You’re both walking the same paths in ${where}.`
+  }
+  if (pathways.length === 1) {
+    return upcoming.length > 0
+      ? `You’re on the same path in ${where}, and you’ll be there together soon.`
+      : `You’re both walking a pathway in ${where}.`
+  }
+
+  // Only plans — never a featured person, since a card requires one
+  // realised signal. Kept truthful for any other caller.
+  return upcoming.length >= 2
+    ? `Your paths are about to cross at ${where}, more than once.`
+    : `You’re both coming to ${where}.`
+}
+
+/** The people the destination features today. The API has already
+ *  chosen them and put them first; this is the contract, in one place
+ *  rather than a `.slice(0, 3)` scattered through components. */
+export function featuredPeople(payload: WaysToConnectPayload): PersonRef[] {
+  return payload.people.slice(0, Math.max(0, payload.featured_count))
+}
+
+// ---------------------------------------------------------------------------
+// Derived context views
+//
+// The payload is person-shaped because the destination asks "who?".
+// The quiet lines on a Gathering or Pathway page ask a different
+// question — "who else is in this room?" — and the Collective page
+// asks it of a whole Collective. Rather than a second endpoint, those
+// views are derived here from the same people.
+//
+// Unnamed members are included on purpose. They never become a card,
+// but "Sarah and 2 other people" is only true if they are counted.
+// ---------------------------------------------------------------------------
+
+export interface GatheringContext {
+  kind: 'gathering'
+  id: string
+  title: string
+  starts_at: string
+  basis: GatheringBasis
+  collective: CollectiveRef
+  people: PersonRef[]
+}
+
+export interface PathwayContext {
+  kind: 'pathway'
+  id: string
+  slug: string
+  title: string
+  collective: CollectiveRef
+  people: PersonRef[]
+}
+
+export type SharedContext = GatheringContext | PathwayContext
+
+/** Turn the person-keyed payload inside out: one entry per shared
+ *  thing, carrying everyone who shares it. */
+export function deriveContexts(people: PersonRef[]): SharedContext[] {
+  const collectives = new Map<string, CollectiveRef>()
+  for (const person of people) {
+    for (const c of person.collectives) {
+      if (!collectives.has(c.id)) collectives.set(c.id, c)
+    }
+  }
+
+  const gatherings = new Map<string, GatheringContext>()
+  const pathways = new Map<string, PathwayContext>()
+
+  for (const person of people) {
+    for (const thing of person.shared) {
+      const collective = collectives.get(thing.collective_id)
+      if (!collective) continue
+
+      if (thing.kind === 'gathering') {
+        const existing = gatherings.get(thing.id)
+        if (existing) {
+          existing.people.push(person)
+        } else {
+          gatherings.set(thing.id, {
+            kind: 'gathering',
+            id: thing.id,
+            title: thing.title,
+            starts_at: thing.starts_at,
+            basis: thing.basis,
+            collective,
+            people: [person],
+          })
+        }
+      } else {
+        const existing = pathways.get(thing.id)
+        if (existing) {
+          existing.people.push(person)
+        } else {
+          pathways.set(thing.id, {
+            kind: 'pathway',
+            id: thing.id,
+            slug: thing.slug,
+            title: thing.title,
+            collective,
+            people: [person],
+          })
+        }
+      }
+    }
+  }
+
+  const sortPeople = (c: SharedContext) => {
+    c.people.sort((a, b) => {
+      // Named first, so a sentence can lead with somebody recognisable.
+      if (!a.display_name !== !b.display_name) return a.display_name ? -1 : 1
+      return (a.display_name ?? '').localeCompare(b.display_name ?? '')
+        || a.id.localeCompare(b.id)
+    })
+    return c
+  }
+
+  return [
+    ...[...gatherings.values()].map(sortPeople),
+    ...[...pathways.values()].map(sortPeople),
+  ]
+}
 
 /** The Gathering context for this Event, if the viewer shares it. */
 export function findGatheringContext(
-  contexts: SharedContext[],
+  people: PersonRef[],
   gatheringId: string,
 ): GatheringContext | null {
-  for (const c of contexts) {
+  for (const c of deriveContexts(people)) {
     if (c.kind === 'gathering' && c.id === gatheringId && c.people.length > 0) {
       return c
     }
@@ -229,10 +419,10 @@ export function findGatheringContext(
 
 /** The Pathway context for this Pathway, if the viewer shares it. */
 export function findPathwayContext(
-  contexts: SharedContext[],
+  people: PersonRef[],
   pathwayId: string,
 ): PathwayContext | null {
-  for (const c of contexts) {
+  for (const c of deriveContexts(people)) {
     if (c.kind === 'pathway' && c.id === pathwayId && c.people.length > 0) {
       return c
     }
@@ -240,58 +430,24 @@ export function findPathwayContext(
   return null
 }
 
-/** Every context belonging to one Collective, in the order the API
- *  gave them. Used by the Collective page, which has no evidence of
- *  its own and shows only what its Gatherings and Pathways produced. */
+/** Every shared thing belonging to one Collective. Used by the
+ *  Collective page, which has no evidence of its own and shows only
+ *  what its Gatherings and Pathways produced. */
 export function contextsInCollective(
-  contexts: SharedContext[],
+  people: PersonRef[],
   collectiveId: string,
 ): SharedContext[] {
-  return contexts.filter(
+  return deriveContexts(people).filter(
     (c) => c.collective.id === collectiveId && c.people.length > 0,
   )
 }
 
-export interface GroupedContexts {
-  comingUp: GatheringContext[]
-  pathways: PathwayContext[]
-  recent: GatheringContext[]
-}
-
-/**
- * The destination's three groups, ordered by what a member is most
- * likely to act on: what is about to happen, what they are in the
- * middle of, what already happened.
- *
- * Grouped by the shared thing, never by person. A person who shows up
- * at the same circle and on the same Pathway appears in both, because
- * those are two different things they share and collapsing them would
- * lose the one worth saying.
- *
- * The API already returns contexts in order; this only partitions.
- * Empty groups stay empty so callers can drop the heading rather than
- * render a section about nothing.
- */
-export function groupContexts(contexts: SharedContext[]): GroupedContexts {
-  const comingUp: GatheringContext[] = []
-  const pathways: PathwayContext[] = []
-  const recent: GatheringContext[] = []
-
-  for (const c of contexts) {
-    if (c.people.length === 0) continue
-    if (c.kind === 'pathway') pathways.push(c)
-    else if (c.basis === 'upcoming') comingUp.push(c)
-    else recent.push(c)
-  }
-
-  return { comingUp, pathways, recent }
-}
-
-/** Whether there is anything at all to show. */
-export function hasAnyContext(grouped: GroupedContexts): boolean {
-  return (
-    grouped.comingUp.length > 0 ||
-    grouped.pathways.length > 0 ||
-    grouped.recent.length > 0
-  )
+/** Whichever sentence fits a derived context. */
+export function contextSentence(
+  context: SharedContext,
+  vantage: Vantage = 'there',
+): string {
+  return context.kind === 'gathering'
+    ? gatheringSentence(context.people, context.basis, vantage)
+    : pathwaySentence(context.people)
 }

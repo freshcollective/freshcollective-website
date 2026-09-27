@@ -28,8 +28,10 @@ function code(relative: string): string {
 }
 
 const PAGE = code('app/ways-to-connect/page.tsx')
-const GROUPS = code('components/connections/SharedContextGroups.tsx')
-const CARD = code('components/connections/SharedContextCard.tsx')
+const PEOPLE = code('components/connections/PeopleYouveCrossed.tsx')
+const CARD_P = code('components/connections/PersonCard.tsx')
+const PORTRAIT = code('components/connections/PersonPortrait.tsx')
+const CARD = code('components/connections/SharedContextCard.tsx')  // collective page
 const EMPTY = code('components/connections/WaysToConnectEmptyState.tsx')
 const UNAVAILABLE = code('components/connections/WaysToConnectUnavailable.tsx')
 const NOTE = code('components/connections/RecognitionNote.tsx')
@@ -103,76 +105,101 @@ describe('the four states are kept apart', () => {
   })
 })
 
-describe('the destination is context-first', () => {
-  test('the three groups are the shared things, not people', () => {
-    assert.match(GROUPS, /Coming up/)
-    assert.match(GROUPS, /Shared pathways/)
-    assert.match(GROUPS, /Recent crossings/)
+describe('the destination is people-first', () => {
+  test('the page renders the featured people, not grouped contexts', () => {
+    assert.match(PAGE, /featuredPeople\(result\.data\)/)
+    assert.match(PAGE, /PeopleYouveCrossed/)
+    assert.ok(!/groupContexts/.test(PAGE))
   })
 
-  test('each group renders only when it has something in it', () => {
-    for (const g of ['comingUp', 'pathways', 'recent']) {
-      assert.match(
-        GROUPS,
-        new RegExp(`grouped\\.${g}\\.length > 0 &&`),
-        `${g} heading must be conditional`,
-      )
-    }
+  test('the card leads with the person', () => {
+    const jsx = CARD_P.slice(CARD_P.indexOf('return ('))
+    const nameAt = jsx.indexOf('{name}')
+    const reasonAt = jsx.indexOf('{reason}')
+    const sharedAt = jsx.indexOf('Shared')
+    assert.ok(nameAt > -1 && reasonAt > nameAt, 'name precedes the reason')
+    assert.ok(sharedAt > reasonAt, 'the evidence comes after the reason')
   })
 
-  test('a card leads the Gathering or Pathway, not the person', () => {
-    // Compare positions inside the rendered markup, not the whole
-    // module — the sentence is computed near the top and rendered
-    // near the bottom, which is exactly the point.
-    const jsx = CARD.slice(CARD.indexOf('return ('))
-    const titleAt = jsx.indexOf('{context.title}')
-    const metaAt = jsx.indexOf('{metaLine(context)}')
-    const peopleAt = jsx.indexOf('{sentence}')
-
-    assert.ok(titleAt > -1 && metaAt > -1 && peopleAt > -1)
-    assert.ok(titleAt < metaAt, 'the shared thing leads')
-    assert.ok(metaAt < peopleAt, 'the people come after the context')
+  test('the card shows the shared evidence, unlike the old prototype', () => {
+    assert.match(CARD_P, /person\.shared\.map/)
+    assert.match(CARD_P, /\{thing\.title\}/)
   })
 
-  test('the action goes back into the shared context', () => {
-    assert.match(CARD, /\/spaces\/\$\{context\.collective\.slug\}\/events\/\$\{context\.id\}/)
-    assert.match(CARD, /\/spaces\/\$\{context\.collective\.slug\}\/pathways\/\$\{context\.slug\}/)
-  })
-
-  test('there is no link to a person anywhere', () => {
-    for (const source of [CARD, GROUPS, NOTE]) {
+  test('there is no link to a profile anywhere', () => {
+    for (const source of [CARD_P, PEOPLE, PORTRAIT]) {
       assert.ok(!/\/profile\//.test(source), 'no profile links')
-      assert.ok(!/person\.id\}\`/.test(source), 'no person-keyed hrefs')
+      assert.ok(!/<Link/.test(source), 'a person is not a destination')
     }
   })
 
-  test('no person-indexed grouping exists', () => {
-    for (const source of [GROUPS, CARD]) {
-      assert.ok(!/groupBy(Person|People)/i.test(source))
-      assert.ok(!/byPerson/i.test(source))
-    }
+  test('the portrait has exactly two states and no category colour', () => {
+    assert.match(PORTRAIT, /WARM_STONE/)
+    assert.ok(!/right-now|shared-journey|thoughtful/.test(PORTRAIT),
+      'the retired intent palette must not come back')
+  })
+
+  test('the portrait is decorative — the name carries the meaning', () => {
+    assert.match(PORTRAIT, /aria-hidden="true"/)
+    assert.match(PORTRAIT, /alt=""/)
+  })
+
+  test('an unnamed person is never rendered as a card', () => {
+    assert.match(CARD_P, /if \(!name\) return null/)
+  })
+
+  test('cards keep a fixed width instead of dividing the container', () => {
+    // A grid gives each card a share of the width, so two people
+    // produce two enormous cards and one produces an absurd one. The
+    // card owns its width; the row centres what it is given.
+    assert.match(CARD_P, /(sm|md|lg):w-\[\d+px\]/, 'card has a fixed desktop width')
+    assert.match(CARD_P, /\bw-full\b/, 'and the full width on a phone')
+    assert.ok(
+      !/grid-cols-\d/.test(PEOPLE),
+      'no column maths — one card in a 3-column grid is the bug',
+    )
+    // The only permitted length check is the "nobody at all" guard;
+    // anything comparing against 2 or 3 is column maths returning.
+    const branches = PEOPLE.match(/people\.length\s*(?:>=|===|>|<)\s*\d+/g) ?? []
+    assert.deepEqual(
+      branches, ['people.length === 0'],
+      'layout must not branch on how many people there are',
+    )
   })
 })
 
-describe('no ranking anywhere', () => {
-  test('no score, rank, match or strength in the surface', () => {
-    for (const [name, source] of Object.entries({
-      PAGE, GROUPS, CARD, EMPTY, NOTE, UNAVAILABLE,
-    })) {
-      for (const banned of ['score', 'ranking', 'rank(', 'strength', 'match%', 'relevance']) {
-        assert.ok(
-          !source.toLowerCase().includes(banned),
-          `${name} must not contain "${banned}"`,
-        )
-      }
-    }
+describe('Say hello is a two-step action', () => {
+  test('pressing it asks for confirmation rather than sending', () => {
+    assert.match(CARD_P, /setState\('confirming'\)/)
+    assert.match(CARD_P, /Say hello to \{name\}\?/)
   })
 
-  test('the truncated notice offers no counts and no way to page', () => {
-    assert.match(GROUPS, /truncated &&/)
-    assert.ok(!/load more/i.test(GROUPS))
-    assert.ok(!/\btotal\b/i.test(GROUPS))
-    assert.ok(!/of \$\{/.test(GROUPS), 'no "60 of 84"')
+  test('the confirmation explains what it does and does not do', () => {
+    assert.match(CARD_P, /open to connecting/)
+    assert.match(CARD_P, /won.{1,3}t be able to message/)
+  })
+
+  test('it offers a way out', () => {
+    assert.match(CARD_P, /Cancel/)
+  })
+
+  test('the sent state is quiet and final', () => {
+    assert.match(CARD_P, /Hello sent/)
+    assert.match(CARD_P, /aria-live="polite"/)
+  })
+
+  test('the send path is wired for a real action later', () => {
+    assert.match(CARD_P, /onSendHello\?:/)
+    assert.match(CARD_P, /await onSendHello\?\.\(person\.id\)/)
+  })
+
+  test('nothing is persisted during 5a', () => {
+    assert.ok(!/fetch\(/.test(CARD_P), 'no request yet')
+    assert.ok(!/apiUrl/.test(CARD_P))
+  })
+
+  test('the action names who it is for', () => {
+    assert.match(CARD_P, /sr-only/)
   })
 })
 
@@ -287,7 +314,7 @@ describe('accessibility and mobile', () => {
   })
 
   test('decorative marks are hidden from assistive technology', () => {
-    for (const source of [NOTE, EMPTY]) {
+    for (const source of [NOTE, EMPTY, PORTRAIT]) {
       assert.match(source, /aria-hidden="true"/)
     }
   })
@@ -301,12 +328,30 @@ describe('accessibility and mobile', () => {
     }
   })
 
-  test('the layout is a single column list, not a fixed grid', () => {
-    assert.match(GROUPS, /flex flex-col/)
-    assert.ok(!/grid-cols-\d/.test(GROUPS), 'one recognition in a grid reads as a broken grid')
+  test('a short row is centred rather than left-hugging', () => {
+    assert.match(PEOPLE, /flex flex-wrap justify-center/)
   })
 
-  test('the card constrains its own width rather than the viewport', () => {
-    assert.match(GROUPS, /max-w-\[720px\]/)
+  test('no placeholder cards and no empty columns', () => {
+    // An empty column is still a visible gap; a card for nobody is
+    // worse than a short row.
+    assert.ok(!/placeholder/i.test(PEOPLE))
+    assert.ok(!/Array\.from|fill\(/.test(PEOPLE), 'nothing is padded out')
+  })
+
+  test('the section constrains its own width rather than the viewport', () => {
+    assert.match(PEOPLE, /max-w-\[980px\]/)
+  })
+
+  test('the portrait stays square against the card width', () => {
+    assert.match(PORTRAIT, /aspectRatio: '1 \/ 1'/)
+  })
+
+  test('the initial sizes against the square, not the viewport', () => {
+    // The container query has to be declared on the square itself —
+    // on the span it would measure the span.
+    const square = PORTRAIT.slice(PORTRAIT.indexOf('aspectRatio'))
+    assert.match(square, /containerType: 'inline-size'/)
+    assert.match(PORTRAIT, /cqw/)
   })
 })

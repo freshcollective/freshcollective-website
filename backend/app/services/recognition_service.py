@@ -130,7 +130,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.community_care.shared import is_user_cancelled, is_user_suspended
@@ -224,6 +224,20 @@ class SharedPathway:
     slug: str
     title: str
     collective_id: str
+    #: When these two people can first be said to have been walking
+    #: this Pathway together: the *earlier* of their two latest
+    #: completed steps.
+    #:
+    #: The earlier, not the later, and not either person's own latest.
+    #: The pair's shared progress is bounded by whoever has moved
+    #: least recently — if one of them stopped three months ago, the
+    #: two of them stopped crossing paths three months ago, however
+    #: busy the other has been since.
+    #:
+    #: Ordering only. It is never a score, never a threshold, and
+    #: never affects whether the Pathway is surfaced: eligibility is
+    #: still "both enrolled, both started", unchanged.
+    crossing_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -596,6 +610,9 @@ def _peer_shared_started_pathways(
     other_enrolment  = Enrollment.__table__.alias("other_enrolment")
     other_membership = SpaceMembership.__table__.alias("other_membership")
 
+    viewer_latest = _latest_completed_step_at(viewer_id)
+    other_latest  = _latest_completed_step_at(other_enrolment.c.user_id)
+
     stmt = (
         select(
             other_enrolment.c.user_id,
@@ -603,6 +620,7 @@ def _peer_shared_started_pathways(
             Pathway.slug,
             Pathway.title,
             Pathway.space_id,
+            func.least(viewer_latest, other_latest).label("crossing_at"),
         )
         .join(viewer_enrolment, viewer_enrolment.c.pathway_id == Pathway.id)
         .join(other_enrolment,  other_enrolment.c.pathway_id  == Pathway.id)
@@ -620,17 +638,18 @@ def _peer_shared_started_pathways(
             other_enrolment.c.user_id.in_(peer_ids),
             other_enrolment.c.status   == EnrollmentStatus.active,
             Pathway.space_id.in_(visible_space_ids),
-            _started_pathway_exists(viewer_id),
-            _started_pathway_exists(other_enrolment.c.user_id),
+            viewer_latest.is_not(None),
+            other_latest.is_not(None),
         )
         .order_by(other_enrolment.c.user_id, Pathway.title)
     )
 
     out: dict[str, list[SharedPathway]] = {}
-    for peer_id, pid, slug, title, space_id in db.execute(stmt).all():
+    for peer_id, pid, slug, title, space_id, crossing_at in db.execute(stmt).all():
         out.setdefault(peer_id, []).append(
             SharedPathway(
-                pathway_id=pid, slug=slug, title=title, collective_id=space_id
+                pathway_id=pid, slug=slug, title=title,
+                collective_id=space_id, crossing_at=crossing_at,
             )
         )
     return {k: tuple(v) for k, v in out.items()}
@@ -784,15 +803,18 @@ def _active_shared_memberships(
     )
 
 
-def _started_pathway_exists(user_id):
-    """Correlated EXISTS: has this user completed at least one step of
-    the Pathway in the enclosing query?
+def _latest_completed_step_at(user_id):
+    """Correlated scalar: this user's most recent completed step in the
+    Pathway of the enclosing query, or NULL if they have not started.
 
-    ``user_id`` may be a literal (the pairwise path, where we know who
-    we are asking about) or a column expression (the batched path,
-    where the peer is whichever row the outer query is on). Both
-    produce the same predicate; there is deliberately not a second
-    copy of this rule for the batched case.
+    Doubles as the eligibility test — ``IS NOT NULL`` here is exactly
+    the old ``EXISTS(completed_at IS NOT NULL)``, so one subquery now
+    answers both "have they started?" and "when did they last move?"
+    rather than scanning twice to ask the same rows two questions.
+
+    ``user_id`` may be a literal (the pairwise path) or a column
+    expression (the batched path, where the peer is whichever row the
+    outer query is on).
 
     Completed, not merely recorded. A StepProgress row is also written
     when a member saves a *draft* reflection, with ``completed_at``
@@ -801,14 +823,14 @@ def _started_pathway_exists(user_id):
     do. ``reflection_text`` itself is never touched.
     """
     return (
-        select(StepProgress.id)
+        select(func.max(StepProgress.completed_at))
         .join(PathwayStep, PathwayStep.id == StepProgress.step_id)
         .where(
             PathwayStep.pathway_id == Pathway.id,
             StepProgress.user_id == user_id,
             StepProgress.completed_at.is_not(None),
         )
-        .exists()
+        .scalar_subquery()
     )
 
 
@@ -832,8 +854,16 @@ def _shared_started_pathways(
     viewer_enrolment = Enrollment.__table__.alias("viewer_enrolment")
     other_enrolment  = Enrollment.__table__.alias("other_enrolment")
 
+    viewer_latest = _latest_completed_step_at(viewer_id)
+    other_latest  = _latest_completed_step_at(other_id)
+
     stmt = (
-        select(Pathway.id, Pathway.slug, Pathway.title, Pathway.space_id)
+        select(
+            Pathway.id, Pathway.slug, Pathway.title, Pathway.space_id,
+            # The pair's shared progress is bounded by whoever moved
+            # least recently.
+            func.least(viewer_latest, other_latest).label("crossing_at"),
+        )
         .join(viewer_enrolment, viewer_enrolment.c.pathway_id == Pathway.id)
         .join(other_enrolment,  other_enrolment.c.pathway_id  == Pathway.id)
         .where(
@@ -842,8 +872,8 @@ def _shared_started_pathways(
             other_enrolment.c.user_id  == other_id,
             other_enrolment.c.status   == EnrollmentStatus.active,
             Pathway.space_id.in_(visible_space_ids),
-            _started_pathway_exists(viewer_id),
-            _started_pathway_exists(other_id),
+            viewer_latest.is_not(None),
+            other_latest.is_not(None),
         )
         .order_by(Pathway.title)
     )
@@ -853,6 +883,7 @@ def _shared_started_pathways(
             slug=r.slug,
             title=r.title,
             collective_id=r.space_id,
+            crossing_at=r.crossing_at,
         )
         for r in db.execute(stmt).all()
     )

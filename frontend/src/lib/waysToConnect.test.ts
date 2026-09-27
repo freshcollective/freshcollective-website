@@ -17,16 +17,18 @@ import {
   contextSentence,
   contextsInCollective,
   describePeople,
+  deriveContexts,
+  featuredPeople,
   findGatheringContext,
   findPathwayContext,
   gatheringSentence,
-  groupContexts,
-  hasAnyContext,
   pathwaySentence,
+  primaryCollective,
+  reasonSentence,
   splitPeople,
-  type GatheringContext,
-  type PathwayContext,
   type PersonRef,
+  type SharedGatheringRef,
+  type SharedPathwayRef,
 } from './waysToConnect.ts'
 
 const COLLECTIVE = {
@@ -43,34 +45,44 @@ function unnamed(id: string): PersonRef {
   return { id, display_name: null, avatar_url: null }
 }
 
-function gathering(
-  people: PersonRef[],
-  basis: 'upcoming' | 'attended' = 'upcoming',
-  over: Partial<GatheringContext> = {},
-): GatheringContext {
+function sharedGathering(
+  over: Partial<SharedGatheringRef> = {},
+): SharedGatheringRef {
   return {
     kind: 'gathering',
     id: 'ev_1',
     title: 'Thursday EMBODY',
     starts_at: '2026-10-08T19:00:00',
-    basis,
-    collective: COLLECTIVE,
-    people,
+    basis: 'upcoming',
+    collective_id: COLLECTIVE.id,
     ...over,
   }
 }
 
-function pathway(
-  people: PersonRef[],
-  over: Partial<PathwayContext> = {},
-): PathwayContext {
+function sharedPathway(over: Partial<SharedPathwayRef> = {}): SharedPathwayRef {
   return {
     kind: 'pathway',
     id: 'pw_1',
     slug: 'life-in-alignment',
     title: 'Life in Alignment',
-    collective: COLLECTIVE,
-    people,
+    collective_id: COLLECTIVE.id,
+    crossing_at: '2026-09-20T10:00:00',
+    ...over,
+  }
+}
+
+/** A person carrying whatever they share. */
+function person(
+  name: string | null,
+  shared: (SharedGatheringRef | SharedPathwayRef)[],
+  over: Partial<PersonRef> = {},
+): PersonRef {
+  return {
+    id: `u_${name ?? 'quiet'}`,
+    display_name: name,
+    avatar_url: null,
+    collectives: [COLLECTIVE],
+    shared,
     ...over,
   }
 }
@@ -182,88 +194,88 @@ describe('splitPeople', () => {
 describe('gathering sentences', () => {
   test('upcoming, on the Gathering’s own page', () => {
     assert.equal(
-      gatheringSentence(gathering([named('Sarah'), named('James')]), 'here'),
+      gatheringSentence([named('Sarah'), named('James')], 'upcoming', 'here'),
       'You’ll be here with Sarah and James.',
     )
   })
 
   test('upcoming, seen from elsewhere', () => {
     assert.equal(
-      gatheringSentence(gathering([named('Sarah')]), 'there'),
+      gatheringSentence([named('Sarah')], 'upcoming', 'there'),
       'You’ll be there with Sarah.',
     )
   })
 
   test('attended, on the Gathering’s own page', () => {
     assert.equal(
-      gatheringSentence(gathering([named('Sarah'), named('James')], 'attended'), 'here'),
+      gatheringSentence([named('Sarah'), named('James')], 'attended', 'here'),
       'You were here with Sarah and James.',
     )
   })
 
   test('attended, seen from elsewhere', () => {
     assert.equal(
-      gatheringSentence(gathering([named('Maya')], 'attended'), 'there'),
+      gatheringSentence([named('Maya')], 'attended', 'there'),
       'You were there with Maya.',
     )
   })
 
   test('mixed named and unnamed reads naturally', () => {
     assert.equal(
-      gatheringSentence(gathering([named('Sarah'), unnamed('a'), unnamed('b')]), 'there'),
+      gatheringSentence([named('Sarah'), unnamed('a'), unnamed('b')], 'upcoming', 'there'),
       'You’ll be there with Sarah and 2 other people.',
     )
   })
 
   test('a single unnamed companion reads as company, not a count', () => {
     assert.equal(
-      gatheringSentence(gathering([unnamed('u1')]), 'here'),
+      gatheringSentence([unnamed('u1')], 'upcoming', 'here'),
       'You’ll be here with someone else.',
     )
     assert.equal(
-      gatheringSentence(gathering([named('Sarah'), unnamed('u1')]), 'here'),
+      gatheringSentence([named('Sarah'), unnamed('u1')], 'upcoming', 'here'),
       'You’ll be here with Sarah and someone else.',
     )
     assert.equal(
-      gatheringSentence(gathering([unnamed('u1')], 'attended'), 'here'),
+      gatheringSentence([unnamed('u1')], 'attended', 'here'),
       'You were here with someone else.',
     )
   })
 
   test('nobody to name produces no sentence at all', () => {
-    assert.equal(gatheringSentence(gathering([])), '')
+    assert.equal(gatheringSentence([], 'upcoming'), '')
   })
 })
 
 describe('pathway sentences', () => {
   test('present tense, both still walking it', () => {
     assert.equal(
-      pathwaySentence(pathway([named('Emma')])),
+      pathwaySentence([named('Emma')]),
       'You’re moving through this with Emma.',
     )
   })
 
   test('several walkers', () => {
     assert.equal(
-      pathwaySentence(pathway([named('Sarah'), named('Maya')])),
+      pathwaySentence([named('Sarah'), named('Maya')]),
       'You’re moving through this with Sarah and Maya.',
     )
   })
 
   test('a single unnamed walker is someone else', () => {
     assert.equal(
-      pathwaySentence(pathway([unnamed('a')])),
+      pathwaySentence([unnamed('a')]),
       'You’re moving through this with someone else.',
     )
     assert.equal(
-      pathwaySentence(pathway([named('Emma'), unnamed('a')])),
+      pathwaySentence([named('Emma'), unnamed('a')]),
       'You’re moving through this with Emma and someone else.',
     )
   })
 
   test('several unnamed walkers are counted', () => {
     assert.equal(
-      pathwaySentence(pathway([named('Emma'), unnamed('a'), unnamed('b')])),
+      pathwaySentence([named('Emma'), unnamed('a'), unnamed('b')]),
       'You’re moving through this with Emma and 2 other people.',
     )
   })
@@ -271,9 +283,9 @@ describe('pathway sentences', () => {
 
 describe('what we never claim', () => {
   const samples = [
-    gatheringSentence(gathering([named('Sarah')]), 'here'),
-    gatheringSentence(gathering([named('Sarah')], 'attended'), 'here'),
-    pathwaySentence(pathway([named('Sarah')])),
+    gatheringSentence([named('Sarah')], 'upcoming', 'here'),
+    gatheringSentence([named('Sarah')], 'attended', 'here'),
+    pathwaySentence([named('Sarah')]),
   ]
 
   test('no claim that anyone met, knows or connected', () => {
@@ -296,97 +308,251 @@ describe('what we never claim', () => {
   })
 })
 
+
 // ---------------------------------------------------------------------------
 
-describe('finding a context', () => {
-  const contexts = [gathering([named('Sarah')]), pathway([named('Emma')])]
-
-  test('finds the Gathering by id', () => {
-    assert.equal(findGatheringContext(contexts, 'ev_1')?.title, 'Thursday EMBODY')
+describe('reasonSentence — leads with the strongest truthful pattern', () => {
+  test('repeated past attendance', () => {
+    assert.equal(
+      reasonSentence(person('Sarah', [
+        sharedGathering({ id: 'a', basis: 'attended' }),
+        sharedGathering({ id: 'b', basis: 'attended' }),
+      ])),
+      'You’ve both been showing up to EMBODY.',
+    )
   })
 
-  test('returns null for an unrelated Gathering', () => {
-    assert.equal(findGatheringContext(contexts, 'ev_other'), null)
+  test('past attendance leads even when there is something coming up', () => {
+    // The rule from review: never introduce a pair by their diary when
+    // they have already been in the same room.
+    const sentence = reasonSentence(person('Sarah', [
+      sharedGathering({ id: 'a', basis: 'attended' }),
+      sharedGathering({ id: 'b', basis: 'upcoming' }),
+    ]))
+    assert.equal(sentence, 'You’ve both been showing up to EMBODY.')
+    assert.ok(!sentence.includes('coming to'), 'must not lead with the plan')
   })
 
-  test('finds the Pathway by id', () => {
-    assert.equal(findPathwayContext(contexts, 'pw_1')?.title, 'Life in Alignment')
+  test('one past room plus a shared path names both', () => {
+    assert.equal(
+      reasonSentence(person('Sarah', [
+        sharedGathering({ basis: 'attended' }),
+        sharedPathway(),
+      ])),
+      'You’ve been in the same room at EMBODY, and you’re on the same path.',
+    )
   })
 
-  test('a context with nobody in it is not a match', () => {
-    assert.equal(findGatheringContext([gathering([])], 'ev_1'), null)
+  test('two shared pathways', () => {
+    assert.equal(
+      reasonSentence(person('Emma', [
+        sharedPathway({ id: 'p1' }),
+        sharedPathway({ id: 'p2' }),
+      ])),
+      'You’re both walking the same paths in EMBODY.',
+    )
   })
 
-  test('a Gathering id never matches a Pathway context', () => {
-    assert.equal(findGatheringContext([pathway([named('Emma')])], 'pw_1'), null)
+  test('a pathway plus a plan mentions both, path first', () => {
+    const sentence = reasonSentence(person('Emma', [
+      sharedPathway(),
+      sharedGathering({ basis: 'upcoming' }),
+    ]))
+    assert.equal(
+      sentence,
+      'You’re on the same path in EMBODY, and you’ll be there together soon.',
+    )
+    assert.ok(sentence.indexOf('path') < sentence.indexOf('soon'))
+  })
+
+  test('only plans is unreachable for a card, and still truthful', () => {
+    // A pair with nothing realised never reaches a card — the server
+    // will not feature them. The sentence stays honest anyway.
+    assert.equal(
+      reasonSentence(person('Tara', [
+        sharedGathering({ id: 'a', basis: 'upcoming' }),
+        sharedGathering({ id: 'b', basis: 'upcoming' }),
+      ])),
+      'Your paths are about to cross at EMBODY, more than once.',
+    )
+  })
+
+  test('every card-reachable shape leads with something realised', () => {
+    // The five categories, in order. Each sentence must open with what
+    // happened or what is underway — never with the diary.
+    const shapes: PersonRef[] = [
+      person('c1', [sharedGathering({ id: 'a', basis: 'attended' }), sharedGathering({ id: 'b', basis: 'attended' })]),
+      person('c2', [sharedGathering({ basis: 'attended' }), sharedPathway()]),
+      person('c3', [sharedGathering({ id: 'a', basis: 'attended' }), sharedGathering({ id: 'b', basis: 'upcoming' })]),
+      person('c4', [sharedPathway({ id: 'p1' }), sharedPathway({ id: 'p2' })]),
+      person('c5', [sharedPathway(), sharedGathering({ basis: 'upcoming' })]),
+    ]
+    for (const p of shapes) {
+      const s = reasonSentence(p)
+      assert.ok(
+        /^You’ve|^You’re on the same path|^You’re both walking/.test(s),
+        `"${s}" should open with realised evidence`,
+      )
+      assert.ok(!/^You’re both coming to/.test(s))
+      assert.ok(!/^Your paths are about to cross/.test(s))
+    }
+  })
+
+  test('it never leads with a plan when history exists', () => {
+    const withHistory = [
+      person('A', [sharedGathering({ id: 'x', basis: 'attended' }), sharedGathering({ id: 'y', basis: 'upcoming' })]),
+      person('B', [sharedGathering({ id: 'x', basis: 'attended' }), sharedGathering({ id: 'y', basis: 'attended' })]),
+      person('C', [sharedGathering({ id: 'x', basis: 'attended' }), sharedPathway()]),
+    ]
+    for (const p of withHistory) {
+      const s = reasonSentence(p)
+      assert.ok(!/^You’re both coming to/.test(s), `"${s}" leads with a plan`)
+      assert.ok(!/^Your paths are about to cross/.test(s), `"${s}" leads with a plan`)
+    }
+  })
+
+  test('it does not repeat the shared titles', () => {
+    const p = person('Sarah', [
+      sharedGathering({ id: 'a', title: 'Thursday EMBODY', basis: 'attended' }),
+      sharedGathering({ id: 'b', title: 'Full Moon', basis: 'attended' }),
+    ])
+    const s = reasonSentence(p)
+    assert.ok(!s.includes('Thursday EMBODY'))
+    assert.ok(!s.includes('Full Moon'))
+  })
+
+  test('it claims nothing about the relationship', () => {
+    const samples = [
+      reasonSentence(person('S', [sharedGathering({ id: 'a', basis: 'attended' }), sharedGathering({ id: 'b', basis: 'attended' })])),
+      reasonSentence(person('S', [sharedGathering({ basis: 'attended' }), sharedPathway()])),
+      reasonSentence(person('S', [sharedPathway({ id: 'p1' }), sharedPathway({ id: 'p2' })])),
+      reasonSentence(person('S', [sharedGathering({ id: 'a', basis: 'upcoming' }), sharedGathering({ id: 'b', basis: 'upcoming' })])),
+    ]
+    for (const s of samples) {
+      for (const word of ['met', 'know', 'knows', 'connected', 'friend', 'match', 'similar']) {
+        assert.ok(
+          !new RegExp(`\\b${word}\\b`, 'i').test(s),
+          `"${s}" must not claim "${word}"`,
+        )
+      }
+    }
+  })
+
+  test('no evidence means no sentence', () => {
+    assert.equal(reasonSentence(person('Nobody', [])), '')
   })
 })
 
-describe('contextsInCollective', () => {
-  test('keeps only this Collective’s contexts', () => {
-    const other = { ...COLLECTIVE, id: 'sp_2', name: 'The Grove' }
-    const all = [
-      gathering([named('Sarah')]),
-      pathway([named('Emma')], { collective: other }),
+describe('primaryCollective', () => {
+  test('picks the collective most of the evidence belongs to', () => {
+    const grove = { id: 'sp_2', slug: 'the-grove', name: 'The Grove', timezone: 'Australia/Melbourne' }
+    const p = person('Sarah', [
+      sharedGathering({ id: 'a', collective_id: grove.id }),
+      sharedGathering({ id: 'b', collective_id: grove.id }),
+      sharedPathway({ collective_id: COLLECTIVE.id }),
+    ], { collectives: [COLLECTIVE, grove] })
+    assert.equal(primaryCollective(p)?.name, 'The Grove')
+  })
+
+  test('null when a person shares no collective', () => {
+    assert.equal(primaryCollective(person('X', [], { collectives: [] })), null)
+  })
+})
+
+describe('featuredPeople', () => {
+  const p = (n: string) => person(n, [sharedGathering()])
+
+  test('takes exactly the count the server chose', () => {
+    const payload = {
+      people: [p('A'), p('B'), p('C'), p('D')],
+      featured_count: 3,
+      truncated: false,
+    }
+    assert.deepEqual(featuredPeople(payload).map((x) => x.display_name), ['A', 'B', 'C'])
+  })
+
+  test('a count of zero features nobody even when people exist', () => {
+    const payload = { people: [p('A')], featured_count: 0, truncated: false }
+    assert.deepEqual(featuredPeople(payload), [])
+  })
+
+  test('never exceeds the people it was given', () => {
+    const payload = { people: [p('A')], featured_count: 3, truncated: false }
+    assert.equal(featuredPeople(payload).length, 1)
+  })
+})
+
+describe('deriveContexts — the in-context view', () => {
+  test('one shared gathering, two people', () => {
+    const people = [
+      person('Sarah', [sharedGathering({ id: 'ev_1' })]),
+      person('James', [sharedGathering({ id: 'ev_1' })]),
     ]
-    const mine = contextsInCollective(all, 'sp_1')
+    const contexts = deriveContexts(people)
+    assert.equal(contexts.length, 1)
+    assert.deepEqual(contexts[0].people.map((p) => p.display_name), ['James', 'Sarah'])
+  })
+
+  test('unnamed people are counted here even though they get no card', () => {
+    const people = [
+      person('Sarah', [sharedGathering({ id: 'ev_1' })]),
+      person(null, [sharedGathering({ id: 'ev_1' })]),
+      { ...person(null, [sharedGathering({ id: 'ev_1' })]), id: 'u_quiet2' },
+    ]
+    const ctx = deriveContexts(people)[0]
+    assert.equal(ctx.people.length, 3)
+    assert.equal(
+      gatheringSentence(ctx.people, 'upcoming', 'here'),
+      'You’ll be here with Sarah and 2 other people.',
+    )
+  })
+
+  test('named people sort ahead of unnamed ones', () => {
+    const people = [
+      person(null, [sharedGathering({ id: 'ev_1' })]),
+      person('Sarah', [sharedGathering({ id: 'ev_1' })]),
+    ]
+    assert.equal(deriveContexts(people)[0].people[0].display_name, 'Sarah')
+  })
+
+  test('one person sharing two things yields two contexts', () => {
+    const people = [person('Sarah', [sharedGathering({ id: 'ev_1' }), sharedPathway()])]
+    assert.equal(deriveContexts(people).length, 2)
+  })
+
+  test('finds a gathering context by id', () => {
+    const people = [person('Sarah', [sharedGathering({ id: 'ev_9' })])]
+    assert.equal(findGatheringContext(people, 'ev_9')?.title, 'Thursday EMBODY')
+    assert.equal(findGatheringContext(people, 'ev_other'), null)
+  })
+
+  test('finds a pathway context by id', () => {
+    const people = [person('Emma', [sharedPathway({ id: 'pw_9' })])]
+    assert.equal(findPathwayContext(people, 'pw_9')?.title, 'Life in Alignment')
+  })
+
+  test('a gathering id never matches a pathway', () => {
+    const people = [person('Emma', [sharedPathway({ id: 'pw_1' })])]
+    assert.equal(findGatheringContext(people, 'pw_1'), null)
+  })
+
+  test('contextsInCollective keeps only that collective', () => {
+    const grove = { id: 'sp_2', slug: 'the-grove', name: 'The Grove', timezone: 'Australia/Melbourne' }
+    const people = [
+      person('Sarah', [sharedGathering({ id: 'a' })]),
+      person('Emma', [sharedPathway({ collective_id: grove.id })], {
+        collectives: [grove],
+      }),
+    ]
+    const mine = contextsInCollective(people, COLLECTIVE.id)
     assert.equal(mine.length, 1)
     assert.equal(mine[0].kind, 'gathering')
   })
-})
 
-// ---------------------------------------------------------------------------
-
-describe('grouping the destination', () => {
-  const soon = gathering([named('Sarah')], 'upcoming', { id: 'ev_soon' })
-  const past = gathering([named('James')], 'attended', { id: 'ev_past' })
-  const walk = pathway([named('Emma')])
-
-  test('splits into coming up, pathways and recent crossings', () => {
-    const g = groupContexts([soon, walk, past])
-    assert.deepEqual(g.comingUp.map((c) => c.id), ['ev_soon'])
-    assert.deepEqual(g.pathways.map((c) => c.id), ['pw_1'])
-    assert.deepEqual(g.recent.map((c) => c.id), ['ev_past'])
-  })
-
-  test('a group with nothing in it stays empty so the heading can be dropped', () => {
-    const g = groupContexts([soon])
-    assert.equal(g.pathways.length, 0)
-    assert.equal(g.recent.length, 0)
-    assert.ok(hasAnyContext(g))
-  })
-
-  test('no contexts at all means nothing to show', () => {
-    assert.equal(hasAnyContext(groupContexts([])), false)
-  })
-
-  test('contexts with nobody in them are dropped', () => {
-    assert.equal(hasAnyContext(groupContexts([gathering([])])), false)
-  })
-
-  test('the same person may appear in more than one context', () => {
-    const sarah = named('Sarah')
-    const g = groupContexts([
-      gathering([sarah], 'upcoming', { id: 'ev_a' }),
-      pathway([sarah]),
-    ])
-    assert.equal(g.comingUp[0].people[0].id, sarah.id)
-    assert.equal(g.pathways[0].people[0].id, sarah.id)
-  })
-
-  test('grouping is by shared thing, never by person', () => {
-    // Two different people at the same Gathering stay one context.
-    const g = groupContexts([gathering([named('Sarah'), named('James')])])
-    assert.equal(g.comingUp.length, 1)
-    assert.equal(g.comingUp[0].people.length, 2)
-  })
-})
-
-describe('contextSentence dispatch', () => {
-  test('picks the gathering voice for a gathering', () => {
-    assert.match(contextSentence(gathering([named('Sarah')])), /You’ll be there/)
-  })
-  test('picks the pathway voice for a pathway', () => {
-    assert.match(contextSentence(pathway([named('Emma')])), /moving through/)
+  test('contextSentence dispatches on kind', () => {
+    const g = deriveContexts([person('Sarah', [sharedGathering()])])[0]
+    const p = deriveContexts([person('Emma', [sharedPathway()])])[0]
+    assert.match(contextSentence(g), /You’ll be there/)
+    assert.match(contextSentence(p), /moving through/)
   })
 })

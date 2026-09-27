@@ -9,8 +9,8 @@ import {
   getSpace,
   getSpaceEvents,
 } from '@/lib/serverApi'
-import { groupContexts, hasAnyContext } from '@/lib/waysToConnect'
-import SharedContextGroups from '@/components/connections/SharedContextGroups'
+import { featuredPeople } from '@/lib/waysToConnect'
+import PeopleYouveCrossed from '@/components/connections/PeopleYouveCrossed'
 import WaysToConnectEmptyState, {
   buildDoorway,
 } from '@/components/connections/WaysToConnectEmptyState'
@@ -93,11 +93,12 @@ async function findDoorway() {
 }
 
 /**
- * Ways to Connect — shared experience first, people second.
+ * Ways to Connect — people first, with the shared experiences that
+ * explain why each one is here.
  *
  * The page has four states and they are genuinely different things:
- * contexts to show, nothing shared yet, the surface is not open, and
- * we could not ask. The third and fourth must never be rendered as
+ * people to introduce, nobody shared yet, the surface is not open,
+ * and we could not ask. The third and fourth must never be rendered as
  * the second — "you have not crossed paths with anyone" is a claim
  * about someone's life, and a failed request is not evidence for it.
  *
@@ -117,12 +118,12 @@ export default async function WaysToConnectPage() {
   if (result.status === 'unavailable' || result.status === 'error') {
     body = <WaysToConnectUnavailable reason={result.status} />
   } else {
-    const grouped = groupContexts(result.data.contexts)
-    body = hasAnyContext(grouped) ? (
-      <SharedContextGroups
-        grouped={grouped}
-        truncated={result.data.truncated}
-      />
+    // Featured people only. The payload's tail exists for the
+    // in-context lines; the destination shows the few the server
+    // chose and offers no way to reach past them.
+    const featured = featuredPeople(result.data)
+    body = featured.length > 0 ? (
+      <PeopleYouveCrossed people={featured} />
     ) : (
       <WaysToConnectEmptyState doorway={await findDoorway()} />
     )
