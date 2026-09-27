@@ -152,7 +152,7 @@ services:
       # sibling DISCOVERY_PILLAR_ENABLED on fc-api must be turned on
       # first, or the page renders and every /api/places call 503s.
       - key: NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED
-        value: "false"
+        value: "true"
       # Ways to Connect, gated separately from Discover Places. Same
       # build-time semantics. Its backend sibling
       # WAYS_TO_CONNECT_ENABLED on fc-api must be turned on first, or
@@ -243,8 +243,14 @@ services:
       # ``backend/app/core/config.py:creator_plan_guard_enabled``).
       - key: CREATOR_PLAN_GUARD_ENABLED
         sync: false
+      # Discover Places' read API. LIVE — and declared here on purpose:
+      # this value is blueprint-managed, so a Dashboard-only change is
+      # reverted by the next Blueprint sync. That is what silently took
+      # the Discover Places doorway off Your World; the surface stayed
+      # built and the flag simply went back to false. Keep this and its
+      # fc-web sibling in step — see ``discoveryPillar.test.ts``.
       - key: DISCOVERY_PILLAR_ENABLED
-        value: "false"
+        value: "true"
       # Ways to Connect's read API. Off until the surface is ready;
       # the application default is False either way (see
       # ``backend/app/core/config.py:ways_to_connect_enabled``).
