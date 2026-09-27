@@ -1,6 +1,15 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
-sqlalchemy>=2.0.0
+# Capped below 2.1 deliberately. SQLAlchemy 2.1.0 (2026-09-24) changed
+# the default DBAPI for a plain ``postgresql://`` URL from psycopg2 to
+# psycopg (v3). Render's fc-db hands us exactly that URL shape, and the
+# first fresh build after 2.1.0 landed therefore resolved a driver this
+# project has never declared — alembic's pre-deploy died on
+# ``ModuleNotFoundError: No module named 'psycopg'`` while the running
+# image, built on 2.0.54, kept working. Moving to psycopg3 is a
+# considered upgrade, not a hotfix; the cap keeps the driver decision
+# ours. ``tests/test_database_driver_contract.py`` fails if it drifts.
+sqlalchemy>=2.0.0,<2.1
 psycopg2-binary>=2.9.0
 python-jose[cryptography]>=3.3.0
 bcrypt==4.3.0
