@@ -1,6 +1,8 @@
 import Link from 'next/link'
-import { getActiveCreatorSpace, getCreatorEvents } from '@/lib/serverApi'
+import { getActiveCreatorSpace, getCreatorEvents, getCreatorSpace } from '@/lib/serverApi'
 import type { CreatorEvent } from '@/types/platform'
+import { collectiveTimezone } from '@/lib/collectiveTimezone'
+import { parseServerDatetime } from '@/lib/dateTime'
 import CreatorEventRow from '@/app/creator/spaces/[slug]/events/CreatorEventRow'
 
 /**
@@ -15,16 +17,20 @@ import CreatorEventRow from '@/app/creator/spaces/[slug]/events/CreatorEventRow'
 
 export default async function GatheringsArchivePage() {
   const primarySpace = await getActiveCreatorSpace()
-  const events: CreatorEvent[] = primarySpace
-    ? await getCreatorEvents(primarySpace.slug, 'archive')
-    : []
+  const [events, space] = primarySpace
+    ? await Promise.all([
+        getCreatorEvents(primarySpace.slug, 'archive') as Promise<CreatorEvent[]>,
+        getCreatorSpace(primarySpace.slug) as Promise<{ timezone?: string | null } | null>,
+      ])
+    : [[] as CreatorEvent[], null]
+  const timezone = collectiveTimezone(space)
 
   const now = Date.now()
   const hasFutureCancelled = events.some((e) => {
     if (e.status !== 'cancelled') return false
     const endMs = e.ends_at
-      ? Date.parse(e.ends_at)
-      : Date.parse(e.starts_at) + 60 * 60 * 1000
+      ? parseServerDatetime(e.ends_at).getTime()
+      : parseServerDatetime(e.starts_at).getTime() + 60 * 60 * 1000
     return endMs > now
   })
   const title = hasFutureCancelled ? 'Gathering Archive' : 'Past Gatherings'
@@ -71,7 +77,7 @@ export default async function GatheringsArchivePage() {
       ) : (
         <div className="flex flex-col gap-3">
           {events.map((event) => (
-            <CreatorEventRow key={event.id} event={event} slug={primarySpace.slug} />
+            <CreatorEventRow key={event.id} event={event} slug={primarySpace.slug} timezone={timezone} />
           ))}
         </div>
       )}

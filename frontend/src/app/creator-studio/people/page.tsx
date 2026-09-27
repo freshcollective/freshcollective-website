@@ -1,6 +1,7 @@
 import { getActiveCreatorSpace, getCreatorMembers, getCreatorInvitations, getCreatorAccessRequests, getCreatorSpace, getManualMembers } from '@/lib/serverApi'
 import type { AccessRequest, CreatorMemberDetail, CreatorSpaceDetail, ManualMember, SpaceInvitation } from '@/types/platform'
 import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
+import { collectiveTimezone } from '@/lib/collectiveTimezone'
 import PeopleClient from './PeopleClient'
 
 export default async function CreatorPeoplePage() {
@@ -43,6 +44,7 @@ export default async function CreatorPeoplePage() {
       spaceIsPublic={activeSpace.is_public}
       headerLocation={spaceDetail?.location ?? null}
       headerCoverImageUrl={spaceDetail?.cover_image_url ?? null}
+      spaceTimezone={collectiveTimezone(spaceDetail)}
     />
   )
 }

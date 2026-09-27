@@ -14,6 +14,7 @@ import SeriesSchedule from './SeriesSchedule'
 import { SidebarWaysToJoin, SidebarYourAccess } from './SeriesSidebar'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import type { PathwayAboutBlock } from '@/types/platform'
+import { formatCalendarDate } from '@/lib/dateTime'
 
 /**
  * Member Gathering Series page (M1).
@@ -105,15 +106,13 @@ interface PaymentOptionOut {
   viewer_holds_this_option: boolean
 }
 
+/** A Series' dates are CALENDAR days, stored ``…T00:00:00`` /
+ *  ``…T23:59:59``. ``formatCalendarDate`` reads the day directly —
+ *  running 23:59:59 through a timezone rolls the end into the next day. */
 function formatDateRange(startsAt: string, endsAt: string | null): string {
-  const start = new Date(startsAt).toLocaleDateString('en-AU', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
+  const start = formatCalendarDate(startsAt)
   if (!endsAt) return `Starts ${start} · Ongoing`
-  const end = new Date(endsAt).toLocaleDateString('en-AU', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
-  return `${start} – ${end}`
+  return `${start} – ${formatCalendarDate(endsAt)}`
 }
 
 export default async function MemberGatheringSeriesPage({ params }: Props) {

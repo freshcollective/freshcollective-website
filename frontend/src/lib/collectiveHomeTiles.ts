@@ -19,6 +19,8 @@
  */
 
 import type { SpaceResponse } from '@/types/platform'
+import { collectiveTimezone } from './collectiveTimezone.ts'
+import { parseServerDatetime } from './dateTime.ts'
 
 /** Platform copy, used whenever a creator has not written their own. */
 export const HOME_TILE_DEFAULT_COPY = {
@@ -105,9 +107,13 @@ function gatheringsMeta(space: SpaceResponse): string {
   const parts = [`${count} upcoming`]
   if (space.next_gathering_starts_at) {
     parts.push(
-      `next ${new Date(space.next_gathering_starts_at).toLocaleDateString(undefined, {
+      // The Collective's zone, via the canonical parser — a bare
+      // ``new Date`` on a naive-UTC string put a Saturday 9 am Melbourne
+      // Gathering on the Friday.
+      `next ${parseServerDatetime(space.next_gathering_starts_at).toLocaleDateString('en-AU', {
         day: 'numeric',
         month: 'short',
+        timeZone: collectiveTimezone(space),
       })}`,
     )
   }

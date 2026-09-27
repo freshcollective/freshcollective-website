@@ -5,6 +5,7 @@ import {
   attendanceFormatLabel,
   accessTypeMeta,
 } from '@/lib/gatheringTypes'
+import { formatGatheringTimeFriendly, parseServerDatetime } from '@/lib/dateTime'
 
 /**
  * CreatorEventRow — the compact list row used on both the main
@@ -15,14 +16,16 @@ import {
  * always points at the same detail URL regardless of context.
  */
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-AU', {
+function formatDate(iso: string, timezone: string) {
+  // In the Collective's zone, via the canonical parser. A bare
+  // ``new Date`` on a naive-UTC string rendered these rows in whatever
+  // zone the server was in — UTC in production.
+  return `${parseServerDatetime(iso).toLocaleDateString('en-AU', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+    timeZone: timezone,
+  })}, ${formatGatheringTimeFriendly(iso, timezone)}`
 }
 
 /** Compact price for the list row. E.g. 2500 + 'AUD' → 'A$25'. */
@@ -42,9 +45,11 @@ function formatTicketPrice(cents: number, currency: string): string {
 interface Props {
   event: CreatorEvent
   slug: string
+  /** The Collective's timezone — a Gathering has none of its own. */
+  timezone: string
 }
 
-export default function CreatorEventRow({ event, slug }: Props) {
+export default function CreatorEventRow({ event, slug, timezone }: Props) {
   const isCancelled = event.status === 'cancelled'
   const access = accessTypeMeta(event.booking_access_type)
   const typeIcon = gatheringIcon(event.gathering_type)
@@ -88,7 +93,7 @@ export default function CreatorEventRow({ event, slug }: Props) {
           ) : null}
         </div>
         <p className="text-xs text-black">
-          {formatDate(event.starts_at)} · {formatLabel}
+          {formatDate(event.starts_at, timezone)} · {formatLabel}
           {event.requires_booking && (
             <> · {event.booked_count}{event.capacity ? `/${event.capacity}` : ''} reserved</>
           )}

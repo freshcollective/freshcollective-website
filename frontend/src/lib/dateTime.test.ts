@@ -141,3 +141,126 @@ describe('parseServerDatetime — Melbourne wall-clock rendering', () => {
     assert.ok(fmt.includes('am'), `expected "am" in ${fmt}`)
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// The Gathering-time sweep — EMBODY Term 4, the cases that were reported
+// ---------------------------------------------------------------------------
+//
+// Every surface below stored the right instant and rendered it wrong: a
+// bare ``new Date`` (which parses a naive string as LOCAL) formatted with
+// no ``timeZone`` (which renders in the server's zone — UTC in
+// production). These pin the canonical helpers the surfaces now call.
+
+// @ts-expect-error - Node-native import path
+import {
+  formatGatheringDate,
+  formatGatheringTimeFriendly,
+  gatheringWeekdaySlot,
+} from './dateTime.ts'
+
+const MEL = 'Australia/Melbourne'
+
+/** Mon 5 Oct 2026 6:00 pm AEDT — stored naive as 07:00 UTC. */
+const MON_6PM = '2026-10-05T07:00:00'
+/** Thu 8 Oct 2026 6:00 pm AEDT — stored naive as 07:00 UTC. */
+const THU_6PM = '2026-10-08T07:00:00'
+/** Sat 10 Oct 2026 9:00 am AEDT — stored naive as FRI 9 Oct 22:00 UTC. */
+const SAT_9AM = '2026-10-09T22:00:00'
+
+
+describe('formatGatheringTimeFriendly — the compact 12-hour style', () => {
+  test('a 6 pm Melbourne Gathering reads as 6:00 pm, not 7:00 am', () => {
+    // The reported symptom, in one assertion.
+    assert.equal(formatGatheringTimeFriendly(MON_6PM, MEL), '6:00 pm')
+  })
+
+  test('the Thursday session reads the same way', () => {
+    assert.equal(formatGatheringTimeFriendly(THU_6PM, MEL), '6:00 pm')
+  })
+
+  test('the Saturday morning session reads as 9:00 am', () => {
+    assert.equal(formatGatheringTimeFriendly(SAT_9AM, MEL), '9:00 am')
+  })
+
+  test('the timezone argument is genuinely used', () => {
+    // Same instant, two zones. If ``timeZone`` were ignored these would
+    // match and the whole fix would be inert.
+    assert.notEqual(
+      formatGatheringTimeFriendly(MON_6PM, MEL),
+      formatGatheringTimeFriendly(MON_6PM, 'UTC'),
+    )
+    assert.equal(formatGatheringTimeFriendly(MON_6PM, 'UTC'), '7:00 am')
+  })
+
+  test('a string that already carries Z is not double-shifted', () => {
+    assert.equal(formatGatheringTimeFriendly('2026-10-05T07:00:00Z', MEL), '6:00 pm')
+  })
+})
+
+
+describe('formatGatheringDate — the calendar date must not roll back', () => {
+  test('Melbourne Saturday 9 am stays SATURDAY the 10th', () => {
+    // The sharpest case: the stored instant is Friday the 9th in UTC.
+    // Your World showed "Fri 9 Oct 10:00 pm".
+    const { day, month } = formatGatheringDate(SAT_9AM, MEL)
+    assert.equal(day, '10')
+    assert.equal(month, 'OCT')
+  })
+
+  test('the Monday case keeps its own day', () => {
+    const { day, month } = formatGatheringDate(MON_6PM, MEL)
+    assert.equal(day, '05')
+    assert.equal(month, 'OCT')
+  })
+
+  test('without the Collective timezone the Saturday case rolls back to Friday', () => {
+    // Pins WHY the timezone has to be threaded: this is the old output.
+    const { day } = formatGatheringDate(SAT_9AM, 'UTC')
+    assert.equal(day, '09')
+  })
+})
+
+
+describe('gatheringWeekdaySlot — grouping follows the Collective, not the runtime', () => {
+  test('a Saturday 9 am Melbourne session groups under Saturday', () => {
+    // Creator Studio filed this under Friday, because ``d.getDay()``
+    // answers in the runtime's zone.
+    const slot = gatheringWeekdaySlot(SAT_9AM, MEL)
+    assert.equal(slot.weekdayIndex, 6, 'Saturday is 6, Sunday-first')
+    assert.equal(slot.time24, '09:00')
+  })
+
+  test('the same instant groups under Friday in UTC — the old behaviour', () => {
+    const slot = gatheringWeekdaySlot(SAT_9AM, 'UTC')
+    assert.equal(slot.weekdayIndex, 5)
+    assert.equal(slot.time24, '22:00')
+  })
+
+  test('a Monday 6 pm run groups under Monday at 18:00', () => {
+    const slot = gatheringWeekdaySlot(MON_6PM, MEL)
+    assert.equal(slot.weekdayIndex, 1)
+    assert.equal(slot.time24, '18:00')
+  })
+
+  test('Monday and Thursday 6 pm sessions land in different groups', () => {
+    const mon = gatheringWeekdaySlot(MON_6PM, MEL)
+    const thu = gatheringWeekdaySlot(THU_6PM, MEL)
+    assert.equal(thu.weekdayIndex, 4)
+    assert.notEqual(
+      `${mon.weekdayIndex}|${mon.time24}`,
+      `${thu.weekdayIndex}|${thu.time24}`,
+    )
+  })
+
+  test('every occurrence of one weekly run shares a key across a DST boundary', () => {
+    // AEDT began Sun 4 Oct 2026. A run that starts in AEST and continues
+    // into AEDT must stay ONE group — the stored UTC hour shifts, the
+    // Melbourne wall clock does not.
+    const beforeDst = '2026-10-01T08:00:00'  // Thu 1 Oct 6 pm AEST (+10)
+    const afterDst  = THU_6PM                 // Thu 8 Oct 6 pm AEDT (+11)
+    const a = gatheringWeekdaySlot(beforeDst, MEL)
+    const b = gatheringWeekdaySlot(afterDst, MEL)
+    assert.deepEqual(a, b, 'a weekly 6 pm run must not split at DST')
+  })
+})

@@ -65,6 +65,46 @@ export function gatheringDateKey(iso: string, timezone: string): string {
   return parseServerDatetime(iso).toLocaleDateString('en-CA', { timeZone: timezone })
 }
 
+/** Sunday-first, matching ``Date.prototype.getDay``. */
+const _WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+}
+
+export interface GatheringWeekdaySlot {
+  /** 0 = Sunday … 6 = Saturday, **in the given timezone**. */
+  weekdayIndex: number
+  /** "18:00" — 24-hour, zero-padded, in the given timezone. */
+  time24: string
+}
+
+/**
+ * Which weekday-and-time slot a Gathering occupies, in the Collective's
+ * timezone. The stable key for grouping a recurring run.
+ *
+ * Not a formatter — a placement key, like ``gatheringDateKey`` above.
+ * It exists because ``d.getDay()`` and ``d.getHours()`` answer in
+ * whatever zone the *runtime* happens to be in, so the Creator Studio
+ * grouping filed a Saturday 9 am Melbourne session under Friday and
+ * labelled a Monday 6 pm run "Mondays at 7:00 am".
+ */
+export function gatheringWeekdaySlot(iso: string, timezone: string): GatheringWeekdaySlot {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(parseServerDatetime(iso))
+  const weekday = parts.find(p => p.type === 'weekday')?.value ?? 'Sun'
+  const hour = parts.find(p => p.type === 'hour')?.value ?? '00'
+  const minute = parts.find(p => p.type === 'minute')?.value ?? '00'
+  return {
+    // ``hour12: false`` yields "24" for midnight on some runtimes.
+    weekdayIndex: _WEEKDAY_INDEX[weekday] ?? 0,
+    time24: `${hour === '24' ? '00' : hour}:${minute}`,
+  }
+}
+
 /** Date key for today in the given timezone. */
 export function todayGatheringKey(timezone: string): string {
   return gatheringDateKey(new Date().toISOString(), timezone)
@@ -93,6 +133,29 @@ export function formatGatheringTimeShort(iso: string, timezone: string): string 
     minute: '2-digit',
     timeZone: timezone,
   })
+}
+
+/**
+ * "6:00 pm" — compact 12-hour clock in the Collective's timezone.
+ *
+ * The friendly style the dashboard and the Creator Studio lists want.
+ * Several surfaces had hand-rolled this with ``hour12: true`` and no
+ * ``timeZone``, which is how a 6 pm Melbourne Gathering came to read as
+ * 7:00 am: the server renders in its own zone, and production runs UTC.
+ * One implementation so the next compact list has nothing to get wrong.
+ */
+export function formatGatheringTimeFriendly(iso: string, timezone: string): string {
+  return parseServerDatetime(iso)
+    .toLocaleTimeString('en-AU', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: timezone,
+    })
+    // en-AU yields "6:00 pm" already; normalise the odd runtime that
+    // returns a narrow no-break space or uppercase meridiem.
+    .replace(/\u202f/g, ' ')
+    .toLowerCase()
 }
 
 /** { day: "28", month: "MAY", time: "10:00 AEST" } */

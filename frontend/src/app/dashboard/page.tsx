@@ -12,6 +12,8 @@ import {
   getSpace,
   getSpaceEvents,
 } from '@/lib/serverApi'
+import { collectiveTimezone } from '@/lib/collectiveTimezone'
+import { formatGatheringTimeFriendly, parseServerDatetime } from '@/lib/dateTime'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
 import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureFlags'
 import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary, UserProfile } from '@/types/platform'
@@ -90,6 +92,10 @@ interface UpcomingEvent {
   event: EventSummary
   spaceSlug: string
   spaceName: string
+  /** The Collective's zone. A Gathering has no timezone of its own —
+   *  the Collective owns it — and without carrying it here the row
+   *  rendered in the *server's* zone, which is UTC in production. */
+  timezone: string
   locationArt: string | null
   fallbackBg: string
 }
@@ -136,14 +142,19 @@ function filterUpcoming(cards: MembershipCard[]): { soon: UpcomingEvent[]; hasMo
         event: e,
         spaceSlug: c.membership.space_slug,
         spaceName: c.membership.space_name,
+        timezone: collectiveTimezone(c.space),
         locationArt: locArt ?? cover ?? null,
         fallbackBg: getCollectiveCoverStyle(c.membership.space_slug).background,
       }))
     })
-    .filter((u) => u.event.status === 'active' && new Date(u.event.starts_at).getTime() > now)
-    .sort((a, b) => new Date(a.event.starts_at).getTime() - new Date(b.event.starts_at).getTime())
+    // ``parseServerDatetime`` rather than ``new Date``: the API emits
+    // naive-UTC strings with no designator, which ES2019+ parses as
+    // LOCAL. Identical on a UTC host, and off by the offset anywhere
+    // else — which would silently shift this whole window.
+    .filter((u) => u.event.status === 'active' && parseServerDatetime(u.event.starts_at).getTime() > now)
+    .sort((a, b) => parseServerDatetime(a.event.starts_at).getTime() - parseServerDatetime(b.event.starts_at).getTime())
 
-  const inWindow = all.filter((u) => new Date(u.event.starts_at).getTime() <= windowEnd)
+  const inWindow = all.filter((u) => parseServerDatetime(u.event.starts_at).getTime() <= windowEnd)
   const soon = inWindow.slice(0, 4)
   const hasMore = all.length > soon.length
   return { soon, hasMore }
@@ -985,12 +996,16 @@ function CreatorStudioCard({ artUrl }: { artUrl?: string | null }) {
 // ---------------------------------------------------------------------------
 
 function SidebarGatheringRow({ g }: { g: UpcomingEvent }) {
-  const date = new Date(g.event.starts_at)
-  const dayNum = date.toLocaleDateString('en-AU', { day: 'numeric' })
-  const monthShort = date.toLocaleDateString('en-AU', { month: 'short' }).toUpperCase()
-  const time = date
-    .toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })
-    .toLowerCase().replace(/\s+/g, '')
+  // Through the canonical helpers, in the Collective's zone. These three
+  // values were derived from a bare ``new Date`` with no ``timeZone``,
+  // so a 6 pm Melbourne Gathering read as 7:00 am and a Saturday 9 am
+  // one read as the Friday before.
+  const date = parseServerDatetime(g.event.starts_at)
+  const dayNum = date.toLocaleDateString('en-AU', { day: 'numeric', timeZone: g.timezone })
+  const monthShort = date
+    .toLocaleDateString('en-AU', { month: 'short', timeZone: g.timezone })
+    .toUpperCase()
+  const time = formatGatheringTimeFriendly(g.event.starts_at, g.timezone)
 
   // State resolution matches the source-of-truth flags on EventSummary.
   // Paid Gatherings are labelled distinctly so a ticketed row never uses

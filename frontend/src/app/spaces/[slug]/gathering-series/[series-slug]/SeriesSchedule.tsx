@@ -8,6 +8,7 @@ import {
   rgbaFromHex,
   type CollectivePaletteMeta,
 } from '@/lib/collectivePalette'
+import { DEFAULT_COLLECTIVE_TIMEZONE } from '@/lib/collectiveTimezone'
 
 /**
  * Compact schedule for a Gathering Series — Calendar | List toggle.
@@ -158,7 +159,7 @@ interface Props {
 
 export default function SeriesSchedule({
   spaceSlug, upcoming, past, memberHasSeriesAccess, palette,
-  timezone = 'Australia/Melbourne',
+  timezone = DEFAULT_COLLECTIVE_TIMEZONE,
 }: Props) {
   const [view, setView] = useState<ScheduleView>('calendar')
   const [monthStart, setMonthStart] = useState<Date>(() => pickInitialMonth(upcoming, past))

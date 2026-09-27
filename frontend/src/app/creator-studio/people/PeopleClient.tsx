@@ -4,6 +4,11 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import type { AccessRequest, AccessPassAdminSummary, AddMemberResponse, CreatorMemberDetail, CreatorPathway, DirectMessageItem, ManualMember, ManualMemberPathwayAccess, MemberBookingItem, MemberPathwayAccessItem, MessageThreadDetail, SpaceInvitation } from '@/types/platform'
 import { apiUrl } from '@/lib/api'
+import {
+  formatGatheringTimeFriendly,
+  gatheringWeekdaySlot,
+  parseServerDatetime,
+} from '@/lib/dateTime'
 import { formatPathwayPrice } from '@/lib/pathwayAccess'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import { Button } from '@/components/platform/Button'
@@ -37,12 +42,28 @@ function roleBadgeStyle(role: string): { background: string; color: string } {
   return                           { background: 'rgba(56,160,158,0.09)',  color: '#38A09E' }
 }
 
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+// Every one of these took a bare ``new Date(iso)``. The API emits
+// naive-UTC strings with no designator, which ES2019+ parses as LOCAL,
+// and the format calls carried no ``timeZone`` — so a 6 pm Melbourne
+// Gathering read as 07:00 and a Saturday 9 am one read as the Friday.
+function formatDate(iso: string, timezone: string) {
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: timezone,
+  })
 }
 
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+function formatDateTime(iso: string, timezone: string) {
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZone: timezone,
+  })
+}
+
+/** "Sat 10 Oct" — the compact row label used throughout this panel. */
+function formatGatheringDayLabel(iso: string, timezone: string) {
+  return parseServerDatetime(iso).toLocaleDateString('en-AU', {
+    weekday: 'short', day: 'numeric', month: 'short', timeZone: timezone,
+  })
 }
 
 function initials(name: string) {
@@ -155,8 +176,9 @@ function AccessPill({ state, label }: { state: string; label: string }) {
   )
 }
 
-function PathwayAccessRow({ item, spaceSlug, userId, onRevoked }: {
+function PathwayAccessRow({ item, spaceSlug, userId, onRevoked, spaceTimezone }: {
   item: MemberPathwayAccessItem; spaceSlug: string; userId: string; onRevoked: () => void
+  spaceTimezone: string
 }) {
   const [revoking, setRevoking] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -207,7 +229,7 @@ function PathwayAccessRow({ item, spaceSlug, userId, onRevoked }: {
             <div className="h-full rounded-full bg-teal-500 transition-all" style={{ width: `${item.progress_pct}%` }} />
           </div>
           <p className="mt-1.5 text-[11px] text-black">
-            {item.last_activity_at ? `Last active: ${formatDate(item.last_activity_at)}` : 'No activity yet'}
+            {item.last_activity_at ? `Last active: ${formatDate(item.last_activity_at, spaceTimezone)}` : 'No activity yet'}
           </p>
         </div>
       )}
@@ -317,7 +339,7 @@ function GrantAccessModal({ spaceSlug, userId, onClose, onGranted }: {
   )
 }
 
-function PathwayAccessSection({ member, spaceSlug }: { member: CreatorMemberDetail; spaceSlug: string }) {
+function PathwayAccessSection({ member, spaceSlug, spaceTimezone }: { member: CreatorMemberDetail; spaceSlug: string; spaceTimezone: string }) {
   const [items, setItems] = useState<MemberPathwayAccessItem[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [showGrant, setShowGrant] = useState(false)
@@ -364,7 +386,7 @@ function PathwayAccessSection({ member, spaceSlug }: { member: CreatorMemberDeta
       {!loading && items && items.length > 0 && (
         <div className="flex flex-col gap-2">
           {items.map((item) => (
-            <PathwayAccessRow key={item.id} item={item} spaceSlug={spaceSlug} userId={member.id} onRevoked={loadItems} />
+            <PathwayAccessRow key={item.id} item={item} spaceSlug={spaceSlug} spaceTimezone={spaceTimezone} userId={member.id} onRevoked={loadItems} />
           ))}
         </div>
       )}
@@ -594,7 +616,7 @@ const PASS_STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   cancelled: { bg: 'rgba(239,68,68,0.08)',   color: '#dc2626' },
 }
 
-function MemberPassesSection({ member, spaceSlug }: { member: CreatorMemberDetail; spaceSlug: string }) {
+function MemberPassesSection({ member, spaceSlug, spaceTimezone }: { member: CreatorMemberDetail; spaceSlug: string; spaceTimezone: string }) {
   const [passes, setPasses] = useState<AccessPassAdminSummary[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [showGrantModal, setShowGrantModal] = useState(false)
@@ -638,7 +660,7 @@ function MemberPassesSection({ member, spaceSlug }: { member: CreatorMemberDetai
           {passes.map(pass => {
             const statusStyle = PASS_STATUS_STYLE[pass.status] ?? PASS_STATUS_STYLE.expired
             const validUntil = pass.valid_until
-              ? new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
+              ? formatDate(pass.valid_until, spaceTimezone)
               : null
             return (
               <div key={pass.id} className="rounded-xl border border-border bg-white p-3.5">
@@ -738,7 +760,7 @@ interface EventPattern {
   events: SpaceEvent[]
 }
 
-function PassInfoCard({ pass, deductNote }: { pass: ActivePassInfo; deductNote?: string }) {
+function PassInfoCard({ pass, deductNote, spaceTimezone }: { pass: ActivePassInfo; deductNote?: string; spaceTimezone: string }) {
   return (
     <div className="rounded-xl border border-teal-100 bg-teal-50/40 px-3 py-2.5">
       <p className="text-[12px] font-semibold text-teal-700">{pass.option_name ?? 'Active pass'}</p>
@@ -748,7 +770,7 @@ function PassInfoCard({ pass, deductNote }: { pass: ActivePassInfo; deductNote?:
       </p>
       {pass.valid_until && (
         <p className="mt-0.5 text-[11px] text-black">
-          Valid until {new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}
+          Valid until {parseServerDatetime(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: spaceTimezone })}
         </p>
       )}
       {deductNote && <p className="mt-1.5 text-[11px] text-teal-600">{deductNote}</p>}
@@ -756,11 +778,12 @@ function PassInfoCard({ pass, deductNote }: { pass: ActivePassInfo; deductNote?:
   )
 }
 
-function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
+function BookSessionModal({ spaceSlug, member, onClose, onBooked, spaceTimezone }: {
   spaceSlug: string
   member: CreatorMemberDetail
   onClose: () => void
   onBooked: () => void
+  spaceTimezone: string
 }) {
   // Shared data
   const [events, setEvents] = useState<SpaceEvent[]>([])
@@ -792,7 +815,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
         .catch(() => null),
     ]).then(([eventsData, passData]: [SpaceEvent[], ActivePassInfo | null]) => {
       const now = new Date()
-      const upcoming = (eventsData || []).filter((e: SpaceEvent) => new Date(e.starts_at) > now)
+      const upcoming = (eventsData || []).filter((e: SpaceEvent) => parseServerDatetime(e.starts_at) > now)
       setEvents(upcoming)
       if (upcoming.length > 0) setSelectedEventId(upcoming[0].id)
       setActivePass(passData)
@@ -803,10 +826,10 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
   // Compute event patterns from upcoming events, filtered by pass dates if in pass mode
   const eligibleEvents = useMemo(() => {
     if (recurringMode !== 'pass' || !activePass) return events
-    const from = activePass.valid_from ? new Date(activePass.valid_from) : null
-    const until = activePass.valid_until ? new Date(activePass.valid_until) : null
+    const from = activePass.valid_from ? parseServerDatetime(activePass.valid_from) : null
+    const until = activePass.valid_until ? parseServerDatetime(activePass.valid_until) : null
     return events.filter(e => {
-      const d = new Date(e.starts_at)
+      const d = parseServerDatetime(e.starts_at)
       if (from && d < from) return false
       if (until && d > until) return false
       return true
@@ -814,32 +837,32 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
   }, [events, recurringMode, activePass])
 
   const patterns = useMemo((): EventPattern[] => {
+    // Grouped by weekday-and-time **in the Collective's zone**. This used
+    // ``d.getDay()`` / ``d.getHours()``, which answer in whatever zone the
+    // runtime is in — so a Saturday 9 am Melbourne session was filed under
+    // Friday, and a Monday 6 pm run was labelled "Mondays at 7:00 am".
     const map = new Map<string, SpaceEvent[]>()
     for (const ev of eligibleEvents) {
-      const d = new Date(ev.starts_at)
-      const weekday = d.getDay() // 0=Sun, 1=Mon…
-      const jsWeekday = weekday // 0=Sun
-      // Convert JS weekday (0=Sun) to Python weekday (0=Mon)
-      const h = d.getHours().toString().padStart(2, '0')
-      const m = d.getMinutes().toString().padStart(2, '0')
-      const key = `${jsWeekday}|${h}:${m}`
+      const slot = gatheringWeekdaySlot(ev.starts_at, spaceTimezone)
+      const key = `${slot.weekdayIndex}|${slot.time24}`
       if (!map.has(key)) map.set(key, [])
       map.get(key)!.push(ev)
     }
+    const byStart = (a: SpaceEvent, b: SpaceEvent) =>
+      parseServerDatetime(a.starts_at).getTime() - parseServerDatetime(b.starts_at).getTime()
     return Array.from(map.entries()).map(([key, evs]) => {
-      const d = new Date(evs[0].starts_at)
-      const weekday = d.getDay()
+      const weekday = gatheringWeekdaySlot(evs[0].starts_at, spaceTimezone).weekdayIndex
       const weekdayName = WEEKDAY_PLURAL[weekday === 0 ? 6 : weekday - 1] ?? WEEKDAY_PLURAL[weekday]
-      const timeStr = d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true })
-      return { key, label: `${weekdayName} at ${timeStr}`, events: evs.sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()) }
-    }).sort((a, b) => new Date(a.events[0].starts_at).getTime() - new Date(b.events[0].starts_at).getTime())
-  }, [eligibleEvents])
+      const timeStr = formatGatheringTimeFriendly(evs[0].starts_at, spaceTimezone)
+      return { key, label: `${weekdayName} at ${timeStr}`, events: [...evs].sort(byStart) }
+    }).sort((a, b) => byStart(a.events[0], b.events[0]))
+  }, [eligibleEvents, spaceTimezone])
 
   const previewEvents = useMemo(() => {
     return patterns
       .filter(p => selectedPatterns.has(p.key))
       .flatMap(p => p.events)
-      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+      .sort((a, b) => parseServerDatetime(a.starts_at).getTime() - parseServerDatetime(b.starts_at).getTime())
   }, [patterns, selectedPatterns])
 
   function togglePattern(key: string) {
@@ -938,7 +961,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
               <p className="mt-0.5 text-[11px] text-amber-600">This member has no active pass. Use Manual override or grant them a pass first.</p>
             </div>
           )}
-          {activePass && <PassInfoCard pass={activePass} deductNote="Sessions will be deducted from this pass." />}
+          {activePass && <PassInfoCard pass={activePass} spaceTimezone={spaceTimezone} deductNote="Sessions will be deducted from this pass." />}
         </div>
       )}
       {passMode === 'override' && (
@@ -987,7 +1010,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                         <div>
                           <span className="text-[12px] font-medium text-teal-800">{item.event_title}</span>
                           <span className="ml-2 text-[11px] text-black">
-                            {new Date(item.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
+                            {formatGatheringDayLabel(item.starts_at, spaceTimezone)}
                           </span>
                         </div>
                       </div>
@@ -1005,7 +1028,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                       <div key={item.event_id} className="rounded-lg bg-slate-50 px-3 py-1.5">
                         <span className="text-[12px] font-medium text-black">{item.event_title}</span>
                         <span className="ml-2 text-[11px] text-black">
-                          {item.starts_at ? new Date(item.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }) : ''}
+                          {item.starts_at ? formatGatheringDayLabel(item.starts_at, spaceTimezone) : ''}
                         </span>
                         {item.reason && <p className="mt-0.5 text-[11px] text-black">{item.reason}</p>}
                       </div>
@@ -1056,7 +1079,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                       className="w-full rounded-xl border border-slate-200 px-3 py-2 text-[13px] text-navy-900 focus:outline-none focus:ring-2 focus:ring-teal-400">
                       {events.map(ev => (
                         <option key={ev.id} value={ev.id}>
-                          {new Date(ev.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })} — {ev.title}
+                          {formatGatheringDayLabel(ev.starts_at, spaceTimezone)} — {ev.title}
                         </option>
                       ))}
                     </select>
@@ -1114,8 +1137,8 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                             <p className="text-[11px] text-black">
                               {pattern.events.length} session{pattern.events.length !== 1 ? 's' : ''}
                               {pattern.events.length > 0 && (
-                                <> · {new Date(pattern.events[0].starts_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
-                                  {' → '}{new Date(pattern.events[pattern.events.length - 1].starts_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}</>
+                                <> · {formatDate(pattern.events[0].starts_at, spaceTimezone)}
+                                  {' → '}{formatDate(pattern.events[pattern.events.length - 1].starts_at, spaceTimezone)}</>
                               )}
                             </p>
                           </div>
@@ -1134,7 +1157,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
                       {previewEvents.map(ev => (
                         <div key={ev.id} className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-1.5">
                           <span className="text-[11px] text-black w-24 shrink-0">
-                            {new Date(ev.starts_at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
+                            {formatGatheringDayLabel(ev.starts_at, spaceTimezone)}
                           </span>
                           <span className="text-[12px] text-navy-900 truncate">{ev.title}</span>
                         </div>
@@ -1178,7 +1201,7 @@ function BookSessionModal({ spaceSlug, member, onClose, onBooked }: {
 // Gathering history (member detail)
 // ---------------------------------------------------------------------------
 
-function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberDetail; spaceSlug: string }) {
+function GatheringHistorySection({ member, spaceSlug, spaceTimezone }: { member: CreatorMemberDetail; spaceSlug: string; spaceTimezone: string }) {
   const [bookings, setBookings] = useState<MemberBookingItem[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [showBookModal, setShowBookModal] = useState(false)
@@ -1204,8 +1227,8 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
   }, [member.id, spaceSlug])
 
   const now = new Date()
-  const upcoming = bookings?.filter(b => new Date(b.event_starts_at) >= now && b.booking_status === 'confirmed') ?? []
-  const past = bookings?.filter(b => new Date(b.event_starts_at) < now && b.booking_status === 'confirmed') ?? []
+  const upcoming = bookings?.filter(b => parseServerDatetime(b.event_starts_at) >= now && b.booking_status === 'confirmed') ?? []
+  const past = bookings?.filter(b => parseServerDatetime(b.event_starts_at) < now && b.booking_status === 'confirmed') ?? []
   const cancelled = bookings?.filter(b => b.booking_status === 'cancelled') ?? []
 
   return (
@@ -1229,7 +1252,7 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-teal-600">Upcoming</p>
               <div className="flex flex-col gap-1.5">
                 {upcoming.map(b => (
-                  <GatheringBookingRow key={b.booking_id} booking={b} />
+                  <GatheringBookingRow key={b.booking_id} booking={b} spaceTimezone={spaceTimezone} />
                 ))}
               </div>
             </div>
@@ -1239,7 +1262,7 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-black">Past</p>
               <div className="flex flex-col gap-1.5">
                 {past.map(b => (
-                  <GatheringBookingRow key={b.booking_id} booking={b} />
+                  <GatheringBookingRow key={b.booking_id} booking={b} spaceTimezone={spaceTimezone} />
                 ))}
               </div>
             </div>
@@ -1251,7 +1274,7 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
               </summary>
               <div className="mt-1.5 flex flex-col gap-1.5">
                 {cancelled.map(b => (
-                  <GatheringBookingRow key={b.booking_id} booking={b} />
+                  <GatheringBookingRow key={b.booking_id} booking={b} spaceTimezone={spaceTimezone} />
                 ))}
               </div>
             </details>
@@ -1260,6 +1283,7 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
       )}
       {showBookModal && (
         <BookSessionModal
+          spaceTimezone={spaceTimezone}
           spaceSlug={spaceSlug}
           member={member}
           onClose={() => setShowBookModal(false)}
@@ -1270,7 +1294,7 @@ function GatheringHistorySection({ member, spaceSlug }: { member: CreatorMemberD
   )
 }
 
-function GatheringBookingRow({ booking }: { booking: MemberBookingItem }) {
+function GatheringBookingRow({ booking, spaceTimezone }: { booking: MemberBookingItem; spaceTimezone: string }) {
   const isCancelled = booking.booking_status === 'cancelled'
   const att = booking.attendance_status
   const attStyle = att ? ATTENDANCE_LABEL[att] : null
@@ -1294,7 +1318,7 @@ function GatheringBookingRow({ booking }: { booking: MemberBookingItem }) {
         )}
       </div>
       <p className="mt-0.5 text-[11px] text-black">
-        {formatDateTime(booking.event_starts_at)} · {LOCATION_LABEL[booking.event_location_type] ?? booking.event_location_type}
+        {formatDateTime(booking.event_starts_at, spaceTimezone)} · {LOCATION_LABEL[booking.event_location_type] ?? booking.event_location_type}
       </p>
     </div>
   )
@@ -1533,12 +1557,13 @@ function RemoveMemberModal({ member, spaceName, spaceSlug, onClose, onRemoved }:
   )
 }
 
-function MemberDetailPanel({ member, onClose, spaceSlug, spaceName, onMemberRemoved }: {
+function MemberDetailPanel({ member, onClose, spaceSlug, spaceName, onMemberRemoved, spaceTimezone }: {
   member: CreatorMemberDetail
   onClose: () => void
   spaceSlug: string
   spaceName: string
   onMemberRemoved: (userId: string) => void
+  spaceTimezone: string
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [showMessage, setShowMessage]     = useState(false)
@@ -1580,20 +1605,20 @@ function MemberDetailPanel({ member, onClose, spaceSlug, spaceName, onMemberRemo
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-black">Joined</p>
-              <p className="mt-1 text-[13px] text-navy-900">{formatDate(member.joined_at)}</p>
+              <p className="mt-1 text-[13px] text-navy-900">{formatDate(member.joined_at, spaceTimezone)}</p>
             </div>
           </div>
 
           <div className="border-t border-border pt-4">
-            <MemberPassesSection member={member} spaceSlug={spaceSlug} />
+            <MemberPassesSection member={member} spaceSlug={spaceSlug} spaceTimezone={spaceTimezone} />
           </div>
 
           <div className="border-t border-border pt-4">
-            <GatheringHistorySection member={member} spaceSlug={spaceSlug} />
+            <GatheringHistorySection member={member} spaceSlug={spaceSlug} spaceTimezone={spaceTimezone} />
           </div>
 
           <div className="border-t border-border pt-4">
-            <PathwayAccessSection member={member} spaceSlug={spaceSlug} />
+            <PathwayAccessSection member={member} spaceSlug={spaceSlug} spaceTimezone={spaceTimezone} />
           </div>
 
           {/* Message member */}
@@ -1856,8 +1881,9 @@ function AddPersonModal({ spaceSlug, existingMemberEmails, existingInviteEmails,
 // Access request row
 // ---------------------------------------------------------------------------
 
-function AccessRequestRow({ request, spaceSlug, isLast, onResolved }: {
+function AccessRequestRow({ request, spaceSlug, isLast, onResolved, spaceTimezone }: {
   request: AccessRequest; spaceSlug: string; isLast: boolean; onResolved: (id: string) => void
+  spaceTimezone: string
 }) {
   const [approving, setApproving] = useState(false)
   const [declining, setDeclining] = useState(false)
@@ -1885,7 +1911,7 @@ function AccessRequestRow({ request, spaceSlug, isLast, onResolved }: {
       <div className="min-w-0 flex-1">
         <p className="truncate text-[14px] font-medium text-navy-900">{request.user_display_name}</p>
         <p className="mt-0.5 truncate text-[12px] text-black">{request.user_email}</p>
-        <p className="mt-0.5 text-[11px] text-black">Requested {formatDate(request.created_at)}</p>
+        <p className="mt-0.5 text-[11px] text-black">Requested {formatDate(request.created_at, spaceTimezone)}</p>
       </div>
       <div className="flex shrink-0 gap-2">
         <button onClick={() => act('approve')} disabled={approving || declining}
@@ -1907,8 +1933,9 @@ function AccessRequestRow({ request, spaceSlug, isLast, onResolved }: {
 // Pending invites section
 // ---------------------------------------------------------------------------
 
-function PendingInviteRow({ invite: initialInvite, spaceSlug, onCancelled }: {
+function PendingInviteRow({ invite: initialInvite, spaceSlug, onCancelled, spaceTimezone }: {
   invite: SpaceInvitation; spaceSlug: string; onCancelled: () => void
+  spaceTimezone: string
 }) {
   const [invite, setInvite]         = useState(initialInvite)
   const [cancelling, setCancelling] = useState(false)
@@ -1981,7 +2008,7 @@ function PendingInviteRow({ invite: initialInvite, spaceSlug, onCancelled }: {
             ) : (
               <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
                 style={{ background: 'rgba(56,160,158,0.12)', color: '#0f766e' }}>
-                Sent {formatDate(invite.sent_at!)}
+                Sent {formatDate(invite.sent_at!, spaceTimezone)}
               </span>
             )}
           </div>
@@ -2659,9 +2686,12 @@ interface Props {
   spaceIsPublic:  boolean
   headerLocation: { name?: string; hero_artwork_url?: string | null; thumbnail_artwork_url?: string | null } | null
   headerCoverImageUrl: string | null
+  /** The Collective's timezone. Every Gathering timestamp in this panel
+   *  belongs to the Collective, not to whoever is reading the page. */
+  spaceTimezone: string
 }
 
-export default function PeopleClient({ members: initialMembers, invitations, accessRequests: initialAccessRequests, manualMembers: initialManualMembers, spaceName, spaceSlug, spaceIsPublic, headerLocation, headerCoverImageUrl }: Props) {
+export default function PeopleClient({ members: initialMembers, invitations, accessRequests: initialAccessRequests, manualMembers: initialManualMembers, spaceName, spaceSlug, spaceIsPublic, headerLocation, headerCoverImageUrl, spaceTimezone }: Props) {
   const router = useRouter()
   const [membersList, setMembersList]                   = useState<CreatorMemberDetail[]>(initialMembers)
   const [manualMembersList, setManualMembersList]       = useState<ManualMember[]>(initialManualMembers)
@@ -2770,7 +2800,7 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
           ) : (
             <ul>
               {accessRequests.map((req, i) => (
-                <AccessRequestRow key={req.id} request={req} spaceSlug={spaceSlug} isLast={i === accessRequests.length - 1}
+                <AccessRequestRow key={req.id} request={req} spaceSlug={spaceSlug} spaceTimezone={spaceTimezone} isLast={i === accessRequests.length - 1}
                   onResolved={(id) => setAccessRequests((prev) => prev.filter((r) => r.id !== id))} />
               ))}
             </ul>
@@ -2792,7 +2822,7 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
           ) : (
             <ul>
               {invitations.map((invite) => (
-                <PendingInviteRow key={invite.id} invite={invite} spaceSlug={spaceSlug} onCancelled={handleInviteCancelled} />
+                <PendingInviteRow key={invite.id} invite={invite} spaceSlug={spaceSlug} spaceTimezone={spaceTimezone} onCancelled={handleInviteCancelled} />
               ))}
             </ul>
           )}
@@ -2934,7 +2964,7 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
                           </div>
                           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                             <RoleBadge role={member.space_role} />
-                            <span className="hidden text-[12px] text-black sm:inline">{formatDate(member.joined_at)}</span>
+                            <span className="hidden text-[12px] text-black sm:inline">{formatDate(member.joined_at, spaceTimezone)}</span>
                           </div>
                         </div>
                       </button>
@@ -2949,6 +2979,7 @@ export default function PeopleClient({ members: initialMembers, invitations, acc
           {selectedMember && (
             <div className="w-full xl:w-[360px] xl:shrink-0">
               <MemberDetailPanel
+          spaceTimezone={spaceTimezone}
                 member={selectedMember}
                 onClose={() => setSelectedMember(null)}
                 spaceSlug={spaceSlug}

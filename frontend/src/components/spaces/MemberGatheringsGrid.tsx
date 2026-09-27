@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { resolveMediaUrl } from '@/lib/api'
 import type { EventSummary } from '@/types/platform'
+import { formatCalendarDate, formatGatheringTimeFriendly, parseServerDatetime } from '@/lib/dateTime'
 
 /**
  * MemberGatheringsGrid — landing-page presentation.
@@ -42,30 +43,31 @@ interface SeriesSummary {
   access: SeriesAccessSummary
 }
 
+/** A Series' dates are CALENDAR days (``…T00:00:00`` / ``…T23:59:59``),
+ *  so they go through ``formatCalendarDate`` — running 23:59:59 through
+ *  a timezone rolls the end date into the next day. */
 function formatDateRange(startsAt: string, endsAt: string | null): string {
-  const start = new Date(startsAt).toLocaleDateString('en-AU', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
+  const start = formatCalendarDate(startsAt)
   if (!endsAt) return `Starts ${start} · Ongoing`
-  const end = new Date(endsAt).toLocaleDateString('en-AU', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
-  return `${start} – ${end}`
+  return `${start} – ${formatCalendarDate(endsAt)}`
 }
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-AU', {
-    weekday: 'short', day: 'numeric', month: 'short',
-    hour: 'numeric', minute: '2-digit',
-  })
+/** A Gathering, by contrast, is an instant — rendered in the
+ *  Collective's zone. */
+function formatDateTime(iso: string, timezone: string): string {
+  return `${parseServerDatetime(iso).toLocaleDateString('en-AU', {
+    weekday: 'short', day: 'numeric', month: 'short', timeZone: timezone,
+  })}, ${formatGatheringTimeFriendly(iso, timezone)}`
 }
 
 export default function MemberGatheringsGrid({
-  spaceSlug, series, standaloneEvents,
+  spaceSlug, series, standaloneEvents, timezone,
 }: {
   spaceSlug: string
   series: SeriesSummary[]
   standaloneEvents: EventSummary[]
+  /** The Collective's zone — Gatherings have none of their own. */
+  timezone: string
 }) {
   const hasAnything = series.length > 0 || standaloneEvents.length > 0
   if (!hasAnything) {
@@ -110,7 +112,7 @@ export default function MemberGatheringsGrid({
           <ul className="grid gap-4 sm:grid-cols-2">
             {standaloneEvents.map((ev) => (
               <li key={ev.id}>
-                <StandaloneCard spaceSlug={spaceSlug} event={ev} />
+                <StandaloneCard spaceSlug={spaceSlug} event={ev} timezone={timezone} />
               </li>
             ))}
           </ul>
@@ -234,10 +236,11 @@ function SeriesCard({
 // ---------------------------------------------------------------------------
 
 function StandaloneCard({
-  spaceSlug, event,
+  spaceSlug, event, timezone,
 }: {
   spaceSlug: string
   event: EventSummary
+  timezone: string
 }) {
   const cover = resolveMediaUrl(event.thumbnail_url ?? undefined)
   const isOnline = event.location_type !== 'in_person'
@@ -291,7 +294,7 @@ function StandaloneCard({
       )}
       <div className="flex flex-1 flex-col p-4">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-          {formatDateTime(event.starts_at)} · {isOnline ? 'Online' : 'In person'}
+          {formatDateTime(event.starts_at, timezone)} · {isOnline ? 'Online' : 'In person'}
         </p>
         <h3 className="mt-1 font-serif text-[16px] leading-snug text-navy-900">{event.title}</h3>
         {event.description && (

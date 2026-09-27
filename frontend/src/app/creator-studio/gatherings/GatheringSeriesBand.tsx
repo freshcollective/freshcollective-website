@@ -16,6 +16,7 @@ import {
   TextArea,
   useToast,
 } from '@/components/platform'
+import { formatCalendarDate } from '@/lib/dateTime'
 
 /**
  * Gathering Series band on the Gatherings index.
@@ -51,14 +52,13 @@ function statusStyle(s: GatheringSeriesStatus): React.CSSProperties {
  *  is null — surfaced explicitly so a Creator never sees a blank
  *  "End: —" or similar. */
 function seriesDateSummary(startsAt: string, endsAt: string | null): string {
-  const start = new Date(startsAt).toLocaleDateString('en-AU', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
+  // ``formatCalendarDate``, not the instant path: a Series' dates are
+  // CALENDAR days set from ``<input type="date">`` and stored as
+  // ``…T00:00:00`` / ``…T23:59:59``. Converting 23:59:59 through a
+  // timezone rolls a Series that ends 12 Dec into 13 Dec.
+  const start = formatCalendarDate(startsAt)
   if (!endsAt) return `Starts ${start} · Ongoing`
-  const end = new Date(endsAt).toLocaleDateString('en-AU', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
-  return `${start} – ${end}`
+  return `${start} – ${formatCalendarDate(endsAt)}`
 }
 
 export default function GatheringSeriesBand({ spaceSlug, series }: Props) {

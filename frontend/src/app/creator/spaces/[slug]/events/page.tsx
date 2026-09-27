@@ -1,6 +1,8 @@
 import Link from 'next/link'
-import { getCreatorEvents } from '@/lib/serverApi'
+import { getCreatorEvents, getCreatorSpace } from '@/lib/serverApi'
 import type { CreatorEvent } from '@/types/platform'
+import { collectiveTimezone } from '@/lib/collectiveTimezone'
+import { parseServerDatetime } from '@/lib/dateTime'
 import CreatorEventRow from './CreatorEventRow'
 
 export default async function CreatorEventsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -10,18 +12,22 @@ export default async function CreatorEventsPage({ params }: { params: Promise<{ 
   // only needed to decide whether to expose the link. The `archive`
   // request is cheap for typical collectives (one indexed range
   // query) — no need to fetch every row twice.
-  const [upcoming, past]: [CreatorEvent[], CreatorEvent[]] = await Promise.all([
-    getCreatorEvents(slug, 'upcoming'),
-    getCreatorEvents(slug, 'archive'),
+  const [upcoming, past, space] = await Promise.all([
+    getCreatorEvents(slug, 'upcoming') as Promise<CreatorEvent[]>,
+    getCreatorEvents(slug, 'archive') as Promise<CreatorEvent[]>,
+    // Cached per request; the Collective owns the timezone every row
+    // below is rendered in.
+    getCreatorSpace(slug) as Promise<{ timezone?: string | null } | null>,
   ])
+  const timezone = collectiveTimezone(space)
 
   const hasArchive = past.length > 0
   const now = Date.now()
   const hasFutureCancelled = past.some((e) => {
     if (e.status !== 'cancelled') return false
     const endMs = e.ends_at
-      ? Date.parse(e.ends_at)
-      : Date.parse(e.starts_at) + 60 * 60 * 1000
+      ? parseServerDatetime(e.ends_at).getTime()
+      : parseServerDatetime(e.starts_at).getTime() + 60 * 60 * 1000
     return endMs > now
   })
   const archiveLinkLabel = hasFutureCancelled ? 'Gathering archive' : 'Past Gatherings'
@@ -68,7 +74,7 @@ export default async function CreatorEventsPage({ params }: { params: Promise<{ 
       ) : (
         <div className="flex flex-col gap-3">
           {upcoming.map((event) => (
-            <CreatorEventRow key={event.id} event={event} slug={slug} />
+            <CreatorEventRow key={event.id} event={event} slug={slug} timezone={timezone} />
           ))}
         </div>
       )}

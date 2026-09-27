@@ -1,6 +1,7 @@
 import Link from 'next/link'
-import { getCreatorEvents } from '@/lib/serverApi'
+import { getCreatorEvents, getCreatorSpace } from '@/lib/serverApi'
 import type { CreatorEvent } from '@/types/platform'
+import { collectiveTimezone } from '@/lib/collectiveTimezone'
 import CreatorEventRow from '../CreatorEventRow'
 
 /**
@@ -18,7 +19,11 @@ export default async function CreatorEventsArchivePage({
   params: Promise<{ slug: string }>
 }) {
   const { slug } = await params
-  const events: CreatorEvent[] = await getCreatorEvents(slug, 'archive')
+  const [events, space] = await Promise.all([
+    getCreatorEvents(slug, 'archive') as Promise<CreatorEvent[]>,
+    getCreatorSpace(slug) as Promise<{ timezone?: string | null } | null>,
+  ])
+  const timezone = collectiveTimezone(space)
 
   const now = Date.now()
   const hasFutureCancelled = events.some((e) => {
@@ -62,7 +67,7 @@ export default async function CreatorEventsArchivePage({
       ) : (
         <div className="flex flex-col gap-3">
           {events.map((event) => (
-            <CreatorEventRow key={event.id} event={event} slug={slug} />
+            <CreatorEventRow key={event.id} event={event} slug={slug} timezone={timezone} />
           ))}
         </div>
       )}

@@ -11,6 +11,8 @@ import { requireArea } from '@/lib/areaAccess'
 import MemberGatheringsGrid from '@/components/spaces/MemberGatheringsGrid'
 import CollectiveSidebarPanel from '@/components/spaces/CollectiveSidebarPanel'
 import type { EventSummary, MemberProfile, SpaceResponse, SpaceAccessStatus, AccessPassSummary } from '@/types/platform'
+import { collectiveTimezone } from '@/lib/collectiveTimezone'
+import { parseServerDatetime } from '@/lib/dateTime'
 
 interface SeriesSummary {
   id: string
@@ -113,7 +115,7 @@ export default async function SpaceEventsPage({ params }: Props) {
         {/* ── Active term pass widget ── */}
         {activePasses.map((pass) => {
           const validUntil = pass.valid_until
-            ? new Date(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+            ? parseServerDatetime(pass.valid_until).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: collectiveTimezone(space) })
             : null
           const remaining = pass.remaining_credits ?? 0
           const total = pass.total_credits
@@ -202,6 +204,7 @@ export default async function SpaceEventsPage({ params }: Props) {
           spaceSlug={slug}
           series={series}
           standaloneEvents={standaloneEvents}
+          timezone={collectiveTimezone(space)}
         />
 
         {hasArchive && (
