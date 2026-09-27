@@ -79,6 +79,36 @@ def _join(db, user, space, role=SpaceRole.learner):
     db.flush()
 
 
+def _visible_space(make_space, **kw):
+    kw.setdefault("show_member_directory", True)
+    return make_space(**kw)
+
+
+@pytest.fixture
+def flag_on(monkeypatch):
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "ways_to_connect_enabled", True)
+
+
+def _two_attended(db, make_event, users, space, *, label="Sitting"):
+    """Two attended Gatherings — the two signals a person card needs."""
+    from datetime import datetime, timedelta
+    from app.models.platform import BookingStatus, EventBooking
+    now = datetime.utcnow()
+    for n, days in enumerate((14, 45)):
+        starts = now - timedelta(days=days)
+        ev = make_event(space=space, starts_at=starts,
+                        ends_at=starts + timedelta(hours=1),
+                        title=f"{label} {n + 1}")
+        ev.attendance_completed_at = starts + timedelta(hours=2)
+        for u in users:
+            db.add(EventBooking(
+                id=str(uuid.uuid4()), event_id=ev.id, user_id=u.id,
+                status=BookingStatus.confirmed, attendance_status="attended",
+            ))
+    db.flush()
+
+
 def _install_cards(db, letters=(), neutral=False):
     for letter in letters:
         db.add(PlatformArtwork(
@@ -509,3 +539,160 @@ class TestSurfacesAgree:
         assert rows, "the member should be suggested"
         assert rows[0]["image"]["kind"] == "alphabet"
         assert rows[0]["image"]["url"].endswith("card_m.png")
+
+
+# ---------------------------------------------------------------------------
+# The initial must never out-reveal the surrounding surface
+# ---------------------------------------------------------------------------
+
+class TestTheInitialRevealsNothingExtra:
+    """An alphabet card must not disclose more identity than the surface
+    it sits on already does.
+
+    The guarantee is that every call site feeds the resolver *the same
+    expression it renders as ``display_name``* — so the letter is the
+    first letter of a name the viewer is already being shown. These
+    tests pin that, because it is a property of the call sites rather
+    than of the resolver, and a future caller could break it by passing
+    a private profile's name while rendering the public one.
+    """
+
+    def test_a_private_profiles_display_name_never_reaches_the_image(
+        self, client, db, make_user, make_space
+    ):
+        """The sharpest case: a member whose private profile says
+        "Zelda" but whose platform name is "Sarah". The surface shows
+        Sarah, so the card must be S — never Z."""
+        _install_cards(db, letters=("S", "Z"), neutral=True)
+        member = make_user(role="user", name="Sarah")
+        _profile(db, member, display_name="Zelda", is_public=False)
+        as_user(make_user())
+
+        body = client.get(f"/api/profile/{member.id}").json()
+
+        assert body["display_name"] == "Sarah"
+        assert body["image"]["initial"] == "S"
+        assert body["image"]["url"].endswith("card_s.png")
+        assert "Zelda" not in client.get(f"/api/profile/{member.id}").text
+
+    def test_a_public_profiles_display_name_does_drive_the_card(
+        self, client, db, make_user
+    ):
+        """The mirror: once the member has published that name, the card
+        follows it, because the surface shows it."""
+        _install_cards(db, letters=("S", "Z"), neutral=True)
+        member = make_user(role="user", name="Sarah")
+        _profile(db, member, display_name="Zelda", is_public=True)
+        as_user(make_user())
+
+        body = client.get(f"/api/profile/{member.id}").json()
+
+        assert body["display_name"] == "Zelda"
+        assert body["image"]["initial"] == "Z"
+
+    def test_the_initial_matches_the_rendered_name_on_the_public_profile(
+        self, client, db, make_user
+    ):
+        _install_cards(db, letters=tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        member = make_user(role="user", name="Priya")
+        _profile(db, member, is_public=False)
+        as_user(make_user())
+
+        body = client.get(f"/api/profile/{member.id}").json()
+
+        assert body["image"]["initial"] == body["display_name"][0].upper()
+
+    def test_the_initial_matches_the_rendered_name_in_the_directory(
+        self, client, db, make_user, make_space
+    ):
+        _install_cards(db, letters=tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        owner = make_user(role="creator")
+        space = make_space(creator=owner, show_member_directory=True)
+        member = make_user(role="user", name="Priya")
+        _profile(db, member, display_name="Hidden", is_public=False)
+        for u in (owner, member):
+            _join(db, u, space)
+        as_user(member)
+
+        rows = client.get(f"/api/spaces/{space.slug}/members").json()
+        row = next(r for r in rows if r["id"] == member.id)
+
+        assert row["display_name"] == "Priya"
+        assert row["image"]["initial"] == "P"
+
+    def test_a_hidden_learner_yields_no_row_and_therefore_no_initial(
+        self, client, db, make_user, make_space
+    ):
+        """With the directory closed, a learner is filtered out of the
+        query entirely — there is no row to carry a letter."""
+        _install_cards(db, letters=tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        owner = make_user(role="creator")
+        space = make_space(creator=owner, show_member_directory=False)
+        hidden = make_user(role="user", name="Priya")
+        viewer = make_user(role="user", name="Viewer")
+        for u in (owner, hidden, viewer):
+            _join(db, u, space)
+        as_user(viewer)
+
+        rows = client.get(f"/api/spaces/{space.slug}/members").json()
+
+        assert all(r["id"] != hidden.id for r in rows)
+        assert "Priya" not in client.get(f"/api/spaces/{space.slug}/members").text
+
+    def test_ways_to_connect_matches_its_own_display_name(
+        self, client, db, flag_on, make_user, make_space, make_event
+    ):
+        _install_cards(db, letters=tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        alice = make_user()
+        bob = make_user(name="Bob")
+        _profile(db, bob, display_name="Hidden", is_public=False)
+        space = _visible_space(make_space)
+        for u in (alice, bob):
+            _join(db, u, space)
+        _two_attended(db, make_event, (alice, bob), space)
+        as_user(alice)
+
+        person = client.get("/api/ways-to-connect").json()["people"][0]
+
+        assert person["display_name"] == "Bob"
+        assert person["image"]["initial"] == "B"
+
+    def test_an_unnamed_member_carries_no_letter_anywhere(
+        self, client, db, flag_on, make_user, make_space, make_event
+    ):
+        """No name rendered, so no letter returned — the neutral card,
+        with ``initial`` null."""
+        _install_cards(db, letters=tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), neutral=True)
+        alice = make_user()
+        bob = make_user(name=None)
+        space = _visible_space(make_space)
+        for u in (alice, bob):
+            _join(db, u, space)
+        _two_attended(db, make_event, (alice, bob), space)
+        as_user(alice)
+
+        person = client.get("/api/ways-to-connect").json()["people"][0]
+
+        assert person["display_name"] is None
+        assert person["image"]["initial"] is None
+        assert person["image"]["kind"] == "neutral"
+
+    def test_mention_suggestions_match_their_own_rendered_name(
+        self, client, db, make_user, make_space
+    ):
+        _install_cards(db, letters=tuple("ABCDEFGHIJKLMNOPQRSTUVWXYZ"))
+        owner = make_user(role="creator")
+        space = make_space(creator=owner)
+        _default_channel(db, space)
+        member = make_user(role="user", name="Mira")
+        _profile(db, member, display_name="Hidden", is_public=False)
+        for u in (owner, member):
+            _join(db, u, space)
+        as_user(owner)
+
+        rows = client.get(
+            f"/api/spaces/{space.slug}/members/search", params={"q": "Mira"},
+        ).json()
+
+        assert rows[0]["display_name"] == "Mira"
+        assert rows[0]["image"]["initial"] == "M"
