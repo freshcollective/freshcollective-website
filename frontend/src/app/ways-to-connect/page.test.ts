@@ -35,6 +35,9 @@ const UNAVAILABLE = code('components/connections/WaysToConnectUnavailable.tsx')
 const NOTE = code('components/connections/RecognitionNote.tsx')
 const INCONTEXT = code('components/connections/InContextRecognition.tsx')
 const CLIENT = code('lib/serverApi.ts')
+const PATHWAY_OVERVIEW = code('app/spaces/[slug]/pathways/[pathway-slug]/page.tsx')
+const PATHWAY_STEP = code('app/spaces/[slug]/pathways/[pathway-slug]/[step-slug]/page.tsx')
+const GATHERING_PAGE = code('app/spaces/[slug]/events/[eventId]/page.tsx')
 
 describe('feature gating', () => {
   test('the route still 404s when the frontend flag is off', () => {
@@ -233,6 +236,47 @@ describe('in-context Recognition', () => {
   test('the note does not depend on avatar imagery', () => {
     assert.ok(!/Avatar/.test(NOTE), 'the sentence carries the meaning')
     assert.match(NOTE, /aria-hidden="true"/, 'the mark is decorative')
+  })
+})
+
+describe('in-context Recognition is placed where it can be seen', () => {
+  // Caught by the demo seed, not by a unit test: the pathway line was
+  // originally on the pathway overview, which redirects every
+  // accessible member straight to their current step. It compiled, it
+  // type-checked, it was covered — and it was unreachable for exactly
+  // the people who could have Recognition on it.
+
+  test('the pathway overview still redirects past itself', () => {
+    // The behaviour that made the original placement dead. If this
+    // ever stops being true, the placement below can be reconsidered.
+    assert.match(
+      PATHWAY_OVERVIEW,
+      /redirect\(`\/spaces\/\$\{slug\}\/pathways\/\$\{pathwaySlug\}\/\$\{continueSlug\}`\)/,
+    )
+  })
+
+  test('the pathway line is NOT on the page that redirects', () => {
+    assert.ok(
+      !/PathwayRecognition/.test(PATHWAY_OVERVIEW),
+      'a member with a shared pathway never sees the overview',
+    )
+  })
+
+  test('the pathway line is on the step page', () => {
+    assert.match(PATHWAY_STEP, /PathwayRecognition/)
+    assert.match(PATHWAY_STEP, /pathwayId=\{overview\.id\}/)
+  })
+
+  test('the gathering line is on the gathering page', () => {
+    assert.match(GATHERING_PAGE, /GatheringRecognition/)
+    assert.match(GATHERING_PAGE, /gatheringId=\{event\.id\}/)
+  })
+
+  test('the gathering page does not redirect away from itself', () => {
+    assert.ok(
+      !/redirect\(/.test(GATHERING_PAGE),
+      'if this page ever gains a redirect, re-check the placement',
+    )
   })
 })
 

@@ -9,6 +9,7 @@ import StepActions from '@/components/spaces/StepActions'
 import StepDiscussion from '@/components/spaces/StepDiscussion'
 import { renderBlocks } from '@/components/spaces/BlockList'
 import PathwayStepNav from '@/components/spaces/PathwayStepNav'
+import { PathwayRecognition } from '@/components/connections/InContextRecognition'
 import { PlanRecoveryNoticeCompact } from '@/components/commerce/PlanRecoveryNoticeCompact'
 import type { PathwayWithSteps, StepDetail, StepSummary, StepResource, StepBlock, StepComment } from '@/types/platform'
 
@@ -382,6 +383,21 @@ export default async function StepPage({ params }: Props) {
           <h1 className="font-serif text-3xl leading-snug text-navy-900 md:text-4xl">
             {step.title}
           </h1>
+
+          {/* Who else is walking this pathway. The step page rather
+              than the pathway overview: an enrolled member is
+              redirected past the overview to their current step, so a
+              line placed there would never be seen by the only people
+              who could have Recognition on it. This is also where the
+              foundations doc puts it — "on the step page there is a
+              small line, quiet, above the fold" — and it is the more
+              human moment of the two. Silent unless both people have
+              genuinely started. */}
+          {overview?.id && (
+            <div className="mt-4">
+              <PathwayRecognition pathwayId={overview.id} />
+            </div>
+          )}
         </div>
 
         {/* Content — blocks take precedence over legacy content_body */}

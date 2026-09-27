@@ -2,7 +2,6 @@ import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getPathwayOverview, getMyPasses, getKnowledgeGuide, getSpace } from '@/lib/serverApi'
 import PathwayAutoRevalidate from '@/components/spaces/PathwayAutoRevalidate'
-import { PathwayRecognition } from '@/components/connections/InContextRecognition'
 import KnowledgeGuideView from '@/components/spaces/KnowledgeGuideView'
 import {
   computeChapters,
@@ -488,14 +487,6 @@ export default async function PathwayDetailPage({ params, searchParams }: Props)
               </div>
             </div>
           )}
-
-          {/* Who else is walking this. Under the progress bar,
-              where the member is already thinking about their own
-              journey through it. Silent unless both people have
-              genuinely started — enrolment alone says nothing. */}
-          <div className="mb-8">
-            <PathwayRecognition pathwayId={pathway.id} />
-          </div>
 
 {pathway.steps.length === 0 ? (
             <div
