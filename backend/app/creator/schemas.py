@@ -3037,7 +3037,38 @@ class SeriesPaymentOptionUpdateRequest(BaseModel):
 # still be edited — belongs in the route, where the Collective is known.
 
 
-class DiscountCodeCreateRequest(BaseModel):
+#: The instant a code stops working is derived from the Collective's
+#: timezone, never supplied. Kept as a named constant so the create and
+#: update requests refuse it in the same words.
+LEGACY_EXPIRES_AT_MESSAGE = (
+    "expires_at is no longer accepted; send expires_on as a calendar date"
+)
+
+
+class _RefusesLegacyExpiresAt(BaseModel):
+    """Refuses an ``expires_at`` in the request body.
+
+    Discount expiry used to be sent as an instant. Accepting one now and
+    quietly dropping it would be the worst outcome available: the client
+    gets a 201, and the code it believes ends on 31 October either ends
+    eleven hours late or never expires at all. Neither is visible until
+    someone redeems a code that should have been dead.
+
+    So the field is refused rather than ignored, and refused on presence
+    rather than on value — a client still sending ``expires_at: null``
+    holds the old model just as firmly as one sending a timestamp, and
+    saying so now is cheaper than the silence.
+    """
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_legacy_expires_at(cls, data):
+        if isinstance(data, dict) and "expires_at" in data:
+            raise ValueError(LEGACY_EXPIRES_AT_MESSAGE)
+        return data
+
+
+class DiscountCodeCreateRequest(_RefusesLegacyExpiresAt):
     code: str
     discount_type: str                      # 'percentage' | 'fixed_amount'
     percent_bps: int | None = None          # 5000 = 50%
@@ -3045,7 +3076,10 @@ class DiscountCodeCreateRequest(BaseModel):
     currency: str | None = None
     scope_kind: str = "space"               # 'space' | 'payment_option'
     scope_id: str | None = None
-    expires_at: datetime | None = None
+    #: A calendar DAY, not an instant. "Ends 31 Oct" means the code works
+    #: for all of 31 October in the Collective's timezone; the server
+    #: resolves it, so the browser's timezone cannot shift the answer.
+    expires_on: date | None = None
     max_redemptions: int | None = None
     is_active: bool = True
 
@@ -3108,7 +3142,7 @@ class DiscountCodeCreateRequest(BaseModel):
         return self
 
 
-class DiscountCodeUpdateRequest(BaseModel):
+class DiscountCodeUpdateRequest(_RefusesLegacyExpiresAt):
     """Every field optional — the route decides which are still editable.
 
     Which fields may change depends on whether the code has been redeemed,
@@ -3123,7 +3157,8 @@ class DiscountCodeUpdateRequest(BaseModel):
     currency: str | None = None
     scope_kind: str | None = None
     scope_id: str | None = None
-    expires_at: datetime | None = None
+    #: Calendar day, resolved server-side. See the create request.
+    expires_on: date | None = None
     max_redemptions: int | None = None
     is_active: bool | None = None
 
@@ -3153,6 +3188,12 @@ class DiscountCodeResponse(BaseModel):
     #: Resolved for display so the list does not need a second fetch.
     scope_payment_option_name: str | None = None
     is_active: bool
+    #: The calendar day the Creator chose, in the Collective's timezone.
+    #: This is what a surface should show — it is the date they picked.
+    expires_on: date | None
+    #: The canonical instant the code stops working, UTC. Exclusive: the
+    #: start of the day AFTER ``expires_on``, locally. Checkout compares
+    #: against this.
     expires_at: datetime | None
     max_redemptions: int | None
     #: Counted from ``discount_redemptions``, which is the source of truth.

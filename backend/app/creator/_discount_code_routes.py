@@ -43,6 +43,10 @@ from app.creator.schemas import (
     DiscountCodeUpdateRequest,
 )
 from app.models.discount_code import DiscountCode, DiscountRedemption
+from app.services.discount_pricing import (
+    expiry_date_in_timezone,
+    resolve_expiry_instant,
+)
 from app.models.payment_option import PaymentOption
 from app.models.user import User
 
@@ -107,8 +111,14 @@ def _resolve_scope_option(db: Session, space, scope_id: str) -> PaymentOption:
     return option
 
 
-def _to_response(db: Session, row: DiscountCode) -> DiscountCodeResponse:
+def _to_response(db: Session, row: DiscountCode, space=None) -> DiscountCodeResponse:
     redeemed = _redemption_count(db, row.id)
+    tz_name = getattr(space, "timezone", None)
+    if tz_name is None:
+        from app.models.platform import Space
+        tz_name = (
+            db.query(Space.timezone).filter(Space.id == row.space_id).scalar()
+        )
     option_name = None
     if row.scope_kind == "payment_option" and row.scope_id:
         option_name = (
@@ -128,6 +138,7 @@ def _to_response(db: Session, row: DiscountCode) -> DiscountCodeResponse:
         scope_id=row.scope_id,
         scope_payment_option_name=option_name,
         is_active=row.is_active,
+        expires_on=expiry_date_in_timezone(row.expires_at, tz_name),
         expires_at=row.expires_at,
         max_redemptions=row.max_redemptions,
         redemption_count=redeemed,
@@ -174,7 +185,7 @@ def list_discount_codes(
         .order_by(DiscountCode.created_at.desc())
         .all()
     )
-    return [_to_response(db, r) for r in rows]
+    return [_to_response(db, r, space) for r in rows]
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +223,9 @@ def create_discount_code(
         scope_kind=body.scope_kind,
         scope_id=body.scope_id,
         is_active=body.is_active,
-        expires_at=body.expires_at,
+        # The Creator chose a day; the Collective's timezone decides when
+        # that day ends. Never the browser's.
+        expires_at=resolve_expiry_instant(body.expires_on, space.timezone),
         max_redemptions=body.max_redemptions,
         redemption_count=0,
         created_by_user_id=current_user.id,
@@ -220,7 +233,7 @@ def create_discount_code(
     db.add(row)
     db.commit()
     db.refresh(row)
-    return _to_response(db, row)
+    return _to_response(db, row, space)
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +252,7 @@ def get_discount_code(
     current_user: User = Depends(get_creator_user),
 ) -> DiscountCodeResponse:
     space = _get_managed_space(slug, current_user, db)
-    return _to_response(db, _get_code_or_404(db, space, code_id))
+    return _to_response(db, _get_code_or_404(db, space, code_id), space)
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +332,7 @@ def update_discount_code(
     # instead of the message a Creator can act on.
     writable = (
         "code", "discount_type", "percent_bps", "amount_cents", "currency",
-        "expires_at", "max_redemptions", "is_active",
+        "max_redemptions", "is_active",
     )
     merged = {f: supplied.get(f, getattr(row, f)) for f in writable}
     _validate_merged_value_shape(merged)
@@ -327,6 +340,8 @@ def update_discount_code(
     for field in writable:
         if field in supplied:
             setattr(row, field, supplied[field])
+    if "expires_on" in supplied:
+        row.expires_at = resolve_expiry_instant(supplied["expires_on"], space.timezone)
     if "scope_kind" in supplied or "scope_id" in supplied:
         row.scope_kind = merged_kind
         row.scope_id = merged_scope_id
@@ -334,7 +349,7 @@ def update_discount_code(
     row.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(row)
-    return _to_response(db, row)
+    return _to_response(db, row, space)
 
 
 def _validate_merged_value_shape(row: dict) -> None:
@@ -422,7 +437,7 @@ def _set_active(
     row.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(row)
-    return _to_response(db, row)
+    return _to_response(db, row, space)
 
 
 # ---------------------------------------------------------------------------

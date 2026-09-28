@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -313,3 +313,84 @@ def platform_fee_cents(final_cents: int, fee_basis_points: int) -> int:
         raise ValueError("fee inputs cannot be negative")
     raw = Decimal(final_cents) * Decimal(fee_basis_points) / Decimal(BPS_DENOMINATOR)
     return _round_half_up(raw)
+
+
+# ---------------------------------------------------------------------------
+# What "expires on this date" means
+# ---------------------------------------------------------------------------
+#
+# A Creator picks a calendar day, not an instant. "Ends 31 Oct" means the
+# code works for all of 31 October *where the Collective is*, and stops
+# when that day does.
+#
+# Resolved on the server, against ``Space.timezone``, because the browser's
+# timezone is the buyer's or the Creator's travel accident and has nothing
+# to do with when the offer ends. A frontend sending ``23:59:59`` would
+# make a Melbourne code run eleven hours into 1 November.
+#
+# Stored as the UTC instant the day ends — which is the start of the NEXT
+# local day, held EXCLUSIVELY. ``core/periods`` documents why that shape:
+# a half-open interval "is the only shape that composes without arithmetic
+# hazards near midnight, month rollover, or DST transitions". It also
+# matches ``validate_code``, which already treats ``expires_at <= now`` as
+# expired, so the boundary instant is the first moment the code is gone.
+
+from datetime import date, timedelta  # noqa: E402
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError  # noqa: E402
+
+#: Matches the ``Space.timezone`` column default. Used only when a stored
+#: timezone string is unusable, which the NOT NULL default should prevent.
+FALLBACK_TIMEZONE = "Australia/Melbourne"
+
+
+def collective_timezone(timezone_name: str | None) -> ZoneInfo:
+    """``ZoneInfo`` for a Collective, never raising on a bad value.
+
+    Mirrors the defensive lookup in ``creator/routes`` recurrence
+    generation: an unknown timezone should never reach here, but falling
+    back is better than a 500 on a Creator saving a discount code.
+    """
+    try:
+        return ZoneInfo(timezone_name or FALLBACK_TIMEZONE)
+    except (ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo(FALLBACK_TIMEZONE)
+
+
+def resolve_expiry_instant(expires_on: date | None, timezone_name: str | None) -> datetime | None:
+    """The UTC instant a code chosen to end on ``expires_on`` stops working.
+
+    Midnight at the START of the following local day, returned UTC-naive to
+    match the ``DateTime(timezone=False)`` storage convention.
+
+    Melbourne, 31 Oct 2026 (AEDT, UTC+11):
+        → 1 Nov 2026 00:00 +11:00
+        → 2026-10-31 13:00 UTC
+
+    So the code is valid through 11:59:59 pm on the 31st in Melbourne, and
+    gone the moment the 1st begins there.
+    """
+    if expires_on is None:
+        return None
+    tz = collective_timezone(timezone_name)
+    end_of_day_local = datetime.combine(
+        expires_on + timedelta(days=1), time.min, tzinfo=tz,
+    )
+    return end_of_day_local.astimezone(UTC).replace(tzinfo=None)
+
+
+def expiry_date_in_timezone(
+    expires_at: datetime | None, timezone_name: str | None,
+) -> date | None:
+    """The calendar day a stored expiry instant represents.
+
+    The inverse of :func:`resolve_expiry_instant`, so a Creator is shown
+    back the date they chose rather than whatever the instant looks like
+    in the reader's timezone. Exact rather than approximate: the stored
+    instant is the start of the following local day, so stepping back one
+    microsecond lands inside the chosen day whatever the offset.
+    """
+    if expires_at is None:
+        return None
+    tz = collective_timezone(timezone_name)
+    local = expires_at.replace(tzinfo=UTC).astimezone(tz)
+    return (local - timedelta(microseconds=1)).date()

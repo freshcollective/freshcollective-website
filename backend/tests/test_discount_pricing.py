@@ -520,3 +520,151 @@ class TestInputGuards:
                 original_cents=100, discount_cents=10,
                 final_cents=50, currency=AUD,
             )
+
+
+# ---------------------------------------------------------------------------
+# What a chosen expiry DATE means
+# ---------------------------------------------------------------------------
+
+class TestExpiryIsACalendarDayInTheCollectivesTimezone:
+    """A Creator picks a day, not an instant.
+
+    "Ends 31 Oct" means the code works for all of 31 October where the
+    Collective is. The server resolves that, because the browser's
+    timezone is the reader's travel accident and has nothing to do with
+    when an offer ends — a frontend sending 23:59:59 would run a
+    Melbourne code eleven hours into 1 November.
+
+    Stored as the start of the NEXT local day, held exclusively, which is
+    the half-open shape ``core/periods`` documents as the only one that
+    survives midnight, month rollover and DST without arithmetic hazards.
+    ``validate_code`` already treats ``expires_at <= now`` as expired, so
+    that instant is the first moment the code is gone.
+    """
+
+    def test_melbourne_resolves_to_the_right_utc_instant(self):
+        from app.services.discount_pricing import resolve_expiry_instant
+        from datetime import date
+
+        # 31 Oct 2026 is AEDT (+11). The day ends at 1 Nov 00:00 +11:00.
+        instant = resolve_expiry_instant(date(2026, 10, 31), "Australia/Melbourne")
+
+        assert instant == datetime(2026, 10, 31, 13, 0, 0)
+
+    def test_a_code_is_still_valid_late_on_the_chosen_day(self):
+        """11:59 pm Melbourne on the 31st — inside the day, so usable."""
+        from app.services.discount_pricing import resolve_expiry_instant, validate_code
+        from datetime import date
+
+        instant = resolve_expiry_instant(date(2026, 10, 31), "Australia/Melbourne")
+        # 23:59 Melbourne on the 31st = 12:59 UTC.
+        validate_code(code(expires_at=instant), space_id="s_1",
+                      now=datetime(2026, 10, 31, 12, 59, 0))
+
+    def test_and_expired_the_moment_the_next_day_begins_there(self):
+        from app.services.discount_pricing import resolve_expiry_instant, validate_code
+        from datetime import date
+
+        instant = resolve_expiry_instant(date(2026, 10, 31), "Australia/Melbourne")
+        with pytest.raises(DiscountError) as exc:
+            validate_code(code(expires_at=instant), space_id="s_1", now=instant)
+        assert exc.value.reason is DiscountRejection.EXPIRED
+
+    def test_it_does_not_leak_into_the_next_local_day(self):
+        """The bug this replaced: 23:59:59 UTC would have kept a Melbourne
+        code alive until 11am on 1 November."""
+        from app.services.discount_pricing import resolve_expiry_instant
+        from datetime import date
+
+        correct = resolve_expiry_instant(date(2026, 10, 31), "Australia/Melbourne")
+        naive_utc_end_of_day = datetime(2026, 10, 31, 23, 59, 59)
+
+        assert correct < naive_utc_end_of_day
+        # Eleven hours of difference, which is exactly the AEDT offset.
+        assert (naive_utc_end_of_day - correct).total_seconds() > 10 * 3600
+
+    def test_a_dst_sensitive_date_uses_the_offset_in_force_that_day(self):
+        """Melbourne moves to AEDT (+11) on 4 Oct 2026. A date either
+        side of that must use its own offset, not a fixed one."""
+        from app.services.discount_pricing import resolve_expiry_instant
+        from datetime import date
+
+        aest = resolve_expiry_instant(date(2026, 10, 1), "Australia/Melbourne")
+        aedt = resolve_expiry_instant(date(2026, 10, 31), "Australia/Melbourne")
+
+        # 2 Oct 00:00 +10:00 → 1 Oct 14:00 UTC
+        assert aest == datetime(2026, 10, 1, 14, 0, 0)
+        # 1 Nov 00:00 +11:00 → 31 Oct 13:00 UTC
+        assert aedt == datetime(2026, 10, 31, 13, 0, 0)
+
+    def test_the_dst_transition_day_itself_resolves(self):
+        """4 Oct 2026 is the day the clocks go forward — 2am does not
+        exist. Midnight does, so the boundary is well defined."""
+        from app.services.discount_pricing import resolve_expiry_instant
+        from datetime import date
+
+        instant = resolve_expiry_instant(date(2026, 10, 3), "Australia/Melbourne")
+        assert instant == datetime(2026, 10, 3, 14, 0, 0)
+
+    def test_a_utc_collective_gets_plain_midnight(self):
+        from app.services.discount_pricing import resolve_expiry_instant
+        from datetime import date
+
+        assert resolve_expiry_instant(date(2026, 10, 31), "UTC") == datetime(2026, 11, 1)
+
+    def test_a_western_collective_ends_later_in_utc(self):
+        """New York is behind UTC, so its day ends after UTC's does."""
+        from app.services.discount_pricing import resolve_expiry_instant
+        from datetime import date
+
+        # 1 Nov 2026 00:00 EDT (-4) → 1 Nov 04:00 UTC.
+        assert resolve_expiry_instant(
+            date(2026, 10, 31), "America/New_York",
+        ) == datetime(2026, 11, 1, 4, 0, 0)
+
+    def test_the_collectives_timezone_decides_not_the_readers(self):
+        """The same chosen day yields different instants per Collective —
+        and nothing in the call depends on the caller's environment."""
+        from app.services.discount_pricing import resolve_expiry_instant
+        from datetime import date
+
+        chosen = date(2026, 10, 31)
+        results = {
+            tz: resolve_expiry_instant(chosen, tz)
+            for tz in ("Australia/Melbourne", "UTC", "America/New_York")
+        }
+        assert len(set(results.values())) == 3
+
+    def test_an_unusable_timezone_falls_back_rather_than_raising(self):
+        """A Creator saving a code should not meet a 500 because a stored
+        timezone string is wrong; the column's NOT NULL default is the
+        same value this falls back to."""
+        from app.services.discount_pricing import resolve_expiry_instant
+        from datetime import date
+
+        assert resolve_expiry_instant(
+            date(2026, 10, 31), "Not/AZone",
+        ) == datetime(2026, 10, 31, 13, 0, 0)
+
+    def test_no_expiry_stays_no_expiry(self):
+        from app.services.discount_pricing import resolve_expiry_instant
+        assert resolve_expiry_instant(None, "Australia/Melbourne") is None
+
+    @pytest.mark.parametrize("tz", [
+        "Australia/Melbourne", "UTC", "America/New_York", "Europe/London",
+        "Pacific/Auckland", "Asia/Kolkata",
+    ])
+    @pytest.mark.parametrize("day", ["2026-01-15", "2026-10-03", "2026-10-31", "2026-12-31"])
+    def test_the_displayed_date_is_always_the_chosen_date(self, tz, day):
+        """The round trip that matters to a Creator: whatever we store,
+        they are shown back the day they picked — including across DST
+        boundaries and half-hour offsets."""
+        from app.services.discount_pricing import (
+            expiry_date_in_timezone, resolve_expiry_instant,
+        )
+        from datetime import date as _date
+
+        chosen = _date.fromisoformat(day)
+        instant = resolve_expiry_instant(chosen, tz)
+
+        assert expiry_date_in_timezone(instant, tz) == chosen

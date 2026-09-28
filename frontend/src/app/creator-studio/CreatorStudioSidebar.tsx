@@ -114,6 +114,10 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
       // Pathway / Series Payment Option CRUD (which is now a
       // reference-only view inside those editors).
       { href: '/creator-studio/payment-options', label: 'Payment Options', requiresCollective: true },
+      // Discount codes sit immediately after Payment Options: a code
+      // reduces the price of an offer, so it belongs beside the offers
+      // rather than with the ledger surfaces below.
+      { href: '/creator-studio/discount-codes',  label: 'Discount Codes', requiresCollective: true },
       // Payments received — transaction history + money in. Named
       // "Payments received" (not just "Payments") to distinguish
       // from "Payment Options" (what Creators offer) and avoid

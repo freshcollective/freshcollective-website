@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 import app.models.community_care  # noqa: F401
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
+from app.creator.schemas import LEGACY_EXPIRES_AT_MESSAGE
 from app.main import app
 from app.models.discount_code import DiscountCode, DiscountRedemption
 from app.models.payment import (
@@ -243,14 +244,16 @@ class TestCreate:
     def test_optional_expiry_and_limit_are_stored(self, client, collective):
         creator, space = collective
         as_user(creator)
-        expires = (datetime.utcnow() + timedelta(days=30)).isoformat()
 
         res = client.post(base(space.slug), json={
-            **HALF_OFF, "expires_at": expires, "max_redemptions": 25,
+            **HALF_OFF, "expires_on": "2026-10-31", "max_redemptions": 25,
         })
 
         assert res.status_code == 201, res.text
         assert res.json()["max_redemptions"] == 25
+        # The day the Creator chose comes back unchanged...
+        assert res.json()["expires_on"] == "2026-10-31"
+        # ...alongside the instant it resolves to.
         assert res.json()["expires_at"] is not None
 
     def test_a_blank_code_is_refused(self, client, collective):
@@ -481,10 +484,8 @@ class TestEditabilityAfterRedemption:
     def test_operational_fields_stay_editable(self, client, redeemed):
         """What happens next, as opposed to what already happened."""
         _creator, space, row = redeemed
-        later = (datetime.utcnow() + timedelta(days=60)).isoformat()
-
         res = client.patch(f"{base(space.slug)}/{row['id']}", json={
-            "is_active": False, "expires_at": later, "max_redemptions": 50,
+            "is_active": False, "expires_on": "2026-12-31", "max_redemptions": 50,
         })
 
         assert res.status_code == 200, res.text
@@ -632,3 +633,202 @@ class TestList:
         db.commit()
 
         assert client.get(f"{base(space.slug)}/{row['id']}").json()["redemption_count"] == 2
+
+
+class TestExpiryBelongsToTheCollective:
+    """End to end, the chosen day is placed by the Collective's timezone.
+
+    The unit tests in ``test_discount_pricing`` cover the arithmetic.
+    These make sure the route actually consults ``space.timezone``
+    rather than defaulting, and that what a Creator reads back is the
+    day they picked.
+    """
+
+    def test_the_stored_instant_comes_from_the_collectives_timezone(
+        self, client, db, collective,
+    ):
+        creator, space = collective
+        space.timezone = "Australia/Melbourne"
+        db.commit()
+        as_user(creator)
+
+        res = client.post(base(space.slug), json={**HALF_OFF, "expires_on": "2026-10-31"})
+
+        assert res.status_code == 201, res.text
+        row = db.query(DiscountCode).filter_by(id=res.json()["id"]).one()
+        # 1 Nov 2026 00:00 AEDT (+11) → 31 Oct 13:00 UTC.
+        assert row.expires_at == datetime(2026, 10, 31, 13, 0, 0)
+
+    def test_a_different_collective_places_the_same_day_differently(
+        self, client, db, make_user, make_space,
+    ):
+        melbourne_creator, melbourne = make_collective(db, make_user, make_space)
+        melbourne.timezone = "Australia/Melbourne"
+        london_creator, london = make_collective(db, make_user, make_space)
+        london.timezone = "Europe/London"
+        db.commit()
+
+        stored = {}
+        for creator, space in ((melbourne_creator, melbourne), (london_creator, london)):
+            as_user(creator)
+            res = client.post(base(space.slug), json={**HALF_OFF, "expires_on": "2026-10-31"})
+            assert res.status_code == 201, res.text
+            stored[space.timezone] = db.query(DiscountCode).filter_by(
+                id=res.json()["id"]).one().expires_at
+
+        # Both cities change clocks in October, in opposite directions:
+        # Melbourne is already on AEDT (+11), London has already dropped
+        # back to GMT (+0). Each day ends at its own local midnight.
+        assert stored["Australia/Melbourne"] == datetime(2026, 10, 31, 13, 0, 0)
+        assert stored["Europe/London"] == datetime(2026, 11, 1, 0, 0, 0)
+
+    def test_the_creator_reads_back_the_day_they_chose(self, client, db, collective):
+        creator, space = collective
+        space.timezone = "Australia/Melbourne"
+        db.commit()
+        as_user(creator)
+
+        created = client.post(base(space.slug), json={**HALF_OFF, "expires_on": "2026-10-31"})
+        assert created.status_code == 201, created.text
+
+        listed = client.get(base(space.slug))
+        assert listed.status_code == 200
+        assert [c["expires_on"] for c in listed.json()] == ["2026-10-31"]
+
+    def test_changing_the_day_moves_the_instant_with_it(self, client, db, collective):
+        creator, space = collective
+        space.timezone = "Australia/Melbourne"
+        db.commit()
+        as_user(creator)
+        code_id = client.post(
+            base(space.slug), json={**HALF_OFF, "expires_on": "2026-10-31"}).json()["id"]
+
+        res = client.patch(f"{base(space.slug)}/{code_id}", json={"expires_on": "2026-10-01"})
+
+        assert res.status_code == 200, res.text
+        assert res.json()["expires_on"] == "2026-10-01"
+        row = db.query(DiscountCode).filter_by(id=code_id).one()
+        # 1 Oct is still AEST (+10) — the offset in force that day, not a fixed one.
+        assert row.expires_at == datetime(2026, 10, 1, 14, 0, 0)
+
+    def test_clearing_the_day_clears_the_instant(self, client, db, collective):
+        creator, space = collective
+        as_user(creator)
+        code_id = client.post(
+            base(space.slug), json={**HALF_OFF, "expires_on": "2026-10-31"}).json()["id"]
+
+        res = client.patch(f"{base(space.slug)}/{code_id}", json={"expires_on": None})
+
+        assert res.status_code == 200, res.text
+        assert res.json()["expires_on"] is None
+        assert db.query(DiscountCode).filter_by(id=code_id).one().expires_at is None
+
+
+class TestLegacyExpiresAtIsRefused:
+    """A client sending the old field is told, not quietly corrected.
+
+    Ignoring it would hand back a 201 for a code whose expiry is not what
+    the caller asked for — eleven hours late, or absent entirely — and
+    nothing would surface that until someone redeemed a code that should
+    have been dead. A 422 costs one deploy of noise; silence costs a
+    wrong answer nobody is looking for.
+    """
+
+    def test_create_with_an_instant_is_refused(self, client, collective):
+        creator, space = collective
+        as_user(creator)
+
+        res = client.post(base(space.slug), json={
+            **HALF_OFF, "expires_at": "2026-10-31T23:59:59",
+        })
+
+        assert res.status_code == 422
+        assert "expires_on" in res.text
+
+    def test_the_refusal_says_what_to_send_instead(self, client, collective):
+        """A message naming the replacement field, because whoever reads
+        it is holding a client that needs changing."""
+        creator, space = collective
+        as_user(creator)
+
+        res = client.post(base(space.slug), json={
+            **HALF_OFF, "expires_at": "2026-10-31T23:59:59",
+        })
+
+        assert LEGACY_EXPIRES_AT_MESSAGE in res.text
+
+    def test_nothing_is_written_when_it_is_refused(self, client, db, collective):
+        creator, space = collective
+        as_user(creator)
+
+        client.post(base(space.slug), json={**HALF_OFF, "expires_at": "2026-10-31T23:59:59"})
+
+        assert db.query(DiscountCode).filter_by(space_id=space.id).count() == 0
+
+    def test_update_with_an_instant_is_refused(self, client, db, collective):
+        creator, space = collective
+        as_user(creator)
+        code_id = client.post(
+            base(space.slug), json={**HALF_OFF, "expires_on": "2026-10-31"}).json()["id"]
+
+        res = client.patch(f"{base(space.slug)}/{code_id}",
+                           json={"expires_at": "2026-12-25T23:59:59"})
+
+        assert res.status_code == 422
+        assert LEGACY_EXPIRES_AT_MESSAGE in res.text
+        # The code it tried to change is untouched.
+        assert db.query(DiscountCode).filter_by(
+            id=code_id).one().expires_at == datetime(2026, 10, 31, 13, 0, 0)
+
+    def test_it_is_refused_even_alongside_a_valid_day(self, client, collective):
+        """Sending both is a client mid-migration; the old field still
+        decides the outcome, so it still has to be refused."""
+        creator, space = collective
+        as_user(creator)
+
+        res = client.post(base(space.slug), json={
+            **HALF_OFF, "expires_on": "2026-10-31", "expires_at": "2026-10-31T23:59:59",
+        })
+
+        assert res.status_code == 422
+
+    def test_a_null_instant_is_refused_too(self, client, collective):
+        """``expires_at: null`` reads as "no expiry" and would be honoured
+        by accident. The client still holds the old model, so it is told
+        the same thing as one sending a timestamp."""
+        creator, space = collective
+        as_user(creator)
+
+        res = client.post(base(space.slug), json={**HALF_OFF, "expires_at": None})
+
+        assert res.status_code == 422
+        assert LEGACY_EXPIRES_AT_MESSAGE in res.text
+
+    def test_the_calendar_day_is_unaffected(self, client, db, collective):
+        """The refusal must not have cost the supported path anything."""
+        creator, space = collective
+        space.timezone = "Australia/Melbourne"
+        db.commit()
+        as_user(creator)
+
+        created = client.post(base(space.slug), json={**HALF_OFF, "expires_on": "2026-10-31"})
+        assert created.status_code == 201, created.text
+        assert created.json()["expires_on"] == "2026-10-31"
+        assert db.query(DiscountCode).filter_by(
+            id=created.json()["id"]).one().expires_at == datetime(2026, 10, 31, 13, 0, 0)
+
+        changed = client.patch(f"{base(space.slug)}/{created.json()['id']}",
+                               json={"expires_on": "2026-12-25"})
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["expires_on"] == "2026-12-25"
+
+    def test_a_code_with_no_expiry_still_creates(self, client, collective):
+        """Omitting the field entirely is how "never expires" is said."""
+        creator, space = collective
+        as_user(creator)
+
+        res = client.post(base(space.slug), json=HALF_OFF)
+
+        assert res.status_code == 201, res.text
+        assert res.json()["expires_on"] is None
+        assert res.json()["expires_at"] is None
