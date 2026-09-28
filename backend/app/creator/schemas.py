@@ -1,6 +1,9 @@
 import re
 from datetime import date, datetime
+
 from pydantic import BaseModel, field_validator, model_validator
+
+from app.services.discount_pricing import MAX_PERCENT_BPS
 
 ALLOWED_THEMES: set[str] = {
     "Inner Work", "Wellbeing", "Creativity", "Leadership", "Reflection",
@@ -3023,3 +3026,142 @@ class SeriesPaymentOptionUpdateRequest(BaseModel):
         if v is not None and v not in _VALID_OPTION_STATUSES:
             raise ValueError(f"status must be one of: {_VALID_OPTION_STATUSES}")
         return v
+
+
+# ---------------------------------------------------------------------------
+# Discount codes (Work Item 2)
+# ---------------------------------------------------------------------------
+#
+# Shape validation only. Anything needing the database — uniqueness, that a
+# scoped Payment Option belongs to this Collective, whether a field may
+# still be edited — belongs in the route, where the Collective is known.
+
+
+class DiscountCodeCreateRequest(BaseModel):
+    code: str
+    discount_type: str                      # 'percentage' | 'fixed_amount'
+    percent_bps: int | None = None          # 5000 = 50%
+    amount_cents: int | None = None
+    currency: str | None = None
+    scope_kind: str = "space"               # 'space' | 'payment_option'
+    scope_id: str | None = None
+    expires_at: datetime | None = None
+    max_redemptions: int | None = None
+    is_active: bool = True
+
+    @field_validator("code")
+    @classmethod
+    def _code_is_present_and_canonical(cls, v: str) -> str:
+        # Upper-cased here so the stored value is canonical and matching is
+        # case-insensitive without a functional index.
+        cleaned = (v or "").strip().upper()
+        if not cleaned:
+            raise ValueError("Code is required.")
+        if len(cleaned) > 40:
+            raise ValueError("Code must be 40 characters or fewer.")
+        if not re.fullmatch(r"[A-Z0-9][A-Z0-9_-]*", cleaned):
+            raise ValueError(
+                "Code may use letters, numbers, hyphens and underscores, "
+                "and must start with a letter or number."
+            )
+        return cleaned
+
+    @field_validator("currency")
+    @classmethod
+    def _currency_is_canonical(cls, v: str | None) -> str | None:
+        return v.strip().upper() if v else v
+
+    @model_validator(mode="after")
+    def _value_shape(self):
+        if self.discount_type == "percentage":
+            if self.amount_cents is not None:
+                raise ValueError("A percentage code cannot also carry an amount.")
+            if self.percent_bps is None:
+                raise ValueError("A percentage code needs a percentage.")
+            if not 1 <= self.percent_bps <= MAX_PERCENT_BPS:
+                raise ValueError(
+                    "Percentage must be between 0.01% and "
+                    f"{MAX_PERCENT_BPS / 100:g}%. A 100% discount is a "
+                    "complimentary pass, not a discount."
+                )
+        elif self.discount_type == "fixed_amount":
+            if self.percent_bps is not None:
+                raise ValueError("A fixed-amount code cannot also carry a percentage.")
+            if self.amount_cents is None or self.amount_cents <= 0:
+                raise ValueError("A fixed-amount code needs an amount above zero.")
+            if not self.currency:
+                raise ValueError("A fixed-amount code needs a currency.")
+        else:
+            raise ValueError("Discount type must be 'percentage' or 'fixed_amount'.")
+
+        if self.scope_kind == "payment_option":
+            if not self.scope_id:
+                raise ValueError("Choose the Payment Option this code applies to.")
+        elif self.scope_kind == "space":
+            if self.scope_id:
+                raise ValueError("A Collective-wide code does not name a Payment Option.")
+        else:
+            raise ValueError("Scope must be 'space' or 'payment_option'.")
+
+        if self.max_redemptions is not None and self.max_redemptions < 1:
+            raise ValueError("Maximum redemptions must be at least 1.")
+        return self
+
+
+class DiscountCodeUpdateRequest(BaseModel):
+    """Every field optional — the route decides which are still editable.
+
+    Which fields may change depends on whether the code has been redeemed,
+    and that is a database question, so it is answered there rather than
+    split across two places.
+    """
+
+    code: str | None = None
+    discount_type: str | None = None
+    percent_bps: int | None = None
+    amount_cents: int | None = None
+    currency: str | None = None
+    scope_kind: str | None = None
+    scope_id: str | None = None
+    expires_at: datetime | None = None
+    max_redemptions: int | None = None
+    is_active: bool | None = None
+
+    @field_validator("code")
+    @classmethod
+    def _code_is_canonical(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        return DiscountCodeCreateRequest._code_is_present_and_canonical(v)
+
+    @field_validator("currency")
+    @classmethod
+    def _currency_is_canonical(cls, v: str | None) -> str | None:
+        return v.strip().upper() if v else v
+
+
+class DiscountCodeResponse(BaseModel):
+    id: str
+    space_id: str
+    code: str
+    discount_type: str
+    percent_bps: int | None
+    amount_cents: int | None
+    currency: str | None
+    scope_kind: str
+    scope_id: str | None
+    #: Resolved for display so the list does not need a second fetch.
+    scope_payment_option_name: str | None = None
+    is_active: bool
+    expires_at: datetime | None
+    max_redemptions: int | None
+    #: Counted from ``discount_redemptions``, which is the source of truth.
+    #: The column of the same name on the model is a denormalised cache
+    #: maintained by redemption fulfilment; this never reads it.
+    redemption_count: int
+    #: False once redeemed — the definition is frozen from then on.
+    definition_editable: bool
+    #: False once redeemed — deactivate instead.
+    deletable: bool
+    created_at: datetime
+    updated_at: datetime

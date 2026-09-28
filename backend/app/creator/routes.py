@@ -9779,6 +9779,14 @@ from app.creator import _gathering_series_routes as _gs_routes  # noqa: E402,F40
 from app.creator import _space_payment_options_routes as _spo_routes  # noqa: E402,F401
 
 # ---------------------------------------------------------------------------
+# Discount codes (Work Item 2). Imported for side effect: the module
+# registers its endpoints against ``router``, same as the Payment Options
+# surface above.
+# ---------------------------------------------------------------------------
+
+from app.creator import _discount_code_routes as _discount_routes  # noqa: E402,F401
+
+# ---------------------------------------------------------------------------
 # Event About Blocks (M1 refinement) — extends the polymorphic
 # ``pathway_about_blocks`` table with owner_kind='event' so
 # individual Gatherings get the same rich member-facing content
