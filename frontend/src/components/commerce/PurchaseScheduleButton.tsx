@@ -7,6 +7,7 @@ import {
   type CollectivePaletteMeta,
 } from '@/lib/collectivePalette'
 import PaymentPlanConfirmDialog from '@/components/checkout/PaymentPlanConfirmDialog'
+import DiscountCodeField from '@/components/checkout/DiscountCodeField'
 import {
   planConfirmationCopy,
   type AnyPaymentSchedule,
@@ -67,6 +68,9 @@ export default function PurchaseScheduleButton({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
+  // Only ever a code. The amount is the server's business — see
+  // ``DiscountCodeField``.
+  const [discountCode, setDiscountCode] = useState<string | null>(null)
 
   // Only finite plans get the extra step. Pay-in-full goes straight
   // through — Stripe shows the amount for those itself.
@@ -95,6 +99,7 @@ export default function PurchaseScheduleButton({
           payment_option_schedule_id: paymentOptionScheduleId,
           success_url: `${base}?checkout=success`,
           cancel_url: `${base}?checkout=cancel`,
+          ...(discountCode ? { discount_code: discountCode } : {}),
         }),
       })
       if (!res.ok) {
@@ -113,6 +118,14 @@ export default function PurchaseScheduleButton({
   const bg = paletteHex('primary', palette) ?? '#38A09E'
   return (
     <div className="flex w-full flex-col items-stretch gap-2">
+      {!needsConfirm && (
+        <DiscountCodeField
+          paymentOptionId={paymentOptionId}
+          paymentOptionScheduleId={paymentOptionScheduleId}
+          onChange={setDiscountCode}
+          disabled={busy}
+        />
+      )}
       <button
         type="button"
         onClick={handleClick}

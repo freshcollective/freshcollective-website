@@ -28,7 +28,6 @@ from app.services.discount_pricing import (
     divides_evenly,
     normalise_code,
     percentage_discount_cents,
-    platform_fee_cents,
 )
 
 AUD = "AUD"
@@ -244,55 +243,6 @@ class TestUnevenCommitments:
         assert r.original_cents == 23331
         assert r.final_cents == r.original_cents - r.discount_cents
         assert r.final_cents % 7 != 0
-
-
-# ---------------------------------------------------------------------------
-# Platform fee — on what was actually charged
-# ---------------------------------------------------------------------------
-
-class TestPlatformFeeFollowsTheDiscount:
-    """Production could not demonstrate this: every live EMBODY
-    transaction has ``platform_fee_basis_points=0``. These use a
-    non-zero rate so the product decision is proved rather than assumed.
-    """
-
-    def test_the_fee_is_taken_on_the_discounted_amount(self):
-        r = compute_discount(
-            original_cents=30600, currency=AUD,
-            discount_type="percentage", percent_bps=5000,
-        )
-        # 10% platform fee on $153, not on $306.
-        assert platform_fee_cents(r.final_cents, 1000) == 1530
-        assert platform_fee_cents(r.original_cents, 1000) == 3060
-
-    def test_halving_the_price_halves_the_fee(self):
-        # 10% divides cleanly at both amounts.
-        assert platform_fee_cents(30600, 1000) == 3060
-        assert platform_fee_cents(15300, 1000) == 1530
-
-    def test_a_half_cent_rounds_up_rather_than_splitting_the_difference(self):
-        """At 7.5%, $153 lands on 1147.5c. Half-up takes it to 1148, so
-        the discounted fee is a cent more than exactly half the full fee.
-        Recorded because it looks like an error and is not — rounding
-        each charge independently is the only rule that keeps every
-        individual fee a whole number of cents."""
-        assert platform_fee_cents(30600, 750) == 2295
-        assert platform_fee_cents(15300, 750) == 1148
-        assert platform_fee_cents(15300, 750) * 2 == 2296
-
-    def test_a_zero_rate_still_yields_zero(self):
-        """The live EMBODY configuration today."""
-        assert platform_fee_cents(15300, 0) == 0
-
-    def test_the_fee_rounds_half_up(self):
-        # 15301 * 0.075 = 1147.575 → 1148
-        assert platform_fee_cents(15301, 750) == 1148
-
-    def test_negative_inputs_are_refused(self):
-        with pytest.raises(ValueError):
-            platform_fee_cents(-1, 750)
-        with pytest.raises(ValueError):
-            platform_fee_cents(100, -1)
 
 
 # ---------------------------------------------------------------------------

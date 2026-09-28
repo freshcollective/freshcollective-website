@@ -29,6 +29,15 @@ exact: Activate $306 at 50% → $153 → $15.30 × 10.
 Validation is separated from arithmetic (:func:`validate_code` vs
 :func:`compute_discount`) so a preview surface and a checkout can share
 one rule set while only the latter consumes a redemption.
+
+Platform fees are deliberately NOT calculated here. Discounting changes
+*what* the fee is charged on, not *how* it is rounded, and the existing
+rule in ``checkout_orchestration`` is production behaviour that predates
+this feature. A second fee function here — even one that agreed today —
+would be a competing definition waiting to drift, so the fee keeps its
+one home and this module simply lowers the amount it is given. That the
+fee follows the discounted charge is proved where it happens, in the
+checkout integration tests.
 """
 
 from __future__ import annotations
@@ -61,6 +70,11 @@ class DiscountRejection(str, enum.Enum):
     WRONG_PAYMENT_OPTION = "wrong_payment_option"
     CURRENCY_MISMATCH = "currency_mismatch"
     NOT_PURCHASABLE = "not_purchasable"
+    #: The discount leaves a positive charge too small to take. Distinct
+    #: from NOT_PURCHASABLE, which means nothing would be charged at all
+    #: — the two need different words to a Creator, because one is fixed
+    #: by a smaller discount and the other by a different feature.
+    BELOW_MINIMUM = "below_minimum"
 
 
 class DiscountError(Exception):
@@ -298,21 +312,6 @@ def build_snapshot(code: Any, amounts: DiscountAmounts) -> dict[str, Any]:
         "final_amount_cents": amounts.final_cents,
         "currency": amounts.currency,
     }
-
-
-def platform_fee_cents(final_cents: int, fee_basis_points: int) -> int:
-    """The platform fee on what was ACTUALLY charged.
-
-    Stated here rather than left to each call site because it is the
-    product decision the discount work turns on: Fresh Collective takes
-    its share of the discounted amount, not of the list price a member
-    never paid. Same half-up rounding as everything else; mirrors
-    ``checkout_orchestration``'s ``round(gross * fee_bps / 10000)``.
-    """
-    if final_cents < 0 or fee_basis_points < 0:
-        raise ValueError("fee inputs cannot be negative")
-    raw = Decimal(final_cents) * Decimal(fee_basis_points) / Decimal(BPS_DENOMINATOR)
-    return _round_half_up(raw)
 
 
 # ---------------------------------------------------------------------------

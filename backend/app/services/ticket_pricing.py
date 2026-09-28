@@ -16,6 +16,8 @@ Used by:
 
 from __future__ import annotations
 
+from app.core.money import MIN_PAID_CHARGE_CENTS
+
 # Two-decimal-minor-unit ISO 4217 currencies whitelisted for MVP.
 # JPY-style zero-minor-unit currencies are intentionally excluded so the
 # `ticket_price_cents` column name remains semantically accurate.
@@ -26,7 +28,13 @@ SUPPORTED_CURRENCIES: frozenset[str] = frozenset({
 # Absolute minimum price we'll accept. Stripe itself refuses very small
 # amounts (typically < 50 minor units in most currencies); reject earlier
 # with a clearer message.
-MIN_TICKET_PRICE_CENTS: int = 100  # e.g. $1.00 AUD
+#
+# The floor itself is shared — see ``core/money`` — because a discounted
+# checkout has to refuse the same amounts a ticket price does, and two
+# constants that happened to agree today would be a coincidence rather
+# than a rule. This name is kept as the ticket path's own vocabulary;
+# the value is not its own.
+MIN_TICKET_PRICE_CENTS: int = MIN_PAID_CHARGE_CENTS  # e.g. $1.00 AUD
 
 # Absolute maximum sanity guard — not a business limit, just protection
 # against pathological input (e.g. accidental extra zero on a big price).

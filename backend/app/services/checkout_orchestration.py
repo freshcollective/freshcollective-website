@@ -32,6 +32,7 @@ those extras is shared.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import uuid4
@@ -75,6 +76,9 @@ from app.services.purchase_fulfilment import (
 
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:  # pragma: no cover
+    from app.services.discount_pricing import AppliedDiscount
 
 
 # ---------------------------------------------------------------------------
@@ -684,6 +688,7 @@ def _create_stripe_session_and_txn(
     txn_transaction_type: PaymentTransactionType,
     txn_pathway_id: str | None,
     now: datetime,
+    applied_discount: "AppliedDiscount | None" = None,
 ) -> tuple[PaymentTransaction, "stripe.checkout.Session"]:
     """Create the Stripe Checkout Session and the matching pending
     ``PaymentTransaction`` row in a single atomic write.
@@ -743,13 +748,30 @@ def _create_stripe_session_and_txn(
         )
     snapshot = serialise_intent(snapshot_resolution.intent)
 
+    # What is actually charged. When a discount applies, every downstream
+    # figure — the Stripe line item, the ledger's gross, and the platform
+    # fee derived from it — comes from this one number, so there is no
+    # path by which Stripe and the ledger could disagree about the price.
+    charge_cents = (
+        applied_discount.amounts.final_cents if applied_discount is not None
+        else resolved.price_cents
+    )
+    if applied_discount is not None and charge_cents <= 0:  # pragma: no cover
+        # ``discount_application`` refuses a discount that clears the
+        # price, so reaching here means a caller built an AppliedDiscount
+        # by another route. Refuse rather than open a zero Stripe Session.
+        raise HTTPException(
+            status_code=500,
+            detail="Discount cleared the price — refusing to charge nothing.",
+        )
+
     try:
         session = stripe.checkout.Session.create(
             mode="payment",
             line_items=_build_stripe_line_items(
                 product_name=product_name,
                 product_description=product_description,
-                currency=resolved.currency, unit_amount=resolved.price_cents,
+                currency=resolved.currency, unit_amount=charge_cents,
             ),
             metadata=metadata,
             payment_intent_data={"metadata": payment_intent_metadata},
@@ -767,7 +789,10 @@ def _create_stripe_session_and_txn(
             detail="Failed to create checkout session. Please try again.",
         )
 
-    gross = resolved.price_cents
+    # Gross is what was charged, not the list price. The platform fee
+    # follows from it, so Fresh Collective takes its share of the money
+    # that actually moved rather than of a price the member never paid.
+    gross = charge_cents
     platform_fee = round(gross * fee_context.fee_bps / 10000)
     net_creator = gross - platform_fee
 
@@ -797,6 +822,14 @@ def _create_stripe_session_and_txn(
         ),
         stripe_mode=settings.stripe_mode,
         snapshot_grants_json=snapshot,
+        # Written now, at the moment the price was decided, so the charge
+        # can still be explained later even if the code is edited or
+        # deleted. Recording that the code was *redeemed* is a separate
+        # act and belongs to fulfilment — this purchase may never
+        # complete.
+        discount_snapshot_json=(
+            applied_discount.snapshot if applied_discount is not None else None
+        ),
         created_at=now,
         updated_at=now,
     )
@@ -838,6 +871,11 @@ def orchestrate_paid_checkout(
     # specific classifications (member_pathway_purchase /
     # member_series_pass_purchase) for reporting continuity.
     txn_transaction_type_override: PaymentTransactionType | None = None,
+    # A discount already validated and priced by ``discount_application``.
+    # Passed in rather than resolved here so that this function stays the
+    # thing that charges and does not also become the thing that decides
+    # what a code is worth.
+    applied_discount: "AppliedDiscount | None" = None,
 ) -> tuple[PaymentTransaction, "stripe.checkout.Session"]:
     """Create the Stripe Checkout Session + PaymentTransaction for
     a paid PaymentOption purchase. Assumes ``resolved`` has
@@ -944,6 +982,7 @@ def orchestrate_paid_checkout(
         cancel_url=cancel_url,
         txn_transaction_type=txn_transaction_type,
         txn_pathway_id=txn_pathway_id,
+        applied_discount=applied_discount,
         now=now,
     )
 

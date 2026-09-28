@@ -59,3 +59,34 @@ class TestCombined:
     def test_currency_missing(self):
         with pytest.raises(TicketPricingError):
             validate_paid_gathering_price(2500, None)
+
+
+class TestTheFloorSurvivedBeingShared:
+    """The floor moved to ``core.money`` so discounted checkout could use
+    the same number. This path's behaviour must be exactly what it was.
+
+    Asserted against literals, not against the constant. The existing
+    tests above read the constant symbolically, so they would keep
+    passing if its value drifted — which is precisely the risk that
+    extracting it introduces.
+    """
+
+    def test_one_dollar_is_still_the_floor(self):
+        assert MIN_TICKET_PRICE_CENTS == 100
+        assert validate_price_cents(100) == 100
+
+    def test_ninety_nine_cents_is_still_refused(self):
+        with pytest.raises(TicketPricingError):
+            validate_price_cents(99)
+
+    def test_it_is_the_same_object_as_the_shared_floor(self):
+        """Not a copy that happens to agree — two constants that drifted
+        apart would be worse than one that was never shared."""
+        from app.core.money import MIN_PAID_CHARGE_CENTS
+
+        assert MIN_TICKET_PRICE_CENTS == MIN_PAID_CHARGE_CENTS
+
+    def test_the_message_still_names_the_amount(self):
+        with pytest.raises(TicketPricingError) as exc:
+            validate_price_cents(50)
+        assert "100" in str(exc.value)

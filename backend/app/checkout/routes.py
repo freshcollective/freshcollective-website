@@ -26,12 +26,15 @@ through the hardened fulfilment service.
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from slowapi import Limiter
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_verified_current_user
 from app.checkout.schemas import (
+    DiscountPreviewRequest,
+    DiscountPreviewResponse,
     GatheringSeriesCheckoutRequest,
     GatheringSeriesCheckoutResponse,
     PathwayCheckoutRequest,
@@ -41,6 +44,7 @@ from app.checkout.schemas import (
 )
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.rate_limit import client_ip_for_rate_limit
 from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.payment import PaymentTransactionType
 from app.models.payment_option import PaymentOption
@@ -52,6 +56,13 @@ from app.models.platform import (
 )
 from app.models.user import User
 from app.models.payment_option_schedule import PaymentOptionSchedule
+from app.services.discount_application import resolve_discount
+from app.services.discount_pricing import (
+    AppliedDiscount,
+    DiscountError,
+    DiscountRejection,
+    normalise_code,
+)
 from app.services.checkout_orchestration import (
     _resolve_fee_bps_for_creator,
     check_option_fulfillable_or_raise,
@@ -69,6 +80,12 @@ from app.services.finite_plan_orchestration import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/checkout", tags=["checkout"])
+
+#: Trying codes is cheap and a Collective's codes are guessable by
+#: design — they are meant to be typed by people. Verified sign-in
+#: already puts a name against every attempt; this caps how fast one
+#: account can sweep a namespace.
+limiter = Limiter(key_func=client_ip_for_rate_limit)
 
 
 def _resolve_fee_bps(
@@ -110,6 +127,77 @@ def checkout_status(
 # ---------------------------------------------------------------------------
 # Unified checkout (B4B)
 # ---------------------------------------------------------------------------
+
+
+@router.post("/discount-preview", response_model=DiscountPreviewResponse)
+@limiter.limit("20/minute")
+def preview_discount_code(
+    request: Request,
+    body: DiscountPreviewRequest,
+    current_user: User = Depends(get_verified_current_user),
+    db: Session = Depends(get_db),
+) -> DiscountPreviewResponse:
+    """What this code would do to this offer's price.
+
+    Answers, it does not reserve. Nothing is written, no code is
+    consumed, and a member may preview the same code as often as they
+    like — the figure is only a statement about right now, and checkout
+    works it out again from scratch.
+
+    The price comes from ``resolve_option_and_schedule``, the same
+    resolver checkout uses, so the number being discounted is the number
+    that would be charged. Anything else and preview would be a second
+    opinion rather than a preview.
+
+    Invalid codes come back 200 with ``valid: false`` and a reason. See
+    ``DiscountPreviewResponse`` for why that is not an error.
+    """
+    resolved = resolve_option_and_schedule(
+        db,
+        payment_option_id=body.payment_option_id,
+        payment_option_schedule_id=body.payment_option_schedule_id,
+    )
+
+    if resolved.price_cents <= 0:
+        return DiscountPreviewResponse(
+            valid=False,
+            code=normalise_code(body.code),
+            reason=DiscountRejection.NOT_PURCHASABLE.value,
+            message="This offer is already free — no code is needed.",
+        )
+
+    try:
+        applied = resolve_discount(
+            db,
+            raw_code=body.code,
+            space_id=resolved.space.id,
+            payment_option_id=resolved.payment_option.id,
+            original_cents=resolved.price_cents,
+            currency=resolved.currency,
+            now=datetime.utcnow(),
+        )
+    except DiscountError as exc:
+        # Logged at debug: a member mistyping a code is ordinary, and a
+        # wrong code is not an incident.
+        logger.debug(
+            "Discount preview refused: reason=%s option=%s user=%s",
+            exc.reason.value, resolved.payment_option.id, current_user.id,
+        )
+        return DiscountPreviewResponse(
+            valid=False,
+            code=normalise_code(body.code),
+            reason=exc.reason.value,
+            message=exc.message,
+        )
+
+    return DiscountPreviewResponse(
+        valid=True,
+        code=applied.code,
+        original_amount_cents=applied.amounts.original_cents,
+        discount_amount_cents=applied.amounts.discount_cents,
+        final_amount_cents=applied.amounts.final_cents,
+        currency=applied.amounts.currency,
+    )
 
 
 @router.post("", response_model=UnifiedCheckoutResponse)
@@ -168,6 +256,19 @@ def create_unified_checkout_session(
     is_recurring = (schedule_type_row[0] == "recurring_installments")
 
     if is_recurring:
+        if body.discount_code:
+            # Discounting a payment plan means deciding how an uneven
+            # split is represented to Stripe across its instalments,
+            # which is a product decision that has not been made. Taking
+            # the code and ignoring it would charge full price against a
+            # member who believes otherwise, so it is refused instead.
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Discount codes cannot be used with payment plans yet. "
+                    "Please choose 'Pay in full' to use a code."
+                ),
+            )
         # FIP2 — finite payment plan path. Setup Session collects
         # payment method; SubscriptionSchedule is created in the
         # webhook once setup completes.
@@ -212,6 +313,11 @@ def create_unified_checkout_session(
 
     # ── Free path: skip Stripe, apply grants directly ─────────────
     if resolved.price_cents == 0:
+        if body.discount_code:
+            raise HTTPException(
+                status_code=409,
+                detail="This offer is already free — no code is needed.",
+            )
         outcome = orchestrate_free_checkout(
             db, resolved=resolved, payer=current_user, now=now,
             txn_transaction_type_override=(
@@ -224,6 +330,30 @@ def create_unified_checkout_session(
             free=True,
         )
 
+    # ── Discount: revalidated here, independently of any preview ──
+    # The preview the member saw is not evidence. It was a statement
+    # about an earlier moment, it is not signed, and the code may have
+    # expired or filled up since. So the code is resolved again from
+    # scratch, against a price read again from the Payment Option.
+    applied: AppliedDiscount | None = None
+    if body.discount_code:
+        try:
+            applied = resolve_discount(
+                db,
+                raw_code=body.discount_code,
+                space_id=resolved.space.id,
+                payment_option_id=resolved.payment_option.id,
+                original_cents=resolved.price_cents,
+                currency=resolved.currency,
+                now=now,
+            )
+        except DiscountError as exc:
+            # 409, not 422: the request was well formed and was valid
+            # when the member saw the preview. What changed is the
+            # world. The reason travels in the detail so the frontend
+            # can say which code stopped working and why.
+            raise HTTPException(status_code=409, detail=exc.message) from exc
+
     # ── Paid path: Stripe Checkout Session ────────────────────────
     txn, session = orchestrate_paid_checkout(
         db,
@@ -232,13 +362,15 @@ def create_unified_checkout_session(
         success_url=body.success_url,
         cancel_url=body.cancel_url,
         now=now,
+        applied_discount=applied,
         txn_transaction_type_override=(
             PaymentTransactionType.member_payment_option_purchase
         ),
     )
     logger.info(
-        "Unified checkout: txn=%s session=%s option=%s user=%s",
+        "Unified checkout: txn=%s session=%s option=%s user=%s discount=%s",
         txn.id, session.id, resolved.payment_option.id, current_user.id,
+        applied.code if applied else "-",
     )
     return UnifiedCheckoutResponse(
         checkout_url=session.url,
