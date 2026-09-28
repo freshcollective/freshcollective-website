@@ -301,6 +301,16 @@ class PaymentTransaction(Base):
         JSONB, nullable=True,
     )
 
+
+    # The discount as it stood at purchase, or NULL when none applied.
+    # Same stance as ``snapshot_grants_json`` above: a historical
+    # purchase must not change because a Creator later edited or
+    # disabled the code, so the transaction reads its own copy and never
+    # the live ``discount_codes`` row. Some older rows legitimately have
+    # neither snapshot — absence means "not recorded", not "no discount".
+    discount_snapshot_json: Mapped[dict | None] = mapped_column(
+        JSONB, nullable=True,
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Refund state (migration 126). Populated by the

@@ -231,6 +231,11 @@ class PurchasePlan(Base):
     # invoice fulfilment. Nullable so pre-FIP2 rows read cleanly.
     snapshot_grants_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # The discount applied to the whole commitment, or NULL. A plan's
+    # instalments are derived from the discounted total, so this is the
+    # record of how that total was reached.
+    discount_snapshot_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # Sandbox vs. live — parallels ``PaymentTransaction.stripe_mode``.
     stripe_mode: Mapped[str] = mapped_column(
         String(10), nullable=False, default="test", server_default="test",
