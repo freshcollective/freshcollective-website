@@ -257,15 +257,21 @@ def create_unified_checkout_session(
 
     if is_recurring:
         if body.discount_code:
-            # Discounting a payment plan means deciding how an uneven
-            # split is represented to Stripe across its instalments,
-            # which is a product decision that has not been made. Taking
-            # the code and ignoring it would charge full price against a
-            # member who believes otherwise, so it is refused instead.
+            # Settled product scope, not an unfinished edge: discount
+            # codes are a pay-in-full feature. A creator wanting a
+            # reduced payment plan publishes a separate Payment Option
+            # at that price, which keeps one price per schedule and
+            # leaves the finite-plan billing machinery alone.
+            #
+            # Refused rather than ignored, because accepting the code
+            # and charging the full plan would tell the member something
+            # untrue at the moment they commit. The frontend already
+            # hides the field here; this is the guard for anything that
+            # posts directly.
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Discount codes cannot be used with payment plans yet. "
+                    "Discount codes apply to pay-in-full purchases only. "
                     "Please choose 'Pay in full' to use a code."
                 ),
             )

@@ -76,6 +76,11 @@ export default function PurchaseScheduleButton({
   // through — Stripe shows the amount for those itself.
   const needsConfirm = schedule != null && planConfirmationCopy(schedule) != null
 
+  // Discount codes are a pay-in-full feature in v1. A recurring plan
+  // takes its price from its own schedule; a creator wanting a reduced
+  // plan makes a separate Payment Option for it.
+  const isPayInFull = schedule?.schedule_type === 'pay_in_full' 
+
   function handleClick() {
     if (needsConfirm) {
       setError(null)
@@ -118,7 +123,15 @@ export default function PurchaseScheduleButton({
   const bg = paletteHex('primary', palette) ?? '#38A09E'
   return (
     <div className="flex w-full flex-col items-stretch gap-2">
-      {!needsConfirm && (
+      {/* Pay-in-full only, and gated on the schedule saying so rather
+          than on ``needsConfirm``. That flag answers "does this need a
+          confirm dialog?", which is false for a payment plan whose
+          instalment metadata is incomplete and false again for a caller
+          that omits the schedule prop — either would have offered a code
+          box on a purchase the server refuses codes for. Asking the
+          schedule directly means the field appears only where a code can
+          actually be used. */}
+      {isPayInFull && (
         <DiscountCodeField
           paymentOptionId={paymentOptionId}
           paymentOptionScheduleId={paymentOptionScheduleId}

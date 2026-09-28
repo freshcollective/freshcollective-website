@@ -52,6 +52,7 @@ from app.models.payment_option import (
 )
 from app.models.payment_option_grant import PaymentOptionGrant
 from app.models.payment_option_schedule import PaymentOptionSchedule
+from app.models.purchase_plan import PurchasePlan
 from app.models.platform import Pathway, PathwayType
 
 
@@ -135,6 +136,8 @@ def make_offer(db, space, *, cents: int = ACTIVATE_CENTS, currency: str = "AUD",
         total_amount_cents=cents,
         installment_amount_cents=(3_060 if schedule_type != "pay_in_full" else None),
         installment_count=(10 if schedule_type != "pay_in_full" else None),
+        stripe_interval=("week" if schedule_type != "pay_in_full" else None),
+        stripe_interval_count=(1 if schedule_type != "pay_in_full" else None),
         currency=currency,
     )
     db.add(sched)
@@ -1020,13 +1023,24 @@ class TestTheClientCannotDictateThePrice:
 # ---------------------------------------------------------------------------
 
 
-class TestOutOfScopePathsRefuseRatherThanPretend:
-    def test_a_payment_plan_will_not_take_a_code_yet(
+class TestDiscountCodesArePayInFullOnly:
+    """Settled v1 product scope, not unfinished work.
+
+    Three needs, three mechanisms: a discount code reduces a
+    single-payment purchase; a reduced payment plan is a separate
+    Payment Option the creator publishes; free access is a complimentary
+    pass. Stretching the code to cover the other two is what these tests
+    prevent.
+
+    Pinned deliberately. If a later work item adds finite-plan
+    discounting it should rewrite this class on purpose — the refusal
+    below is a decision, and should not be deleted as though it were a
+    gap someone forgot to fill.
+    """
+
+    def test_a_payment_plan_refuses_a_code(
         self, db, make_space, make_user, stripe_configured, stripe_spy,
     ):
-        """Discounting instalments means deciding how an uneven split is
-        represented to Stripe, which has not been decided. Accepting the
-        code and charging full price would be the silent wrong answer."""
         space, buyer = make_space(), make_user()
         option, schedule = make_offer(db, space, schedule_type="recurring_installments")
         make_code(db, space)
@@ -1035,8 +1049,91 @@ class TestOutOfScopePathsRefuseRatherThanPretend:
             checkout(db, buyer, option=option, schedule=schedule, code="FAMILY50")
 
         assert exc.value.status_code == 400
-        assert "pay in full" in exc.value.detail.lower()
+        assert "pay-in-full" in exc.value.detail.lower()
         assert stripe_spy.calls == []
+
+    def test_it_is_refused_rather_than_charged_at_full_price(
+        self, db, make_space, make_user, stripe_configured, stripe_spy,
+    ):
+        """The failure worth preventing is not "the discount did not
+        apply" — it is a member committing to ten payments believing
+        they are discounted. Nothing reaches Stripe."""
+        space, buyer = make_space(), make_user()
+        option, schedule = make_offer(db, space, schedule_type="recurring_installments")
+        make_code(db, space)
+
+        with pytest.raises(HTTPException):
+            checkout(db, buyer, option=option, schedule=schedule, code="FAMILY50")
+
+        assert stripe_spy.calls == []
+        assert db.query(PurchasePlan).count() == 0
+
+    def test_a_plan_without_a_code_is_untouched(
+        self, db, make_space, make_user, stripe_configured, stripe_spy,
+    ):
+        """The refusal is about the code, not about payment plans. A
+        plan purchased normally must still work."""
+        space, buyer = make_space(), make_user()
+        option, schedule = make_offer(db, space, schedule_type="recurring_installments")
+
+        # Reaches the finite-plan path rather than being turned away.
+        with patch("app.services.finite_plan_orchestration.start_finite_plan_setup") as start:
+            start.return_value = SimpleNamespace(
+                plan=SimpleNamespace(id="pplan_x"),
+                session=SimpleNamespace(id="cs_x"),
+                checkout_url="https://checkout.stripe.test/setup",
+            )
+            with patch("app.checkout.routes.start_finite_plan_setup", start):
+                result = checkout(db, buyer, option=option, schedule=schedule)
+
+        assert result.free is False
+        assert start.called
+
+    def test_the_same_payment_option_still_takes_the_code_pay_in_full(
+        self, db, make_space, make_user, stripe_configured, stripe_spy,
+    ):
+        """The distinction is per SCHEDULE, not per Payment Option. One
+        offer can be sold both ways, and the code works on the pay-in-full
+        schedule while being refused on the plan."""
+        space, buyer = make_space(), make_user()
+        option, pay_in_full = make_offer(db, space)
+        plan_schedule = PaymentOptionSchedule(
+            payment_option_id=option.id, name="10 payments",
+            schedule_type="recurring_installments", status="published",
+            total_amount_cents=ACTIVATE_CENTS,
+            installment_amount_cents=3_060, installment_count=10,
+            stripe_interval="week", stripe_interval_count=1,
+            currency="AUD",
+        )
+        db.add(plan_schedule)
+        db.commit()
+        make_code(db, space, percent_bps=5000)
+
+        # Refused on the plan...
+        with pytest.raises(HTTPException) as exc:
+            checkout(db, buyer, option=option, schedule=plan_schedule, code="FAMILY50")
+        assert exc.value.status_code == 400
+
+        # ...and accepted on the pay-in-full schedule of the same offer.
+        checkout(db, buyer, option=option, schedule=pay_in_full, code="FAMILY50")
+        assert stripe_spy.unit_amount == HALF_OF_ACTIVATE
+
+    def test_preview_refuses_a_plan_schedule_too(
+        self, client, db, make_space, make_user,
+    ):
+        """Preview must not quote a price for something checkout will
+        refuse — that would be an offer the member cannot accept."""
+        space, buyer = make_space(), make_user()
+        option, schedule = make_offer(db, space, schedule_type="recurring_installments")
+        make_code(db, space)
+        as_user(buyer)
+
+        res = preview(client, option=option, schedule=schedule, code="FAMILY50")
+
+        assert res.status_code != 200 or res.json()["valid"] is False
+
+
+class TestOutOfScopePathsRefuseRatherThanPretend:
 
     def test_a_free_offer_refuses_a_code_rather_than_dropping_it(
         self, db, make_space, make_user, stripe_configured, stripe_spy,

@@ -133,3 +133,42 @@ describe('the browser does not price anything', () => {
     }
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// v1 scope: pay-in-full only
+// ---------------------------------------------------------------------------
+
+describe('the code field belongs to pay-in-full purchases only', () => {
+  const BUTTON = 'src/components/commerce/PurchaseScheduleButton.tsx'
+
+  test('the field is gated on the schedule being pay_in_full', () => {
+    // Pinned against the source because the alternative — gating on
+    // "does this need a confirm dialog?" — is false for a plan with
+    // incomplete instalment metadata and false again for a caller that
+    // omits the schedule. Either would offer a code box on a purchase
+    // the server refuses codes for.
+    const source = readFileSync(BUTTON, 'utf8')
+
+    assert.match(source, /const isPayInFull = schedule\?\.schedule_type === 'pay_in_full'/)
+    assert.match(source, /\{isPayInFull && \(\s*<DiscountCodeField/)
+    assert.ok(!/\{!needsConfirm && \(\s*<DiscountCodeField/.test(source),
+      'the field must not be gated on the confirm-dialog flag')
+  })
+
+  test('the creator form says which purchases a code applies to', () => {
+    const form = readFileSync(
+      'src/app/creator-studio/discount-codes/DiscountCodesClient.tsx', 'utf8')
+
+    assert.match(form, /apply to pay-in-full purchases only/)
+  })
+
+  test('no creator copy promises a code covers everything sold', () => {
+    // "on everything you sell" was true before payment plans were
+    // excluded, and would now be a promise the checkout does not keep.
+    const form = readFileSync(
+      'src/app/creator-studio/discount-codes/DiscountCodesClient.tsx', 'utf8')
+
+    assert.ok(!form.includes('everything you sell'))
+  })
+})

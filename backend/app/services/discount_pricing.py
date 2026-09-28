@@ -19,12 +19,38 @@ the same way and is a surprising rule to explain to a Creator. Because
 the final amount is derived by subtraction rather than rounded
 separately, ``original == discount + final`` always holds exactly.
 
-Finite plans: :func:`discount_committed_total` returns the **exact**
-discounted commitment. It deliberately does not decide how an uneven
-total is split across instalments — that is a Stripe-representation
-question, and inventing a rounding compromise here would bake a
-payments constraint into the pricing layer. The common real case is
-exact: Activate $306 at 50% → $153 → $15.30 × 10.
+Finite plans are OUT OF SCOPE for v1 — a discount code applies to
+pay-in-full purchases only. A creator wanting a reduced payment plan
+publishes a separate Payment Option at that price. Complimentary access
+is a complimentary pass. Each of the three has its own mechanism, and
+none of them is a discount code stretched to cover the others.
+
+:func:`discount_committed_total` and :func:`divides_evenly` are kept
+because that decision is expected to be revisited, and because the
+arithmetic is the part worth having settled in advance: the commitment
+is discounted as a whole, then instalments derive from it. Discounting
+one invoice would give away a tenth of what was promised. Neither
+function has a caller today; both are covered by tests so they stay
+honest until one does.
+
+What a later finite-plan work item would have to solve, recorded so the
+next reader starts from the findings rather than the question. A plan is
+one Stripe Product, one Price and one SubscriptionSchedule phase, so
+every invoice is identical by construction. Two amount gates —
+``finite_plan_handlers`` on the first invoice and ``finite_plan_lifecycle``
+on the rest — raise if an invoice total differs from
+``PurchasePlan.installment_amount_cents``, which is a single scalar. An
+uneven final instalment would therefore not merely fail to be
+represented; it would be rejected mid-plan, after the member had paid
+several times. ``schedule_validation`` already names the intended fix: add
+an explicit ``final_installment_amount_cents`` column and re-derive the
+sum — do not restore a tolerance. The disclosure sentence in
+``finite_plan_disclosure`` ("N payments of X") would also stop being true
+and is the only place money appears on Stripe's setup page.
+
+The common real case is exact anyway — Activate $306 at 50% → $153 →
+$15.30 × 10 — so an even-split-only first step would ship every live
+EMBODY plan without touching the billing machinery.
 
 Validation is separated from arithmetic (:func:`validate_code` vs
 :func:`compute_discount`) so a preview surface and a checkout can share
