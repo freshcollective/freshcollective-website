@@ -40,6 +40,7 @@ from app.models.payment import (
     PayoutStatus,
 )
 from app.services import discount_reservations as _discount_reservations
+from app.services import gathering_tickets as _gt_reasons
 from app.models.payment_option import PaymentOption
 from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.services.purchase_fulfilment import (
@@ -943,7 +944,7 @@ def _handle_checkout_expired(session: dict, db: Session) -> None:
             db,
             transaction_id=txn.id,
             final_status=PaymentTransactionStatus.cancelled,
-            reason="checkout_expired",
+            reason=_gt_reasons.CANCEL_CHECKOUT_EXPIRED,
         )
         db.commit()
         logger.info("checkout.session.expired: released gathering hold txn=%s session=%s",
@@ -1016,7 +1017,7 @@ def _handle_payment_failed(payment_intent: dict, db: Session) -> None:
                 db,
                 transaction_id=txn.id,
                 final_status=PaymentTransactionStatus.failed,
-                reason="payment_failed",
+                reason=_gt_reasons.CANCEL_PAYMENT_FAILED,
             )
             db.commit()
             logger.info("payment_intent.payment_failed: released gathering hold txn=%s pi=%s",

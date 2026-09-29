@@ -192,11 +192,21 @@ class TestHoldCreation:
             gt.create_or_reuse_hold(db, offer=offer, buyer=buyer_b,
                                     hold_ttl_minutes=30, **_fee_defaults())
 
-    def test_expired_hold_ignored_by_capacity(
+    def test_an_expired_hold_still_counts_against_capacity(
         self, db, make_event, make_user, make_pending_txn,
     ):
+        """Rewritten deliberately. This test previously asserted the
+        opposite — that an expired hold "does not count" — which is the
+        rule that oversold seats.
+
+        A buyer can pay at 10:59:59 against a hold expiring at 11:00 and
+        have the webhook arrive at 11:01. Freeing the seat at 11:00 sells
+        it twice, because fulfilment does not reject late payment (nor
+        should it: that would take the money and give nothing). So the
+        seat stays counted until something positively resolves the hold,
+        and the service layer refuses the next buyer.
+        """
         event = make_event(capacity=1)
-        # Insert an EXPIRED pending_payment row for someone else
         other = make_user()
         txn, _ = make_pending_txn(space=event.space, event=event, payer=other)
         db.add(EventBooking(
@@ -208,12 +218,97 @@ class TestHoldCreation:
         ))
         db.flush()
 
+        assert gt.capacity_used(db, event.id) == 1
+
         offer = gt.load_and_validate_offer(db, event.space.slug, event.id)
-        buyer = make_user()
-        # Must succeed — the expired hold does not count
-        outcome = gt.create_or_reuse_hold(db, offer=offer, buyer=buyer,
-                                          hold_ttl_minutes=30, **_fee_defaults())
-        assert outcome.booking.status == BookingStatus.pending_payment
+        with pytest.raises(gt.SoldOut):
+            gt.create_or_reuse_hold(db, offer=offer, buyer=make_user(),
+                                    hold_ttl_minutes=30, **_fee_defaults())
+
+    def test_the_seat_returns_once_the_hold_is_verified_dead(
+        self, db, make_event, make_user, make_pending_txn,
+    ):
+        """Verification, not the clock, is what frees it."""
+        from unittest.mock import patch
+        from app.services import discount_stripe_sessions as _sessions
+
+        event = make_event(capacity=1)
+        other = make_user()
+        txn, _ = make_pending_txn(space=event.space, event=event, payer=other)
+        txn.provider_checkout_session_id = "cs_stale"
+        booking = EventBooking(
+            id="bk_stale2_" + "x" * 9,
+            event_id=event.id, user_id=other.id,
+            status=BookingStatus.pending_payment,
+            hold_expires_at=datetime.utcnow() - timedelta(minutes=5),
+            payment_transaction_id=txn.id,
+        )
+        db.add(booking)
+        db.commit()
+
+        with patch.object(_sessions, "session_status", return_value="expired"):
+            assert gt.sweep_stale_holds(db, event_id=event.id) == 1
+
+        assert gt.capacity_used(db, event.id) == 0
+        db.refresh(booking)
+        assert booking.status == BookingStatus.cancelled
+        assert gt.CANCEL_VERIFIED_EXPIRED in (booking.note or "")
+
+    def test_an_unverifiable_hold_keeps_its_seat(
+        self, db, make_event, make_user, make_pending_txn,
+    ):
+        """Fail conservatively: refuse the waiting buyer rather than sell
+        a seat somebody may be paying for right now."""
+        from unittest.mock import patch
+        from app.services import discount_stripe_sessions as _sessions
+
+        event = make_event(capacity=1)
+        other = make_user()
+        txn, _ = make_pending_txn(space=event.space, event=event, payer=other)
+        txn.provider_checkout_session_id = "cs_stale"
+        db.add(EventBooking(
+            id="bk_stale3_" + "x" * 9,
+            event_id=event.id, user_id=other.id,
+            status=BookingStatus.pending_payment,
+            hold_expires_at=datetime.utcnow() - timedelta(minutes=5),
+            payment_transaction_id=txn.id,
+        ))
+        db.commit()
+
+        with patch.object(_sessions, "session_status",
+                          side_effect=_sessions.StripeUnavailable("down")):
+            assert gt.sweep_stale_holds(db, event_id=event.id) == 0
+
+        assert gt.capacity_used(db, event.id) == 1
+
+    def test_a_paid_stale_hold_is_never_released(
+        self, db, make_event, make_user, make_pending_txn,
+    ):
+        """The race itself, at service level: our clock says expired,
+        Stripe says paid. The seat is theirs."""
+        from unittest.mock import patch
+        from app.services import discount_stripe_sessions as _sessions
+
+        event = make_event(capacity=1)
+        other = make_user()
+        txn, _ = make_pending_txn(space=event.space, event=event, payer=other)
+        txn.provider_checkout_session_id = "cs_paid"
+        booking = EventBooking(
+            id="bk_stale4_" + "x" * 9,
+            event_id=event.id, user_id=other.id,
+            status=BookingStatus.pending_payment,
+            hold_expires_at=datetime.utcnow() - timedelta(minutes=5),
+            payment_transaction_id=txn.id,
+        )
+        db.add(booking)
+        db.commit()
+
+        with patch.object(_sessions, "session_status", return_value="complete"):
+            assert gt.sweep_stale_holds(db, event_id=event.id) == 0
+
+        assert gt.capacity_used(db, event.id) == 1
+        db.refresh(booking)
+        assert booking.status == BookingStatus.pending_payment
 
     def test_already_confirmed_user_cannot_buy_again(
         self, db, make_event, make_user,

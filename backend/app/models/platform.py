@@ -172,10 +172,20 @@ class BookingStatus(str, enum.Enum):
     confirmed = "confirmed"
     cancelled = "cancelled"
     # Temporary hold for a standalone paid Gathering while the buyer is in
-    # Stripe Checkout. Expires via `hold_expires_at`. Converted to
-    # `confirmed` by the webhook on successful payment; converted to
-    # `cancelled` on payment failure, Session expiry, or capacity queries
-    # that opportunistically prune stale holds. Never grants access.
+    # Stripe Checkout. Never grants access.
+    #
+    # Consumes a seat for as long as it exists, INCLUDING past
+    # `hold_expires_at` — that timestamp marks when the hold becomes
+    # eligible for verification, not when it stops counting. Leaves this
+    # state only on positive knowledge: `confirmed` when payment succeeds
+    # (whenever the webhook arrives), or `cancelled` when Stripe reports
+    # the Session expired or the payment failed, or when FC asks Stripe
+    # directly and is told the Session is dead.
+    #
+    # Nothing prunes stale holds on a timer. An earlier version of this
+    # comment claimed capacity queries did so opportunistically; they
+    # never have, and a clock-only rule is what oversold seats — see
+    # invariant I2 in `services/gathering_tickets.py`.
     pending_payment = "pending_payment"
 
 

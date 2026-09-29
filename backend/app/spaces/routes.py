@@ -2244,8 +2244,20 @@ def create_gathering_ticket_checkout(
     fee_bps, plan_id, sub_id = _resolve_fee_bps_for_ticket(offer.space.creator_id, db)
 
     # 4. Create (or UPDATE-reuse) the hold + pending transaction, in one lock.
-    try:
-        outcome = _gt.create_or_reuse_hold(
+    #
+    # A SoldOut refusal may be stale: holds now keep their seats past
+    # their window until something positively resolves them (invariant
+    # I2), so the seat a buyer is being refused may belong to a checkout
+    # that quietly died. On the first refusal we verify those holds
+    # against Stripe — OUTSIDE the Event lock, because a lock spanning a
+    # network call would queue every other buyer of this Gathering behind
+    # it — and then try exactly once more.
+    #
+    # One retry. If the second attempt still refuses, the holds are
+    # genuinely live or genuinely unverifiable, and looping would spend
+    # longer reaching the same answer.
+    def _take_hold():
+        return _gt.create_or_reuse_hold(
             db,
             offer=offer,
             buyer=current_user,
@@ -2254,6 +2266,15 @@ def create_gathering_ticket_checkout(
             creator_subscription_id=sub_id,
             hold_ttl_minutes=settings.gathering_checkout_expiry_minutes,
         )
+
+    try:
+        try:
+            outcome = _take_hold()
+        except _gt.SoldOut:
+            db.rollback()
+            if not _gt.sweep_stale_holds(db, event_id=offer.event.id):
+                raise
+            outcome = _take_hold()
     except _gt.TicketCheckoutError as exc:
         raise _map_ticket_error(exc)
 
@@ -2319,9 +2340,26 @@ def create_gathering_ticket_checkout(
                     "message": "Could not open Stripe Checkout. Please try again."},
         ) from exc
 
-    # 6. Persist Stripe refs onto the pending PaymentTransaction.
+    # 6. Persist Stripe refs, and adopt Stripe's OWN expiry as canonical.
+    #
+    # The hold above was given a provisional, deliberately generous
+    # expiry. Stripe enforces a minimum Session lifetime from its own
+    # clock and may normalise what we asked for, so whatever it returns is
+    # the truth — and writing that exact instant into the hold is what
+    # makes the two impossible to disagree about. Two independently
+    # computed timestamps was the original defect: the Session outlived
+    # the hold by the gap between their calculations, and the seat was
+    # sellable while still payable.
     outcome.transaction.provider_checkout_session_id = session.id
     outcome.transaction.provider_checkout_url = session.url
+
+    session_expires_at = getattr(session, "expires_at", None)
+    if session_expires_at:
+        # Stripe reports a Unix timestamp; the column is naive UTC, as
+        # every timestamp in this schema is.
+        outcome.booking.hold_expires_at = datetime.fromtimestamp(
+            int(session_expires_at), tz=timezone.utc,
+        ).replace(tzinfo=None)
 
     db.commit()
     return GatheringCheckoutResponse(

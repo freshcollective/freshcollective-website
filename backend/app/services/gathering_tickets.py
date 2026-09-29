@@ -10,10 +10,22 @@ Design invariants (each enforced in code AND in tests):
 
   I1. Client never supplies price, currency, or user identity. Every
       trust-sensitive value is loaded from the database.
-  I2. Capacity is calculated as
-        confirmed + (pending_payment AND hold_expires_at > NOW-UTC).
-      Any expired hold is invisible to capacity, so a stalled buyer
-      never permanently consumes a seat.
+  I2. Capacity is calculated as confirmed + pending_payment. NO clock
+      appears in that sum, and that is the whole point: a hold is a seat
+      until FC has POSITIVE KNOWLEDGE the checkout behind it can no
+      longer complete.
+
+      The previous rule counted only holds whose ``hold_expires_at`` was
+      still in the future, which oversold. A buyer who paid at 10:59:59
+      against a hold expiring at 11:00, whose webhook arrived at 11:01,
+      had their seat sold to somebody else at 11:00 — and then got it
+      too, because fulfilment does not consult the clock either (I6). Two
+      confirmed bookings, one seat.
+
+      A stalled buyer therefore does hold a seat past the window. It is
+      returned by ``release_hold_for_transaction`` on Stripe's expiry
+      webhook, or by ``verify_stale_hold`` asking Stripe directly when
+      another buyer wants it — never by the clock alone.
   I3. Hold creation acquires SELECT ... FOR UPDATE on the Event row.
       Concurrent last-seat buyers serialise on that lock; the loser
       sees sold_out before Stripe is ever contacted.
@@ -24,8 +36,16 @@ Design invariants (each enforced in code AND in tests):
   I5. If the same user retries with an ACTIVE hold, they get the
       original Stripe Checkout URL back — no new Session, no new hold.
   I6. Fulfilment (webhook) SELECT ... FOR UPDATE both the hold row and
-      the event row. It refuses to fulfil a hold that has expired,
-      been cancelled, or does not match the trusted metadata.
+      the event row. It refuses to fulfil a hold that has been cancelled
+      or does not match the trusted metadata.
+
+      It deliberately does NOT check ``hold_expires_at``. This file used
+      to claim it did; it never has, and it must not start. Stripe
+      retries for days and our own processing can lag, so a completion
+      arriving after the window is still a completion — refusing it would
+      take the member's money and give them nothing, which is worse than
+      the oversell the window exists to prevent. Capacity safety comes
+      from I2 keeping the seat counted, not from rejecting late payment.
   I7. Repeated webhook delivery is a no-op after the first successful
       fulfilment (idempotency via status='succeeded' short-circuit and
       UNIQUE constraints on the resulting rows).
@@ -156,19 +176,26 @@ def ensure_sales_enabled_or_raise() -> None:
 # accidentally forget the timezone() call.
 # ---------------------------------------------------------------------------
 
+#: Seats taken. Both live states count, with no clock in the predicate —
+#: see invariant I2. A ``pending_payment`` row stops consuming a seat only
+#: when something moves it to ``cancelled`` or ``confirmed``, and only
+#: positive knowledge does that.
 CAPACITY_USED_SQL = text("""
     SELECT COUNT(*)
     FROM event_bookings
     WHERE event_id = :event_id
-      AND (
-        status = 'confirmed'
-        OR (status = 'pending_payment' AND hold_expires_at > timezone('UTC', NOW()))
-      )
+      AND status IN ('confirmed', 'pending_payment')
 """)
 
 
 def capacity_used(db: Session, event_id: str) -> int:
-    """Number of seats currently taken by confirmed bookings + live holds."""
+    """Seats taken: confirmed bookings plus every unresolved hold.
+
+    "Unresolved" is a status, not a deadline. A hold past its window is
+    still counted, because the buyer behind it may be completing payment
+    at this moment and a seat given away on that assumption is a seat
+    sold twice.
+    """
     return int(db.execute(CAPACITY_USED_SQL, {"event_id": event_id}).scalar_one())
 
 
@@ -315,9 +342,20 @@ def create_or_reuse_hold(
       6. Create the pending PaymentTransaction.
 
     Caller must commit. The Stripe Checkout Session is created AFTER
-    this returns, then the caller sets `transaction.provider_checkout_*`
-    and commits again. If Stripe fails, the second commit is skipped
-    and the hold is left in place — it will expire naturally.
+    this returns; the caller then writes the Session's own ``expires_at``
+    back into ``booking.hold_expires_at`` (so the two cannot disagree)
+    along with ``transaction.provider_checkout_*``, and commits.
+
+    If Stripe fails the caller ROLLS BACK, so this hold never existed —
+    it is not "left in place to expire naturally", as this docstring
+    previously claimed.
+
+    The expiry set here is PROVISIONAL and deliberately generous. Stripe
+    enforces a minimum Session lifetime measured from its own clock, and
+    work happens between this call and that one, so an exact figure
+    computed here can be rejected or can undercut the Session. Erring
+    long only over-counts a seat briefly; erring short reopens the
+    oversell window.
     """
     # 1. Row lock the event
     db.execute(text("SELECT id FROM events WHERE id = :id FOR UPDATE"),
@@ -688,3 +726,193 @@ def booking_access_source_label(booking: EventBooking) -> str:
     if booking.source == "creator_manual":
         return "Creator added"
     return "Complimentary"
+
+
+# ---------------------------------------------------------------------------
+# Verification — the positive knowledge invariant I2 depends on
+# ---------------------------------------------------------------------------
+#
+# A hold past its window keeps its seat until FC learns what happened to
+# the checkout behind it. Usually Stripe tells us, via
+# ``checkout.session.expired`` or ``payment_intent.payment_failed``. When
+# it has not, and another buyer wants the seat, we ask.
+#
+# Asking is a network call, so it happens with NO Event row lock held: a
+# lock spanning a third-party request makes a slow provider into a stuck
+# table, with every other buyer of that Gathering queued behind it.
+
+#: Structured cancellation reasons. A closed set rather than free prose,
+#: so a cancelled hold can be told apart from a buyer who changed their
+#: mind, and so nothing can invent a reason that means "we guessed".
+CANCEL_CHECKOUT_EXPIRED = "checkout_expired"
+CANCEL_PAYMENT_FAILED = "payment_failed"
+CANCEL_VERIFIED_EXPIRED = "verified_expired"
+
+VERIFY_CONFIRMED = "confirmed"
+VERIFY_CANCELLED = "cancelled"
+VERIFY_UNKNOWN = "unknown"
+
+
+def stale_holds_for_event(db: Session, event_id: str) -> list[EventBooking]:
+    """Holds past their window, oldest first.
+
+    Past the window makes a hold eligible for verification. It is
+    emphatically not what makes its seat available.
+    """
+    return (
+        db.query(EventBooking)
+        .filter(
+            EventBooking.event_id == event_id,
+            EventBooking.status == BookingStatus.pending_payment,
+            EventBooking.hold_expires_at.isnot(None),
+            EventBooking.hold_expires_at <= datetime.utcnow(),
+        )
+        .order_by(EventBooking.hold_expires_at.asc())
+        .all()
+    )
+
+
+def verify_stale_hold(db: Session, *, booking_id: str) -> str:
+    """Ask Stripe what became of one stale hold, and act on the answer.
+
+    Commits. Returns one of the ``VERIFY_*`` constants.
+
+    No Event lock is taken here, and no Stripe call happens under one.
+    Each database mutation takes a short lock on the single booking row it
+    touches; the caller reacquires the Event lock afterwards and recounts.
+
+    The ladder, and why each rung is where it is:
+
+      * Session ``complete`` → the buyer paid and we missed the webhook.
+        Their seat is theirs. Fulfilment is left to the webhook path
+        rather than duplicated here, so there is exactly one place that
+        grants a pass; this only records that the hold must not be
+        released.
+      * Session ``expired`` → cancel, seat returns.
+      * Session ``open`` past its intended window → expire it explicitly
+        rather than waiting on Stripe's own timeout, then re-read. The
+        expire call can lose a race with a buyer paying at that instant,
+        which is exactly why the answer comes from the re-read.
+      * anything unreadable → leave the hold alone. An unanswered
+        question is not permission to sell the seat twice.
+    """
+    from app.services import discount_stripe_sessions as _sessions
+
+    booking = db.get(EventBooking, booking_id)
+    if booking is None or booking.status != BookingStatus.pending_payment:
+        return VERIFY_UNKNOWN
+
+    txn = (
+        db.get(PaymentTransaction, booking.payment_transaction_id)
+        if booking.payment_transaction_id else None
+    )
+    session_id = getattr(txn, "provider_checkout_session_id", None)
+    if not session_id:
+        # No Session was ever recorded against this hold. The endpoint
+        # commits the Session id in the same transaction as the hold and
+        # rolls back when Stripe fails, so a hold without one means the
+        # Session never existed — nothing can charge this buyer.
+        _cancel_hold(db, booking=booking, txn=txn,
+                     reason=CANCEL_VERIFIED_EXPIRED)
+        return VERIFY_CANCELLED
+
+    try:
+        status = _sessions.session_status(session_id)
+    except _sessions.StripeUnavailable as exc:
+        logger.warning(
+            "gathering hold unverifiable: booking=%s session=%s err=%s — "
+            "seat stays held rather than risking a double sale.",
+            booking.id, session_id, exc,
+        )
+        return VERIFY_UNKNOWN
+
+    if status == "complete":
+        logger.warning(
+            "gathering hold found COMPLETE during verification: booking=%s "
+            "session=%s — completion webhook was missed; seat is theirs.",
+            booking.id, session_id,
+        )
+        return VERIFY_CONFIRMED
+
+    if status == "expired":
+        _cancel_hold(db, booking=booking, txn=txn,
+                     reason=CANCEL_VERIFIED_EXPIRED)
+        return VERIFY_CANCELLED
+
+    # 'open' past its window — close it, then let the re-read decide.
+    try:
+        _sessions.expire_session(session_id)
+    except _sessions.StripeStateChanged:
+        pass
+    except _sessions.StripeUnavailable as exc:
+        logger.warning(
+            "gathering hold expire failed: booking=%s err=%s — staying held.",
+            booking.id, exc,
+        )
+        return VERIFY_UNKNOWN
+
+    try:
+        status = _sessions.session_status(session_id)
+    except _sessions.StripeUnavailable:
+        return VERIFY_UNKNOWN
+
+    if status == "complete":
+        logger.warning(
+            "gathering hold completed during expire attempt: booking=%s — "
+            "treating as paid, not released.", booking.id,
+        )
+        return VERIFY_CONFIRMED
+    if status == "expired":
+        _cancel_hold(db, booking=booking, txn=txn,
+                     reason=CANCEL_VERIFIED_EXPIRED)
+        return VERIFY_CANCELLED
+    return VERIFY_UNKNOWN
+
+
+def _cancel_hold(
+    db: Session, *, booking: EventBooking,
+    txn: PaymentTransaction | None, reason: str,
+) -> None:
+    """Release one seat, under a short lock on that booking row only."""
+    db.execute(
+        text("SELECT id FROM event_bookings WHERE id = :id FOR UPDATE"),
+        {"id": booking.id},
+    )
+    db.refresh(booking)
+    if booking.status != BookingStatus.pending_payment:
+        db.commit()
+        return
+    booking.status = BookingStatus.cancelled
+    booking.cancelled_at = datetime.utcnow()
+    booking.hold_expires_at = None
+    booking.note = f"{booking.note or ''}\n[{reason}]".strip()
+    if txn is not None and txn.status == PaymentTransactionStatus.pending:
+        txn.status = PaymentTransactionStatus.cancelled
+    db.commit()
+    logger.info(
+        "gathering hold released: booking=%s reason=%s", booking.id, reason,
+    )
+
+
+def sweep_stale_holds(db: Session, *, event_id: str) -> int:
+    """Verify every stale hold on one Gathering; return how many resolved.
+
+    Called when a buyer has been refused for capacity, from OUTSIDE the
+    Event row lock. The caller retakes the lock and recounts afterwards.
+
+    A hold that cannot be verified is left alone, so the waiting buyer is
+    refused. That is the cost of never selling one seat twice.
+    """
+    resolved = 0
+    for booking in stale_holds_for_event(db, event_id):
+        try:
+            outcome = verify_stale_hold(db, booking_id=booking.id)
+        except Exception:
+            logger.exception(
+                "gathering hold verification raised: booking=%s — leaving held.",
+                booking.id,
+            )
+            continue
+        if outcome == VERIFY_CANCELLED:
+            resolved += 1
+    return resolved
