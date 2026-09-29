@@ -162,13 +162,18 @@ def process_webhook_event(
     try:
         handler()
     except SkipWebhookEvent as exc:
+        # The reason is persisted, not only logged. ``skipped`` exists so
+        # operational tooling can see what was received and deliberately
+        # not acted on, and "we skipped it" without "because…" leaves
+        # someone reading logs to reconstruct why.
         db.execute(
             text(
                 "UPDATE webhook_events "
-                "SET outcome = 'skipped', processed_at = :now "
+                "SET outcome = 'skipped', processed_at = :now, "
+                "    error_message = :reason "
                 "WHERE id = :id"
             ),
-            {"id": row_id, "now": datetime.utcnow()},
+            {"id": row_id, "now": datetime.utcnow(), "reason": str(exc)[:2000]},
         )
         db.commit()
         logger.info(

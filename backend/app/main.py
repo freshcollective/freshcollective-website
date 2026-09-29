@@ -62,6 +62,7 @@ from app.checkout.routes import router as checkout_router
 from app.commerce.finite_plan_repair_routes import router as finite_plan_repair_router
 from app.purchases.routes import router as purchases_router
 from app.webhooks.routes import router as webhooks_router
+from app.webhooks.connect_routes import router as webhooks_v2_router
 from app.messages.routes import creator_router as messages_creator_router, member_router as messages_member_router
 from app.places.routes import router as places_router
 from app.ways_to_connect.routes import router as ways_to_connect_router
@@ -256,6 +257,7 @@ app.include_router(checkout_router)
 app.include_router(finite_plan_repair_router)
 app.include_router(purchases_router)
 app.include_router(webhooks_router)
+app.include_router(webhooks_v2_router)
 app.include_router(notifications_router)
 app.include_router(activities_router)
 app.include_router(messages_creator_router)

@@ -75,6 +75,17 @@ class Settings(BaseSettings):
     # from this, and it cannot be changed after activation, so it is
     # configuration rather than a literal. FC's platform account is AU.
     stripe_connect_account_country: str = "AU"
+    # Signing secret for the Accounts v2 event destination. Deliberately
+    # NOT ``stripe_webhook_secret``: v1 events and v2 core events arrive
+    # on different endpoints with different payload contracts and
+    # different secrets, and sharing one would mean a rotation on either
+    # side silently breaking the other. Stripe returns this secret only
+    # when the event destination is created — see
+    # ``scripts/create_connect_event_destination.py``.
+    stripe_v2_webhook_secret: str | None = None
+    # Name of the event destination FC creates, used by that script to
+    # recognise its own destination rather than making a second one.
+    stripe_v2_event_destination_name: str = "fc-connect-account-lifecycle"
     stripe_price_id_creator: str | None = None
     stripe_price_id_pro: str | None = None
 
@@ -600,6 +611,17 @@ class Settings(BaseSettings):
     @property
     def stripe_enabled(self) -> bool:
         return bool(self.stripe_secret_key and self.stripe_webhook_secret)
+
+    @property
+    def stripe_v2_webhooks_enabled(self) -> bool:
+        """Whether the Accounts v2 intake can verify a signature.
+
+        Separate from ``stripe_enabled`` on purpose: an environment may
+        legitimately take payments (v1) long before it has a Connect event
+        destination, and the v2 intake must refuse rather than pretend when
+        its own secret is unset.
+        """
+        return bool(self.stripe_secret_key and self.stripe_v2_webhook_secret)
 
     @property
     def stripe_mode(self) -> str:

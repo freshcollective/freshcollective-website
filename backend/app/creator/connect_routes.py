@@ -53,7 +53,7 @@ from app.models.creator_stripe_account import (
 )
 from app.models.platform import Space
 from app.models.user import User
-from app.services import connect_account_state as projection
+from app.services import connect_account_sync as sync
 from app.services import stripe_connect_accounts as connect
 
 logger = logging.getLogger(__name__)
@@ -209,39 +209,16 @@ def _sync(
     source: SyncSource,
     v2: dict | None = None,
 ) -> CreatorStripeAccount:
-    """Re-read Stripe, project, persist, and stamp the diagnostics.
+    """Thin alias over the shared sync service.
 
-    ``v2`` may be supplied when the caller already has a fresh account
-    object — the create response is one — to avoid an immediate second
-    read of something just returned.
-
-    Both objects are fetched before anything is written, so a failure
-    halfway through cannot leave the row describing a mixture of two
-    moments.
+    Shared with the v2 webhook intake — two callers writing the same row
+    from the same two Stripe objects should not be two implementations.
     """
-    account = v2 if v2 is not None else connect.retrieve_account(row.stripe_account_id)
-    legacy = connect.retrieve_legacy_account(row.stripe_account_id)
-
-    projection.project(
-        stripe_account_id=row.stripe_account_id, v2=account, v1=legacy,
-    ).apply_to(row)
-
-    row.last_synced_at = datetime.utcnow()
-    row.last_sync_source = source.value
-    row.last_error_message = None
-    db.commit()
-    return row
+    return sync.sync_from_stripe(db, row, source=source, v2=v2)
 
 
 def _record_failure(db: Session, row: CreatorStripeAccount, message: str) -> None:
-    """Record why a sync failed without touching the projection.
-
-    Deliberately leaves every projected field alone: an unanswered
-    question is not evidence, and a creator who was ``ready`` a minute ago
-    must not be demoted because Stripe timed out.
-    """
-    row.last_error_message = message[:1000]
-    db.commit()
+    sync.record_sync_failure(db, row, message)
 
 
 def _to_status(row: CreatorStripeAccount | None) -> ConnectStatusResponse:
