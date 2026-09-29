@@ -208,16 +208,37 @@ class TestMarkOwed:
         assert txn.connect_transfer_status == \
             ConnectTransferStatus.awaiting_payment.value
 
-    def test_an_unknown_fee_leaves_it_awaiting_payment(self, db):
-        """No estimating. The sweeper resolves the fee before the row is
-        considered owed."""
+    def test_an_unknown_fee_still_becomes_owed(self, db):
+        """Owed and computable are different questions.
+
+        The payment succeeded, so a transfer *is* owed — and only ``pending``
+        rows are visible to the sweeper, which resolves the fee before sending.
+        Leaving this ``awaiting_payment`` stranded a paid purchase that nothing
+        would ever look at again.
+        """
         txn = _txn(
             db, processing_fee_cents=None,
             connect_transfer_status=ConnectTransferStatus.awaiting_payment.value,
         )
-        assert ct.mark_transfer_owed(db, txn) is False
-        assert txn.connect_transfer_status == \
-            ConnectTransferStatus.awaiting_payment.value
+        assert ct.mark_transfer_owed(db, txn) is True
+        db.commit()
+        db.refresh(txn)
+        assert txn.connect_transfer_status == ConnectTransferStatus.pending.value
+
+    def test_a_pending_row_with_no_fee_is_never_sent(self, db):
+        """The fee gate applies to sending, not to owing. Nothing is estimated."""
+        txn = _txn(
+            db, processing_fee_cents=None,
+            connect_transfer_status=ConnectTransferStatus.pending.value,
+        )
+        fake = _FakeStripe()
+        with _patched(fake):
+            outcome = ct.execute_transfer(db, payment_transaction_id=txn.id)
+        assert fake.calls == []
+        assert outcome.status == ConnectTransferStatus.pending.value
+        db.refresh(txn)
+        assert txn.provider_transfer_id is None
+        assert txn.transfer_amount_cents is None
 
     def test_a_manual_row_is_never_marked_owed(self, db):
         txn = _txn(

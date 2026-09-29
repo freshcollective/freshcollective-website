@@ -169,6 +169,51 @@ class PlanCancellationOutcome:
 # ---------------------------------------------------------------------------
 
 
+def plan_routing_fields(plan: PurchasePlan) -> dict:
+    """Where an instalment row pays, inherited from its plan's snapshot.
+
+    Never re-resolved: the creator's current Connect state is deliberately not
+    consulted per invoice, because a plan must pay out the same way in month
+    ten as it did in month one.
+
+    Separate from :func:`plan_payout_fields` because a *failed* instalment row
+    needs the routing identity — so a later recovery upgrades in place knowing
+    where it pays — while its ``payout_status`` must stay
+    ``not_applicable``: a payment that did not happen owes nobody anything.
+    """
+    from app.models.payment import ConnectTransferStatus, PayoutModel
+
+    is_connect = plan.payout_model == PayoutModel.connect.value
+    return {
+        "payout_model": plan.payout_model,
+        "connect_destination_account_id": (
+            plan.connect_destination_account_id if is_connect else None
+        ),
+        # Applicable but not yet due. Fulfilment moves it to ``pending``.
+        "connect_transfer_status": (
+            ConnectTransferStatus.awaiting_payment.value if is_connect
+            else ConnectTransferStatus.not_applicable.value
+        ),
+    }
+
+
+def plan_payout_fields(plan: PurchasePlan) -> dict:
+    """Routing plus the manual-payout status, for a *succeeded* instalment.
+
+    Connect rows take ``not_applicable`` — they are outside FC's manual payout
+    bookkeeping, per the payout-status decision in migration 143.
+    """
+    from app.models.payment import PayoutModel
+
+    is_connect = plan.payout_model == PayoutModel.connect.value
+    return {
+        **plan_routing_fields(plan),
+        "payout_status": (
+            PayoutStatus.not_applicable if is_connect else PayoutStatus.pending
+        ),
+    }
+
+
 def record_later_successful_instalment(
     db: Session,
     *,
@@ -315,7 +360,11 @@ def record_later_successful_instalment(
         txn.provider_payment_intent_id = payment_intent_id
         txn.processing_fee_cents = processing_fee_cents
         txn.installment_number = installment_number
-        txn.payout_status = PayoutStatus.pending
+        # Inherit the plan's snapshot on recovery too: the failed row was
+        # created with it, but re-applying keeps the two in step if a failed
+        # row predates the plan snapshot.
+        for _field, _value in plan_payout_fields(plan).items():
+            setattr(txn, _field, _value)
         if audit_note:
             txn.notes = audit_note
         txn.updated_at = now
@@ -351,13 +400,20 @@ def record_later_successful_instalment(
             purchase_plan_id=plan.id,
             installment_number=installment_number,
             stripe_mode=plan.stripe_mode,
-            payout_status=PayoutStatus.pending,
+            **plan_payout_fields(plan),
             notes=audit_note,
             created_at=now,
             updated_at=now,
         )
         db.add(txn)
     db.flush()
+
+    # This instalment's payment has positively succeeded, so a Connect row now
+    # owes the creator a transfer. Marking it owed is part of this unit of
+    # work; sending it happens after the commit — fulfilment first, transfer
+    # second, exactly as on the pay-in-full path.
+    from app.services import connect_transfers as _connect_transfers
+    _connect_transfers.mark_transfer_owed(db, txn)
 
     # Advance the counter.
     prev_status = plan.status
@@ -558,6 +614,13 @@ def handle_invoice_failed_for_plan(
             # the same invoice or move to the next).
             installment_number=None,
             stripe_mode=plan.stripe_mode,
+            # Carries the plan's routing from the outset. Nothing is owed yet
+            # — the row is ``failed`` and its transfer status is
+            # ``awaiting_payment`` — but if Stripe's retry succeeds, the same
+            # row is upgraded in place and must already know where it pays.
+            # Routing only: ``payout_status`` below stays ``not_applicable``,
+            # because a payment that did not happen owes nobody.
+            **plan_routing_fields(plan),
             payout_status=PayoutStatus.not_applicable,
             created_at=failed_at,
             updated_at=failed_at,

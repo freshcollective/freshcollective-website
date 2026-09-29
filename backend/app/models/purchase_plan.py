@@ -37,6 +37,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Enum as SAEnum,
     ForeignKey,
@@ -200,6 +201,19 @@ class PurchasePlan(Base):
     platform_fee_basis_points: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0",
     )
+    # Payout routing, snapshotted at plan creation (migration 144). A
+    # ten-month plan must not change how it pays out in month four because
+    # the creator's Connect state moved — every instalment inherits what was
+    # decided here. Same discipline as ``platform_fee_basis_points`` above.
+    payout_model: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="manual", server_default="manual",
+    )
+    #: The ``acct_…`` this plan's instalments pay, as it stood at creation. A
+    #: creator who swaps accounts mid-plan does not redirect it.
+    connect_destination_account_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True,
+    )
+
     creator_plan_id: Mapped[str | None] = mapped_column(
         String, ForeignKey("creator_plans.id", ondelete="SET NULL"),
         nullable=True,
@@ -301,6 +315,20 @@ class PurchasePlan(Base):
     )
 
     __table_args__ = (
+        CheckConstraint(
+            "payout_model IN ('manual', 'connect', 'not_applicable')",
+            name="ck_purchase_plans_payout_model",
+        ),
+        # A Connect-routed plan must name the account its instalments will
+        # pay, and nothing else may carry one. The snapshot is enforced.
+        CheckConstraint(
+            "payout_model <> 'connect' OR connect_destination_account_id IS NOT NULL",
+            name="ck_purchase_plans_connect_has_destination",
+        ),
+        CheckConstraint(
+            "payout_model = 'connect' OR connect_destination_account_id IS NULL",
+            name="ck_purchase_plans_non_connect_has_no_destination",
+        ),
         # Reconciliation joins: a webhook carrying
         # ``customer.subscription.updated`` finds the plan by
         # ``provider_subscription_id`` in O(1).

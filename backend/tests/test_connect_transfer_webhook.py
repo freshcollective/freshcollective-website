@@ -226,8 +226,14 @@ class TestPaymentIntentGate:
 
 
 class TestUnknownFee:
-    def test_an_unknown_fee_sends_nothing_and_stays_awaiting(self, db):
-        """No estimate, no partial transfer. The sweeper resolves the fee."""
+    def test_an_unknown_fee_sends_nothing_but_records_the_debt(self, db):
+        """No estimate and no partial transfer — but the row becomes ``pending``.
+
+        Owed and computable are separate questions. The payment succeeded, so a
+        transfer is owed; only ``pending`` rows are visible to the sweeper,
+        which resolves the fee from the PaymentIntent before sending anything.
+        Leaving it ``awaiting_payment`` stranded a paid purchase.
+        """
         txn = _txn(db, processing_fee_cents=None)
         fake = _FakeStripe()
         with patch(TRANSFER_TARGET, return_value=fake):
@@ -237,10 +243,49 @@ class TestUnknownFee:
             )
         assert fake.calls == []
         db.refresh(txn)
-        assert txn.connect_transfer_status == \
-            ConnectTransferStatus.awaiting_payment.value
+        assert txn.connect_transfer_status == ConnectTransferStatus.pending.value
         assert txn.processing_fee_cents is None
         assert txn.transfer_amount_cents is None
+        assert txn.provider_transfer_id is None
+
+    def test_a_fee_less_row_is_picked_up_by_the_sweeper(self, db):
+        """The other half: the row the webhook could not price is resolved and
+        sent by the sweeper, rather than sitting unseen."""
+        from app.services import connect_transfer_sweeper as sweeper
+
+        txn = _txn(db, processing_fee_cents=None)
+        with patch(TRANSFER_TARGET, return_value=_FakeStripe()):
+            _attempt_connect_transfer(
+                db, payment_transaction_id=txn.id,
+                payment_intent_status="succeeded", source="test",
+            )
+
+        class _Bt:
+            fee = 210
+
+        class _Charge:
+            id = "ch_test"
+            balance_transaction = _Bt()
+
+        class _Pi:
+            status = "succeeded"
+            latest_charge = _Charge()
+
+        fake = _FakeStripe(result={"id": "tr_swept"})
+        fake.PaymentIntent = type(
+            "PI", (), {"retrieve": staticmethod(lambda *a, **k: _Pi())},
+        )
+        with patch(
+            "app.services.connect_transfer_sweeper.get_stripe", return_value=fake,
+        ), patch(TRANSFER_TARGET, return_value=fake):
+            report = sweeper.sweep_pending_transfers(db)
+
+        assert report.fee_resolved == 1
+        assert report.sent == 1
+        db.refresh(txn)
+        assert txn.processing_fee_cents == 210
+        assert txn.transfer_amount_cents == 9200 - 210
+        assert txn.connect_transfer_status == ConnectTransferStatus.sent.value
 
 
 # ---------------------------------------------------------------------------

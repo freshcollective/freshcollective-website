@@ -781,6 +781,64 @@ def handle_invoice_payment_succeeded(
         handler=_handler,
     )
 
+    # ── Connect: send the creator their share of this instalment. AFTER the
+    #    plan work has committed, so a transfer failure cannot touch the
+    #    member's access or the plan's progress. Same ordering as pay-in-full:
+    #    fulfilment first, transfer second. ──
+    _attempt_instalment_transfer(db, invoice=invoice)
+
+
+def _attempt_instalment_transfer(db: Session, *, invoice: dict) -> None:
+    """Send the creator's share for a just-paid instalment.
+
+    Reuses the shared transfer service — there is no second transfer
+    implementation for plans. The row was already marked owed inside the
+    handler, at the point its payment was known to have succeeded; this only
+    sends it.
+
+    Never raises. The instalment is recorded and the member's access applied; a
+    transfer problem must not become a 5xx that has Stripe redeliver a
+    fulfilment with nothing left to do. Retryable failures stay ``pending`` and
+    the existing transfer sweeper picks them up.
+    """
+    from app.models.payment import ConnectTransferStatus, PayoutModel
+    from app.services import connect_transfers
+
+    invoice_id = _sfield(invoice, "id", default="")
+    if not invoice_id:
+        return
+
+    try:
+        txn = (
+            db.query(PaymentTransaction)
+            .filter(
+                PaymentTransaction.provider_invoice_id == invoice_id,
+                PaymentTransaction.status == PaymentTransactionStatus.succeeded,
+            )
+            .first()
+        )
+        if txn is None or txn.payout_model != PayoutModel.connect.value:
+            return
+        if txn.connect_transfer_status != ConnectTransferStatus.pending.value:
+            # Not owed: unpaid, already sent, or already reversed. Anything
+            # that becomes owed later is the sweeper's.
+            return
+
+        outcome = connect_transfers.execute_transfer(
+            db, payment_transaction_id=txn.id,
+        )
+        logger.info(
+            "finite plan: instalment %s transfer → %s (txn=%s amount=%s)",
+            invoice_id, outcome.status, txn.id, outcome.amount_cents,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "finite plan: instalment transfer raised for invoice=%s — the "
+            "instalment and the member's access are unaffected and the sweeper "
+            "will retry", invoice_id,
+        )
+
 
 def _do_invoice_succeeded(
     db: Session, *, invoice: dict, event_livemode: bool,
@@ -937,9 +995,10 @@ def _do_invoice_succeeded(
     platform_fee = round(gross * plan.platform_fee_basis_points / 10000)
     net_creator = gross - platform_fee
 
-    # Best-effort Stripe processing-fee capture (parity with pay-in-full
-    # path in webhooks/routes.py). Fresh Collective absorbs the fee for
-    # MVP; stored for reporting only.
+    # The actual per-invoice processing fee. Reporting only for a manual row;
+    # load-bearing for a Connect one, where this instalment's transfer is
+    # ``net_creator_amount_cents - processing_fee_cents``. Each invoice has its
+    # own fee — never reused from a sibling instalment.
     processing_fee_cents: int | None = None
     if charge_id:
         from app.services.stripe_finite_plan import retrieve_processing_fee_for_charge
@@ -971,13 +1030,21 @@ def _do_invoice_succeeded(
         purchase_plan_id=plan.id,
         installment_number=plan.installments_paid + 1,
         stripe_mode=plan.stripe_mode,
-        payout_status=PayoutStatus.pending,
+        # Inherited from the plan's snapshot, never re-resolved from the
+        # creator's current Connect state.
+        **finite_plan_lifecycle.plan_payout_fields(plan),
         notes=audit_note,
         created_at=now,
         updated_at=now,
     )
     db.add(txn)
     db.flush()
+
+    # This instalment's payment has positively succeeded, so a Connect row now
+    # owes the creator a transfer. Marking it owed belongs to this unit of
+    # work; sending it happens after the commit.
+    from app.services import connect_transfers as _connect_transfers
+    _connect_transfers.mark_transfer_owed(db, txn)
 
     # ── Fulfilment — apply the snapshotted grants atomically ───────
     if plan.snapshot_grants_json is None:

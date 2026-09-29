@@ -209,11 +209,14 @@ def classify(exc: Exception) -> TransferError:
 def mark_transfer_owed(db: Session, txn: PaymentTransaction) -> bool:
     """``awaiting_payment`` → ``pending``: a transfer is now due.
 
-    Only once the payment has definitely succeeded *and* the actual
-    processing fee is known, because ``pending`` is what the sweeper acts on
-    and a row in it must be immediately computable. Returns False, having
-    changed nothing, whenever those conditions do not hold — including for
-    rows that are not Connect-routed at all.
+    Only once the payment has definitely succeeded. Returns False, having
+    changed nothing, whenever that does not hold — including for rows that are
+    not Connect-routed at all.
+
+    A missing processing fee does *not* prevent this. The row is owed either
+    way, and ``execute_transfer`` refuses to send without the fee rather than
+    estimating, so a ``pending`` row with no fee is safe: the sweeper resolves
+    the fee first and only then transfers.
 
     Does not commit; the caller decides the transaction boundary.
     """
@@ -223,15 +226,20 @@ def mark_transfer_owed(db: Session, txn: PaymentTransaction) -> bool:
         return False
     if txn.status != PaymentTransactionStatus.succeeded:
         return False
+
     if txn.processing_fee_cents is None:
-        # Deliberately stays ``awaiting_payment``. The sweeper resolves the
-        # fee before it will consider the row owed.
+        # Owed, but not yet computable. The row still becomes ``pending``,
+        # because whether a transfer is owed and whether its amount is known
+        # are different questions — and only ``pending`` is visible to the
+        # sweeper, which resolves the fee from the PaymentIntent before it
+        # will send anything. Leaving it ``awaiting_payment`` would strand a
+        # paid purchase no process ever looked at again.
         logger.warning(
             "connect transfer: txn=%s payment succeeded but the Stripe "
-            "processing fee is not known; not marking the transfer owed",
+            "processing fee is not known yet; marking the transfer owed for "
+            "the sweeper to resolve",
             txn.id,
         )
-        return False
 
     txn.connect_transfer_status = ConnectTransferStatus.pending.value
     logger.info("connect transfer: txn=%s is now owed a transfer", txn.id)

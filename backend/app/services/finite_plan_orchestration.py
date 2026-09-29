@@ -40,6 +40,7 @@ from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import Space
 from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
 from app.models.user import User
+from app.services.connect_payout_model import resolve_payout_model
 from app.services.checkout_orchestration import (
     FeeContext,
     NoActiveCreatorPlanError,
@@ -315,6 +316,17 @@ def start_finite_plan_setup(
     schedule = resolved.payment_schedule
     total_expected = schedule.installment_amount_cents * schedule.installment_count
 
+    # Payout routing, decided once and frozen onto the plan. Every instalment
+    # inherits it, so a creator who finishes onboarding — or loses a
+    # capability, or swaps accounts — in month four does not split one
+    # member's plan across two payout models. Same rule and the same
+    # current-mode safety as pay-in-full.
+    payout = resolve_payout_model(
+        db,
+        creator_user_id=fee_context.creator_id,
+        is_platform_owned=fee_context.is_platform_owned,
+    )
+
     plan = PurchasePlan(
         id=f"pplan_{uuid.uuid4().hex[:24]}",
         member_user_id=payer.id,
@@ -329,6 +341,8 @@ def start_finite_plan_setup(
         installments_paid=0,
         total_expected_cents=total_expected,
         platform_fee_basis_points=fee_context.fee_bps,
+        payout_model=payout.payout_model,
+        connect_destination_account_id=payout.destination_account_id,
         creator_plan_id=fee_context.creator_plan_id,
         stripe_interval=schedule.stripe_interval,
         stripe_interval_count=schedule.stripe_interval_count,
