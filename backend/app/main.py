@@ -8,6 +8,11 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.core.rate_limit import client_ip_for_rate_limit
+from app.checkout.stripe_client import (
+    assert_api_version,
+    installed_api_version,
+    installed_package_version,
+)
 
 from app.services.scheduled_publisher import start_publisher, stop_publisher
 from app.services.finite_plan_reconciler import (
@@ -93,10 +98,27 @@ async def lifespan(_: FastAPI):
     # (``_check_stripe_configuration`` in ``core/config.py``) already
     # refuse to instantiate ``Settings`` for mis-configured combos,
     # so at this point we only report the resolved state.
+    # The API version is part of that resolved state and belongs in the
+    # same line: FC sets none of its own, so the pinned SDK decides what
+    # every request is sent under. Printing it makes "which API version
+    # is production on?" answerable from the logs instead of from
+    # requirements.txt plus a reading of the SDK internals.
+    #
+    # ``assert_api_version`` is local — two module attributes, no network
+    # call — so this adds no boot-time dependency on Stripe being
+    # reachable. It raises only on a major version change; see its
+    # docstring for why refusing to boot is the safer failure there.
+    stripe_version_notes = assert_api_version()
     logger.info(
-        "Stripe: enabled=%s mode=%s app_env=%s",
+        "Stripe: enabled=%s mode=%s app_env=%s sdk=%s api_version=%s",
         settings.stripe_enabled, settings.stripe_mode, settings.app_env,
+        installed_package_version(), installed_api_version(),
     )
+    for note in stripe_version_notes:
+        # Not fatal, but never quiet: a same-major version drift still
+        # means this code is running against an API it was not tested
+        # against.
+        logger.critical("Stripe version drift: %s", note)
     # Comms M6 — surface a config gap that would otherwise fail silently
     # until the first real webhook fired. Outbound email still works
     # without this secret; delivery/bounce/complaint webhooks do not.

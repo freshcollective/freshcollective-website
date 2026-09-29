@@ -19,7 +19,16 @@ alembic>=1.14.0
 python-multipart>=0.0.9
 slowapi>=0.1.9
 python-dotenv>=1.0.0
-stripe>=10.0.0
+# Pinned exactly, not floored. stripe-python sets
+# ``stripe.api_version`` to the version it was generated against and
+# sends it as a ``Stripe-Version`` header on every request, so the
+# package version IS the API version every FC call is made under —
+# checkout, webhooks, subscriptions and refunds alike. A floor let a
+# rebuild change that with no code change and nothing in the diff.
+# Bumping this line is an API-version migration: update
+# EXPECTED_STRIPE_* in app/checkout/stripe_client.py in the same
+# commit, or tests/test_stripe_api_version.py fails.
+stripe==15.2.0
 resend>=2.0.0
 Pillow>=10.3.0
 # HTML sanitiser used at the community-post write boundary (SEC-001).
