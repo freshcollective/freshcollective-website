@@ -39,6 +39,10 @@ from app.models.payment import (
     PaymentTransactionType,
     PayoutStatus,
 )
+from app.services.webhook_idempotency import (
+    SkipWebhookEvent,
+    process_webhook_event,
+)
 from app.services import discount_reservations as _discount_reservations
 from app.services import gathering_tickets as _gt_reasons
 from app.models.payment_option import PaymentOption
@@ -129,6 +133,7 @@ async def stripe_webhook(
             _handle_checkout_completed(
                 event_object, db,
                 event_livemode=event_livemode,
+                event_id=event["id"],
             )
     elif event_type == "checkout.session.expired":
         _handle_checkout_expired(event_object, db)
@@ -458,18 +463,37 @@ def _handle_gathering_ticket_completed(
             stripe_payment_intent_id=payment_intent_id,
             stripe_charge_id=None,
         )
-    except ValueError as exc:
-        # Amount/currency mismatch, missing hold, wrong status. Log loudly
-        # and re-raise so Stripe retries — but only ONCE this returns a
-        # non-500, which currently we do not do. For MVP, log and return
-        # to acknowledge the delivery; the mismatch is investigable via
-        # the pending PaymentTransaction row.
+    except _gt_reasons.FulfilmentRetryable as exc:
+        # May succeed next time — most often a read that raced the hold's
+        # own commit. Re-raised so the endpoint returns non-2xx and Stripe
+        # redelivers. This path used to be swallowed with a 200, which
+        # meant a member could pay and silently receive nothing, forever,
+        # with no retry and nothing surfaced.
         logger.error(
-            "gathering ticket fulfilment refused: session=%s txn=%s err=%s",
+            "gathering ticket fulfilment failed (retryable): session=%s "
+            "txn=%s err=%s — returning non-2xx so Stripe redelivers.",
             session_id, txn_id, exc,
         )
         db.rollback()
-        return
+        raise
+    except _gt_reasons.FulfilmentTerminal as exc:
+        # Retrying cannot help: the amount disagrees, the transaction does
+        # not exist, or the booking was already cancelled. Acknowledged
+        # DELIBERATELY rather than by catching everything — recorded as
+        # ``skipped`` through the shared webhook-event mechanism so it is
+        # visible as "seen, did nothing" instead of counting as success.
+        #
+        # This is the population Q3 finds: a payment with no confirmed
+        # booking. It needs a person, not another delivery.
+        logger.error(
+            "gathering ticket fulfilment refused (terminal): session=%s "
+            "txn=%s err=%s — acknowledging; needs manual review.",
+            session_id, txn_id, exc,
+        )
+        db.rollback()
+        raise SkipWebhookEvent(
+            f"gathering ticket fulfilment terminal for txn={txn_id}: {exc}"
+        ) from exc
 
     db.commit()
     if outcome.already_fulfilled:
@@ -536,6 +560,7 @@ def _handle_gathering_ticket_completed(
 
 def _handle_checkout_completed(
     session: dict, db: Session, *, event_livemode: bool = False,
+    event_id: str | None = None,
 ) -> None:
     """
     checkout.session.completed — payment confirmed by Stripe.
@@ -563,7 +588,27 @@ def _handle_checkout_completed(
     # does NOT create pathway entitlements or space memberships.
     # ---------------------------------------------------------------
     if metadata.get("purchase_type") == "standalone_gathering":
-        _handle_gathering_ticket_completed(session, db, metadata)
+        # Run through the shared webhook-event mechanism. It gives two
+        # things this path lacked: deduplication keyed on Stripe's own
+        # event id (the fix now spans booking, transaction and pass, so
+        # row-lock-only idempotency is thinner than it was), and a place
+        # to record a TERMINAL fulfilment refusal as ``skipped`` —
+        # acknowledged on purpose, and visibly distinct from success.
+        #
+        # A retryable failure propagates out of here so the endpoint
+        # returns non-2xx and Stripe redelivers.
+        if event_id:
+            process_webhook_event(
+                db,
+                provider="stripe",
+                provider_event_id=event_id,
+                event_type="checkout.session.completed",
+                handler=lambda: _handle_gathering_ticket_completed(
+                    session, db, metadata,
+                ),
+            )
+        else:  # pragma: no cover — every real delivery carries an id
+            _handle_gathering_ticket_completed(session, db, metadata)
         return
 
     # ---------------------------------------------------------------

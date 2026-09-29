@@ -433,7 +433,9 @@ class TestFulfilment:
         event = make_event()
         buyer = make_user()
         outcome = self._seed_hold(db, event, buyer)
-        with pytest.raises(ValueError, match="amount"):
+        # Terminal, not retryable: figures that disagree will still
+        # disagree on the next delivery.
+        with pytest.raises(gt.FulfilmentTerminal, match="amount"):
             gt.fulfil_ticket_purchase(
                 db, transaction_id=outcome.transaction.id, event_id=event.id,
                 payer_user_id=buyer.id, stripe_amount_total=9999, stripe_currency="AUD",
@@ -449,7 +451,7 @@ class TestFulfilment:
         event = make_event()
         buyer = make_user()
         outcome = self._seed_hold(db, event, buyer)
-        with pytest.raises(ValueError, match="currency"):
+        with pytest.raises(gt.FulfilmentTerminal, match="currency"):
             gt.fulfil_ticket_purchase(
                 db, transaction_id=outcome.transaction.id, event_id=event.id,
                 payer_user_id=buyer.id, stripe_amount_total=2500, stripe_currency="USD",

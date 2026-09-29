@@ -121,6 +121,27 @@ class GatheringUnavailable(TicketCheckoutError):
     code = "gathering_unavailable"
 
 
+class FulfilmentTerminal(TicketCheckoutError):
+    """Fulfilment cannot succeed, and retrying will not change that.
+
+    An amount that does not match, a currency that does not match, a
+    transaction that does not exist, a booking already cancelled. Retrying
+    these hammers Stripe for days and reaches the same answer; they need a
+    person. Raised as a distinct type so the webhook can acknowledge the
+    delivery deliberately rather than by swallowing everything.
+    """
+
+
+class FulfilmentRetryable(TicketCheckoutError):
+    """Fulfilment failed for a reason that may not hold next time.
+
+    A missing hold row is the real case: a read racing a write that has
+    not committed yet. Stripe redelivers, and the second attempt usually
+    finds it. Distinguished from terminal because the cost of getting this
+    wrong is a member who paid and silently got nothing.
+    """
+
+
 class SoldOut(TicketCheckoutError):
     http_status = 409
     code = "sold_out"
@@ -521,7 +542,10 @@ def fulfil_ticket_purchase(
         {"id": transaction_id},
     ).first()
     if txn is None:
-        raise ValueError(f"PaymentTransaction {transaction_id!r} not found.")
+        # A transaction id that does not exist will not start existing.
+        raise FulfilmentTerminal(
+            f"PaymentTransaction {transaction_id!r} not found."
+        )
     # Reload as ORM object for convenience
     txn_obj = db.get(PaymentTransaction, transaction_id)
 
@@ -545,19 +569,23 @@ def fulfil_ticket_purchase(
 
     if txn_obj.status not in (PaymentTransactionStatus.pending,):
         # e.g. already 'failed' or 'cancelled' — refuse to un-fail it.
-        raise ValueError(
+        # Already failed or cancelled. Un-failing it on a redelivery
+        # would resurrect state we deliberately ended.
+        raise FulfilmentTerminal(
             f"PaymentTransaction {txn_obj.id!r} is in status "
             f"{txn_obj.status!r}; refusing to fulfil."
         )
 
     # 2. Amount + currency sanity
     if stripe_amount_total != txn_obj.gross_amount_cents:
-        raise ValueError(
+        # The figures disagree. That is a real problem for a human, and
+        # no number of retries will reconcile them.
+        raise FulfilmentTerminal(
             f"Stripe amount {stripe_amount_total} does not match "
             f"expected {txn_obj.gross_amount_cents} for txn {txn_obj.id}."
         )
     if stripe_currency.upper() != txn_obj.currency.upper():
-        raise ValueError(
+        raise FulfilmentTerminal(
             f"Stripe currency {stripe_currency!r} does not match "
             f"expected {txn_obj.currency!r} for txn {txn_obj.id}."
         )
@@ -577,12 +605,18 @@ def fulfil_ticket_purchase(
         .first()
     )
     if booking is None:
-        raise ValueError(
+        # Retryable: most likely a read that raced the hold's own
+        # commit. Stripe redelivers and the next attempt finds it.
+        raise FulfilmentRetryable(
             f"No hold row for event={event_id!r} user={payer_user_id!r} "
             f"txn={transaction_id!r}."
         )
     if booking.status not in (BookingStatus.pending_payment, BookingStatus.confirmed):
-        raise ValueError(
+        # ``cancelled`` is terminal — the hold was verified dead or
+        # released, and a payment against it needs a human deciding
+        # between granting a seat and refunding. Any other unexpected
+        # status is treated the same way rather than retried blindly.
+        raise FulfilmentTerminal(
             f"Booking {booking.id!r} is {booking.status!r}; cannot fulfil."
         )
 
