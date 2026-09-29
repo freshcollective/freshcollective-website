@@ -37,6 +37,7 @@ from app.models.payment import (
     PaymentTransaction,
     PaymentTransactionStatus,
     PaymentTransactionType,
+    PayoutModel,
     PayoutStatus,
 )
 from app.services.webhook_idempotency import (
@@ -135,6 +136,20 @@ async def stripe_webhook(
                 event_livemode=event_livemode,
                 event_id=event["id"],
             )
+    elif event_type == "checkout.session.async_payment_succeeded":
+        # A delayed-notification payment has finally cleared. Fulfilment
+        # already ran on ``checkout.session.completed``; the transfer was
+        # deliberately withheld until now, because FC must not send its own
+        # money before the customer's has arrived.
+        process_webhook_event(
+            db,
+            provider="stripe",
+            provider_event_id=event["id"],
+            event_type=event_type,
+            handler=lambda: _handle_async_payment_succeeded(event_object, db),
+        )
+    elif event_type == "checkout.session.async_payment_failed":
+        _handle_async_payment_failed(event_object, db)
     elif event_type == "checkout.session.expired":
         _handle_checkout_expired(event_object, db)
     elif event_type == "payment_intent.payment_failed":
@@ -736,18 +751,32 @@ def _handle_checkout_completed(
         )
         return
 
-    # --- Retrieve Stripe processing fee (best-effort, informational only) ---
-    # FC absorbs the Stripe fee — it is NOT deducted from creator net.
-    # Stored for reporting purposes only.
+    # --- Retrieve the actual Stripe processing fee, and the charge ----------
+    # For a manual-payout row this remains reporting only. For a
+    # Connect-routed row it is load-bearing: the creator's transfer is
+    # ``net_creator_amount_cents - processing_fee_cents``, so an unknown fee
+    # means no transfer rather than an estimated one.
+    #
+    # ``payment_intent_status`` decides whether the money is actually in.
+    # Checkout completing is not the same as the payment succeeding for
+    # delayed-notification methods, and FC must not send its own money
+    # before the customer's has arrived.
     processing_fee_cents: int | None = None
+    payment_intent_status: str | None = None
+    charge_id: str | None = None
     if payment_intent_id:
         try:
             pi = stripe.PaymentIntent.retrieve(
                 payment_intent_id,
                 expand=["latest_charge.balance_transaction"],
             )
+            payment_intent_status = getattr(pi, "status", None)
             charge = getattr(pi, "latest_charge", None)
             if charge:
+                charge_id = (
+                    charge if isinstance(charge, str)
+                    else getattr(charge, "id", None)
+                )
                 bt = getattr(charge, "balance_transaction", None)
                 if bt and hasattr(bt, "fee"):
                     processing_fee_cents = int(bt.fee)
@@ -777,6 +806,11 @@ def _handle_checkout_completed(
     txn.provider_checkout_session_id = session_id   # ensure it's set (fallback path)
     txn.provider_payment_intent_id = payment_intent_id
     txn.processing_fee_cents = processing_fee_cents
+    # The transfer's ``source_transaction``. Ties a Connect transfer to
+    # the charge that funds it, so Stripe holds it until those funds are
+    # available rather than refusing for insufficient balance.
+    if charge_id and not txn.provider_charge_id:
+        txn.provider_charge_id = charge_id
     txn.payout_status = PayoutStatus.pending
     txn.updated_at = now
 
@@ -960,6 +994,169 @@ def _handle_checkout_completed(
         ent_summary,
         payer_user_id,
         pathway_id,
+    )
+
+    # ── Connect: send the creator their share. LAST, and deliberately
+    #    outside the try/except above, so the ordering is structural rather
+    #    than a convention someone could reorder:
+    #
+    #      fulfilment first, transfer second
+    #
+    #    The member's access is already committed. A transfer that fails
+    #    cannot roll it back, and a transfer is never attempted before the
+    #    purchase it belongs to is real. ──
+    _attempt_connect_transfer(
+        db,
+        payment_transaction_id=txn.id,
+        payment_intent_status=payment_intent_status,
+        source="checkout.session.completed",
+    )
+
+
+def _attempt_connect_transfer(
+    db: Session,
+    *,
+    payment_transaction_id: str,
+    payment_intent_status: str | None,
+    source: str,
+) -> None:
+    """Mark a Connect row owed and try to send it, swallowing every failure.
+
+    Called after fulfilment has committed. Nothing here may raise: the
+    member's purchase is already real, and turning a transfer problem into a
+    5xx would have Stripe re-deliver a fulfilment that has nothing left to
+    do. Failures are recorded on the row and retried by the sweeper.
+
+    ``payment_intent_status`` is the gate. Only ``succeeded`` means the
+    customer's money has actually arrived — Checkout completing is not the
+    same thing for delayed-notification methods, and FC must not send its
+    own money ahead of the payment. Anything else leaves the row
+    ``awaiting_payment`` for the async success event to pick up.
+    """
+    from app.services import connect_transfers
+
+    try:
+        txn = (
+            db.query(PaymentTransaction)
+            .filter(PaymentTransaction.id == payment_transaction_id)
+            .first()
+        )
+        if txn is None or txn.payout_model != PayoutModel.connect.value:
+            return
+
+        if payment_intent_status != "succeeded":
+            logger.info(
+                "connect transfer: txn=%s not yet payable via %s "
+                "(payment_intent status=%r) — leaving it awaiting payment",
+                payment_transaction_id, source, payment_intent_status,
+            )
+            return
+
+        if not connect_transfers.mark_transfer_owed(db, txn):
+            # Either already owed/sent, or the fee is still unknown. The
+            # sweeper resolves both; nothing is estimated here.
+            db.commit()
+            return
+        db.commit()
+
+        connect_transfers.execute_transfer(
+            db, payment_transaction_id=payment_transaction_id,
+        )
+    except Exception:
+        # Never propagate. The purchase stands; the transfer is retried.
+        db.rollback()
+        logger.exception(
+            "connect transfer: attempt via %s raised for txn=%s — the purchase "
+            "is unaffected and the sweeper will retry",
+            source, payment_transaction_id,
+        )
+
+
+def _handle_async_payment_succeeded(session: dict, db: Session) -> None:
+    """``checkout.session.async_payment_succeeded`` — the delayed money landed.
+
+    Fulfilment already happened on ``checkout.session.completed``; what was
+    deliberately not done then is the transfer, because the payment had not
+    succeeded yet. This is where that gets picked up.
+
+    The fee is re-read here rather than trusted from earlier: a
+    balance transaction only exists once the charge settles, which for a
+    delayed method is precisely what has just happened.
+    """
+    session_id = session.get("id", "")
+    payment_intent_id = session.get("payment_intent")
+    transaction_id = (session.get("metadata") or {}).get("transaction_id", "")
+
+    txn = (
+        db.query(PaymentTransaction)
+        .filter(PaymentTransaction.provider_checkout_session_id == session_id)
+        .first()
+    )
+    if txn is None and transaction_id:
+        txn = (
+            db.query(PaymentTransaction)
+            .filter(PaymentTransaction.id == transaction_id)
+            .first()
+        )
+    if txn is None:
+        logger.warning(
+            "checkout.session.async_payment_succeeded: no transaction for "
+            "session=%s", session_id,
+        )
+        return
+    if txn.payout_model != PayoutModel.connect.value:
+        return
+
+    payment_intent_status: str | None = None
+    if payment_intent_id:
+        try:
+            pi = stripe.PaymentIntent.retrieve(
+                payment_intent_id, expand=["latest_charge.balance_transaction"],
+            )
+            payment_intent_status = getattr(pi, "status", None)
+            charge = getattr(pi, "latest_charge", None)
+            if charge:
+                cid = charge if isinstance(charge, str) else getattr(charge, "id", None)
+                if cid and not txn.provider_charge_id:
+                    txn.provider_charge_id = cid
+                bt = getattr(charge, "balance_transaction", None)
+                if bt and hasattr(bt, "fee") and txn.processing_fee_cents is None:
+                    txn.processing_fee_cents = int(bt.fee)
+            db.commit()
+        except Exception as exc:
+            logger.warning(
+                "checkout.session.async_payment_succeeded: could not read the "
+                "payment for session=%s: %s", session_id, exc,
+            )
+            db.rollback()
+
+    _attempt_connect_transfer(
+        db,
+        payment_transaction_id=txn.id,
+        payment_intent_status=payment_intent_status,
+        source="checkout.session.async_payment_succeeded",
+    )
+
+
+def _handle_async_payment_failed(session: dict, db: Session) -> None:
+    """``checkout.session.async_payment_failed`` — the delayed money never came.
+
+    Recorded rather than acted on. The row stays ``awaiting_payment``, which
+    already means "no transfer is due", so there is nothing to undo — the
+    point of logging it is that a Connect row which never becomes payable
+    should be explainable later.
+    """
+    session_id = session.get("id", "")
+    txn = (
+        db.query(PaymentTransaction)
+        .filter(PaymentTransaction.provider_checkout_session_id == session_id)
+        .first()
+    )
+    if txn is None or txn.payout_model != PayoutModel.connect.value:
+        return
+    logger.warning(
+        "checkout.session.async_payment_failed: txn=%s will never be payable "
+        "(transfer status stays %s)", txn.id, txn.connect_transfer_status,
     )
 
 
