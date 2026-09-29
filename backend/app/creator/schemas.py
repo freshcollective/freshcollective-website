@@ -2046,6 +2046,27 @@ class CreatorPaymentTransactionOut(BaseModel):
     # after a partial, ``refunded`` after a full — never downgrades.
     refunded_amount_cents: int = 0
     last_refunded_at: datetime | None = None
+
+    # ── Discount, when one was applied ────────────────────────────────
+    # Read from the transaction's immutable ``discount_snapshot_json``,
+    # not from the live code — the definition may since have been edited,
+    # deactivated or deleted, and none of that may change what this
+    # purchase says it charged.
+    #
+    # All optional and all None on historical rows, which is every
+    # transaction predating discount codes. A creator looking at one of
+    # those sees exactly what they saw before.
+    #
+    # ``gross_amount_cents`` above remains the amount actually paid; these
+    # explain how it got there.
+    discount_code: str | None = None
+    discount_original_amount_cents: int | None = None
+    discount_amount_cents: int | None = None
+    #: 'percentage' | 'fixed_amount' — lets the UI say "50% off" rather
+    #: than only naming a dollar figure.
+    discount_type: str | None = None
+    #: Basis points, when percentage (5000 = 50%).
+    discount_percent_bps: int | None = None
     # Fee-split reversal (migration 127). Cumulative reversed portions
     # of ``platform_fee_cents`` and ``net_creator_amount_cents``. Both
     # zero until a refund lands. Frontend uses these to display

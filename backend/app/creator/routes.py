@@ -7341,6 +7341,20 @@ def list_creator_payments(
             grant_revoked_at=grant_revoked_at_by_txn.get(r.id),
             refunded_amount_cents=r.refunded_amount_cents or 0,
             last_refunded_at=r.last_refunded_at,
+            # Snapshot, not the live code. ``.get`` throughout because a
+            # historical row has no snapshot at all and an older one may
+            # predate a field.
+            discount_code=(r.discount_snapshot_json or {}).get("code"),
+            discount_original_amount_cents=(
+                (r.discount_snapshot_json or {}).get("original_amount_cents")
+            ),
+            discount_amount_cents=(
+                (r.discount_snapshot_json or {}).get("discount_amount_cents")
+            ),
+            discount_type=(r.discount_snapshot_json or {}).get("discount_type"),
+            discount_percent_bps=(
+                (r.discount_snapshot_json or {}).get("percent_bps")
+            ),
             refunded_platform_fee_cents=r.refunded_platform_fee_cents or 0,
             refunded_creator_amount_cents=r.refunded_creator_amount_cents or 0,
             payout_status=(

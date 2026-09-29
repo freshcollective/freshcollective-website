@@ -1354,3 +1354,87 @@ class TestTheFloorOnlyConcernsDiscounts:
         checkout(db, buyer, option=option, schedule=schedule, code="FAMILY50")
 
         assert stripe_spy.unit_amount == HALF_OF_ACTIVATE
+
+
+class TestTheCreatorCanSeeWhyItWasDiscounted:
+    """Work Item 7 — the snapshot reaches the API.
+
+    Before this, a creator saw a bare A$153 for a discounted purchase,
+    indistinguishable from an offer that simply costs that. The snapshot
+    was recorded faithfully and displayed nowhere.
+
+    Read from ``discount_snapshot_json``, not the live code: by the time a
+    creator looks, the definition may have been edited, deactivated or
+    deleted, and none of that may change what a purchase says it charged.
+    """
+
+    def test_the_transaction_dto_carries_the_discount(
+        self, db, make_space, make_user, stripe_configured, stripe_spy,
+    ):
+        from app.creator.schemas import CreatorPaymentTransactionOut
+
+        space, buyer = make_space(), make_user()
+        option, schedule = make_offer(db, space)
+        make_code(db, space, percent_bps=5000)
+        result = checkout(db, buyer, option=option, schedule=schedule, code="FAMILY50")
+        txn = db.query(PaymentTransaction).filter_by(id=result.transaction_id).one()
+        snap = txn.discount_snapshot_json
+
+        dto = CreatorPaymentTransactionOut(
+            id=txn.id, transaction_type="member_payment_option_purchase",
+            status="succeeded", payer_user_id=buyer.id, space_id=space.id,
+            pathway_id=None, currency=txn.currency,
+            gross_amount_cents=txn.gross_amount_cents,
+            platform_fee_basis_points=0, platform_fee_cents=0,
+            net_creator_amount_cents=txn.gross_amount_cents,
+            notes=None, created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+            discount_code=snap.get("code"),
+            discount_original_amount_cents=snap.get("original_amount_cents"),
+            discount_amount_cents=snap.get("discount_amount_cents"),
+            discount_type=snap.get("discount_type"),
+            discount_percent_bps=snap.get("percent_bps"),
+        )
+
+        assert dto.discount_code == "FAMILY50"
+        assert dto.discount_original_amount_cents == ACTIVATE_CENTS
+        assert dto.discount_amount_cents == HALF_OF_ACTIVATE
+        assert dto.discount_type == "percentage"
+        assert dto.discount_percent_bps == 5000
+        # The amount paid stays where it always was.
+        assert dto.gross_amount_cents == HALF_OF_ACTIVATE
+
+    def test_an_undiscounted_transaction_has_no_discount_fields(
+        self, db, make_space, make_user, stripe_configured, stripe_spy,
+    ):
+        """Historical rows must render exactly as they do today."""
+        from app.creator.schemas import CreatorPaymentTransactionOut
+
+        dto = CreatorPaymentTransactionOut(
+            id="txn_old", transaction_type="member_payment_option_purchase",
+            status="succeeded", payer_user_id="u_1", space_id="sp_1",
+            pathway_id=None, currency="AUD", gross_amount_cents=ACTIVATE_CENTS,
+            platform_fee_basis_points=0, platform_fee_cents=0,
+            net_creator_amount_cents=ACTIVATE_CENTS,
+            notes=None, created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+        )
+
+        assert dto.discount_code is None
+        assert dto.discount_original_amount_cents is None
+        assert dto.discount_amount_cents is None
+
+    def test_the_snapshot_still_reads_after_the_code_is_deleted(
+        self, db, make_space, make_user, stripe_configured, stripe_spy,
+    ):
+        """The reason it is a snapshot and not a join."""
+        space, buyer = make_space(), make_user()
+        option, schedule = make_offer(db, space)
+        code = make_code(db, space, percent_bps=5000)
+        result = checkout(db, buyer, option=option, schedule=schedule, code="FAMILY50")
+
+        db.delete(code)
+        db.commit()
+
+        snap = db.query(PaymentTransaction).filter_by(
+            id=result.transaction_id).one().discount_snapshot_json
+        assert snap["code"] == "FAMILY50"
+        assert snap["percent_bps"] == 5000

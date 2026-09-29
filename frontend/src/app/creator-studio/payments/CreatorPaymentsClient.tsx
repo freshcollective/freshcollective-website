@@ -3,6 +3,7 @@
 import type { CreatorPlanCardView } from '@/lib/creatorPlanCard'
 
 import { useEffect, useState } from 'react'
+import { describeTransactionDiscount } from '@/lib/discountDisplay'
 import { apiUrl } from '@/lib/api'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import RevokeAccessModal, { type RevokeResult } from './RevokeAccessModal'
@@ -45,6 +46,13 @@ interface CreatorPaymentTransaction {
   payment_option_schedule_id: string | null
   currency: string
   gross_amount_cents: number
+  /** Present only when a discount code was applied. Null on every
+   *  transaction predating the feature. */
+  discount_code?: string | null
+  discount_original_amount_cents?: number | null
+  discount_amount_cents?: number | null
+  discount_type?: string | null
+  discount_percent_bps?: number | null
   platform_fee_basis_points: number
   platform_fee_cents: number
   net_creator_amount_cents: number | null
@@ -794,6 +802,33 @@ export default function CreatorPaymentsClient({
                         </p>
                       </div>
                     </div>
+                    {(() => {
+                      // Only rendered when the purchase recorded a
+                      // discount. Historical rows return null and the
+                      // panel looks exactly as it always has.
+                      const d = describeTransactionDiscount(row)
+                      if (!d) return null
+                      return (
+                        <div className="mt-2 rounded-lg bg-slate-50 px-2.5 py-2 text-[12px]">
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="text-black">Original price</span>
+                            <span className="text-black line-through">{d.originalAmount}</span>
+                          </div>
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="text-black">Discount</span>
+                            <span className="font-medium text-[#0F172A]">{d.label}</span>
+                          </div>
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span className="text-black">Discount amount</span>
+                            <span className="text-black">&minus;{d.discountAmount}</span>
+                          </div>
+                          <div className="mt-1 flex items-baseline justify-between gap-3 border-t border-slate-200 pt-1">
+                            <span className="font-medium text-[#0F172A]">Amount paid</span>
+                            <span className="font-semibold text-[#0F172A]">{d.amountPaid}</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
                     {row.refunded_amount_cents > 0 && (
                       <div className="mt-2 grid grid-cols-2 gap-2 text-[12px]">
                         <div>

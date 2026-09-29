@@ -38,7 +38,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.money import MIN_PAID_CHARGE_CENTS
@@ -55,16 +54,6 @@ from app.services.discount_pricing import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def live_redemption_count(db: Session, discount_code_id: str) -> int:
-    """Permanent redemptions only. Kept for callers that genuinely mean
-    "has this been spent", as distinct from "is a slot available"."""
-    return (
-        db.query(func.count(DiscountRedemption.id))
-        .filter(DiscountRedemption.discount_code_id == discount_code_id)
-        .scalar()
-    ) or 0
 
 
 def find_code(db: Session, *, raw_code: str | None, space_id: str) -> DiscountCode | None:
