@@ -316,7 +316,21 @@ def _existing_confirmed_booking(db: Session, event_id: str, user_id: str) -> Eve
 
 
 def _existing_active_hold(db: Session, event_id: str, user_id: str) -> EventBooking | None:
-    """Return the caller's non-expired pending_payment booking, if any."""
+    """Return the caller's non-expired pending_payment booking, if any.
+
+    **This one is deliberately clock-based, and must stay that way.**
+
+    It asks a different question from ``capacity_used``. That one asks "is
+    this seat still taken?", which must ignore the clock — a past-due hold
+    keeps its seat until Stripe confirms the checkout is dead (invariant
+    I2). This asks "does this member still have a payment page worth
+    sending them back to?", and that genuinely expires: past the window
+    the Stripe Session is closed and its URL leads nowhere, so the caller
+    should fall through and open a fresh one.
+
+    Aligning this with I2 would hand a member a dead Stripe URL instead of
+    a working checkout. Two questions, two rules, one timestamp.
+    """
     row = db.execute(
         text("""
             SELECT id FROM event_bookings

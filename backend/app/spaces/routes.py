@@ -2496,12 +2496,13 @@ def get_event(
         # Free/included/pathway/invitation events never generate holds,
         # so the confirmed-only count is unchanged for them.
         if is_paid_event:
-            booked_count = int(db.execute(text("""
-                SELECT COUNT(*) FROM event_bookings
-                WHERE event_id = :e
-                  AND (status = 'confirmed'
-                       OR (status = 'pending_payment' AND hold_expires_at > timezone('UTC', NOW())))
-            """), {"e": event.id}).scalar_one())
+            # The authoritative count, not a copy of it. This used to
+            # embed its own clock-based predicate, which after the
+            # oversell fix meant member-facing availability disagreed
+            # with the gate that actually allocates seats: a seat could
+            # read "1 left" and then be refused on click. One function,
+            # one answer — see invariant I2 in ``gathering_tickets``.
+            booked_count = _gt.capacity_used(db, event.id)
         else:
             booked_count = (
                 db.query(func.count(EventBooking.id))

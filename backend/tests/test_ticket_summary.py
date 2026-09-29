@@ -153,7 +153,7 @@ class TestLabels:
 # ---------------------------------------------------------------------------
 
 class TestCapacityDisplay:
-    def test_expired_hold_not_counted_in_active_holds(
+    def test_a_past_due_hold_still_counts_and_reconciles(
         self, db, make_event, make_user, make_pending_txn,
     ):
         event = make_event(capacity=5)
@@ -174,9 +174,16 @@ class TestCapacityDisplay:
         ))
         db.flush()
 
+        # Rewritten: this asserted the past-due hold was NOT counted,
+        # which is the rule that oversold seats. Both holds occupy their
+        # seats until Stripe says otherwise, and the creator's reported
+        # numbers must reconcile with the gate that allocates seats.
         summary = ts.ticket_summary_for(db, event)
-        assert summary.active_hold_count == 1
-        assert summary.remaining_capacity == 4  # 5 cap - 1 live hold
+        assert summary.active_hold_count == 2
+        assert summary.remaining_capacity == 3  # 5 cap - 2 unresolved holds
+        # The reconciliation that matters: reporting agrees with authority.
+        assert gt.capacity_used(db, event.id) == 2
+        assert summary.remaining_capacity == 5 - gt.capacity_used(db, event.id)
 
     def test_remaining_capacity_counts_confirmed_plus_active_holds(
         self, db, make_event, make_user,
@@ -238,9 +245,12 @@ class TestAccessTypeEditLock:
         event = make_event()
         assert self._patch_event(db, event, "free") == "allowed"
 
-    def test_expired_hold_does_not_lock(
+    def test_a_past_due_hold_still_locks(
         self, db, make_event, make_user, make_pending_txn,
     ):
+        """Rewritten. An unresolved hold means someone may be paying right
+        now, so the access type is not free to change underneath them —
+        the clock alone does not make it safe."""
         event = make_event()
         stale_user = make_user()
         stale_txn, _ = make_pending_txn(space=event.space, event=event, payer=stale_user)
@@ -252,7 +262,7 @@ class TestAccessTypeEditLock:
             payment_transaction_id=stale_txn.id,
         ))
         db.flush()
-        assert self._patch_event(db, event, "free") == "allowed"
+        assert self._patch_event(db, event, "free") == "locked_by_holds"
 
 
 # ---------------------------------------------------------------------------

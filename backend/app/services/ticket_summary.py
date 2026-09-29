@@ -115,9 +115,15 @@ def ticket_summary_for(db: Session, event: Event) -> TicketSalesSummary:
               COALESCE(SUM(CASE
                   WHEN status = 'confirmed'
                   THEN 1 ELSE 0 END), 0)                    AS confirmed,
+              -- Every unresolved hold, with NO clock. A past-due hold
+              -- still occupies its seat until Stripe tells us the
+              -- checkout behind it is dead. Counting only unexpired ones
+              -- made this figure disagree with ``capacity_used``, so
+              -- "seats remaining" could overstate availability and a
+              -- creator's numbers would not reconcile against capacity.
+              -- See invariant I2 in ``services/gathering_tickets``.
               COALESCE(SUM(CASE
                   WHEN status = 'pending_payment'
-                   AND hold_expires_at > timezone('UTC', NOW())
                   THEN 1 ELSE 0 END), 0)                    AS active_holds
             FROM event_bookings
             WHERE event_id = :event_id
@@ -207,9 +213,15 @@ def bulk_ticket_summaries(
                   THEN 1 ELSE 0 END), 0)                    AS complimentary,
               COALESCE(SUM(CASE
                   WHEN status = 'confirmed' THEN 1 ELSE 0 END), 0) AS confirmed,
+              -- Every unresolved hold, with NO clock. A past-due hold
+              -- still occupies its seat until Stripe tells us the
+              -- checkout behind it is dead. Counting only unexpired ones
+              -- made this figure disagree with ``capacity_used``, so
+              -- "seats remaining" could overstate availability and a
+              -- creator's numbers would not reconcile against capacity.
+              -- See invariant I2 in ``services/gathering_tickets``.
               COALESCE(SUM(CASE
                   WHEN status = 'pending_payment'
-                   AND hold_expires_at > timezone('UTC', NOW())
                   THEN 1 ELSE 0 END), 0)                    AS active_holds
             FROM event_bookings
             WHERE event_id = ANY(:ids)
