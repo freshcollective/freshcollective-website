@@ -43,6 +43,7 @@ from app.creator.schemas import (
     DiscountCodeUpdateRequest,
 )
 from app.models.discount_code import DiscountCode, DiscountRedemption
+from app.services.discount_reservations import held_reservation_count
 from app.services.discount_pricing import (
     expiry_date_in_timezone,
     resolve_expiry_instant,
@@ -113,6 +114,12 @@ def _resolve_scope_option(db: Session, space, scope_id: str) -> PaymentOption:
 
 def _to_response(db: Session, row: DiscountCode, space=None) -> DiscountCodeResponse:
     redeemed = _redemption_count(db, row.id)
+    # An unresolved reservation is an in-flight promise: a member is at
+    # Stripe right now with this definition in hand. Editing what the code
+    # means underneath them would change the deal mid-purchase, so the
+    # same fields freeze as after a redemption. Computed here so Creator
+    # Studio is TOLD the state rather than guessing at it.
+    held = held_reservation_count(db, row.id)
     tz_name = getattr(space, "timezone", None)
     if tz_name is None:
         from app.models.platform import Space
@@ -142,8 +149,8 @@ def _to_response(db: Session, row: DiscountCode, space=None) -> DiscountCodeResp
         expires_at=row.expires_at,
         max_redemptions=row.max_redemptions,
         redemption_count=redeemed,
-        definition_editable=(redeemed == 0),
-        deletable=(redeemed == 0),
+        definition_editable=(redeemed == 0 and held == 0),
+        deletable=(redeemed == 0 and held == 0),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -274,16 +281,25 @@ def update_discount_code(
     space = _get_managed_space(slug, current_user, db)
     row = _get_code_or_404(db, space, code_id)
     redeemed = _redemption_count(db, row.id)
+    held = held_reservation_count(db, row.id)
     supplied = body.model_dump(exclude_unset=True)
 
     # ── Frozen once somebody has acted on the promise ────────────────
-    if redeemed:
+    # Redemptions and live reservations both count. A reservation means a
+    # member is mid-checkout holding this definition; changing the code,
+    # its value, or its scope underneath them would alter the deal after
+    # they agreed to it.
+    if redeemed or held:
         blocked = [f for f in FROZEN_AFTER_REDEMPTION if f in supplied]
         if blocked:
+            reason = (
+                "has been redeemed" if redeemed
+                else "has a checkout in progress"
+            )
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "This code has been redeemed, so its definition can no "
+                    f"This code {reason}, so its definition can no "
                     f"longer change ({', '.join(sorted(blocked))}). You can "
                     "deactivate it or adjust its expiry and limit instead."
                 ),
@@ -295,7 +311,10 @@ def update_discount_code(
             raise HTTPException(
                 status_code=422, detail="Maximum redemptions must be at least 1.",
             )
-        if supplied["max_redemptions"] < redeemed:
+        # The floor is slots COMMITTED, not merely redeemed: reducing the
+        # limit below the reservations already outstanding would promise a
+        # member at Stripe a slot that no longer exists.
+        if supplied["max_redemptions"] < redeemed + held:
             raise HTTPException(
                 status_code=409,
                 detail=(
@@ -469,6 +488,20 @@ def delete_discount_code(
             detail=(
                 "This code has been redeemed and is part of your purchase "
                 "history. Deactivate it instead so it can no longer be used."
+            ),
+        )
+
+    # A live reservation means money is in flight. The reservation row
+    # cascades on delete, so removing the definition now would erase the
+    # record of a slot a member may be paying for at this moment — and the
+    # completion webhook would arrive with nothing to convert.
+    if held_reservation_count(db, row.id):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Someone is in the middle of a checkout with this code. "
+                "Deactivate it to stop new uses; it can be deleted once "
+                "that checkout finishes or times out."
             ),
         )
 

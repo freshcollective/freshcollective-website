@@ -36,7 +36,11 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.money import MIN_PAID_CHARGE_CENTS
 from app.main import app
-from app.models.discount_code import DiscountCode, DiscountRedemption
+from app.models.discount_code import (
+    DiscountCode,
+    DiscountRedemption,
+    DiscountReservation,
+)
 from app.models.payment import (
     PaymentFulfilmentStatus,
     PaymentProvider,
@@ -761,59 +765,56 @@ class TestCheckoutDoesNotRecordRedemption:
         assert code.redemption_count == 0
 
 
-class TestTheFinalSlotIsNotYetGuarded:
-    """A known gap, recorded so it is not mistaken for finished work.
+class TestTheFinalSlotIsHeldWhileSomeonePaysForIt:
+    """Rewritten by Work Item 6, which is what the previous version of
+    this class said should happen to it.
 
-    Two checkout sessions can currently exist against a single-use code,
-    because nothing is written until payment succeeds. The test below
-    pins that as *current behaviour*, not as intended behaviour.
-
-    The fix is NOT to refuse the loser at fulfilment. By then the card
-    has been charged, and a member holding a completed payment they must
-    be refunded for is a worse outcome than the double-spend it was
-    meant to prevent. The competing checkout has to be stopped BEFORE
-    Stripe takes any money.
-
-    Work Item 6 therefore owes an atomic pre-payment reservation:
-
-      * preview reserves nothing — it is a question, asked freely;
-      * starting a real checkout reserves a slot;
-      * live reservations count against ``max_redemptions`` alongside
-        redemptions, so the limit reflects money in flight;
-      * an abandoned or expired checkout releases its slot;
-      * a successful payment converts reservation → redemption exactly
-        once, and never double-counts as both;
-      * a competing checkout for the last slot is refused before Stripe
-        is called at all;
-      * deactivating a code stops new reservations;
-      * a code with live reservations cannot be hard-deleted out from
-        under them.
-
-    Until that exists, a single-use code oversold by a simultaneous
-    second buyer is a real possibility, and this file does not pretend
-    otherwise.
+    It used to pin the gap: two checkouts could reach Stripe with a
+    one-use code. A reservation now holds the slot from the moment a real
+    checkout starts, so the second attempt is refused before Stripe is
+    called — and the member's own retry is handed back their own payment
+    page instead of being told the code is spent.
     """
 
-    def test_two_sessions_can_currently_open_against_one_slot(
+    def test_a_second_member_cannot_reach_stripe_with_the_last_slot(
         self, db, make_space, make_user, stripe_configured, stripe_spy,
     ):
-        """Current behaviour, pinned so the reservation work has a
-        starting point that fails visibly when it lands."""
+        space = make_space()
+        first, second = make_user(), make_user()
+        option, schedule = make_offer(db, space)
+        make_code(db, space, max_redemptions=1)
+
+        checkout(db, first, option=option, schedule=schedule, code="FAMILY50")
+        with pytest.raises(HTTPException) as exc:
+            checkout(db, second, option=option, schedule=schedule, code="FAMILY50")
+
+        assert exc.value.status_code == 409
+        # One Session, for the member who got there first.
+        assert len(stripe_spy.calls) == 1
+
+    def test_the_holders_own_retry_reuses_their_payment_page(
+        self, db, make_space, make_user, stripe_configured, stripe_spy,
+    ):
+        """The failure a naive implementation produces: a member reloads
+        and is told their own code is fully used, by their own hold."""
         space, buyer = make_space(), make_user()
         option, schedule = make_offer(db, space)
         make_code(db, space, max_redemptions=1)
 
-        checkout(db, buyer, option=option, schedule=schedule, code="FAMILY50")
-        checkout(db, buyer, option=option, schedule=schedule, code="FAMILY50")
+        first = checkout(db, buyer, option=option, schedule=schedule, code="FAMILY50")
+        again = checkout(db, buyer, option=option, schedule=schedule, code="FAMILY50")
 
-        assert len(stripe_spy.calls) == 2
+        assert again.checkout_url == first.checkout_url
+        # No second Session, and no second slot spent.
+        assert len(stripe_spy.calls) == 1
+        assert db.query(DiscountReservation).filter_by(
+            status="held").count() == 1
 
-    def test_nothing_in_work_item_4_reserves_a_slot(
+    def test_a_reservation_is_not_a_redemption(
         self, db, make_space, make_user, stripe_configured, stripe_spy,
     ):
-        """The reservation concept does not exist yet. Asserted so that
-        adding it cannot be mistaken for a no-op refactor: this test is
-        expected to be rewritten by Work Item 6, not deleted quietly."""
+        """Holding is not spending. Nothing is in the ledger until the
+        member actually pays."""
         space, buyer = make_space(), make_user()
         option, schedule = make_offer(db, space)
         code = make_code(db, space, max_redemptions=1)

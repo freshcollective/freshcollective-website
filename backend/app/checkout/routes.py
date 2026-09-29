@@ -56,7 +56,8 @@ from app.models.platform import (
 )
 from app.models.user import User
 from app.models.payment_option_schedule import PaymentOptionSchedule
-from app.services.discount_application import resolve_discount
+from app.services.discount_application import find_code, resolve_discount
+from app.services.discount_reservations import attach_session, release
 from app.services.discount_pricing import (
     AppliedDiscount,
     DiscountError,
@@ -129,6 +130,87 @@ def checkout_status(
 # ---------------------------------------------------------------------------
 
 
+def _persist_session_params(db: Session, reservation, params: dict) -> None:
+    """Store the exact Stripe kwargs before the call is made.
+
+    This runs microseconds before the network request, and it is the only
+    reason a crash between creating a Session and recording its id is
+    recoverable: without the params, the reservation looks like one that
+    never reached Stripe, and releasing it would free a slot a member may
+    already have paid for.
+    """
+    from app.services.discount_reservations import _jsonable
+
+    reservation.session_create_params_json = _jsonable(params)
+    db.commit()
+
+
+def _resolve_and_reserve(
+    db: Session, *, raw_code, resolved, user, now,
+):
+    """Price the code and hold a slot, sweeping stale holds once if the
+    code looks full.
+
+    Both steps live behind one sweep because either can be the thing that
+    reports a full code: ``resolve_discount`` refuses when the slot count
+    has reached the limit, and ``reserve_or_reuse`` refuses again under
+    the row lock. A stale hold — one whose checkout window elapsed but
+    which nothing has verified — makes both refuse for a reason that may
+    not be true any more.
+
+    So on the first ``LIMIT_REACHED`` from either step, the stale holds
+    for that code are verified against Stripe, OUTSIDE the row lock, and
+    the pair is attempted once more. One retry only: if the second
+    attempt still refuses, the holds are genuinely live or genuinely
+    unverifiable, and looping would spend more time reaching the same
+    answer.
+
+    Returns ``(applied, ReservationOutcome)``.
+    """
+    from app.services.discount_reservations import (
+        reserve_or_reuse, sweep_stale_reservations,
+    )
+
+    own_attempt = (
+        user.id, resolved.payment_option.id, resolved.payment_schedule.id,
+    )
+
+    def attempt():
+        applied = resolve_discount(
+            db,
+            raw_code=raw_code,
+            space_id=resolved.space.id,
+            payment_option_id=resolved.payment_option.id,
+            original_cents=resolved.price_cents,
+            currency=resolved.currency,
+            now=now,
+            own_attempt=own_attempt,
+        )
+        code_row = find_code(db, raw_code=raw_code, space_id=resolved.space.id)
+        outcome = reserve_or_reuse(
+            db, applied=applied, code=code_row, user_id=user.id,
+            payment_option_id=resolved.payment_option.id,
+            payment_option_schedule_id=resolved.payment_schedule.id, now=now,
+        )
+        return applied, outcome
+
+    try:
+        return attempt()
+    except DiscountError as first:
+        if first.reason is not DiscountRejection.LIMIT_REACHED:
+            raise
+        code_row = find_code(db, raw_code=raw_code, space_id=resolved.space.id)
+        if code_row is None:
+            raise
+        if not sweep_stale_reservations(db, discount_code_id=code_row.id, now=now):
+            raise
+        logger.info(
+            "Discount slot freed by verification sweep: code=%s user=%s",
+            code_row.id, user.id,
+        )
+        return attempt()
+
+
 @router.post("/discount-preview", response_model=DiscountPreviewResponse)
 @limiter.limit("20/minute")
 def preview_discount_code(
@@ -175,6 +257,14 @@ def preview_discount_code(
             original_cents=resolved.price_cents,
             currency=resolved.currency,
             now=datetime.utcnow(),
+            # Their own hold must not count against them. Without this a
+            # member who reserved the last slot reloads the page and is
+            # told the code is fully used — by themselves.
+            own_attempt=(
+                current_user.id,
+                resolved.payment_option.id,
+                resolved.payment_schedule.id,
+            ),
         )
     except DiscountError as exc:
         # Logged at debug: a member mistyping a code is ordinary, and a
@@ -342,37 +432,122 @@ def create_unified_checkout_session(
     # expired or filled up since. So the code is resolved again from
     # scratch, against a price read again from the Payment Option.
     applied: AppliedDiscount | None = None
+    reservation = None
     if body.discount_code:
         try:
-            applied = resolve_discount(
-                db,
-                raw_code=body.discount_code,
-                space_id=resolved.space.id,
-                payment_option_id=resolved.payment_option.id,
-                original_cents=resolved.price_cents,
-                currency=resolved.currency,
-                now=now,
+            applied, outcome = _resolve_and_reserve(
+                db, raw_code=body.discount_code, resolved=resolved,
+                user=current_user, now=now,
             )
         except DiscountError as exc:
-            # 409, not 422: the request was well formed and was valid
-            # when the member saw the preview. What changed is the
-            # world. The reason travels in the detail so the frontend
-            # can say which code stopped working and why.
+            # 409, not 422: the request was well formed and was valid when
+            # the member saw the preview. What changed is the world.
             raise HTTPException(status_code=409, detail=exc.message) from exc
+        reservation = outcome.reservation
+
+        if (
+            outcome.reused
+            and reservation.provider_checkout_session_id
+            and now < reservation.session_expires_at
+        ):
+            # This member already has a live payment page for exactly this
+            # purchase. Hand back the same one: a new Session would be a
+            # second charge waiting to happen, and a new reservation would
+            # spend a slot they already hold.
+            existing_url = reservation.provider_checkout_session_url
+            if existing_url:
+                logger.info(
+                    "Unified checkout: reusing reservation=%s session=%s user=%s",
+                    reservation.id, reservation.provider_checkout_session_id,
+                    current_user.id,
+                )
+                return UnifiedCheckoutResponse(
+                    checkout_url=existing_url,
+                    transaction_id=(
+                        reservation.payment_transaction_id
+                        or reservation.intended_payment_transaction_id
+                        or reservation.id
+                    ),
+                    free=False,
+                )
+
+        if outcome.reused and now >= reservation.session_expires_at:
+            # Their own hold is past its window. Whether it is dead is a
+            # question for Stripe, not for this request — opening a second
+            # Session before knowing could charge them twice.
+            from app.services.discount_reservations import verify_stale_reservation
+            verdict = verify_stale_reservation(db, reservation=reservation, now=now)
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "That checkout has already been completed."
+                    if verdict == "completed" else
+                    "Your previous checkout for this offer timed out. "
+                    "Please start again."
+                ),
+            )
 
     # ── Paid path: Stripe Checkout Session ────────────────────────
-    txn, session = orchestrate_paid_checkout(
-        db,
-        resolved=resolved,
-        payer=current_user,
-        success_url=body.success_url,
-        cancel_url=body.cancel_url,
-        now=now,
-        applied_discount=applied,
-        txn_transaction_type_override=(
-            PaymentTransactionType.member_payment_option_purchase
-        ),
-    )
+    try:
+        txn, session = orchestrate_paid_checkout(
+            db,
+            resolved=resolved,
+            payer=current_user,
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+            now=now,
+            applied_discount=applied,
+            txn_id_override=(
+                reservation.intended_payment_transaction_id if reservation else None
+            ),
+            session_expires_at=reservation.session_expires_at if reservation else None,
+            session_idempotency_key=(
+                reservation.session_idempotency_key if reservation else None
+            ),
+            on_session_params=(
+                (lambda params: _persist_session_params(db, reservation, params))
+                if reservation else None
+            ),
+            txn_transaction_type_override=(
+                PaymentTransactionType.member_payment_option_purchase
+            ),
+        )
+    except Exception:
+        # Stripe refused, or the ledger write failed. Either way no
+        # payment page exists for this attempt, so the slot must go back
+        # immediately rather than waiting out its window — this is the one
+        # release that needs no verification, because we are the party who
+        # knows the request failed.
+        #
+        # Guarded on the params never having been persisted: if they WERE
+        # persisted, a Session may exist despite the error, and releasing
+        # would be a guess. Those fall to the verification ladder.
+        if reservation is not None:
+            db.rollback()
+            db.refresh(reservation)
+            if reservation.session_create_params_json is None:
+                release(
+                    db, reservation=reservation,
+                    reason="session_create_failed", now=now,
+                )
+            else:
+                logger.warning(
+                    "Discount reservation %s left held after a failed checkout: "
+                    "Stripe params were already sent, so a Session may exist. "
+                    "Verification will decide.",
+                    reservation.id,
+                )
+        raise
+    if reservation is not None:
+        reservation.provider_checkout_session_url = session.url
+        attach_session(
+            db,
+            reservation=reservation,
+            session_id=session.id,
+            session_params=reservation.session_create_params_json or {},
+            payment_transaction_id=txn.id,
+            now=now,
+        )
     logger.info(
         "Unified checkout: txn=%s session=%s option=%s user=%s discount=%s",
         txn.id, session.id, resolved.payment_option.id, current_user.id,

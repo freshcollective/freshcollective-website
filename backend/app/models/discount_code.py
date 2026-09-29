@@ -21,8 +21,9 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String,
-    UniqueConstraint, func,
+    Text, UniqueConstraint, func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -187,5 +188,117 @@ class DiscountRedemption(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
 
     redeemed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False, server_default=func.now(),
+    )
+
+
+class ReservationStatus(str, enum.Enum):
+    """Only ``held`` consumes a slot.
+
+    The two terminal states differ in what FC knows. ``converted`` means
+    the purchase completed and a redemption row exists. ``released``
+    means FC has positive knowledge the checkout can never complete — a
+    Stripe expiry webhook, a Session verified expired, or a reservation
+    that never reached Stripe at all. A reservation FC merely *suspects*
+    is dead stays ``held``, because guessing frees a slot that a paid
+    member is still entitled to.
+    """
+
+    held = "held"
+    converted = "converted"
+    released = "released"
+
+
+class DiscountReservation(Base):
+    """A slot held while one member is away at Stripe.
+
+    Created before the Stripe Session, committed immediately so a crash
+    between the two leaves evidence rather than a silently free slot. Its
+    pricing is frozen at creation: conversion charges what the member was
+    quoted, not what the code says by the time their webhook lands.
+
+    Identity is the purchase attempt — code, member, Payment Option and
+    schedule — so a retry of the same purchase reuses its own reservation
+    instead of being told the code is fully used, while the same member
+    using one Collective-wide code on a different offer correctly takes a
+    second slot.
+    """
+
+    __tablename__ = "discount_reservations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    discount_code_id: Mapped[str] = mapped_column(
+        String, ForeignKey("discount_codes.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    space_id: Mapped[str] = mapped_column(
+        String, ForeignKey("spaces.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+
+    #: All four identity columns are NOT NULL. A nullable one would let a
+    #: row slip past the partial unique index that makes retry safe.
+    user_id: Mapped[str] = mapped_column(
+        String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+    )
+    payment_option_id: Mapped[str] = mapped_column(
+        String, ForeignKey("payment_options.id", ondelete="CASCADE"), nullable=False,
+    )
+    payment_option_schedule_id: Mapped[str] = mapped_column(
+        String, ForeignKey("payment_option_schedules.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="held")
+
+    original_amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    discount_amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    final_amount_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    discount_snapshot_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    #: Persisted BEFORE the Stripe call, so a recovery replay re-sends
+    #: identical parameters — including the original absolute expiry.
+    #: Recomputing ``now + 60 minutes`` on a retry would send different
+    #: parameters under the same idempotency key.
+    session_idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    session_create_params_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    session_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False,
+    )
+    intended_payment_transaction_id: Mapped[str | None] = mapped_column(
+        String, nullable=True,
+    )
+    provider_checkout_session_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True,
+    )
+    provider_checkout_session_url: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+    )
+    payment_transaction_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("payment_transactions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    verification_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=sa_text("0"),
+    )
+    last_verification_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    last_verification_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    last_verification_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    release_reason: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    converted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), nullable=False, server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), nullable=False, server_default=func.now(),
     )

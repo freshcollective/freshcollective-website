@@ -43,6 +43,7 @@ from sqlalchemy.orm import Session
 
 from app.core.money import MIN_PAID_CHARGE_CENTS
 from app.models.discount_code import DiscountCode, DiscountRedemption
+from app.services.discount_reservations import consumed_slots
 from app.services.discount_pricing import (
     AppliedDiscount,
     DiscountError,
@@ -57,14 +58,8 @@ logger = logging.getLogger(__name__)
 
 
 def live_redemption_count(db: Session, discount_code_id: str) -> int:
-    """How many times this code has actually been redeemed.
-
-    Counted from the ledger rather than read from
-    ``DiscountCode.redemption_count``, for the same reason the Creator
-    CRUD does: the ledger is the record of what happened, and the column
-    is a cache of it. A cache that drifts low would let a limited code
-    over-redeem, which is the one failure this check exists to prevent.
-    """
+    """Permanent redemptions only. Kept for callers that genuinely mean
+    "has this been spent", as distinct from "is a slot available"."""
     return (
         db.query(func.count(DiscountRedemption.id))
         .filter(DiscountRedemption.discount_code_id == discount_code_id)
@@ -98,6 +93,11 @@ def resolve_discount(
     original_cents: int,
     currency: str,
     now: datetime | None = None,
+    #: ``(user_id, payment_option_id, payment_option_schedule_id)`` — the
+    #: purchase attempt asking. Its own held reservation is excluded from
+    #: the slot count, so a member who already holds the last slot is not
+    #: told their own code is fully used when they retry or reload.
+    own_attempt: tuple[str, str, str] | None = None,
 ) -> AppliedDiscount:
     """Validate a code against one offer and price it, or raise.
 
@@ -117,7 +117,13 @@ def resolve_discount(
         # the attribute in the identity map would dirty the row and flush
         # a pointless UPDATE, so the true count goes to validate_code by
         # way of a lightweight stand-in.
-        code_for_validation = _WithLiveCount(code, live_redemption_count(db, code.id))
+        # Slots, not redemptions: a code with one use left and one live
+        # reservation against it is unavailable, even though nothing has
+        # been redeemed yet. Counting redemptions alone here would let two
+        # members reach Stripe with a one-use code.
+        code_for_validation = _WithLiveCount(
+            code, consumed_slots(db, code.id, excluding_attempt=own_attempt),
+        )
     else:
         code_for_validation = None
 

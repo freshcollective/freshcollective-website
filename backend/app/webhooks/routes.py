@@ -39,6 +39,7 @@ from app.models.payment import (
     PaymentTransactionType,
     PayoutStatus,
 )
+from app.services import discount_reservations as _discount_reservations
 from app.models.payment_option import PaymentOption
 from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.services.purchase_fulfilment import (
@@ -707,6 +708,23 @@ def _handle_checkout_completed(
         except Exception as exc:
             logger.warning("Could not retrieve Stripe processing fee: %s", exc)
 
+    # --- Discount reservation → permanent redemption -------------------------
+    # Inside this transaction on purpose: the redemption lands with the
+    # fulfilment or not at all. Deliberately NOT clock-checked — Stripe
+    # retries for days and our own processing can lag, so a completion
+    # arriving after the reservation's nominal expiry is still a
+    # completion. Refusing it would take the member's money and spend
+    # their code on nothing.
+    _reservation = _discount_reservations.find_by_session(db, session_id)
+    if _reservation is not None:
+        _discount_reservations.convert_to_redemption(
+            db,
+            reservation=_reservation,
+            payment_transaction_id=txn.id,
+            now=datetime.utcnow(),
+            commit=False,
+        )
+
     # --- Update transaction to succeeded ------------------------------------
     now = datetime.utcnow()
     txn.status = PaymentTransactionStatus.succeeded
@@ -936,6 +954,18 @@ def _handle_checkout_expired(session: dict, db: Session) -> None:
     txn.payout_status = PayoutStatus.not_applicable
     txn.updated_at = datetime.utcnow()
     db.commit()
+
+    # Stripe has told us this session is dead, which is the positive
+    # knowledge a discount slot needs before it can go to someone else.
+    # This is the fast path; without it the slot would wait out its window
+    # and then need a verification round trip to reach the same answer.
+    _reservation = _discount_reservations.find_by_session(db, session_id)
+    if _reservation is not None:
+        _discount_reservations.release(
+            db, reservation=_reservation,
+            reason="stripe_session_expired_webhook", now=datetime.utcnow(),
+        )
+
     logger.info("checkout.session.expired: cancelled txn=%s session=%s", txn.id, session_id)
 
 

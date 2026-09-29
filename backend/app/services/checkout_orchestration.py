@@ -32,9 +32,9 @@ those extras is shared.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import stripe
@@ -65,6 +65,7 @@ from app.models.payment_option_grant import (
 from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import EntitlementStatus, PathwayEntitlement, Space
 from app.models.user import User
+from app.services.discount_stripe_sessions import build_session_params
 from app.services.purchase_fulfilment import (
     FulfilmentResult,
     apply_intent,
@@ -689,6 +690,20 @@ def _create_stripe_session_and_txn(
     txn_pathway_id: str | None,
     now: datetime,
     applied_discount: "AppliedDiscount | None" = None,
+    # Supplied when a discount reservation already exists: the txn id it
+    # recorded as intended, the Session lifetime it persisted, and the
+    # idempotency key it will replay with. All three come from the
+    # reservation rather than being minted here, so a recovery replay can
+    # reproduce this request exactly.
+    txn_id_override: str | None = None,
+    session_expires_at: datetime | None = None,
+    session_idempotency_key: str | None = None,
+    # Called with the exact Session kwargs immediately BEFORE the network
+    # call. A reservation persists them here so that a crash between
+    # creating the Session and recording its id is still recoverable —
+    # without them, a live payment page would look like a reservation
+    # that never reached Stripe.
+    on_session_params: "Callable[[dict], None] | None" = None,
 ) -> tuple[PaymentTransaction, "stripe.checkout.Session"]:
     """Create the Stripe Checkout Session and the matching pending
     ``PaymentTransaction`` row in a single atomic write.
@@ -698,7 +713,7 @@ def _create_stripe_session_and_txn(
     ``provider_checkout_session_id`` already populated. The
     partial unique index on that column prevents duplicates.
     """
-    txn_id = str(uuid4())
+    txn_id = txn_id_override or str(uuid4())
 
     # Populate transaction_id in metadata now that we have it,
     # if caller didn't already.
@@ -765,20 +780,33 @@ def _create_stripe_session_and_txn(
             detail="Discount cleared the price — refusing to charge nothing.",
         )
 
+    # One builder for both the live call and any later replay — two
+    # constructions of "the same request" would eventually differ, and a
+    # replay that differs is a new charge rather than a recovery.
+    session_params = build_session_params(
+        currency=resolved.currency,
+        unit_amount=charge_cents,
+        product_name=product_name,
+        product_description=product_description,
+        customer_email=payer.email,
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata=metadata,
+        payment_intent_metadata=payment_intent_metadata,
+        expires_at=(
+            int(session_expires_at.replace(tzinfo=UTC).timestamp())
+            if session_expires_at is not None else None
+        ),
+    )
+    if on_session_params is not None:
+        on_session_params(session_params)
+
+    create_kwargs: dict = dict(session_params)
+    if session_idempotency_key:
+        create_kwargs["idempotency_key"] = session_idempotency_key
+
     try:
-        session = stripe.checkout.Session.create(
-            mode="payment",
-            line_items=_build_stripe_line_items(
-                product_name=product_name,
-                product_description=product_description,
-                currency=resolved.currency, unit_amount=charge_cents,
-            ),
-            metadata=metadata,
-            payment_intent_data={"metadata": payment_intent_metadata},
-            customer_email=payer.email,
-            success_url=success_url,
-            cancel_url=cancel_url,
-        )
+        session = stripe.checkout.Session.create(**create_kwargs)
     except stripe.StripeError as exc:
         logger.error(
             "Stripe session creation failed for option=%s user=%s: %s",
@@ -876,6 +904,10 @@ def orchestrate_paid_checkout(
     # thing that charges and does not also become the thing that decides
     # what a code is worth.
     applied_discount: "AppliedDiscount | None" = None,
+    txn_id_override: str | None = None,
+    session_expires_at: datetime | None = None,
+    session_idempotency_key: str | None = None,
+    on_session_params: "Callable[[dict], None] | None" = None,
 ) -> tuple[PaymentTransaction, "stripe.checkout.Session"]:
     """Create the Stripe Checkout Session + PaymentTransaction for
     a paid PaymentOption purchase. Assumes ``resolved`` has
@@ -983,6 +1015,10 @@ def orchestrate_paid_checkout(
         txn_transaction_type=txn_transaction_type,
         txn_pathway_id=txn_pathway_id,
         applied_discount=applied_discount,
+        txn_id_override=txn_id_override,
+        session_expires_at=session_expires_at,
+        session_idempotency_key=session_idempotency_key,
+        on_session_params=on_session_params,
         now=now,
     )
 
