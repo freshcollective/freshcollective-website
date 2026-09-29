@@ -66,6 +66,10 @@ from app.models.payment_option_schedule import PaymentOptionSchedule
 from app.models.platform import EntitlementStatus, PathwayEntitlement, Space
 from app.models.user import User
 from app.services.discount_stripe_sessions import build_session_params
+from app.services.connect_payout_model import (
+    resolve_for_free_purchase,
+    resolve_payout_model,
+)
 from app.services.purchase_fulfilment import (
     FulfilmentResult,
     apply_intent,
@@ -824,6 +828,19 @@ def _create_stripe_session_and_txn(
     platform_fee = round(gross * fee_context.fee_bps / 10000)
     net_creator = gross - platform_fee
 
+    # How this purchase's creator share will reach the creator, decided
+    # once and frozen onto the row. Nothing downstream re-reads the
+    # creator's Connect state: a creator who finishes onboarding while this
+    # buyer is at Stripe must not change how this purchase pays out.
+    # ``net_creator`` above is deliberately unaffected — it stays
+    # ``gross - platform_fee``, and the Connect figure lives in
+    # ``transfer_amount_cents``, which a later commit computes.
+    payout = resolve_payout_model(
+        db,
+        creator_user_id=fee_context.creator_id,
+        is_platform_owned=fee_context.is_platform_owned,
+    )
+
     txn = PaymentTransaction(
         id=txn_id,
         transaction_type=txn_transaction_type,
@@ -848,6 +865,9 @@ def _create_stripe_session_and_txn(
             PayoutStatus.not_applicable if fee_context.is_platform_owned
             else PayoutStatus.pending
         ),
+        payout_model=payout.payout_model,
+        connect_destination_account_id=payout.destination_account_id,
+        connect_transfer_status=payout.initial_transfer_status,
         stripe_mode=settings.stripe_mode,
         snapshot_grants_json=snapshot,
         # Written now, at the moment the price was decided, so the charge
@@ -1108,6 +1128,13 @@ def orchestrate_free_checkout(
         else _pick_transaction_type(resolved.payment_option)
     )
     txn_id = str(uuid4())
+    # A free purchase has no creator share and nothing to transfer, so it
+    # is never Connect-routed — marking it so would park a permanent
+    # zero-amount obligation in the transfer queue.
+    payout = resolve_for_free_purchase(
+        creator_user_id=fee_context.creator_id,
+        is_platform_owned=fee_context.is_platform_owned,
+    )
     txn = PaymentTransaction(
         id=txn_id,
         transaction_type=txn_transaction_type,
@@ -1129,6 +1156,9 @@ def orchestrate_free_checkout(
         payment_option_id=resolved.payment_option.id,
         payment_option_schedule_id=resolved.payment_schedule.id,
         payout_status=PayoutStatus.not_applicable,
+        payout_model=payout.payout_model,
+        connect_destination_account_id=payout.destination_account_id,
+        connect_transfer_status=payout.initial_transfer_status,
         stripe_mode=settings.stripe_mode,
         fulfilment_status=PaymentFulfilmentStatus.pending,
         created_at=now,

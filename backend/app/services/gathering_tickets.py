@@ -73,6 +73,7 @@ from app.models.access_pass import (
     AccessPassSource,
     AccessPassType,
 )
+from app.services.connect_payout_model import resolve_payout_model
 from app.models.payment import (
     PaymentProvider,
     PaymentTransaction,
@@ -422,6 +423,7 @@ def create_or_reuse_hold(
     ).first()
 
     txn = _build_pending_transaction(
+        db,
         offer=offer,
         buyer=buyer,
         fee_bps=fee_bps,
@@ -467,6 +469,7 @@ def create_or_reuse_hold(
 
 
 def _build_pending_transaction(
+    db: Session,
     *,
     offer: TrustedTicketOffer,
     buyer: User,
@@ -483,6 +486,14 @@ def _build_pending_transaction(
     is_platform_owned = offer.space.creator_id is None
     payout_status = (
         PayoutStatus.not_applicable if is_platform_owned else PayoutStatus.pending
+    )
+    # Decided now and frozen onto the row. A creator who completes Connect
+    # onboarding while this buyer is away at Stripe must not change how
+    # this ticket pays out.
+    payout = resolve_payout_model(
+        db,
+        creator_user_id=offer.space.creator_id,
+        is_platform_owned=is_platform_owned,
     )
 
     return PaymentTransaction(
@@ -502,6 +513,9 @@ def _build_pending_transaction(
         creator_subscription_id=creator_subscription_id,
         stripe_mode=settings.stripe_mode,
         payout_status=payout_status,
+        payout_model=payout.payout_model,
+        connect_destination_account_id=payout.destination_account_id,
+        connect_transfer_status=payout.initial_transfer_status,
     )
 
 

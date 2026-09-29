@@ -4,6 +4,8 @@ Payout eligibility:
 
 * creator + currency scope (cross-Collective; no per-Space filter);
 * PaymentTransaction status ∈ (succeeded, partially_refunded);
+* payout_model = 'manual' — Connect-routed rows are paid by Stripe
+  transfer, never by a manual batch (the double-payment guard);
 * payout_status = 'pending';
 * payment_provider = 'stripe';
 * retained creator amount > 0
@@ -130,6 +132,13 @@ def create_payout_batch(
             WHERE pt.creator_user_id = :creator_id
               AND pt.currency = :currency
               AND pt.payout_status = 'pending'
+              -- The double-payment guard. A Connect-routed row's creator
+              -- share is owed to the creator's own Stripe account; paying
+              -- it again through a manual batch would pay the creator
+              -- twice. ``payout_status`` alone is not enough, because a
+              -- Connect row whose transfer failed or has not been sent
+              -- yet also sits at 'pending'.
+              AND pt.payout_model = 'manual'
               AND pt.status IN ('succeeded', 'partially_refunded')
               AND pt.payment_provider = 'stripe'
               AND (pt.net_creator_amount_cents
@@ -339,6 +348,13 @@ def compute_payable_summary(
             WHERE pt.creator_user_id = :creator_id
               AND pt.currency = :currency
               AND pt.payout_status = 'pending'
+              -- The double-payment guard. A Connect-routed row's creator
+              -- share is owed to the creator's own Stripe account; paying
+              -- it again through a manual batch would pay the creator
+              -- twice. ``payout_status`` alone is not enough, because a
+              -- Connect row whose transfer failed or has not been sent
+              -- yet also sits at 'pending'.
+              AND pt.payout_model = 'manual'
               AND pt.status IN ('succeeded', 'partially_refunded')
               AND pt.payment_provider = 'stripe'
               AND (pt.net_creator_amount_cents

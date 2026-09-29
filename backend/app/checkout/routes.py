@@ -44,6 +44,9 @@ from app.checkout.schemas import (
 )
 from app.core.config import settings
 from app.core.database import get_db
+from app.services.connect_payout_model import (
+    resolve_payout_model as _resolve_payout_model,
+)
 from app.core.rate_limit import client_ip_for_rate_limit
 from app.models.access_pass import AccessPass, AccessPassStatus
 from app.models.payment import PaymentTransactionType
@@ -825,6 +828,13 @@ def _legacy_pathway_price_stripe_session(
     currency = (pathway.currency or "AUD").upper()
     platform_fee = round(gross * fee_context.fee_bps / 10000)
     net_creator = gross - platform_fee
+    # Same snapshot rule as every other purchase path: decided here, frozen
+    # on the row, never re-derived from the creator's later Connect state.
+    payout = _resolve_payout_model(
+        db,
+        creator_user_id=fee_context.creator_id,
+        is_platform_owned=fee_context.is_platform_owned,
+    )
     txn_id = str(_uuid4())
 
     try:
@@ -897,6 +907,9 @@ def _legacy_pathway_price_stripe_session(
             PayoutStatus.not_applicable if fee_context.is_platform_owned
             else PayoutStatus.pending
         ),
+        payout_model=payout.payout_model,
+        connect_destination_account_id=payout.destination_account_id,
+        connect_transfer_status=payout.initial_transfer_status,
         stripe_mode=settings.stripe_mode,
         created_at=now,
         updated_at=now,

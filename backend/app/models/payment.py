@@ -13,6 +13,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     Enum as SAEnum,
     ForeignKey,
@@ -22,6 +23,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -119,6 +121,63 @@ class PayoutStatus(str, enum.Enum):
     cancelled = "cancelled"            # TODO: set if payout is cancelled
 
 
+class PayoutModel(str, enum.Enum):
+    """How a transaction's creator share reaches the creator.
+
+    Decided once, when the transaction is created, and never re-derived.
+    A creator who completes Stripe onboarding (or loses a capability)
+    while a checkout is in flight must not change how that purchase pays
+    out — the row records the promise made at the time.
+    """
+
+    #: Fresh Collective holds the creator's share and pays it out through
+    #: ``CreatorPayoutBatch``. Every historical row, and every creator who
+    #: has not been individually enabled for Connect routing.
+    manual = "manual"
+    #: The creator's share is owed to their own Stripe account as a
+    #: ``/v1/transfers`` transfer. Only set when the creator is fully
+    #: payout-ready *and* deliberately enabled.
+    connect = "connect"
+    #: No creator share exists — a platform-owned Collective, where the
+    #: money stays with Fresh Collective.
+    not_applicable = "not_applicable"
+
+
+class ConnectTransferStatus(str, enum.Enum):
+    """State of the transfer that carries a Connect row's creator share.
+
+    The distinction that shapes this enum: *applicable* and *due* are not
+    the same thing. A Connect row always owes a transfer eventually, so it
+    is never ``not_applicable`` — but it is not owed one until the money
+    actually arrives. Hence ``awaiting_payment``, which keeps abandoned and
+    still-open Checkout Sessions out of the sweeper's queue without
+    pretending a transfer will never apply to them.
+
+    The relationship to ``payout_model`` is exact, and the ledger's CHECK
+    constraints enforce it in both directions:
+
+        manual / not_applicable  ⇔  not_applicable
+        connect                  ⇔  anything but not_applicable
+    """
+
+    #: No transfer will ever be owed — the row is not Connect-routed.
+    not_applicable = "not_applicable"
+    #: Connect-routed, but the payment has not succeeded. A transfer is
+    #: applicable and simply not due yet. The sweeper ignores these.
+    awaiting_payment = "awaiting_payment"
+    #: The money arrived and the creator's share is owed and unsent. This
+    #: is the only state the sweeper acts on.
+    pending = "pending"
+    sent = "sent"
+    #: A genuine dead end, not a retryable hiccup. A transfer that failed
+    #: for a reason worth retrying — an insufficient platform balance, for
+    #: instance, which is a normal outcome while a charge settles — stays
+    #: ``pending`` and records the error instead, so the sweeper keeps it.
+    failed = "failed"
+    reversed = "reversed"
+    partially_reversed = "partially_reversed"
+
+
 class PaymentTransaction(Base):
     """
     Ledger row for a single payment event.
@@ -135,6 +194,26 @@ class PaymentTransaction(Base):
         platform_fee_cents        = 0
         net_platform_amount_cents = gross_amount_cents
         net_creator_amount_cents  = NULL
+
+    Connect routing (migration 142) does NOT change any of the above.
+    ``net_creator_amount_cents`` keeps meaning the creator's share of the
+    gross — ``gross - platform_fee`` — and the Stripe processing fee is
+    still never subtracted from it. Two things depend on that identity and
+    would break if it moved: ``CreatorPayoutBatch`` sums this column across
+    every historical row, and the refund invariant
+    ``refunded_platform_fee_cents + refunded_creator_amount_cents ==
+    refunded_amount_cents`` holds precisely because the gross splits in two.
+
+    The Connect number lives separately, in ``transfer_amount_cents``:
+
+        transfer_amount_cents = net_creator_amount_cents - processing_fee_cents
+
+    Stripe charges the processing fee to Fresh Collective as the platform
+    merchant; FC accounts for that cost by retaining it before transferring
+    the creator's share, which is why the deduction appears here and not in
+    the gross split. ``processing_fee_cents`` continues to be populated
+    exactly as before — it simply stops being informational once a row is
+    Connect-routed.
     """
 
     __tablename__ = "payment_transactions"
@@ -379,6 +458,50 @@ class PaymentTransaction(Base):
         index=True,
     )
 
+    # --- Connect routing (migration 142) ------------------------------------
+    # Snapshotted at creation. Nothing downstream re-reads the creator's
+    # current Connect state, because the answer must not change once a
+    # buyer has been sent to Stripe.
+    payout_model: Mapped[str] = mapped_column(
+        String(20), nullable=False,
+        default=PayoutModel.manual.value, server_default="manual",
+    )
+    #: The ``acct_…`` this row's share is owed to, as it stood at checkout.
+    #: A creator who later swaps accounts must not retarget an old sale.
+    connect_destination_account_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True,
+    )
+    #: What was (or will be) transferred. For Connect rows this is the
+    #: creator's authoritative entitlement, and it is deliberately NOT the
+    #: same number as ``net_creator_amount_cents`` — see the class
+    #: docstring's calculation rules.
+    transfer_amount_cents: Mapped[int | None] = mapped_column(
+        Integer, nullable=True,
+    )
+    provider_transfer_id: Mapped[str | None] = mapped_column(
+        String(200), nullable=True,
+    )
+    connect_transfer_status: Mapped[str] = mapped_column(
+        String(20), nullable=False,
+        default=ConnectTransferStatus.not_applicable.value,
+        server_default="not_applicable",
+    )
+    transfer_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    transfer_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    transfer_attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    transfer_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Cumulative, maintained the same monotonic way as
+    #: ``refunded_amount_cents``. Zero for rows never reversed.
+    reversed_transfer_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )
@@ -393,4 +516,61 @@ class PaymentTransaction(Base):
         Index("ix_payment_transactions_status", "status"),
         Index("ix_payment_transactions_transaction_type", "transaction_type"),
         Index("ix_payment_transactions_created_at", "created_at"),
+        # The future sweeper's query: owed-and-unsent transfers, oldest
+        # first.
+        Index(
+            "ix_payment_transactions_connect_transfer",
+            "connect_transfer_status", "created_at",
+        ),
+        # One transfer per transaction, even under webhook re-delivery.
+        # Mirrors the partial unique index on
+        # ``provider_checkout_session_id``.
+        Index(
+            "uq_payment_transactions_provider_transfer_id",
+            "provider_transfer_id",
+            unique=True,
+            postgresql_where=sa_text("provider_transfer_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "payout_model IN ('manual', 'connect', 'not_applicable')",
+            name="ck_payment_transactions_payout_model",
+        ),
+        CheckConstraint(
+            "connect_transfer_status IN ('not_applicable', 'awaiting_payment', "
+            "'pending', 'sent', 'failed', 'reversed', 'partially_reversed')",
+            name="ck_payment_transactions_connect_transfer_status",
+        ),
+        # A Connect row must name the account it owes. This is what makes
+        # the snapshot a guarantee rather than a convention.
+        CheckConstraint(
+            "payout_model <> 'connect' OR connect_destination_account_id IS NOT NULL",
+            name="ck_payment_transactions_connect_has_destination",
+        ),
+        # And nothing else may carry Connect state. A manual row with a
+        # transfer id or a transfer status would be a row two systems
+        # disagree about.
+        CheckConstraint(
+            "payout_model = 'connect' OR ("
+            "connect_destination_account_id IS NULL "
+            "AND provider_transfer_id IS NULL "
+            "AND transfer_amount_cents IS NULL "
+            "AND connect_transfer_status = 'not_applicable' "
+            "AND reversed_transfer_amount_cents = 0)",
+            name="ck_payment_transactions_non_connect_has_no_transfer",
+        ),
+        # The other half of the relationship above: a Connect row always
+        # owes a transfer eventually, so ``not_applicable`` is wrong for it
+        # even before the payment succeeds.
+        CheckConstraint(
+            "payout_model <> 'connect' OR connect_transfer_status <> 'not_applicable'",
+            name="ck_payment_transactions_connect_transfer_applies",
+        ),
+        CheckConstraint(
+            "transfer_amount_cents IS NULL OR transfer_amount_cents >= 0",
+            name="ck_payment_transactions_transfer_amount_non_negative",
+        ),
+        CheckConstraint(
+            "reversed_transfer_amount_cents >= 0",
+            name="ck_payment_transactions_reversed_amount_non_negative",
+        ),
     )
