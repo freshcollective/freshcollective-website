@@ -7,14 +7,19 @@ The safety recipe under test:
 
     BEGIN;
     SELECT id FROM events WHERE id = :event_id FOR UPDATE;
-    SELECT COUNT(*) FROM event_bookings
-      WHERE event_id = :event_id
-        AND (
-          status = 'confirmed'
-          OR (status = 'pending_payment' AND hold_expires_at > timezone('UTC', NOW()))
-        );
+    <the production capacity count>          -- gt.CAPACITY_USED_SQL
     -- if count < capacity: INSERT hold row
     COMMIT;
+
+The count comes from ``gathering_tickets.CAPACITY_USED_SQL`` itself, not
+a copy of it. This file used to restate the query, which meant it kept
+certifying the old clock-based rule after the application stopped using
+it — and a locking test that counts seats by a different rule than
+production is testing the wrong recipe.
+
+Raw threads and real connections are still used deliberately: the shared
+``db`` fixture runs inside one SAVEPOINT, so it cannot express two
+genuinely concurrent transactions contending for a row lock.
 
 The SELECT ... FOR UPDATE on the Event row is the serialisation point;
 without it, both workers see count < capacity, both insert, and only
@@ -37,17 +42,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.platform import BookingStatus, Event, EventBooking
+from app.services import gathering_tickets as gt
 
 
-CAPACITY_SQL = """
-    SELECT COUNT(*)
-    FROM event_bookings
-    WHERE event_id = :event_id
-      AND (
-        status = 'confirmed'
-        OR (status = 'pending_payment' AND hold_expires_at > timezone('UTC', NOW()))
-      )
-"""
+#: The production query, verbatim. Same rule as every other capacity
+#: surface — see invariant I2 in ``services/gathering_tickets``.
+CAPACITY_SQL = str(gt.CAPACITY_USED_SQL)
 
 
 def _try_hold_last_seat(

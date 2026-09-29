@@ -6,9 +6,11 @@ route exposes the fields the Stage 4 member UI needs (price, currency,
 sales_enabled flag, hold-aware capacity), and NEVER exposes creator-only
 data (paid_ticket_count, revenue, has_completed_sales, etc.).
 
-We invoke the serialiser at the SQL layer rather than through FastAPI
-so tests stay fast and free of DI plumbing — the routes are one-line
-wrappers around this shape.
+Capacity is checked through the production helper
+(``gathering_tickets.capacity_used``), not a local copy of its SQL. The
+member route now calls that helper directly, so this asserts the real
+thing rather than a private restatement of it — a copy kept passing after
+the rule it described was removed.
 """
 
 from __future__ import annotations
@@ -23,16 +25,6 @@ from app.models.platform import BookingStatus, EventBooking
 from app.services import gathering_tickets as gt
 
 
-CAPACITY_HOLD_AWARE_SQL = text("""
-    SELECT COUNT(*) FROM event_bookings
-    WHERE event_id = :e
-      AND (
-        status = 'confirmed'
-        OR (status = 'pending_payment' AND hold_expires_at > timezone('UTC', NOW()))
-      )
-""")
-
-
 def _fee():
     return {"fee_bps": 800, "creator_plan_id": None, "creator_subscription_id": None}
 
@@ -41,20 +33,21 @@ class TestMemberVisibleFields:
     def test_capacity_math_respects_active_hold(
         self, db, make_event, make_user, make_pending_txn,
     ):
-        """The member endpoint counts non-expired holds toward booked_count."""
+        """The member endpoint counts holds toward booked_count."""
         event = make_event(capacity=1)
         buyer = make_user()
         offer = gt.load_and_validate_offer(db, event.space.slug, event.id)
         gt.create_or_reuse_hold(db, offer=offer, buyer=buyer,
                                 hold_ttl_minutes=30, **_fee())
-        used = db.execute(CAPACITY_HOLD_AWARE_SQL, {"e": event.id}).scalar_one()
-        assert used == 1  # the hold counts
+        assert gt.capacity_used(db, event.id) == 1  # the hold counts
 
-    def test_capacity_math_ignores_expired_hold(
+    def test_capacity_math_still_counts_a_past_due_hold(
         self, db, make_event, make_user, make_pending_txn,
     ):
+        """Rewritten. Member-facing availability must not offer a seat the
+        allocation gate will then refuse — which is what happened while
+        this asserted the hold was ignored."""
         event = make_event(capacity=1)
-        # Insert an already-expired hold directly
         stale_user = make_user()
         stale_txn, _ = make_pending_txn(space=event.space, event=event, payer=stale_user)
         db.add(EventBooking(
@@ -65,8 +58,7 @@ class TestMemberVisibleFields:
             payment_transaction_id=stale_txn.id,
         ))
         db.flush()
-        used = db.execute(CAPACITY_HOLD_AWARE_SQL, {"e": event.id}).scalar_one()
-        assert used == 0
+        assert gt.capacity_used(db, event.id) == 1
 
 
 class TestMemberResponseSafety:
