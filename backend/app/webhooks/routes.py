@@ -252,6 +252,40 @@ async def stripe_webhook(
             provider_event_id=event["id"],
             event_livemode=event_livemode,
         )
+    elif event_type == "charge.dispute.created":
+        # FC is liable for the whole charge. If the creator's share has
+        # already gone, take it back; if it has not, hold it rather than pay
+        # a creator for money FC may be about to lose.
+        from app.webhooks.connect_money_handlers import handle_dispute_created
+        process_webhook_event(
+            db,
+            provider="stripe",
+            provider_event_id=event["id"],
+            event_type=event_type,
+            handler=lambda: handle_dispute_created(event_object, db),
+        )
+    elif event_type == "charge.dispute.closed":
+        # Handled so a dispute FC wins does not hold the creator's transfer
+        # forever.
+        from app.webhooks.connect_money_handlers import handle_dispute_closed
+        process_webhook_event(
+            db,
+            provider="stripe",
+            provider_event_id=event["id"],
+            event_type=event_type,
+            handler=lambda: handle_dispute_closed(event_object, db),
+        )
+    elif event_type == "transfer.reversed":
+        # A reversal from the Dashboard, or by Stripe. Without this the row
+        # would keep claiming ``sent`` after the money came back.
+        from app.webhooks.connect_money_handlers import handle_transfer_reversed
+        process_webhook_event(
+            db,
+            provider="stripe",
+            provider_event_id=event["id"],
+            event_type=event_type,
+            handler=lambda: handle_transfer_reversed(event_object, db),
+        )
     elif event_type == "charge.refunded":
         # Stripe refund sync — the sole MVP refund event. Stamps
         # PaymentTransaction.refunded_amount_cents / status /

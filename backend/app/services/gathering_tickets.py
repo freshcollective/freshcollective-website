@@ -484,9 +484,6 @@ def _build_pending_transaction(
 
     # Platform-owned Collective: fee=0, payout_status=not_applicable.
     is_platform_owned = offer.space.creator_id is None
-    payout_status = (
-        PayoutStatus.not_applicable if is_platform_owned else PayoutStatus.pending
-    )
     # Decided now and frozen onto the row. A creator who completes Connect
     # onboarding while this buyer is away at Stripe must not change how
     # this ticket pays out.
@@ -494,6 +491,12 @@ def _build_pending_transaction(
         db,
         creator_user_id=offer.space.creator_id,
         is_platform_owned=is_platform_owned,
+    )
+    # Connect rows are not_applicable: FC's manual payout process does not
+    # cover them.
+    payout_status = (
+        PayoutStatus.pending if payout.manual_payout_applies
+        else PayoutStatus.not_applicable
     )
 
     return PaymentTransaction(

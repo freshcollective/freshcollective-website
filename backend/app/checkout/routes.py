@@ -904,8 +904,8 @@ def _legacy_pathway_price_stripe_session(
         payment_option_id=None,
         payment_option_schedule_id=None,
         payout_status=(
-            PayoutStatus.not_applicable if fee_context.is_platform_owned
-            else PayoutStatus.pending
+            PayoutStatus.pending if payout.manual_payout_applies
+            else PayoutStatus.not_applicable
         ),
         payout_model=payout.payout_model,
         connect_destination_account_id=payout.destination_account_id,

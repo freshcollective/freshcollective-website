@@ -334,6 +334,14 @@ def handle_charge_refunded(
         handler=_handler,
     )
 
+    # ── Connect: claw the creator's share back. AFTER the customer refund
+    #    has committed, and wrapped so it cannot raise. Refunding a separate
+    #    charge does nothing to the transfer that carried the creator's
+    #    share, so this is FC's to do — but it is downstream reconciliation.
+    #    The customer's refund is already real and must never be rolled back
+    #    because recovery from the creator failed. ──
+    _reverse_creator_share_after_refund(db, charge=charge)
+
     # Schedule routing for any refund confirmation the handler emitted.
     # Runs outside a request context (Stripe webhook), so
     # ``schedule_routing_if_needed`` dispatches synchronously.
@@ -341,3 +349,46 @@ def handle_charge_refunded(
         if event is not None:
             from app.comms.rollout import schedule_routing_if_needed
             schedule_routing_if_needed(None, event, "purchase.refunded")
+
+
+def _reverse_creator_share_after_refund(db: Session, *, charge: dict) -> None:
+    """Reverse the creator transfer to its new cumulative target.
+
+    Separate from the refund write and deliberately after it. Two reasons:
+    the customer's money going back must not depend on FC's ability to
+    recover from the creator, and a reversal failure has somewhere truthful
+    to be recorded (``connect_recovery_state`` and
+    ``connect_unrecovered_amount_cents``) rather than needing to fail the
+    whole event.
+
+    Never raises. A retryable failure leaves the row owed; an insufficient
+    creator balance is recorded as outstanding with the exact amount.
+    """
+    from app.models.payment import PayoutModel
+    from app.services import connect_reversals
+
+    try:
+        txn = _find_txn_for_charge(db, charge)
+        if txn is None or txn.payout_model != PayoutModel.connect.value:
+            return
+        if not txn.provider_transfer_id:
+            # Nothing was ever sent, so a refund simply cancels the
+            # obligation — there is nothing to take back.
+            return
+
+        outcome = connect_reversals.reverse_to_target(
+            db, payment_transaction_id=txn.id,
+        )
+        logger.info(
+            "charge.refunded: creator reversal for txn=%s → %s (reversed_now=%s, "
+            "cumulative=%s, target=%s, unrecovered=%s)",
+            txn.id, outcome.status, outcome.reversed_now,
+            outcome.cumulative_reversed, outcome.target, outcome.unrecovered,
+        )
+    except Exception:
+        db.rollback()
+        logger.exception(
+            "charge.refunded: creator reversal raised for charge=%s — the "
+            "customer refund stands and recovery remains outstanding",
+            _sfield(charge, "id"),
+        )

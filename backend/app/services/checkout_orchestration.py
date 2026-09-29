@@ -862,8 +862,11 @@ def _create_stripe_session_and_txn(
         payment_option_id=resolved.payment_option.id,
         payment_option_schedule_id=resolved.payment_schedule.id,
         payout_status=(
-            PayoutStatus.not_applicable if fee_context.is_platform_owned
-            else PayoutStatus.pending
+            # Connect rows are not_applicable: FC's manual payout process does
+            # not cover them, and ``connect_transfer_status`` is the authority
+            # on whether the creator has been sent their share.
+            PayoutStatus.pending if payout.manual_payout_applies
+            else PayoutStatus.not_applicable
         ),
         payout_model=payout.payout_model,
         connect_destination_account_id=payout.destination_account_id,

@@ -178,6 +178,28 @@ class ConnectTransferStatus(str, enum.Enum):
     partially_reversed = "partially_reversed"
 
 
+class ConnectRecoveryState(str, enum.Enum):
+    """Whether Fresh Collective is still owed the creator's share back.
+
+    Deliberately separate from ``ConnectTransferStatus``, which describes the
+    transfer. This describes FC's position. Keeping them apart is what lets a
+    row say "we reversed what Stripe would allow, and this much is still
+    outstanding" rather than collapsing into a status that implies either
+    complete success or nothing attempted.
+    """
+
+    #: Nothing owed back.
+    none = "none"
+    #: A refund or dispute means FC needs money back that it could not take —
+    #: ``connect_unrecovered_amount_cents`` says how much.
+    required = "required"
+    #: Fully clawed back.
+    recovered = "recovered"
+    #: Positively known to be unrecoverable through Stripe. An admin
+    #: decision, not something this code concludes on its own.
+    unrecoverable = "unrecoverable"
+
+
 class PaymentTransaction(Base):
     """
     Ledger row for a single payment event.
@@ -502,6 +524,31 @@ class PaymentTransaction(Base):
         Integer, nullable=False, default=0, server_default="0",
     )
 
+    # --- Recovery (migration 143) --------------------------------------------
+    connect_recovery_state: Mapped[str] = mapped_column(
+        String(20), nullable=False,
+        default=ConnectRecoveryState.none.value, server_default="none",
+    )
+    #: How much of the reversal target Stripe would not return, usually
+    #: because the creator's balance could not cover it. The figure an admin
+    #: needs, and the reason "we tried" is never recorded as "we recovered".
+    connect_unrecovered_amount_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    reversal_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    reversal_attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    reversal_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Set while a charge is contested. A transfer that has not been sent
+    #: stays owed but is held out of the sweeper's queue — FC does not keep
+    #: paying a creator for a charge it may lose.
+    connect_dispute_opened_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=False), server_default=func.now(), nullable=False
     )
@@ -572,5 +619,26 @@ class PaymentTransaction(Base):
         CheckConstraint(
             "reversed_transfer_amount_cents >= 0",
             name="ck_payment_transactions_reversed_amount_non_negative",
+        ),
+        CheckConstraint(
+            "connect_recovery_state IN ('none', 'required', 'recovered', "
+            "'unrecoverable')",
+            name="ck_payment_transactions_connect_recovery_state",
+        ),
+        CheckConstraint(
+            "connect_unrecovered_amount_cents >= 0",
+            name="ck_payment_transactions_unrecovered_non_negative",
+        ),
+        # Only a Connect row can owe anything back.
+        CheckConstraint(
+            "payout_model = 'connect' OR ("
+            "connect_recovery_state = 'none' "
+            "AND connect_unrecovered_amount_cents = 0 "
+            "AND connect_dispute_opened_at IS NULL)",
+            name="ck_payment_transactions_recovery_requires_connect",
+        ),
+        Index(
+            "ix_payment_transactions_connect_recovery",
+            "connect_recovery_state", "created_at",
         ),
     )

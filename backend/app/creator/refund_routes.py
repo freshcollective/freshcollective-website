@@ -13,7 +13,14 @@ Payout-state gate:
 * ``payout_status = cancelled`` → transaction reverted to pending
   via batch cancellation; treat as ``pending``.
 * ``payout_status = not_applicable`` → never applies to refundable
-  member payments.
+  *manual* member payments.
+
+Connect-routed rows bypass all of the above and are gated on
+``connect_transfer_status`` instead — their ``payout_status`` is
+``not_applicable`` because FC's manual payout process does not cover them,
+so it cannot answer "has the creator been paid?". Before the transfer is
+sent a refund just cancels the obligation; once sent, the same admin-only
+policy as ``paid`` applies and FC attempts the transfer reversal.
 
 One-refund-in-flight rule: before submitting a new refund, opportunistically
 reconcile any stale ``in_flight`` operations. If any RefundOperation for
@@ -42,9 +49,11 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_creator_user
 from app.core.database import get_db
 from app.models.payment import (
+    ConnectTransferStatus,
     PaymentProvider,
     PaymentTransaction,
     PaymentTransactionStatus,
+    PayoutModel,
     PayoutStatus,
 )
 from app.models.platform import Space
@@ -99,15 +108,67 @@ def _can_creator_act_on_space(user: User, space_id: str, db: Session) -> bool:
     return owned is not None
 
 
+def _connect_gate_action(
+    *, txn: PaymentTransaction, actor_is_admin: bool,
+) -> tuple[bool, str | None]:
+    """The same policy as the manual gate, keyed on whether money has moved.
+
+    ``awaiting_payment`` / ``pending`` — the creator's share has not been
+    sent. A refund simply cancels the obligation, so anyone who may refund
+    may refund. ``failed`` is the same: nothing left.
+
+    ``sent`` / ``partially_reversed`` — money is in the creator's Stripe
+    balance. FC can usually reverse it automatically, but Stripe will refuse
+    if their balance cannot cover it, so recovery is not guaranteed. Treated
+    exactly as the manual ``paid`` case is: admin only, with an advisory.
+    That is deliberately conservative and can be relaxed once reversal has a
+    production track record.
+
+    ``reversed`` — already clawed back in full; nothing outstanding.
+    """
+    status = txn.connect_transfer_status
+
+    if status in (
+        ConnectTransferStatus.awaiting_payment.value,
+        ConnectTransferStatus.pending.value,
+        ConnectTransferStatus.failed.value,
+        ConnectTransferStatus.reversed.value,
+    ):
+        return True, None
+
+    if status in (
+        ConnectTransferStatus.sent.value,
+        ConnectTransferStatus.partially_reversed.value,
+    ):
+        if actor_is_admin:
+            # FC will attempt the reversal automatically once the refund
+            # lands; the advisory covers the case where it cannot complete.
+            return True, "post_payout_manual_recovery_required"
+        return False, None
+
+    # Unrecognised: refuse rather than guess about money.
+    return False, None
+
+
 def _payout_gate_action(
     *, txn: PaymentTransaction, actor_is_admin: bool,
 ) -> tuple[bool, str | None]:
     """Returns (allowed, payout_advisory_if_admin_override).
 
-    Non-admin actors are refused for paid/held rows.
-    Admin actors are always allowed; a payout_advisory flag is set on
-    the RefundOperation so operations can track post-payout recovery.
+    Non-admin actors are refused once the creator's share has left Fresh
+    Collective; an admin may still refund, and a ``payout_advisory`` is
+    stamped on the RefundOperation so operations can track recovery.
+
+    Connect rows are gated on ``connect_transfer_status``, not on
+    ``payout_status``. Their ``payout_status`` is ``not_applicable`` —
+    truthfully, because FC's manual payout process does not cover them — so
+    inferring from it would refuse every Connect refund outright. The
+    question the gate actually needs answered is "has FC sent the creator
+    their share yet?", and only the transfer status knows.
     """
+    if txn.payout_model == PayoutModel.connect.value:
+        return _connect_gate_action(txn=txn, actor_is_admin=actor_is_admin)
+
     ps = txn.payout_status
     if ps == PayoutStatus.pending or ps == PayoutStatus.cancelled:
         return True, None

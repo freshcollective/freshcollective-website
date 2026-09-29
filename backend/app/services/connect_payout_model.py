@@ -64,6 +64,21 @@ class PayoutModelDecision:
         return self.payout_model == PayoutModel.connect.value
 
     @property
+    def manual_payout_applies(self) -> bool:
+        """Whether FC's manual payout process covers this row.
+
+        False for Connect rows, which is the whole payout-status decision:
+        ``payout_status`` keeps meaning "state of FC's manual payout
+        bookkeeping", so a Connect row takes ``not_applicable`` rather than
+        being forced into ``pending`` (which would show as money FC owes by
+        hand) or later ``paid`` (which means a payout batch recorded a
+        disbursement, and would also wrongly imply Stripe had reached the
+        creator's bank). ``connect_transfer_status`` is the authority for
+        Connect instead.
+        """
+        return self.payout_model == PayoutModel.manual.value
+
+    @property
     def initial_transfer_status(self) -> str:
         """What ``connect_transfer_status`` should be at creation.
 

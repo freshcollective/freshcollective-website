@@ -67,6 +67,8 @@ class SweepReport:
     skipped: int = 0
     fee_resolved: int = 0
     fee_unavailable: int = 0
+    #: Owed, but held out of the queue while their charge is contested.
+    held_by_dispute: int = 0
     #: Rows whose attempt count has passed the attention threshold. Reported
     #: rather than written off.
     needs_attention: list[str] = field(default_factory=list)
@@ -80,6 +82,7 @@ class SweepReport:
             "skipped": self.skipped,
             "fee_resolved": self.fee_resolved,
             "fee_unavailable": self.fee_unavailable,
+            "held_by_dispute": self.held_by_dispute,
             "needs_attention": len(self.needs_attention),
         }
 
@@ -101,6 +104,11 @@ def _claim_ids(db: Session, *, limit: int) -> list[str]:
             WHERE payout_model = 'connect'
               AND connect_transfer_status = 'pending'
               AND provider_transfer_id IS NULL
+              -- A contested charge does not keep paying its creator. The
+              -- transfer stays owed; the hold lifts when the dispute closes
+              -- in FC's favour. Counted separately below so a held row is
+              -- reported rather than silently stalled.
+              AND connect_dispute_opened_at IS NULL
             ORDER BY created_at ASC
             LIMIT :limit
             """
@@ -175,6 +183,25 @@ def sweep_pending_transfers(
 ) -> SweepReport:
     """One bounded pass over the owed transfers."""
     report = SweepReport()
+    report.held_by_dispute = int(
+        db.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM payment_transactions
+                WHERE payout_model = 'connect'
+                  AND connect_transfer_status = 'pending'
+                  AND provider_transfer_id IS NULL
+                  AND connect_dispute_opened_at IS NOT NULL
+                """
+            )
+        ).scalar()
+        or 0
+    )
+    if report.held_by_dispute:
+        logger.warning(
+            "connect sweeper: %s owed transfer(s) held while their charge is "
+            "disputed", report.held_by_dispute,
+        )
     ids = _claim_ids(db, limit=limit)
     report.considered = len(ids)
     if not ids:
