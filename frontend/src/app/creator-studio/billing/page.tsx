@@ -1,8 +1,20 @@
-import { getActiveCreatorSpace, getCreatorBilling, getCreatorSpace } from '@/lib/serverApi'
-import type { CreatorBillingResponse, CreatorPlanOut, CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
+import {
+  getActiveCreatorSpace,
+  getCreatorBilling,
+  getCreatorSpace,
+  getCreatorStripeConnectStatus,
+} from '@/lib/serverApi'
+import type {
+  CreatorBillingResponse,
+  CreatorPlanOut,
+  CreatorSpaceDetail,
+  CreatorStripeConnectStatus,
+  SpaceSummary,
+} from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import { creatorFacingPlanName } from '@/lib/creatorPlanDisplay'
 import BillingFeeCalculator from './BillingFeeCalculator'
+import StripeConnectPanel from './StripeConnectPanel'
 import {
   CancelSubscriptionButton,
   ManageBillingButton,
@@ -130,9 +142,17 @@ function StatusBadge({
 // ---------------------------------------------------------------------------
 
 export default async function BillingPage() {
-  const [billing, activeSpace]: [CreatorBillingResponse | null, SpaceSummary | null] = await Promise.all([
+  const [billing, activeSpace, connectStatus]: [
+    CreatorBillingResponse | null,
+    SpaceSummary | null,
+    CreatorStripeConnectStatus | null,
+  ] = await Promise.all([
     getCreatorBilling(),
     getActiveCreatorSpace(),
+    // Cheap: the endpoint answers from FC's own projection with no Stripe
+    // call, and returns null rather than throwing, so it cannot take the
+    // page down with it.
+    getCreatorStripeConnectStatus(),
   ])
   const spaceDetail: CreatorSpaceDetail | null = activeSpace
     ? ((await getCreatorSpace(activeSpace.slug)) as CreatorSpaceDetail | null)
@@ -168,7 +188,13 @@ export default async function BillingPage() {
     return <PlatformOwnerBilling billing={billing} header={headerProps} />
   }
 
-  return <CreatorBilling billing={billing} header={headerProps} />
+  return (
+    <CreatorBilling
+      billing={billing}
+      header={headerProps}
+      connectStatus={connectStatus}
+    />
+  )
 }
 
 type HeaderProps = {
@@ -308,7 +334,11 @@ function UsageRow({ label, value }: { label: string; value: string }) {
 // Creator branch (unchanged behaviour — plan card, fee calc, upgrade UI)
 // ---------------------------------------------------------------------------
 
-function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; header: HeaderProps }) {
+function CreatorBilling({ billing, header, connectStatus }: {
+  billing: CreatorBillingResponse
+  header: HeaderProps
+  connectStatus: CreatorStripeConnectStatus | null
+}) {
   const current_plan = billing.current_plan
   // "Not configured" state: creator has no active/trialing
   // CreatorSubscription. Renders a truthful warning card and hides
@@ -656,26 +686,28 @@ function CreatorBilling({ billing, header }: { billing: CreatorBillingResponse; 
             <StatusBadge state={payment_setup.member_payments_connected ? 'connected' : 'not_connected'} />
           </div>
 
-          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-            <div>
-              <p className="text-[13px] font-medium text-navy-900">Automatic creator payouts</p>
-              <p className="text-[12px] text-black">
-                Direct payouts via Stripe Connect — coming later
-              </p>
-            </div>
-            <StatusBadge state={payment_setup.stripe_connect_connected ? 'connected' : 'not_connected'} />
-          </div>
+          {/* Stripe Connect. Self-loading rather than server-rendered: the
+              status endpoint reads FC's own projection with no Stripe call,
+              so it is cheap, and keeping it out of the page's server fetch
+              means a slow Stripe never delays the whole Billing page.
+              ``payment_setup.stripe_connect_connected`` is deliberately not
+              consulted here — the panel reads the richer nine-state
+              projection instead of a boolean. */}
+          <StripeConnectPanel
+            initialStatus={connectStatus}
+            planFeeBasisPoints={current_plan.transaction_fee_basis_points}
+          />
         </div>
 
         <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-[13px] text-black">
           <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-black">Phase 1 — current</p>
-          <p>Payments are processed through the Fresh Collective Stripe account. Your earnings are tracked as pending payout and disbursed manually.</p>
+          <p>Payments are processed through the Fresh Collective Stripe account. Your earnings are tracked as pending payout and disbursed manually — connecting Stripe above prepares your account for automatic payouts, and we&rsquo;ll tell you before your sales start using it.</p>
         </div>
 
         <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
           <p className="text-[12px] font-semibold uppercase tracking-wide text-black">Coming later</p>
           <ul className="mt-2 space-y-1 text-[13px] text-black">
-            <li>· Stripe Connect onboarding for automatic creator payouts</li>
+            <li>· Automatic payouts of your sales through Stripe</li>
             <li>· Refunds, disputes, and payout reporting</li>
             <li>· GST/tax reporting and invoicing</li>
           </ul>

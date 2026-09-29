@@ -1431,6 +1431,74 @@ export interface CreatorUsage {
   media_storage_used_mb: number | null
 }
 
+/** One of the nine states the backend derives from Stripe's own fields. */
+export type ConnectOnboardingState =
+  | 'not_started'
+  | 'onboarding'
+  | 'verifying'
+  | 'action_required'
+  | 'transfers_only'
+  | 'ready'
+  | 'restricted'
+  | 'unsupported'
+  | 'closed'
+
+/** A single outstanding Stripe requirement, as the backend stores it. */
+export interface ConnectRequirementEntry {
+  description: string | null
+  /** 'user' means the creator must act; 'stripe' means Stripe is reviewing. */
+  awaiting_action_from: string | null
+  restricts_capabilities: string[]
+  errors: unknown[]
+}
+
+/**
+ * Mirrors the backend ``ConnectStatusResponse``
+ * (``GET /api/creator/stripe-connect/status``).
+ *
+ * The frontend treats every field here as authoritative and derives no
+ * state of its own — the backend already projected it from Stripe's v2 and
+ * v1 account objects.
+ *
+ * Note the two separate facts that are easy to conflate: ``state ===
+ * 'ready'`` says the Stripe account *can* be paid out to, while
+ * ``connect_routing_enabled`` says Fresh Collective is actually sending
+ * sales through it. Only the second means a creator's money has moved to
+ * the new path.
+ */
+export interface CreatorStripeConnectStatus {
+  connected: boolean
+  state: ConnectOnboardingState
+  /** 'test' | 'live'. Never shown to creators. */
+  stripe_mode: string
+  /** Never rendered — present for support tooling only. */
+  stripe_account_id: string | null
+
+  transfers_status: string | null
+  transfers_status_codes: string[]
+  payouts_status: string | null
+  payouts_status_codes: string[]
+  transfers_enabled: boolean
+  payouts_enabled: boolean
+
+  details_submitted: boolean
+  requirements: ConnectRequirementEntry[]
+  requirements_deadline: string | null
+  action_required: boolean
+
+  external_account_count: number
+  payout_interval: string | null
+  payout_delay_days: number | null
+
+  /** True only when FC routes this creator's sales through Connect. */
+  connect_routing_enabled: boolean
+
+  last_synced_at: string | null
+  last_sync_source: string | null
+  last_error_message: string | null
+}
+
+
 export interface CreatorPaymentSetup {
   creator_billing_connected: boolean
   member_payments_connected: boolean  // True when FC platform Stripe is configured for member checkout

@@ -2,7 +2,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { apiUrl, resolveMediaUrl } from './api'
 import { SESSION_COOKIE } from './session'
-import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, CreatorBillingResponse, CreatorMemberDetail, InviteLookupResponse, ManualMember, MessageThreadDetail, MessageThreadSummary, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
+import type { AccessPassAdminSummary, AccessPassSummary, AccessRequest, ActivityListResponse, CreatorBillingResponse, CreatorMemberDetail, CreatorStripeConnectStatus, InviteLookupResponse, ManualMember, MessageThreadDetail, MessageThreadSummary, MemberBookingItem, NotificationPrefs, PublicSpaceCard, SpaceAccessStatus, SpaceSummary } from '@/types/platform'
 
 // Re-export so existing callers keep working. The canonical definition
 // lives in ``@/lib/activeSpaceCookie`` because the proxy middleware also
@@ -1110,6 +1110,27 @@ export const getCreatorBilling = cache(async (): Promise<CreatorBillingResponse 
     return null
   }
 })
+
+/** The creator's Stripe Connect state, as Fresh Collective has it stored.
+ *
+ *  Server-rendered so the Billing page arrives with the state already in
+ *  place rather than flashing a spinner. Safe to read here because the
+ *  endpoint answers from FC's own projection and makes no Stripe call —
+ *  see ``app/creator/connect_routes.py``.
+ *
+ *  Returns null on any failure so the panel can offer "try again" instead
+ *  of the page failing around it. */
+export const getCreatorStripeConnectStatus = cache(
+  async (): Promise<CreatorStripeConnectStatus | null> => {
+    try {
+      const res = await fetchWithSession('/api/creator/stripe-connect/status')
+      if (!res.ok) return null
+      return res.json()
+    } catch {
+      return null
+    }
+  },
+)
 
 
 // ---------------------------------------------------------------------------
