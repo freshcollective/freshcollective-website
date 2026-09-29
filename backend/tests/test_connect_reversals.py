@@ -402,17 +402,27 @@ class TestRecoveryRequired:
         for manual post-payout recovery understands Connect too."""
         assert cr.RECOVERY_ADVISORY == "post_payout_manual_recovery_required"
 
-    def test_a_retryable_failure_leaves_nothing_resolved(self, db):
+    def test_a_retryable_failure_records_the_outstanding_amount(self, db):
+        """Nothing was recovered, and the row has to say so.
+
+        FC is owed this money whatever the reason the call failed, so a
+        retryable failure records the shortfall exactly as a balance problem
+        does — otherwise the row shows nothing outstanding and no sweeper can
+        find it again. The *reason* is in ``reversal_last_error``; the
+        *position* is in these two columns.
+        """
         txn = _txn(db)
         _refunded(txn, db, amount=10000, creator_share=9200, platform_share=800)
         with _patched(_FakeStripe(error=stripe.APIConnectionError("no route"))):
             outcome = cr.reverse_to_target(db, payment_transaction_id=txn.id)
 
         assert outcome.status == "retryable"
+        assert outcome.unrecovered == 9000
         db.refresh(txn)
         assert txn.reversed_transfer_amount_cents == 0
-        # Not marked required: this is a blip, not a balance problem.
-        assert txn.connect_recovery_state == ConnectRecoveryState.none.value
+        assert txn.connect_recovery_state == ConnectRecoveryState.required.value
+        assert txn.connect_unrecovered_amount_cents == 9000
+        assert "no route" in (txn.reversal_last_error or "")
         assert txn.reversal_attempt_count == 1
 
     def test_a_terminal_refusal_still_leaves_the_money_owed(self, db):

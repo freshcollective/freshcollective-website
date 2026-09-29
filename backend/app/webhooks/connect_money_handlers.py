@@ -128,12 +128,11 @@ def handle_dispute_created(
 
     # Money is already with the creator. FC is liable for the whole charge, so
     # the whole transfer is owed back — not a proportion of a refund that has
-    # not happened.
+    # not happened. ``current_recovery_target`` reads that from
+    # ``connect_dispute_opened_at``, which was just set, so the rule lives in
+    # one place and a later sweep derives the same figure.
     outcome = connect_reversals.reverse_to_target(
-        db,
-        payment_transaction_id=txn.id,
-        target_override=txn.transfer_amount_cents or 0,
-        now=now,
+        db, payment_transaction_id=txn.id, now=now,
     )
     logger.error(
         "charge.dispute.created: txn=%s creator recovery → %s "

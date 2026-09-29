@@ -166,6 +166,25 @@ def compute_reversal_target(txn: PaymentTransaction) -> int:
     return max(0, min(target, transferred))
 
 
+def current_recovery_target(txn: PaymentTransaction) -> int:
+    """How much of the transfer should be back with FC right now.
+
+    Covers both reasons money comes back, so no caller has to know the rule:
+
+    * **disputed** — FC is liable for the whole charge, so the whole transfer
+      is owed regardless of what has been refunded. A dispute usually arrives
+      with no refund at all, where the refund-derived target would be zero.
+    * **refunded** — the proportional cumulative target above.
+
+    This is what makes a recovery row re-computable later: a sweeper picking it
+    up days afterwards derives the same figure from stored state rather than
+    needing the original event's context.
+    """
+    if txn.connect_dispute_opened_at is not None:
+        return txn.transfer_amount_cents or 0
+    return compute_reversal_target(txn)
+
+
 def reversal_idempotency_key(payment_transaction_id: str, target: int) -> str:
     """Deterministic per (transaction, cumulative target).
 
@@ -282,10 +301,15 @@ def _record_failure(
             detail=str(exc),
         )
 
+    # Retryable, but still unresolved — and that has to be recorded, not just
+    # logged. FC is owed this money whatever the reason the call failed, and a
+    # row showing nothing outstanding is a row no sweeper can find.
+    txn.connect_recovery_state = ConnectRecoveryState.required.value
+    txn.connect_unrecovered_amount_cents = outstanding
     db.commit()
     logger.warning(
-        "connect reversal: txn=%s retryable after %s attempt(s): %s",
-        txn.id, txn.reversal_attempt_count, exc,
+        "connect reversal: txn=%s retryable after %s attempt(s), %s outstanding: %s",
+        txn.id, txn.reversal_attempt_count, outstanding, exc,
     )
     return ReversalOutcome(
         status="retryable",
@@ -309,8 +333,10 @@ def reverse_to_target(
     cannot both send the same delta: the second computes a delta of zero
     against the first's committed total.
 
-    ``target_override`` exists for disputes, where the whole transfer is owed
-    back regardless of what has been refunded.
+    The target defaults to :func:`current_recovery_target`, derived under the
+    same lock, so refunds and disputes are handled by one rule and a retry
+    days later recomputes the same figure. ``target_override`` remains for a
+    caller that genuinely knows better.
     """
     now = now or datetime.utcnow()
 
@@ -318,6 +344,12 @@ def reverse_to_target(
         db.query(PaymentTransaction)
         .filter(PaymentTransaction.id == payment_transaction_id)
         .with_for_update()
+        # ``populate_existing`` is load-bearing, not tidiness. Without it
+        # SQLAlchemy returns the instance already in this session's identity
+        # map and leaves its loaded attributes alone, so a caller that read the
+        # row before taking the lock would compute its delta from values that
+        # predate another worker's commit — and reverse the same amount twice.
+        .populate_existing()
         .first()
     )
     if txn is None:
@@ -332,7 +364,10 @@ def reverse_to_target(
         )
 
     transferred = txn.transfer_amount_cents or 0
-    target = target_override if target_override is not None else compute_reversal_target(txn)
+    target = (
+        target_override if target_override is not None
+        else current_recovery_target(txn)
+    )
     target = max(0, min(target, transferred))
     already = txn.reversed_transfer_amount_cents or 0
     delta = target - already
@@ -413,6 +448,7 @@ def reconcile_from_stripe(
         db.query(PaymentTransaction)
         .filter(PaymentTransaction.provider_transfer_id == transfer_id)
         .with_for_update()
+        .populate_existing()
         .first()
     )
     if txn is None:

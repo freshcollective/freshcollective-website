@@ -304,6 +304,11 @@ def execute_transfer(
         db.query(PaymentTransaction)
         .filter(PaymentTransaction.id == payment_transaction_id)
         .with_for_update()
+        # Overwrite anything this session already loaded. A caller that read
+        # the row before taking the lock — the sweeper does — would otherwise
+        # decide from a copy that predates another worker's commit, and send
+        # the same transfer twice.
+        .populate_existing()
         .first()
     )
     if txn is None:
