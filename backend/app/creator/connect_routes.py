@@ -54,6 +54,8 @@ from app.models.creator_stripe_account import (
 from app.models.platform import Space
 from app.models.user import User
 from app.services import connect_account_sync as sync
+from app.services import connect_earnings as earnings
+from app.services import connect_routing_enablement as enablement
 from app.services import stripe_connect_accounts as connect
 
 logger = logging.getLogger(__name__)
@@ -102,9 +104,44 @@ class ConnectStatusResponse(BaseModel):
     #: False for everyone until a deliberate, separate action sets it.
     connect_routing_enabled: bool = False
 
+    #: Whether the creator has acknowledged how the fees fall. A
+    #: precondition for routing, and never a trigger for it.
+    fee_disclosure_acknowledged: bool = False
+    fee_disclosure_acknowledged_at: datetime | None = None
+    fee_disclosure_version: str | None = None
+
     last_synced_at: datetime | None = None
     last_sync_source: str | None = None
     last_error_message: str | None = None
+
+
+class ConnectEarningOut(BaseModel):
+    """One Connect-routed sale. No Stripe ids, no recovery internals."""
+
+    payment_transaction_id: str
+    created_at: str
+    currency: str
+    sale_amount_cents: int
+    platform_fee_cents: int
+    processing_fee_cents: int | None
+    creator_amount_cents: int | None
+    status: str
+    status_label: str
+    amount_is_estimate: bool
+    refunded_amount_cents: int
+    installment_number: int | None
+
+
+class ConnectEarningsResponse(BaseModel):
+    currency: str
+    sale_total_cents: int
+    platform_fee_total_cents: int
+    processing_fee_total_cents: int
+    creator_total_cents: int
+    sent_total_cents: int
+    awaiting_total_cents: int
+    row_count: int
+    rows: list[ConnectEarningOut]
 
 
 class AccountLinkResponse(BaseModel):
@@ -250,6 +287,9 @@ def _to_status(row: CreatorStripeAccount | None) -> ConnectStatusResponse:
         payout_interval=row.payout_interval,
         payout_delay_days=row.payout_delay_days,
         connect_routing_enabled=row.connect_payouts_enabled_at is not None,
+        fee_disclosure_acknowledged=row.fee_disclosure_acknowledged_at is not None,
+        fee_disclosure_acknowledged_at=row.fee_disclosure_acknowledged_at,
+        fee_disclosure_version=row.fee_disclosure_version,
         last_synced_at=row.last_synced_at,
         last_sync_source=row.last_sync_source,
         last_error_message=row.last_error_message,
@@ -463,3 +503,55 @@ def refresh_status(
         raise _translate(exc) from exc
 
     return _to_status(row)
+
+
+@router.post("/acknowledge-fees", response_model=ConnectStatusResponse)
+def acknowledge_fees(
+    creator: User = Depends(get_creator_user),
+    db: Session = Depends(get_db),
+) -> ConnectStatusResponse:
+    """Record that the creator has seen how the fees fall.
+
+    Deliberately does not enable anything. Acknowledging is the one
+    precondition the creator controls; whether their sales route through
+    Connect stays an administrative decision, so this endpoint cannot be the
+    thing that moves a creator's money.
+    """
+    try:
+        row = enablement.acknowledge_fee_disclosure(db, creator_user_id=creator.id)
+    except enablement.RoutingEnablementError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _to_status(row)
+
+
+@router.get("/earnings", response_model=ConnectEarningsResponse)
+def get_connect_earnings(
+    creator: User = Depends(get_creator_user),
+    db: Session = Depends(get_db),
+) -> ConnectEarningsResponse:
+    """Connect-routed sales, with the fee breakdown for each.
+
+    Separate from the manual payout figures on the Billing page, because for
+    these sales Fresh Collective owes nothing by hand — Stripe does. Folding
+    them together would tell a creator FC is holding money it is not.
+    """
+    rows = earnings.list_connect_earnings(db, creator_user_id=creator.id)
+    currency = rows[0].currency if rows else "AUD"
+    summary = earnings.summarise(rows, currency=currency)
+    return ConnectEarningsResponse(
+        currency=summary.currency,
+        sale_total_cents=summary.sale_total_cents,
+        platform_fee_total_cents=summary.platform_fee_total_cents,
+        processing_fee_total_cents=summary.processing_fee_total_cents,
+        creator_total_cents=summary.creator_total_cents,
+        sent_total_cents=summary.sent_total_cents,
+        awaiting_total_cents=summary.awaiting_total_cents,
+        row_count=summary.row_count,
+        rows=[
+            ConnectEarningOut(**{
+                field: getattr(row, field)
+                for field in ConnectEarningOut.model_fields
+            })
+            for row in rows
+        ],
+    )

@@ -9,7 +9,12 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 // @ts-expect-error - Node-native import
-import { describeConnect, feeDisclosure, payoutScheduleSentence } from './stripeConnectPanel.ts'
+import {
+  describeConnect,
+  feeAcknowledgement,
+  feeDisclosure,
+  payoutScheduleSentence,
+} from './stripeConnectPanel.ts'
 
 type State =
   | 'not_started' | 'onboarding' | 'verifying' | 'action_required'
@@ -34,6 +39,9 @@ const status = (state: State, overrides: Record<string, unknown> = {}) => ({
   payout_interval: null,
   payout_delay_days: null,
   connect_routing_enabled: false,
+  fee_disclosure_acknowledged: false,
+  fee_disclosure_acknowledged_at: null,
+  fee_disclosure_version: null,
   last_synced_at: null,
   last_sync_source: null,
   last_error_message: null,
@@ -248,19 +256,36 @@ describe('fee disclosure', () => {
   test('states the order: Stripe first, then FC, then the creator', () => {
     const text = feeDisclosure(800)
     const stripeAt = text.indexOf('Stripe’s processing fee')
-    const fcAt = text.indexOf('Fresh Collective’s plan fee')
+    const fcAt = text.indexOf('Fresh Collective’s platform fee')
     const creatorAt = text.indexOf('paid to you')
     assert.ok(stripeAt >= 0 && fcAt > stripeAt && creatorAt > fcAt, text)
   })
 
-  test('a 0% plan is told the 0% is FC’s share, not Stripe’s fee', () => {
-    const text = feeDisclosure(0)
-    assert.match(text, /0% fee is Fresh Collective’s share/)
-    assert.match(text, /Stripe’s\s+processing fee still applies/)
+  test('the agreed wording, verbatim', () => {
+    assert.equal(
+      feeDisclosure(800),
+      'Stripe’s processing fee comes out of each sale first, then Fresh ' +
+      'Collective’s platform fee, and the remainder is paid to you.',
+    )
   })
 
-  test('a 0% plan still gets the Stripe-fee disclosure', () => {
-    assert.match(feeDisclosure(0), /Stripe’s processing fee comes out of each sale/)
+  test('a 0% plan gets the explicit second sentence', () => {
+    const text = feeDisclosure(0)
+    assert.ok(
+      text.includes(
+        'Your Fresh Collective platform fee is 0%. Stripe processing fees ' +
+        'still apply.',
+      ),
+      text,
+    )
+  })
+
+  test('a 0% plan still gets the Stripe-fee disclosure itself', () => {
+    // The sentence most at risk of being skipped for these creators, and the
+    // one they most need — 0% is easily heard as "nothing is deducted".
+    assert.match(
+      feeDisclosure(0), /Stripe’s processing fee comes out of each sale first/,
+    )
   })
 
   test('no percentages, amounts or pricing tables are quoted', () => {
@@ -274,6 +299,50 @@ describe('fee disclosure', () => {
 
   test('an unknown plan fee still discloses the order', () => {
     assert.match(feeDisclosure(null), /Stripe’s processing fee comes out of each sale/)
+  })
+})
+
+describe('fee acknowledgement', () => {
+  test('it is asked for when not yet given', () => {
+    const ack = feeAcknowledgement(status('ready'), 800)
+    assert.equal(ack.required, true)
+    assert.ok(ack.actionLabel.length > 0)
+  })
+
+  test('it is not asked for again once given', () => {
+    const ack = feeAcknowledgement(
+      status('ready', {
+        fee_disclosure_acknowledged: true,
+        fee_disclosure_acknowledged_at: '2026-09-20T10:00:00',
+        fee_disclosure_version: '2026-09-connect-v1',
+      }),
+      800,
+    )
+    assert.equal(ack.required, false)
+  })
+
+  test('it carries the disclosure it is an acknowledgement of', () => {
+    assert.equal(
+      feeAcknowledgement(status('ready'), 0).disclosure, feeDisclosure(0),
+    )
+  })
+
+  test('it says plainly that agreeing does not switch anything on', () => {
+    // A creator must not come away thinking they have enabled their own
+    // payouts — they cannot, and believing otherwise would be a nasty surprise.
+    const ack = feeAcknowledgement(status('ready'), 800)
+    assert.match(ack.note, /doesn’t switch anything on/)
+    assert.match(ack.note, /Fresh Collective enables/)
+  })
+
+  test('it is asked for regardless of onboarding state', () => {
+    // The fee model applies whenever routing is switched on, so consent is not
+    // conditional on how far through Stripe setup they are.
+    for (const state of ['not_started', 'onboarding', 'ready', 'transfers_only']) {
+      assert.equal(
+        feeAcknowledgement(status(state as State), 800).required, true, state,
+      )
+    }
   })
 })
 

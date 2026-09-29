@@ -60,6 +60,11 @@ def _connect_account(db, creator_id, **overrides) -> CreatorStripeAccount:
         "details_submitted": True,
         "external_account_count": 1,
         "connect_payouts_enabled_at": datetime(2026, 9, 29, 12, 0, 0),
+        # Routing cannot be on without an acknowledgement — the schema
+        # says so (migration 145), so a fixture that skips it is not a
+        # state production can reach.
+        "fee_disclosure_acknowledged_at": datetime(2026, 9, 1, 8, 0, 0),
+        "fee_disclosure_version": "2026-09-connect-v1",
     }
     values.update(overrides)
     row = CreatorStripeAccount(**values)

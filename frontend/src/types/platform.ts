@@ -1493,9 +1493,51 @@ export interface CreatorStripeConnectStatus {
   /** True only when FC routes this creator's sales through Connect. */
   connect_routing_enabled: boolean
 
+  /** Whether the creator has acknowledged how the fees fall. A precondition
+   *  for routing, never a trigger for it. */
+  fee_disclosure_acknowledged: boolean
+  fee_disclosure_acknowledged_at: string | null
+  fee_disclosure_version: string | null
+
   last_synced_at: string | null
   last_sync_source: string | null
   last_error_message: string | null
+}
+
+
+/** One Connect-routed sale, as the creator sees it. Mirrors the backend
+ *  ``ConnectEarningOut`` — deliberately carries no Stripe ids and no recovery
+ *  internals. */
+export interface ConnectEarningRow {
+  payment_transaction_id: string
+  created_at: string
+  currency: string
+  sale_amount_cents: number
+  platform_fee_cents: number
+  /** Null until Stripe has told us. Shown as "being confirmed", never zero. */
+  processing_fee_cents: number | null
+  /** What was transferred, or what will be once the fee is known. */
+  creator_amount_cents: number | null
+  status: string
+  /** Plain-language wording composed by the backend. */
+  status_label: string
+  amount_is_estimate: boolean
+  refunded_amount_cents: number
+  /** Present only for a payment-plan instalment. */
+  installment_number: number | null
+}
+
+/** ``GET /api/creator/stripe-connect/earnings``. */
+export interface ConnectEarningsResponse {
+  currency: string
+  sale_total_cents: number
+  platform_fee_total_cents: number
+  processing_fee_total_cents: number
+  creator_total_cents: number
+  sent_total_cents: number
+  awaiting_total_cents: number
+  row_count: number
+  rows: ConnectEarningRow[]
 }
 
 

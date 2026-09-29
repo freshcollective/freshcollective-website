@@ -20,6 +20,8 @@ import pytest
 
 from app.models.creator_stripe_account import CreatorStripeAccount, OnboardingState
 from app.services import stripe_connect_accounts as connect
+from tests.test_connect_enablement import ACCT as CONNECT_ACCT
+from tests.test_connect_enablement import _connect_txn
 from tests.test_connect_account_state import (
     ACCT,
     V1_AFTER,
@@ -795,3 +797,235 @@ class TestFailureTranslation:
             )
         assert sent["use_case"]["type"] == "account_update"
         assert sent["use_case"]["account_update"]["configurations"] == ["recipient"]
+
+
+# ---------------------------------------------------------------------------
+# POST /acknowledge-fees
+# ---------------------------------------------------------------------------
+
+
+READY_FIELDS = dict(
+    stripe_account_id=ACCT,
+    onboarding_state=OnboardingState.ready.value,
+    transfers_status="active", transfers_enabled=True,
+    payouts_status="active", payouts_enabled=True,
+    details_submitted=True, external_account_count=1,
+)
+
+
+class TestAcknowledgeFees:
+    def test_it_records_the_acknowledgement_and_returns_the_status(
+        self, client, as_creator, db,
+    ):
+        row = _row(db, as_creator.id, **READY_FIELDS)
+
+        res = client.post("/api/creator/stripe-connect/acknowledge-fees")
+
+        assert res.status_code == 200
+        assert res.json()["fee_disclosure_acknowledged"] is True
+        assert res.json()["fee_disclosure_version"]
+        db.refresh(row)
+        assert row.fee_disclosure_acknowledged_at is not None
+
+    def test_acknowledging_does_not_switch_routing_on(
+        self, client, as_creator, db,
+    ):
+        """The whole reason this is a separate endpoint from enablement."""
+        row = _row(db, as_creator.id, **READY_FIELDS)
+
+        res = client.post("/api/creator/stripe-connect/acknowledge-fees")
+
+        assert res.json()["connect_routing_enabled"] is False
+        db.refresh(row)
+        assert row.connect_payouts_enabled_at is None
+
+    def test_a_creator_with_no_stripe_account_gets_a_clear_refusal(
+        self, client, as_creator,
+    ):
+        res = client.post("/api/creator/stripe-connect/acknowledge-fees")
+        assert res.status_code == 409
+
+    def test_it_makes_no_stripe_call(self, client, as_creator, db):
+        """A creator agreeing to the fee model is a local fact."""
+        _row(db, as_creator.id, **READY_FIELDS)
+
+        with patch(f"{ADAPTER}.retrieve_account") as retrieve, \
+             patch(f"{ADAPTER}.get_stripe_client") as get_client:
+            res = client.post("/api/creator/stripe-connect/acknowledge-fees")
+
+        assert res.status_code == 200
+        retrieve.assert_not_called()
+        get_client.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# GET /earnings
+# ---------------------------------------------------------------------------
+
+
+class TestEarningsEndpoint:
+    def test_it_returns_only_this_creators_connect_sales(
+        self, client, as_creator, db, make_user,
+    ):
+        other = make_user(role="creator")
+        mine = _connect_txn(db, as_creator.id)
+        theirs = _connect_txn(db, other.id)
+
+        res = client.get("/api/creator/stripe-connect/earnings")
+
+        assert res.status_code == 200
+        ids = [r["payment_transaction_id"] for r in res.json()["rows"]]
+        assert mine.id in ids
+        assert theirs.id not in ids
+
+    def test_it_exposes_no_stripe_ids_or_recovery_internals(
+        self, client, as_creator, db,
+    ):
+        _connect_txn(
+            db, as_creator.id,
+            provider_transfer_id="tr_leaky",
+            connect_destination_account_id=CONNECT_ACCT,
+            connect_unrecovered_amount_cents=500,
+        )
+
+        body = client.get("/api/creator/stripe-connect/earnings").text
+
+        assert "tr_leaky" not in body
+        assert CONNECT_ACCT not in body
+        assert "unrecovered" not in body
+
+    def test_a_creator_with_no_account_gets_an_empty_list_not_an_error(
+        self, client, as_creator,
+    ):
+        """Nothing to show is a normal state, not a failure."""
+        res = client.get("/api/creator/stripe-connect/earnings")
+        assert res.status_code == 200
+        assert res.json()["rows"] == []
+        assert res.json()["row_count"] == 0
+
+    def test_it_makes_no_stripe_call(self, client, as_creator, db):
+        with patch(f"{ADAPTER}.get_stripe_client") as get_client:
+            res = client.get("/api/creator/stripe-connect/earnings")
+        assert res.status_code == 200
+        get_client.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Admin enablement
+# ---------------------------------------------------------------------------
+#
+# Called as functions, matching ``test_physical_locations_routes.py`` — that
+# exercises the real guard and the real DB effects without booting the auth
+# stack. Admin-only access is asserted two ways below: the dependency itself
+# rejects a creator, and every route in the module declares it.
+
+
+class TestAdminEnablement:
+    def _ready_acknowledged(self, db, creator_id):
+        return _row(
+            db, creator_id, **READY_FIELDS,
+            fee_disclosure_acknowledged_at=datetime(2026, 9, 1, 8, 0, 0),
+            fee_disclosure_version="2026-09-connect-v1",
+        )
+
+    def test_enable_routes_the_creators_future_sales(self, db, make_user):
+        from app.admin.connect_routes import enable_connect_routing
+
+        admin = make_user(role="admin")
+        creator = make_user(role="creator")
+        row = self._ready_acknowledged(db, creator.id)
+
+        out = enable_connect_routing(
+            creator_user_id=creator.id, admin=admin, db=db,
+        )
+
+        assert out.routing_enabled_at is not None
+        assert out.ready_to_enable is True
+        db.refresh(row)
+        assert row.connect_payouts_enabled_at is not None
+
+    def test_enable_refuses_an_unacknowledged_creator(self, db, make_user):
+        from fastapi import HTTPException
+        from app.admin.connect_routes import enable_connect_routing
+
+        admin = make_user(role="admin")
+        creator = make_user(role="creator")
+        row = _row(db, creator.id, **READY_FIELDS)
+
+        with pytest.raises(HTTPException) as ex:
+            enable_connect_routing(
+                creator_user_id=creator.id, admin=admin, db=db,
+            )
+        assert ex.value.status_code == 409
+        assert ex.value.detail["reason"] == "fee_disclosure_not_acknowledged"
+        db.refresh(row)
+        assert row.connect_payouts_enabled_at is None
+
+    def test_readiness_names_every_missing_condition(self, db, make_user):
+        from app.admin.connect_routes import get_connect_readiness
+
+        admin = make_user(role="admin")
+        creator = make_user(role="creator")
+        _row(db, creator.id)   # no account id, no payouts, no acknowledgement
+
+        out = get_connect_readiness(
+            creator_user_id=creator.id, admin=admin, db=db,
+        )
+
+        assert out.ready_to_enable is False
+        assert "no_stripe_account_id" in out.blockers
+        assert "payouts_not_enabled" in out.blockers
+        assert "fee_disclosure_not_acknowledged" in out.blockers
+
+    def test_readiness_for_an_unknown_creator_is_a_blocker_not_a_crash(
+        self, db, make_user,
+    ):
+        from app.admin.connect_routes import get_connect_readiness
+
+        admin = make_user(role="admin")
+        out = get_connect_readiness(
+            creator_user_id="usr_nobody", admin=admin, db=db,
+        )
+        assert out.ready_to_enable is False
+        assert "no_account_for_current_mode" in out.blockers
+
+    def test_disable_stops_future_routing_and_leaves_the_row_intact(
+        self, db, make_user,
+    ):
+        from app.admin.connect_routes import (
+            disable_connect_routing, enable_connect_routing,
+        )
+
+        admin = make_user(role="admin")
+        creator = make_user(role="creator")
+        row = self._ready_acknowledged(db, creator.id)
+        enable_connect_routing(creator_user_id=creator.id, admin=admin, db=db)
+
+        out = disable_connect_routing(
+            creator_user_id=creator.id, admin=admin, db=db,
+        )
+
+        assert out.routing_enabled_at is None
+        db.refresh(row)
+        assert row.connect_payouts_enabled_at is None
+        # The acknowledgement is a historical fact and survives.
+        assert row.fee_disclosure_acknowledged_at is not None
+
+    def test_the_dependency_rejects_a_creator_and_a_member(self, db, make_user):
+        from fastapi import HTTPException
+        from app.auth.dependencies import get_admin_user
+
+        for role in ("user", "creator"):
+            with pytest.raises(HTTPException) as ex:
+                get_admin_user(current_user=make_user(role=role))
+            assert ex.value.status_code == 403
+
+    def test_every_admin_connect_route_requires_an_admin(self):
+        """The guard cannot be dropped from one route without failing here."""
+        from app.admin import connect_routes as admin_connect
+        from app.auth.dependencies import get_admin_user
+
+        assert admin_connect.router.routes
+        for route in admin_connect.router.routes:
+            guards = [d.call for d in route.dependant.dependencies]
+            assert get_admin_user in guards, route.path

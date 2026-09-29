@@ -703,6 +703,8 @@ def test_an_already_enabled_creator_is_not_disturbed_by_a_sync(
     """If routing were ever on, a webhook must not switch it off either."""
     enabled_at = datetime(2026, 9, 29, 12, 0, 0)
     row = _ready_row(db, make_user(role="creator").id)
+    row.fee_disclosure_acknowledged_at = datetime(2026, 9, 1, 8, 0, 0)
+    row.fee_disclosure_version = "2026-09-connect-v1"
     row.connect_payouts_enabled_at = enabled_at
     db.commit()
 

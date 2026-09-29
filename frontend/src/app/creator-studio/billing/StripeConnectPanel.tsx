@@ -29,9 +29,11 @@ import {
 } from '@/lib/stripeConnectActions'
 import {
   describeConnect,
+  feeAcknowledgement,
   feeDisclosure,
   type ConnectPanelTone,
 } from '@/lib/stripeConnectPanel'
+import ConnectEarnings from './ConnectEarnings'
 
 async function request<T>(path: string, method: 'GET' | 'POST'): Promise<T> {
   const res = await fetch(apiUrl(path), {
@@ -124,6 +126,16 @@ export default function StripeConnectPanel({
     })
   }
 
+  function onAcknowledge() {
+    void run(async () => {
+      setStatus(
+        await transport.post<CreatorStripeConnectStatus>(
+          '/api/creator/stripe-connect/acknowledge-fees',
+        ),
+      )
+    })
+  }
+
   // The server fetch failed. Offer a retry rather than a blank panel, and
   // never guess at a state — "we don't know" is the honest answer here.
   if (!status) {
@@ -147,6 +159,7 @@ export default function StripeConnectPanel({
 
   const view = describeConnect(status)
   const tone = TONE_STYLES[view.tone]
+  const ack = feeAcknowledgement(status, planFeeBasisPoints)
 
   return (
     <div className="rounded-xl bg-slate-50 p-4">
@@ -203,9 +216,39 @@ export default function StripeConnectPanel({
         <p className="mt-2 text-[12px] font-medium text-red-700">{error}</p>
       )}
 
-      <p className="mt-3 max-w-prose border-t border-slate-200 pt-3 text-[12px] text-black">
-        {feeDisclosure(planFeeBasisPoints)}
-      </p>
+      <div className="mt-3 border-t border-slate-200 pt-3">
+        <p className="max-w-prose text-[12px] text-black">
+          {feeDisclosure(planFeeBasisPoints)}
+        </p>
+
+        {/* Acknowledgement. A precondition Fresh Collective must have before it
+            will route a creator's sales — and one the creator controls. The
+            note under the button matters: agreeing must not read as switching
+            payouts on, because it does not. */}
+        {ack.required ? (
+          <div className="mt-2">
+            <p className="max-w-prose text-[12px] text-black">{ack.prompt}</p>
+            <button
+              type="button"
+              onClick={onAcknowledge}
+              disabled={busy}
+              className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-[12px] font-medium text-navy-900 hover:bg-white disabled:opacity-60"
+            >
+              {busy ? 'Saving…' : ack.actionLabel}
+            </button>
+            <p className="mt-1 max-w-prose text-[12px] text-black">
+              {ack.note}
+            </p>
+          </div>
+        ) : (
+          <p className="mt-2 text-[12px] text-black">
+            Thanks — you’ve confirmed you understand how the fees work.
+          </p>
+        )}
+      </div>
+
+      {/* Only worth offering once there could be something to show. */}
+      {status.connect_routing_enabled && <ConnectEarnings />}
     </div>
   )
 }

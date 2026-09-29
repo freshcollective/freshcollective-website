@@ -92,23 +92,60 @@ export function payoutScheduleSentence(
  * erode trust. The order is the whole point — Stripe's fee comes out
  * first, then FC's, and the remainder is the creator's.
  *
- * A 0% plan needs its own sentence. "0% fee" is easily heard as "nothing
- * is deducted", and Stripe's processing fee is still deducted.
+ * A 0% plan needs its own sentence. "0% fee" is easily heard as "nothing is
+ * deducted", and Stripe's processing fee is still deducted — which for those
+ * creators is the entire change Connect brings.
  */
 export function feeDisclosure(platformFeeBasisPoints: number | null): string {
   const base =
-    'Once automatic Stripe payouts are switched on for your sales, ' +
     'Stripe’s processing fee comes out of each sale first, then Fresh ' +
-    'Collective’s plan fee, and the remainder is paid to you.'
+    'Collective’s platform fee, and the remainder is paid to you.'
   if (platformFeeBasisPoints === 0) {
     return (
       base +
-      ' Your plan’s 0% fee is Fresh Collective’s share — Stripe’s ' +
-      'processing fee still applies to every sale.'
+      ' Your Fresh Collective platform fee is 0%. Stripe processing fees ' +
+      'still apply.'
     )
   }
   return base
 }
+
+/**
+ * What the creator must agree to before Fresh Collective will route their
+ * sales through Connect.
+ *
+ * Acknowledging is not enabling. It records that they have seen how the fees
+ * fall; whether their money actually changes path stays a deliberate decision
+ * by Fresh Collective. Saying so on the button's own screen avoids a creator
+ * believing they have switched something on.
+ */
+export interface FeeAcknowledgementView {
+  /** Whether to ask at all. */
+  required: boolean
+  disclosure: string
+  prompt: string
+  actionLabel: string
+  /** Reassurance that agreeing does not move their money. */
+  note: string
+}
+
+export function feeAcknowledgement(
+  status: CreatorStripeConnectStatus,
+  platformFeeBasisPoints: number | null,
+): FeeAcknowledgementView {
+  return {
+    required: !status.fee_disclosure_acknowledged,
+    disclosure: feeDisclosure(platformFeeBasisPoints),
+    prompt:
+      'Before we can switch your sales over, please confirm you’ve read how ' +
+      'the fees work.',
+    actionLabel: 'I understand how the fees work',
+    note:
+      'Confirming doesn’t switch anything on. Fresh Collective enables ' +
+      'automatic payouts separately, and we’ll tell you when yours are live.',
+  }
+}
+
 
 function outstandingForCreator(status: CreatorStripeConnectStatus): number {
   return (status.requirements ?? []).filter(

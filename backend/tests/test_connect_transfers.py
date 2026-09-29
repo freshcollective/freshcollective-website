@@ -303,6 +303,8 @@ class TestExecute:
             transfers_status="active", transfers_enabled=True,
             payouts_status="active", payouts_enabled=True,
             connect_payouts_enabled_at=datetime(2026, 9, 29, 12, 0, 0),
+            fee_disclosure_acknowledged_at=datetime(2026, 9, 1, 8, 0, 0),
+            fee_disclosure_version="2026-09-connect-v1",
         ))
         db.commit()
 

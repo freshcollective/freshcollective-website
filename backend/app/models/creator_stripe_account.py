@@ -114,6 +114,13 @@ class SyncSource(str, enum.Enum):
     manual = "manual"
 
 
+#: Which wording a creator acknowledged. Bump when the fee model itself
+#: changes, so consent to different terms is never inherited silently — the
+#: admin guard compares nothing but presence today, and a future change can
+#: compare versions.
+FEE_DISCLOSURE_VERSION = "2026-09-connect-v1"
+
+
 _ONBOARDING_STATES = tuple(s.value for s in OnboardingState)
 _CAPABILITY_STATUSES = tuple(s.value for s in CapabilityStatus)
 _SYNC_SOURCES = tuple(s.value for s in SyncSource)
@@ -214,6 +221,20 @@ class CreatorStripeAccount(Base):
         DateTime(timezone=False), nullable=True,
     )
 
+    # --- fee acknowledgement (migration 145) --------------------------------
+    #: When the creator acknowledged that Stripe's fee comes out of each sale
+    #: before Fresh Collective's. Connect changes what they receive — most
+    #: sharply for a Founding Creator on 0%, who goes from the full price to
+    #: the price less Stripe's fee — so routing cannot be enabled without it.
+    fee_disclosure_acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=False), nullable=True,
+    )
+    #: The wording they saw. Lets a later change to the fee model require a
+    #: fresh acknowledgement rather than inheriting consent to other terms.
+    fee_disclosure_version: Mapped[str | None] = mapped_column(
+        String(20), nullable=True,
+    )
+
     # --- diagnostics --------------------------------------------------------
     last_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True,
@@ -285,6 +306,19 @@ class CreatorStripeAccount(Base):
             "connect_payouts_enabled_at IS NULL OR "
             "(payouts_enabled AND stripe_account_id IS NOT NULL)",
             name="ck_creator_stripe_accounts_routing_requires_payouts",
+        ),
+        # Half-recorded consent is worse than none.
+        CheckConstraint(
+            "(fee_disclosure_acknowledged_at IS NULL) "
+            "= (fee_disclosure_version IS NULL)",
+            name="ck_creator_stripe_accounts_ack_has_version",
+        ),
+        # Routing requires acknowledgement. In the schema as well as in the
+        # admin action, because this is the one that cannot be forgotten.
+        CheckConstraint(
+            "connect_payouts_enabled_at IS NULL "
+            "OR fee_disclosure_acknowledged_at IS NOT NULL",
+            name="ck_creator_stripe_accounts_routing_requires_ack",
         ),
         # A Stripe account id belongs to exactly one row. Partial so the
         # pre-create state (many rows with NULL) stays legal.
