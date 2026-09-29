@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     # ever hard-coded in application source. Leave unset in development
     # when Stripe itself is not configured — the checkout service reports
     # an isolated "not configured" state rather than pretending to work.
+    # Country new Connect recipient accounts are created in. Stripe
+    # derives the account's default currency and its fee structure
+    # from this, and it cannot be changed after activation, so it is
+    # configuration rather than a literal. FC's platform account is AU.
+    stripe_connect_account_country: str = "AU"
     stripe_price_id_creator: str | None = None
     stripe_price_id_pro: str | None = None
 

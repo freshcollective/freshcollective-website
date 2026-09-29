@@ -30,6 +30,7 @@ from app.admin.email_templates import router as admin_email_templates_router
 from app.admin.plan_cancellation import router as admin_plan_cancellation_router
 from app.admin.payout_batch_routes import router as admin_payout_batch_router
 from app.creator.refund_routes import router as creator_refund_router
+from app.creator.connect_routes import router as creator_connect_router
 from app.creator.plan_cancellation_routes import router as creator_plan_cancellation_router
 from app.admin.atlas import router as admin_atlas_router
 from app.admin.physical_locations import router as admin_physical_locations_router
@@ -225,6 +226,7 @@ app.include_router(admin_access_revocation_router)
 app.include_router(admin_plan_cancellation_router)
 app.include_router(admin_payout_batch_router)
 app.include_router(creator_refund_router)
+app.include_router(creator_connect_router)
 app.include_router(creator_plan_cancellation_router)
 app.include_router(admin_atlas_router)
 app.include_router(admin_physical_locations_router)
