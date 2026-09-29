@@ -185,3 +185,30 @@ def assert_api_version() -> list[str]:
             "before deploying."
         )
     return api_version_discrepancies()
+
+
+def get_stripe_client() -> "stripe.StripeClient":
+    """Return a ``StripeClient`` bound to this environment's secret key.
+
+    Exists because the v2 API has no module-global call pattern at all.
+    ``stripe.v2.core`` is importable, but its resource classes
+    (``Account``, ``AccountLink``, ``EventDestination``) carry no
+    ``create`` / ``retrieve`` / ``list`` classmethods — the only
+    ``update`` on them is the inherited dict method, not an API call.
+    Every v2 operation exists solely as a service on an instantiated
+    client (``client.v2.core.accounts.create(...)``), so the
+    ``stripe.X.create(...)`` idiom every FC v1 call site uses has no v2
+    equivalent to reach for.
+
+    Every v1 call site keeps using :func:`get_stripe` — this is an
+    addition, not a migration, and the two can be used side by side in
+    the same request.
+
+    A client is cheap to construct and holds no connection state worth
+    sharing, so this returns a new one per call rather than memoising a
+    global whose key could go stale.
+
+    Raises :class:`StripeNotConfiguredError` when the secret is unset.
+    """
+    ensure_configured()
+    return stripe.StripeClient(settings.stripe_secret_key)

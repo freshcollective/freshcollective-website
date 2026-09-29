@@ -40,6 +40,8 @@ from app.checkout.stripe_client import (
     api_version_discrepancies,
     api_version_major,
     assert_api_version,
+    get_stripe,
+    get_stripe_client,
     installed_api_version,
     installed_package_version,
 )
@@ -194,3 +196,40 @@ def test_api_version_major_reports_an_unfamiliar_format_verbatim():
     # Better to surface a shape we don't recognise than to parse it into
     # something that happens to compare equal.
     assert api_version_major("not-a-version") == "not-a-version"
+
+
+# ---------------------------------------------------------------------------
+# The v1 path is untouched by the v2 addition
+# ---------------------------------------------------------------------------
+
+
+def test_get_stripe_still_returns_the_module_with_the_key_bound():
+    """Every existing v1 call site depends on this exact behaviour."""
+    returned = get_stripe()
+    assert returned is stripe
+    assert stripe.api_key  # bound, not cleared
+
+
+def test_v2_has_no_module_global_call_pattern():
+    """The reason the factory exists.
+
+    ``stripe.v2.core`` imports fine, which makes it look as though FC's
+    existing ``stripe.X.create(...)`` idiom would work. It does not: the
+    v2 resource classes carry no API classmethods, so there is nothing to
+    call without a client.
+    """
+    for name in ("Account", "AccountLink", "EventDestination"):
+        resource = getattr(stripe.v2.core, name)
+        for operation in ("create", "retrieve", "list"):
+            assert not hasattr(resource, operation), (
+                f"stripe.v2.core.{name}.{operation} now exists — the v2 "
+                "surface may be reachable without a client, and "
+                "get_stripe_client()'s rationale needs revisiting."
+            )
+
+
+def test_get_stripe_client_reaches_the_v2_account_services():
+    client = get_stripe_client()
+    assert hasattr(client.v2.core.accounts, "create")
+    assert hasattr(client.v2.core.account_links, "create")
+    assert hasattr(client.v2.core.event_destinations, "create")
