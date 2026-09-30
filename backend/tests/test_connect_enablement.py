@@ -495,3 +495,186 @@ class TestManualEarningsUnchanged:
         ]
         assert [t.id for t in pending] == [manual.id]
         assert connect.payout_status == PayoutStatus.not_applicable
+
+
+# ---------------------------------------------------------------------------
+# Who is waiting on the decision
+# ---------------------------------------------------------------------------
+#
+# The admin overview tells a caretaker when a creator has finished everything
+# asked of them and is now waiting on Fresh Collective. It is derived on read,
+# so these tests are all "does the line appear, and does it go away" — there is
+# no stored item, no dedup key and no resolve step to test.
+
+
+def _ready_awaiting(db, creator_id, account_id, **overrides):
+    """Ready, acknowledged, and not routed. The state the prompt is for.
+
+    ``stripe_account_id`` is unique across the table, so each account needs
+    its own; an override still wins, for the case that drops it entirely.
+    """
+    overrides.setdefault("stripe_account_id", account_id)
+    return _account(db, creator_id, **overrides)
+
+
+class TestAwaitingEnablement:
+    def test_a_ready_acknowledged_unrouted_creator_is_listed(self, db, make_user):
+        creator = make_user(role="creator")
+        _ready_awaiting(db, creator.id, "acct_awaiting_1")
+
+        waiting = enablement.find_awaiting_enablement(db)
+
+        assert [a.creator_user_id for a in waiting] == [creator.id]
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            pytest.param(
+                {"onboarding_state": OnboardingState.verifying.value},
+                id="onboarding not ready",
+            ),
+            pytest.param(
+                {"onboarding_state": OnboardingState.transfers_only.value},
+                id="transfers only",
+            ),
+            # ``payouts_enabled = (payouts_status = 'active')`` is a CHECK
+            # constraint, so the pair moves together or not at all.
+            pytest.param(
+                {"payouts_status": "pending", "payouts_enabled": False},
+                id="payouts not enabled",
+            ),
+            pytest.param(
+                {"fee_disclosure_acknowledged_at": None, "fee_disclosure_version": None},
+                id="not acknowledged",
+            ),
+            pytest.param({"stripe_account_id": None}, id="no stripe account"),
+            pytest.param({"stripe_mode": "live"}, id="other stripe mode"),
+        ],
+    )
+    def test_every_condition_is_required(self, db, make_user, overrides):
+        creator = make_user(role="creator")
+        _ready_awaiting(db, creator.id, "acct_awaiting_2", **overrides)
+
+        assert enablement.find_awaiting_enablement(db) == []
+
+    def test_a_creator_already_routed_is_not_listed(self, db, make_user):
+        """The prompt clears itself when the decision has been made."""
+        creator = make_user(role="creator")
+        _ready_awaiting(
+            db, creator.id, "acct_awaiting_3",
+            connect_payouts_enabled_at=datetime(2026, 9, 25, 9, 0, 0),
+        )
+
+        assert enablement.find_awaiting_enablement(db) == []
+
+    def test_enabling_routing_clears_the_prompt(self, db, make_user):
+        creator = make_user(role="creator")
+        admin = make_user(role="admin")
+        _ready_awaiting(db, creator.id, "acct_awaiting_4")
+        assert len(enablement.find_awaiting_enablement(db)) == 1
+
+        enablement.enable_routing(
+            db, creator_user_id=creator.id, enabled_by_user_id=admin.id,
+        )
+
+        assert enablement.find_awaiting_enablement(db) == []
+
+    def test_disabling_routing_brings_the_prompt_back(self, db, make_user):
+        """Still ready, still not routed — so still worth mentioning."""
+        creator = make_user(role="creator")
+        admin = make_user(role="admin")
+        _ready_awaiting(db, creator.id, "acct_awaiting_5")
+        enablement.enable_routing(
+            db, creator_user_id=creator.id, enabled_by_user_id=admin.id,
+        )
+        enablement.disable_routing(
+            db, creator_user_id=creator.id, disabled_by_user_id=admin.id,
+        )
+
+        assert [a.creator_user_id for a in enablement.find_awaiting_enablement(db)] == [
+            creator.id,
+        ]
+
+    def test_readiness_lapsing_clears_the_prompt(self, db, make_user):
+        """Stripe withdrawing the capability is the other way it goes away."""
+        creator = make_user(role="creator")
+        row = _ready_awaiting(db, creator.id, "acct_awaiting_6")
+        assert len(enablement.find_awaiting_enablement(db)) == 1
+
+        row.onboarding_state = OnboardingState.restricted.value
+        db.commit()
+
+        assert enablement.find_awaiting_enablement(db) == []
+
+    def test_the_longest_wait_comes_first(self, db, make_user):
+        earlier = make_user(role="creator")
+        later = make_user(role="creator")
+        _ready_awaiting(
+            db, later.id, "acct_awaiting_8",
+            fee_disclosure_acknowledged_at=datetime(2026, 9, 28, 12, 0, 0),
+        )
+        _ready_awaiting(
+            db, earlier.id, "acct_awaiting_7",
+            fee_disclosure_acknowledged_at=datetime(2026, 9, 2, 12, 0, 0),
+        )
+
+        waiting = enablement.find_awaiting_enablement(db)
+
+        assert [a.creator_user_id for a in waiting] == [earlier.id, later.id]
+
+    def test_looking_never_enables_anything(self, db, make_user):
+        """A prompt is a prompt. Reading the list is not a decision."""
+        creator = make_user(role="creator")
+        row = _ready_awaiting(db, creator.id, "acct_awaiting_9")
+
+        enablement.find_awaiting_enablement(db)
+        enablement.find_awaiting_enablement(db)
+        db.refresh(row)
+
+        assert row.connect_payouts_enabled_at is None
+
+
+class TestOverviewAttention:
+    """The admin overview payload, called as a function like the other admin
+    route tests in ``test_connect_routes``."""
+
+    def _overview(self, db, admin):
+        from app.admin.routes import get_platform_overview
+
+        return get_platform_overview(_=admin, db=db)
+
+    def test_a_waiting_creator_appears_with_their_name_and_id(self, db, make_user):
+        admin = make_user(role="admin")
+        creator = make_user(role="creator", name="Ada Lovelace")
+        _ready_awaiting(db, creator.id, "acct_overview_1")
+
+        ready = self._overview(db, admin).connect_routing_ready
+
+        assert [(r.user_id, r.name) for r in ready] == [(creator.id, "Ada Lovelace")]
+
+    def test_a_creator_with_no_name_is_shown_by_email(self, db, make_user):
+        """``users.name`` is nullable, and a line that names nobody is worse
+        than one naming an email address."""
+        admin = make_user(role="admin")
+        creator = make_user(role="creator", name=None)
+        _ready_awaiting(db, creator.id, "acct_overview_2")
+
+        ready = self._overview(db, admin).connect_routing_ready
+
+        assert ready[0].name == creator.email
+
+    def test_nobody_waiting_is_an_empty_list_not_an_error(self, db, make_user):
+        admin = make_user(role="admin")
+
+        assert self._overview(db, admin).connect_routing_ready == []
+
+    def test_the_payload_carries_no_stripe_internals(self, db, make_user):
+        """The decision is made on the creator's own page, where readiness is
+        re-fetched and the guard enforced. This line only points at them."""
+        admin = make_user(role="admin")
+        creator = make_user(role="creator", name="Grace")
+        _ready_awaiting(db, creator.id, "acct_overview_3")
+
+        ready = self._overview(db, admin).connect_routing_ready
+
+        assert set(ready[0].model_dump().keys()) == {"user_id", "name"}

@@ -6,6 +6,7 @@ import {
   type MotherWorldMoment,
 } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
+import { connectRoutingItems, type AttentionItem } from '@/lib/adminAttention'
 
 /**
  * Mother World — the visual + emotional centre of World Management.
@@ -207,9 +208,6 @@ function SectionHeader({
 // is waiting.
 // ---------------------------------------------------------------------------
 
-type AttentionSeverity = 'routine' | 'critical'
-type AttentionItem = { label: string; href: string; severity: AttentionSeverity }
-
 function NeedsAttentionSection({ data }: { data: MotherWorldOverview }) {
   // Panel surfaces the health of the world, not workflow mechanics.
   // Invitation and access-request counts are intentionally excluded: they
@@ -224,6 +222,10 @@ function NeedsAttentionSection({ data }: { data: MotherWorldOverview }) {
       severity: 'critical',
     })
   }
+  // A creator has finished everything asked of them and is waiting on the
+  // one decision only Fresh Collective can make. Listed after the failures
+  // because nothing is broken here — see ``connectRoutingItems``.
+  items.push(...connectRoutingItems(data.connect_routing_ready))
 
   const quiet = items.length === 0
 

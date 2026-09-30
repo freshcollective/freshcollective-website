@@ -475,6 +475,14 @@ export interface MotherWorldHealth {
   last_backup_at: string | null
 }
 
+/** A creator whose Connect onboarding is finished and whose sales are not
+ *  yet routed through it. Mirrors the backend ``ConnectRoutingReadyCreator``. */
+export interface ConnectRoutingReadyCreator {
+  user_id: string
+  /** Their name, or their email when they have not set one. */
+  name: string
+}
+
 export interface MotherWorldOverview {
   total_collectives: number
   active_collectives: number
@@ -494,6 +502,8 @@ export interface MotherWorldOverview {
   failed_transactions_7d: number
   recent_moments: MotherWorldMoment[]
   world_health: MotherWorldHealth
+  /** Optional so an overview served by an older backend still parses. */
+  connect_routing_ready?: ConnectRoutingReadyCreator[]
 }
 
 export const getMotherWorldOverview = cache(async (): Promise<MotherWorldOverview | null> => {

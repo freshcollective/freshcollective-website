@@ -1480,7 +1480,12 @@ def get_platform_overview(
 
     # ── Stage 2 Mother World fields ─────────────────────────────────────
     from datetime import datetime, timedelta
-    from app.admin.schemas import MotherWorldHealth, MotherWorldMoment
+    from app.admin.schemas import (
+        ConnectRoutingReadyCreator,
+        MotherWorldHealth,
+        MotherWorldMoment,
+    )
+    from app.services import connect_routing_enablement as connect_enablement
     from app.core.config import settings as _s
 
     now_utc = datetime.utcnow()
@@ -1525,6 +1530,20 @@ def get_platform_overview(
 
     recent_moments = _collect_recent_moments(db, limit=5)
 
+    # Creators who have done everything asked of them and are waiting on the
+    # one decision only Fresh Collective can make. Derived on read like every
+    # other signal on this page, which is what keeps it honest: it appears on
+    # the transition into the actionable state and disappears on the
+    # transition out, and no webhook or status refresh can emit it twice
+    # because nothing is emitted at all.
+    connect_routing_ready = [
+        ConnectRoutingReadyCreator(
+            user_id=account.creator_user_id,
+            name=_creator_display_name(db, account.creator_user_id),
+        )
+        for account in connect_enablement.find_awaiting_enablement(db)
+    ]
+
     world_health = MotherWorldHealth(
         platform_ok=True,  # if we're serving this response, the platform is up
         stripe_ok=bool(_s.stripe_enabled),
@@ -1553,7 +1572,29 @@ def get_platform_overview(
         failed_transactions_7d=failed_transactions_7d,
         recent_moments=recent_moments,
         world_health=world_health,
+        connect_routing_ready=connect_routing_ready,
     )
+
+
+def _creator_display_name(db: Session, user_id: str) -> str:
+    """What to call this creator in an attention line.
+
+    Falls back to the email, because ``users.name`` is nullable and a line
+    reading "is ready for Stripe Connect routing" with nothing in front of
+    it names nobody. Falls back again to the id rather than raising: a
+    missing user row should not take down the whole overview page.
+    """
+    from app.models.user import User as UserModel
+
+    row = (
+        db.query(UserModel.name, UserModel.email)
+        .filter(UserModel.id == user_id)
+        .first()
+    )
+    if row is None:
+        return user_id
+    name, email = row
+    return (name or "").strip() or email or user_id
 
 
 def _collect_recent_moments(db: Session, *, limit: int = 5) -> list:

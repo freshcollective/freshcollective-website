@@ -86,6 +86,47 @@ def find_account(db: Session, *, creator_user_id: str) -> CreatorStripeAccount |
     )
 
 
+def find_awaiting_enablement(db: Session) -> list[CreatorStripeAccount]:
+    """Creators who could be switched over, and have not been.
+
+    **Read-only.** This function exists so an admin is told when a creator
+    has finished everything asked of them and is now waiting on a decision
+    only Fresh Collective can make. It writes nothing, enables nothing, and
+    changes none of the guards below — being on this list is a prompt to a
+    person, never a step towards routing.
+
+    Stricter than :func:`assess` on purpose. ``assess`` asks whether the
+    *payouts* capability is active, because that is what makes a transfer
+    reach a bank. This asks for ``onboarding_state == ready``, which the
+    projection only reaches when transfers **and** payouts are both active.
+    So an account can satisfy the enable guard without appearing here —
+    deliberately: a prompt that fires while a capability is still settling
+    would send an admin to press a button they should not yet press. The
+    guard is the authority on what is permitted; this is only what is worth
+    mentioning.
+
+    Mode-scoped, like every other Connect lookup.
+
+    Uncapped, and that is the point: the result is self-clearing. A row
+    leaves this list the moment routing is enabled or readiness lapses, so
+    it cannot accumulate into a list worth truncating — and truncating it
+    would quietly hide the creator waiting longest.
+    """
+    return (
+        db.query(CreatorStripeAccount)
+        .filter(
+            CreatorStripeAccount.stripe_mode == settings.stripe_mode,
+            CreatorStripeAccount.stripe_account_id.isnot(None),
+            CreatorStripeAccount.onboarding_state == OnboardingState.ready.value,
+            CreatorStripeAccount.payouts_enabled.is_(True),
+            CreatorStripeAccount.fee_disclosure_acknowledged_at.isnot(None),
+            CreatorStripeAccount.connect_payouts_enabled_at.is_(None),
+        )
+        .order_by(CreatorStripeAccount.fee_disclosure_acknowledged_at.asc())
+        .all()
+    )
+
+
 def assess(account: CreatorStripeAccount | None) -> EnablementReadiness:
     """Every unmet condition, not just the first."""
     blockers: list[str] = []

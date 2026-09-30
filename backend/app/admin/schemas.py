@@ -225,6 +225,21 @@ class MotherWorldHealth(BaseModel):
     last_backup_at: datetime | None = None
 
 
+class ConnectRoutingReadyCreator(BaseModel):
+    """A creator who has finished Connect onboarding and acknowledged the
+    fee model, and whose sales are still not routed through it.
+
+    Carries only what the attention line needs — a name to say and a
+    creator to link to. No Stripe ids and no account state: the decision
+    itself is made on the creator's own page, where the full readiness is
+    fetched and the guard is enforced.
+    """
+
+    user_id: str
+    #: Their name, or their email when they have not set one.
+    name: str
+
+
 class AdminPlatformOverview(BaseModel):
     # Collectives
     total_collectives: int
@@ -249,6 +264,10 @@ class AdminPlatformOverview(BaseModel):
     failed_transactions_7d: int = 0
     recent_moments: list[MotherWorldMoment] = []
     world_health: MotherWorldHealth = MotherWorldHealth()
+    #: Creators waiting on the one decision only Fresh Collective can make.
+    #: Empty is the normal state; an entry clears itself once routing is
+    #: enabled or readiness lapses.
+    connect_routing_ready: list[ConnectRoutingReadyCreator] = []
 
 
 class AdminCollectiveRow(BaseModel):
