@@ -891,4 +891,3 @@ class TestInitialTransferStatus:
             db, creator_user_id=creator.id, currency="AUD",
         )
         assert summary["transaction_count"] == 0
-
