@@ -10,6 +10,7 @@ import { resolveMediaUrl } from '@/lib/api'
 import { AvatarPortrait } from '../CreatorsShell'
 import ContactCard from './ContactCard'
 import PlanCard from './PlanCard'
+import StripeConnectCard from './StripeConnectCard'
 
 /**
  * World Management view of a single Creator.
@@ -30,6 +31,11 @@ import PlanCard from './PlanCard'
  *     price, limits) lives on Creator Plans; the two surfaces are
  *     deliberately separate so editing one plan's fee doesn't blur
  *     with granting it to a specific creator.
+ *   - STRIPE CONNECT ROUTING is here, for the same reason as plan
+ *     assignment: deciding whether a creator's sales route through
+ *     their own Stripe account is a commercial term, and the backend
+ *     accepts it from nowhere else. It is deliberate, audited and never
+ *     automatic — see StripeConnectCard.
  *   - No moderation actions (that lives on Community Care).
  *   - No caretaker notes yet — needs a real product decision about
  *     whether the creator can see them and how they're audited.
@@ -131,6 +137,13 @@ export default async function CreatorDetailPage({
           hasActivePlan={row.has_active_plan}
           availablePlans={availablePlans}
         />
+      </div>
+
+      {/* Where their sales are paid out. Sits under the plan because the
+          two answer one question together: what the commercial terms are,
+          and which route the money takes. */}
+      <div className="mt-6">
+        <StripeConnectCard userId={row.id} />
       </div>
 
       {/* The world they've built */}

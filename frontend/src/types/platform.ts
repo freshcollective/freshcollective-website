@@ -1527,6 +1527,30 @@ export interface ConnectEarningRow {
   installment_number: number | null
 }
 
+/** ``GET|POST /api/admin/creators/{user_id}/stripe-connect[/enable|/disable]``.
+ *
+ *  Mirrors the backend ``ConnectReadinessResponse``. All three endpoints
+ *  return this same shape, so an enable or disable response *is* the
+ *  refreshed readiness and needs no follow-up fetch. */
+export interface AdminConnectReadiness {
+  creator_user_id: string
+  stripe_mode: string
+  /** Whether every condition for enabling routing holds. */
+  ready_to_enable: boolean
+  /** Machine-readable reasons it does not. Empty when ready. */
+  blockers: string[]
+
+  onboarding_state: string | null
+  payouts_status: string | null
+  payouts_enabled: boolean
+  has_stripe_account: boolean
+  fee_disclosure_acknowledged: boolean
+  fee_disclosure_version: string | null
+  /** Non-null when this creator's sales already route through Connect. */
+  routing_enabled_at: string | null
+}
+
+
 /** ``GET /api/creator/stripe-connect/earnings``. */
 export interface ConnectEarningsResponse {
   currency: string
