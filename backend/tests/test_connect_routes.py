@@ -303,6 +303,128 @@ class TestAccountConfiguration:
 
 
 # ---------------------------------------------------------------------------
+# Serialising what the SDK actually returns
+# ---------------------------------------------------------------------------
+
+
+def _as_stripe_object(payload: dict, cls=None):
+    """The recorded payload as the SDK would hand it back.
+
+    Every other test in this file stubs Stripe with plain dicts, which is
+    why a serialisation bug could reach production: ``_to_dict`` was only
+    ever given values that were already dicts. These tests give it the
+    real thing.
+    """
+    from stripe.v2.core._account import Account
+
+    cls = cls or Account
+    return cls._construct_from(values=payload, requestor=None, api_mode="V2")
+
+
+class TestStripeObjectSerialisation:
+    """A creator clicking Connect Stripe got a 500: ``dict(account)`` on a
+    v2 ``StripeObject`` raises ``KeyError: 0``, because the object is not a
+    mapping and ``dict()`` falls back to indexing it as a sequence."""
+
+    def test_create_returns_a_plain_dict_from_a_stripe_object(self):
+        account_object = _as_stripe_object(_created_account())
+
+        class _Accounts:
+            def create(self, params):
+                return account_object
+
+        class _Core:
+            accounts = _Accounts()
+
+        class _V2:
+            core = _Core()
+
+        class _Client:
+            v2 = _V2()
+
+        with patch(f"{ADAPTER}.get_stripe_client", return_value=_Client()):
+            result = connect.create_recipient_account(
+                display_name="A Creator", contact_email="c@example.com",
+                country="AU", business_url=None,
+            )
+
+        assert type(result) is dict
+        assert result["id"] == ACCT
+        assert result == _created_account()
+
+    def test_conversion_reaches_the_nested_objects_too(self):
+        """A shallow copy would leave StripeObjects one level down, and the
+        projection reads capability statuses and requirement entries."""
+        converted = connect._to_dict(_as_stripe_object(_created_account()))
+
+        def assert_plain(value, path):
+            assert not hasattr(value, "_data"), f"StripeObject survived at {path}"
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    assert_plain(item, f"{path}.{key}")
+            elif isinstance(value, list):
+                for index, item in enumerate(value):
+                    assert_plain(item, f"{path}[{index}]")
+
+        assert_plain(converted, "account")
+        recipient = converted["configuration"]["recipient"]
+        assert type(recipient["capabilities"]) is dict
+
+    def test_the_whole_create_endpoint_survives_a_real_stripe_object(
+        self, client, as_creator, db,
+    ):
+        """The production path end to end: the adapter is not patched, so
+        the account the route projects is the one the SDK would return."""
+        account_object = _as_stripe_object(_created_account())
+
+        class _Accounts:
+            def create(self, params):
+                return account_object
+
+        class _Core:
+            accounts = _Accounts()
+
+        class _V2:
+            core = _Core()
+
+        class _Client:
+            v2 = _V2()
+
+        with patch(f"{ADAPTER}.get_stripe_client", return_value=_Client()), \
+             patch(f"{ADAPTER}.retrieve_legacy_account", return_value=V1_BEFORE):
+            r = client.post("/api/creator/stripe-connect/account")
+
+        assert r.status_code == 200, r.text
+        assert r.json()["stripe_account_id"] == ACCT
+        assert r.json()["transfers_status"] == "restricted"
+
+        rows = db.query(CreatorStripeAccount).filter_by(
+            creator_user_id=as_creator.id,
+        ).all()
+        assert len(rows) == 1
+        assert rows[0].stripe_account_id == ACCT
+
+    def test_an_ordinary_dict_is_returned_unchanged(self):
+        """Every existing caller and fixture passes a plain dict."""
+        payload = _created_account()
+        assert connect._to_dict(payload) is payload
+
+    def test_none_is_an_empty_dict(self):
+        assert connect._to_dict(None) == {}
+
+    def test_something_unreadable_is_a_connect_failure_not_a_key_error(self):
+        """The old guard caught TypeError and ValueError only, so the
+        KeyError went straight out as a 500."""
+
+        class _Opaque:
+            def __getitem__(self, key):
+                raise KeyError(key)
+
+        with pytest.raises(connect.ConnectUnavailable):
+            connect._to_dict(_Opaque())
+
+
+# ---------------------------------------------------------------------------
 # POST /onboarding-link
 # ---------------------------------------------------------------------------
 

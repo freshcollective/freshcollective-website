@@ -136,14 +136,34 @@ def _translate(exc: stripe.StripeError, *, what: str) -> ConnectError:
 
 
 def _to_dict(value: Any) -> dict[str, Any]:
-    """Plain dict, so the projection layer never touches a StripeObject."""
+    """Plain dict, so the projection layer never touches a StripeObject.
+
+    ``dict(value)`` was wrong for a v2 resource. A ``StripeObject`` in
+    stripe 15.x is not a mapping — no ``keys()``, no ``__iter__``, only
+    ``__getitem__`` — so ``dict()`` falls back to the legacy sequence
+    protocol, asks the account for index ``0`` and gets ``KeyError: 0``.
+    That is not a ``TypeError`` or a ``ValueError``, so it escaped the
+    guard below and surfaced as a 500 the first time a creator clicked
+    Connect Stripe against the real SDK.
+
+    ``to_dict()`` is the SDK's own conversion and recurses by default,
+    which is the behaviour this function needs rather than merely a
+    behaviour it tolerates: the projection reads nested capability
+    statuses and requirement entries, and a shallow copy would hand it
+    StripeObjects one level down.
+    """
     if value is None:
         return {}
     if isinstance(value, dict):
         return value
+    converter = getattr(value, "to_dict", None)
+    if callable(converter):
+        converted = converter()
+        if isinstance(converted, dict):
+            return converted
     try:
         return dict(value)
-    except (TypeError, ValueError):  # pragma: no cover - defensive
+    except (TypeError, ValueError, KeyError):  # pragma: no cover - defensive
         raise ConnectUnavailable("Stripe returned an object we cannot read")
 
 
