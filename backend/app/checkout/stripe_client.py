@@ -23,6 +23,14 @@ Design notes
     ``StripeNotConfiguredError`` (not ``HTTPException``) so that
     service-layer callers stay framework-agnostic. Route handlers
     translate this into a 503.
+  * There are **two** readiness questions and they are not the same
+    one. "Can I call the Stripe API?" needs a secret key.
+    "Is the payment loop wired end to end?" also needs the webhook
+    secret. Background jobs answer yes to the first and no to the
+    second, legitimately and by design, so the client factories ask
+    the API question and every checkout entry point asks the fuller
+    one. Webhook signature verification is gated separately again, at
+    the intake, by the secret it actually uses.
 """
 
 from __future__ import annotations
@@ -33,24 +41,63 @@ from app.core.config import settings
 
 
 class StripeNotConfiguredError(RuntimeError):
-    """Raised when a Stripe operation is attempted without a configured
-    ``STRIPE_SECRET_KEY`` / ``STRIPE_WEBHOOK_SECRET`` pair. Routes turn
-    this into a 503 with an honest, machine-parseable body so the
-    frontend can render an isolated "not configured" state (never a
-    fake success)."""
+    """Raised when a Stripe operation is attempted without the
+    configuration it needs. Routes turn this into a 503 with an honest,
+    machine-parseable body so the frontend can render an isolated "not
+    configured" state (never a fake success).
+
+    Two different shortfalls raise it, and the message says which:
+    :func:`ensure_api_configured` wants a secret key, and
+    :func:`ensure_configured` wants the whole payment loop."""
+
+
+def api_is_configured() -> bool:
+    """Whether this process can call the Stripe API. Secret key only."""
+    return settings.stripe_api_enabled
+
+
+def ensure_api_configured() -> None:
+    """Raise ``StripeNotConfiguredError`` if there is no secret key.
+
+    The right check for making an API call, and the reason this is
+    separate from :func:`ensure_configured`. Both of the Connect
+    sweepers run as crons with ``STRIPE_SECRET_KEY`` and deliberately
+    without ``STRIPE_WEBHOOK_SECRET`` — a job receives no webhooks, so
+    granting it the signing secret would be paying for a capability it
+    does not have. Asking for the pair here refused to start them: the
+    transfer sweeper failed in this module and never reached Stripe, so
+    creator shares sat unsent while the cron reported a clean failure
+    every fifteen minutes.
+
+    The boot-time rules in ``config`` already drew this line — a job
+    requires the secret key and not the webhook secret. This is the
+    runtime half agreeing with them.
+    """
+    if not api_is_configured():
+        raise StripeNotConfiguredError(
+            "STRIPE_SECRET_KEY is not set in this environment. Stripe "
+            "API operations are disabled."
+        )
 
 
 def is_configured() -> bool:
-    """Cheap boolean check — mirrors ``settings.stripe_enabled`` and
-    is exposed here so callers can avoid importing ``settings`` when
-    all they need is the readiness signal."""
+    """Whether the whole payment loop is wired — API out, webhook in.
+
+    Mirrors ``settings.stripe_enabled``, and is exposed here so callers
+    can avoid importing ``settings`` when all they need is the readiness
+    signal."""
     return settings.stripe_enabled
 
 
 def ensure_configured() -> None:
-    """Raise ``StripeNotConfiguredError`` if Stripe is not fully wired
-    for this environment. Call at the top of any function that will
-    hit the Stripe SDK."""
+    """Raise ``StripeNotConfiguredError`` unless Stripe is *fully* wired.
+
+    Stricter than :func:`ensure_api_configured` on purpose, and the
+    right check before taking money: a Checkout Session created in an
+    environment that cannot verify the completion webhook charges a
+    member with no path to fulfilment. Callers that only read from or
+    write to the API want the API check instead.
+    """
     if not is_configured():
         raise StripeNotConfiguredError(
             "Stripe secret key or webhook secret is not set in this "
@@ -63,9 +110,12 @@ def get_stripe():
     current environment's secret key. Callers use this instead of
     importing ``stripe`` directly so the key can never be forgotten.
 
-    Raises :class:`StripeNotConfiguredError` when the secret is unset.
+    Raises :class:`StripeNotConfiguredError` when the secret key is
+    unset. Binding a key needs the key and nothing else — webhook
+    verification is a separate concern with a separate secret, checked
+    where signatures are actually verified.
     """
-    ensure_configured()
+    ensure_api_configured()
     stripe.api_key = settings.stripe_secret_key
     return stripe
 
@@ -208,7 +258,11 @@ def get_stripe_client() -> "stripe.StripeClient":
     sharing, so this returns a new one per call rather than memoising a
     global whose key could go stale.
 
-    Raises :class:`StripeNotConfiguredError` when the secret is unset.
+    Raises :class:`StripeNotConfiguredError` when the secret key is
+    unset. As with :func:`get_stripe`, constructing a client needs the
+    key alone. The v2 webhook intake calls this *after* its own
+    ``stripe_v2_webhooks_enabled`` gate, so that path still refuses
+    without ``STRIPE_V2_WEBHOOK_SECRET``.
     """
-    ensure_configured()
+    ensure_api_configured()
     return stripe.StripeClient(settings.stripe_secret_key)

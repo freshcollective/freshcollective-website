@@ -609,7 +609,33 @@ class Settings(BaseSettings):
         return self
 
     @property
+    def stripe_api_enabled(self) -> bool:
+        """Whether this process can make Stripe **API** calls.
+
+        Only the secret key. A background job that transfers money,
+        reads an account or issues a refund needs nothing else — it
+        never receives a webhook, and ``STRIPE_WEBHOOK_SECRET`` is
+        deliberately absent from every cron environment.
+
+        The boot rules above already say exactly this: a job in
+        production is required to have ``STRIPE_SECRET_KEY`` and is
+        required *not* to need the webhook secret. This property is the
+        runtime half of the same statement, which
+        :attr:`stripe_enabled` could not be — it answers a different
+        question.
+        """
+        return bool(self.stripe_secret_key)
+
+    @property
     def stripe_enabled(self) -> bool:
+        """Whether the whole payment loop is wired: API out, webhook in.
+
+        Deliberately stricter than :attr:`stripe_api_enabled`, and the
+        right gate for anything that takes money. Creating a Checkout
+        Session in an environment that cannot verify the completion
+        webhook would charge a member with no path to fulfilment, so
+        every checkout entry point keeps asking this one.
+        """
         return bool(self.stripe_secret_key and self.stripe_webhook_secret)
 
     @property

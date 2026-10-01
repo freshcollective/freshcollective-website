@@ -567,20 +567,29 @@ class TestRaces:
             s = Session()
             try:
                 barrier.wait(timeout=10)
-                with _patched(fake):
-                    outcomes.append(
-                        ct.execute_transfer(s, payment_transaction_id=txn_id)
-                    )
+                outcomes.append(
+                    ct.execute_transfer(s, payment_transaction_id=txn_id)
+                )
             except Exception as exc:  # noqa: BLE001 — surfaced in the assertion
                 outcomes.append(exc)
             finally:
                 s.close()
 
-        threads = [threading.Thread(target=worker) for _ in range(2)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=20)
+        # Patched once around both threads rather than once inside each.
+        # ``mock.patch`` is not thread-safe: two overlapping patches of
+        # the same target can have the second thread record the first
+        # thread's mock as "the original" and restore *that* on exit,
+        # leaving a MagicMock on ``connect_transfers.get_stripe`` for
+        # every test that runs afterwards in the session. The fake was
+        # already shared by both workers, so hoisting changes nothing
+        # about what this test exercises — the row lock still has to
+        # serialise two genuinely concurrent callers.
+        with _patched(fake):
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=20)
         return outcomes
 
     def test_two_workers_produce_one_transfer(self, engine):
