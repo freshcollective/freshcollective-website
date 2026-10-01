@@ -70,101 +70,118 @@ export default function StandaloneGatheringCard({ event, slug, spaceTimezone }: 
 
   const editHref = `/creator/spaces/${slug}/events/${event.id}`
 
+  const showAttendance = event.requires_booking && !isCancelled
+
   return (
-    <Link
-      href={editHref}
+    // The card chrome sits on a plain element, not on the link. The
+    // Attendance entry point has to be a real <Link>, and an <a> nested
+    // inside another <a> is invalid HTML that React will not render —
+    // so the two links are siblings and the card is their container.
+    // ``group`` stays here so hovering either one still lifts the card,
+    // which is what it did when the whole card was one link.
+    <div
       className={`group flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg ${
         isCancelled ? 'border-red-100 opacity-70' : 'border-border hover:border-teal-200/60'
       }`}
     >
-      {/* Cover / icon band — mirrors the visual role of PathwayCover. */}
-      {event.thumbnail_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={event.thumbnail_url}
-          alt=""
-          className="h-32 w-full object-cover"
-        />
-      ) : (
+      <Link href={editHref} className="flex flex-1 flex-col">
+        {/* Cover / icon band — mirrors the visual role of PathwayCover. */}
+        {event.thumbnail_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={event.thumbnail_url}
+            alt=""
+            className="h-32 w-full object-cover"
+          />
+        ) : (
+          <div
+            className="flex h-24 w-full items-center justify-center text-4xl"
+            style={{ background: 'linear-gradient(135deg, rgba(56,160,158,0.14) 0%, rgba(85,184,182,0.08) 100%)' }}
+            aria-hidden="true"
+          >
+            {typeIcon}
+          </div>
+        )}
+
         <div
-          className="flex h-24 w-full items-center justify-center text-4xl"
-          style={{ background: 'linear-gradient(135deg, rgba(56,160,158,0.14) 0%, rgba(85,184,182,0.08) 100%)' }}
-          aria-hidden="true"
+          className={`flex flex-1 flex-col px-4 pt-4 ${
+            // The Attendance link below supplies the bottom padding when it
+            // is present, so the gap above it stays the 0.5rem it has always
+            // been rather than becoming a full 1rem.
+            showAttendance ? 'pb-2' : 'pb-4'
+          }`}
         >
-          {typeIcon}
+          <div className="mb-1 flex items-start justify-between gap-2">
+            <h3 className="font-serif text-[15.5px] leading-snug text-navy-900">
+              {event.title}
+            </h3>
+            {isCancelled && (
+              <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-red-600">
+                Cancelled
+              </span>
+            )}
+            {isDraft && (
+              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
+                Draft
+              </span>
+            )}
+          </div>
+
+          <p className="text-[12.5px] text-black">
+            {fmtDate(event.starts_at, timezone)}
+          </p>
+          <p className="mt-0.5 text-[11.5px] text-slate-500">
+            {formatLabel}
+            {event.requires_booking && (
+              <> · {event.booked_count}{event.capacity ? `/${event.capacity}` : ''} reserved</>
+            )}
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border pt-3">
+            {event.gathering_type && event.gathering_type !== 'other' && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                {typeLabel}
+              </span>
+            )}
+            {access.value !== 'included_with_collective' && (
+              <span
+                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                style={{
+                  background: access.value === 'paid_separately' ? 'rgba(212,176,72,0.16)'
+                    : access.value === 'invitation_only' ? 'rgba(126,66,145,0.14)'
+                    : 'rgba(56,160,158,0.10)',
+                  color: access.value === 'paid_separately' ? '#8A6A15'
+                    : access.value === 'invitation_only' ? '#6B2C7A'
+                    : '#0f766e',
+                }}
+              >
+                {access.short}
+                {access.value === 'paid_separately'
+                  && event.ticket_price_cents != null
+                  && event.ticket_currency
+                  && ` · ${fmtPrice(event.ticket_price_cents, event.ticket_currency)}`}
+              </span>
+            )}
+            <span className="ml-auto text-[12.5px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
+              Edit →
+            </span>
+          </div>
         </div>
-      )}
+      </Link>
 
-      <div className="flex flex-1 flex-col p-4">
-        <div className="mb-1 flex items-start justify-between gap-2">
-          <h3 className="font-serif text-[15.5px] leading-snug text-navy-900">
-            {event.title}
-          </h3>
-          {isCancelled && (
-            <span className="shrink-0 rounded-full bg-red-50 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-red-600">
-              Cancelled
-            </span>
-          )}
-          {isDraft && (
-            <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-slate-500">
-              Draft
-            </span>
-          )}
-        </div>
-
-        <p className="text-[12.5px] text-black">
-          {fmtDate(event.starts_at, timezone)}
-        </p>
-        <p className="mt-0.5 text-[11.5px] text-slate-500">
-          {formatLabel}
-          {event.requires_booking && (
-            <> · {event.booked_count}{event.capacity ? `/${event.capacity}` : ''} reserved</>
-          )}
-        </p>
-
-        <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border pt-3">
-          {event.gathering_type && event.gathering_type !== 'other' && (
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-700">
-              {typeLabel}
-            </span>
-          )}
-          {access.value !== 'included_with_collective' && (
-            <span
-              className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-              style={{
-                background: access.value === 'paid_separately' ? 'rgba(212,176,72,0.16)'
-                  : access.value === 'invitation_only' ? 'rgba(126,66,145,0.14)'
-                  : 'rgba(56,160,158,0.10)',
-                color: access.value === 'paid_separately' ? '#8A6A15'
-                  : access.value === 'invitation_only' ? '#6B2C7A'
-                  : '#0f766e',
-              }}
-            >
-              {access.short}
-              {access.value === 'paid_separately'
-                && event.ticket_price_cents != null
-                && event.ticket_currency
-                && ` · ${fmtPrice(event.ticket_price_cents, event.ticket_currency)}`}
-            </span>
-          )}
-          <span className="ml-auto text-[12.5px] font-semibold text-teal-700 transition-colors group-hover:text-teal-800">
-            Edit →
-          </span>
-        </div>
-
-        {/* Attendance dashboard entry point. Rendered outside the card
-            link contract via ``e.stopPropagation()`` — a nested <a>
-            inside <Link> is invalid HTML, so this stays a plain span
-            and navigates programmatically. Suppresses the outer
-            Link's default when clicked. */}
-        {event.requires_booking && !isCancelled && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault(); e.stopPropagation()
-              window.location.href = `/creator/spaces/${slug}/events/${event.id}/attendance`
-            }}
-            className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11.5px] font-semibold transition-colors"
+      {/* Attendance dashboard entry point — a sibling of the card link,
+          never a child of it. It was briefly a <button> that navigated
+          with ``window.location.href`` so it could live inside the card
+          link; that made this a Client Component in all but the
+          directive, and the page failed with "Event handlers cannot be
+          passed to Client Component props". An ordinary <Link> needs no
+          handler, keeps this file a Server Component, and is reachable
+          by keyboard and middle-click as a link should be. */}
+      {showAttendance && (
+        <div className="px-4 pb-4">
+          <Link
+            href={`/creator/spaces/${slug}/events/${event.id}/attendance`}
+            className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11.5px] font-semibold transition-colors"
             style={{
               borderColor: 'rgba(56,160,158,0.35)',
               background: 'var(--fc-accent-soft, rgba(56,160,158,0.08))',
@@ -172,9 +189,9 @@ export default function StandaloneGatheringCard({ event, slug, spaceTimezone }: 
             }}
           >
             Attendance dashboard →
-          </button>
-        )}
-      </div>
-    </Link>
+          </Link>
+        </div>
+      )}
+    </div>
   )
 }
