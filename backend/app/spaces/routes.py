@@ -100,6 +100,7 @@ from app.services.gathering_booking_emit import (  # noqa: E402
 )
 from app.services.notification_service import trigger_event_booking_creator  # noqa: E402
 from app.services import channel_permissions as channel_perms  # noqa: E402
+from app.services import pathway_payment_options as pathway_options  # noqa: E402
 
 
 def _option_supports_finite_member_checkout(option) -> bool:
@@ -391,9 +392,13 @@ def hydrate_public_space_cards(
         PaymentOption.override_total_cents,
         PaymentOption.calculated_total_cents,
     )
+    # Joined through the grant/legacy union for the same reason as the
+    # pathway projection: a grants-first Option has no ``pathway_id``.
+    _pairs = pathway_options.pathway_option_pairs()
     options_rows = (
         db.query(Pathway.space_id, func.min(effective_price_expr))
-        .join(PaymentOption, PaymentOption.pathway_id == Pathway.id)
+        .join(_pairs, _pairs.c.pathway_id == Pathway.id)
+        .join(PaymentOption, PaymentOption.id == _pairs.c.payment_option_id)
         .filter(
             Pathway.space_id.in_(space_ids),
             Pathway.status == "active",
@@ -3018,14 +3023,11 @@ def get_pathway_overview(
 
     user_has_access = _compute_pathway_access(current_user, pathway, space, db)
 
-    published_options = (
-        db.query(PaymentOption)
-        .filter(
-            PaymentOption.pathway_id == pathway.id,
-            PaymentOption.status == "published",
-        )
-        .order_by(PaymentOption.position)
-        .all()
+    # Grants-first: an Option authored in the Payment Options editor
+    # leaves ``pathway_id`` NULL and links through PaymentOptionGrant,
+    # so asking the legacy column alone returned nothing for it.
+    published_options = pathway_options.published_options_for_pathway(
+        db, pathway.id,
     )
 
     # Fetch published schedules for each option in one query

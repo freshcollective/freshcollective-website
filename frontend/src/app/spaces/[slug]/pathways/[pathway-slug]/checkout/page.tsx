@@ -8,6 +8,7 @@ import { CheckoutButton } from '@/components/checkout/CheckoutButton'
 import { PaymentOptionSelector } from '@/components/checkout/PaymentOptionSelector'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import type { PathwayWithSteps } from '@/types/platform'
+import { includedLines, paymentCardCopy } from '@/lib/pathwayCheckoutCopy'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string }>
@@ -30,11 +31,14 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
   const { slug, 'pathway-slug': pathwaySlug } = await params
   const { success, cancelled, payment_option_id, payment_option_schedule_id } = await searchParams
 
-  const [pathway, space, me] = await Promise.all([
+  // Typed rather than left as untyped JSON: an untyped ``pathway`` is
+  // why five lines of invented copy could sit here claiming to be data.
+  const [pathwayRaw, space, me] = await Promise.all([
     getPathwayOverview(slug, pathwaySlug),
     getSpace(slug),
     getMe(),
   ])
+  const pathway = pathwayRaw as PathwayWithSteps | null
   const isAuthenticated = me !== null
 
   if (!pathway || !space) notFound()
@@ -49,6 +53,7 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
 
   const isSubscription = pathway.access_type === 'subscription'
   const isPaymentOptionsMode = pathway.pricing_mode === 'payment_options'
+  const paymentCopy = paymentCardCopy(pathway.pricing_mode, pathway.payment_options)
   const overviewHref = `/spaces/${slug}/pathways/${pathwaySlug}`
   const aboutHref = `/spaces/${slug}/pathways/${pathwaySlug}/about`
   const cs = getPathwayCoverStyle(pathwaySlug)
@@ -273,21 +278,10 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
             <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-black">
               Payment
             </p>
-            {isPaymentOptionsMode ? (
-              <>
-                <p className="text-[14px] font-medium text-navy-900">Choose your term pass</p>
-                <p className="mt-0.5 text-[13px] text-black">
-                  Select the pass that suits your schedule. Pay in full to lock in your term.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-[14px] font-medium text-navy-900">Pay in full</p>
-                <p className="mt-0.5 text-[13px] text-black">
-                  One payment to secure your term pass.
-                </p>
-              </>
-            )}
+            <p className="text-[14px] font-medium text-navy-900">{paymentCopy.title}</p>
+            <p className="mt-0.5 text-[13px] text-black">
+              {paymentCopy.blurb}
+            </p>
           </div>
 
           {/* What you get */}
@@ -296,17 +290,12 @@ export default async function PathwayCheckoutPage({ params, searchParams }: Prop
               What&apos;s included
             </p>
             <ul className="space-y-2">
-              {(isPaymentOptionsMode ? [
-                'In-person sessions across the 10-week term',
-                'Monday evenings, Thursday evenings and Saturday mornings',
-                'South Croydon, Victoria',
-                'Full address shared after enrolment',
-                'Session guidance and member information pathway',
-              ] : [
-                `Access to all ${pathway.step_count > 0 ? pathway.step_count : ''} pathway steps`,
-                'Progress tracking',
-                'Resources attached to steps',
-              ]).map((item) => (
+              {/* Pathway-level facts only, the same in both pricing modes.
+                  What each Payment Option includes differs per option, so
+                  it is rendered on the option's own card by
+                  PaymentOptionSelector from the creator's description and
+                  buyer note — not asserted once here for all of them. */}
+              {includedLines(pathway).map((item) => (
                 <li key={item} className="flex items-start gap-2 text-[13px] text-black">
                   <span className="mt-0.5 shrink-0" style={{ color: 'var(--fc-accent, #38A09E)' }}>✓</span>
                   {item}

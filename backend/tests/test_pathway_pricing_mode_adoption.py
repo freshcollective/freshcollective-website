@@ -423,3 +423,217 @@ class TestRemovingOptionsLeavesTheModeExplicit:
         assert r.status_code == 200, r.text
         db.refresh(pathway)
         assert pathway.pricing_mode == "payment_options"
+
+
+# ---------------------------------------------------------------------------
+# Grants-first Options must be visible to members
+# ---------------------------------------------------------------------------
+#
+# The second half of the same production report. With pricing_mode finally
+# correct, the member surface still showed no option and no price: every
+# member-facing read asked ``PaymentOption.pathway_id == pathway.id``, and a
+# grants-first Option leaves that column NULL by design. The Option was
+# published, had a published $2 schedule, and was invisible.
+
+
+def _grants_first_option(db, space, pathway, *, cents=200):
+    """Authored the way the Payment Options editor authors: no
+    ``pathway_id``, linked by a grant."""
+    opt = PaymentOption(
+        id=_uid("po"),
+        space_id=space.id,
+        attaches_to_kind="space",
+        attaches_to_id=space.id,
+        name="$2 Option",
+        payment_type=PaymentOptionType.one_time,
+        status=PaymentOptionStatus.published,
+        calculated_total_cents=cents,
+        currency="AUD",
+    )
+    db.add(opt)
+    db.flush()
+    db.add(PaymentOptionSchedule(
+        id=_uid("pos"),
+        payment_option_id=opt.id,
+        name="Pay in full",
+        schedule_type="pay_in_full",
+        status="published",
+        total_amount_cents=cents,
+        currency="AUD",
+    ))
+    db.add(PaymentOptionGrant(
+        id=_uid("pog"),
+        payment_option_id=opt.id,
+        grant_kind="pathway",
+        pathway_id=pathway.id,
+    ))
+    db.flush()
+    assert opt.pathway_id is None, "fixture must model grants-first authoring"
+    return opt
+
+
+def _overview(client, make_user, space, pathway):
+    from app.auth.dependencies import get_current_user
+
+    member = make_user(role="user")
+    app.dependency_overrides[get_current_user] = lambda: member
+    try:
+        return client.get(
+            f"/api/spaces/{space.slug}/pathways/{pathway.slug}/overview"
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+class TestGrantsFirstOptionsReachTheMemberProjection:
+    def test_the_option_appears_at_all(self, client, as_creator, db, make_user):
+        _creator, space = as_creator
+        pathway = _legacy_pathway(db, space, price_cents=500)
+        pathway.pricing_mode = "payment_options"
+        option = _grants_first_option(db, space, pathway)
+        db.commit()
+
+        r = _overview(client, make_user, space, pathway)
+
+        assert r.status_code == 200, r.text
+        returned = r.json()["payment_options"]
+        assert [o["id"] for o in returned] == [option.id]
+
+    def test_its_two_dollar_schedule_price_is_shown(
+        self, client, as_creator, db, make_user,
+    ):
+        _creator, space = as_creator
+        pathway = _legacy_pathway(db, space, price_cents=500)
+        pathway.pricing_mode = "payment_options"
+        _grants_first_option(db, space, pathway, cents=200)
+        db.commit()
+
+        body = _overview(client, make_user, space, pathway).json()
+
+        option = body["payment_options"][0]
+        assert option["effective_price_cents"] == 200
+        schedules = option["schedules"]
+        assert [s["total_amount_cents"] for s in schedules] == [200]
+
+    def test_the_legacy_five_dollar_price_is_not_what_is_offered(
+        self, client, as_creator, db, make_user,
+    ):
+        """price_cents stays on the row for a creator who reverts, but it
+        is not the price a member is being asked for."""
+        _creator, space = as_creator
+        pathway = _legacy_pathway(db, space, price_cents=500)
+        pathway.pricing_mode = "payment_options"
+        _grants_first_option(db, space, pathway, cents=200)
+        db.commit()
+
+        body = _overview(client, make_user, space, pathway).json()
+
+        assert body["pricing_mode"] == "payment_options"
+        assert body["payment_options"][0]["effective_price_cents"] == 200
+
+    def test_a_draft_option_still_does_not_reach_members(
+        self, client, as_creator, db, make_user,
+    ):
+        _creator, space = as_creator
+        pathway = _legacy_pathway(db, space)
+        pathway.pricing_mode = "payment_options"
+        option = _grants_first_option(db, space, pathway)
+        option.status = PaymentOptionStatus.draft
+        db.commit()
+
+        body = _overview(client, make_user, space, pathway).json()
+
+        assert body["payment_options"] == []
+
+    def test_legacy_pathway_id_options_still_reach_members(
+        self, client, as_creator, db, make_user,
+    ):
+        """Compatibility. Rows authored on the old Pathway editor still
+        carry ``pathway_id`` and must keep selling."""
+        _creator, space = as_creator
+        pathway = _legacy_pathway(db, space)
+        pathway.pricing_mode = "payment_options"
+        option = _option(db, space, cents=700)
+        option.pathway_id = pathway.id
+        db.commit()
+
+        body = _overview(client, make_user, space, pathway).json()
+
+        assert [o["id"] for o in body["payment_options"]] == [option.id]
+
+    def test_an_option_granting_another_pathway_does_not_leak(
+        self, client, as_creator, db, make_user,
+    ):
+        _creator, space = as_creator
+        mine = _legacy_pathway(db, space)
+        mine.pricing_mode = "payment_options"
+        theirs = _legacy_pathway(db, space)
+        _grants_first_option(db, space, theirs)
+        db.commit()
+
+        body = _overview(client, make_user, space, mine).json()
+
+        assert body["payment_options"] == []
+
+
+class TestCheckoutAcceptsAGrantsFirstOption:
+    def _buy(self, client, make_user, pathway, option, schedule_id):
+        from app.auth.dependencies import get_verified_current_user
+
+        member = make_user(role="user")
+        app.dependency_overrides[get_verified_current_user] = lambda: member
+        try:
+            return client.post(
+                "/api/checkout/pathway",
+                json={
+                    "pathway_id": pathway.id,
+                    "payment_option_id": option.id,
+                    "payment_option_schedule_id": schedule_id,
+                    "success_url": "https://example.com/ok",
+                    "cancel_url": "https://example.com/no",
+                },
+            )
+        finally:
+            app.dependency_overrides.pop(get_verified_current_user, None)
+
+    def test_it_is_no_longer_refused_as_not_for_this_pathway(
+        self, client, as_creator, db, make_user,
+    ):
+        """Before the fix this 404'd on ``pre_option.pathway_id !=
+        pathway.id`` — the Option the member had just been shown."""
+        _creator, space = as_creator
+        pathway = _legacy_pathway(db, space, price_cents=500)
+        pathway.pricing_mode = "payment_options"
+        option = _grants_first_option(db, space, pathway, cents=200)
+        db.commit()
+        schedule_id = (
+            db.query(PaymentOptionSchedule.id)
+            .filter(PaymentOptionSchedule.payment_option_id == option.id)
+            .scalar()
+        )
+
+        r = self._buy(client, make_user, pathway, option, schedule_id)
+
+        assert r.status_code != 404, r.text
+        assert "not available for this pathway" not in r.text
+
+    def test_an_option_for_a_different_pathway_is_still_refused(
+        self, client, as_creator, db, make_user,
+    ):
+        """The check still authorises; it just asks the right question."""
+        _creator, space = as_creator
+        pathway = _legacy_pathway(db, space)
+        pathway.pricing_mode = "payment_options"
+        other = _legacy_pathway(db, space)
+        option = _grants_first_option(db, space, other)
+        db.commit()
+        schedule_id = (
+            db.query(PaymentOptionSchedule.id)
+            .filter(PaymentOptionSchedule.payment_option_id == option.id)
+            .scalar()
+        )
+
+        r = self._buy(client, make_user, pathway, option, schedule_id)
+
+        assert r.status_code == 404, r.text
+        assert "not available for this pathway" in r.text

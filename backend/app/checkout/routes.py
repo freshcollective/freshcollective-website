@@ -67,6 +67,7 @@ from app.services.discount_pricing import (
     DiscountRejection,
     normalise_code,
 )
+from app.services import pathway_payment_options as pathway_options
 from app.services.checkout_orchestration import (
     _resolve_fee_bps_for_creator,
     check_option_fulfillable_or_raise,
@@ -640,7 +641,12 @@ def create_pathway_checkout_session(
             .filter(PaymentOption.id == body.payment_option_id)
             .first()
         )
-        if pre_option is None or pre_option.pathway_id != pathway.id:
+        # Grant or legacy column — a grants-first Option has no
+        # ``pathway_id``, and comparing it to the Pathway's id refused
+        # the very Option the member had just been shown.
+        if not pathway_options.option_sells_pathway(
+            db, option=pre_option, pathway_id=pathway.id,
+        ):
             raise HTTPException(
                 status_code=404,
                 detail="Payment option not found or not available for this pathway.",
