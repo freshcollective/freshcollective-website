@@ -81,6 +81,7 @@ underneath.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from uuid import uuid4
 
@@ -150,6 +151,8 @@ from app.services.purchase_fulfilment import (
 
 
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 class _GrantRefTarget(BaseModel):
@@ -403,6 +406,104 @@ def _serialise_option(db: Session, space: Space, opt: PaymentOption) -> dict:
         "purchasability": state,
         "purchasability_notes": notes,
     }
+
+
+PRICING_MODE_LEGACY = "legacy"
+PRICING_MODE_PAYMENT_OPTIONS = "payment_options"
+
+
+def _option_status(opt: PaymentOption) -> str:
+    return opt.status.value if hasattr(opt.status, "value") else str(opt.status)
+
+
+def _adopt_payment_options_pricing(
+    db: Session,
+    opt: PaymentOption,
+    *,
+    pathway_ids: list[str] | None = None,
+) -> list[str]:
+    """Move every Pathway this Option sells into payment-options pricing.
+
+    The rule
+    --------
+    **A Pathway is in ``payment_options`` pricing as soon as a published
+    Option grants it.** Forward only: this function never writes
+    ``legacy`` back (see "Removing the last Option" below).
+
+    Why this exists
+    ---------------
+    Creating a grant used to write a ``payment_option_grants`` row and
+    nothing else, so the Pathway kept ``pricing_mode='legacy'`` — and
+    every consumer still reads that column, not the grants. A Pathway
+    with a $2 Option linked therefore sold at its legacy
+    ``price_cents``: the Option was configured, displayed, and ignored
+    at the till.
+
+    Published, not merely granted
+    -----------------------------
+    Gated on the Option being ``published``, because grants are added
+    while an Option is still a draft — that is the authoring order the
+    Payment Options editor encourages, and ``_derive_purchasability``
+    treats a grant-less Option as incomplete. Flipping on the draft's
+    grant would take a live legacy Pathway off sale for the whole time
+    the creator is still building the Option: ``pricing_mode`` would say
+    "choose an Option" while no Option is published to choose. So the
+    flip happens at whichever of the two deliberate acts completes the
+    pair — linking a Pathway to an already-published Option, or
+    publishing an Option that already links one.
+
+    Archived Options are not published, so a historical grant left
+    behind by an archived Option never moves anything.
+
+    Removing the last Option — deliberately NOT handled here
+    ---------------------------------------------------------
+    Deleting the final grant, or archiving the last published Option,
+    leaves the Pathway in ``payment_options`` with nothing to buy. That
+    is intentional, and the intended rule is: **pricing mode is a
+    deliberate setting, and only a deliberate act changes it back.**
+    Auto-reverting would silently re-expose a stale ``price_cents`` that
+    the creator stopped intending to charge years ago — reviving a price
+    is worse than showing none. The creator reverts it explicitly from
+    Pathway settings, where choosing any Access option already writes
+    ``pricing_mode='legacy'``.
+
+    Returns the ids of the Pathways actually changed, for logging.
+    """
+    if _option_status(opt) != "published":
+        return []
+
+    if pathway_ids is None:
+        # Queried rather than read off ``opt.grants``: the collection may
+        # already be loaded and a grant added since would not appear in
+        # it, which is exactly the publish-after-linking case below.
+        targets = {
+            row[0] for row in db.query(PaymentOptionGrant.pathway_id).filter(
+                PaymentOptionGrant.payment_option_id == opt.id,
+                PaymentOptionGrant.grant_kind == "pathway",
+                PaymentOptionGrant.pathway_id.isnot(None),
+            ).all()
+        }
+    else:
+        targets = {pid for pid in pathway_ids if pid}
+    if not targets:
+        return []
+
+    rows = (
+        db.query(Pathway)
+        .filter(
+            Pathway.id.in_(targets),
+            Pathway.pricing_mode != PRICING_MODE_PAYMENT_OPTIONS,
+        )
+        .all()
+    )
+    for pathway in rows:
+        pathway.pricing_mode = PRICING_MODE_PAYMENT_OPTIONS
+    if rows:
+        logger.info(
+            "payment-options: pathways %s now priced by Option %s",
+            [p.id for p in rows], opt.id,
+        )
+    return [p.id for p in rows]
 
 
 def _validate_grant_target(
@@ -674,6 +775,10 @@ def update_commerce_payment_option(
             setattr(opt, field, val)
 
     opt.updated_at = datetime.utcnow()
+    # Publishing an Option that already links Pathways is the other act
+    # that puts them into payment-options pricing. Harmless on every
+    # other PATCH: the helper no-ops unless the Option is published.
+    _adopt_payment_options_pricing(db, opt)
     db.commit()
     db.refresh(opt)
     return _serialise_option(db, space, opt)
@@ -772,6 +877,11 @@ def add_commerce_payment_option_grant(
     )
     db.add(grant)
     opt.updated_at = now
+    # Linking a Pathway to a published Option is one of the two acts that
+    # put it into payment-options pricing. The new row is not visible on
+    # ``opt.grants`` until flush, so the target is passed explicitly.
+    if body.grant_kind == "pathway" and body.pathway_id:
+        _adopt_payment_options_pricing(db, opt, pathway_ids=[body.pathway_id])
     db.commit()
     db.refresh(grant)
     return {
