@@ -29,6 +29,20 @@ Design invariants (from the workstream's technical amendments):
   Subscription with :func:`stripe_creator_billing.retrieve_subscription`
   and read metadata from there before deciding this is a
   creator-billing event.
+
+* **Normalise the retrieved Subscription at the boundary**.
+  ``retrieve_subscription`` returns the raw SDK object by design (the
+  service layer never converts). A ``stripe.Subscription`` is a
+  ``StripeObject``, which has no ``.get()`` — reading one raises
+  ``AttributeError: get`` (chained from ``KeyError: 'get'``), and in
+  the invoice path that fired *before* the creator-billing
+  discriminator had decided anything, so it 500'd finite-plan invoices
+  too. Every retrieved Subscription therefore goes through
+  :func:`app.checkout.stripe_client.to_plain_dict` the moment it
+  arrives, before ``is_creator_subscription`` or any other ``.get()``
+  reader touches it. Invoice payloads handed in by the dispatcher are
+  already plain dicts; only the Subscription we fetch ourselves needs
+  this.
 """
 
 from __future__ import annotations
@@ -39,6 +53,7 @@ from datetime import datetime, timedelta
 import stripe
 from sqlalchemy.orm import Session
 
+from app.checkout.stripe_client import to_plain_dict
 from app.models.creator_billing import (
     CreatorPlan,
     CreatorSubscription,
@@ -184,7 +199,7 @@ def handle_invoice_paid(
         return False
 
     try:
-        subscription = scb.retrieve_subscription(subscription_id)
+        subscription = to_plain_dict(scb.retrieve_subscription(subscription_id))
     except stripe.error.StripeError:
         logger.exception(
             "creator_billing_webhook: failed to retrieve subscription %s "
@@ -300,7 +315,7 @@ def handle_invoice_payment_failed(
     if not subscription_id:
         return False
     try:
-        subscription = scb.retrieve_subscription(subscription_id)
+        subscription = to_plain_dict(scb.retrieve_subscription(subscription_id))
     except stripe.error.StripeError:
         logger.exception(
             "creator_billing_webhook: retrieve failed for sub=%s",
