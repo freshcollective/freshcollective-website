@@ -45,6 +45,17 @@ export interface SpaceResponse {
   included_access_summary: string | null
   paid_content_summary: string | null
   derived_has_paid_internal_content: boolean
+  /**
+   * Cheapest paid Pathway in this Collective, in cents, derived by the
+   * backend (`spaces/pathway_pricing.py`) from published Payment Options
+   * for payment-options Pathways and from `price_cents` only for legacy
+   * ones. The single source of truth for "Pathways from $X".
+   *
+   * Never re-derive this from `pathways[].price_cents`: that column is
+   * the legacy price and is stale on any Pathway switched to
+   * `pricing_mode='payment_options'`.
+   */
+  min_paid_pathway_price_cents: number | null
   guidance_start_title: string | null
   guidance_start_body: string | null
   guidance_focus_title: string | null

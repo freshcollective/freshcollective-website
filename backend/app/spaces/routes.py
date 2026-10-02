@@ -44,6 +44,7 @@ from app.models.user import User
 from app.spaces import home_config
 from app.spaces import join_policy
 from app.spaces import joining_doors
+from app.spaces import pathway_pricing
 from app.spaces import venue_projection
 from app.spaces import area_access
 from app.spaces import area_policies
@@ -360,60 +361,14 @@ def hydrate_public_space_cards(
         .all()
     )
 
-    # Minimum price among active paid pathways per space.
-    # - Legacy pathways (pricing_mode='legacy'): use pathway.price_cents.
-    # - Payment-options pathways (pricing_mode='payment_options'): use minimum
-    #   effective price from PUBLISHED options only (draft/archived excluded).
-    #   effective_price_cents = COALESCE(override_total_cents, calculated_total_cents)
-    _paid_access_types = ('one_time', 'subscription')
-    min_pathway_prices: dict[str, int] = {}
-
-    # Legacy pathway prices
-    legacy_rows = (
-        db.query(Pathway.space_id, func.min(Pathway.price_cents))
-        .filter(
-            Pathway.space_id.in_(space_ids),
-            Pathway.status == "active",
-            Pathway.access_type.in_(_paid_access_types),
-            Pathway.pricing_mode == "legacy",
-            Pathway.price_cents.isnot(None),
-            Pathway.price_cents > 0,
-        )
-        .group_by(Pathway.space_id)
-        .all()
+    # Minimum price among active paid pathways per space. The rule lives
+    # in ``pathway_pricing`` so the Collective detail endpoint returns
+    # the same number this listing shows — the public About page used to
+    # re-derive its own from ``pathway.price_cents``, which is stale on
+    # any payment-options Pathway.
+    min_pathway_prices = pathway_pricing.min_paid_price_cents_by_space(
+        db, space_ids,
     )
-    for space_id, min_cents in legacy_rows:
-        if min_cents is not None:
-            min_pathway_prices[space_id] = int(min_cents)
-
-    # Payment-options pathway prices — derived from published options only
-    from sqlalchemy import case as sa_case
-    effective_price_expr = func.coalesce(
-        PaymentOption.override_total_cents,
-        PaymentOption.calculated_total_cents,
-    )
-    # Joined through the grant/legacy union for the same reason as the
-    # pathway projection: a grants-first Option has no ``pathway_id``.
-    _pairs = pathway_options.pathway_option_pairs()
-    options_rows = (
-        db.query(Pathway.space_id, func.min(effective_price_expr))
-        .join(_pairs, _pairs.c.pathway_id == Pathway.id)
-        .join(PaymentOption, PaymentOption.id == _pairs.c.payment_option_id)
-        .filter(
-            Pathway.space_id.in_(space_ids),
-            Pathway.status == "active",
-            Pathway.pricing_mode == "payment_options",
-            PaymentOption.status == "published",
-            effective_price_expr.isnot(None),
-            effective_price_expr > 0,
-        )
-        .group_by(Pathway.space_id)
-        .all()
-    )
-    for space_id, min_cents in options_rows:
-        if min_cents is not None:
-            existing = min_pathway_prices.get(space_id)
-            min_pathway_prices[space_id] = int(min_cents) if existing is None else min(existing, int(min_cents))
 
     member_counts: dict[str, int] = dict(
         db.query(Pathway.space_id, func.count(func.distinct(Enrollment.user_id)))
@@ -1050,6 +1005,10 @@ def get_space(
         "atmosphere_labels": atmo_labels,
         "identity_statement": space.identity_statement,
         "welcome_message": space.welcome_message,
+        # Same derivation the Explore listing uses, so the two surfaces
+        # cannot quote different prices for the same Collective.
+        "min_paid_pathway_price_cents":
+            pathway_pricing.min_paid_price_cents_for_space(db, space.id),
     })
 
 

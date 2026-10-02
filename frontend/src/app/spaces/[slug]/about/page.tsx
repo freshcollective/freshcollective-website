@@ -1,6 +1,10 @@
 import { getSpace, getSpaceMembers, getMe, getSpaceEvents, getMySpaceAccess } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
-import { formatCollectiveAccessLabel, formatCollectivePricingSummary } from '@/lib/pricing'
+import {
+  formatCollectiveAccessLabel,
+  formatCollectivePricingSummary,
+  formatPaidSeparatelyCopy,
+} from '@/lib/pricing'
 import {
   additionalPaidTitles,
   buildJoiningAccessSummary,
@@ -72,11 +76,16 @@ export default async function SpaceAboutPage({ params }: Props) {
   // Effective paid content = manual toggle OR auto-detected from paid pathways
   const effectiveHasPaidContent = space.has_paid_internal_content || space.derived_has_paid_internal_content
 
-  // Derive minimum paid pathway price from pathways already in the response
-  const paidPathwayCents = space.pathways
-    .filter((p) => (p.access_type === 'one_time' || p.access_type === 'subscription') && p.status === 'active' && p.price_cents != null && p.price_cents > 0)
-    .map((p) => p.price_cents as number)
-  const minPaidPathwayPriceCents = paidPathwayCents.length > 0 ? Math.min(...paidPathwayCents) : null
+  // There is deliberately no local minimum-price derivation here.
+  // ``space.min_paid_pathway_price_cents`` is the single source of
+  // truth, derived by ``spaces/pathway_pricing.py`` and shared with the
+  // Explore listing. This page used to compute its own from
+  // ``pathway.price_cents``, which is the legacy column and stays stale
+  // once a Pathway moves to ``pricing_mode='payment_options'`` — so it
+  // advertised "Pathways from $5 AUD" for a Pathway whose published
+  // Payment Option sells at $2. Both surfaces below read the backend
+  // field: the quick-facts row via ``formatCollectivePricingSummary``
+  // and the Access card via ``formatPaidSeparatelyCopy``.
 
   // A purchase-required Collective sells entry and content in one
   // transaction, so its Access card describes one purchase.
@@ -97,9 +106,11 @@ export default async function SpaceAboutPage({ params }: Props) {
       )
     : []
 
-  // Paid-separately copy — priority: creator summary > derived price > generic
-  const paidSeparatelyCopy = space.paid_content_summary?.trim()
-    || (minPaidPathwayPriceCents != null ? `Pathways from $${Math.round(minPaidPathwayPriceCents / 100)} AUD` : 'Paid pathways available separately')
+  // Paid-separately copy — priority: creator summary > derived price > generic.
+  // Reads the same backend-derived price as the quick-facts row above;
+  // it used to build its own string from the local derivation and so
+  // repeated the stale legacy price in a second place on the page.
+  const paidSeparatelyCopy = formatPaidSeparatelyCopy(space)
 
   return (
     <div className="max-w-5xl">
@@ -208,7 +219,7 @@ export default async function SpaceAboutPage({ params }: Props) {
                 )}
                 <span className="flex items-center gap-1.5 text-[13px] text-black">
                   <span>🏷️</span>
-                  <span>{formatCollectivePricingSummary({ ...space, min_paid_pathway_price_cents: minPaidPathwayPriceCents })}</span>
+                  <span>{formatCollectivePricingSummary(space)}</span>
                 </span>
                 {creatorName && (
                   <span className="flex items-center gap-1.5 text-[13px] text-black">

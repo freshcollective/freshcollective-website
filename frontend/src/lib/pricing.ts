@@ -175,6 +175,42 @@ export function formatCollectivePricingSummary(space: FullPricingSource): string
   return accessLabel
 }
 
+/**
+ * The "Paid separately" line in the About page's Access card.
+ *
+ * Priority, unchanged from the inline version this replaces:
+ *   1. ``paid_content_summary`` (creator-entered) — always wins when non-empty
+ *   2. the backend's derived minimum paid Pathway price
+ *   3. a generic last resort
+ *
+ * Note this is the opposite precedence to the inline suffix in
+ * ``formatCollectivePricingSummary`` for a free Collective, where the
+ * derived price wins. That difference is deliberate and pre-existing:
+ * the Access card is the creator's own description of what they sell,
+ * while the quick-facts row is a price comparison. Both are left as
+ * they were.
+ *
+ * Lives here, exported, because it used to be a template literal inside
+ * an async server component — unreachable from the test harness, which
+ * is why it quietly kept quoting a stale price alongside the row above
+ * it. ``min_paid_pathway_price_cents`` must come from the backend; see
+ * the note on that field.
+ */
+export function formatPaidSeparatelyCopy(space: FullPricingSource): string {
+  const manualSummary = space.paid_content_summary?.trim()
+  if (manualSummary) return manualSummary
+
+  const cents = space.min_paid_pathway_price_cents
+  if (cents != null && cents > 0) {
+    // Deliberately the same shape the page rendered before: whole
+    // dollars, AUD. Currency is not read from ``pricing_currency``
+    // here because it never was, and changing the copy was not part
+    // of fixing where the number comes from.
+    return `Pathways from $${Math.round(cents / 100)} AUD`
+  }
+  return 'Paid pathways available separately'
+}
+
 /** Legacy alias — prefer the two functions above. */
 export function formatCollectivePrice(space: PricingSource): string {
   return formatCollectiveAccessLabel(space)

@@ -65,6 +65,13 @@ class SpaceResponse(BaseModel):
     has_paid_internal_content: bool = False
     included_access_summary: str | None = None
     paid_content_summary: str | None = None
+    # Cheapest paid Pathway inside this Collective, in cents, injected by
+    # the ``get_space`` route from ``spaces.pathway_pricing``. The public
+    # About page renders "Pathways from $X" off this and must not derive
+    # its own: ``PathwaySummary.price_cents`` is the legacy column and
+    # stays stale on a Pathway switched to ``pricing_mode='payment_options'``.
+    # None means there is no purchasable Pathway to quote.
+    min_paid_pathway_price_cents: int | None = None
     guidance_start_title: str | None = None
     guidance_start_body: str | None = None
     guidance_focus_title: str | None = None

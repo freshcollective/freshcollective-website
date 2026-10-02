@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path'
 import {
   formatCollectiveAccessLabel,
   formatCollectivePricingSummary,
+  formatPaidSeparatelyCopy,
 } from './pricing.ts'
 
 /**
@@ -129,7 +130,12 @@ describe('every surface that states the joining cost', () => {
   test('the About Access card and quick-facts row use these helpers', () => {
     const page = read('app/spaces/[slug]/about/page.tsx')
     assert.match(page, /formatCollectiveAccessLabel\(space\)/)
-    assert.match(page, /formatCollectivePricingSummary\(\{ \.\.\.space/)
+    // Was `formatCollectivePricingSummary({ ...space` — the spread
+    // existed to override min_paid_pathway_price_cents with a locally
+    // derived value, which is the bug. The space is now passed as the
+    // backend served it.
+    assert.match(page, /formatCollectivePricingSummary\(space\)/)
+    assert.match(page, /formatPaidSeparatelyCopy\(space\)/)
   })
 
   test('the Explore card does too', () => {
@@ -208,5 +214,200 @@ describe('the inline suffix, character by character', () => {
   test('accented capitals count as capitals', () => {
     assert.equal(suffixFor('ÉCOLE sessions'), 'ÉCOLE sessions')
     assert.equal(suffixFor('Élan sessions'), 'élan sessions')
+  })
+})
+
+
+/**
+ * Stale legacy pricing on the public About page.
+ *
+ * Production, exactly as reported: Test Pathway sits at
+ * ``pricing_mode='payment_options'`` with a published $2 Payment
+ * Option, and still carries ``price_cents=500`` in the legacy column
+ * that the switch left behind. The backend derives 200 correctly and
+ * serves it as ``min_paid_pathway_price_cents``. The About page threw
+ * that away, re-derived its own minimum from ``pathway.price_cents``,
+ * and advertised "Pathways from $5 AUD" — two and a half times the
+ * real price, on the page a visitor reads before deciding to buy.
+ *
+ * The page now passes the Collective through as the backend served it.
+ * These tests fix the number at $2 from both surfaces that quote it.
+ */
+describe('a payment-options Pathway with a stale legacy price', () => {
+  /** The Collective as the detail endpoint serves it. */
+  const staleCollective = {
+    ...openCollective,
+    paid_content_summary: null,
+    has_paid_internal_content: true,
+    // The backend's answer: the published $2 Option.
+    min_paid_pathway_price_cents: 200,
+    // The stale column, present in the payload and now unread. Kept in
+    // the fixture precisely because the bug was reading it.
+    pathways: [{
+      title: 'Test Pathway',
+      status: 'active',
+      access_type: 'one_time',
+      pricing_mode: 'payment_options',
+      price_cents: 500,
+    }],
+  }
+
+  test('the quick-facts row quotes $2, never $5', () => {
+    const summary = formatCollectivePricingSummary(staleCollective)
+    assert.equal(summary, 'Free to join · pathways from $2 AUD')
+    assert.ok(!summary.includes('$5'), summary)
+  })
+
+  test('the Access card quotes $2, never $5', () => {
+    // The second place the stale price surfaced on the same page.
+    const copy = formatPaidSeparatelyCopy(staleCollective)
+    assert.equal(copy, 'Pathways from $2 AUD')
+    assert.ok(!copy.includes('$5'), copy)
+  })
+
+  test('the stale column cannot reach either surface', () => {
+    // Drive the real failure mode: if anything still derived from
+    // price_cents, dropping the backend field would resurrect $5.
+    // It must degrade to the generic copy instead.
+    const withoutBackendValue = {
+      ...staleCollective, min_paid_pathway_price_cents: null,
+    }
+    const summary = formatCollectivePricingSummary(withoutBackendValue)
+    const copy = formatPaidSeparatelyCopy(withoutBackendValue)
+    assert.ok(!summary.includes('$5'), summary)
+    assert.ok(!copy.includes('$5'), copy)
+    assert.equal(copy, 'Paid pathways available separately')
+  })
+})
+
+describe('a legacy Pathway still prices normally', () => {
+  const legacyCollective = {
+    ...openCollective,
+    paid_content_summary: null,
+    has_paid_internal_content: true,
+    // Legacy mode: the backend derives from price_cents, and the two
+    // agree. This is the case that must not regress while fixing the
+    // other one.
+    min_paid_pathway_price_cents: 1800,
+    pathways: [{
+      title: 'Legacy Pathway',
+      status: 'active',
+      access_type: 'one_time',
+      pricing_mode: 'legacy',
+      price_cents: 1800,
+    }],
+  }
+
+  test('the quick-facts row shows the backend-derived minimum', () => {
+    assert.equal(
+      formatCollectivePricingSummary(legacyCollective),
+      'Free to join · pathways from $18 AUD',
+    )
+  })
+
+  test('the Access card shows it too', () => {
+    assert.equal(
+      formatPaidSeparatelyCopy(legacyCollective),
+      'Pathways from $18 AUD',
+    )
+  })
+
+  test('a Collective with nothing paid inside is unchanged', () => {
+    assert.equal(
+      formatCollectivePricingSummary({
+        ...openCollective,
+        has_paid_internal_content: false,
+        paid_content_summary: null,
+        min_paid_pathway_price_cents: null,
+      }),
+      'Free to join · all included',
+    )
+  })
+})
+
+describe('creator-supplied copy keeps its precedence', () => {
+  test('the Access card prefers the creator summary over any price', () => {
+    // Unchanged from the inline version: the creator describing what
+    // they sell outranks a derived number.
+    assert.equal(
+      formatPaidSeparatelyCopy({
+        ...openCollective,
+        paid_content_summary: 'Term passes sold separately',
+        min_paid_pathway_price_cents: 200,
+      }),
+      'Term passes sold separately',
+    )
+  })
+
+  test('whitespace-only copy is not treated as copy', () => {
+    assert.equal(
+      formatPaidSeparatelyCopy({
+        ...openCollective,
+        paid_content_summary: '   ',
+        min_paid_pathway_price_cents: 200,
+      }),
+      'Pathways from $2 AUD',
+    )
+  })
+
+  test('the Access card is not lower-cased the way the inline suffix is', () => {
+    // It opens a line of its own rather than following "Free to join ·",
+    // so sentence case is correct there. Asserted because the two
+    // helpers sit next to each other and share a shape.
+    assert.equal(
+      formatPaidSeparatelyCopy({
+        ...openCollective,
+        paid_content_summary: 'Paid pathways available',
+      }),
+      'Paid pathways available',
+    )
+  })
+
+  test('the quick-facts row still prefers the price for a free Collective', () => {
+    // Pre-existing and deliberate asymmetry with the Access card. Pinned
+    // so the refactor is visibly not a behaviour change.
+    assert.equal(
+      formatCollectivePricingSummary({
+        ...openCollective,
+        paid_content_summary: 'Term passes sold separately',
+        min_paid_pathway_price_cents: 200,
+      }),
+      'Free to join · pathways from $2 AUD',
+    )
+  })
+})
+
+describe('the About page does not re-derive the price', () => {
+  /**
+   * These match the *use*, not the word. ``price_cents`` still appears
+   * in the page's comments — explaining why it is deliberately not read
+   * is the thing that stops the derivation coming back — so a blunt
+   * ``includes('price_cents')`` check would fail on the documentation
+   * rather than on a regression.
+   */
+  const page = () => read('app/spaces/[slug]/about/page.tsx')
+
+  test('no local minimum is computed over the pathway list', () => {
+    assert.ok(!/Math\.min\(/.test(page()), 'a local minimum reappeared')
+  })
+
+  test('no pathway price is read in a filter predicate', () => {
+    const src = page()
+    assert.ok(!/price_cents\s*!=\s*null/.test(src), 'price_cents null-check returned')
+    assert.ok(!/price_cents\s*>\s*0/.test(src), 'price_cents > 0 filter returned')
+    assert.ok(!/price_cents as number/.test(src), 'price_cents cast returned')
+  })
+
+  test('the backend field is what the page reads', () => {
+    assert.match(page(), /space\.min_paid_pathway_price_cents/)
+  })
+
+  test('and the type system offers it', () => {
+    const types = read('types/platform.ts')
+    const block = types.slice(types.indexOf('export interface SpaceResponse {'))
+    assert.match(
+      block.slice(0, block.indexOf('\n}')),
+      /min_paid_pathway_price_cents: number \| null/,
+    )
   })
 })
