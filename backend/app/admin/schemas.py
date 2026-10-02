@@ -240,6 +240,28 @@ class ConnectRoutingReadyCreator(BaseModel):
     name: str
 
 
+class ConnectRecoveryOutstandingOut(BaseModel):
+    """Money Fresh Collective is owed back by one creator.
+
+    Arises when a member refund succeeded but the matching Connect
+    reversal could not take the creator's share back — typically because
+    the connected account's balance did not cover it. The member's
+    refund is real and is not in question here.
+
+    Grouped per creator and currency rather than per transaction, to
+    match how Today's Focus lists things, with ``sample_transaction_id``
+    carried when there is only one so the admin can be sent straight to
+    it.
+    """
+
+    creator_user_id: str
+    creator_name: str
+    currency: str
+    outstanding_cents: int
+    transaction_count: int
+    sample_transaction_id: str | None = None
+
+
 class AdminPlatformOverview(BaseModel):
     # Collectives
     total_collectives: int
@@ -268,6 +290,9 @@ class AdminPlatformOverview(BaseModel):
     #: Empty is the normal state; an entry clears itself once routing is
     #: enabled or readiness lapses.
     connect_routing_ready: list[ConnectRoutingReadyCreator] = []
+    #: Creator shares a refund could not claw back. Clears itself once
+    #: recovery completes or the outstanding amount reaches zero.
+    connect_recovery_outstanding: list[ConnectRecoveryOutstandingOut] = []
 
 
 class AdminCollectiveRow(BaseModel):

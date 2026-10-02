@@ -6,7 +6,11 @@ import {
   type MotherWorldMoment,
 } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
-import { connectRoutingItems, type AttentionItem } from '@/lib/adminAttention'
+import {
+  connectRecoveryItems,
+  connectRoutingItems,
+  type AttentionItem,
+} from '@/lib/adminAttention'
 
 /**
  * Mother World — the visual + emotional centre of World Management.
@@ -222,6 +226,9 @@ function NeedsAttentionSection({ data }: { data: MotherWorldOverview }) {
       severity: 'critical',
     })
   }
+  // Money FC is owed back by a creator. Pushed before the routine items
+  // because it is outstanding money, not a prompt.
+  items.push(...connectRecoveryItems(data.connect_recovery_outstanding))
   // A creator has finished everything asked of them and is waiting on the
   // one decision only Fresh Collective can make. Listed after the failures
   // because nothing is broken here — see ``connectRoutingItems``.

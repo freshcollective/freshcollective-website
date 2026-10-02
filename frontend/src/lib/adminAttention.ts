@@ -20,7 +20,10 @@
  * need a persisted admin queue, which the product does not have.
  */
 
-import type { ConnectRoutingReadyCreator } from '@/lib/serverApi'
+import type {
+  ConnectRecoveryOutstanding,
+  ConnectRoutingReadyCreator,
+} from '@/lib/serverApi'
 
 export type AttentionSeverity = 'routine' | 'critical'
 
@@ -51,4 +54,55 @@ export function connectRoutingItems(
     href: `/admin/creators/${creator.user_id}`,
     severity: 'routine' as const,
   }))
+}
+
+/** "$1.51" — cents in the row's own currency, never summed across them. */
+function formatMoney(cents: number, currency: string): string {
+  return new Intl.NumberFormat('en-AU', {
+    style: 'currency',
+    currency: currency || 'AUD',
+    minimumFractionDigits: 2,
+  }).format(cents / 100)
+}
+
+/**
+ * Money Fresh Collective is owed back by a creator.
+ *
+ * A creator may refund their own sale after the Connect transfer has
+ * gone out. The member's refund commits first and is never contingent
+ * on recovery, so when Stripe cannot take the creator's share back the
+ * shortfall is recorded against the row. Until this item existed that
+ * fact lived only in a log line and a sweeper report.
+ *
+ * The wording has three jobs and the order matters. It must say Fresh
+ * Collective is owed money, by whom, and — before anything else can be
+ * misread — that the member *was* refunded. An operator skimming a
+ * panel of alerts should not come away thinking a customer is out of
+ * pocket; nobody is, and treating it as a failed refund would send them
+ * looking in the wrong place entirely.
+ *
+ * ``critical``: this is real money outstanding, not a prompt. It sits
+ * with payment failures rather than with the routine items.
+ */
+export function connectRecoveryItems(
+  outstanding: ConnectRecoveryOutstanding[] | undefined,
+): AttentionItem[] {
+  return (outstanding ?? []).map((row) => {
+    const amount = formatMoney(row.outstanding_cents, row.currency)
+    const scope = row.transaction_count === 1
+      ? 'a refunded sale'
+      : `${row.transaction_count} refunded sales`
+    return {
+      label:
+        `${row.creator_name} owes Fresh Collective ${amount} — the member ` +
+        `was refunded, but Stripe could not take the creator’s share back ` +
+        `from ${scope}.`,
+      // Straight to the payment when there is only one; otherwise the
+      // payments list, which is where the context lives.
+      href: row.sample_transaction_id
+        ? `/admin/payments?txn=${row.sample_transaction_id}`
+        : '/admin/payments',
+      severity: 'critical' as const,
+    }
+  })
 }

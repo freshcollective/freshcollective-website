@@ -483,6 +483,19 @@ export interface ConnectRoutingReadyCreator {
   name: string
 }
 
+/** Money Fresh Collective is owed back by a creator, because a refund's
+ *  Connect reversal could not complete. Mirrors the backend
+ *  ``ConnectRecoveryOutstandingOut``. */
+export interface ConnectRecoveryOutstanding {
+  creator_user_id: string
+  creator_name: string
+  currency: string
+  outstanding_cents: number
+  transaction_count: number
+  /** Set only when a single transaction is outstanding. */
+  sample_transaction_id?: string | null
+}
+
 export interface MotherWorldOverview {
   total_collectives: number
   active_collectives: number
@@ -504,6 +517,7 @@ export interface MotherWorldOverview {
   world_health: MotherWorldHealth
   /** Optional so an overview served by an older backend still parses. */
   connect_routing_ready?: ConnectRoutingReadyCreator[]
+  connect_recovery_outstanding?: ConnectRecoveryOutstanding[]
 }
 
 export const getMotherWorldOverview = cache(async (): Promise<MotherWorldOverview | null> => {

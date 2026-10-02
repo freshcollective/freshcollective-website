@@ -1481,10 +1481,12 @@ def get_platform_overview(
     # ── Stage 2 Mother World fields ─────────────────────────────────────
     from datetime import datetime, timedelta
     from app.admin.schemas import (
+        ConnectRecoveryOutstandingOut,
         ConnectRoutingReadyCreator,
         MotherWorldHealth,
         MotherWorldMoment,
     )
+    from app.services import connect_recovery_watch
     from app.services import connect_routing_enablement as connect_enablement
     from app.core.config import settings as _s
 
@@ -1544,6 +1546,21 @@ def get_platform_overview(
         for account in connect_enablement.find_awaiting_enablement(db)
     ]
 
+    # Money FC is owed back by a creator, because a refund's Connect
+    # reversal could not complete. Derived on read like everything else
+    # here, so it disappears the moment recovery lands.
+    connect_recovery_outstanding = [
+        ConnectRecoveryOutstandingOut(
+            creator_user_id=row.creator_user_id,
+            creator_name=_creator_display_name(db, row.creator_user_id),
+            currency=row.currency,
+            outstanding_cents=row.outstanding_cents,
+            transaction_count=row.transaction_count,
+            sample_transaction_id=row.sample_transaction_id,
+        )
+        for row in connect_recovery_watch.outstanding_recoveries(db)
+    ]
+
     world_health = MotherWorldHealth(
         platform_ok=True,  # if we're serving this response, the platform is up
         stripe_ok=bool(_s.stripe_enabled),
@@ -1573,6 +1590,7 @@ def get_platform_overview(
         recent_moments=recent_moments,
         world_health=world_health,
         connect_routing_ready=connect_routing_ready,
+        connect_recovery_outstanding=connect_recovery_outstanding,
     )
 
 
