@@ -176,3 +176,73 @@ describe('isConnectRow', () => {
     assert.equal(isConnectRow(manualRow('pending', { payout_model: undefined })), false)
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// The immediate toast
+// ---------------------------------------------------------------------------
+
+// @ts-expect-error - Node-native import
+import { refundToast } from './refundGating.ts'
+
+const accepted = { terminal_status: 'accepted', stripe_refund_id: 're_1', message: '' }
+const confirmed = { terminal_status: 'webhook_confirmed', stripe_refund_id: 're_1', message: '' }
+
+describe('refundToast', () => {
+  test('a Connect post-transfer refund does NOT claim manual recovery', () => {
+    // The reported bug. FC is about to attempt the reversal
+    // automatically; saying otherwise is wrong at the moment it is said.
+    const { text } = refundToast(accepted, 'connect_reversal')
+    assert.ok(!text.toLowerCase().includes('manual recovery'))
+    assert.ok(!text.toLowerCase().includes('manual follow-up'))
+  })
+
+  test('it says the refund was initiated and recovery will be attempted', () => {
+    const { text } = refundToast(accepted, 'connect_reversal')
+    assert.match(text, /Refund initiated/)
+    assert.match(text, /automatically attempt to recover the creator’s transfer/)
+  })
+
+  test('a Connect refund reads as success, not as a warning', () => {
+    // Nothing has gone wrong yet, and colouring it amber would teach an
+    // operator to discount the colour when something has.
+    assert.equal(refundToast(accepted, 'connect_reversal').tone, 'success')
+  })
+
+  test('a manual post-payout refund still says manual follow-up', () => {
+    // Unchanged, because there the claim is true when it is made:
+    // nothing automatic will recover that money.
+    const toast = refundToast(accepted, 'manual_recovery')
+    assert.match(toast.text, /manual follow-up/)
+    assert.equal(toast.tone, 'attention')
+  })
+
+  test('no advisory means no extra sentence', () => {
+    const { text } = refundToast(accepted, 'none')
+    assert.match(text, /Refund initiated/)
+    assert.ok(!text.includes('recover'))
+  })
+
+  test('a confirmed refund names the Stripe id', () => {
+    assert.match(refundToast(confirmed, 'none').text, /Refund confirmed — re_1/)
+  })
+
+  test('a confirmed refund with no id does not print "no Stripe id"', () => {
+    const { text } = refundToast(
+      { terminal_status: 'webhook_confirmed', stripe_refund_id: null }, 'none',
+    )
+    assert.ok(!text.includes('no Stripe id'))
+    assert.match(text, /Refund confirmed\./)
+  })
+
+  test('an unexpected status falls back to the backend message', () => {
+    const { text } = refundToast(
+      { terminal_status: 'refused', message: 'Stripe refused the refund.' }, 'none',
+    )
+    assert.equal(text, 'Stripe refused the refund.')
+  })
+
+  test('an empty message still says something', () => {
+    assert.ok(refundToast({ terminal_status: 'weird', message: '' }, 'none').text.length > 0)
+  })
+})

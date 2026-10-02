@@ -121,3 +121,72 @@ export function refundAdvisory(row: RefundGateRow): RefundAdvisory {
     ? 'manual_recovery'
     : 'none'
 }
+
+
+export type ToastTone = 'success' | 'attention'
+
+export interface RefundToast {
+  text: string
+  tone: ToastTone
+}
+
+export interface RefundResultLike {
+  terminal_status?: string | null
+  stripe_refund_id?: string | null
+  message?: string | null
+}
+
+/**
+ * What to tell the operator the instant a refund is submitted.
+ *
+ * The old message appended "creator has already been paid; manual
+ * recovery required" whenever the backend returned a ``payout_advisory``
+ * — and it returns the same advisory string for a manual payout and for
+ * a Connect transfer, so a Connect refund announced manual recovery
+ * before anything had even been attempted.
+ *
+ * For Connect that is wrong twice over. Fresh Collective *does* attempt
+ * the reversal, automatically, moments later; and whether any manual
+ * follow-up is needed is not knowable yet — it depends on whether the
+ * connected account's balance covers the clawback. Manual-recovery
+ * language belongs where that outcome is actually known: the
+ * transaction's own status once ``connect_recovery_state`` lands on
+ * ``required``, and the admin Today's Focus item that watches for it.
+ *
+ * The manual case is unchanged, because there the claim is true at the
+ * moment it is made: nothing automatic will recover that money.
+ */
+export function refundToast(
+  result: RefundResultLike,
+  advisory: RefundAdvisory,
+): RefundToast {
+  const status = result.terminal_status
+  let text: string
+  if (status === 'webhook_confirmed') {
+    text = `Refund confirmed${result.stripe_refund_id ? ` — ${result.stripe_refund_id}` : ''}.`
+  } else if (status === 'accepted') {
+    text = 'Refund initiated. The ledger updates when Stripe confirms, usually within seconds.'
+  } else {
+    text = result.message || 'Refund submitted.'
+  }
+
+  if (advisory === 'connect_reversal') {
+    return {
+      text:
+        `${text} Fresh Collective will automatically attempt to recover the ` +
+        `creator’s transfer.`,
+      tone: 'success',
+    }
+  }
+
+  if (advisory === 'manual_recovery') {
+    return {
+      text:
+        `${text} The creator has already been paid — recovering their share ` +
+        `is a manual follow-up.`,
+      tone: 'attention',
+    }
+  }
+
+  return { text, tone: 'success' }
+}

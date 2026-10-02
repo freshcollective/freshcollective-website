@@ -7,7 +7,12 @@ import { describeTransactionDiscount } from '@/lib/discountDisplay'
 import { apiUrl } from '@/lib/api'
 import type { ConnectEarningRow } from '@/types/platform'
 import { payoutNote } from '@/lib/paymentsPayoutCopy'
-import { canRefundRow, refundAdvisory } from '@/lib/refundGating'
+import {
+  canRefundRow,
+  refundAdvisory,
+  refundToast,
+  type RefundToast,
+} from '@/lib/refundGating'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import RevokeAccessModal, { type RevokeResult } from './RevokeAccessModal'
 import RefundPaymentModal, { type RefundResult } from './RefundPaymentModal'
@@ -296,7 +301,7 @@ export default function CreatorPaymentsClient({
   const [error, setError] = useState<string | null>(null)
   const [revokingRow, setRevokingRow] = useState<CreatorPaymentTransaction | null>(null)
   const [refundingRow, setRefundingRow] = useState<CreatorPaymentTransaction | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<RefundToast | null>(null)
 
   async function loadRows() {
     // Always attach ``space_slug`` when a Collective is selected so
@@ -335,7 +340,10 @@ export default function CreatorPaymentsClient({
     // Summarise the outcome. Idempotent second call reads
     // "This purchase's access was already revoked. No changes made."
     if (result.already_revoked) {
-      setToast("This purchase's access was already revoked. No changes made.")
+      setToast({
+        text: "This purchase's access was already revoked. No changes made.",
+        tone: 'success',
+      })
     } else {
       const bits: string[] = []
       bits.push(`${result.access_passes_revoked} access pass${result.access_passes_revoked === 1 ? '' : 'es'} revoked`)
@@ -351,7 +359,7 @@ export default function CreatorPaymentsClient({
       if (result.membership_removed) {
         bits.push('Collective membership removed')
       }
-      setToast(`Revoked · ${bits.join(' · ')}.`)
+      setToast({ text: `Revoked · ${bits.join(' · ')}.`, tone: 'success' })
     }
     setRevokingRow(null)
     // Refresh the ledger so the chips + button eligibility update.
@@ -363,18 +371,11 @@ export default function CreatorPaymentsClient({
     // may not show refunded_amount_cents changes until the webhook
     // arrives (usually seconds). Show the operation's terminal_status
     // so the operator sees the truthful state.
-    let msg: string
-    if (result.terminal_status === 'webhook_confirmed') {
-      msg = `Refund confirmed — ${result.stripe_refund_id ?? 'no Stripe id'}.`
-    } else if (result.terminal_status === 'accepted') {
-      msg = 'Refund initiated. Ledger will update when Stripe confirms (usually seconds).'
-    } else {
-      msg = result.message
-    }
-    if (result.payout_advisory) {
-      msg += ' — creator has already been paid; manual recovery required.'
-    }
-    setToast(msg)
+    // The advisory comes from the row's payout model, not from the
+    // backend's advisory string: that string is identical for a manual
+    // payout and a Connect transfer, so reading it alone announced
+    // manual recovery on refunds FC was about to recover automatically.
+    setToast(refundToast(result, refundingRow ? refundAdvisory(refundingRow) : 'none'))
     setRefundingRow(null)
     loadRows().catch(() => { /* non-fatal */ })
   }
@@ -920,12 +921,27 @@ export default function CreatorPaymentsClient({
           the operator opens another modal or reloads. */}
       {toast && (
         <div
-          className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-full px-4 py-2 text-[12.5px] font-medium text-white shadow-lg"
-          style={{ background: '#0F172A' }}
+          className="fixed bottom-6 left-1/2 z-40 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 cursor-pointer rounded-2xl px-5 py-4 text-[13.5px] leading-relaxed text-white shadow-2xl"
+          style={{
+            background: '#0F172A',
+            // A refund is money moving. The old pill was a thin dark
+            // capsule that read as a minor confirmation; the accent and
+            // the width make it something an operator actually reads.
+            borderLeft: `4px solid ${toast.tone === 'attention' ? '#F59E0B' : '#38A09E'}`,
+          }}
           onClick={() => setToast(null)}
           role="status"
+          aria-live="polite"
         >
-          {toast}
+          <div className="flex items-start gap-2.5">
+            <span className="mt-[1px] shrink-0 text-[15px]" aria-hidden>
+              {toast.tone === 'attention' ? '⚠' : '✓'}
+            </span>
+            <span>{toast.text}</span>
+          </div>
+          <span className="mt-1.5 block text-[11.5px] opacity-60">
+            Click to dismiss
+          </span>
         </div>
       )}
 
