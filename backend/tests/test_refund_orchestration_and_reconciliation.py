@@ -325,7 +325,11 @@ class TestReconciliationAccepted:
             refunded=False,
             refunds=SimpleNamespace(data=[], has_more=False),
         )
-        # Emulate .to_dict_recursive() behaviour used by the reconciler.
+        # ``to_dict``, not ``to_dict_recursive``. This fake used to carry
+        # the latter — a method stripe 15.x does not have — so the test
+        # exercised a branch production could never reach, and the real
+        # fallback (``dict(charge)``, which raises ``KeyError: 0``) was
+        # never covered at all.
         def _to_dict():
             return {
                 "id": s.txn.provider_charge_id,
@@ -334,7 +338,7 @@ class TestReconciliationAccepted:
                 "payment_intent": None,
                 "refunds": {"data": [], "has_more": False},
             }
-        fake_charge.to_dict_recursive = _to_dict
+        fake_charge.to_dict = _to_dict
 
         with patch(
             "app.services.stripe_refund_orchestration.retrieve_refund",
@@ -374,3 +378,156 @@ class TestOverRefundGuard:
         assert res.status_code == 409
         assert "exceeds" in res.text.lower() or "refundable" in res.text.lower()
         mock_create.assert_not_called()
+
+
+class TestStripeObjectLedgerSync:
+    """The reconciler died converting a Charge it had already fetched.
+
+    Production: the stale accepted op was found, ``GET /v1/refunds/…``
+    and ``GET /v1/charges/…`` both returned 200, and then
+    ``_force_sync_ledger_from_stripe`` raised ``KeyError: 0`` on
+    ``dict(charge)``. Same stripe 15.2.0 trap as the Connect account
+    serialisation bug: a ``StripeObject`` is not a mapping, so ``dict()``
+    indexes it as a sequence.
+
+    These use a real ``stripe.Charge`` rather than a stand-in, because a
+    stand-in is what hid it.
+    """
+
+    def _stranded_op(self, db, s, *, refund_id="re_3ULhkPIHWmUObCoG177U4oqT"):
+        op = RefundOperation(
+            id=f"refop_{uuid.uuid4().hex[:12]}",
+            payment_transaction_id=s.txn.id,
+            requested_by_user_id=s.creator.id,
+            requested_at=datetime.utcnow() - timedelta(minutes=15),
+            reason=RefundOperationReason.member_request.value,
+            requested_amount_cents=3000,
+            expected_cumulative_refunded_amount_cents=3000,
+            stripe_identifier_kind=StripeIdentifierKind.charge.value,
+            stripe_identifier_value=s.txn.provider_charge_id,
+            stripe_refund_id=refund_id,
+            terminal_status=RefundOperationTerminalStatus.accepted.value,
+            updated_at=datetime.utcnow() - timedelta(minutes=15),
+        )
+        db.add(op)
+        db.commit()
+        return op
+
+    def _real_charge(self, charge_id):
+        from stripe import Charge
+
+        return Charge._construct_from(
+            values={
+                "id": charge_id,
+                "object": "charge",
+                "amount_refunded": 3000,
+                "refunded": False,
+                "payment_intent": None,
+                "refunds": {"object": "list", "data": [], "has_more": False},
+            },
+            requestor=None,
+            api_mode="V1",
+        )
+
+    def test_a_real_stripe_charge_is_not_a_dict(self):
+        """The premise. If this ever becomes true the bug is moot, and
+        the rest of this class should be revisited rather than deleted."""
+        charge = self._real_charge("ch_premise")
+        assert not isinstance(charge, dict)
+        assert not hasattr(charge, "to_dict_recursive"), (
+            "the method the old code guarded on does not exist"
+        )
+        with pytest.raises(KeyError):
+            dict(charge)
+
+    def test_the_live_stranded_op_recovers(self, db, make_user, make_space):
+        """The production path end to end, with the real object type."""
+        s = _make_creator_owned_txn(db, make_user, make_space)
+        op = self._stranded_op(db, s)
+        charge = self._real_charge(s.txn.provider_charge_id)
+
+        with patch(
+            "app.services.stripe_refund_orchestration.retrieve_refund",
+            return_value=SimpleNamespace(
+                id=op.stripe_refund_id, status="succeeded",
+                charge=s.txn.provider_charge_id, amount=3000,
+            ),
+        ), patch(
+            "app.services.stripe_refund_orchestration.retrieve_charge",
+            return_value=charge,
+        ):
+            new_status = _rec.reconcile_accepted(db, op)
+
+        db.refresh(op)
+        db.refresh(s.txn)
+        assert new_status == RefundOperationTerminalStatus.webhook_confirmed.value
+        assert op.confirmed_at is not None
+        assert op.reconciled_at is not None
+
+    def test_the_ledger_is_synced_from_the_converted_charge(
+        self, db, make_user, make_space,
+    ):
+        """Conversion is not cosmetic — the refund handler reads the
+        result, so a failed conversion meant no ledger write at all."""
+        s = _make_creator_owned_txn(db, make_user, make_space)
+        op = self._stranded_op(db, s)
+        charge = self._real_charge(s.txn.provider_charge_id)
+
+        with patch(
+            "app.services.stripe_refund_orchestration.retrieve_refund",
+            return_value=SimpleNamespace(
+                id=op.stripe_refund_id, status="succeeded",
+                charge=s.txn.provider_charge_id, amount=3000,
+            ),
+        ), patch(
+            "app.services.stripe_refund_orchestration.retrieve_charge",
+            return_value=charge,
+        ):
+            _rec.reconcile_accepted(db, op)
+
+        db.refresh(s.txn)
+        assert s.txn.refunded_amount_cents == 3000
+        assert s.txn.refunded_platform_fee_cents == 300
+        assert s.txn.refunded_creator_amount_cents == 2700
+
+    def test_nested_objects_are_converted_too(self):
+        """``refunds`` must arrive as a dict, since the refund handler
+        reads ``charge["refunds"]["data"]``. A shallow copy would leave a
+        StripeObject to fail later and further away."""
+        from app.checkout.stripe_client import to_plain_dict
+
+        converted = to_plain_dict(self._real_charge("ch_nested"))
+
+        assert type(converted) is dict
+        assert type(converted["refunds"]) is dict
+        assert converted["refunds"]["data"] == []
+
+    def test_a_plain_dict_passes_through_untouched(self):
+        """Every existing caller and fixture hands over a dict."""
+        from app.checkout.stripe_client import to_plain_dict
+
+        payload = {"id": "ch_plain", "refunds": {"data": []}}
+        assert to_plain_dict(payload) is payload
+
+    def test_a_stripe_error_still_stops_before_conversion(
+        self, db, make_user, make_space,
+    ):
+        """Error handling is unchanged: a failed charge fetch leaves the
+        op accepted for the next pass, and never reaches the converter."""
+        s = _make_creator_owned_txn(db, make_user, make_space)
+        op = self._stranded_op(db, s)
+
+        with patch(
+            "app.services.stripe_refund_orchestration.retrieve_refund",
+            return_value=SimpleNamespace(
+                id=op.stripe_refund_id, status="succeeded",
+                charge=s.txn.provider_charge_id, amount=3000,
+            ),
+        ), patch(
+            "app.services.stripe_refund_orchestration.retrieve_charge",
+            side_effect=stripe.APIConnectionError("Stripe unreachable"),
+        ):
+            _rec.reconcile_accepted(db, op)
+
+        db.refresh(s.txn)
+        assert s.txn.refunded_amount_cents == 0, "no ledger write on a failed fetch"

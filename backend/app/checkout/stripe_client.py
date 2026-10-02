@@ -120,6 +120,52 @@ def get_stripe():
     return stripe
 
 
+def to_plain_dict(value: Any) -> dict[str, Any]:
+    """A Stripe object as a plain, fully-recursive dict.
+
+    Lives here because the alternative keeps being written by hand and
+    keeps being written wrong. ``dict(stripe_object)`` looks obvious and
+    is not: a ``StripeObject`` in stripe 15.x is not a mapping — no
+    ``keys()``, no ``__iter__``, only ``__getitem__`` — so ``dict()``
+    falls back to the legacy sequence protocol, asks for index ``0`` and
+    raises ``KeyError: 0``. That is not a ``TypeError`` or a
+    ``ValueError``, so the usual defensive ``except`` around it does not
+    catch it either, and it surfaces as a 500 or a dead background job.
+
+    ``to_dict_recursive()`` is the other trap. It reads like the right
+    method and does not exist on this SDK version — only the private
+    ``_to_dict_recursive`` does — so a ``hasattr`` guard on it is always
+    False and every caller written that way silently takes the broken
+    branch. The public method is ``to_dict()``, and it recurses by
+    default.
+
+    Recursion is required, not merely nice: callers hand the result to
+    code that reads nested fields, and a shallow copy leaves
+    StripeObjects one level down to fail later and further away.
+
+    Plain dicts pass through untouched, and ``None`` becomes ``{}``.
+    """
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    converter = getattr(value, "to_dict", None)
+    if callable(converter):
+        converted = converter()
+        if isinstance(converted, dict):
+            return converted
+    try:
+        return dict(value)
+    except (TypeError, ValueError, KeyError) as exc:  # pragma: no cover
+        # Deliberately not ``StripeNotConfiguredError``: nothing about
+        # configuration is wrong here, and callers translate that one
+        # into a 503 "payments are off" the operator would then go
+        # looking for in the wrong place.
+        raise TypeError(
+            f"cannot convert {type(value).__name__} to a dict"
+        ) from exc
+
+
 # ---------------------------------------------------------------------------
 # API version
 # ---------------------------------------------------------------------------

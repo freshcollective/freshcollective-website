@@ -47,6 +47,7 @@ import stripe
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.checkout.stripe_client import to_plain_dict
 from app.models.refund_operation import (
     RefundOperation,
     RefundOperationTerminalStatus,
@@ -290,10 +291,15 @@ def _force_sync_ledger_from_stripe(
         return
     # Convert to plain dict so refund_handlers._do_charge_refunded
     # sees the same shape it gets from a real webhook payload.
-    charge_dict = (
-        charge.to_dict_recursive() if hasattr(charge, "to_dict_recursive")
-        else dict(charge)
-    )
+    #
+    # This used to try ``to_dict_recursive()`` and fall back to
+    # ``dict(charge)``. The first method does not exist on stripe 15.x —
+    # only the private ``_to_dict_recursive`` does — so the ``hasattr``
+    # guard was always False and every call took the fallback, where
+    # ``dict()`` on a non-mapping StripeObject raises ``KeyError: 0``.
+    # The reconciler fetched the refund and the charge successfully and
+    # then died converting the result.
+    charge_dict = to_plain_dict(charge)
     from app.webhooks.refund_handlers import _do_charge_refunded
     _do_charge_refunded(
         db, charge=charge_dict, event_created=None,
