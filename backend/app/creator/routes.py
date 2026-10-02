@@ -68,6 +68,7 @@ from app.creator.schemas import (
     CreatorPaymentSummary,
     CreatorPaymentPlansAttentionCount,
     CreatorPaymentTransactionOut,
+    TransactionConnectDetail,
     CreatorPlanOut,
     CreatorPurchasePlanSummary,
     CreatorSubscriptionOut,
@@ -7149,6 +7150,41 @@ def get_creator_payment_summary(
     )
 
 
+def _payout_model_value(txn) -> str:
+    """``payout_model`` as a plain string, enum or not.
+
+    The column is a plain ``String`` on the model but arrives as an enum
+    member from some construction paths, so both are normalised here
+    rather than at each call site.
+    """
+    raw = txn.payout_model
+    return raw.value if hasattr(raw, "value") else (raw or "manual")
+
+
+def _connect_detail(txn) -> "TransactionConnectDetail | None":
+    """The Connect economics of a sale, or ``None`` for a manual one.
+
+    Built from ``connect_earnings.to_row`` rather than from the columns
+    directly, so this surface inherits that module's rules whole: the
+    creator amount is the transferred amount (Stripe's fee comes out of
+    ``net_creator_amount_cents`` too), an unmeasured processing fee stays
+    ``None`` rather than becoming zero, and an outstanding recovery is
+    folded into "Needs attention" instead of being shown as a debt.
+    """
+    from dataclasses import asdict
+
+    from app.models.payment import PayoutModel
+    from app.services import connect_earnings
+
+    if _payout_model_value(txn) != PayoutModel.connect.value:
+        return None
+
+    row = asdict(connect_earnings.to_row(txn))
+    return TransactionConnectDetail(
+        **{k: v for k, v in row.items() if k in TransactionConnectDetail.model_fields}
+    )
+
+
 @router.get("/payments", response_model=list[CreatorPaymentTransactionOut])
 def list_creator_payments(
     space_slug: str | None = None,
@@ -7334,6 +7370,8 @@ def list_creator_payments(
             platform_fee_basis_points=r.platform_fee_basis_points,
             platform_fee_cents=r.platform_fee_cents,
             net_creator_amount_cents=r.net_creator_amount_cents,
+            payout_model=_payout_model_value(r),
+            connect=_connect_detail(r),
             # FIP4C — plan context. NULL on pay-in-full rows.
             purchase_plan_id=r.purchase_plan_id,
             installment_number=r.installment_number,

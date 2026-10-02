@@ -1992,6 +1992,39 @@ class CreatorPaymentSummary(BaseModel):
     partially_refunded_count: int = 0
 
 
+class TransactionConnectDetail(BaseModel):
+    """The Connect economics of one sale, for the creator who made it.
+
+    Mirrors ``connect_earnings.ConnectEarningRow`` field for field and is
+    built from it, so Payments received and the Billing earnings list can
+    never disagree about what a sale was worth or what happened to it.
+    ``tests/test_connect_payout_status.py`` asserts the two stay in step.
+
+    Present only on ``payout_model = 'connect'`` rows. Carries no Stripe
+    ids, no attempt counts and no recovery amount: ``status_label``
+    already folds an outstanding recovery into "Needs attention",
+    because a creator being chased for money should hear it from a
+    person.
+    """
+
+    currency: str
+    sale_amount_cents: int
+    platform_fee_cents: int
+    #: ``None`` until Stripe has told us. Rendered as "being confirmed",
+    #: never as zero — zero would be a claim about an unmeasured cost.
+    processing_fee_cents: int | None
+    #: What was transferred, or what will be once the fee is known. Not
+    #: ``net_creator_amount_cents``: Stripe's fee comes out of that too.
+    creator_amount_cents: int | None
+    status: str
+    #: "Sent to Stripe", never "Paid" — a transfer reaches the creator's
+    #: Stripe balance, and Stripe pays their bank on its own schedule.
+    status_label: str
+    amount_is_estimate: bool
+    refunded_amount_cents: int
+    installment_number: int | None
+
+
 class CreatorPaymentTransactionOut(BaseModel):
     model_config = {"from_attributes": True}
 
@@ -2077,7 +2110,23 @@ class CreatorPaymentTransactionOut(BaseModel):
     # Payout state — surfaced so the Refund modal can gate the button
     # for creators when the transaction has been paid out. Values match
     # the ``PayoutStatus`` enum.
+    #
+    # Note for readers of this field on a Connect row: it means
+    # ``not_applicable`` there, and that is correct rather than missing.
+    # ``payout_status`` is the state of FC's *manual* payout bookkeeping;
+    # a Connect sale is settled by Stripe transfer and reports itself
+    # through ``connect`` below.
     payout_status: str = "pending"
+
+    # How this sale's creator share reaches them: 'manual' | 'connect'.
+    # Frozen at creation and never re-derived, so a creator enabled for
+    # Connect halfway through does not change how earlier sales paid out.
+    payout_model: str = "manual"
+
+    # Populated only when ``payout_model == 'connect'``. The whole point
+    # of the field: without it the page cannot tell a Connect sale from a
+    # manual one, and showed every creator the same pre-Connect copy.
+    connect: TransactionConnectDetail | None = None
 
     # Grant-lifecycle indicator, orthogonal to Stripe payment status.
     # Derived from the AccessPass rows attached to this transaction

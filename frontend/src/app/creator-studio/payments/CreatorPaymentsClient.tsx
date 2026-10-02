@@ -5,6 +5,8 @@ import type { CreatorPlanCardView } from '@/lib/creatorPlanCard'
 import { useEffect, useState } from 'react'
 import { describeTransactionDiscount } from '@/lib/discountDisplay'
 import { apiUrl } from '@/lib/api'
+import type { ConnectEarningRow } from '@/types/platform'
+import { payoutNote } from '@/lib/paymentsPayoutCopy'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import RevokeAccessModal, { type RevokeResult } from './RevokeAccessModal'
 import RefundPaymentModal, { type RefundResult } from './RefundPaymentModal'
@@ -78,6 +80,13 @@ interface CreatorPaymentTransaction {
   /** Payout lifecycle — surfaced so the Refund button can gate for
    *  creators when the transaction has already been paid out. */
   payout_status: 'pending' | 'paid' | 'held' | 'cancelled' | 'not_applicable'
+  /** How this sale's creator share reaches them. Frozen at creation, so a
+   *  list can legitimately contain both. */
+  payout_model?: 'manual' | 'connect'
+  /** Present only on Connect rows. Typed as the earnings row minus its two
+   *  identity fields, so the backend cannot add a figure the Billing
+   *  earnings list shows and this page silently drops. */
+  connect?: Omit<ConnectEarningRow, 'payment_transaction_id' | 'created_at'> | null
   /** Grant lifecycle indicator, orthogonal to Stripe payment status.
    *  Values: intact | partially_revoked | fully_revoked | no_grant_records.
    *  Derived server-side from the AccessPass + reachable
@@ -376,6 +385,10 @@ export default function CreatorPaymentsClient({
 
   const feeDisplay = `${(feeBasisPoints / 100).toFixed(0)}%`
   const displayCurrency = rows[0]?.currency ?? currency
+  // Copy follows the rows rather than a global flag: payout_model is
+  // frozen onto each transaction at creation, so a creator can hold
+  // manual history and Connect sales at the same time.
+  const payoutCopy = payoutNote(rows, { feeDisplay })
 
   return (
     <div className="w-full max-w-[1100px] px-6 py-8 md:px-10 md:py-10">
@@ -422,9 +435,16 @@ export default function CreatorPaymentsClient({
                 )}
               </div>
               <p className="mt-1 text-[13px] leading-relaxed" style={{ color: '#0F766E' }}>
-                Purchases are processed through Fresh Collective during this phase — you do
-                not need to connect your own Stripe account. Configure what members can buy in{' '}
-                <strong>Commerce → Payment Options</strong>.
+                {/* Suppressed as soon as one Connect sale exists: telling a
+                    creator who has already connected Stripe that they needn't
+                    have is worse than saying nothing, and it contradicted the
+                    Billing page that asked them to connect. */}
+                {payoutCopy.showNoStripeNeededCard
+                  ? <>Purchases are processed through Fresh Collective — you do
+                      not need to connect your own Stripe account. Configure what
+                      members can buy in <strong>Commerce → Payment Options</strong>.</>
+                  : <>Configure what members can buy in{' '}
+                      <strong>Commerce → Payment Options</strong>.</>}
               </p>
             </div>
           </div>
@@ -626,13 +646,7 @@ export default function CreatorPaymentsClient({
                 Sales go directly to the Fresh Collective Stripe account. No payout tracking or disbursement is required.
               </span>
             ) : (
-              <span>
-                Your creator earnings are tracked as pending payout. Automatic payouts via Stripe
-                Connect are coming in a future update — for now, payouts are handled manually by
-                Fresh Collective. Your transaction fee is{' '}
-                <span className="font-semibold text-[#0F172A]">{feeDisplay}</span>{' '}
-                per sale.
-              </span>
+              <span>{payoutCopy.body}</span>
             )}
           </div>
 
@@ -655,7 +669,7 @@ export default function CreatorPaymentsClient({
                 <table className="w-full text-left">
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                      {['Date', 'Member', 'Collective', 'Purchase', 'Source', 'Gross', 'FC Fee', 'Est. Retained', 'Status', ''].map((h, idx) => (
+                      {['Date', 'Member', 'Collective', 'Purchase', 'Source', 'Gross', 'FC Fee', 'Stripe Fee', 'Est. Retained', 'Status', ''].map((h, idx) => (
                         <th key={`${h}-${idx}`} className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">
                           {h}
                         </th>
@@ -709,12 +723,42 @@ export default function CreatorPaymentsClient({
                         <td className="px-3 py-3 text-[12px] text-black whitespace-nowrap">
                           {fmt(row.platform_fee_cents, row.currency)}
                         </td>
+                        {/* Stripe's cut. Known only for Connect sales, and
+                            only once Stripe has reported it — never estimated,
+                            because a guess at a real cost that the creator can
+                            check is worse than saying it is not known yet. */}
+                        <td
+                          className="px-3 py-3 text-[12px] whitespace-nowrap"
+                          style={{ color: '#64748B' }}
+                          title="Stripe's processing fee, as charged on this sale."
+                        >
+                          {row.connect
+                            ? (row.connect.processing_fee_cents != null
+                                ? fmt(row.connect.processing_fee_cents, row.currency)
+                                : <span style={{ fontStyle: 'italic' }}>being confirmed</span>)
+                            : '—'}
+                        </td>
                         <td
                           className="px-3 py-3 text-[12px] font-semibold whitespace-nowrap"
                           style={{ color: '#38A09E' }}
-                          title="Retained creator earnings — original creator share minus the reversed portion of any refund. Zero when the transaction is fully refunded."
+                          title={row.connect
+                            ? "What was transferred to this creator's Stripe account, after both fees."
+                            : 'Retained creator earnings — original creator share minus the reversed portion of any refund. Zero when the transaction is fully refunded.'}
                         >
-                          {row.net_creator_amount_cents != null
+                          {/* A Connect row shows what actually moved, not
+                              gross-minus-FC-fee: Stripe's fee comes out of
+                              that figure too, so the old column overstated
+                              the sale by the processing fee. */}
+                          {row.connect ? (
+                            <>
+                              {row.connect.creator_amount_cents != null
+                                ? fmt(row.connect.creator_amount_cents, row.currency)
+                                : <span style={{ fontStyle: 'italic' }}>being confirmed</span>}
+                              <span className="block text-[10.5px] font-medium" style={{ color: '#64748B' }}>
+                                {row.connect.status_label}
+                              </span>
+                            </>
+                          ) : row.net_creator_amount_cents != null
                             ? fmt(
                                 Math.max(
                                   0,

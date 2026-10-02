@@ -13,6 +13,7 @@ import type {
 } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import { creatorFacingPlanName } from '@/lib/creatorPlanDisplay'
+import { billingPayoutPhase } from '@/lib/paymentsPayoutCopy'
 import BillingFeeCalculator from './BillingFeeCalculator'
 import StripeConnectPanel from './StripeConnectPanel'
 import {
@@ -340,6 +341,11 @@ function CreatorBilling({ billing, header, connectStatus }: {
   connectStatus: CreatorStripeConnectStatus | null
 }) {
   const current_plan = billing.current_plan
+  // Only ``connect_routing_enabled`` means a creator's sales actually
+  // route through Connect. A connected-but-not-enabled account is still
+  // paid by hand, so the copy must not read the panel's presence as
+  // proof the money has changed path.
+  const payoutPhase = billingPayoutPhase(connectStatus?.connect_routing_enabled)
   // "Not configured" state: creator has no active/trialing
   // CreatorSubscription. Renders a truthful warning card and hides
   // the fee-display / upgrade UI. Paid checkout is blocked (see the
@@ -699,17 +705,23 @@ function CreatorBilling({ billing, header, connectStatus }: {
           />
         </div>
 
+        {/* Sits directly above the live Connect earnings list, so it has
+            to agree with it. Driven by routing state rather than a fixed
+            "Phase 1" label: this block said payouts were disbursed by
+            hand and that automatic Stripe payouts were still to come,
+            while the panel below it showed real transfers marked "Sent
+            to Stripe". */}
         <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-[13px] text-black">
-          <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-black">Phase 1 — current</p>
-          <p>Payments are processed through the Fresh Collective Stripe account. Your earnings are tracked as pending payout and disbursed manually — connecting Stripe above prepares your account for automatic payouts, and we&rsquo;ll tell you before your sales start using it.</p>
+          <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-black">{payoutPhase.title}</p>
+          <p>{payoutPhase.body}</p>
         </div>
 
         <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
           <p className="text-[12px] font-semibold uppercase tracking-wide text-black">Coming later</p>
           <ul className="mt-2 space-y-1 text-[13px] text-black">
-            <li>· Automatic payouts of your sales through Stripe</li>
-            <li>· Refunds, disputes, and payout reporting</li>
-            <li>· GST/tax reporting and invoicing</li>
+            {payoutPhase.comingLater.map((item) => (
+              <li key={item}>· {item}</li>
+            ))}
           </ul>
         </div>
       </div>

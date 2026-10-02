@@ -845,7 +845,15 @@ def _handle_checkout_completed(
     # available rather than refusing for insufficient balance.
     if charge_id and not txn.provider_charge_id:
         txn.provider_charge_id = charge_id
-    txn.payout_status = PayoutStatus.pending
+    # Only manual rows enter FC's payout bookkeeping. A Connect row was
+    # created ``not_applicable`` precisely because its creator share
+    # reaches them through Stripe, and overwriting that here put it back
+    # into the manual queue — where the admin "Pending Payouts" total and
+    # the creator's own "pending payout" figure both counted money Stripe
+    # had already sent. ``connect_transfer_status`` is the authority for
+    # those rows; see ``connect_payout_model.manual_payout_applies``.
+    if txn.payout_model != PayoutModel.connect.value:
+        txn.payout_status = PayoutStatus.pending
     txn.updated_at = now
 
     # --- Store schedule_id on transaction (best-effort) -----------------------
