@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import type { RefundAdvisory } from '@/lib/refundGating'
 import { apiUrl } from '@/lib/api'
 
 /**
@@ -47,6 +48,11 @@ interface Props {
    *  for the platform-owner override case, the warning + explicit
    *  acknowledgement gate the confirm button. */
   payoutStatus: 'pending' | 'paid' | 'held' | 'cancelled' | 'not_applicable'
+  /** Which pre-submit warning applies. Computed from the payout model,
+   *  because ``payoutStatus`` cannot express it: a Connect row is always
+   *  ``not_applicable``, so reading it alone showed no warning at all on
+   *  exactly the refunds that need one. */
+  advisory?: RefundAdvisory
   onClose: () => void
   onRefunded: (result: RefundResult) => void
 }
@@ -70,7 +76,7 @@ function fmtMoney(cents: number, currency: string): string {
 
 export default function RefundPaymentModal({
   txnId, memberLabel, purchaseLabel, currency,
-  grossAmountCents, alreadyRefundedCents, payoutStatus,
+  grossAmountCents, alreadyRefundedCents, payoutStatus, advisory = 'none',
   onClose, onRefunded,
 }: Props) {
   const refundable = Math.max(0, grossAmountCents - alreadyRefundedCents)
@@ -81,7 +87,12 @@ export default function RefundPaymentModal({
   // that money from the creator's bank account; the pre-submit
   // warning + explicit acknowledgement are required so this is
   // never a surprise.
-  const postPayoutOverride = payoutStatus === 'paid' || payoutStatus === 'held'
+  // Falls back to the payout_status reading for any caller that has not
+  // been updated, so a manual row keeps its warning either way.
+  const resolvedAdvisory: RefundAdvisory = advisory !== 'none'
+    ? advisory
+    : (payoutStatus === 'paid' || payoutStatus === 'held' ? 'manual_recovery' : 'none')
+  const postPayoutOverride = resolvedAdvisory !== 'none'
 
   // Amount mode: 'full' | 'partial'. Default to full for the common case.
   const [mode, setMode] = useState<'full' | 'partial'>('full')
@@ -249,18 +260,37 @@ export default function RefundPaymentModal({
             role="alert"
             data-testid="post-payout-warning"
           >
-            <p className="font-semibold" style={{ color: '#92400E' }}>
-              Creator funds already {payoutStatus === 'paid' ? 'paid out' : 'held'}
-            </p>
-            <p className="mt-1">
-              This transaction&apos;s creator earnings have already been
-              {payoutStatus === 'paid' ? ' paid to the creator' : ' placed on hold'}.
-              Fresh Collective <strong>will not automatically recover</strong>
-              those funds when you refund the member. Proceeding will refund
-              the member through Stripe; recovering the creator amount is a
-              manual follow-up (adjust a future payout, ask the creator to
-              return the amount, or absorb it — your call).
-            </p>
+            {resolvedAdvisory === 'connect_reversal' ? (
+              <>
+                <p className="font-semibold" style={{ color: '#92400E' }}>
+                  Creator funds already sent to Stripe
+                </p>
+                <p className="mt-1">
+                  The creator&apos;s share of this sale has already been
+                  transferred to their Stripe account. Refunding the member
+                  will <strong>also attempt to reverse that transfer
+                  automatically</strong>. Stripe can refuse the reversal if
+                  the connected account&apos;s balance does not cover it — the
+                  member is refunded either way, and the shortfall is recorded
+                  so it can be followed up.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold" style={{ color: '#92400E' }}>
+                  Creator funds already {payoutStatus === 'held' ? 'held' : 'paid out'}
+                </p>
+                <p className="mt-1">
+                  This transaction&apos;s creator earnings have already been
+                  {payoutStatus === 'held' ? ' placed on hold' : ' paid to the creator'}.
+                  Fresh Collective <strong>will not automatically recover</strong>
+                  those funds when you refund the member. Proceeding will refund
+                  the member through Stripe; recovering the creator amount is a
+                  manual follow-up (adjust a future payout, ask the creator to
+                  return the amount, or absorb it — your call).
+                </p>
+              </>
+            )}
             <label className="mt-3 flex items-start gap-2">
               <input
                 type="checkbox"
@@ -270,8 +300,9 @@ export default function RefundPaymentModal({
                 className="mt-0.5"
               />
               <span>
-                I understand this refund will require manual creator-fund
-                recovery.
+                {resolvedAdvisory === 'connect_reversal'
+                  ? 'I understand the reversal may not complete, and any shortfall will need following up.'
+                  : 'I understand this refund will require manual creator-fund recovery.'}
               </span>
             </label>
           </div>

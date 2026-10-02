@@ -7,6 +7,7 @@ import { describeTransactionDiscount } from '@/lib/discountDisplay'
 import { apiUrl } from '@/lib/api'
 import type { ConnectEarningRow } from '@/types/platform'
 import { payoutNote } from '@/lib/paymentsPayoutCopy'
+import { canRefundRow, refundAdvisory } from '@/lib/refundGating'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import RevokeAccessModal, { type RevokeResult } from './RevokeAccessModal'
 import RefundPaymentModal, { type RefundResult } from './RefundPaymentModal'
@@ -193,16 +194,11 @@ function canRevoke(row: CreatorPaymentTransaction, isPlatformOwner: boolean): bo
  *  We deliberately do NOT couple to grant_state or plan-anchored
  *  status — refund and access are independent, and finite-plan
  *  instalments are individually refundable. */
+// Policy lives in ``@/lib/refundGating`` so it can be tested against
+// the backend's ``_payout_gate_action`` without rendering the page.
+// This wrapper keeps the call sites below unchanged.
 function canRefund(row: CreatorPaymentTransaction, isPlatformOwner: boolean): boolean {
-  if (row.payment_provider !== 'stripe') return false
-  if (row.status !== 'succeeded' && row.status !== 'partially_refunded') return false
-  const refundable = row.gross_amount_cents - row.refunded_amount_cents
-  if (refundable <= 0) return false
-  if (row.payout_status === 'paid' || row.payout_status === 'held') {
-    return isPlatformOwner
-  }
-  if (row.payout_status === 'not_applicable') return false
-  return true
+  return canRefundRow(row, isPlatformOwner)
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -966,6 +962,7 @@ export default function CreatorPaymentsClient({
           grossAmountCents={refundingRow.gross_amount_cents}
           alreadyRefundedCents={refundingRow.refunded_amount_cents}
           payoutStatus={refundingRow.payout_status}
+          advisory={refundAdvisory(refundingRow)}
           onClose={() => setRefundingRow(null)}
           onRefunded={handleRefunded}
         />

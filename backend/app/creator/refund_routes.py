@@ -118,11 +118,29 @@ def _connect_gate_action(
     may refund. ``failed`` is the same: nothing left.
 
     ``sent`` / ``partially_reversed`` — money is in the creator's Stripe
-    balance. FC can usually reverse it automatically, but Stripe will refuse
-    if their balance cannot cover it, so recovery is not guaranteed. Treated
-    exactly as the manual ``paid`` case is: admin only, with an advisory.
-    That is deliberately conservative and can be relaxed once reversal has a
-    production track record.
+    balance, and an authorised creator-owner may still refund it. This was
+    admin-only at launch, as a conservative rule while reversal had no
+    production track record. It is no longer the right trade: a creator
+    has to be able to refund their own sale without waiting on Fresh
+    Collective, and the thing that made the restriction look prudent —
+    the risk of unrecovered money — is handled downstream rather than by
+    refusing.
+
+    What actually happens on such a refund is already built and is not
+    changed here. The customer refund commits first; the reversal is a
+    separate, deliberately-after step that cannot raise
+    (``_reverse_creator_share_after_refund``). If the connected account
+    cannot cover it, ``connect_recovery_state`` becomes ``required`` and
+    ``connect_unrecovered_amount_cents`` records the exact shortfall — so
+    the money FC is owed is visible and sweepable, never silently written
+    off and never reported as recovered. The customer's refund is real
+    either way, and must not depend on FC's ability to collect from the
+    creator.
+
+    The advisory is still returned, for both actors. It is a property of
+    the transaction's state, not of who pressed the button: operations
+    need to know a refund happened after the transfer went out,
+    regardless of which of the two initiated it.
 
     ``reversed`` — already clawed back in full; nothing outstanding.
     """
@@ -140,11 +158,11 @@ def _connect_gate_action(
         ConnectTransferStatus.sent.value,
         ConnectTransferStatus.partially_reversed.value,
     ):
-        if actor_is_admin:
-            # FC will attempt the reversal automatically once the refund
-            # lands; the advisory covers the case where it cannot complete.
-            return True, "post_payout_manual_recovery_required"
-        return False, None
+        # ``actor_is_admin`` is deliberately not consulted: both an
+        # authorised creator-owner and an admin may refund here. Who is
+        # authorised at all is decided before this gate, by
+        # ``_can_creator_act_on_space``.
+        return True, "post_payout_manual_recovery_required"
 
     # Unrecognised: refuse rather than guess about money.
     return False, None
@@ -153,11 +171,19 @@ def _connect_gate_action(
 def _payout_gate_action(
     *, txn: PaymentTransaction, actor_is_admin: bool,
 ) -> tuple[bool, str | None]:
-    """Returns (allowed, payout_advisory_if_admin_override).
+    """Returns (allowed, payout_advisory).
 
-    Non-admin actors are refused once the creator's share has left Fresh
-    Collective; an admin may still refund, and a ``payout_advisory`` is
-    stamped on the RefundOperation so operations can track recovery.
+    For **manual** rows, non-admin actors are still refused once the
+    creator's share has left Fresh Collective; an admin may refund, and a
+    ``payout_advisory`` is stamped on the RefundOperation so operations
+    can track recovery. That restriction is unchanged — relaxing it would
+    be a separate decision, because a manual payout has no automatic
+    recovery path at all.
+
+    For **Connect** rows it is no longer an admin override: a creator may
+    refund their own sale after the transfer has gone out, and the
+    advisory is stamped for either actor. See
+    :func:`_connect_gate_action`.
 
     Connect rows are gated on ``connect_transfer_status``, not on
     ``payout_status``. Their ``payout_status`` is ``not_applicable`` —

@@ -20,7 +20,10 @@ from unittest.mock import patch
 import pytest
 import stripe
 
+from types import SimpleNamespace
+
 from app.creator.refund_routes import _payout_gate_action
+from app.models.refund_operation import RefundOperation
 from app.models.payment import (
     ConnectRecoveryState,
     ConnectTransferStatus,
@@ -154,21 +157,47 @@ class TestConnectGate:
         ConnectTransferStatus.sent.value,
         ConnectTransferStatus.partially_reversed.value,
     ])
-    def test_sent_funds_are_admin_only_with_an_advisory(self, db, status):
-        """Money is in someone else's Stripe balance and recovery is not
-        guaranteed. Same policy as the manual ``paid`` case."""
+    @pytest.mark.parametrize("is_admin", [True, False])
+    def test_sent_funds_are_refundable_by_creator_and_admin_alike(
+        self, db, status, is_admin,
+    ):
+        """Policy change, deliberate: this was admin-only at launch.
+
+        A creator has to be able to refund their own sale without waiting
+        on Fresh Collective, and the risk that made the restriction look
+        prudent is handled downstream instead of by refusing — the
+        customer refund commits first and any shortfall is recorded as
+        ``connect_recovery_state = required`` with the exact amount.
+        """
         txn = _connect_txn(
             db, connect_transfer_status=status,
             reversed_transfer_amount_cents=(
                 4500 if status == ConnectTransferStatus.partially_reversed.value else 0
             ),
         )
-        allowed, advisory = _payout_gate_action(txn=txn, actor_is_admin=True)
+        allowed, advisory = _payout_gate_action(txn=txn, actor_is_admin=is_admin)
         assert allowed is True
-        assert advisory == "post_payout_manual_recovery_required"
+        assert advisory == "post_payout_manual_recovery_required", (
+            "the advisory describes the transaction's state, not who pressed "
+            "the button — operations need it either way"
+        )
 
-        refused, _ = _payout_gate_action(txn=txn, actor_is_admin=False)
-        assert refused is False
+    def test_an_unknown_transfer_status_still_refuses(self):
+        """Refuse rather than guess about money.
+
+        Unpersisted on purpose: ``ck_payment_transactions_connect_transfer_
+        status`` already makes an unknown value unstorable, so this covers
+        the branch without pretending the database would allow the row.
+        The gate reads two attributes and nothing else.
+        """
+        from types import SimpleNamespace
+
+        txn = SimpleNamespace(
+            payout_model="connect",
+            connect_transfer_status="some_future_state",
+        )
+        assert _payout_gate_action(txn=txn, actor_is_admin=True) == (False, None)
+        assert _payout_gate_action(txn=txn, actor_is_admin=False) == (False, None)
 
     def test_not_applicable_payout_status_does_not_block_a_connect_refund(self, db):
         """The bug this gate rewrite exists to prevent: the old gate refused
@@ -449,3 +478,82 @@ class TestManualRowsUnaffected:
         assert fake.reversals == []
         db.refresh(txn)
         assert txn.refunded_amount_cents == 10000
+
+# ---------------------------------------------------------------------------
+# The HTTP boundary
+# ---------------------------------------------------------------------------
+
+
+class TestCreatorCanRefundASentTransferOverHttp:
+    """One route-level test, for the one thing the gate unit tests cannot
+    show: that a non-admin creator actually gets through
+    ``POST /api/creator/payments/{id}/refund`` on a transfer that has
+    already gone out.
+
+    Deliberately not a second copy of the reversal and recovery tests
+    above — those already cover what happens to the money. This covers
+    only the boundary: authorisation, the payout gate, and the advisory
+    that gets stamped on the way through.
+    """
+
+    def _client(self, db, creator):
+        from fastapi.testclient import TestClient
+
+        from app.auth.dependencies import get_creator_user
+        from app.core.database import get_db
+        from app.main import app
+
+        app.dependency_overrides[get_db] = lambda: db
+        app.dependency_overrides[get_creator_user] = lambda: creator
+        return TestClient(app)
+
+    def _release(self):
+        from app.auth.dependencies import get_creator_user
+        from app.core.database import get_db
+        from app.main import app
+
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_creator_user, None)
+
+    def test_a_non_admin_owner_may_refund_after_the_transfer_was_sent(
+        self, db, make_user, make_space,
+    ):
+        creator = make_user(role="creator")
+        assert creator.role != "admin", "the whole point of the test"
+        space = make_space(creator=creator)
+        txn = _connect_txn(
+            db,
+            space_id=space.id,
+            creator_user_id=creator.id,
+            connect_transfer_status=ConnectTransferStatus.sent.value,
+        )
+        assert txn.payout_status == PayoutStatus.not_applicable
+
+        refund = SimpleNamespace(id="re_test_boundary")
+        client = self._client(db, creator)
+        try:
+            with patch(
+                "app.services.stripe_refund_orchestration.create_refund",
+                return_value=refund,
+            ) as submit:
+                response = client.post(
+                    f"/api/creator/payments/{txn.id}/refund",
+                    json={"amount_cents": 10000, "reason": "member_request"},
+                )
+        finally:
+            self._release()
+
+        assert response.status_code not in (403, 404, 409), response.text
+        assert response.status_code == 200, response.text
+        assert submit.call_count == 1, "the refund must actually be submitted"
+
+        op = (
+            db.query(RefundOperation)
+            .filter(RefundOperation.payment_transaction_id == txn.id)
+            .one()
+        )
+        assert op.requested_by_user_id == creator.id
+        assert op.payout_advisory == "post_payout_manual_recovery_required", (
+            "operations need to know the refund happened after the transfer "
+            "went out, whoever initiated it"
+        )
