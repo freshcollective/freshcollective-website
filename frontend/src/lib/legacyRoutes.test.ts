@@ -180,6 +180,171 @@ describe('the preserved legacy URLs exist as real pages', () => {
 })
 
 // ---------------------------------------------------------------------------
+// The Book Companion's actual contents
+// ---------------------------------------------------------------------------
+
+describe('the Book Companion carries the real resources', () => {
+  const PUBLIC_DIR = join(SRC, '..', 'public')
+  const page = () => read('app/tnlbook123/page.tsx')
+
+  /** Every companion asset the page offers, as (path, control). */
+  const ASSETS: readonly [string, string][] = [
+    ['/book-companion/natural-leader-front-cover.jpg', 'hero cover'],
+    ['/book-companion/gates-summaries.pdf', 'Gate / Gifts Summary'],
+    ['/book-companion/healing-vortex.mp3', 'The Healing Vortex'],
+    ['/book-companion/feminine-archetypes.pdf', 'Feminine Archetypes'],
+    [
+      '/book-companion/journal-prompts-and-somatic-practices.pdf',
+      'Prompts & Practices',
+    ],
+  ]
+
+  for (const [path, label] of ASSETS) {
+    test(`${label} is referenced at ${path}`, () => {
+      assert.ok(page().includes(path), `${path} is not on the page`)
+    })
+
+    test(`${label} exists on disk under public/`, () => {
+      // The asset paths are strings in a TSX file, so a typo is
+      // invisible until someone clicks. Resolving each one against
+      // ``public/`` is what makes them real.
+      assert.ok(
+        existsSync(join(PUBLIC_DIR, path.replace(/^\//, ''))),
+        `${path} is linked but missing from public/`,
+      )
+    })
+  }
+
+  test('the five files are the only book-companion assets referenced', () => {
+    // Guards the other direction: a link added to a file nobody shipped.
+    const referenced = [...page().matchAll(/\/book-companion\/[A-Za-z0-9._-]+/g)]
+      .map((m) => m[0])
+    for (const path of new Set(referenced)) {
+      assert.ok(
+        ASSETS.some(([a]) => a === path),
+        `${path} is referenced but not a known companion asset`,
+      )
+    }
+  })
+
+  test('the Spotify show is linked, and opens safely', () => {
+    const src = page()
+    assert.match(
+      src,
+      /https:\/\/open\.spotify\.com\/show\/4K7nabojVkR6jhQpqqzSEq/,
+    )
+    assert.match(src, /target="_blank"/)
+    assert.match(src, /rel="noopener noreferrer"/)
+  })
+
+  test('the chart CTA uses the current terminology', () => {
+    const src = page()
+    // "Human Design Bodychart" is the current name. The old "Leadership
+    // Body Chart" wording must not come back on the CTA.
+    assert.ok(
+      !/Leadership Body Chart/i.test(codeOnly('app/tnlbook123/page.tsx')),
+      'the retired "Leadership Body Chart" wording is back',
+    )
+    assert.match(src, />\s*Get Chart\s*</)
+  })
+
+  test('the retired Natural Leader Hub promotion is absent', () => {
+    // The old Wix page sold the Hub. That programme is retired and this
+    // page is not a sales surface.
+    const src = codeOnly('app/tnlbook123/page.tsx')
+    for (const phrase of ['Natural Leader Hub', 'tnlhub', 'Join the Hub']) {
+      assert.ok(!src.includes(phrase), `the page still promotes: ${phrase}`)
+    }
+  })
+
+  test('the launch placeholder copy is gone', () => {
+    // Through codeOnly: the page's header comment records that this
+    // placeholder was removed, so the raw text legitimately contains
+    // the phrase it is asserting the absence of.
+    const src = codeOnly('app/tnlbook123/page.tsx')
+    for (const phrase of [
+      'resources are being gathered',
+      'being gathered into Fresh Collective',
+      'In the meantime',
+    ]) {
+      assert.ok(!src.includes(phrase), `placeholder copy remains: ${phrase}`)
+    }
+  })
+
+  test('all six resource cards are present', () => {
+    const src = page()
+    for (const title of [
+      'Human Design Chart',
+      'Gate / Gifts Summary',
+      'The Healing Vortex',
+      'Feminine Archetypes',
+      'Prompts &amp; Practices',
+      'The Natural Leader Podcast',
+    ]) {
+      assert.ok(src.includes(title), `missing resource card: ${title}`)
+    }
+  })
+
+  test('the reading list carries all twelve books with authors', () => {
+    const src = page()
+    for (const [title, author] of [
+      ['Women Who Run With the Wolves', 'Clarissa Pinkola Estés'],
+      ['Burnout: The Secret to Unlocking the Stress Cycle', 'Emily Nagoski'],
+      ['The Patriarchy Stress Disorder', 'Dr Valerie Rein'],
+      ['Do Less', 'Kate Northrup'],
+      ['The Body Is Not an Apology', 'Sonya Renee Taylor'],
+      ['Untamed', 'Glennon Doyle'],
+      ['Power:', 'Kemi Nekvapil'],
+      ['The Chalice and the Blade', 'Riane Eisler'],
+      ['Dare to Lead', 'Brené Brown'],
+      ["My Grandmother's Hands", 'Resmaa Menakem'],
+      ['You Can Heal Your Life', 'Louise Hay'],
+      ['The Secret Language of Your Body', 'Inna Segal'],
+    ]) {
+      assert.ok(src.includes(title!), `missing book: ${title}`)
+      assert.ok(src.includes(author!), `missing author: ${author}`)
+    }
+  })
+
+  test('the reading list carries no purchase or affiliate links', () => {
+    // Titles and authors only, as agreed. Through codeOnly, because the
+    // page comment states this intent in the same words.
+    const src = codeOnly('app/tnlbook123/page.tsx')
+    const block = src.slice(src.indexOf('READING_LIST'), src.indexOf('ResourceCard'))
+    assert.ok(!/https?:\/\//.test(block), 'the reading list contains a link')
+    // Query-parameter form only — a bare 'ref=' is a substring of
+    // 'href=', which every link on the page legitimately uses.
+    for (const marker of ['amazon.', 'bookshop.', 'affiliate', '?tag=', '&tag=', '?ref=', '&ref=']) {
+      assert.ok(!src.includes(marker), `affiliate marker present: ${marker}`)
+    }
+  })
+
+  test('the large audio file is not preloaded', () => {
+    // ~48MB. Browsers that preload metadata would pull a slice of it
+    // for every visitor, most of whom came for a PDF.
+    assert.match(page(), /preload="none"/)
+  })
+
+  test('the hero cover goes through next/image', () => {
+    const src = page()
+    assert.match(src, /from 'next\/image'/)
+    assert.match(src, /alt="The Natural Leader by Lindsey Hilliard/)
+  })
+
+  test('no API route or database access serves these files', () => {
+    const src = codeOnly('app/tnlbook123/page.tsx')
+    for (const forbidden of ['/api/', 'serverApi', 'fetch(', 'prisma', 'db.']) {
+      assert.ok(!src.includes(forbidden), `the page reaches for ${forbidden}`)
+    }
+  })
+
+  test('the route itself is unchanged', () => {
+    // The whole point of the page. The directory name IS the legacy URL.
+    assert.ok(existsSync(appPage('tnlbook123')))
+  })
+})
+
+// ---------------------------------------------------------------------------
 // The chart embed — configured vs not
 // ---------------------------------------------------------------------------
 
