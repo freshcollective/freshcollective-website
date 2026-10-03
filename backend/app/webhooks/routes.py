@@ -570,6 +570,7 @@ def _handle_gathering_ticket_completed(
         # dedupe key is a second guard. Email is a graceful no-op when
         # RESEND_API_KEY is unset.
         try:
+            from app.comms.rollout import schedule_routing_if_needed
             from app.services.gathering_booking_emit import (
                 emit_booking_confirmed,
             )
@@ -581,8 +582,9 @@ def _handle_gathering_ticket_completed(
 
             _buyer = db.query(_User).filter(_User.id == payer_user_id).first()
             _gathering = db.query(_Event).filter(_Event.id == event_id).first()
+            creator_event = None
             if _buyer is not None and _gathering is not None:
-                emit_purchase_received_creator(
+                creator_event = emit_purchase_received_creator(
                     db,
                     space_id=_gathering.space_id,
                     buyer=_buyer,
@@ -592,8 +594,21 @@ def _handle_gathering_ticket_completed(
                     currency=currency,
                     dedupe_key=f"purchase_received:txn:{txn_id}",
                 )
+            # Commit the emit, then route it. Both halves were missing
+            # here, and the second hid the first: the row survived only
+            # because ``emit_booking_confirmed`` below commits, which
+            # made it look durable while nothing ever routed it — and on
+            # a ticket with no booking row nothing committed it either.
+            # Fulfilment is already committed above, so this commit
+            # covers the notification alone and cannot affect the sale.
+            if creator_event is not None:
+                db.commit()
+                schedule_routing_if_needed(
+                    None, creator_event, "collective.purchase.received",
+                )
             # Comms — member booking confirmation. No BackgroundTasks in a
-            # webhook, so routing dispatches synchronously.
+            # webhook, so routing dispatches synchronously. Commits and
+            # routes itself; left exactly as it was.
             if outcome.booking is not None:
                 emit_booking_confirmed(db, booking=outcome.booking)
         except Exception as exc:  # noqa: BLE001 — never let notify failure block fulfilment
@@ -978,6 +993,7 @@ def _handle_checkout_completed(
         from app.models.user import User as _User
         _member = db.query(_User).filter(_User.id == payer_user_id).first()
         purchase_completed_event = None
+        creator_event = None
         if _member is not None:
             purchase_completed_event = _r3.emit_purchase_completed(
                 db, user=_member, payment_option=payment_option,
@@ -991,7 +1007,7 @@ def _handle_checkout_completed(
             # bookings it fans out into, so a Term pass covering thirty
             # Gatherings still produces exactly one. Same idempotency as
             # above, plus a dedupe key on the transaction id.
-            _r3.emit_purchase_received_creator(
+            creator_event = _r3.emit_purchase_received_creator(
                 db,
                 space_id=space_id,
                 buyer=_member,
@@ -1020,6 +1036,20 @@ def _handle_checkout_completed(
         from app.comms.rollout import schedule_routing_if_needed
         schedule_routing_if_needed(
             None, purchase_completed_event, "purchase.completed",
+        )
+    # The creator side needs routing too, and this is where it was
+    # missing: the event row was written and committed, and then nothing
+    # ever turned it into intents. In production that is a
+    # ``communication_events`` row with no ``communication_intents`` at
+    # all — silent, and invisible unless you go looking for the absence.
+    # Same shape as the finite-plan path, which is why that path worked
+    # and this one did not. After the commit, deliberately: routing
+    # dispatches synchronously here and must never run against state
+    # that could still roll back.
+    if creator_event is not None:
+        from app.comms.rollout import schedule_routing_if_needed
+        schedule_routing_if_needed(
+            None, creator_event, "collective.purchase.received",
         )
 
     # Singular ``entitlement`` field in the summary line is kept

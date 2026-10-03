@@ -153,6 +153,31 @@ def db(engine: Engine) -> Iterator[Session]:
 
     Nested transactions via SAVEPOINT let production code call `.commit()`
     freely without breaking isolation.
+
+    One known limitation, documented rather than fixed
+    -------------------------------------------------
+    ``comms.emit`` wraps a **dedupe-keyed** insert in
+    ``with db.begin_nested()`` so a key collision rolls back only that
+    attempt. Once anything in this session has committed, the
+    savepoint-restart listener below has replaced the savepoint that
+    ``begin_nested()`` expects, and the context manager fails. ``emit``
+    catches only ``IntegrityError``, so the caller sees ``None`` —
+    indistinguishable from a legitimate dedupe no-op.
+
+    The practical effect: a dedupe-keyed emit reached through a handler
+    that commits first returns ``None`` here, and any routing the caller
+    does ``if event is not None`` is correctly skipped. The test then
+    shows no communication intents, which looks exactly like a missing
+    routing call. Emits with no dedupe key take ``emit``'s fast path and
+    are unaffected.
+
+    This bit once: the creator purchase notification shipped unrouted on
+    two paths, and an end-to-end test written against this fixture would
+    have agreed that nothing should be delivered. If you are asserting
+    on a dedupe-keyed emit downstream of a commit, drive the routing
+    layer separately rather than trusting the handler's return — see
+    ``test_creator_purchase_notification_routing.py`` for the pattern.
+    Production is unaffected; there is no savepoint listener there.
     """
     connection = engine.connect()
     outer = connection.begin()
