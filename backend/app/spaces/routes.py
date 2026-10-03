@@ -370,11 +370,33 @@ def hydrate_public_space_cards(
         db, space_ids,
     )
 
+    # Members of the Collective — active learner memberships.
+    #
+    # This used to count DISTINCT users with an ``Enrollment`` in one of
+    # the Collective's Pathways, which is a different question and gave
+    # a different answer: EMBODY showed "1 member" on Explore while its
+    # own About page showed "4 members". Both were right about what they
+    # measured. Only one of them was measuring membership.
+    #
+    # Enrolment is not how most people belong. A Collective whose
+    # Pathways are ``included_with_offer`` grants access through a pass,
+    # so members hold a SpaceMembership and may have no Enrollment row
+    # at all — the count then reports on whoever happened to start a
+    # Pathway, and under-reports the longer a Collective sells access
+    # that way.
+    #
+    # The definition here is the one the public About page and the admin
+    # Collectives table already use: active + role=learner. Leaders are
+    # counted separately by ``get_space`` and are deliberately NOT folded
+    # in — "4 members · 1 leader" is two facts, not one.
     member_counts: dict[str, int] = dict(
-        db.query(Pathway.space_id, func.count(func.distinct(Enrollment.user_id)))
-        .join(Enrollment, Enrollment.pathway_id == Pathway.id)
-        .filter(Pathway.space_id.in_(space_ids))
-        .group_by(Pathway.space_id)
+        db.query(SpaceMembership.space_id, func.count(SpaceMembership.id))
+        .filter(
+            SpaceMembership.space_id.in_(space_ids),
+            SpaceMembership.status == SpaceMembershipStatus.active,
+            SpaceMembership.role == SpaceRole.learner,
+        )
+        .group_by(SpaceMembership.space_id)
         .all()
     )
 
