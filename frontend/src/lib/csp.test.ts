@@ -209,6 +209,17 @@ describe('SEC-011 Stage A — frame-src ↔ EMBED_PROVIDERS drift check', () => 
     assert.ok(frameSrc.has('https://checkout.stripe.com'))
   })
 
+  test('frame-src includes Neutrino Human Design', () => {
+    // Named explicitly as well as covered by the loop above. The loop
+    // proves the plumbing holds for whatever is in EMBED_PROVIDERS;
+    // this proves Neutrino is actually in it, so removing the provider
+    // fails here rather than passing an empty obligation.
+    assert.ok(
+      frameSrc.has('https://neutrinoplatform.com'),
+      'the Neutrino chart iframe would be blocked by CSP',
+    )
+  })
+
   test('frame-src has no unexpected extra origins', () => {
     const expected = new Set<string>([
       ...EMBED_PROVIDERS.flatMap((p) =>

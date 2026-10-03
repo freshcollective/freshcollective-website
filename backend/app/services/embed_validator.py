@@ -33,7 +33,49 @@ EMBED_ALLOWED_HOSTS: tuple[str, ...] = (
     "calendly.com",
     "spotify.com", "open.spotify.com",
     "soundcloud.com", "w.soundcloud.com",
+    "neutrinoplatform.com",
 )
+
+
+# Provider display names, in the order a creator meets them in the
+# helper text. Kept beside the host tuple because the rejection message
+# used to be a hand-written string literal and nothing stopped it
+# drifting from what was actually allowed.
+EMBED_PROVIDER_NAMES: tuple[str, ...] = (
+    "YouTube",
+    "Vimeo",
+    "Wistia",
+    "Loom",
+    "Google Forms",
+    "Typeform",
+    "Calendly",
+    "Spotify",
+    "SoundCloud",
+    "Neutrino Human Design",
+)
+
+
+# Hosts whose embeds live at one known path, keyed by the allowlist
+# entry that matched. A host absent from this map is unrestricted, as
+# every provider was before Neutrino.
+#
+# Neutrino serves other things from the same domain — the marketing
+# site, the app, ``loader.js`` — and only ``/widget-v2/iframe`` is the
+# embeddable widget. Pinning the path means a creator cannot
+# accidentally (or deliberately) frame the rest of the platform through
+# a block that exists to show a chart.
+#
+# Matched **exactly**, not as a prefix. There is no evidence Neutrino
+# serves anything beneath the widget path, and an unused permission is
+# one an attacker gets for free: a prefix rule would admit every future
+# ``/widget-v2/iframe/<anything>`` route sight unseen. If Neutrino does
+# add a sub-route, this is one tuple entry.
+#
+# The query string is deliberately untouched: the widget carries
+# ``type``, ``key`` and ``hideBrand`` and is useless without them.
+EMBED_ALLOWED_PATHS: dict[str, tuple[str, ...]] = {
+    "neutrinoplatform.com": ("/widget-v2/iframe",),
+}
 
 
 _IFRAME_SRC_RE = re.compile(
@@ -74,9 +116,44 @@ def extract_embed_src(raw: str) -> str:
     return s
 
 
+def _matched_allowed_host(host: str) -> str | None:
+    """The allowlist entry ``host`` satisfies, or ``None``.
+
+    Exact match first, then an exact-suffix match like
+    ``subdomain.youtube.com``. Never a substring, so
+    ``calendly.com.evil.tld`` matches nothing. Returning the entry
+    rather than a bool lets the caller look up per-host policy.
+    """
+    if host in EMBED_ALLOWED_HOSTS:
+        return host
+    for allowed in EMBED_ALLOWED_HOSTS:
+        if host.endswith("." + allowed):
+            return allowed
+    return None
+
+
+def _path_is_allowed(path: str, allowed: tuple[str, ...]) -> bool:
+    """``path`` is exactly one of ``allowed``.
+
+    Not a prefix test. ``/widget-v2/iframe`` permits itself and nothing
+    else — neither ``/widget-v2/iframexyz`` (which a bare
+    ``startswith`` would admit) nor ``/widget-v2/iframe/v3`` (which a
+    segment-prefix test would).
+
+    One tolerance: a single trailing slash is the same resource, and
+    rejecting a URL that works in the browser would be a confusing
+    refusal rather than a safer one. It cannot reach a different path.
+    """
+    candidate = path or "/"
+    if candidate != "/" and candidate.endswith("/"):
+        candidate = candidate.rstrip("/")
+    return candidate in allowed
+
+
 def validate_embed_host(url: str) -> str:
     """
-    Validate that the URL's hostname is on the allowlist. Returns the URL
+    Validate that the URL's hostname is on the allowlist, and that its
+    path is permitted for hosts that restrict one. Returns the URL
     unchanged. Raises EmbedValidationError on rejection.
     """
     try:
@@ -93,14 +170,20 @@ def validate_embed_host(url: str) -> str:
     if parsed.scheme != "https":
         raise EmbedValidationError("Embed URL must use https://.")
 
-    if host not in EMBED_ALLOWED_HOSTS:
-        # Also allow exact-suffix match like "subdomain.youtube.com"
-        if not any(host.endswith("." + h) for h in EMBED_ALLOWED_HOSTS):
-            raise EmbedValidationError(
-                f"Embed host '{host}' is not on the allowlist. "
-                f"Supported providers: YouTube, Vimeo, Wistia, Loom, Google Forms, "
-                f"Typeform, Calendly, Spotify, SoundCloud."
-            )
+    matched = _matched_allowed_host(host)
+    if matched is None:
+        raise EmbedValidationError(
+            f"Embed host '{host}' is not on the allowlist. "
+            f"Supported providers: {', '.join(EMBED_PROVIDER_NAMES)}."
+        )
+
+    allowed_paths = EMBED_ALLOWED_PATHS.get(matched)
+    if allowed_paths is not None and not _path_is_allowed(parsed.path, allowed_paths):
+        shown = parsed.path or "/"
+        raise EmbedValidationError(
+            f"Embed path '{shown}' is not supported for {matched}. "
+            f"Expected exactly: {', '.join(allowed_paths)}."
+        )
 
     return url
 

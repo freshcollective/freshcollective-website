@@ -347,3 +347,21 @@ select.field-input {
     grid-template-columns: var(--fc-cols, 1fr 1fr);
   }
 }
+
+/* Embed block — a provider that publishes two heights rather than one
+   (Neutrino Human Design: 1500px on phones, 850px from 900px up). The
+   narrow height is set inline so the iframe is right before this rule
+   applies and on any viewport below the breakpoint; the wide height
+   arrives as a custom property.
+
+   The 900px breakpoint lives here rather than in provider metadata
+   because a media query cannot read a custom property. ``breakpoint``
+   in ``EmbedProvider`` is typed as the literal ``900`` so a provider
+   cannot declare one this stylesheet does not implement — a second
+   breakpoint means a second rule, deliberately. */
+@media (min-width: 900px) {
+  .fc-embed-h-900 {
+    min-height: var(--fc-embed-h-wide);
+    height: var(--fc-embed-h-wide);
+  }
+}

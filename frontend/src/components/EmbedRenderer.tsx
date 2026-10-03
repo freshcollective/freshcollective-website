@@ -7,8 +7,10 @@
  * reaches here, and `referrerPolicy` to avoid leaking the member's session.
  */
 
+import type { CSSProperties } from 'react'
+
 import type { EmbedProvider } from '@/lib/embedAllowlist'
-import { getEmbedProvider } from '@/lib/embedAllowlist'
+import { getEmbedProvider, resolveEmbedBox } from '@/lib/embedAllowlist'
 
 interface Props {
   url: string
@@ -59,14 +61,17 @@ export default function EmbedRenderer({ url, provider, title }: Props) {
     )
   }
 
-  const minH = p.minHeight ?? (p.shape === 'short' ? 200 : 600)
+  // One height for most providers; two for one that publishes separate
+  // phone and desktop sizing (see ``resolveEmbedBox``). Providers with a
+  // single height get the same class and style they always had.
+  const box = resolveEmbedBox(p)
   return (
     <div className="w-full overflow-hidden rounded-xl bg-white">
       <iframe
         src={url}
         title={title ?? p.name}
-        className="block w-full border-0"
-        style={{ minHeight: minH, height: minH }}
+        className={`block w-full border-0${box.className ? ` ${box.className}` : ''}`}
+        style={box.style as CSSProperties}
         loading="lazy"
         referrerPolicy="strict-origin-when-cross-origin"
         sandbox={sandbox}
