@@ -82,16 +82,27 @@ describe('/embody redirects to the Collective', () => {
     assert.equal(rule()!.permanent, true)
   })
 
-  test('the destination is /spaces/embody', () => {
-    assert.equal(rule()!.destination, '/spaces/embody')
+  test('the destination is the public About page', () => {
+    // Not the Collective root. Whoever follows this legacy Wix URL is
+    // as likely to be a stranger as a member, and About is the page
+    // that reads correctly for both.
+    assert.equal(rule()!.destination, '/spaces/embody/about')
   })
 
   test('the destination route actually exists', () => {
     // A permanent redirect into a 404 is worse than no redirect.
     assert.ok(
-      existsSync(join(SRC, 'app', 'spaces', '[slug]', 'page.tsx')),
-      '/spaces/[slug] is missing, so /spaces/embody cannot resolve',
+      existsSync(join(SRC, 'app', 'spaces', '[slug]', 'about', 'page.tsx')),
+      '/spaces/[slug]/about is missing, so the redirect target cannot resolve',
     )
+  })
+
+  test('it points at a page, not at member-aware routing', () => {
+    // The Collective root decides where to send someone based on who
+    // they are. A permanently-cached redirect must not land on a
+    // decision point — browsers and crawlers remember a 308, so the
+    // target has to be stable for every visitor.
+    assert.notEqual(rule()!.destination, '/spaces/embody')
   })
 
   test('no query-string rule is needed, and none is added', () => {
@@ -103,11 +114,13 @@ describe('/embody redirects to the Collective', () => {
     assert.ok(!sources.includes('/embody/:path*'))
   })
 
-  test('it does not shadow /spaces/embody itself', () => {
+  test('it does not shadow /spaces/embody or its About page', () => {
     // The redirect must not be declared in the reverse direction, and
-    // must not be a prefix rule that could catch the destination.
+    // must not catch its own destination — normal Collective routing
+    // for /spaces/embody is untouched by this rule.
     for (const r of declaredRedirects()) {
       assert.notEqual(r.source, '/spaces/embody')
+      assert.notEqual(r.source, '/spaces/embody/about')
       assert.notEqual(r.destination, '/embody')
     }
   })

@@ -93,10 +93,18 @@ const nextConfig: NextConfig = {
       // ``permanent: true`` emits a 308, Next's canonical permanent
       // redirect. Query strings are carried over by the framework
       // without an explicit rule, so ``/embody?utm_source=book``
-      // arrives at ``/spaces/embody?utm_source=book``.
+      // arrives at ``/spaces/embody/about?utm_source=book``.
+      //
+      // Lands on the About page rather than the Collective root. This
+      // is the legacy public Wix URL, so whoever follows it is as
+      // likely to be a stranger as a member, and About is the page that
+      // reads correctly for both. The Collective root resolves to About
+      // for a signed-out visitor anyway — pointing here just makes it
+      // one hop instead of two, and keeps the landing stable if the
+      // root's member-aware routing ever sends members elsewhere.
       {
         source: '/embody',
-        destination: '/spaces/embody',
+        destination: '/spaces/embody/about',
         permanent: true,
       },
     ]
