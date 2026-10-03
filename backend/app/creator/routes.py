@@ -322,15 +322,116 @@ def _space_detail_response(space: Space, db: Session) -> dict:
 
 
 def _derived_has_paid_content(space_id: str, db: Session) -> bool:
-    """True if the space has at least one active paid pathway."""
+    """Has this creator published paid content inside this Collective?
+
+    A **configuration** question, deliberately not the same one
+    ``spaces.pathway_pricing.min_paid_price_cents_for_space`` answers:
+
+    * public pricing helper — *what can a visitor buy right now, and at
+      what headline price?* Depends on member checkoutability and
+      therefore on ``finite_plan_member_checkout_enabled``.
+    * this helper — *has the creator published paid content?* A
+      Collective whose instalment plans are not yet offered to members
+      still contains paid content, and the creator has still configured
+      it.
+
+    The distinction is load-bearing, not academic. The Creator Studio
+    settings panel describes this as "Contains paid content inside this
+    collective … also detected automatically when you publish a paid
+    pathway", and uses it to gate the "What's included?" and "Paid
+    separately" fields. Deriving it from member checkoutability would
+    make a creator's own configuration flicker in and out of existence
+    behind a platform feature flag they cannot see, taking their copy
+    fields with it.
+
+    What counts:
+
+    * ``pricing_mode='legacy'`` → an active, paid-access Pathway with
+      ``price_cents > 0``. Unchanged.
+    * ``pricing_mode='payment_options'`` → an active Pathway with at
+      least one **published, genuinely paid** Payment Option. The
+      Pathway's own ``price_cents`` is ignored: it is the legacy column
+      and is stale by design after the mode switch — reading it was the
+      bug this replaces, which both claimed paid content for a price
+      the creator had stopped selling at and denied it for a Pathway
+      priced wholly through its Options.
+
+    "Genuinely paid" means a positive price somewhere in the Option's
+    configuration: its own ``override_total_cents`` /
+    ``calculated_total_cents``, **or** a published schedule with a
+    positive total. The Option columns are authoring fields and are
+    routinely NULL on real Options, so they are one of two alternatives
+    here rather than the only source. Schedule *shape* is not
+    considered — a plan counts whether or not checkout would currently
+    accept it.
+
+    Draft and archived Pathways and Options do not count: nothing has
+    been published. Nor do ``payment_type='free'`` Options.
+    """
+    from sqlalchemy import or_, select
+
+    from app.models.payment_option import (
+        PaymentOption,
+        PaymentOptionStatus,
+        PaymentOptionType,
+    )
+    from app.models.payment_option_schedule import PaymentOptionSchedule
     from app.models.platform import Pathway  # local import to avoid circular
-    return db.query(Pathway).filter(
-        Pathway.space_id == space_id,
-        Pathway.status == "active",
-        Pathway.access_type.in_(("one_time", "subscription")),
-        Pathway.price_cents.isnot(None),
-        Pathway.price_cents > 0,
-    ).first() is not None
+    from app.services import pathway_payment_options
+
+    _paid_access = ("one_time", "subscription")
+
+    legacy_paid = (
+        db.query(Pathway.id)
+        .filter(
+            Pathway.space_id == space_id,
+            Pathway.status == "active",
+            Pathway.access_type.in_(_paid_access),
+            Pathway.pricing_mode == "legacy",
+            Pathway.price_cents.isnot(None),
+            Pathway.price_cents > 0,
+        )
+        .first()
+    )
+    if legacy_paid is not None:
+        return True
+
+    # A positive total on any published schedule of this Option. The
+    # price of a finite plan lives here and nowhere else.
+    priced_schedule = (
+        select(PaymentOptionSchedule.id)
+        .where(
+            PaymentOptionSchedule.payment_option_id == PaymentOption.id,
+            PaymentOptionSchedule.status == "published",
+            PaymentOptionSchedule.total_amount_cents.isnot(None),
+            PaymentOptionSchedule.total_amount_cents > 0,
+        )
+        .exists()
+    )
+    option_own_price = func.coalesce(
+        PaymentOption.override_total_cents,
+        PaymentOption.calculated_total_cents,
+    )
+
+    # Joined through the grant/legacy union, not ``PaymentOption.pathway_id``:
+    # a grants-first Option has no ``pathway_id``, and most real ones
+    # are grants-first. Reading the column alone would miss them.
+    _pairs = pathway_payment_options.pathway_option_pairs()
+    options_paid = (
+        db.query(Pathway.id)
+        .join(_pairs, _pairs.c.pathway_id == Pathway.id)
+        .join(PaymentOption, PaymentOption.id == _pairs.c.payment_option_id)
+        .filter(
+            Pathway.space_id == space_id,
+            Pathway.status == "active",
+            Pathway.pricing_mode == "payment_options",
+            PaymentOption.status == PaymentOptionStatus.published,
+            PaymentOption.payment_type != PaymentOptionType.free,
+            or_(option_own_price > 0, priced_schedule),
+        )
+        .first()
+    )
+    return options_paid is not None
 
 
 def _ensure_creator_write_allowed(user: User, space: Space, db: Session) -> None:
