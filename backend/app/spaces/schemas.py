@@ -159,15 +159,33 @@ class SpaceResponse(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def derived_has_paid_internal_content(self) -> bool:
-        """True if at least one active pathway requires separate payment."""
-        paid_access = {'one_time', 'subscription'}
-        return any(
-            p.access_type in paid_access
-            and p.status == 'active'
-            and p.price_cents is not None
-            and p.price_cents > 0
-            for p in (self.pathways or [])
-        )
+        """True if this Collective has something a member can actually buy.
+
+        Read off ``min_paid_pathway_price_cents`` — which the
+        ``get_space`` route populates from
+        ``spaces.pathway_pricing`` — rather than re-inspecting
+        ``self.pathways``. No extra query: the price has already been
+        derived by the time this is serialised.
+
+        This used to scan the Pathway summaries for
+        ``price_cents > 0``, which is the same stale-column mistake the
+        public About page made. ``price_cents`` is the legacy price and
+        is left behind when a Pathway moves to
+        ``pricing_mode='payment_options'``, so the old rule was wrong in
+        both directions: it claimed paid content for a Pathway whose
+        only price was a 500 the creator had stopped selling at, and it
+        denied paid content for one priced entirely through a published
+        Payment Option with a NULL legacy column.
+
+        "Has paid content" and "has a price to show" are deliberately
+        the same question. A Collective whose only paid Pathway sells
+        through a payment method checkout would currently refuse has
+        nothing purchasable, so it advertises nothing — the same answer
+        ``PublicSpaceCard`` gives for the same Collective, which
+        derives the flag from presence in the same price mapping.
+        """
+        cents = self.min_paid_pathway_price_cents
+        return cents is not None and cents > 0
 
 
 class SpaceSummary(BaseModel):

@@ -820,6 +820,237 @@ class TestTheListingAndTheDetailAgree:
 
 
 # ---------------------------------------------------------------------------
+# "Has paid content" is the same question as "has a price to show"
+# ---------------------------------------------------------------------------
+
+
+class TestDerivedHasPaidInternalContent:
+    """``SpaceResponse.derived_has_paid_internal_content`` used to scan
+    the Pathway summaries for ``price_cents > 0`` — the same stale-column
+    mistake the About page made, one layer down.
+
+    It mattered more than the price did. The frontend gates the whole
+    "Included / Paid separately" block on
+    ``has_paid_internal_content || derived_has_paid_internal_content``,
+    so a False here hides the section that the corrected price is
+    rendered inside. Test Pathway only escaped it because its stale 500
+    happens to be non-zero.
+    """
+
+    def test_a_schedule_priced_pathway_has_paid_content(
+        self, db, space, plans_checkoutable,
+    ):
+        """The reported shape: NULL legacy column, published $4 plan.
+        The old rule said False — no paid content — and hid the block."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _instalment_plan_option(db, space, pathway)
+
+        resp = get_space(space.slug, db=db, current_user=None)
+
+        assert resp.min_paid_pathway_price_cents == PLAN_TOTAL_CENTS
+        assert resp.derived_has_paid_internal_content is True
+
+    def test_the_old_rule_would_have_said_no_here(
+        self, db, space, plans_checkoutable,
+    ):
+        """Stated as the counterfactual, so the regression is legible:
+        every Pathway summary in this payload has ``price_cents=None``,
+        which is exactly what the old predicate scanned for."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _instalment_plan_option(db, space, pathway)
+
+        resp = get_space(space.slug, db=db, current_user=None)
+
+        assert all(p.price_cents is None for p in resp.pathways)
+        assert resp.derived_has_paid_internal_content is True
+
+    def test_no_checkoutable_paid_schedule_means_no_paid_content(
+        self, db, space, plans_checkoutable,
+    ):
+        """The inverse. A payment-options Pathway whose Option has only
+        a draft schedule sells nothing, so there is nothing to announce
+        — and the stale legacy column must not resurrect the claim."""
+        pathway = _pathway(
+            db, space,
+            pricing_mode="payment_options",
+            price_cents=STALE_LEGACY_CENTS,
+        )
+        _instalment_plan_option(db, space, pathway, schedule_status="draft")
+
+        resp = get_space(space.slug, db=db, current_user=None)
+
+        assert resp.min_paid_pathway_price_cents is None
+        assert resp.derived_has_paid_internal_content is False
+
+    def test_a_stale_price_with_no_published_option_is_not_paid_content(
+        self, db, space,
+    ):
+        """The other direction of the old bug, which mattered less
+        loudly but was just as wrong: a Pathway switched to
+        payment-options with no Option yet still carried 500, so the old
+        rule claimed paid content for something nobody could buy."""
+        _pathway(
+            db, space,
+            pricing_mode="payment_options",
+            price_cents=STALE_LEGACY_CENTS,
+        )
+
+        resp = get_space(space.slug, db=db, current_user=None)
+
+        assert resp.min_paid_pathway_price_cents is None
+        assert resp.derived_has_paid_internal_content is False
+
+    def test_a_legacy_paid_pathway_still_has_paid_content(self, db, space):
+        """Preserved, now routed through the derived minimum rather than
+        a second scan of the same rows."""
+        _pathway(db, space, pricing_mode="legacy", price_cents=1800)
+
+        resp = get_space(space.slug, db=db, current_user=None)
+
+        assert resp.min_paid_pathway_price_cents == 1800
+        assert resp.derived_has_paid_internal_content is True
+
+    def test_a_free_collective_has_no_paid_content(self, db, space):
+        _pathway(
+            db, space, pricing_mode="legacy", price_cents=0,
+            access_type="free",
+        )
+
+        resp = get_space(space.slug, db=db, current_user=None)
+
+        assert resp.derived_has_paid_internal_content is False
+
+    def test_a_collective_with_no_pathways_at_all(self, db, space):
+        resp = get_space(space.slug, db=db, current_user=None)
+
+        assert resp.derived_has_paid_internal_content is False
+
+    def test_the_flag_tracks_the_price_exactly(
+        self, db, space, plans_checkoutable,
+    ):
+        """The stated semantic, asserted as an equivalence rather than
+        case by case, across every shape above."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        option = _instalment_plan_option(db, space, pathway)
+
+        resp = get_space(space.slug, db=db, current_user=None)
+        cents = resp.min_paid_pathway_price_cents
+        assert resp.derived_has_paid_internal_content == (
+            cents is not None and cents > 0
+        )
+
+        # Withdraw the only payment method and re-ask. Both must move
+        # together — a flag that can disagree with the price is how the
+        # section ends up hiding its own contents.
+        schedule = (
+            db.query(PaymentOptionSchedule)
+            .filter(PaymentOptionSchedule.payment_option_id == option.id)
+            .one()
+        )
+        schedule.status = "draft"
+        db.flush()
+
+        resp = get_space(space.slug, db=db, current_user=None)
+        cents = resp.min_paid_pathway_price_cents
+        assert cents is None
+        assert resp.derived_has_paid_internal_content == (
+            cents is not None and cents > 0
+        )
+
+    def test_reading_the_flag_costs_no_query(
+        self, db, space, plans_checkoutable,
+    ):
+        """The field is a property evaluated at serialisation time, so a
+        DB read inside it would run per response — and on the detail
+        endpoint, after the route had already derived the same number."""
+        from sqlalchemy import event
+
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _instalment_plan_option(db, space, pathway)
+        resp = get_space(space.slug, db=db, current_user=None)
+
+        n = 0
+
+        def _on_execute(*_args, **_kwargs):
+            nonlocal n
+            n += 1
+
+        event.listen(db.get_bind(), "before_cursor_execute", _on_execute)
+        try:
+            # Both the property and a full serialisation, which is what
+            # FastAPI actually does to build the response body.
+            assert resp.derived_has_paid_internal_content is True
+            dumped = resp.model_dump()
+        finally:
+            event.remove(db.get_bind(), "before_cursor_execute", _on_execute)
+
+        assert dumped["derived_has_paid_internal_content"] is True
+        assert n == 0, f"{n} queries issued while serialising the flag"
+
+
+class TestBothPublicSurfacesAgreeOnPaidContent:
+    """``PublicSpaceCard`` already derived the flag from presence in the
+    shared price mapping, which is the same rule. These assert the two
+    answers match rather than merely resembling each other."""
+
+    def test_they_agree_for_a_schedule_priced_collective(
+        self, db, space, plans_checkoutable,
+    ):
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _instalment_plan_option(db, space, pathway)
+
+        [card] = hydrate_public_space_cards([space], db)
+        detail = get_space(space.slug, db=db, current_user=None)
+
+        assert card.derived_has_paid_internal_content is True
+        assert (
+            detail.derived_has_paid_internal_content
+            == card.derived_has_paid_internal_content
+        )
+
+    def test_they_agree_when_nothing_is_buyable(
+        self, db, space, plans_checkoutable,
+    ):
+        pathway = _pathway(
+            db, space,
+            pricing_mode="payment_options",
+            price_cents=STALE_LEGACY_CENTS,
+        )
+        _instalment_plan_option(db, space, pathway, schedule_status="draft")
+
+        [card] = hydrate_public_space_cards([space], db)
+        detail = get_space(space.slug, db=db, current_user=None)
+
+        assert card.derived_has_paid_internal_content is False
+        assert (
+            detail.derived_has_paid_internal_content
+            == card.derived_has_paid_internal_content
+        )
+
+    def test_they_agree_for_a_legacy_collective(self, db, space):
+        _pathway(db, space, pricing_mode="legacy", price_cents=1800)
+
+        [card] = hydrate_public_space_cards([space], db)
+        detail = get_space(space.slug, db=db, current_user=None)
+
+        assert card.derived_has_paid_internal_content is True
+        assert (
+            detail.derived_has_paid_internal_content
+            == card.derived_has_paid_internal_content
+        )
+
+
+# ---------------------------------------------------------------------------
 # Query cost on the busiest public endpoint
 # ---------------------------------------------------------------------------
 
