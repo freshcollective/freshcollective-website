@@ -62,6 +62,7 @@ from typing import Any
 import stripe
 
 from app.core.config import settings
+from app.checkout.stripe_client import invoice_subscription_id
 from app.models.purchase_plan import PurchasePlan
 from app.services.stripe_finite_plan import _bind_key, _idem
 
@@ -414,19 +415,12 @@ def _sfield(obj: Any, *path: str, default: Any = None) -> Any:
 def _extract_invoice_subscription(invoice: Any) -> str | None:
     """Return the Subscription id linked to a Stripe Invoice payload.
 
-    Mirrors the extraction logic in
-    :func:`app.webhooks.finite_plan_handlers._extract_subscription_id`
-    so the repair service does NOT import from the webhook module.
-    Current API surfaces it at
-    ``invoice.parent.subscription_details.subscription``; older SDKs
-    exposed a top-level ``invoice.subscription``.
+    Thin alias for
+    :func:`app.checkout.stripe_client.invoice_subscription_id`. This
+    used to be a deliberate copy of the webhook module's version, to
+    avoid a service importing from a webhook handler. The logic now
+    lives in the shared Stripe-shape module instead, which both can
+    import without that awkwardness — and which also keeps the two from
+    drifting, as a copy eventually would.
     """
-    parent_type = _sfield(invoice, "parent", "type")
-    if parent_type == "subscription_details":
-        current = _sfield(invoice, "parent", "subscription_details", "subscription")
-        if current:
-            return current
-    legacy = _sfield(invoice, "subscription")
-    if legacy:
-        return legacy
-    return None
+    return invoice_subscription_id(invoice)

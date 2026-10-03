@@ -44,6 +44,7 @@ import stripe
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.checkout.stripe_client import invoice_subscription_id
 from app.models.payment import (
     PaymentFulfilmentStatus,
     PaymentProvider,
@@ -138,27 +139,15 @@ def _compose_balance_settlement_note(
 def _extract_subscription_id(invoice: Any) -> str | None:
     """Return the Subscription id linked to a Stripe Invoice payload.
 
-    Current Stripe API surfaces it at
-    ``invoice.parent.subscription_details.subscription``, discriminated
-    by ``invoice.parent.type == 'subscription_details'``. Older API
-    versions exposed a top-level ``invoice.subscription``; we fall
-    back to that for maximum tolerance across SDK versions.
-
-    Returns ``None`` for non-subscription invoices (one-off, quote,
-    or unknown-parent), which the caller treats as "not one of ours,
-    skip cleanly".
+    Thin alias for
+    :func:`app.checkout.stripe_client.invoice_subscription_id`, which is
+    now the single definition. This module held the first copy; creator
+    billing needed the same logic and would have been the third, so it
+    moved to the shared Stripe-shape module beside ``to_plain_dict``.
+    Kept as a named local so this module's two call sites read
+    unchanged.
     """
-    # Preferred: current API — parent.subscription_details.subscription
-    parent_type = _sfield(invoice, "parent", "type")
-    if parent_type == "subscription_details":
-        current = _sfield(invoice, "parent", "subscription_details", "subscription")
-        if current:
-            return current
-    # Legacy fallback — deprecated top-level ``subscription`` field.
-    legacy = _sfield(invoice, "subscription")
-    if legacy:
-        return legacy
-    return None
+    return invoice_subscription_id(invoice)
 
 
 # ---------------------------------------------------------------------------

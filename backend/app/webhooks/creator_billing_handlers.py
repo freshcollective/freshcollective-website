@@ -53,7 +53,11 @@ from datetime import datetime, timedelta
 import stripe
 from sqlalchemy.orm import Session
 
-from app.checkout.stripe_client import to_plain_dict
+from app.checkout.stripe_client import (
+    invoice_subscription_id,
+    stripe_field,
+    to_plain_dict,
+)
 from app.models.creator_billing import (
     CreatorPlan,
     CreatorSubscription,
@@ -194,7 +198,7 @@ def handle_invoice_paid(
       * Clear ``grace_expires_at`` (any prior grace is resolved).
       * Update ``current_period_end`` from the Subscription.
     """
-    subscription_id = invoice.get("subscription")
+    subscription_id = invoice_subscription_id(invoice)
     if not subscription_id:
         return False
 
@@ -203,7 +207,7 @@ def handle_invoice_paid(
     except stripe.error.StripeError:
         logger.exception(
             "creator_billing_webhook: failed to retrieve subscription %s "
-            "for invoice %s", subscription_id, invoice.get("id"),
+            "for invoice %s", subscription_id, stripe_field(invoice, "id"),
         )
         return False
 
@@ -236,7 +240,7 @@ def handle_invoice_paid(
                 "creator_billing_webhook: invoice.paid without a linked "
                 "CreatorSubscription AND without metadata to reconstruct "
                 "one — subscription=%s invoice=%s",
-                subscription_id, invoice.get("id"),
+                subscription_id, stripe_field(invoice, "id"),
             )
             return True
         plan = (
@@ -311,7 +315,7 @@ def handle_invoice_payment_failed(
     (``scripts/creator_subscription_grace_reconcile.py``) flips to
     ``unpaid`` after the window elapses.
     """
-    subscription_id = invoice.get("subscription")
+    subscription_id = invoice_subscription_id(invoice)
     if not subscription_id:
         return False
     try:

@@ -166,6 +166,71 @@ def to_plain_dict(value: Any) -> dict[str, Any]:
         ) from exc
 
 
+def stripe_field(value: Any, *path: str, default: Any = None) -> Any:
+    """Read ``value[path[0]][path[1]]…``, returning ``default`` on any miss.
+
+    Works on plain dicts and on ``StripeObject``, which supports ``in``
+    and ``[]`` at every nesting level but does NOT expose ``.get()``.
+    Never calls ``.get()``, so a StripeObject walked by this helper
+    cannot re-hit the ``AttributeError: get`` boundary bug.
+
+    Falls back to attribute access for a value supporting neither, so a
+    hand-rolled test double reads the same way a real payload does.
+    Every miss is quiet — callers decide whether ``None`` is a problem.
+    """
+    cur: Any = value
+    for key in path:
+        if cur is None:
+            return default
+        try:
+            if key in cur:
+                cur = cur[key]
+            else:
+                return default
+        except TypeError:
+            # Not a container at all. Attribute access or nothing.
+            found = getattr(cur, key, default)
+            if found is default:
+                return default
+            cur = found
+        except KeyError:
+            return default
+    return cur
+
+
+def invoice_subscription_id(invoice: Any) -> str | None:
+    """The Subscription id linked to a Stripe Invoice payload.
+
+    One definition for every surface that needs it. There were three:
+    the finite-plan webhook handler, the finite-plan repair service, and
+    — reading only the legacy field — creator billing. The third is how
+    this ends up mattering: creator billing runs *first* on every
+    invoice event, including a member's, so a shape it cannot read is
+    not merely its own blind spot.
+
+    Current Stripe API nests the link under ``parent``, discriminated by
+    ``parent.type == 'subscription_details'``. Older versions exposed a
+    top-level ``invoice.subscription``, and that remains the fallback —
+    a redelivery of an event created under the previous shape must keep
+    resolving.
+
+    ``None`` for a non-subscription invoice (one-off, quote, unknown
+    parent), which callers treat as "not one of ours, skip cleanly".
+    Accepts a ``StripeObject`` or a plain dict.
+    """
+    parent_type = stripe_field(invoice, "parent", "type")
+    if parent_type == "subscription_details":
+        current = stripe_field(
+            invoice, "parent", "subscription_details", "subscription",
+        )
+        if current:
+            return current
+    legacy = stripe_field(invoice, "subscription")
+    if legacy:
+        return legacy
+    return None
+
+
 # ---------------------------------------------------------------------------
 # API version
 # ---------------------------------------------------------------------------
