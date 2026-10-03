@@ -211,6 +211,38 @@ export function formatPaidSeparatelyCopy(space: FullPricingSource): string {
   return 'Paid pathways available separately'
 }
 
+/**
+ * The Access card's line when there is no paid content to describe.
+ *
+ * Reached only when the purchase-required and paid-separately branches
+ * above have both declined, so it is the "nothing is sold inside here"
+ * case. Priority, unchanged:
+ *   1. the creator's own ``pricing_note``
+ *   2. a statement about joining, for a free Collective
+ *   3. nothing at all — a paid Collective has already said its price
+ *      in the Access label, and repeating it here reads as a second fee
+ *
+ * This used to say "All available content is included." It was too
+ * strong a claim to derive from a purchasability flag. A Collective can
+ * hold paid content that is configured but not currently checkoutable
+ * — an instalment plan published before member plans were switched on,
+ * for instance — and the public flag is false in exactly that case. So
+ * the page would tell a visitor everything was included while the
+ * creator had already published something that is not.
+ *
+ * "Joining this Collective is free." says only the part that is
+ * reliably true here, which is the part the Access card is answering.
+ * It makes no claim about what is inside.
+ */
+export function formatAccessFallbackCopy(space: PricingSource): string | null {
+  // Truthy rather than trimmed, deliberately: that is what this branch
+  // has always done, and tightening it would change which Collectives
+  // see their own note.
+  if (space.pricing_note) return space.pricing_note
+  if (space.pricing_type === 'free') return 'Joining this Collective is free.'
+  return null
+}
+
 /** Legacy alias — prefer the two functions above. */
 export function formatCollectivePrice(space: PricingSource): string {
   return formatCollectiveAccessLabel(space)

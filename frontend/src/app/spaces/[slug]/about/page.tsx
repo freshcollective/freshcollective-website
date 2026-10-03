@@ -1,6 +1,7 @@
 import { getSpace, getSpaceMembers, getMe, getSpaceEvents, getMySpaceAccess } from '@/lib/serverApi'
 import { resolveMediaUrl } from '@/lib/api'
 import {
+  formatAccessFallbackCopy,
   formatCollectiveAccessLabel,
   formatCollectivePricingSummary,
   formatPaidSeparatelyCopy,
@@ -111,6 +112,11 @@ export default async function SpaceAboutPage({ params }: Props) {
   // it used to build its own string from the local derivation and so
   // repeated the stale legacy price in a second place on the page.
   const paidSeparatelyCopy = formatPaidSeparatelyCopy(space)
+  // Shown only when nothing paid is being described. Says what joining
+  // costs and nothing about what is inside — the previous copy claimed
+  // "all available content is included", which a Collective holding
+  // configured-but-not-yet-checkoutable paid content contradicts.
+  const accessFallbackCopy = formatAccessFallbackCopy(space)
 
   return (
     <div className="max-w-5xl">
@@ -448,15 +454,9 @@ export default async function SpaceAboutPage({ params }: Props) {
                       <p className="text-[12px] text-black">{paidSeparatelyCopy}</p>
                     </div>
                   </div>
-                ) : (
-                  <>
-                    {space.pricing_note ? (
-                      <p className="mt-1 text-[12px] text-black">{space.pricing_note}</p>
-                    ) : space.pricing_type === 'free' ? (
-                      <p className="mt-1 text-[12px] text-black">All available content is included.</p>
-                    ) : null}
-                  </>
-                )}
+                ) : accessFallbackCopy ? (
+                  <p className="mt-1 text-[12px] text-black">{accessFallbackCopy}</p>
+                ) : null}
               </div>
 
               <div className="mb-4 h-px" style={{ background: 'rgba(0,0,0,0.06)' }} />

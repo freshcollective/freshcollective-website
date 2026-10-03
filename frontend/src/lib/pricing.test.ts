@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 import {
+  formatAccessFallbackCopy,
   formatCollectiveAccessLabel,
   formatCollectivePricingSummary,
   formatPaidSeparatelyCopy,
@@ -473,6 +474,186 @@ describe('the About page does not re-derive the price', () => {
     assert.match(
       block.slice(0, block.indexOf('\n}')),
       /min_paid_pathway_price_cents: number \| null/,
+    )
+  })
+})
+
+
+/**
+ * The Access card's line when nothing paid is being described.
+ *
+ * It used to read "All available content is included." — a claim about
+ * the contents of the Collective, derived from a flag about
+ * purchasability. Those are not the same thing. A creator can publish
+ * paid content that is not currently checkoutable (an instalment plan
+ * published before member plans were switched on), and the public flag
+ * is false in exactly that case, so the page asserted that everything
+ * was included while something published was not.
+ *
+ * "Joining this Collective is free." answers only what the Access card
+ * is asking and makes no claim about what is inside.
+ */
+describe('the Access card fallback line', () => {
+  /** Free to join, nothing paid detected inside. */
+  const plainFreeCollective = {
+    ...openCollective,
+    pricing_note: null,
+    paid_content_summary: null,
+    has_paid_internal_content: false,
+    derived_has_paid_internal_content: false,
+    min_paid_pathway_price_cents: null,
+  }
+
+  test('a free Collective says what joining costs', () => {
+    assert.equal(
+      formatAccessFallbackCopy(plainFreeCollective),
+      'Joining this Collective is free.',
+    )
+  })
+
+  test('it no longer claims everything is included', () => {
+    // The sentence is gone from what the function returns...
+    assert.ok(
+      !formatAccessFallbackCopy(plainFreeCollective)
+        ?.includes('All available content is included'),
+    )
+
+    // ...and from what either file can render. These match the
+    // sentence as *code* — a returned string literal, or a JSX text
+    // node — not merely as text. Both files now explain in a comment
+    // what the old copy was and why it was wrong, and a blunt
+    // includes() check fails on that explanation rather than on a
+    // regression. Keeping the documentation is worth more than the
+    // looser assertion.
+    assert.ok(
+      !/'All available content is included\.'/.test(read('lib/pricing.ts')),
+      'the old sentence is still returned by a helper',
+    )
+    assert.ok(
+      !/>\s*All available content is included\./.test(
+        read('app/spaces/[slug]/about/page.tsx'),
+      ),
+      'the old sentence is still rendered by the page',
+    )
+  })
+
+  test('it makes no claim about what is inside at all', () => {
+    // The point of the change, rather than the wording of it: this line
+    // is reached from a purchasability flag, which cannot support a
+    // statement about contents either way.
+    const copy = formatAccessFallbackCopy(plainFreeCollective) ?? ''
+    for (const word of ['included', 'content', 'everything', 'all ']) {
+      assert.ok(
+        !copy.toLowerCase().includes(word),
+        `fallback copy still describes contents: ${copy}`,
+      )
+    }
+  })
+
+  test("the creator's pricing_note still wins", () => {
+    assert.equal(
+      formatAccessFallbackCopy({
+        ...plainFreeCollective,
+        pricing_note: 'Sliding scale — pay what you can.',
+      }),
+      'Sliding scale — pay what you can.',
+    )
+  })
+
+  test('pricing_note wins on a paid Collective too', () => {
+    // Precedence is unchanged, which means it does not depend on
+    // pricing_type.
+    assert.equal(
+      formatAccessFallbackCopy({
+        ...plainFreeCollective,
+        pricing_type: 'paid_one_time',
+        pricing_amount_cents: 4500,
+        pricing_note: 'One payment, lifetime access.',
+      }),
+      'One payment, lifetime access.',
+    )
+  })
+
+  test('a paid Collective with no note says nothing', () => {
+    // The Access label above has already stated the price; repeating it
+    // here would read as a second fee.
+    assert.equal(
+      formatAccessFallbackCopy({
+        ...plainFreeCollective,
+        pricing_type: 'paid_one_time',
+        pricing_amount_cents: 4500,
+      }),
+      null,
+    )
+  })
+
+  test('a whitespace-only note is still treated as a note', () => {
+    // Pre-existing truthy check, preserved deliberately: trimming here
+    // would change which Collectives see their own note, which is not
+    // what this change is for.
+    assert.equal(formatAccessFallbackCopy({
+      ...plainFreeCollective, pricing_note: '   ',
+    }), '   ')
+  })
+
+  test('the page renders this line and not its own conditional', () => {
+    const page = read('app/spaces/[slug]/about/page.tsx')
+    assert.match(page, /formatAccessFallbackCopy\(space\)/)
+    // The branch used to inline the pricing_note / pricing_type test in
+    // JSX, which is why the copy was unreachable from here.
+    assert.ok(
+      !/space\.pricing_type === 'free' \?/.test(page),
+      'the inline pricing_type conditional is back in the JSX',
+    )
+  })
+})
+
+describe('the paid-separately branch is untouched by that change', () => {
+  /**
+   * Requirement 4, stated as behaviour rather than as a diff: a
+   * Collective with paid content inside still goes through
+   * ``formatPaidSeparatelyCopy`` and still quotes the backend price.
+   */
+  const withPaidContent = {
+    ...openCollective,
+    pricing_note: null,
+    paid_content_summary: null,
+    has_paid_internal_content: true,
+    min_paid_pathway_price_cents: 400,
+  }
+
+  test('it still quotes the derived price', () => {
+    assert.equal(
+      formatPaidSeparatelyCopy(withPaidContent),
+      'Pathways from $4 AUD',
+    )
+  })
+
+  test('it does not fall back to the joining line', () => {
+    // The two branches are mutually exclusive in the page; this asserts
+    // they also say different things, so a mix-up would be visible.
+    assert.notEqual(
+      formatPaidSeparatelyCopy(withPaidContent),
+      formatAccessFallbackCopy(withPaidContent),
+    )
+  })
+
+  test('a pricing_note does not leak into the paid-separately line', () => {
+    // ``pricing_note`` feeds the fallback only. The paid-separately
+    // line has its own creator field, ``paid_content_summary``.
+    assert.equal(
+      formatPaidSeparatelyCopy({
+        ...withPaidContent,
+        pricing_note: 'Sliding scale — pay what you can.',
+      }),
+      'Pathways from $4 AUD',
+    )
+  })
+
+  test('the page still routes that branch through the helper', () => {
+    assert.match(
+      read('app/spaces/[slug]/about/page.tsx'),
+      /formatPaidSeparatelyCopy\(space\)/,
     )
   })
 })
