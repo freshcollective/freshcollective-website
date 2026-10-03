@@ -22,12 +22,25 @@ export default function NotFound() {
         We couldn&apos;t find what you were looking for. It may have moved, or
         the link may be out of date.
       </Text>
+      {/* Three ways onward rather than two. Discover Places was the
+          missing one, and an old Wix link is the likeliest way to
+          arrive here with no idea what Fresh Collective now is.
+
+          Deliberately NOT legacy-specific copy. "This page belonged to
+          an earlier version of Fresh Collective" would be wrong for the
+          ordinary reasons people reach a 404 — a typo, a stale
+          in-product link, a signed-out member — and this is the one 404
+          for the whole app. The honest version says the link may be out
+          of date, which covers both. */}
       <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
         <Link href="/" tabIndex={-1}>
           <Button variant="primary">Back to home</Button>
         </Link>
         <Link href="/spaces" tabIndex={-1}>
           <Button variant="tertiary">Explore collectives</Button>
+        </Link>
+        <Link href="/discover-places" tabIndex={-1}>
+          <Button variant="tertiary">Discover places</Button>
         </Link>
       </div>
     </div>

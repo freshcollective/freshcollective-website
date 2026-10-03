@@ -81,6 +81,24 @@ const nextConfig: NextConfig = {
         destination: '/spaces/embody/:path*',
         permanent: true,
       },
+
+      // ── Legacy Wix URLs, ahead of the freshcollective.au cutover ──
+      //
+      // Only routes with a genuine successor appear here. The rest of
+      // the old Wix site is deliberately retired and absent: a 404 is
+      // the honest answer for a page that no longer exists, and
+      // redirecting it to the homepage would claim an equivalence that
+      // isn't there. See ``src/app/not-found.tsx``.
+      //
+      // ``permanent: true`` emits a 308, Next's canonical permanent
+      // redirect. Query strings are carried over by the framework
+      // without an explicit rule, so ``/embody?utm_source=book``
+      // arrives at ``/spaces/embody?utm_source=book``.
+      {
+        source: '/embody',
+        destination: '/spaces/embody',
+        permanent: true,
+      },
     ]
   },
 };
