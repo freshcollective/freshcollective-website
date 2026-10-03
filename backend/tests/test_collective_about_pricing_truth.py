@@ -15,9 +15,26 @@ carried the field at all. With nothing authoritative in the payload, the
 About page derived its own from ``pathway.price_cents``, which is
 exactly the stale column.
 
+The second report, same page
+----------------------------
+Test Connect Instalments is a published Option whose
+``override_total_cents`` and ``calculated_total_cents`` are both NULL —
+the normal state, because the commerce UI treats schedules as the
+source of truth. Its whole price lives on a published schedule: two
+weekly payments of $2, $4 committed. The first fix derived the price as
+``COALESCE(override_total_cents, calculated_total_cents)``, so this
+Option produced NULL and the About page fell back to "Paid pathways
+available separately" for a Collective that plainly sells something.
+
+The headline is now ``purchase_schedule_view.headline_price_cents`` —
+the same projection the joining doors and the Series sidebar use. It
+reports **total commitment**, so that Option's Collective headline is
+$4, not the $2 instalment.
+
 What this file covers
 ---------------------
-* ``min_paid_price_cents_by_space`` — the rule itself, per pricing_mode.
+* ``min_paid_price_cents_by_space`` — the rule itself, per pricing_mode,
+  and per schedule shape.
 * ``GET /api/spaces/{slug}`` now serves ``min_paid_pathway_price_cents``,
   so the page has a source of truth to read.
 * The Explore listing still reports the same number, because both now
@@ -49,6 +66,10 @@ from app.spaces.routes import get_space, hydrate_public_space_cards
 # The production numbers, kept verbatim.
 STALE_LEGACY_CENTS = 500
 PUBLISHED_OPTION_CENTS = 200
+# Test Connect Instalments: 2 weekly payments of $2, $4 committed.
+INSTALMENT_CENTS = 200
+INSTALMENT_COUNT = 2
+PLAN_TOTAL_CENTS = INSTALMENT_CENTS * INSTALMENT_COUNT   # 400
 
 
 def _uid(prefix: str) -> str:
@@ -77,34 +98,26 @@ def _pathway(
     return p
 
 
-def _published_option(
+def _bare_option(
     db, space, pathway, *,
-    cents: int = PUBLISHED_OPTION_CENTS,
+    name: str,
+    calculated_total_cents: int | None,
     status: PaymentOptionStatus = PaymentOptionStatus.published,
 ) -> PaymentOption:
-    """An Option granting ``pathway``, priced at ``cents``."""
+    """An Option granting ``pathway``, with no schedules yet."""
     opt = PaymentOption(
         id=_uid("po"),
         space_id=space.id,
         attaches_to_kind="space",
         attaches_to_id=space.id,
-        name=f"${cents // 100} Option",
+        name=name,
         payment_type=PaymentOptionType.one_time,
         status=status,
-        calculated_total_cents=cents,
+        calculated_total_cents=calculated_total_cents,
         currency="AUD",
     )
     db.add(opt)
     db.flush()
-    db.add(PaymentOptionSchedule(
-        id=_uid("pos"),
-        payment_option_id=opt.id,
-        name="Pay in full",
-        schedule_type="pay_in_full",
-        status="published",
-        total_amount_cents=cents,
-        currency="AUD",
-    ))
     db.add(PaymentOptionGrant(
         id=_uid("pog"),
         payment_option_id=opt.id,
@@ -113,6 +126,105 @@ def _published_option(
     ))
     db.flush()
     return opt
+
+
+def _published_option(
+    db, space, pathway, *,
+    cents: int = PUBLISHED_OPTION_CENTS,
+    status: PaymentOptionStatus = PaymentOptionStatus.published,
+) -> PaymentOption:
+    """A pay-in-full Option at ``cents``, with its authoring columns
+    populated — the shape where ``effective_price_cents`` agrees with
+    the schedule. Retained deliberately: the schedule-aware rewrite
+    must not regress the Options that were already priced correctly."""
+    opt = _bare_option(
+        db, space, pathway,
+        name=f"${cents // 100} Option",
+        calculated_total_cents=cents,
+        status=status,
+    )
+    db.add(PaymentOptionSchedule(
+        id=_uid("pos"),
+        payment_option_id=opt.id,
+        name="Pay in full",
+        schedule_type="pay_in_full",
+        status="published",
+        total_amount_cents=cents,
+        currency="AUD",
+        position=0,
+    ))
+    db.flush()
+    return opt
+
+
+def _instalment_plan_option(
+    db, space, pathway, *,
+    instalment_cents: int = INSTALMENT_CENTS,
+    count: int = INSTALMENT_COUNT,
+    schedule_status: str = "published",
+    option_total_cents: int | None = None,
+) -> PaymentOption:
+    """Test Connect Instalments, as production holds it.
+
+    Both authoring columns NULL by default — the real state of this
+    Option — so the price exists only on the schedule. The schedule is
+    structurally valid for ``validate_recurring_installments_row``:
+    equal instalments, a supported cadence, and a total that is exactly
+    per-instalment x count.
+    """
+    opt = _bare_option(
+        db, space, pathway,
+        name="Test Connect Instalments",
+        calculated_total_cents=option_total_cents,
+    )
+    db.add(PaymentOptionSchedule(
+        id=_uid("pos"),
+        payment_option_id=opt.id,
+        name=f"{count} weekly payments",
+        schedule_type="recurring_installments",
+        status=schedule_status,
+        total_amount_cents=instalment_cents * count,
+        installment_amount_cents=instalment_cents,
+        installment_count=count,
+        interval="weekly",
+        stripe_interval="week",
+        stripe_interval_count=1,
+        currency="AUD",
+        position=0,
+    ))
+    db.flush()
+    return opt
+
+
+def _add_pay_in_full(db, option, *, cents: int, position: int = 1) -> None:
+    """A second payment method on an existing Option."""
+    db.add(PaymentOptionSchedule(
+        id=_uid("pos"),
+        payment_option_id=option.id,
+        name="Pay in full",
+        schedule_type="pay_in_full",
+        status="published",
+        total_amount_cents=cents,
+        currency="AUD",
+        position=position,
+    ))
+    db.flush()
+
+
+@pytest.fixture
+def plans_checkoutable(monkeypatch):
+    """Finite plans offered to members.
+
+    ``_schedule_is_member_checkoutable`` gates recurring instalments on
+    this flag, and the Collective headline honours that predicate — a
+    price whose only payment method checkout would refuse is not a
+    price. The flag defaults to False, so every instalment-plan
+    assertion has to say which world it is in.
+    """
+    from app.core.config import settings
+    monkeypatch.setattr(
+        settings, "finite_plan_member_checkout_enabled", True,
+    )
 
 
 @pytest.fixture
@@ -236,14 +348,394 @@ class TestTheDerivationItself:
 
 
 # ---------------------------------------------------------------------------
+# Schedule-expressed prices — the Test Connect Instalments report
+# ---------------------------------------------------------------------------
+
+
+class TestAnOptionPricedOnlyByItsSchedule:
+    """The authoring columns are NULL and the schedule carries the price.
+    The old COALESCE produced NULL here, which is the whole bug."""
+
+    def test_the_reported_option_prices_at_the_total_commitment(
+        self, db, space, plans_checkoutable,
+    ):
+        """$4, not $2. The headline is what the member commits to, not
+        what leaves their account on the first Friday."""
+        pathway = _pathway(
+            db, space,
+            pricing_mode="payment_options",
+            price_cents=STALE_LEGACY_CENTS,
+        )
+        _instalment_plan_option(db, space, pathway)
+
+        assert _min_for(db, space) == PLAN_TOTAL_CENTS
+        # The two numbers this must not produce: the stale legacy
+        # column, and the per-instalment amount.
+        assert _min_for(db, space) != STALE_LEGACY_CENTS
+        assert _min_for(db, space) != INSTALMENT_CENTS
+
+    def test_it_is_not_silence(self, db, space, plans_checkoutable):
+        """Before the fix this returned None, and the About page said
+        "Paid pathways available separately" — generic copy for a
+        Collective with a published, buyable Option."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _instalment_plan_option(db, space, pathway)
+
+        assert _min_for(db, space) is not None
+
+    def test_the_authoring_columns_really_are_null(
+        self, db, space, plans_checkoutable,
+    ):
+        """The premise, asserted rather than assumed. If a future
+        migration backfills these, this file should be revisited rather
+        than trusted."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        option = _instalment_plan_option(db, space, pathway)
+
+        assert option.override_total_cents is None
+        assert option.calculated_total_cents is None
+        assert option.effective_price_cents is None
+
+    def test_a_discounted_pay_in_full_becomes_the_headline(
+        self, db, space, plans_checkoutable,
+    ):
+        """``headline_price_cents`` prefers the pay-in-full total where
+        one is offered, because that is the commitment people compare
+        on. Mirrored here so the Collective headline cannot drift from
+        the Option's own."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        option = _instalment_plan_option(db, space, pathway)
+        _add_pay_in_full(db, option, cents=350)
+
+        assert _min_for(db, space) == 350
+
+    def test_pay_in_full_wins_even_when_it_is_the_dearer_method(
+        self, db, space, plans_checkoutable,
+    ):
+        """The discriminating case. A cheaper pay-in-full also satisfies
+        "cheapest wins", so it cannot tell the two rules apart; this
+        can.
+
+        ``headline_price_cents`` returns the pay-in-full total
+        unconditionally when one is checkoutable, so a Collective whose
+        Option offers a $4 plan and a $5 lump sum quotes $5. That is a
+        real consequence of matching the canonical helper rather than
+        minimising, and it is asserted rather than left to be
+        discovered — the alternative would be a second, quietly
+        different definition of the same price.
+        """
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        option = _instalment_plan_option(db, space, pathway)
+        _add_pay_in_full(db, option, cents=500)
+
+        assert _min_for(db, space) == 500
+
+    def test_the_cheapest_checkoutable_schedule_wins_without_pay_in_full(
+        self, db, space, plans_checkoutable,
+    ):
+        """Two plans, no pay-in-full: the lower total is the headline."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        option = _instalment_plan_option(db, space, pathway)
+        db.add(PaymentOptionSchedule(
+            id=_uid("pos"),
+            payment_option_id=option.id,
+            name="4 weekly payments",
+            schedule_type="recurring_installments",
+            status="published",
+            total_amount_cents=1200,
+            installment_amount_cents=300,
+            installment_count=4,
+            interval="weekly",
+            stripe_interval="week",
+            stripe_interval_count=1,
+            currency="AUD",
+            position=1,
+        ))
+        db.flush()
+
+        assert _min_for(db, space) == PLAN_TOTAL_CENTS
+
+    def test_a_draft_schedule_is_not_a_price(
+        self, db, space, plans_checkoutable,
+    ):
+        """Schedule-level status, not just Option-level. A plan the
+        creator has not published yet cannot set the headline, and the
+        stale legacy column must not fill the gap."""
+        pathway = _pathway(
+            db, space,
+            pricing_mode="payment_options",
+            price_cents=STALE_LEGACY_CENTS,
+        )
+        _instalment_plan_option(db, space, pathway, schedule_status="draft")
+
+        assert _min_for(db, space) is None
+
+    def test_a_structurally_invalid_plan_is_not_a_price(
+        self, db, space, plans_checkoutable,
+    ):
+        """Same predicate the checkout endpoint enforces: a total that
+        disagrees with per-instalment x count would 422 there, so it
+        must not be advertised here."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        option = _instalment_plan_option(db, space, pathway)
+        schedule = (
+            db.query(PaymentOptionSchedule)
+            .filter(PaymentOptionSchedule.payment_option_id == option.id)
+            .one()
+        )
+        schedule.total_amount_cents = 999      # != 200 x 2
+        db.flush()
+
+        assert _min_for(db, space) is None
+
+    def test_a_single_payment_plan_is_not_a_price(
+        self, db, space, plans_checkoutable,
+    ):
+        """``installment_count`` below 2 fails the row validator — a
+        one-payment "plan" is a pay_in_full schedule."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _instalment_plan_option(db, space, pathway, count=1)
+
+        assert _min_for(db, space) is None
+
+
+class TestCheckoutabilityGatesTheHeadline:
+    """A Collective must not advertise a price nobody can pay."""
+
+    def test_with_member_plans_disabled_a_plan_only_option_is_silent(
+        self, db, space,
+    ):
+        """No ``plans_checkoutable`` fixture: the flag is at its default
+        False, as in an environment that has not completed the finite-plan
+        rollout. The Option is published and the schedule is valid, but
+        checkout would refuse it, so there is no price to quote.
+
+        Deliberate, and the reason the headline runs through
+        ``_schedule_is_member_checkoutable`` rather than reading totals
+        directly."""
+        pathway = _pathway(
+            db, space,
+            pricing_mode="payment_options",
+            price_cents=STALE_LEGACY_CENTS,
+        )
+        _instalment_plan_option(db, space, pathway)
+
+        assert _min_for(db, space) is None
+
+    def test_the_flag_does_not_affect_pay_in_full(self, db, space):
+        """Pay-in-full is always checkoutable, so the same Collective
+        with a pay-in-full Option prices normally regardless."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _published_option(db, space, pathway)
+
+        assert _min_for(db, space) == PUBLISHED_OPTION_CENTS
+
+    def test_a_gathering_grant_plan_is_not_offered(
+        self, db, space, make_event, plans_checkoutable,
+    ):
+        """``_option_supports_finite_member_checkout`` refuses a plan
+        whose bundle includes a Gathering grant — the finite-plan path
+        cannot fulfil one — so it is not a price either."""
+        from app.models.payment_option_grant import GRANT_KIND_GATHERING
+
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        option = _instalment_plan_option(db, space, pathway)
+        gathering = make_event(space=space)
+        db.add(PaymentOptionGrant(
+            id=_uid("pog"),
+            payment_option_id=option.id,
+            grant_kind=GRANT_KIND_GATHERING,
+            event_id=gathering.id,
+            position=1,
+        ))
+        db.flush()
+
+        assert _min_for(db, space) is None
+
+
+class TestTheFallbackToTheOptionsOwnPrice:
+    """``effective_price_cents`` is the last resort, not the first."""
+
+    def test_an_option_with_no_schedules_uses_its_own_price(
+        self, db, space,
+    ):
+        """A shape that should not occur for a purchasable Option, but
+        which must degrade to a number rather than to silence."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _bare_option(
+            db, space, pathway,
+            name="Columns-only Option",
+            calculated_total_cents=2500,
+        )
+
+        assert _min_for(db, space) == 2500
+
+    def test_an_option_with_neither_is_silent_not_zero(self, db, space):
+        """No schedules, no columns. Must not become a $0 headline."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _bare_option(
+            db, space, pathway,
+            name="Priceless Option",
+            calculated_total_cents=None,
+        )
+
+        assert _min_for(db, space) is None
+
+    def test_a_schedule_price_beats_the_option_columns(
+        self, db, space, plans_checkoutable,
+    ):
+        """When both exist the schedule wins — it is what checkout
+        charges. An Option whose stale columns disagree with its live
+        schedule must quote the schedule."""
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _instalment_plan_option(
+            db, space, pathway, option_total_cents=9900,
+        )
+
+        assert _min_for(db, space) == PLAN_TOTAL_CENTS
+
+
+class TestMixedCollectives:
+    def test_a_plan_total_competes_with_a_legacy_price(
+        self, db, space, plans_checkoutable,
+    ):
+        """One Pathway of each mode: the cheaper headline wins, and the
+        plan's $4 total is what enters the comparison."""
+        _pathway(db, space, pricing_mode="legacy", price_cents=1800)
+        options_pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+            title="Instalments Pathway",
+        )
+        _instalment_plan_option(db, space, options_pathway)
+
+        assert _min_for(db, space) == PLAN_TOTAL_CENTS
+
+    def test_a_cheaper_legacy_price_still_wins(
+        self, db, space, plans_checkoutable,
+    ):
+        _pathway(db, space, pricing_mode="legacy", price_cents=300)
+        options_pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+            title="Instalments Pathway",
+        )
+        _instalment_plan_option(db, space, options_pathway)
+
+        assert _min_for(db, space) == 300
+
+    def test_two_options_on_one_pathway_take_the_cheaper(
+        self, db, space, plans_checkoutable,
+    ):
+        pathway = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        _instalment_plan_option(db, space, pathway)
+        _published_option(db, space, pathway, cents=1000)
+
+        assert _min_for(db, space) == PLAN_TOTAL_CENTS
+
+    def test_one_option_selling_two_pathways_is_counted_once(
+        self, db, space, plans_checkoutable,
+    ):
+        """The pairs join yields a row per (pathway, option). Collapsing
+        to unique Options must not lose the space mapping."""
+        first = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+        )
+        second = _pathway(
+            db, space, pricing_mode="payment_options", price_cents=None,
+            title="Second Pathway",
+        )
+        option = _instalment_plan_option(db, space, first)
+        db.add(PaymentOptionGrant(
+            id=_uid("pog"),
+            payment_option_id=option.id,
+            grant_kind="pathway",
+            pathway_id=second.id,
+        ))
+        db.flush()
+
+        assert _min_for(db, space) == PLAN_TOTAL_CENTS
+
+
+class TestTheHeadlineMatchesTheCanonicalHelper:
+    def test_the_collective_quotes_what_the_option_quotes(
+        self, db, space, plans_checkoutable,
+    ):
+        """Not a third definition of Option headline price: the same
+        ``headline_price_cents`` the joining doors and Series sidebar
+        call, asserted side by side so a future divergence fails here."""
+        from app.spaces.purchase_schedule_view import (
+            headline_price_cents,
+            published_schedules_by_option,
+            schedule_view,
+        )
+
+        pathway = _pathway(
+            db, space,
+            pricing_mode="payment_options",
+            price_cents=STALE_LEGACY_CENTS,
+        )
+        option = _instalment_plan_option(db, space, pathway)
+
+        schedules = published_schedules_by_option(db, [option.id])[option.id]
+        canonical = headline_price_cents(
+            [schedule_view(s, option) for s in schedules], option,
+        )
+
+        assert canonical == PLAN_TOTAL_CENTS
+        assert _min_for(db, space) == canonical
+
+
+# ---------------------------------------------------------------------------
 # The endpoint the About page actually reads
 # ---------------------------------------------------------------------------
 
 
 class TestTheDetailEndpointCarriesThePrice:
+    def test_the_reported_collective_is_served_four_dollars(
+        self, db, space, plans_checkoutable,
+    ):
+        """The whole chain, end to end: stale legacy 500 on a
+        payment-options Pathway, a published 2 x $2 plan, and the
+        endpoint the About page reads reports 400."""
+        pathway = _pathway(
+            db, space,
+            pricing_mode="payment_options",
+            price_cents=STALE_LEGACY_CENTS,
+        )
+        _instalment_plan_option(db, space, pathway)
+
+        resp = get_space(space.slug, db=db, current_user=None)
+
+        assert resp.min_paid_pathway_price_cents == PLAN_TOTAL_CENTS
+
     def test_the_field_is_served_at_all(self, db, space):
-        """The gap behind the bug: with nothing authoritative in the
-        payload, the page had to invent its own number."""
+        """The gap behind the first bug: with nothing authoritative in
+        the payload, the page had to invent its own number."""
         pathway = _pathway(
             db, space,
             pricing_mode="payment_options",
@@ -256,23 +748,23 @@ class TestTheDetailEndpointCarriesThePrice:
         assert resp.min_paid_pathway_price_cents == PUBLISHED_OPTION_CENTS
 
     def test_the_stale_column_is_still_in_the_payload_and_now_unread(
-        self, db, space,
+        self, db, space, plans_checkoutable,
     ):
         """The frontend fix depends on this combination existing: the
         pathway summary still carries 500, and the Collective-level
-        field says 200. A page reading the wrong one renders $5."""
+        field says 400. A page reading the wrong one renders $5."""
         pathway = _pathway(
             db, space,
             pricing_mode="payment_options",
             price_cents=STALE_LEGACY_CENTS,
         )
-        _published_option(db, space, pathway)
+        _instalment_plan_option(db, space, pathway)
 
         resp = get_space(space.slug, db=db, current_user=None)
 
         summary = next(p for p in resp.pathways if p.id == pathway.id)
         assert summary.price_cents == STALE_LEGACY_CENTS
-        assert resp.min_paid_pathway_price_cents == PUBLISHED_OPTION_CENTS
+        assert resp.min_paid_pathway_price_cents == PLAN_TOTAL_CENTS
 
     def test_a_legacy_collective_is_served_its_own_price(self, db, space):
         _pathway(db, space, pricing_mode="legacy", price_cents=1800)
@@ -293,20 +785,23 @@ class TestTheDetailEndpointCarriesThePrice:
 
 
 class TestTheListingAndTheDetailAgree:
-    def test_explore_and_about_quote_the_same_number(self, db, space):
+    def test_explore_and_about_quote_the_same_number(
+        self, db, space, plans_checkoutable,
+    ):
         """They disagreed by design before: the listing used the shared
-        derivation, the About page used its own. One helper now."""
+        derivation, the About page used its own. One helper now — and
+        the schedule-aware rewrite moved both at once."""
         pathway = _pathway(
             db, space,
             pricing_mode="payment_options",
             price_cents=STALE_LEGACY_CENTS,
         )
-        _published_option(db, space, pathway)
+        _instalment_plan_option(db, space, pathway)
 
         [card] = hydrate_public_space_cards([space], db)
         detail = get_space(space.slug, db=db, current_user=None)
 
-        assert card.min_paid_pathway_price_cents == PUBLISHED_OPTION_CENTS
+        assert card.min_paid_pathway_price_cents == PLAN_TOTAL_CENTS
         assert (
             detail.min_paid_pathway_price_cents
             == card.min_paid_pathway_price_cents
@@ -322,3 +817,75 @@ class TestTheListingAndTheDetailAgree:
 
         assert card.min_paid_pathway_price_cents == 1800
         assert card.derived_has_paid_internal_content is True
+
+
+# ---------------------------------------------------------------------------
+# Query cost on the busiest public endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestTheListingDoesNotGoQuadratic:
+    def test_query_count_is_flat_in_the_number_of_collectives(
+        self, db, make_space, plans_checkoutable,
+    ):
+        """Explore lists every public Collective at once, and the
+        headline now needs schedules and grants per Option rather than
+        one COALESCE. Those are bulk-loaded; this pins that.
+
+        Asserts a constant, not a small number: the count must not grow
+        with the Collectives, which is the failure mode an eager load
+        prevents.
+        """
+        from sqlalchemy import event
+
+        space_ids: list[str] = []
+        for n in range(6):
+            s = make_space(
+                slug=f"cost-{n}-{uuid.uuid4().hex[:8]}",
+                status="active", is_public=True, auto_grant_role=None,
+            )
+            db.flush()
+            pathway = _pathway(
+                db, s, pricing_mode="payment_options", price_cents=None,
+            )
+            _instalment_plan_option(db, s, pathway)
+            # Ids, not instances: the measurement below expires the
+            # session, and touching an expired Space would refresh it
+            # and count as one of the queries under test.
+            space_ids.append(s.id)
+
+        def _count_for(subset: list[str]) -> int:
+            # Cold start. Without this the grants written above are
+            # still warm in the identity map, no lazy load fires, and
+            # the test would pass with or without the eager load —
+            # measuring nothing. Production always reads cold.
+            db.expire_all()
+
+            n = 0
+
+            def _on_execute(*_args, **_kwargs):
+                nonlocal n
+                n += 1
+
+            event.listen(db.get_bind(), "before_cursor_execute", _on_execute)
+            try:
+                result = pathway_pricing.min_paid_price_cents_by_space(
+                    db, subset,
+                )
+            finally:
+                event.remove(
+                    db.get_bind(), "before_cursor_execute", _on_execute,
+                )
+            # The work must actually have happened, or a zero-query
+            # "win" would pass this test.
+            assert len(result) == len(subset)
+            assert set(result.values()) == {PLAN_TOTAL_CENTS}
+            return n
+
+        for_two = _count_for(space_ids[:2])
+        for_six = _count_for(space_ids)
+
+        assert for_two == for_six, (
+            f"query count grew with the Collective count: "
+            f"{for_two} for 2, {for_six} for 6 — an eager load is missing"
+        )

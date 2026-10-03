@@ -221,17 +221,24 @@ describe('the inline suffix, character by character', () => {
 /**
  * Stale legacy pricing on the public About page.
  *
- * Production, exactly as reported: Test Pathway sits at
- * ``pricing_mode='payment_options'`` with a published $2 Payment
- * Option, and still carries ``price_cents=500`` in the legacy column
- * that the switch left behind. The backend derives 200 correctly and
- * serves it as ``min_paid_pathway_price_cents``. The About page threw
- * that away, re-derived its own minimum from ``pathway.price_cents``,
- * and advertised "Pathways from $5 AUD" — two and a half times the
- * real price, on the page a visitor reads before deciding to buy.
+ * Production, as reported: Test Pathway sits at
+ * ``pricing_mode='payment_options'`` and still carries
+ * ``price_cents=500`` in the legacy column the switch left behind. Its
+ * live price is a published Payment Option — Test Connect Instalments,
+ * two weekly payments of $2, $4 committed — whose own
+ * ``override_total_cents`` and ``calculated_total_cents`` are both
+ * NULL, because the commerce UI treats schedules as the source of
+ * truth.
  *
- * The page now passes the Collective through as the backend served it.
- * These tests fix the number at $2 from both surfaces that quote it.
+ * The backend now derives 400 from that schedule and serves it as
+ * ``min_paid_pathway_price_cents``. Two things had to be fixed for this
+ * number to reach the page: it threw the backend value away and
+ * re-derived its own from ``pathway.price_cents`` (advertising $5), and
+ * before that the backend's own derivation read the Option's NULL
+ * authoring columns (advertising nothing at all).
+ *
+ * $4 is the total commitment, not the $2 instalment: a visitor
+ * comparing Collectives is comparing what they are signing up for.
  */
 describe('a payment-options Pathway with a stale legacy price', () => {
   /** The Collective as the detail endpoint serves it. */
@@ -239,8 +246,8 @@ describe('a payment-options Pathway with a stale legacy price', () => {
     ...openCollective,
     paid_content_summary: null,
     has_paid_internal_content: true,
-    // The backend's answer: the published $2 Option.
-    min_paid_pathway_price_cents: 200,
+    // The backend's answer: the published plan's total commitment.
+    min_paid_pathway_price_cents: 400,
     // The stale column, present in the payload and now unread. Kept in
     // the fixture precisely because the bug was reading it.
     pathways: [{
@@ -252,17 +259,39 @@ describe('a payment-options Pathway with a stale legacy price', () => {
     }],
   }
 
-  test('the quick-facts row quotes $2, never $5', () => {
+  test('the quick-facts row quotes $4, never $5', () => {
     const summary = formatCollectivePricingSummary(staleCollective)
-    assert.equal(summary, 'Free to join · pathways from $2 AUD')
+    assert.equal(summary, 'Free to join · pathways from $4 AUD')
     assert.ok(!summary.includes('$5'), summary)
   })
 
-  test('the Access card quotes $2, never $5', () => {
+  test('the Access card quotes $4, never $5', () => {
     // The second place the stale price surfaced on the same page.
     const copy = formatPaidSeparatelyCopy(staleCollective)
-    assert.equal(copy, 'Pathways from $2 AUD')
+    assert.equal(copy, 'Pathways from $4 AUD')
     assert.ok(!copy.includes('$5'), copy)
+  })
+
+  test('neither surface falls back to the generic copy', () => {
+    // The second reported symptom. A Collective that plainly sells
+    // something must not read as though it sells nothing.
+    assert.ok(
+      !formatPaidSeparatelyCopy(staleCollective)
+        .includes('Paid pathways available separately'),
+    )
+    assert.match(
+      formatCollectivePricingSummary(staleCollective),
+      /pathways from \$/,
+    )
+  })
+
+  test('the instalment amount is not the headline', () => {
+    // $2 is what leaves the member's account on the first Friday. The
+    // commitment is $4, and that is what a comparison surface shows.
+    const summary = formatCollectivePricingSummary(staleCollective)
+    const copy = formatPaidSeparatelyCopy(staleCollective)
+    assert.ok(!summary.includes('$2'), summary)
+    assert.ok(!copy.includes('$2'), copy)
   })
 
   test('the stale column cannot reach either surface', () => {
@@ -277,6 +306,42 @@ describe('a payment-options Pathway with a stale legacy price', () => {
     assert.ok(!summary.includes('$5'), summary)
     assert.ok(!copy.includes('$5'), copy)
     assert.equal(copy, 'Paid pathways available separately')
+  })
+})
+
+describe('an Option priced by its own columns still renders', () => {
+  /**
+   * The pay-in-full / one-time shape, where ``effective_price_cents``
+   * is populated and agrees with the schedule. Retained deliberately:
+   * the schedule-aware backend rewrite must not regress the Options
+   * that were already priced correctly.
+   */
+  const payInFullCollective = {
+    ...openCollective,
+    paid_content_summary: null,
+    has_paid_internal_content: true,
+    min_paid_pathway_price_cents: 200,
+    pathways: [{
+      title: 'Pay In Full Pathway',
+      status: 'active',
+      access_type: 'one_time',
+      pricing_mode: 'payment_options',
+      price_cents: 200,
+    }],
+  }
+
+  test('the quick-facts row shows it', () => {
+    assert.equal(
+      formatCollectivePricingSummary(payInFullCollective),
+      'Free to join · pathways from $2 AUD',
+    )
+  })
+
+  test('the Access card shows it', () => {
+    assert.equal(
+      formatPaidSeparatelyCopy(payInFullCollective),
+      'Pathways from $2 AUD',
+    )
   })
 })
 
