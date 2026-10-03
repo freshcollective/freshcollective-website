@@ -57,7 +57,7 @@ export default function LeadershipBodyChartPage() {
         <Container>
           <div className="mx-auto max-w-[760px]">
             <h1 className="mb-5 font-serif text-4xl leading-tight text-navy-900 md:text-5xl">
-              Your Leadership Body Chart
+              Your Human Design Bodychart
             </h1>
             <p className="mb-10 text-lg leading-relaxed text-[#4A5568]">
               Enter your birth details below to generate your Human Design
