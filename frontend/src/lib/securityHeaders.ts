@@ -74,13 +74,53 @@ const EMBED_ORIGINS: readonly string[] = Array.from(
 // requiring another CSP change.
 const STRIPE_CHECKOUT_ORIGIN = 'https://checkout.stripe.com'
 
+// MailerLite book-resource opt-in form on /tnlbook.
+//
+// These are the first third-party scripts Fresh Collective loads at
+// all, which is why none of this was here before. Scoped to the exact
+// origins — and, for reCAPTCHA, the exact paths — that the embed
+// actually fetches. No wildcards: a widening here is a widening for
+// every page the header is served on, which is all of them.
+//
+// Four directives need it, and ``form-action`` is the one that is easy
+// to miss. The <form> posts to assets.mailerlite.com, so without it the
+// browser refuses the submission even when every script has loaded.
+//
+//   script-src   groot.mailerlite.com  — webforms.min.js
+//                www.google.com/recaptcha/, www.gstatic.com/recaptcha/
+//   frame-src    www.google.com/recaptcha/, recaptcha.google.com/recaptcha/
+//                — the challenge iframe
+//   connect-src  assets.mailerlite.com — the /takel impression ping and
+//                the script's own XHR submit
+//   form-action  assets.mailerlite.com — the POST itself
+//
+// Deliberately NOT added: assets.mlcdn.com. MailerLite's embed imports
+// an Open Sans stylesheet from there, which is cosmetic — the form is
+// styled with Fresh Collective's own type instead, so style-src,
+// font-src and img-src stay as they were.
+const MAILERLITE_FORM_SCRIPT_ORIGIN = 'https://groot.mailerlite.com'
+const MAILERLITE_API_ORIGIN = 'https://assets.mailerlite.com'
+const RECAPTCHA_SCRIPT_SOURCES: readonly string[] = [
+  'https://www.google.com/recaptcha/',
+  'https://www.gstatic.com/recaptcha/',
+]
+const RECAPTCHA_FRAME_SOURCES: readonly string[] = [
+  'https://www.google.com/recaptcha/',
+  'https://recaptcha.google.com/recaptcha/',
+]
+
 const CSP_DIRECTIVES: Record<string, readonly string[]> = {
   'default-src': ["'self'"],
   // Next.js 16 hydration injects inline <script> tags. 'unsafe-inline'
   // is accepted for Stage A per policy — nonce/hash strategy is
   // deferred until after SEC-016 lands, since SEC-001 sanitisation
   // already closes the primary XSS surface.
-  'script-src': ["'self'", "'unsafe-inline'"],
+  'script-src': [
+    "'self'",
+    "'unsafe-inline'",
+    MAILERLITE_FORM_SCRIPT_ORIGIN,
+    ...RECAPTCHA_SCRIPT_SOURCES,
+  ],
   // Same reasoning as script-src, plus pervasive React inline
   // ``style={…}`` attributes that would require every value to be
   // nonced/hashed. Not tractable without a large refactor.
@@ -96,7 +136,7 @@ const CSP_DIRECTIVES: Record<string, readonly string[]> = {
   'font-src': ["'self'"],
   // Browser code only talks to same-origin /api/* (SEC-002). If we
   // ever add browser telemetry, extend this directive.
-  'connect-src': ["'self'"],
+  'connect-src': ["'self'", MAILERLITE_API_ORIGIN],
   // <audio> and <video> sources. Same host set as ``img-src`` minus
   // the ``data:``/``blob:`` variants that only apply to previews.
   // Previously omitted — falling back to ``default-src 'self'`` — which
@@ -107,9 +147,13 @@ const CSP_DIRECTIVES: Record<string, readonly string[]> = {
   'media-src': ["'self'", MEDIA_ORIGIN, ...R2_MEDIA_ORIGINS],
   // Embed providers + Stripe Checkout (defensive; not currently used
   // as an iframe but the redirect target is Stripe).
-  'frame-src': [...EMBED_ORIGINS, STRIPE_CHECKOUT_ORIGIN],
+  'frame-src': [
+    ...EMBED_ORIGINS,
+    STRIPE_CHECKOUT_ORIGIN,
+    ...RECAPTCHA_FRAME_SOURCES,
+  ],
   // Same-origin form posts + Stripe Checkout redirect target.
-  'form-action': ["'self'", STRIPE_CHECKOUT_ORIGIN],
+  'form-action': ["'self'", STRIPE_CHECKOUT_ORIGIN, MAILERLITE_API_ORIGIN],
   // No page in Fresh Collective is intentionally embeddable.
   'frame-ancestors': ["'none'"],
   // Prevent <base href="//evil"> from repointing all relative URLs.

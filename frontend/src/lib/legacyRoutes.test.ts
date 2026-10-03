@@ -643,3 +643,241 @@ describe('no origin is hard-coded by this change', () => {
     }
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// /tnlbook — the book-resource opt-in, distinct from /tnlbook123
+// ---------------------------------------------------------------------------
+
+describe('/tnlbook is its own public opt-in page', () => {
+  const page = () => read('app/tnlbook/page.tsx')
+
+  test('the route exists', () => {
+    assert.ok(existsSync(appPage('tnlbook')), '/tnlbook is missing')
+  })
+
+  test('it is a separate route from /tnlbook123', () => {
+    // Two steps of one flow, not two names for one page: /tnlbook
+    // collects details, /tnlbook123 holds the resources.
+    assert.ok(existsSync(appPage('tnlbook')))
+    assert.ok(existsSync(appPage('tnlbook123')))
+    assert.notEqual(page(), read('app/tnlbook123/page.tsx'))
+  })
+
+  test('neither route redirects to the other', () => {
+    for (const r of declaredRedirects()) {
+      for (const p of ['/tnlbook', '/tnlbook123']) {
+        assert.notEqual(r.source, p, `${p} is being redirected away`)
+        assert.notEqual(r.destination, p, `something redirects into ${p}`)
+      }
+    }
+  })
+
+  test('it renders in the public shell', () => {
+    assert.match(page(), /SiteShell/)
+  })
+
+  test('it needs no session, membership or Collective access', () => {
+    const src = codeOnly('app/tnlbook/page.tsx') + codeOnly('app/tnlbook/MailerLiteBookForm.tsx')
+    for (const gate of ['getMe(', 'cookies(', 'SESSION_COOKIE', 'getMySpaceAccess', 'area_access']) {
+      assert.ok(!src.includes(gate), `/tnlbook reads ${gate}`)
+    }
+  })
+
+  test('it is not behind the auth proxy', () => {
+    const proxy = read('proxyRouting.ts')
+    const prefixes = proxy
+      .slice(proxy.indexOf('PROTECTED_PREFIXES'), proxy.indexOf('function normalize'))
+      .match(/'(\/[^']+)'/g)
+    for (const quoted of prefixes!) {
+      const prefix = quoted.slice(1, -1)
+      assert.ok(
+        '/tnlbook' !== prefix && !'/tnlbook'.startsWith(prefix + '/'),
+        `/tnlbook sits under the protected prefix ${prefix}`,
+      )
+    }
+  })
+
+  test('it exposes no Creator or admin controls', () => {
+    const src = codeOnly('app/tnlbook/page.tsx') + codeOnly('app/tnlbook/MailerLiteBookForm.tsx')
+    for (const forbidden of ['creator-studio', '/admin', 'getCreatorUser', 'CreatorStudio']) {
+      assert.ok(!src.includes(forbidden), `/tnlbook references ${forbidden}`)
+    }
+  })
+
+  test('it sets its own metadata and hard-codes no origin', () => {
+    const src = page()
+    assert.match(src, /export const metadata: Metadata/)
+    assert.match(src, /The Natural Leader Book Resources · Fresh Collective/)
+    assert.ok(!codeOnly('app/tnlbook/page.tsx').includes('onrender.com'))
+    assert.ok(
+      !/https?:\/\/[a-z0-9.-]*freshcollective\.au/i.test(codeOnly('app/tnlbook/page.tsx')),
+    )
+  })
+
+  test('it reuses the Book Companion cover rather than a second copy', () => {
+    assert.match(page(), /\/book-companion\/natural-leader-front-cover\.jpg/)
+    assert.ok(
+      existsSync(join(SRC, '..', 'public', 'book-companion', 'natural-leader-front-cover.jpg')),
+      'the cover asset is missing from public/',
+    )
+    assert.match(page(), /from 'next\/image'/)
+  })
+
+  test('it carries the agreed copy and no sales padding', () => {
+    const src = page()
+    assert.match(src, /The Natural Leader/)
+    assert.match(src, /Book Resources Now/)
+    assert.match(src, /instant\s+access/)
+  })
+
+  test('it offers no bypass link to the resources page', () => {
+    // The whole point of this page is that people opt in first.
+    //
+    // Matched as a LINK and through codeOnly: the page's header comment
+    // explains that /tnlbook123 is deliberately a separate route, and a
+    // bare substring check fails on that explanation instead of on a
+    // real bypass.
+    const src = codeOnly('app/tnlbook/page.tsx')
+      + codeOnly('app/tnlbook/MailerLiteBookForm.tsx')
+    assert.ok(
+      !/href=["'{]?\/tnlbook123/.test(src),
+      '/tnlbook links straight to the resources, bypassing MailerLite',
+    )
+    assert.ok(!src.includes('<Link'), '/tnlbook offers a navigation shortcut')
+  })
+})
+
+describe('the MailerLite embed is reproduced exactly', () => {
+  const form = () => read('app/tnlbook/MailerLiteBookForm.tsx')
+
+  test('the subscribe action is unchanged', () => {
+    assert.match(
+      form(),
+      /https:\/\/assets\.mailerlite\.com\/jsonp\/998040\/forms\/157084874450142696\/subscribe/,
+    )
+  })
+
+  test('the container id and form class are intact', () => {
+    // The success callback finds this form by the numbered class.
+    assert.match(form(), /mlb2-\$\{FORM_ID\}|mlb2-27181412/)
+    assert.match(form(), /ml-subscribe-form-/)
+    assert.match(form(), /FORM_ID = '27181412'/)
+  })
+
+  test('all three field names are present and unrenamed', () => {
+    for (const name of ['fields[email]', 'fields[name]', 'fields[last_name]']) {
+      assert.ok(form().includes(name), `missing field ${name}`)
+    }
+  })
+
+  test('the three visible fields are labelled for the reader', () => {
+    for (const placeholder of ['"Email"', '"First Name"', '"Last name"']) {
+      assert.ok(form().includes(placeholder), `missing placeholder ${placeholder}`)
+    }
+    for (const label of ['aria-label="email"', 'aria-label="name"', 'aria-label="last_name"']) {
+      assert.ok(form().includes(label), `missing ${label}`)
+    }
+  })
+
+  test('both hidden fields keep their exact values', () => {
+    assert.match(form(), /name="ml-submit"\s*\n?\s*value="1"|name="ml-submit" value="1"/)
+    assert.match(form(), /name="anticsrf"\s*\n?\s*value="true"|name="anticsrf" value="true"/)
+  })
+
+  test('the reCAPTCHA site key is MailerLite\'s, unchanged', () => {
+    assert.match(form(), /6Lf1KHQUAAAAAFNKEX1hdSWCS3mRMv4FlFaNslaD/)
+    assert.match(form(), /class(Name)?="g-recaptcha"|className="g-recaptcha"/)
+  })
+
+  test('both MailerLite scripts are loaded from their exact URLs', () => {
+    assert.match(
+      form(),
+      /https:\/\/groot\.mailerlite\.com\/js\/w\/webforms\.min\.js\?v83147fa8ce2d95cb73ece7f28b469519/,
+    )
+    assert.match(form(), /https:\/\/www\.google\.com\/recaptcha\/api\.js/)
+  })
+
+  test('the takel impression ping is preserved', () => {
+    assert.match(
+      form(),
+      /https:\/\/assets\.mailerlite\.com\/jsonp\/998040\/forms\/157084874450142696\/takel/,
+    )
+  })
+
+  test('the button says what MailerLite says', () => {
+    assert.match(form(), />\s*Let me in!\s*</)
+  })
+
+  test('the success state and its message survive', () => {
+    const src = form()
+    assert.match(src, /ml-form-successBody row-success/)
+    assert.match(src, /display: 'none'/)
+    assert.match(src, /Thank you!/)
+    assert.match(src, /Please check your inbox to get access to all The Natural Leader/)
+  })
+
+  test('the success callback keeps its global name and behaviour', () => {
+    const src = form()
+    // webforms.min.js calls this by name — renaming it loses every
+    // thank-you state silently.
+    assert.match(src, /ml_webform_success_\$\{FORM_ID\}/)
+    assert.match(src, /ml_jQuery \|\| w\.jQuery|ml_jQuery/)
+    assert.match(src, /\.row-success`\)\.show\(\)/)
+    assert.match(src, /\.row-form`\)\.hide\(\)/)
+  })
+
+  test('the validation hooks webforms.min.js looks for are intact', () => {
+    const src = form()
+    for (const cls of [
+      'ml-block-form',
+      'ml-form-fieldRow',
+      'ml-field-group',
+      'ml-validate-email',
+      'ml-validate-required',
+      'ml-form-embedSubmit',
+      'ml-form-recaptcha',
+    ]) {
+      assert.ok(src.includes(cls), `missing MailerLite hook class ${cls}`)
+    }
+  })
+
+  test('the form posts to MailerLite, never to Fresh Collective', () => {
+    const src = codeOnly('app/tnlbook/MailerLiteBookForm.tsx')
+    // No API route, no server action, no database — FC must not hold
+    // these names and emails.
+    for (const forbidden of ['/api/', 'serverApi', 'useActionState', "action={", 'prisma']) {
+      if (forbidden === "action={") continue
+      assert.ok(!src.includes(forbidden), `the form reaches for ${forbidden}`)
+    }
+    assert.match(src, /action=\{ACTION\}/)
+  })
+})
+
+describe('the CSP additions for MailerLite are narrow', () => {
+  const csp = () => read('lib/securityHeaders.ts')
+
+  test('all four required directives are widened', () => {
+    const src = csp()
+    assert.match(src, /'script-src':[\s\S]*?MAILERLITE_FORM_SCRIPT_ORIGIN/)
+    assert.match(src, /'connect-src':[\s\S]*?MAILERLITE_API_ORIGIN/)
+    assert.match(src, /'frame-src':[\s\S]*?RECAPTCHA_FRAME_SOURCES/)
+    assert.match(src, /'form-action':[\s\S]*?MAILERLITE_API_ORIGIN/)
+  })
+
+  test('no wildcard source is introduced', () => {
+    const src = codeOnly('lib/securityHeaders.ts')
+    const added = src.match(/'https:\/\/[^']*'/g) ?? []
+    for (const origin of added) {
+      if (!/mailerlite|google|gstatic|recaptcha/.test(origin)) continue
+      assert.ok(!origin.includes('*'), `${origin} is a wildcard`)
+    }
+  })
+
+  test('the MailerLite font CDN is not allowed', () => {
+    assert.ok(
+      !codeOnly('lib/securityHeaders.ts').includes('mlcdn.com'),
+      'the cosmetic Open Sans import was meant to stay dropped',
+    )
+  })
+})

@@ -160,14 +160,62 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     assert.deepEqual(parsed['font-src'], ["'self'"])
   })
 
-  test('connect-src is self only (SEC-002 same-origin BFF)', () => {
-    assert.deepEqual(parsed['connect-src'], ["'self'"])
+  test('connect-src is self plus MailerLite only (SEC-002)', () => {
+    // SEC-002 keeps browser XHR same-origin. The one exception is the
+    // MailerLite opt-in form on /tnlbook, which pings its own endpoint
+    // and submits through it. Asserted as an exact set rather than a
+    // contains-check, so the next addition has to be argued for here.
+    assert.deepEqual(parsed['connect-src'], [
+      "'self'",
+      'https://assets.mailerlite.com',
+    ])
   })
 
-  test('form-action allows self and Stripe Checkout', () => {
-    const values = parsed['form-action']
-    assert.ok(values.includes("'self'"))
-    assert.ok(values.includes('https://checkout.stripe.com'))
+  test('form-action allows self, Stripe Checkout and MailerLite only', () => {
+    // The directive that silently refuses the subscribe POST if it is
+    // forgotten — every script can load and the form still fails.
+    assert.deepEqual(parsed['form-action'], [
+      "'self'",
+      'https://checkout.stripe.com',
+      'https://assets.mailerlite.com',
+    ])
+  })
+
+  test('script-src adds only the MailerLite and reCAPTCHA sources', () => {
+    assert.deepEqual(parsed['script-src'], [
+      "'self'",
+      "'unsafe-inline'",
+      'https://groot.mailerlite.com',
+      'https://www.google.com/recaptcha/',
+      'https://www.gstatic.com/recaptcha/',
+    ])
+  })
+
+  test('the reCAPTCHA script sources are path-scoped, not whole hosts', () => {
+    // www.google.com and www.gstatic.com serve a great deal more than
+    // reCAPTCHA. The trailing path keeps the grant to the widget.
+    for (const src of parsed['script-src']) {
+      if (src.includes('google.com') || src.includes('gstatic.com')) {
+        assert.ok(
+          src.endsWith('/recaptcha/'),
+          `${src} grants a whole Google host rather than just reCAPTCHA`,
+        )
+      }
+    }
+  })
+
+  test('no MailerLite asset CDN is allowed anywhere', () => {
+    // assets.mlcdn.com serves the embed's Open Sans import, which is
+    // cosmetic and deliberately dropped. If it reappears in any
+    // directive, the styling decision has quietly been reversed.
+    for (const [directive, values] of Object.entries(parsed)) {
+      for (const v of values) {
+        assert.ok(
+          !v.includes('mlcdn.com'),
+          `${directive} allows ${v}; the font import was meant to be dropped`,
+        )
+      }
+    }
   })
 
   test("frame-ancestors is 'none'", () => {
@@ -226,6 +274,11 @@ describe('SEC-011 Stage A — frame-src ↔ EMBED_PROVIDERS drift check', () => 
         p.hosts.map((h) => `https://${h}`),
       ),
       'https://checkout.stripe.com',
+      // reCAPTCHA's challenge iframe, for the MailerLite form on
+      // /tnlbook. Path-scoped, and not an embed provider — it is never
+      // a destination a creator can paste.
+      'https://www.google.com/recaptcha/',
+      'https://recaptcha.google.com/recaptcha/',
     ])
     for (const origin of frameSrc) {
       assert.ok(
