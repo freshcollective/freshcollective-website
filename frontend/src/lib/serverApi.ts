@@ -1259,3 +1259,19 @@ export const getSpaceMessageThread = cache(async (
   threadId: string,
 ): Promise<FetchOutcome<MessageThreadDetail>> =>
   loadJson<MessageThreadDetail>(`/api/spaces/${slug}/messages/${threadId}`))
+
+/** The signed-in member's private conversations, newest activity first. */
+export const getPeerThreads = cache(async () => {
+  const res = await fetchWithSession('/api/messages')
+  if (!res.ok) return []
+  return res.json()
+})
+
+/** One private conversation. Null when it is not the caller's — the API
+ *  answers 404 for somebody else's thread and for one that does not
+ *  exist, so this cannot distinguish them either. */
+export const getPeerThread = cache(async (threadId: string) => {
+  const res = await fetchWithSession(`/api/messages/${encodeURIComponent(threadId)}`)
+  if (!res.ok) return null
+  return res.json()
+})

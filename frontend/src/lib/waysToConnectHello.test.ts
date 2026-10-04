@@ -82,12 +82,18 @@ describe('each state says the right thing', () => {
     }
   })
 
-  test('no Message action is offered', () => {
-    // The existing messaging model is creator-to-member inside a
-    // Collective and has no peer thread, so a Message button would be
-    // a promise the backend cannot keep.
-    assert.ok(!/>\s*Message\s*</.test(src))
-    assert.ok(!/\/messages/.test(src))
+  test('Message is offered only on a mutual connection', () => {
+    // 5b stopped at "Connected" because no peer thread existed. 5c adds
+    // one, so the rule is no longer "never" but "mutual only" — the
+    // narrower invariant is asserted in detail in peerMessages.test.ts.
+    const mutualStart = src.indexOf('isMutual ? (')
+    const nextBranch = src.indexOf('isOutgoing || state ===')
+    assert.ok(mutualStart > -1 && nextBranch > mutualStart)
+    const everythingElse = src.slice(0, mutualStart) + src.slice(nextBranch)
+    assert.ok(
+      !/Message →/.test(everythingElse),
+      'a one-sided hello must not unlock messaging',
+    )
   })
 })
 

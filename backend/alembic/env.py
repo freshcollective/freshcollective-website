@@ -31,6 +31,7 @@ import app.models.access_grant_record  # noqa: F401 — registers AccessGrantRec
 import app.models.refund_operation  # noqa: F401 — registers RefundOperation (migration 128)
 import app.models.creator_payout_batch  # noqa: F401 — registers CreatorPayoutBatch + BatchItem (migration 129)
 import app.models.connections       # noqa: F401 — registers MemberHello (Ways to Connect 5b, migration 147)
+import app.models.peer_messages     # noqa: F401 — registers PeerThread + PeerMessage (Ways to Connect 5c, migration 148)
 import app.comms.models             # noqa: F401 — registers Communications Layer models (Milestone 1)
 
 config = context.config

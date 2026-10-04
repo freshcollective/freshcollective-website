@@ -28,7 +28,9 @@
 
 import { useState } from 'react'
 import MemberImage from '@/components/ui/MemberImage'
+import { useRouter } from 'next/navigation'
 import {
+  openConversation,
   primaryCollective,
   reasonSentence,
   sayHello,
@@ -49,12 +51,15 @@ export default function PersonCard({
    *  without persisting anything. */
   onSendHello?: (personId: string) => Promise<void>
 }) {
+  const router = useRouter()
   const [state, setState] = useState<HelloState>('idle')
   const [error, setError] = useState<string | null>(null)
   // The server's answer, once this card has sent one. Until then the
   // relationship is whatever the page was told — the backend owns this,
   // and an optimistic local flag must not outrank it on re-render.
   const [sentNow, setSentNow] = useState(false)
+  const [opening, setOpening] = useState(false)
+  const [openError, setOpenError] = useState<string | null>(null)
 
   const relationship = person.relationship ?? 'none'
   const isMutual = relationship === 'mutual'
@@ -71,6 +76,18 @@ export default function PersonCard({
 
   const collective = primaryCollective(person)
   const reason = reasonSentence(person)
+
+  async function openMessage() {
+    setOpening(true)
+    setOpenError(null)
+    try {
+      const threadId = await openConversation(person.id)
+      router.push(`/messages/${threadId}`)
+    } catch {
+      setOpenError('We couldn’t open that conversation. Please try again.')
+      setOpening(false)
+    }
+  }
 
   async function send() {
     setState('sending')
@@ -172,14 +189,37 @@ export default function PersonCard({
               thread, so offering one here would be a promise the
               backend cannot keep. See the 5b report. */}
           {isMutual ? (
-            <p
-              aria-live="polite"
-              className="text-[13px] font-semibold"
-              style={{ color: '#1E6E6C', fontFamily: 'Georgia, serif' }}
-            >
-              <span aria-hidden="true">✓</span> Connected
-              <span className="sr-only"> — you and {name} have both said hello</span>
-            </p>
+            <div>
+              <p
+                aria-live="polite"
+                className="text-[13px] font-semibold"
+                style={{ color: '#1E6E6C', fontFamily: 'Georgia, serif' }}
+              >
+                <span aria-hidden="true">✓</span> Connected
+                <span className="sr-only"> — you and {name} have both said hello</span>
+              </p>
+              {/* Only reachable in the mutual state, which is the whole
+                  authorisation story: the backend get-or-creates the
+                  thread and refuses with a 404 unless both hello rows
+                  exist, so this button cannot be the thing that grants
+                  access. Pressing it opens the conversation; it does
+                  not send anything. */}
+              <button
+                type="button"
+                onClick={openMessage}
+                disabled={opening}
+                className="mt-2 rounded text-[13px] font-semibold transition-opacity hover:opacity-70 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
+                style={{ color: '#2F8F8D' }}
+              >
+                {opening ? 'Opening…' : 'Message →'}
+                <span className="sr-only"> — {name}</span>
+              </button>
+              {openError && (
+                <p className="mt-2 text-[12.5px]" style={{ color: '#B4483C' }}>
+                  {openError}
+                </p>
+              )}
+            </div>
           ) : isOutgoing || state === 'sent' ? (
             /* Pending, and not a button: there is nothing useful to do
                with a second click, and a disabled-looking control reads

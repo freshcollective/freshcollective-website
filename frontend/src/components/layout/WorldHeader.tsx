@@ -56,6 +56,11 @@ function peerNavItems(discoveryOn: boolean, waysToConnectOn: boolean): NavItem[]
   // One flag each — see lib/featureFlags.ts.
   if (discoveryOn) items.push({ href: '/discover-places', label: 'Discover Places' })
   if (waysToConnectOn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
+  // Messages rides the same flag rather than getting one of its own: a
+  // private conversation can only come into existence through a mutual
+  // hello, so with Ways to Connect off there is nothing for this
+  // destination to show. One flag, one feature.
+  if (waysToConnectOn) items.push({ href: '/messages', label: 'Messages' })
   return items
 }
 

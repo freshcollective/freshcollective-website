@@ -491,3 +491,24 @@ export async function sayHello(
   if (!res.ok) throw new Error(`say hello failed: ${res.status}`)
   return res.json()
 }
+
+/**
+ * Open (or get) the private conversation with a mutually-connected
+ * member, and return its thread id.
+ *
+ * Get-or-create on the server, so pressing Message twice — or both
+ * people pressing it at once — resolves to the one conversation. The
+ * 404 on an unconnected pair is deliberate and privacy-safe: it is the
+ * same answer as a member who does not exist.
+ */
+export async function openConversation(personId: string): Promise<string> {
+  const res = await fetch('/api/messages/open', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: personId }),
+  })
+  if (!res.ok) throw new Error(`open conversation failed: ${res.status}`)
+  const body = (await res.json()) as { thread_id: string }
+  return body.thread_id
+}
