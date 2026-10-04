@@ -13,6 +13,7 @@ import type {
 } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import { creatorFacingPlanName } from '@/lib/creatorPlanDisplay'
+import { describeCreatorAccess } from '@/lib/creatorPlanAccess'
 import { billingPayoutPhase } from '@/lib/paymentsPayoutCopy'
 import BillingFeeCalculator from './BillingFeeCalculator'
 import StripeConnectPanel from './StripeConnectPanel'
@@ -83,7 +84,17 @@ function BillingStatusPill({ billing, plan }: {
   const stripePaid = sub?.source === 'stripe_paid'
   let label = 'Billing not connected yet'
   let style: React.CSSProperties = { background: '#FEF9C3', color: '#854D0E' }
+  const granted = describeCreatorAccess(plan, sub).isUnbilled
   if (plan.monthly_price_cents === 0 && plan.is_purchasable === false) {
+    label = 'No billing required'
+    style = { background: '#F1F5F9', color: '#475569' }
+  } else if (granted && sub?.source === 'manual_grant') {
+    // An admin-granted plan has no Stripe subscription behind it, so
+    // every ``stripePaid`` branch below misses and the default
+    // "Billing not connected yet" used to show — a yellow warning
+    // telling a complimentary creator to set up billing they will
+    // never need. Same class of mislabel as the Community "Not
+    // connected" bug closed previously.
     label = 'No billing required'
     style = { background: '#F1F5F9', color: '#475569' }
   } else if (stripePaid && sub?.status === 'active') {
@@ -341,6 +352,10 @@ function CreatorBilling({ billing, header, connectStatus }: {
   connectStatus: CreatorStripeConnectStatus | null
 }) {
   const current_plan = billing.current_plan
+  // How the creator actually holds this plan (Stripe-billed vs
+  // admin-granted). Drives the price line and the term note so a
+  // complimentary creator is never shown a subscription price.
+  const access = describeCreatorAccess(current_plan, billing.subscription)
   // Only ``connect_routing_enabled`` means a creator's sales actually
   // route through Connect. A connected-but-not-enabled account is still
   // paid by hand, so the copy must not read the panel's presence as
@@ -426,11 +441,19 @@ function CreatorBilling({ billing, header, connectStatus }: {
               {creatorFacingPlanName(current_plan.slug, current_plan.name)}
             </p>
             <p className="mt-0.5 text-[15px] text-black">
-              {current_plan.monthly_price_cents === 0
-                ? 'Free'
-                : formatPrice(current_plan.monthly_price_cents, current_plan.currency)
+              {/* An admin-granted plan is not billed at its retail
+                  price, so quoting it would tell the creator they are
+                  paying when nothing will ever charge them. The
+                  transaction fee is kept either way — it genuinely
+                  applies to what they sell. */}
+              {access.priceOverride
+                ?? (current_plan.monthly_price_cents === 0
+                  ? 'Free'
+                  : formatPrice(current_plan.monthly_price_cents, current_plan.currency))
               }
-              {current_plan.monthly_price_cents !== null && current_plan.monthly_price_cents > 0 && '/month'}
+              {!access.priceOverride
+                && current_plan.monthly_price_cents !== null
+                && current_plan.monthly_price_cents > 0 && '/month'}
               &nbsp;·&nbsp;
               {formatFee(current_plan.transaction_fee_basis_points)} transaction fee
             </p>
@@ -440,11 +463,14 @@ function CreatorBilling({ billing, header, connectStatus }: {
                 Renews {formatDate(billing.subscription.current_period_end)}
               </p>
             )}
-            {billing.subscription?.source === 'manual_grant'
-              && current_plan.monthly_price_cents !== null
-              && current_plan.monthly_price_cents > 0 && (
-              <p className="mt-1 text-[12px] italic text-black">
-                Billed manually by Fresh Collective.
+            {access.label && (
+              <p className="mt-1.5 text-[13px] font-semibold text-navy-900">
+                {access.label}
+              </p>
+            )}
+            {access.termNote && (
+              <p className="mt-0.5 text-[12px] text-black">
+                {access.termNote}
               </p>
             )}
             {billing.is_platform_owner && (

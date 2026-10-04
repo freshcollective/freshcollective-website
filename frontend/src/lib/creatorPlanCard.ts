@@ -1,4 +1,5 @@
 import type { CreatorPlanOut, CreatorSubscriptionOut } from '@/types/platform'
+import { describeCreatorAccess } from './creatorPlanAccess.ts'
 
 /**
  * What the "Your creator plan" card should say.
@@ -74,10 +75,16 @@ export function buildCreatorPlanCard(
     }
   }
 
+  // How the creator actually holds the plan. An admin-granted plan has
+  // no Stripe subscription behind it, so the retail price is not what
+  // they pay — see ``creatorPlanAccess`` for the audited semantics.
+  const access = describeCreatorAccess(plan, subscription)
+
   // Null price is the Organisation plan — "Talk to us", not free.
-  const priceLabel = plan.monthly_price_cents == null
-    ? 'Talk to us'
-    : `${formatMoney(plan.monthly_price_cents, plan.currency)} / month`
+  const priceLabel = access.priceOverride
+    ?? (plan.monthly_price_cents == null
+      ? 'Talk to us'
+      : `${formatMoney(plan.monthly_price_cents, plan.currency)} / month`)
 
   const status = subscription?.status
   const endsOn = formatDate(
@@ -91,7 +98,12 @@ export function buildCreatorPlanCard(
     : null
 
   let statusNote: string | null = null
-  if (status === 'trialing') {
+  // An active manual grant would otherwise fall through every branch
+  // below and say nothing at all, leaving the creator with a bare plan
+  // name and a price they are not paying.
+  if (access.isUnbilled && access.termNote && status !== 'cancelled') {
+    statusNote = access.termNote
+  } else if (status === 'trialing') {
     statusNote = endsOn ? `Billing starts ${endsOn}.` : null
   } else if (status === 'active' && subscription?.cancel_at_period_end) {
     // Still active. The plan runs to the paid-through date.

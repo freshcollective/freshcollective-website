@@ -219,23 +219,32 @@ export default function BuildYourCollectiveClient({
           name: string
           world_builders_slug: string | null
         }
-        // Route based on which CTA the creator clicked. World Builders
-        // routes into the Pathways area — that's where the guided
-        // Creator experience lives. Creator Studio routes to the new
-        // collective's Overview via the switch route, which sets the
-        // active-space cookie so the whole sidebar + shell reflect
-        // this collective from the very next render. Overview is the
-        // natural home for a brand-new collective: it surfaces the
-        // next actions (add pathway, add resource, invite people)
-        // without dropping the creator into any single tool.
+        // Route based on which CTA the creator clicked.
+        //
+        // Your World is the default and the primary CTA's destination:
+        // the creator has just become a member, a Creator, a World
+        // Builder and the owner of a Collective, and Your World is the
+        // only place that shows all of it at once. Its creator-gated
+        // "For creators" band already lists the new Collective and
+        // offers Creator Studio, so there is no separate Creator Studio
+        // CTA on the completion screen any more.
+        //
+        // World Builders still routes into the Pathways area — that's
+        // where the guided Creator experience lives.
+        //
+        // ``creator_studio`` is kept as an accepted destination rather
+        // than deleted: it routes via the switch route, which sets the
+        // active-space cookie so the sidebar and shell reflect the new
+        // collective from the very next render. Nothing on the
+        // completion screen sends it today, but the preview harness and
+        // any future caller get the correct behaviour instead of
+        // falling through to a default.
         if (destination === 'world_builders' && world_builders_slug) {
           router.push(`/spaces/${world_builders_slug}/pathways`)
         } else if (destination === 'creator_studio') {
           router.push(`/creator-studio/collective/switch/${newSlug}`)
-        } else if (world_builders_slug) {
-          router.push(`/spaces/${world_builders_slug}/pathways`)
         } else {
-          router.push(`/creator-studio/collective/switch/${newSlug}`)
+          router.push('/dashboard')
         }
         // Deliberately leave busy=true — the navigation is in flight,
         // and we don't want the CTAs re-enabling before the next page

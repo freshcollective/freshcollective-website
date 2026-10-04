@@ -121,6 +121,8 @@ export default function PreviewClient({ initial }: Props) {
               showToast('In the live flow, this creates the collective and opens World Builders Pathways.')
             } else if (destination === 'creator_studio') {
               showToast("In the live flow, this creates the collective and opens the new collective's Community area.")
+            } else if (destination === 'your_world') {
+              showToast('In the live flow, this creates the collective and opens Your World, where the new Collective, World Builders and Creator Studio all appear.')
             } else {
               showToast('In the live flow, this would create the collective.')
             }

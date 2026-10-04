@@ -893,6 +893,7 @@ def get_creator_billing(
             ends_at=subscription.ends_at,
             stripe_connected=bool(subscription.stripe_subscription_id),
             source=subscription.source,
+            grant_reason=subscription.grant_reason,
             current_period_end=subscription.current_period_end,
             cancel_at_period_end=subscription.cancel_at_period_end,
             grace_expires_at=subscription.grace_expires_at,

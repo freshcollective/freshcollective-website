@@ -4,7 +4,7 @@ import { resolveMediaUrl } from '@/lib/api'
 import StepShell from '../StepShell'
 import type { DraftData, LocationOption } from '@/lib/build-your-collective/types'
 
-export type OpenDestination = 'world_builders' | 'creator_studio'
+export type OpenDestination = 'your_world' | 'world_builders' | 'creator_studio'
 
 interface Props {
   draft: DraftData
@@ -35,9 +35,26 @@ const PROMISES: Promise[] = [
  *
  * Create mode is the emotional peak of the ritual: the Location's
  * artwork, the collective's name, the whisper that it has come to
- * life, and — in the same breath — the invitation into World Builders
- * or straight into Creator Studio. Either primary or secondary CTA
- * performs the POST /open action exactly once.
+ * life, and — in the same breath — the way onward. Either CTA performs
+ * the POST /open action exactly once.
+ *
+ * Where it leads, and why. By this point the creator has become a
+ * member, become a Creator, joined World Builders and opened their
+ * first Collective. Dropping them straight into Creator Studio hides
+ * three of those four things, so the primary CTA now goes to Your
+ * World, where all of it is already visible: the new Collective under
+ * "Collectives you created", World Builders among the Collectives they
+ * belong to, and a Creator Studio card in "Create & Manage". That band
+ * is creator-gated and pre-existing — nothing had to be added to Your
+ * World to make this work.
+ *
+ * Creator Studio therefore has no CTA of its own here: the Your World
+ * card covers it, and the Collective card there sets the active-space
+ * cookie before entering, which is exactly what the old
+ * ``creator_studio`` destination did. World Builders stays as a
+ * secondary CTA — it is the guided creator experience, and the
+ * onboarding ritual would lose something real without a direct door
+ * into it.
  *
  * Edit modes (change-location, edit-identity) retain the simpler
  * reveal: artwork + name + identity + welcome message + Save.
@@ -174,7 +191,7 @@ function CreateNext({
 
       <button
         type="button"
-        onClick={() => onOpen('world_builders')}
+        onClick={() => onOpen('your_world')}
         disabled={opening}
         className="mt-16 rounded-full px-8 py-3.5 text-[14px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         style={{
@@ -182,17 +199,17 @@ function CreateNext({
           letterSpacing: '0.08em',
         }}
       >
-        {opening ? 'Opening your collective…' : 'Begin in World Builders →'}
+        {opening ? 'Opening your collective…' : 'Enter Your World →'}
       </button>
 
       <button
         type="button"
-        onClick={() => onOpen('creator_studio')}
+        onClick={() => onOpen('world_builders')}
         disabled={opening}
         className="mt-8 text-[13px] font-medium transition-opacity hover:opacity-70 disabled:opacity-50"
         style={{ color: 'rgba(12, 24, 38, 0.55)' }}
       >
-        Enter Creator Studio →
+        Begin in World Builders →
       </button>
 
       {error && (

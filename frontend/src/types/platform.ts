@@ -1425,6 +1425,13 @@ export interface CreatorSubscriptionOut {
   /** 'stripe_paid' when the sub is Stripe-billed, 'manual_grant' when
    *  admin-comped (Founding Creator, Community). */
   source?: 'stripe_paid' | 'manual_grant'
+  /** Why a manual grant was made, from the backend's PLAN_GRANT_REASONS.
+   *  Null for Stripe-billed subs. `source` alone cannot tell a
+   *  complimentary grant from any other administrative one. */
+  grant_reason?:
+    | 'comp' | 'beta' | 'migration' | 'correction'
+    | 'temporary' | 'replacement' | 'internal' | 'other'
+    | null
   /** Renewal date from Stripe. Populated for source='stripe_paid' subs. */
   current_period_end?: string | null
   /** True when the creator has scheduled a cancellation at period end. */

@@ -1747,6 +1747,14 @@ class CreatorSubscriptionOut(BaseModel):
     # ``CreatorSubscription`` for server-side use and stay behind
     # the schema boundary.
     source: str = "manual_grant"       # 'stripe_paid' | 'manual_grant'
+    # Why a manual grant was made — one of ``admin.schemas``'
+    # ``PLAN_GRANT_REASONS`` ('comp', 'beta', 'migration', …), or None
+    # for a ``stripe_paid`` row. Exposed because ``source`` alone cannot
+    # tell a complimentary grant from any other administrative one, and
+    # the Billing page must not describe free access as a paid
+    # subscription. The operator's free-text ``grant_note`` is
+    # deliberately NOT exposed — it is internal.
+    grant_reason: str | None = None
     current_period_end: datetime | None = None
     cancel_at_period_end: bool = False
     grace_expires_at: datetime | None = None
