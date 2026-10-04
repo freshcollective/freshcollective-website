@@ -11,6 +11,7 @@ Community Phase 1 additions:
     caretaker-answered questions.
 """
 
+import pathlib
 import uuid
 from datetime import datetime
 
@@ -23,7 +24,7 @@ from app.auth.dependencies import get_current_user, get_verified_current_user
 from app.core.database import get_db
 from app.services.member_identity import display_name as member_display_name
 from app.services.member_image import MemberCardArtwork, MemberImagePayload
-from app.core.storage import save_media_file
+from app.core.storage import MEDIA_EXTENSION_MAP, save_media_file
 from app.models.platform import (
     CreatorProfile,
     CommunityPost,
@@ -1103,6 +1104,17 @@ def search_space_members(
 # Image upload for community posts/comments
 # ---------------------------------------------------------------------------
 
+#: Response Content-Type per permitted image extension. Derived from
+#: the extension rather than echoed from the request — see the note in
+#: ``upload_community_image``.
+_IMAGE_MIME_BY_EXT = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
+
 @router.post("/{slug}/community/upload-image", status_code=201)
 async def upload_community_image(
     slug: str,
@@ -1127,12 +1139,34 @@ async def upload_community_image(
             detail="You must be a member of this collective to upload community images.",
         )
 
+    # Images only, on an endpoint named upload-image.
+    #
+    # ``save_media_file`` is the shared media-library writer and accepts
+    # everything that library takes — PDFs, Office documents, audio, and
+    # video up to 250 MB. The composer's ``accept`` attribute is a file
+    # picker hint and nothing more, so a member could hand this endpoint
+    # a .mp4 and get a URL back. It would never render as an image; it
+    # would just sit in the Collective's storage. The endpoint now says
+    # what it means.
+    original_name = file.filename or "image.jpg"
+    ext = pathlib.Path(original_name).suffix.lower()
+    kind, _max = MEDIA_EXTENSION_MAP.get(ext, (None, 0))
+    if kind != "image":
+        raise HTTPException(
+            status_code=400,
+            detail="Only JPEG, PNG and WebP images can be attached.",
+        )
+
     data = await file.read()
     try:
         _, file_url, _, _, _ = save_media_file(
             data=data,
-            original_name=file.filename or "image.jpg",
-            mime_type=file.content_type or "image/jpeg",
+            original_name=original_name,
+            # Derived from the extension we just validated, not taken
+            # from the request. The browser-supplied Content-Type is
+            # stored on the object and served back with it, so trusting
+            # it lets an upload choose how it is later interpreted.
+            mime_type=_IMAGE_MIME_BY_EXT[ext],
             space_slug=f"{slug}/community",
         )
     except ValueError as exc:

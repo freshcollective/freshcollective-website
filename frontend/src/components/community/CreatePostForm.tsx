@@ -157,8 +157,11 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    if (postType !== 'poll' && !body.trim()) {
-      setError('Please write something before sharing.')
+    // An image is something to share. Requiring words alongside it was
+    // the whole of the reported bug: the upload succeeded, the preview
+    // appeared, and Share stayed inert with nothing to explain why.
+    if (postType !== 'poll' && !body.trim() && !imageUrl) {
+      setError('Please write something or attach an image before sharing.')
       return
     }
     if (postType === 'poll') {
@@ -430,7 +433,14 @@ const CreatePostForm = forwardRef<CreatePostFormHandle, CreatePostFormProps>(fun
 
         <button
           type="submit"
-          disabled={isPending || uploading || (postType !== 'poll' && !body.trim())}
+          // ``imageUrl``, not ``imagePreview``: the preview appears the
+          // moment a file is chosen, but only an upload that came back
+          // with a URL is something the post can actually carry.
+          disabled={
+            isPending
+            || uploading
+            || (postType !== 'poll' && !body.trim() && !imageUrl)
+          }
           className="rounded-full px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           style={{ background: 'var(--fc-accent, #14b8a6)' }}
         >

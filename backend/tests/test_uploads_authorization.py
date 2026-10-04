@@ -729,3 +729,153 @@ class TestPublicPlatformArtworkRegression:
         )
         # Public flow never presigns (public bucket).
         r2_serving.generate_presigned_url.assert_not_called()
+
+
+class TestConversationsImageKeysResolve:
+    """The uploader and the authoriser have to agree about the key.
+
+    They did not. ``save_media_file`` was handed ``"{slug}/community"``
+    and flattened every non-word character, so the key came out as
+    ``media/{slug}_community/{file}`` — one path segment. The authoriser
+    reads the segment after ``media/`` as a Collective slug, and
+    ``embody_community`` is not a Collective, so it raised 404 for
+    everybody including the author. No test caught it because the
+    authoriser's tests hand-wrote the key they expected instead of
+    asking the uploader for one.
+    """
+
+    def _produced_key(self, slug: str) -> str:
+        """The key the upload endpoint actually creates, from the real
+        writer rather than from a literal in a test."""
+        import pathlib as _pathlib
+        import tempfile
+
+        from app.core import storage
+
+        original = storage.UPLOAD_DIR
+        storage.UPLOAD_DIR = _pathlib.Path(tempfile.mkdtemp())
+        try:
+            path, _url, _kind, _name, _size = storage.save_media_file(
+                data=b"\x89PNG\r\n\x1a\n" + b"0" * 32,
+                original_name="ocean.png",
+                mime_type="image/png",
+                space_slug=f"{slug}/community",
+            )
+            return path
+        finally:
+            storage.UPLOAD_DIR = original
+
+    def test_the_uploader_keeps_the_community_prefix_nested(self, db, spaces_and_users):
+        slug = spaces_and_users["space_private"].slug
+        key = self._produced_key(slug)
+        assert key.startswith(f"media/{slug}/community/"), key
+
+    def test_the_key_the_uploader_produces_is_readable_by_a_member(
+        self, db, spaces_and_users,
+    ):
+        """The test that would have caught the bug: ask the writer for a
+        key, then hand that exact key to the reader."""
+        s = spaces_and_users
+        key = self._produced_key(s["space_private"].slug)
+        _assert_allow(lambda: authorize_upload(key, s["learner_priv"], db))
+        _assert_allow(lambda: authorize_upload(key, s["owner_private"], db))
+        _assert_deny(lambda: authorize_upload(key, s["unrelated"], db))
+
+    def test_other_callers_still_get_a_single_segment(self, db, spaces_and_users):
+        """Per-segment sanitising must not change the Media Library or
+        the World Guide, which pass one segment."""
+        import pathlib as _pathlib
+        import tempfile
+
+        from app.core import storage
+
+        original = storage.UPLOAD_DIR
+        storage.UPLOAD_DIR = _pathlib.Path(tempfile.mkdtemp())
+        try:
+            slug = spaces_and_users["space_private"].slug
+            path, _u, _k, _n, _s = storage.save_media_file(
+                data=b"x", original_name="asset.png",
+                mime_type="image/png", space_slug=slug,
+            )
+            assert path.startswith(f"media/{slug}/")
+            assert path.count("/") == 2, path
+        finally:
+            storage.UPLOAD_DIR = original
+
+    def test_a_traversal_attempt_in_the_prefix_cannot_escape(self, db):
+        import pathlib as _pathlib
+        import tempfile
+
+        from app.core import storage
+
+        original = storage.UPLOAD_DIR
+        storage.UPLOAD_DIR = _pathlib.Path(tempfile.mkdtemp())
+        try:
+            path, _u, _k, _n, _s = storage.save_media_file(
+                data=b"x", original_name="a.png",
+                mime_type="image/png", space_slug="../../etc/community",
+            )
+            assert ".." not in path, path
+            assert path.startswith("media/")
+        finally:
+            storage.UPLOAD_DIR = original
+
+
+class TestLegacyConversationsKeys:
+    """Images posted before the key fix are still in storage and still
+    referenced by live posts, so the flattened shape has to keep
+    resolving — under the same membership rule, not a looser one."""
+
+    def test_a_legacy_flattened_key_resolves_to_its_collective(
+        self, db, spaces_and_users,
+    ):
+        s = spaces_and_users
+        slug = s["space_private"].slug
+        key = f"media/{slug}_community/uuid_ocean.jpeg"
+        _assert_allow(lambda: authorize_upload(key, s["learner_priv"], db))
+        _assert_allow(lambda: authorize_upload(key, s["owner_private"], db))
+
+    def test_a_legacy_key_is_no_more_readable_than_the_conversation(
+        self, db, spaces_and_users,
+    ):
+        s = spaces_and_users
+        slug = s["space_private"].slug
+        key = f"media/{slug}_community/uuid_ocean.jpeg"
+        _assert_deny(lambda: authorize_upload(key, s["unrelated"], db))
+        _assert_deny(lambda: authorize_upload(key, s["suspended_priv"], db))
+        _assert_deny(lambda: authorize_upload(key, s["removed_priv"], db))
+
+    def test_an_unknown_collective_is_still_not_found(self, db, spaces_and_users):
+        s = spaces_and_users
+        key = "media/no-such-collective_community/uuid_x.png"
+        # 404, not 403: there is no Collective to be a member of, and
+        # the status must not reveal which of the two it was.
+        _assert_deny(lambda: authorize_upload(key, s["admin"], db), 404)
+
+    def test_a_real_collective_named_with_the_suffix_keeps_its_library(
+        self, db, spaces_and_users, make_user, make_space,
+    ):
+        """The reason the legacy branch runs *after* the plain lookup.
+
+        A Collective may genuinely be called "something_community", and
+        its Media Library key is a single segment that happens to end
+        the same way. Reading the suffix first would hand its files to
+        members of a different Collective.
+        """
+        from app.models.platform import (
+            SpaceMembership, SpaceMembershipStatus, SpaceRole,
+        )
+
+        space = make_space(slug="wellness_community")
+        member = make_user()
+        db.add(SpaceMembership(
+            id=str(uuid.uuid4()), space_id=space.id, user_id=member.id,
+            role=SpaceRole.learner, status=SpaceMembershipStatus.active,
+        ))
+        db.flush()
+
+        key = f"media/{space.slug}/uuid_asset.png"
+        _assert_allow(lambda: authorize_upload(key, member, db))
+        _assert_deny(
+            lambda: authorize_upload(key, spaces_and_users["unrelated"], db),
+        )

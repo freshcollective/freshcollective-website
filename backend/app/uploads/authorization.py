@@ -225,6 +225,10 @@ def _authorise_step_resource(user: User, file_path: str, db: Session) -> None:
     _check_pathway_access(user, pathway, space, db)
 
 
+#: What ``save_media_file`` used to flatten "{slug}/community" to.
+_LEGACY_COMMUNITY_SUFFIX = "_community"
+
+
 def _authorise_media(user: User, file_path: str, db: Session) -> None:
     """media/… namespace — three sub-cases:
 
@@ -248,6 +252,34 @@ def _authorise_media(user: User, file_path: str, db: Session) -> None:
         return  # any authenticated user allowed.
 
     space = db.query(Space).filter(Space.slug == slug).first()
+
+    # Legacy Conversations keys.
+    #
+    # ``save_media_file`` used to flatten "{slug}/community" into
+    # "{slug}_community", so images posted before that was fixed live at
+    # ``media/{slug}_community/{file}`` — one path segment, and not a
+    # Collective slug, so the lookup above found nothing and the image
+    # 404'd for everybody including its author. Those objects are still
+    # in storage and still referenced by live posts, so the key shape
+    # has to keep resolving.
+    #
+    # Deliberately *after* the plain lookup: a Collective may genuinely
+    # be called "wellness_community", and its Media Library must keep
+    # working. Only when no such Collective exists is the suffix read as
+    # the old Conversations prefix.
+    #
+    # Residual, and worth closing by migrating those objects to the
+    # nested key: if somebody registers a Collective whose slug is
+    # exactly "{target}_community", the lookup above matches it and
+    # their members can read the target's *legacy* Conversations images.
+    # Not reachable for anything uploaded after this change — new keys
+    # are nested, where the slug is a whole segment and cannot be
+    # spoofed by naming.
+    if space is None and slug.endswith(_LEGACY_COMMUNITY_SUFFIX):
+        base = slug[: -len(_LEGACY_COMMUNITY_SUFFIX)]
+        if base:
+            space = db.query(Space).filter(Space.slug == base).first()
+
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
     _require_member_or_manager(user, space, db)

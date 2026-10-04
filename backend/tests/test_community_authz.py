@@ -809,3 +809,144 @@ class TestCrossCollectiveIDORMatrix:
         assert db.query(PostComment).filter_by(
             post_id=two_spaces["post_b"].id,
         ).count() == 1  # just the original seeded comment_b, no new insert
+
+
+class TestCommunityImageUploadIsImagesOnly:
+    """``upload-image`` writes through ``save_media_file``, which is the
+    shared Media Library writer and accepts documents, audio and video
+    up to 250 MB. The composer's ``accept`` attribute is a file-picker
+    hint, not a constraint, so the endpoint has to say what it means.
+    """
+
+    def _upload(self, db, user, space, **file_kw):
+        return _call_upload(upload_community_image(
+            slug=space.slug,
+            file=_FakeUploadFile(data=b"\x00" * 16, **file_kw),
+            db=db, current_user=user,
+        ))
+
+    @pytest.fixture
+    def member_and_space(self, db, make_user, make_space, make_membership):
+        space = make_space()
+        member = make_user(role="user")
+        make_membership(user=member, space=space)
+        return member, space
+
+    @pytest.mark.parametrize(
+        "filename", ["photo.jpg", "photo.jpeg", "photo.PNG", "photo.webp"],
+    )
+    def test_permitted_image_types_are_accepted(
+        self, db, member_and_space, stub_save_media_file, filename,
+    ):
+        member, space = member_and_space
+        assert "url" in self._upload(db, member, space, filename=filename)
+
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            "notes.pdf",      # document — 25 MB ceiling
+            "clip.mp4",       # video — 250 MB ceiling
+            "song.mp3",       # audio — 50 MB ceiling
+            "sheet.xlsx",
+            "drawing.svg",    # never permitted anywhere, and not sanitised
+            "payload.html",
+            "archive.zip",
+            "noextension",
+        ],
+    )
+    def test_everything_else_is_rejected(
+        self, db, member_and_space, stub_save_media_file, filename,
+    ):
+        member, space = member_and_space
+        with pytest.raises(HTTPException) as exc:
+            self._upload(db, member, space, filename=filename)
+        assert exc.value.status_code == 400
+
+    def test_a_declared_image_content_type_does_not_launder_the_extension(
+        self, db, member_and_space, stub_save_media_file,
+    ):
+        """The request says image/jpeg; the file is a .mp4. The
+        extension decides, because the extension is what the stored key
+        and every later reader go by."""
+        member, space = member_and_space
+        with pytest.raises(HTTPException) as exc:
+            self._upload(
+                db, member, space,
+                filename="clip.mp4", content_type="image/jpeg",
+            )
+        assert exc.value.status_code == 400
+
+    def test_the_stored_content_type_is_derived_not_echoed(
+        self, db, member_and_space, monkeypatch,
+    ):
+        """What the browser claims is stored on the object and served
+        back with it, so a .png announced as text/html would be served
+        as text/html. The extension decides instead."""
+        member, space = member_and_space
+        seen: dict = {}
+
+        def _fake_save(*, data, original_name, mime_type, space_slug):
+            seen["mime_type"] = mime_type
+            return ("k", "/api/uploads/k", "image", "k", len(data))
+
+        monkeypatch.setattr("app.community.routes.save_media_file", _fake_save)
+        self._upload(
+            db, member, space,
+            filename="photo.png", content_type="text/html",
+        )
+        assert seen["mime_type"] == "image/png"
+
+    def test_rejection_happens_before_the_body_is_read(
+        self, db, member_and_space, monkeypatch,
+    ):
+        """A 250 MB video should not be pulled into memory just to be
+        turned away."""
+        member, space = member_and_space
+        read_called = {"yes": False}
+
+        class _Watchful(_FakeUploadFile):
+            async def read(self):
+                read_called["yes"] = True
+                return b""
+
+        with pytest.raises(HTTPException):
+            _call_upload(upload_community_image(
+                slug=space.slug,
+                file=_Watchful(filename="clip.mp4"),
+                db=db, current_user=member,
+            ))
+        assert not read_called["yes"], "the file was read before rejection"
+
+    def test_membership_is_still_checked_first(
+        self, db, make_user, make_space, stub_save_media_file,
+    ):
+        """Type validation must not become a way to probe Collectives
+        you are not in: a stranger gets 403 whatever they send."""
+        space = make_space()
+        stranger = make_user(role="user")
+        for filename in ("photo.png", "clip.mp4"):
+            with pytest.raises(HTTPException) as exc:
+                self._upload(db, stranger, space, filename=filename)
+            assert exc.value.status_code == 403, filename
+
+
+class TestImageMimeTableAgrees:
+    def test_every_permitted_image_extension_has_a_content_type(self):
+        """``_IMAGE_MIME_BY_EXT`` is indexed directly after the
+        extension check passes, so a new image type added to
+        ``MEDIA_EXTENSION_MAP`` without a matching entry here would be a
+        KeyError — a 500 on upload rather than a clear rejection."""
+        from app.community.routes import _IMAGE_MIME_BY_EXT
+        from app.core.storage import MEDIA_EXTENSION_MAP
+
+        image_exts = {
+            ext for ext, (kind, _max) in MEDIA_EXTENSION_MAP.items()
+            if kind == "image"
+        }
+        assert image_exts == set(_IMAGE_MIME_BY_EXT), (
+            "MEDIA_EXTENSION_MAP and _IMAGE_MIME_BY_EXT have drifted"
+        )
+
+    def test_svg_is_not_permitted_anywhere(self):
+        from app.core.storage import MEDIA_EXTENSION_MAP
+        assert ".svg" not in MEDIA_EXTENSION_MAP

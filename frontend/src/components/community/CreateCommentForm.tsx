@@ -68,7 +68,13 @@ export default function CreateCommentForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!body.trim()) return
+    // Same rule as the post composer — an image alone is a reply.
+    // This one returned silently, so an image-only reply did nothing at
+    // all and said nothing about why.
+    if (!body.trim() && !imageUrl) {
+      setError('Please write something or attach an image.')
+      return
+    }
     setError('')
 
     const res = await fetch(apiUrl(`/api/spaces/${spaceSlug}/community/${postId}/comments`), {
@@ -176,7 +182,7 @@ export default function CreateCommentForm({
 
         <button
           type="submit"
-          disabled={isPending || !body.trim() || uploading}
+          disabled={isPending || uploading || (!body.trim() && !imageUrl)}
           className="rounded-full px-5 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           style={{ background: 'var(--fc-accent, #14b8a6)' }}
         >

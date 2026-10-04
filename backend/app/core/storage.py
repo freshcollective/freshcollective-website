@@ -275,7 +275,30 @@ def save_media_file(
     safe_base = _sanitize_filename(pathlib.Path(original_name).stem)
     stored_filename = f"{uuid4().hex}_{safe_base}{ext}"
 
-    safe_slug = re.sub(r"[^\w\-]", "_", space_slug)[:50]
+    # Sanitised per path segment rather than across the whole string.
+    #
+    # ``space_slug`` is sometimes a path — Collective Conversations
+    # passes ``"{slug}/community"`` to keep its images in their own
+    # prefix. Replacing every non-word character flattened that to
+    # ``"{slug}_community"``, and the read authoriser in
+    # ``uploads/authorization._authorise_media`` reads the segment after
+    # ``media/`` as a Collective slug. ``embody_community`` is not a
+    # Collective, so every Conversations image 404'd for everybody,
+    # including the person who posted it.
+    #
+    # Per-segment keeps the separator and is still traversal-proof: "."
+    # and ".." are not in ``[\w-]`` either, so a segment of dots becomes
+    # underscores rather than a parent reference. Empty segments are
+    # dropped so a stray slash cannot produce "media//file".
+    #
+    # Single-segment callers — every other one — are byte-for-byte
+    # unchanged, because one segment capped at 50 is what they got
+    # before.
+    safe_slug = "/".join(
+        re.sub(r"[^\w\-]", "_", segment)[:50]
+        for segment in space_slug.split("/")
+        if segment
+    )
     subdir = f"media/{safe_slug}"
     storage_path = f"{subdir}/{stored_filename}"
 

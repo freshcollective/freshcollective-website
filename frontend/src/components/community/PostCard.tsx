@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import PostTypeTag from './PostTypeTag'
 import ModerationMenu from './ModerationMenu'
+import CommunityImage from './CommunityImage'
 import MentionText from './MentionText'
 import PollView from './PollView'
 import Avatar from '@/components/ui/Avatar'
@@ -187,8 +188,12 @@ export default function PostCard({
                   <MentionText body={preview} mentionedNames={mentionedNames} />
                 </p>
                 {post.image_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  // The shared component, like the detail page and the
+                  // replies: a bare <img> here showed a broken-image
+                  // icon in the feed whenever the file could not be
+                  // read, which is every Conversations image posted
+                  // before the storage key was fixed.
+                  <CommunityImage
                     src={resolveMediaUrl(post.image_url) ?? ''}
                     alt=""
                     className="h-16 w-16 shrink-0 rounded-lg object-cover"
