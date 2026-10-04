@@ -80,6 +80,7 @@ from app.services.test_account_cleanup import (
     apply_cleanup,
     audit,
     protected_snapshot,
+    recheck_unchanged,
     verify_protected_intact,
 )
 
@@ -109,7 +110,19 @@ def main() -> int:
         "--show-emails", action="store_true",
         help="Show full addresses of attached third parties, not masked ones.",
     )
+    parser.add_argument(
+        "--only", action="append", metavar="EMAIL", default=None,
+        choices=list(TARGET_EMAILS),
+        help=(
+            "Narrow this run to one or more of the approved targets, so a "
+            "blocked account cannot strand a clean one. Repeatable. The "
+            "choices are fixed: this can only ever narrow the set, never "
+            "widen it. Accounts left out are retained and treated as "
+            "outsiders, so anything shared with them blocks."
+        ),
+    )
     args = parser.parse_args()
+    scope = tuple(args.only) if args.only else TARGET_EMAILS
     show = (lambda e: e or "<none>") if args.show_emails else mask
 
     engine = create_engine(settings.database_url, future=True, pool_pre_ping=True)
@@ -122,7 +135,16 @@ def main() -> int:
                 "cleanup_test_accounts: %s",
                 "APPLY" if args.apply else "AUDIT (read-only, nothing will be written)",
             )
-            log.info("  targets:   %s", ", ".join(TARGET_EMAILS))
+            log.info("  in scope:  %s", ", ".join(scope))
+            if set(scope) != set(TARGET_EMAILS):
+                log.info(
+                    "  retained:  %s",
+                    ", ".join(e for e in TARGET_EMAILS if e not in scope),
+                )
+                log.info(
+                    "             (retained accounts count as OUTSIDERS — "
+                    "anything shared with them blocks)"
+                )
             log.info("  protected: %s", ", ".join(PROTECTED_EMAILS))
             log.info("=" * 68)
 
@@ -144,10 +166,16 @@ def main() -> int:
                     )
             log.info("")
 
-            plan = audit(db)
+            plan = audit(db, apply_to=scope)
 
             for finding in plan.findings:
                 log.info("-" * 68)
+                if not finding.in_scope:
+                    log.info(
+                        "%s — RETAINED, out of scope for this run. Audited "
+                        "below for context only; nothing will be deleted.",
+                        finding.email,
+                    )
                 if not finding.present:
                     log.info(
                         "%s — NOT PRESENT. Nothing to do (already removed, or "
@@ -208,7 +236,7 @@ def main() -> int:
 
             log.info("-" * 68)
 
-            present = [f for f in plan.findings if f.present]
+            present = [f for f in plan.in_scope() if f.present]
             log.info(
                 "summary: %d of %d target(s) present, %d blocked",
                 len(present), len(plan.findings), len(plan.blocked),
@@ -261,6 +289,23 @@ def main() -> int:
                 return 0
 
             # --- apply ---------------------------------------------------
+            # Every dependency check again, inside the transaction, with
+            # nothing deleted yet. The audit above may be minutes or
+            # hours old by the time somebody runs this.
+            moved = recheck_unchanged(db, plan)
+            if moved:
+                log.error("")
+                for m in moved:
+                    log.error("  CHANGED SINCE THE AUDIT: %s", m)
+                log.error(
+                    "Refusing to apply — re-run the audit and read it again."
+                )
+                db.rollback()
+                return 2
+
+            log.info("")
+            log.info("  re-check immediately before mutation: unchanged")
+
             result = apply_cleanup(db, plan)
 
             problems = verify_protected_intact(db, before)

@@ -38,6 +38,7 @@ from app.services.test_account_cleanup import (
     apply_cleanup,
     audit,
     protected_snapshot,
+    recheck_unchanged,
     user_fk_columns,
     verify_protected_intact,
 )
@@ -50,6 +51,18 @@ TOM = "tom@hilliard.net.au"
 
 def _uid(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+def _exists(db, user_id: str) -> bool:
+    """Whether the row is still there, asked of the database.
+
+    ``db.get`` would answer from the identity map, and ``apply_cleanup``
+    deletes with Core statements that do not pass through it — so a
+    deleted user still comes back as an object.
+    """
+    return bool(db.scalar(
+        text("SELECT 1 FROM users WHERE id = :u"), {"u": user_id},
+    ))
 
 
 @pytest.fixture
@@ -645,3 +658,202 @@ class TestTomIsNeverTouched:
         db.flush()
 
         assert verify_protected_intact(db, before) == []
+
+
+class TestScopingToOneAccount:
+    """``--only`` exists so one blocked account cannot strand a clean
+    one. It must narrow and never widen, and narrowing has to make the
+    shared-data checks *stricter*, not weaker."""
+
+    def test_only_the_scoped_account_is_deleted(self, db, mk, make_space):
+        jenson = mk(JENSON, role="creator")
+        creator = mk(CREATOR)
+        lindsey = mk(LINDSEY_TEST)
+        space = make_space(creator=jenson, slug="jensons-test-community")
+        db.add(SpaceMembership(
+            id=_uid("sm"), space_id=space.id, user_id=jenson.id,
+            role=SpaceRole.creator, status=SpaceMembershipStatus.active,
+            joined_at=datetime.utcnow(),
+        ))
+        db.flush()
+
+        plan = audit(db, apply_to=(JENSON,))
+        assert plan.safe
+        apply_cleanup(db, plan)
+        db.flush()
+
+        assert not _exists(db, jenson.id)
+        assert _exists(db, creator.id), "Creator Test retained"
+        assert _exists(db, lindsey.id), "Lindsey Test retained"
+
+    def test_a_blocked_account_does_not_strand_a_clean_one(self, db, mk):
+        """The reason this flag exists."""
+        jenson = mk(JENSON)
+        creator = mk(CREATOR)
+        real = mk("kelly@example.com")
+        # Creator Test is blocked by a shared conversation.
+        low, high = canonical_pair(creator.id, real.id)
+        db.add(PeerThread(
+            id=_uid("pt"), participant_a_user_id=low, participant_b_user_id=high,
+        ))
+        db.flush()
+
+        assert audit(db).safe is False, "the whole-set plan is blocked"
+        scoped = audit(db, apply_to=(JENSON,))
+        assert scoped.safe is True, "Jenson alone is clean"
+
+        apply_cleanup(db, scoped)
+        db.flush()
+        assert not _exists(db, jenson.id)
+        assert _exists(db, creator.id)
+
+    def test_a_retained_target_becomes_an_outsider(self, db, mk):
+        """The tightening, and the whole reason this is not just a skip.
+
+        A conversation between two targets is fine when both are going
+        and is data loss when only one is. Narrowing the scope has to
+        turn the other end into an outsider.
+        """
+        jenson = mk(JENSON)
+        creator = mk(CREATOR)
+        low, high = canonical_pair(jenson.id, creator.id)
+        db.add(PeerThread(
+            id=_uid("pt"), participant_a_user_id=low, participant_b_user_id=high,
+        ))
+        db.flush()
+
+        both = next(f for f in audit(db).findings if f.email == JENSON)
+        assert both.safe, "both ends going: nothing is orphaned"
+
+        alone = next(
+            f for f in audit(db, apply_to=(JENSON,)).findings
+            if f.email == JENSON
+        )
+        assert not alone.safe, "Creator Test is retained, so this is data loss"
+        assert any(b.kind == "shared_peer_thread" for b in alone.blockers)
+
+    def test_a_retained_target_in_a_collective_becomes_an_outsider(
+        self, db, mk, make_space,
+    ):
+        """The shared 'Test Collective' shape: members who are other
+        test accounts are insiders only while they are also going."""
+        jenson = mk(JENSON, role="creator")
+        creator = mk(CREATOR)
+        space = make_space(creator=jenson, slug="test-collective",
+                           name="Test Collective")
+        for u in (jenson, creator):
+            db.add(SpaceMembership(
+                id=_uid("sm"), space_id=space.id, user_id=u.id,
+                role=SpaceRole.learner, status=SpaceMembershipStatus.active,
+                joined_at=datetime.utcnow(),
+            ))
+        db.flush()
+
+        both = next(f for f in audit(db).findings if f.email == JENSON)
+        assert both.safe
+
+        alone = next(
+            f for f in audit(db, apply_to=(JENSON,)).findings
+            if f.email == JENSON
+        )
+        assert not alone.safe
+        assert any(
+            b.kind == "collective_has_outside_members" for b in alone.blockers
+        )
+
+    def test_the_scope_cannot_be_widened(self, db, mk):
+        with pytest.raises(ValueError, match="not in the approved target set"):
+            audit(db, apply_to=(TOM,))
+        with pytest.raises(ValueError):
+            audit(db, apply_to=("someone@else.com",))
+
+    def test_retained_accounts_are_still_audited_for_context(self, db, mk):
+        mk(JENSON)
+        mk(CREATOR)
+        plan = audit(db, apply_to=(JENSON,))
+        assert {f.email for f in plan.findings} == set(TARGET_EMAILS)
+        assert [f.email for f in plan.in_scope()] == [JENSON]
+        assert CREATOR in {f.email for f in plan.retained}
+
+    def test_a_retained_account_is_reported_as_skipped(self, db, mk):
+        mk(JENSON)
+        mk(CREATOR)
+        result = apply_cleanup(db, audit(db, apply_to=(JENSON,)))
+        assert any(CREATOR in s and "retained" in s for s in result.skipped)
+
+
+class TestTheRecheckBeforeMutation:
+    def test_an_unchanged_plan_passes(self, db, mk):
+        mk(JENSON)
+        plan = audit(db, apply_to=(JENSON,))
+        assert recheck_unchanged(db, plan) == []
+
+    def test_a_new_outside_member_is_caught(self, db, mk, make_space):
+        """Somebody joining between the audit and the apply."""
+        jenson = mk(JENSON, role="creator")
+        space = make_space(creator=jenson, slug="jensons-test-community")
+        plan = audit(db, apply_to=(JENSON,))
+        assert plan.safe
+
+        real = mk("kelly@example.com")
+        db.add(SpaceMembership(
+            id=_uid("sm"), space_id=space.id, user_id=real.id,
+            role=SpaceRole.learner, status=SpaceMembershipStatus.active,
+            joined_at=datetime.utcnow(),
+        ))
+        db.flush()
+
+        problems = recheck_unchanged(db, plan)
+        assert problems
+        assert any("blocker appeared" in p for p in problems)
+
+    def test_a_new_shared_conversation_is_caught(self, db, mk):
+        jenson = mk(JENSON)
+        plan = audit(db, apply_to=(JENSON,))
+        assert plan.safe
+
+        real = mk("kelly@example.com")
+        low, high = canonical_pair(jenson.id, real.id)
+        db.add(PeerThread(
+            id=_uid("pt"), participant_a_user_id=low, participant_b_user_id=high,
+        ))
+        db.flush()
+
+        assert any("blocker appeared" in p for p in recheck_unchanged(db, plan))
+
+    def test_a_vanished_account_is_caught(self, db, mk):
+        jenson = mk(JENSON)
+        plan = audit(db, apply_to=(JENSON,))
+        db.execute(text("DELETE FROM users WHERE id = :u"), {"u": jenson.id})
+        db.flush()
+        assert recheck_unchanged(db, plan) != []
+
+    def test_an_email_pointing_at_a_different_account_is_caught(
+        self, db, mk,
+    ):
+        """The address resolving somewhere new between audit and apply —
+        the one thing that would make the whole report describe a
+        different person."""
+        jenson = mk(JENSON)
+        plan = audit(db, apply_to=(JENSON,))
+        original_id = jenson.id
+
+        db.execute(text("DELETE FROM users WHERE id = :u"), {"u": original_id})
+        db.flush()
+        mk(JENSON)  # same email, new row
+
+        problems = recheck_unchanged(db, plan)
+        assert any("different account" in p for p in problems)
+
+    def test_routine_activity_does_not_trip_it(self, db, mk):
+        """A notification arriving is not a reason to refuse. Only
+        identity and safety are compared, not every count."""
+        jenson = mk(JENSON)
+        plan = audit(db, apply_to=(JENSON,))
+        db.execute(text(
+            "INSERT INTO notifications "
+            "(id, user_id, notification_type, title, message) "
+            "VALUES (:i, :u, 'generic', 'Hi', 'Body')"
+        ), {"i": _uid("n"), "u": jenson.id})
+        db.flush()
+        assert recheck_unchanged(db, plan) == []

@@ -122,6 +122,11 @@ class SpaceFinding:
 @dataclass
 class UserFinding:
     email: str
+    #: Is this account in the set being deleted on this run? Accounts
+    #: outside it are still audited and reported — the picture is more
+    #: useful whole — but are retained, and count as outsiders for every
+    #: shared-data check.
+    in_scope: bool = True
     user_id: str | None = None
     name: str | None = None
     role: str | None = None
@@ -151,18 +156,32 @@ class UserFinding:
 class CleanupPlan:
     findings: list[UserFinding]
     protected_user_ids: dict[str, str]
+    #: The emails this run would delete. A subset of ``TARGET_EMAILS``.
+    apply_emails: tuple[str, ...] = TARGET_EMAILS
+
+    def in_scope(self) -> list[UserFinding]:
+        return [f for f in self.findings if f.in_scope]
 
     @property
     def safe(self) -> bool:
-        """Every present target is individually safe, and at least one
-        is present. A plan with any blocker is not partially applied —
-        see ``apply``."""
-        present = [f for f in self.findings if f.present]
+        """Every in-scope present account is individually safe, and at
+        least one is present.
+
+        Scoped rather than global so one blocked account cannot strand
+        the others — but the scoping *tightens* rather than loosens: an
+        account left out of the scope becomes an outsider, so anything
+        shared with it now blocks where before both ends were going.
+        """
+        present = [f for f in self.in_scope() if f.present]
         return bool(present) and all(f.safe for f in present)
 
     @property
     def blocked(self) -> list[UserFinding]:
-        return [f for f in self.findings if f.present and f.blockers]
+        return [f for f in self.in_scope() if f.present and f.blockers]
+
+    @property
+    def retained(self) -> list[UserFinding]:
+        return [f for f in self.findings if not f.in_scope]
 
 
 # ---------------------------------------------------------------------------
@@ -364,8 +383,27 @@ def _shared_data_blockers(
     return blockers
 
 
-def audit(db: Session) -> CleanupPlan:
-    """Read-only. Resolves the targets and everything attached to them."""
+def audit(
+    db: Session, apply_to: tuple[str, ...] | None = None,
+) -> CleanupPlan:
+    """Read-only. Resolves the targets and everything attached to them.
+
+    ``apply_to`` narrows which accounts this run would delete. It can
+    only ever be a subset of ``TARGET_EMAILS`` — passing anything else
+    raises, so narrowing cannot become widening.
+
+    Narrowing is not a relaxation. The shared-data checks ask "is the
+    other end of this also being deleted?", and the answer changes when
+    the scope shrinks: a conversation between two targets is fine when
+    both are going and is a blocker when only one is. So ``apply_to``
+    is what defines an outsider, not ``TARGET_EMAILS``.
+    """
+    scope = TARGET_EMAILS if apply_to is None else tuple(apply_to)
+    unknown = set(scope) - set(TARGET_EMAILS)
+    if unknown:
+        raise ValueError(
+            f"not in the approved target set: {sorted(unknown)}"
+        )
     protected: dict[str, str] = {}
     for email in PROTECTED_EMAILS:
         found = _resolve(db, email)
@@ -378,13 +416,16 @@ def audit(db: Session) -> CleanupPlan:
         if found:
             resolved[email] = found
 
-    target_ids = {v[0] for v in resolved.values()}
+    # Only the accounts actually being deleted count as insiders.
+    target_ids = {
+        v[0] for e, v in resolved.items() if e in scope
+    }
     protected_ids = set(protected.values())
     fk_columns = user_fk_columns(db)
 
     findings: list[UserFinding] = []
     for email in TARGET_EMAILS:
-        finding = UserFinding(email=email)
+        finding = UserFinding(email=email, in_scope=email in scope)
         found = resolved.get(email)
         if not found:
             findings.append(finding)
@@ -465,7 +506,9 @@ def audit(db: Session) -> CleanupPlan:
         )
         findings.append(finding)
 
-    return CleanupPlan(findings=findings, protected_user_ids=protected)
+    return CleanupPlan(
+        findings=findings, protected_user_ids=protected, apply_emails=scope,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -501,6 +544,9 @@ def apply_cleanup(db: Session, plan: CleanupPlan) -> ApplyResult:
     result = ApplyResult()
 
     for finding in plan.findings:
+        if not finding.in_scope:
+            result.skipped.append(f"{finding.email}: retained (out of scope)")
+            continue
         if not finding.present:
             result.skipped.append(f"{finding.email}: no such account")
             continue
@@ -584,6 +630,51 @@ def protected_snapshot(db: Session) -> dict[str, dict[str, int | str]]:
             )
         snapshot[email] = counts
     return snapshot
+
+
+def recheck_unchanged(db: Session, plan: CleanupPlan) -> list[str]:
+    """Re-run the whole audit and report anything that moved. Empty is good.
+
+    Called inside the transaction, immediately before the first delete.
+    The gap between reading a plan and acting on it is small but it is
+    not zero: somebody can join a Collective, send a hello or start a
+    purchase in between, and the second audit is cheaper than finding
+    out afterwards.
+
+    Compares identity and safety rather than every count, because
+    counts legitimately move — a notification arriving is not a reason
+    to refuse. What must not move is who the emails resolve to, and
+    whether anything attached is now somebody else's.
+    """
+    fresh = audit(db, apply_to=plan.apply_emails)
+    problems: list[str] = []
+
+    before = {f.email: f for f in plan.findings}
+    after = {f.email: f for f in fresh.findings}
+
+    for email in plan.apply_emails:
+        was, now = before.get(email), after.get(email)
+        if was is None or now is None:
+            problems.append(f"{email}: disappeared from the plan")
+            continue
+        if was.user_id != now.user_id:
+            problems.append(
+                f"{email}: resolves to a different account "
+                f"({was.user_id} -> {now.user_id})"
+            )
+        if now.blockers:
+            problems.append(
+                f"{email}: a blocker appeared since the audit — "
+                + "; ".join(b.kind for b in now.blockers)
+            )
+        was_spaces = {s.space_id for s in was.owned_spaces}
+        now_spaces = {s.space_id for s in now.owned_spaces}
+        if was_spaces != now_spaces:
+            problems.append(f"{email}: the set of owned Collectives changed")
+
+    if not fresh.safe:
+        problems.append("the re-audit is no longer safe to apply")
+    return problems
 
 
 def verify_protected_intact(
