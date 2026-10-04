@@ -363,3 +363,87 @@ class TestGrantExpiryIsNotAutomatic:
         sweep_expired_creator_grace(db)
         db.flush()
         assert sub.status == CreatorSubscriptionStatus.active
+
+
+class TestBillingAfterGrantExpiry:
+    """What Billing says once a complimentary grant has ended.
+
+    The guards already treat a creator with no active subscription as a
+    Community creator. This display used to disagree, showing an orange
+    "your plan has not been configured yet / contact Fresh Collective"
+    warning — alarming and wrong for a normal return to the free plan.
+    The one state that stays a warning is a genuine payment failure.
+    """
+
+    def test_an_expired_grant_shows_community_not_a_warning(
+        self, db, client, make_user,
+    ):
+        creator = make_user(role="creator")
+        _ensure_plan(db, slug="community", fee_bps=0, price=0)
+        plan = _ensure_plan(db, slug="creator", fee_bps=800, price=1900)
+        sub = _grant_sub(
+            db, creator, plan, source="manual_grant",
+            status=CreatorSubscriptionStatus.cancelled,
+        )
+        sub.grant_reason = "comp"
+        sub.ends_at = datetime.utcnow() - timedelta(days=1)
+        sub.revoked_at = datetime.utcnow()
+        sub.revoked_by_user_id = None          # system expiry
+        db.commit()
+
+        app.dependency_overrides[get_creator_user] = lambda: creator
+        res = client.get("/api/creator/billing")
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["has_active_plan"] is True
+        assert body["current_plan"]["slug"] == "community"
+        # No active subscription row — Community is reached by fallback.
+        assert body["subscription"] is None
+
+    def test_a_self_serve_community_creator_shows_community(
+        self, db, client, make_user,
+    ):
+        """Same fix covers a creator who never had a subscription row —
+        the state /api/creator/community/start leaves them in."""
+        creator = make_user(role="creator")
+        _ensure_plan(db, slug="community", fee_bps=0, price=0)
+        db.commit()
+
+        app.dependency_overrides[get_creator_user] = lambda: creator
+        res = client.get("/api/creator/billing")
+        body = res.json()
+        assert body["has_active_plan"] is True
+        assert body["current_plan"]["slug"] == "community"
+
+    def test_a_lapsed_unpaid_subscription_still_warns(
+        self, db, client, make_user,
+    ):
+        """Regression guard: a payment failure is genuinely unconfigured
+        and must keep the warning, not be softened into Community."""
+        creator = make_user(role="creator")
+        _ensure_plan(db, slug="community", fee_bps=0, price=0)
+        plan = _ensure_plan(db, slug="creator", fee_bps=800, price=1900)
+        _grant_sub(
+            db, creator, plan, source="stripe_paid",
+            status=CreatorSubscriptionStatus.unpaid,
+            stripe_subscription_id="sub_lapsed", stripe_customer_id="cus_lapsed",
+        )
+        db.commit()
+
+        app.dependency_overrides[get_creator_user] = lambda: creator
+        res = client.get("/api/creator/billing")
+        body = res.json()
+        assert body["has_active_plan"] is False
+        assert body["current_plan"] is None
+
+    def test_community_display_does_not_unlock_paid_offers(
+        self, db, client, make_user,
+    ):
+        """Showing Community must not read as commercial permission."""
+        creator = make_user(role="creator")
+        _ensure_plan(db, slug="community", fee_bps=0, price=0)
+        db.commit()
+
+        app.dependency_overrides[get_creator_user] = lambda: creator
+        body = client.get("/api/creator/billing").json()
+        assert body["plan_permits_paid_offers"] is False

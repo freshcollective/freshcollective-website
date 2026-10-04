@@ -63,13 +63,16 @@ describe('a complimentary grant is never shown as a paid subscription', () => {
     assert.ok(!/19/.test(v.priceOverride ?? ''))
   })
 
-  test('the end date is shown', () => {
+  test('the end date is shown as an enforced term', () => {
     const v = describeCreatorAccess(
       plan(),
       sub({ grant_reason: 'comp', ends_at: '2026-11-04T00:00:00Z' }),
       NOW,
     )
     assert.match(v.termNote ?? '', /4 Nov 2026/)
+    // "Active until" is accurate now that creator_grant_expiry.py
+    // enforces ends_at and returns the creator to Community.
+    assert.match(v.termNote ?? '', /Active until/)
   })
 
   test('no copy claims a future charge — a grant has no Stripe subscription', () => {
@@ -84,22 +87,24 @@ describe('a complimentary grant is never shown as a paid subscription', () => {
     }
   })
 
-  test('no copy claims the access stops by itself — nothing enforces ends_at', () => {
+  test('the copy names the free plan it falls back to, not a price', () => {
     const note = describeCreatorAccess(
       plan(), sub({ grant_reason: 'comp', ends_at: '2026-11-04T00:00:00Z' }), NOW,
     ).termNote ?? ''
-    // "Granted until", not "Active until": the backend has no sweeper
-    // for ends_at, so an automatic cutoff would be a false promise.
-    assert.match(note, /Granted until/)
-    assert.ok(!/expires automatically|will end|access ends/i.test(note))
+    assert.match(note, /Community/)
+    assert.match(note, /not be charged/)
   })
 
-  test('a lapsed grant says access continues, matching real backend behaviour', () => {
+  test('a just-past end date gets no bespoke claim either way', () => {
+    // Expiry is scheduled, so this state is transient. The old copy
+    // asserted "your access is still active", which stops being true
+    // the moment the reconciler runs.
     const v = describeCreatorAccess(
       plan(), sub({ grant_reason: 'comp', ends_at: '2026-09-01T00:00:00Z' }), NOW,
     )
     assert.match(v.termNote ?? '', /1 Sept 2026/)
-    assert.match(v.termNote ?? '', /still active/i)
+    assert.match(v.termNote ?? '', /ended on/i)
+    assert.ok(!/still active/i.test(v.termNote ?? ''))
   })
 
   test('an indefinite grant says so without inventing a date', () => {
@@ -151,7 +156,7 @@ describe('the plan card tells the same truth', () => {
       plan(), sub({ grant_reason: 'comp', ends_at: '2026-11-04T00:00:00Z' }), 800,
     )
     assert.equal(card.priceLabel, 'Complimentary')
-    assert.match(card.statusNote ?? '', /Granted until 4 Nov 2026/)
+    assert.match(card.statusNote ?? '', /Active until 4 Nov 2026/)
   })
 
   test('a paid subscription still quotes the retail price', () => {

@@ -21,21 +21,23 @@ import type { CreatorPlanOut, CreatorSubscriptionOut } from '@/types/platform'
  *     `ends_at`. It writes **no** `stripe_subscription_id` and no
  *     `stripe_customer_id`, so Stripe has nothing to invoice. There is
  *     no charge, now or at the end of the term.
- *   * **Nothing enforces `ends_at`.** `plan_guards.resolve_creator_plan`
- *     filters on `status` only, and the sole subscription cron
- *     (`creator_subscription_grace_reconcile.py`) sweeps
- *     `past_due → unpaid` on `grace_expires_at` — it never looks at
- *     `ends_at`. Every other reference to `ends_at` in the backend is a
- *     write or a display read.
- *   * Therefore a grant does **not** expire by itself. When `ends_at`
- *     passes, the creator keeps the plan until an admin extends or
- *     revokes it.
+ *   * A finite grant **does** now expire.
+ *     `services/creator_grant_expiry.py` cancels the grant row once
+ *     `ends_at` has passed, and `resolve_creator_plan`'s
+ *     cheapest-active-plan fallback returns the creator to Community.
+ *     Only `grant_reason` 'comp' and 'temporary' are eligible, and only
+ *     on purchasable tiers — Founding Creator, Organisation and
+ *     indefinite grants (`ends_at IS NULL`) are excluded by design.
+ *   * Expiry is scheduled, so a grant whose date has just passed can
+ *     briefly still be active. That state gets no special copy: it is
+ *     transient, and the reconciler leaves a row alone entirely when
+ *     downgrading would be unsafe (more Collectives than Community
+ *     allows, or live paid content), for an admin to resolve.
  *
- * That last point is why this module says "Granted until" rather than
- * "Active until", and why it never promises a cutoff or a future
- * charge. Saying "active until 4 Nov" would imply an automatic end the
- * platform does not perform; saying "then $19/month" would invent a
- * charge that cannot happen.
+ * So "Active until" is accurate for a future end date. What this
+ * module must still never say is "then $19/month": expiry creates no
+ * Stripe subscription and charges nobody — the fallback is to the free
+ * Community plan, never to a paid one.
  *
  * `source` alone is not enough to pick the wording: it only separates
  * Stripe-billed from administratively-granted. `grant_reason='comp'`
@@ -124,15 +126,16 @@ export function describeCreatorAccess(
   const endsOn = formatDate(subscription.ends_at)
   const passed = termHasPassed(subscription.ends_at, now)
 
-  // Never claims a future charge, and never claims the access will stop
-  // on its own — neither is true of a manual grant.
+  // States when the access ends, because the backend now enforces it,
+  // but never implies a charge follows — none does: expiry returns the
+  // creator to the free Community plan.
   let termNote: string
   if (!endsOn) {
-    termNote = 'Granted with no end date. This is not a paid subscription, so you will not be charged.'
+    termNote = 'No end date. This is not a paid subscription, so you will not be charged.'
   } else if (passed) {
-    termNote = `Granted until ${endsOn}. Your access is still active.`
+    termNote = `This complimentary period ended on ${endsOn}.`
   } else {
-    termNote = `Granted until ${endsOn}. This is not a paid subscription, so you will not be charged.`
+    termNote = `Active until ${endsOn}. You will not be charged — your account returns to the free Community plan.`
   }
 
   return {
