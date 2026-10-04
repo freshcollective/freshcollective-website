@@ -4,9 +4,9 @@
  * The Natural Leader book-resource opt-in form.
  *
  * MailerLite's own embed, transcribed into JSX. It is NOT reimplemented:
- * the action URL, the three ``fields[…]`` names, the reCAPTCHA site key,
- * both hidden inputs, the success markup, the global callback name and
- * both script URLs are exactly as MailerLite generated them. Changing
+ * the action URL, the three ``fields[…]`` names, both hidden inputs,
+ * the success markup, the global callback name and the script URL are
+ * exactly as MailerLite generated them. Changing
  * any of those silently stops subscribing people, which on a URL printed
  * in a book is a failure nobody would notice for weeks.
  *
@@ -29,10 +29,15 @@
  * which writes inline display. A Tailwind ``hidden`` class would work by
  * accident rather than by contract.
  *
- * Why a client component: it needs two external scripts and a global
- * callback, none of which a Server Component can carry. These are the
- * first third-party scripts in Fresh Collective, which is why the CSP
+ * Why a client component: it needs an external script and a global
+ * callback, neither of which a Server Component can carry. This is the
+ * only third-party script in Fresh Collective, which is why the CSP
  * needed widening — see ``lib/securityHeaders.ts``.
+ *
+ * reCAPTCHA was turned off in the MailerLite dashboard, so the widget,
+ * its script and its site key are gone, along with the CSP grants that
+ * existed solely for them. MailerLite's own field validation is
+ * unaffected — that lives in webforms.min.js, not in reCAPTCHA.
  */
 
 import Script from 'next/script'
@@ -45,8 +50,6 @@ const TAKEL =
   'https://assets.mailerlite.com/jsonp/998040/forms/157084874450142696/takel'
 const WEBFORMS_JS =
   'https://groot.mailerlite.com/js/w/webforms.min.js?v83147fa8ce2d95cb73ece7f28b469519'
-const RECAPTCHA_JS = 'https://www.google.com/recaptcha/api.js'
-const RECAPTCHA_SITE_KEY = '6Lf1KHQUAAAAAFNKEX1hdSWCS3mRMv4FlFaNslaD'
 
 /** Field appearance. MailerLite adds ``ml-error`` to the surrounding
  *  group on a failed validation; the scoped rule below colours it. */
@@ -83,27 +86,16 @@ export default function MailerLiteBookForm() {
 
   return (
     <>
-      {/* Scoped to the container id, as MailerLite's own CSS was. Only
-          the two things utilities cannot reach: the error state it
-          applies at runtime, and the reCAPTCHA widget, which renders at
-          a fixed 304px and needs scaling to fit a narrow phone. */}
+      {/* Scoped to the container id, as MailerLite's own CSS was. One
+          rule, for the only thing utilities cannot reach: the error
+          state MailerLite applies to a field group at runtime.
+
+          The reCAPTCHA scaling rule that used to sit here went with the
+          widget — there is no longer a fixed-width 304px element to fit
+          onto a phone. */}
       <style>{`
         #mlb2-${FORM_ID} .ml-error input {
           border-color: #DC2626;
-        }
-        #mlb2-${FORM_ID} .ml-form-recaptcha.ml-error iframe {
-          border: solid 1px #DC2626;
-        }
-        @media screen and (max-width: 480px) {
-          #mlb2-${FORM_ID} .g-recaptcha {
-            transform: scale(0.85);
-            -webkit-transform: scale(0.85);
-            transform-origin: 0 0;
-            -webkit-transform-origin: 0 0;
-          }
-          #mlb2-${FORM_ID} .ml-form-recaptcha {
-            height: 65px;
-          }
         }
       `}</style>
 
@@ -165,10 +157,6 @@ export default function MailerLiteBookForm() {
                 </div>
               </div>
 
-              <div className="ml-form-recaptcha ml-validate-required mt-5">
-                <div className="g-recaptcha" data-sitekey={RECAPTCHA_SITE_KEY} />
-              </div>
-
               <input type="hidden" name="ml-submit" value="1" />
 
               <div className="ml-form-embedSubmit mt-5">
@@ -211,8 +199,6 @@ export default function MailerLiteBookForm() {
         </div>
       </div>
 
-      {/* reCAPTCHA first — webforms.min.js expects the widget to exist. */}
-      <Script src={RECAPTCHA_JS} strategy="afterInteractive" />
       <Script src={WEBFORMS_JS} strategy="afterInteractive" />
     </>
   )

@@ -181,26 +181,42 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     ])
   })
 
-  test('script-src adds only the MailerLite and reCAPTCHA sources', () => {
+  test('script-src adds only the MailerLite form script', () => {
     assert.deepEqual(parsed['script-src'], [
       "'self'",
       "'unsafe-inline'",
       'https://groot.mailerlite.com',
-      'https://www.google.com/recaptcha/',
-      'https://www.gstatic.com/recaptcha/',
     ])
   })
 
-  test('the reCAPTCHA script sources are path-scoped, not whole hosts', () => {
-    // www.google.com and www.gstatic.com serve a great deal more than
-    // reCAPTCHA. The trailing path keeps the grant to the widget.
-    for (const src of parsed['script-src']) {
-      if (src.includes('google.com') || src.includes('gstatic.com')) {
+  test('no reCAPTCHA source survives in any directive', () => {
+    // reCAPTCHA was switched off in the MailerLite dashboard. The
+    // grants existed solely for that widget, so they came out with it.
+    // Checked across every directive, not just the two that carried
+    // them, so a reappearance anywhere fails here.
+    //
+    // Matched on the reCAPTCHA path and on gstatic — NOT on "google",
+    // because docs.google.com and forms.gle are legitimate embed
+    // providers in frame-src and have nothing to do with this.
+    for (const [directive, values] of Object.entries(parsed)) {
+      for (const v of values) {
         assert.ok(
-          src.endsWith('/recaptcha/'),
-          `${src} grants a whole Google host rather than just reCAPTCHA`,
+          !v.includes('/recaptcha/') && !v.includes('gstatic.com'),
+          `${directive} still allows ${v} after reCAPTCHA was removed`,
         )
       }
+    }
+  })
+
+  test('frame-src is back to embed providers plus Stripe', () => {
+    // It briefly carried the reCAPTCHA challenge iframe. Nothing else
+    // in the app asked for a Google frame, so the directive returns to
+    // what it was before /tnlbook existed.
+    for (const v of parsed['frame-src']) {
+      assert.ok(
+        !v.startsWith('https://recaptcha.') && !v.includes('/recaptcha/'),
+        `frame-src still allows ${v}`,
+      )
     }
   })
 
@@ -274,11 +290,6 @@ describe('SEC-011 Stage A — frame-src ↔ EMBED_PROVIDERS drift check', () => 
         p.hosts.map((h) => `https://${h}`),
       ),
       'https://checkout.stripe.com',
-      // reCAPTCHA's challenge iframe, for the MailerLite form on
-      // /tnlbook. Path-scoped, and not an embed provider — it is never
-      // a destination a creator can paste.
-      'https://www.google.com/recaptcha/',
-      'https://recaptcha.google.com/recaptcha/',
     ])
     for (const origin of frameSrc) {
       assert.ok(

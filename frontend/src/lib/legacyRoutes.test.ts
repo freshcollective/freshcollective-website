@@ -785,17 +785,17 @@ describe('the MailerLite embed is reproduced exactly', () => {
     assert.match(form(), /name="anticsrf"\s*\n?\s*value="true"|name="anticsrf" value="true"/)
   })
 
-  test('the reCAPTCHA site key is MailerLite\'s, unchanged', () => {
-    assert.match(form(), /6Lf1KHQUAAAAAFNKEX1hdSWCS3mRMv4FlFaNslaD/)
-    assert.match(form(), /class(Name)?="g-recaptcha"|className="g-recaptcha"/)
-  })
-
-  test('both MailerLite scripts are loaded from their exact URLs', () => {
+  test('the MailerLite script is loaded from its exact URL', () => {
     assert.match(
       form(),
       /https:\/\/groot\.mailerlite\.com\/js\/w\/webforms\.min\.js\?v83147fa8ce2d95cb73ece7f28b469519/,
     )
-    assert.match(form(), /https:\/\/www\.google\.com\/recaptcha\/api\.js/)
+  })
+
+  test('it is the only third-party script the page loads', () => {
+    const scripts = [...form().matchAll(/<Script[^>]*src=\{([A-Z_]+)\}/g)]
+      .map((m) => m[1])
+    assert.deepEqual(scripts, ['WEBFORMS_JS'])
   })
 
   test('the takel impression ping is preserved', () => {
@@ -836,10 +836,41 @@ describe('the MailerLite embed is reproduced exactly', () => {
       'ml-validate-email',
       'ml-validate-required',
       'ml-form-embedSubmit',
-      'ml-form-recaptcha',
     ]) {
       assert.ok(src.includes(cls), `missing MailerLite hook class ${cls}`)
     }
+  })
+
+  test('no reCAPTCHA script, widget or site key remains', () => {
+    // reCAPTCHA was switched off in the MailerLite dashboard, so the
+    // regenerated embed has no widget at all. Checked through codeOnly
+    // because the component still *explains* in a comment that it was
+    // removed — that documentation is what stops it drifting back.
+    const src = codeOnly('app/tnlbook/MailerLiteBookForm.tsx')
+      + codeOnly('app/tnlbook/page.tsx')
+    for (const marker of [
+      'g-recaptcha',
+      'data-sitekey',
+      '6Lf1KHQUAAAAAFNKEX1hdSWCS3mRMv4FlFaNslaD',
+      'recaptcha/api.js',
+      'ml-form-recaptcha',
+      'www.google.com',
+    ]) {
+      assert.ok(!src.includes(marker), `/tnlbook still carries ${marker}`)
+    }
+  })
+
+  test('MailerLite\'s own field validation is untouched by that removal', () => {
+    // Validation lives in webforms.min.js, not in reCAPTCHA — losing
+    // the widget must not quietly take the required-field checks with
+    // it.
+    // Through codeOnly: the component's header comment names these
+    // classes while explaining that they are load-bearing, which would
+    // otherwise inflate the count.
+    const src = codeOnly('app/tnlbook/MailerLiteBookForm.tsx')
+    assert.match(src, /ml-validate-email/)
+    assert.equal((src.match(/ml-validate-required/g) ?? []).length, 3)
+    assert.equal((src.match(/aria-required="true"/g) ?? []).length, 3)
   })
 
   test('the form posts to MailerLite, never to Fresh Collective', () => {
@@ -857,12 +888,27 @@ describe('the MailerLite embed is reproduced exactly', () => {
 describe('the CSP additions for MailerLite are narrow', () => {
   const csp = () => read('lib/securityHeaders.ts')
 
-  test('all four required directives are widened', () => {
+  test('the three required directives are widened, and only those', () => {
     const src = csp()
     assert.match(src, /'script-src':[\s\S]*?MAILERLITE_FORM_SCRIPT_ORIGIN/)
     assert.match(src, /'connect-src':[\s\S]*?MAILERLITE_API_ORIGIN/)
-    assert.match(src, /'frame-src':[\s\S]*?RECAPTCHA_FRAME_SOURCES/)
     assert.match(src, /'form-action':[\s\S]*?MAILERLITE_API_ORIGIN/)
+  })
+
+  test('frame-src carries no MailerLite or reCAPTCHA grant', () => {
+    // It had one while reCAPTCHA was on. The widget is gone, so the
+    // directive is back to embed providers plus Stripe.
+    const src = csp()
+    const frameSrc = src.slice(src.indexOf("'frame-src'"), src.indexOf("'form-action'"))
+    assert.ok(!/recaptcha/i.test(frameSrc), 'frame-src still grants reCAPTCHA')
+    assert.ok(!/mailerlite/i.test(frameSrc), 'frame-src grants MailerLite, which never needed it')
+  })
+
+  test('no reCAPTCHA constant survives in the header module', () => {
+    assert.ok(
+      !codeOnly('lib/securityHeaders.ts').includes('RECAPTCHA'),
+      'a reCAPTCHA source constant is still declared',
+    )
   })
 
   test('no wildcard source is introduced', () => {
