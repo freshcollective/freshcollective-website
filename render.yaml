@@ -153,12 +153,24 @@ services:
       # first, or the page renders and every /api/places call 503s.
       - key: NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED
         value: "true"
-      # Ways to Connect, gated separately from Discover Places. Same
-      # build-time semantics. Its backend sibling
-      # WAYS_TO_CONNECT_ENABLED on fc-api must be turned on first, or
-      # the page renders and GET /api/ways-to-connect 503s.
+      # Ways to Connect — launched globally. Gated separately from
+      # Discover Places, same build-time semantics: NEXT_PUBLIC_* is
+      # inlined by Next, so this takes effect on a rebuild and never on
+      # a restart. Its backend sibling WAYS_TO_CONNECT_ENABLED on
+      # fc-api has to be on too, or the nav and the page appear and the
+      # GET /api/ways-to-connect behind them 503s.
+      #
+      # Declared here rather than left to the Dashboard, for the same
+      # reason Discovery is: a ``value:`` entry is reasserted on every
+      # blueprint sync, so a Dashboard-only "true" can be reverted to
+      # whatever this file says. That reverts *asymmetrically*, which
+      # is what makes it hard to recognise — Platform Owner keeps
+      # working through the preview bypass in
+      # ``ways_to_connect_available`` while every ordinary member loses
+      # the feature, so it reads like a permissions bug rather than a
+      # flag one.
       - key: NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED
-        value: "false"
+        value: "true"
       # Server-side proxy target — not exposed to the browser.
       # SEC-010 Step 1: routes BFF traffic over Render's private
       # per-account network. ``hostport`` yields ``<host>:<port>``;
@@ -251,11 +263,17 @@ services:
       # fc-web sibling in step — see ``discoveryPillar.test.ts``.
       - key: DISCOVERY_PILLAR_ENABLED
         value: "true"
-      # Ways to Connect's read API. Off until the surface is ready;
-      # the application default is False either way (see
-      # ``backend/app/core/config.py:ways_to_connect_enabled``).
+      # Ways to Connect's read API. LIVE — and blueprint-managed for
+      # exactly the reason given above Discovery: a Dashboard-only
+      # change here is reverted by the next sync, and the application
+      # default is False (see
+      # ``backend/app/core/config.py:ways_to_connect_enabled``), so
+      # losing the declaration loses the feature.
+      #
+      # Must not lag its fc-web sibling. With this off and the frontend
+      # on, members get the nav and the page and a 503 behind them.
       - key: WAYS_TO_CONNECT_ENABLED
-        value: "false"
+        value: "true"
       - key: COMMUNITY_CARE_ENABLED
         value: "false"
 

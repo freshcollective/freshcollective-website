@@ -115,23 +115,62 @@ describe('the Blueprint keeps frontend and backend discovery in step', () => {
     assert.equal(blueprintValue('DISCOVERY_PILLAR_ENABLED'), 'true')
   })
 
-  test('Ways to Connect stays declared off, on both services', () => {
-    assert.equal(blueprintValue('NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED'), 'false')
-    assert.equal(blueprintValue('WAYS_TO_CONNECT_ENABLED'), 'false')
+  test('Ways to Connect is now declared on, on both services', () => {
+    // Launched globally. Declared rather than left to the Dashboard for
+    // the same reason Discovery is — see the blueprint-managed test
+    // below, and the incident it refers to.
+    assert.equal(blueprintValue('NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED'), 'true')
+    assert.equal(blueprintValue('WAYS_TO_CONNECT_ENABLED'), 'true')
   })
 
-  test('the two pillars are independent — Discovery on does not imply WTC on', () => {
-    assert.notEqual(
-      blueprintValue('DISCOVERY_PILLAR_ENABLED'),
+  test('the Ways to Connect pair cannot drift apart', () => {
+    // The 503 trap, and the worse half of it: frontend on with backend
+    // off gives members the nav and the page and an error behind them.
+    assert.equal(
+      blueprintValue('NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED'),
       blueprintValue('WAYS_TO_CONNECT_ENABLED'),
+      'fc-web and fc-api Ways to Connect flags disagree',
     )
   })
 
-  test('discovery is blueprint-managed, not left to the Dashboard', () => {
-    // A ``sync: false`` entry is Dashboard-owned and survives a sync; a
-    // ``value:`` entry is reasserted by it. Discovery must be the latter,
-    // or the reset that caused this incident can recur.
-    const re = /-\s*key:\s*DISCOVERY_PILLAR_ENABLED\s*\n\s*(value:|sync:)/
-    assert.match(BLUEPRINT.match(re)?.[1] ?? '', /value:/)
+  test('the two pillars stay independently switchable', () => {
+    // Previously asserted as "these two values differ", which only held
+    // while one pillar happened to be off. Both are live now, so that
+    // form would have had to be deleted rather than kept — and what it
+    // was protecting is not the values at all: it is that each surface
+    // reads its own flag, so one can be turned off without the other.
+    assert.notEqual(
+      blueprintValue('DISCOVERY_PILLAR_ENABLED'),
+      null,
+      'discovery must still have its own entry',
+    )
+    assert.notEqual(
+      blueprintValue('WAYS_TO_CONNECT_ENABLED'),
+      null,
+      'Ways to Connect must still have its own entry',
+    )
+    const flags = read('./featureFlags.ts')
+    assert.match(flags, /NEXT_PUBLIC_DISCOVERY_PILLAR_ENABLED/)
+    assert.match(flags, /NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED/)
+    assert.ok(
+      !/isWaysToConnectEnabled[\s\S]{0,120}DISCOVERY/.test(flags),
+      'one pillar must not be gated on the other',
+    )
   })
+
+  for (const key of [
+    'DISCOVERY_PILLAR_ENABLED',
+    'WAYS_TO_CONNECT_ENABLED',
+    'NEXT_PUBLIC_WAYS_TO_CONNECT_ENABLED',
+  ]) {
+    test(`${key} is blueprint-managed, not left to the Dashboard`, () => {
+      // A ``sync: false`` entry is Dashboard-owned and survives a sync;
+      // a ``value:`` entry is reasserted by it. These must be the
+      // latter, or the reset that caused this incident can recur — and
+      // it did recur, for Ways to Connect, which is why this now covers
+      // all three keys instead of only Discovery's.
+      const re = new RegExp(`-\\s*key:\\s*${key}\\s*\\n(?:\\s*#.*\\n)*\\s*(value:|sync:)`)
+      assert.match(BLUEPRINT.match(re)?.[1] ?? '', /value:/)
+    })
+  }
 })
