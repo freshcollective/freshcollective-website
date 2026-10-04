@@ -39,6 +39,7 @@ from app.core.database import get_db
 from app.creator.plan_config import get_plan_capability
 from app.creator.plan_guards import (
     count_space_members,
+    effective_collective_allowance,
     guard_member_allowance,
     guard_pathway_limit,
     resolve_creator_plan,
@@ -613,3 +614,117 @@ class TestPathwayLimit:
         space = make_space(creator=owner)
         self._add_pathways(db, space, 12)
         guard_pathway_limit(owner, space, db)
+
+
+# ---------------------------------------------------------------------------
+# One plan, consistent across every surface
+# ---------------------------------------------------------------------------
+
+
+class TestCommunityPlanIsConsistentEverywhere:
+    """Jenson's bug: My World said "1 of 1 collectives used" while
+    Billing said "plan has not been configured" and Account said "No
+    active plan" — three surfaces disagreeing about the same creator.
+
+    Community is held **implicitly**: activation promotes the role and
+    writes no subscription row, and ``resolve_creator_plan`` reaches
+    Community through its cheapest-active-plan fallback. That is the
+    intended architecture, so the fix is that every surface resolves it
+    the same way — not that a row gets invented.
+
+    ``/api/creator/billing`` is the single source for Billing, Account →
+    Plan and My World's allowance, so asserting on it covers all three.
+    """
+
+    @staticmethod
+    def _billing(client, creator):
+        app.dependency_overrides[get_creator_user] = lambda: creator
+        app.dependency_overrides[get_verified_creator_user] = lambda: creator
+        res = client.get("/api/creator/billing")
+        assert res.status_code == 200, res.text
+        return res.json()
+
+    def test_self_serve_signup_resolves_community_on_every_surface(
+        self, plans, db, client, make_user,
+    ):
+        """New-user Community signup path."""
+        user = make_user(role="user")
+        app.dependency_overrides[get_verified_current_user] = lambda: user
+        start = client.post("/api/creator/community/start")
+        assert start.status_code == 200, start.text
+        db.refresh(user)
+
+        body = self._billing(client, user)
+        assert body["current_plan"]["slug"] == "community"
+        assert body["has_active_plan"] is True
+        assert body["plan_permits_paid_offers"] is False
+        # The guards agree with the display.
+        assert resolve_creator_plan(user, db).slug == "community"
+
+    def test_existing_member_activation_resolves_community_too(
+        self, plans, db, client, make_user,
+    ):
+        """Existing-member → Community Creator activation (Jenson)."""
+        member = make_user(role="user")
+        # Already a member of something, as an existing member would be.
+        app.dependency_overrides[get_verified_current_user] = lambda: member
+        assert client.post("/api/creator/community/start").status_code == 200
+        db.refresh(member)
+        assert member.role == "creator"
+
+        body = self._billing(client, member)
+        assert body["current_plan"]["slug"] == "community"
+        assert body["has_active_plan"] is True
+
+    def test_no_surface_reports_an_unconfigured_or_absent_plan(
+        self, plans, db, client, make_user,
+    ):
+        """``has_active_plan=False`` / ``current_plan=None`` are what
+        drive "not configured" on Billing and "No active plan" on
+        Account. Neither may be true for a Community creator."""
+        creator = make_user(role="creator")
+        body = self._billing(client, creator)
+        assert body["has_active_plan"] is not False
+        assert body["current_plan"] is not None
+
+    def test_the_allowance_my_world_shows_is_the_enforced_one(
+        self, plans, db, client, make_user, make_space,
+    ):
+        """"1 of 1 collectives used" must come from the same number the
+        guard blocks against."""
+        creator = make_user(role="creator")
+        make_space(creator=creator)
+        db.flush()
+
+        body = self._billing(client, creator)
+        assert body["current_plan"]["active_collective_limit"] == 1
+        assert body["usage"]["collectives_used"] == 1
+        assert effective_collective_allowance(creator, db) == 1
+
+    def test_community_plan_carries_the_capability_fields_the_ui_needs(
+        self, plans, db, client, make_user,
+    ):
+        """Account → Plan renders bullets from ``card_features`` and
+        picks its CTA from ``paid_offers_enabled``; the sidebar and the
+        Pricing tab gate on ``paid_offers_enabled`` too. All must be
+        present on the response, not inferred client-side."""
+        creator = make_user(role="creator")
+        plan = self._billing(client, creator)["current_plan"]
+        assert plan["paid_offers_enabled"] is False
+        assert plan["monthly_price_cents"] == 0
+        assert plan["card_features"], "bullets must come from the backend"
+        assert any("100 members" in f for f in plan["card_features"])
+
+    def test_a_paid_creator_still_resolves_as_commercial(
+        self, plans, db, client, make_user,
+    ):
+        """Regression: the Community fallback must not capture a real
+        paid creator."""
+        creator = make_user(role="creator")
+        _subscribe(db, creator, "creator")
+        db.flush()
+
+        body = self._billing(client, creator)
+        assert body["current_plan"]["slug"] == "creator"
+        assert body["plan_permits_paid_offers"] is True
+        assert body["current_plan"]["paid_offers_enabled"] is True

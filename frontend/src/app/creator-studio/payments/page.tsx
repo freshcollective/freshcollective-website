@@ -1,3 +1,4 @@
+import PlanUpgradeNotice from '@/components/creator/PlanUpgradeNotice'
 import {
   getActiveCreatorSpace,
   getCreatorBilling,
@@ -11,6 +12,22 @@ import CreatorPaymentsClient from './CreatorPaymentsClient'
 export const metadata = { title: 'Payments — Creator Studio' }
 
 export default async function CreatorPaymentsPage() {
+  // Plan gate — mirrors the sidebar, which omits this entry entirely on
+  // Community. A direct URL is therefore the only way to arrive here on
+  // that plan, and it should explain the plan rather than render a tool
+  // whose every action the backend will refuse. Not a security
+  // boundary: ``app/creator/plan_guards.py`` still owns every write.
+  const _billing = await getCreatorBilling().catch(() => null)
+  if (!(_billing?.is_platform_owner || _billing?.current_plan?.paid_offers_enabled)) {
+    return (
+      <PlanUpgradeNotice
+        title="Payments received"
+        intro="Payments received is the ledger of money that has come in from your offers."
+        unlocks="member checkout, so there are payments to show here"
+      />
+    )
+  }
+
   const [billing, activeSpace] = await Promise.all([
     getCreatorBilling(),
     getActiveCreatorSpace(),

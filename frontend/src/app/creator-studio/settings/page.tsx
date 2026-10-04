@@ -3,6 +3,7 @@ import {
   getActiveCreatorSpace,
   getCreatorSpace,
   getBuildYourCollectiveOptions,
+  getCreatorBilling,
 } from '@/lib/serverApi'
 import type { CreatorSpaceDetail } from '@/types/platform'
 import type { BuildYourCollectiveOptions } from '@/lib/build-your-collective/types'
@@ -31,6 +32,26 @@ export default async function SettingsPage() {
       ),
       _safe(getBuildYourCollectiveOptions(), primarySpace.slug, 'getBuildYourCollectiveOptions', null),
     ])
+  }
+
+  // Can this creator sell? Drives the Pricing tab: a Community
+  // creator must not be invited to configure paid pricing and then
+  // discover the restriction on Save. A fetch failure defaults to
+  // false — erring toward the restricted UI, never toward offering a
+  // paid option the backend will refuse. The 403 in
+  // ``plan_guards.guard_paid_offers_enabled`` stays authoritative
+  // regardless of what this renders.
+  let paidOffersEnabled = false
+  try {
+    const billing = await getCreatorBilling()
+    if (billing) {
+      paidOffersEnabled = !!(
+        billing.is_platform_owner
+        || billing.current_plan?.paid_offers_enabled
+      )
+    }
+  } catch (err) {
+    console.error('[creator-studio/settings] billing fetch failed:', err)
   }
 
   // Resolve atmosphere keys → display names using the build-your-collective
@@ -119,6 +140,7 @@ export default async function SettingsPage() {
           spaceDetail={spaceDetail}
           atmosphereNames={atmosphereNames}
           buildOptions={buildOptions}
+          paidOffersEnabled={paidOffersEnabled}
         />
       )}
 

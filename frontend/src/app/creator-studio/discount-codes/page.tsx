@@ -1,4 +1,5 @@
-import { getActiveCreatorSpace, getCreatorSpace } from '@/lib/serverApi'
+import PlanUpgradeNotice from '@/components/creator/PlanUpgradeNotice'
+import { getActiveCreatorSpace, getCreatorSpace, getCreatorBilling} from '@/lib/serverApi'
 import type { CreatorSpaceDetail } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import DiscountCodesClient from './DiscountCodesClient'
@@ -14,6 +15,22 @@ import DiscountCodesClient from './DiscountCodesClient'
  * ``GET /api/creator/spaces/{slug}/discount-codes``.
  */
 export default async function DiscountCodesPage() {
+  // Plan gate — mirrors the sidebar, which omits this entry entirely on
+  // Community. A direct URL is therefore the only way to arrive here on
+  // that plan, and it should explain the plan rather than render a tool
+  // whose every action the backend will refuse. Not a security
+  // boundary: ``app/creator/plan_guards.py`` still owns every write.
+  const _billing = await getCreatorBilling().catch(() => null)
+  if (!(_billing?.is_platform_owner || _billing?.current_plan?.paid_offers_enabled)) {
+    return (
+      <PlanUpgradeNotice
+        title="Discount Codes"
+        intro="Discount codes reduce the price of a paid offer at checkout."
+        unlocks="paid offers and the discount codes that go with them"
+      />
+    )
+  }
+
   const activeSpace = await getActiveCreatorSpace()
   const spaceDetail: CreatorSpaceDetail | null = activeSpace
     ? ((await getCreatorSpace(activeSpace.slug)) as CreatorSpaceDetail | null)

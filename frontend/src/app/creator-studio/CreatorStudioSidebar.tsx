@@ -113,16 +113,16 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
       // surface. Collective-scoped; supersedes the older nested
       // Pathway / Series Payment Option CRUD (which is now a
       // reference-only view inside those editors).
-      { href: '/creator-studio/payment-options', label: 'Payment Options', requiresCollective: true },
+      { href: '/creator-studio/payment-options', label: 'Payment Options', requiresCollective: true, requiresPaidOffers: true },
       // Discount codes sit immediately after Payment Options: a code
       // reduces the price of an offer, so it belongs beside the offers
       // rather than with the ledger surfaces below.
-      { href: '/creator-studio/discount-codes',  label: 'Discount Codes', requiresCollective: true },
+      { href: '/creator-studio/discount-codes',  label: 'Discount Codes', requiresCollective: true, requiresPaidOffers: true },
       // Payments received — transaction history + money in. Named
       // "Payments received" (not just "Payments") to distinguish
       // from "Payment Options" (what Creators offer) and avoid
       // "Payment" doubling up on both sides of the sidebar.
-      { href: '/creator-studio/payments',        label: 'Payments received' },
+      { href: '/creator-studio/payments',        label: 'Payments received', requiresPaidOffers: true },
       // Payment Plans (FIP4C) — plan-level view of member finite-
       // instalment agreements. Sits next to Payments received so the
       // two concepts (ledger vs. agreement) live side-by-side in
@@ -130,16 +130,16 @@ const COLLECTIVE_NAV: { label: string; items: NavItem[] }[] = [
       // any authorised-scope plans are in payment_problem / suspended
       // so creators learn about attention states without having to
       // visit the page first.
-      { href: '/creator-studio/payment-plans',   label: 'Payment Plans', badge: 'payment_plans_attention' as const },
+      { href: '/creator-studio/payment-plans',   label: 'Payment Plans', badge: 'payment_plans_attention' as const, requiresPaidOffers: true },
       // Access — renamed from "Memberships". Route is /access;
       // /passes redirects here for backwards compatibility.
-      { href: '/creator-studio/access',          label: 'Access',          requiresCollective: true },
+      { href: '/creator-studio/access',          label: 'Access',          requiresCollective: true, requiresPaidOffers: true },
       // Offer Pages remain on hold. Muted + non-navigable + "Coming
       // later" suffix so Creators know the surface exists without
       // being invited into it. Data + backend endpoints + migrations
       // are all preserved; direct URLs still resolve for
       // development / recovery.
-      { href: '/creator-studio/offers',          label: 'Offer Pages',     requiresCollective: true, paused: true },
+      { href: '/creator-studio/offers',          label: 'Offer Pages',     requiresCollective: true, paused: true, requiresPaidOffers: true },
     ],
   },
 ]
@@ -260,23 +260,21 @@ export default function CreatorStudioSidebar({
           })}
         </ul>
 
-        {COLLECTIVE_NAV.map(({ label, items }) => (
+        {COLLECTIVE_NAV.map(({ label, items }) => {
+          // Every item in a group can be plan-gated away — the whole
+          // Commerce group is, on Community. Render nothing rather than
+          // a bare section heading with an empty list under it.
+          const visible = items.filter(
+            ({ requiresPaidOffers }) => !requiresPaidOffers || paidOffersEnabled,
+          )
+          if (visible.length === 0) return null
+          return (
           <div key={label} className="mb-5">
             <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-teal-700">
               {label}
             </p>
             <ul className="space-y-0.5">
-              {items
-                // Plan-gated items (e.g. Offer Pages) are omitted
-                // entirely on plans that can't use them — dimming
-                // would still hint at a feature the plan doesn't
-                // include. If we ever want an "Upgrade" nudge, it
-                // belongs on My World, not here. Paused items
-                // bypass this filter because they should be visible
-                // to everyone (regardless of plan) as "Coming later".
-                .filter(({ requiresPaidOffers, paused }) =>
-                  paused || !requiresPaidOffers || paidOffersEnabled,
-                )
+              {visible
                 .map(({ href, label: itemLabel, exact, activeOnPath, requiresCollective, paused, badge }) => {
                 const active = !paused && isActive(href, exact, activeOnPath)
                 const dimmed = (requiresCollective ?? false) && !hasCollective
@@ -339,7 +337,8 @@ export default function CreatorStudioSidebar({
               })}
             </ul>
           </div>
-        ))}
+          )
+        })}
 
         {/* ── Account-scoped nav ── visually separated from the
              collective-scoped groups above. */}

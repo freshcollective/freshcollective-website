@@ -84,17 +84,17 @@ function BillingStatusPill({ billing, plan }: {
   const stripePaid = sub?.source === 'stripe_paid'
   let label = 'Billing not connected yet'
   let style: React.CSSProperties = { background: '#FEF9C3', color: '#854D0E' }
-  const granted = describeCreatorAccess(plan, sub).isUnbilled
-  if (plan.monthly_price_cents === 0 && plan.is_purchasable === false) {
-    label = 'No billing required'
-    style = { background: '#F1F5F9', color: '#475569' }
-  } else if (granted && sub?.source === 'manual_grant') {
-    // An admin-granted plan has no Stripe subscription behind it, so
-    // every ``stripePaid`` branch below misses and the default
-    // "Billing not connected yet" used to show — a yellow warning
-    // telling a complimentary creator to set up billing they will
-    // never need. Same class of mislabel as the Community "Not
-    // connected" bug closed previously.
+  // One question decides the quiet grey pill: is this creator billed at
+  // all? ``describeCreatorAccess`` answers it for every unbilled shape —
+  // a $0 plan (Community) and an admin grant alike — so the pill no
+  // longer depends on ``is_purchasable``. That mattered: Community has
+  // ``is_purchasable=true`` (it *is* self-service), so the old
+  // zero-price branch missed it, every ``stripePaid`` branch missed it
+  // too, and a Community creator fell through to a yellow "Billing not
+  // connected yet" — telling someone on a free plan to go set up
+  // billing that will never exist. Same class of mislabel as the
+  // complimentary-grant and Community "Not connected" bugs before it.
+  if (describeCreatorAccess(plan, sub).isUnbilled) {
     label = 'No billing required'
     style = { background: '#F1F5F9', color: '#475569' }
   } else if (stripePaid && sub?.status === 'active') {

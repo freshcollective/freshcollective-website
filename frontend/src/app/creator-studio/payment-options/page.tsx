@@ -1,4 +1,5 @@
-import { getActiveCreatorSpace, getCreatorSpace } from '@/lib/serverApi'
+import PlanUpgradeNotice from '@/components/creator/PlanUpgradeNotice'
+import { getActiveCreatorSpace, getCreatorSpace, getCreatorBilling} from '@/lib/serverApi'
 import type { CreatorSpaceDetail } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
@@ -17,6 +18,22 @@ import PaymentOptionsIndexClient from './PaymentOptionsIndexClient'
  * ``GET /api/creator/spaces/{slug}/commerce/payment-options``.
  */
 export default async function PaymentOptionsPage() {
+  // Plan gate — mirrors the sidebar, which omits this entry entirely on
+  // Community. A direct URL is therefore the only way to arrive here on
+  // that plan, and it should explain the plan rather than render a tool
+  // whose every action the backend will refuse. Not a security
+  // boundary: ``app/creator/plan_guards.py`` still owns every write.
+  const _billing = await getCreatorBilling().catch(() => null)
+  if (!(_billing?.is_platform_owner || _billing?.current_plan?.paid_offers_enabled)) {
+    return (
+      <PlanUpgradeNotice
+        title="Payment Options"
+        intro="Payment Options are how you price and sell what you offer — one-off, instalments or subscription."
+        unlocks="paid offers, instalment plans and member checkout"
+      />
+    )
+  }
+
   const activeSpace = await getActiveCreatorSpace()
   const spaceDetail: CreatorSpaceDetail | null = activeSpace
     ? ((await getCreatorSpace(activeSpace.slug)) as CreatorSpaceDetail | null)

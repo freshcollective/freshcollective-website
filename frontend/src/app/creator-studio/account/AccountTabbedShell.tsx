@@ -189,14 +189,28 @@ function PlanTab({ billing }: { billing: CreatorBillingResponse | null }) {
         style={{ border: '1px dashed rgba(12,24,38,0.14)' }}
       >
         <p className="font-serif text-[16px] text-navy-900">
-          No active plan.
+          Your plan needs attention.
         </p>
         <p
           className="mt-2 text-[13px] italic leading-relaxed"
           style={{ color: 'rgba(12,24,38,0.60)', fontFamily: 'Georgia, serif' }}
         >
-          Once you subscribe to a plan, its details will appear here.
+          {/* Reached only when a paid subscription has lapsed unpaid.
+              A Community creator is NOT this state: the billing endpoint
+              resolves Community for a creator with no subscription row,
+              so they render the full plan card below. Saying "no active
+              plan" to a Community creator was the bug here — Community
+              is a deliberate $0 plan, not an absence. */}
+          Your most recent payment didn&rsquo;t complete, so your plan is
+          paused. Open Billing to sort it out.
         </p>
+        <Link
+          href="/creator-studio/billing"
+          className="mt-4 inline-flex items-center rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+        >
+          Go to Billing →
+        </Link>
       </section>
     )
   }
@@ -232,9 +246,11 @@ function PlanTab({ billing }: { billing: CreatorBillingResponse | null }) {
         <div>
           <dt className="text-[12px] font-medium text-slate-500">Price</dt>
           <dd className="mt-1 text-[15px] text-navy-900">
-            {plan.monthly_price_cents != null
-              ? `$${(plan.monthly_price_cents / 100).toFixed(0)} ${plan.currency ?? 'AUD'} / month`
-              : <span className="italic text-slate-400">Not set</span>}
+            {plan.monthly_price_cents === 0
+              ? 'Free'
+              : plan.monthly_price_cents != null
+                ? `$${(plan.monthly_price_cents / 100).toFixed(0)} ${plan.currency ?? 'AUD'} / month`
+                : <span className="italic text-slate-400">Not set</span>}
           </dd>
         </div>
         <div>
@@ -265,14 +281,42 @@ function PlanTab({ billing }: { billing: CreatorBillingResponse | null }) {
         </p>
       )}
 
+      {/* What the plan includes, straight from the capability record
+          the backend already serves (``card_features`` in
+          plan_config.py). Not restated here, so the page cannot drift
+          from what the guards actually enforce. */}
+      {plan.card_features && plan.card_features.length > 0 && (
+        <ul className="mt-6 grid gap-1.5 border-t border-slate-100 pt-5 md:grid-cols-2">
+          {plan.card_features.map((feature) => (
+            <li key={feature} className="text-[13.5px] leading-relaxed text-navy-900">
+              <span aria-hidden="true" className="text-teal-700">✓</span>{' '}
+              {feature}
+            </li>
+          ))}
+        </ul>
+      )}
+
       <div className="mt-6 border-t border-slate-100 pt-5">
         <Link
           href="/creator-studio/billing"
           className="inline-flex items-center rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
           style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
         >
-          Manage plan →
+          {/* A creator who cannot sell is being offered a way up; one
+              who already can is being offered management. Both land on
+              Billing, which carries the live Stripe subscribe flow. */}
+          {plan.paid_offers_enabled ? 'Manage plan →' : 'Upgrade plan →'}
         </Link>
+        {!plan.paid_offers_enabled && (
+          <p
+            className="mt-3 max-w-xl text-[13px] italic leading-relaxed"
+            style={{ color: 'rgba(12,24,38,0.60)', fontFamily: 'Georgia, serif' }}
+          >
+            Community is free and non-commercial. Upgrading to Creator
+            unlocks paid offers, payment options and the wider
+            commercial toolset.
+          </p>
+        )}
       </div>
     </section>
   )

@@ -45,6 +45,9 @@ interface Props {
   spaceDetail: CreatorSpaceDetail
   atmosphereNames: string[]
   buildOptions: BuildYourCollectiveOptions | null
+  /** Whether the resolved creator plan unlocks paid offers. Gates the
+   *  paid pricing types on the Pricing tab. */
+  paidOffersEnabled?: boolean
 }
 
 /**
@@ -60,7 +63,7 @@ interface Props {
  *    the collective builder for actual editing).
  */
 export default function SettingsTabbedShell({
-  spaceDetail, atmosphereNames, buildOptions,
+  spaceDetail, atmosphereNames, buildOptions, paidOffersEnabled = false,
 }: Props) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -180,6 +183,7 @@ export default function SettingsTabbedShell({
         <CollectiveSettingsForm
           space={spaceDetail}
           tab={tab === 'members' || tab === 'place' ? 'details' : tab}
+          paidOffersEnabled={paidOffersEnabled}
         />
       </div>
 

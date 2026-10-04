@@ -217,25 +217,48 @@ describe('Billing renders the access state rather than the bare price', () => {
 describe('the Billing status pill does not warn an unbilled creator', () => {
   const BILLING = 'app/creator-studio/billing/page.tsx'
 
-  test('a manual grant reports no billing required', () => {
+  test('the pill asks one question — is this creator billed at all', () => {
     const src = codeOnly(BILLING)
     const pill = src.slice(src.indexOf('function BillingStatusPill'))
-    assert.match(pill, /sub\?\.source === 'manual_grant'/)
+    assert.match(pill, /describeCreatorAccess\(plan, sub\)\.isUnbilled/)
     assert.match(pill, /No billing required/)
   })
 
-  test('a grant no longer falls through to the not-connected warning', () => {
+  test('the unbilled branch is evaluated before the Stripe branches', () => {
     const src = codeOnly(BILLING)
     const pill = src.slice(src.indexOf('function BillingStatusPill'))
-    // The grant branch must come before the stripePaid branches, so it
-    // cannot fall through to the default label.
-    const grantBranch = pill.indexOf("sub?.source === 'manual_grant'")
+    const unbilled = pill.indexOf('.isUnbilled')
     const firstStripeBranch = pill.indexOf("stripePaid && sub?.status === 'active'")
-    assert.ok(grantBranch > -1 && firstStripeBranch > -1)
+    assert.ok(unbilled > -1 && firstStripeBranch > -1)
     assert.ok(
-      grantBranch < firstStripeBranch,
-      'the manual-grant branch must be evaluated before the Stripe branches',
+      unbilled < firstStripeBranch,
+      'an unbilled creator must never fall through to a Stripe branch',
     )
+  })
+
+  test('the pill no longer depends on is_purchasable', () => {
+    // Community has is_purchasable=true (it *is* self-service), so the
+    // old zero-price branch missed it and a Community creator saw a
+    // yellow "Billing not connected yet".
+    const src = codeOnly(BILLING)
+    const pill = src.slice(
+      src.indexOf('function BillingStatusPill'),
+      src.indexOf('function BillingStatusPill') + 1800,
+    )
+    assert.ok(
+      !pill.includes('is_purchasable'),
+      'is_purchasable is the wrong question for "is this billed?"',
+    )
+  })
+
+  test('a Community creator with no subscription is unbilled', () => {
+    // Jenson's exact shape: $0 plan, no subscription row at all.
+    const v = describeCreatorAccess(
+      plan({ slug: 'community', name: 'Community', monthly_price_cents: 0 }),
+      null,
+      NOW,
+    )
+    assert.equal(v.isUnbilled, true)
   })
 
   test('the paid branches still key off a real Stripe subscription', () => {

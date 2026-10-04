@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRef, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
@@ -19,9 +20,14 @@ interface Props {
   space: CreatorSpaceDetail
   /** Which grouping of fields to render. */
   tab?: CollectiveSettingsTab
+  /** Whether the resolved creator plan unlocks paid offers. When false
+   *  (Community), the paid pricing types are shown but unselectable
+   *  with an upgrade affordance, rather than inviting the creator to
+   *  configure pricing the backend will refuse on Save. */
+  paidOffersEnabled?: boolean
 }
 
-export default function CollectiveSettingsForm({ space, tab = 'details' }: Props) {
+export default function CollectiveSettingsForm({ space, tab = 'details', paidOffersEnabled = false }: Props) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -79,7 +85,31 @@ export default function CollectiveSettingsForm({ space, tab = 'details' }: Props
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
-  function isPaidType(type: PricingType): boolean {
+  /**
+ * The Pricing tab's options, and which require a commercial plan.
+ *
+ * "commercial" mirrors the backend guard exactly:
+ * ``plan_guards.guard_paid_offers_enabled`` early-returns only for
+ * ``pricing_type == 'free'`` and otherwise requires
+ * ``paid_offers_enabled``. So every value except ``free`` — including
+ * ``invite_only`` and ``coming_soon`` — is refused on Community today.
+ * This table is deliberately that same shape rather than a prettier
+ * guess, so the UI never offers something Save would reject.
+ */
+const PRICING_TYPE_OPTIONS: {
+  value: string
+  label: string
+  commercial: boolean
+}[] = [
+  { value: 'free',          label: 'Free',                 commercial: false },
+  { value: 'paid_one_time', label: 'Paid — one time',      commercial: true },
+  { value: 'paid_monthly',  label: 'Paid — monthly',       commercial: true },
+  { value: 'paid_annual',   label: 'Paid — annual',        commercial: true },
+  { value: 'invite_only',   label: 'Invite only',          commercial: true },
+  { value: 'coming_soon',   label: 'Paid — coming soon',   commercial: true },
+]
+
+function isPaidType(type: PricingType): boolean {
     return type === 'paid_one_time' || type === 'paid_monthly' || type === 'paid_annual'
   }
 
@@ -703,13 +733,29 @@ export default function CollectiveSettingsForm({ space, tab = 'details' }: Props
               onChange={(e) => setPricingType(e.target.value as PricingType)}
               className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-navy-900 shadow-sm outline-none transition-colors focus:border-teal-400"
             >
-              <option value="free">Free</option>
-              <option value="paid_one_time">Paid — one time</option>
-              <option value="paid_monthly">Paid — monthly</option>
-              <option value="paid_annual">Paid — annual</option>
-              <option value="invite_only">Invite only</option>
-              <option value="coming_soon">Paid — coming soon</option>
+              {PRICING_TYPE_OPTIONS.map(({ value, label, commercial }) => (
+                <option
+                  key={value}
+                  value={value}
+                  // Keep the currently-saved value selectable even when
+                  // the plan no longer permits it — otherwise a
+                  // Collective that holds a paid type from an earlier
+                  // plan would render a select that misreports its own
+                  // state, with no way to move back to Free.
+                  disabled={commercial && !paidOffersEnabled && value !== space.pricing_type}
+                >
+                  {label}
+                </option>
+              ))}
             </select>
+            {!paidOffersEnabled && (
+              <p className="mt-2 text-[12.5px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.62)' }}>
+                Paid pricing is available on Creator plans.{' '}
+                <Link href="/creator-studio/billing" className="font-semibold text-teal-700 hover:underline">
+                  Upgrade →
+                </Link>
+              </p>
+            )}
           </div>
 
           {/* Amount — only shown for paid types */}
