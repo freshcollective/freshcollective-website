@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import stripe
 from sqlalchemy.orm import Session
@@ -162,6 +162,51 @@ def find_or_create_customer(user: User, db: Session) -> str:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Deferred first billing date
+# ---------------------------------------------------------------------------
+
+#: Stripe requires ``subscription_data.trial_end`` to be at least 48
+#: hours in the future when creating a Checkout Session. Verified
+#: against the pinned stripe==15.2.0 API surface.
+TRIAL_END_MIN_LEAD = timedelta(hours=48)
+
+
+def resolve_deferred_trial_end(
+    complimentary_ends_at: datetime | None,
+    now: datetime | None = None,
+) -> datetime | None:
+    """When should the first paid invoice fall?
+
+    A creator on a finite complimentary grant who elects to keep paying
+    must not forfeit the rest of the free term, so the paid subscription
+    starts with a trial running to the grant's ``ends_at``. Returns the
+    datetime to use, or None when no deferral applies (no grant, or the
+    term has already finished — an election during grace is charged
+    immediately, by product decision).
+
+    The 48-hour floor is Stripe's, and it is resolved in the only
+    direction that is ever acceptable: **later**. If the creator elects
+    inside the final two days, ``ends_at`` is not a date Stripe will
+    accept, so the trial is pushed out to ``now + 48h``. That hands them
+    a little extra free access rather than taking money before the date
+    they were shown. Charging early to satisfy an API constraint would
+    be the one outcome we will not produce.
+
+    Callers must disclose the returned date as the first billing date,
+    because it can be later than ``ends_at``.
+    """
+    if complimentary_ends_at is None:
+        return None
+    now = now or datetime.utcnow()
+    if complimentary_ends_at <= now:
+        # Term already over (grace). Immediate start is the agreed
+        # product behaviour; no second free period.
+        return None
+    floor = now + TRIAL_END_MIN_LEAD
+    return max(complimentary_ends_at, floor)
+
+
 def create_checkout_session(
     *,
     user: User,
@@ -169,6 +214,7 @@ def create_checkout_session(
     success_url: str,
     cancel_url: str,
     db: Session,
+    trial_end: datetime | None = None,
 ) -> stripe.checkout.Session:
     """Create a Stripe Checkout Session for a creator to subscribe
     to ``plan``. Card-only per the workstream invariant.
@@ -198,7 +244,17 @@ def create_checkout_session(
         # Metadata on the resulting Subscription — surfaces on every
         # ``customer.subscription.*`` and (indirectly, via
         # subscription lookup) on ``invoice.*`` events.
-        subscription_data={"metadata": metadata},
+        # ``trial_end`` defers the first charge without deferring the
+        # commitment: Stripe collects the card now, creates the
+        # subscription, and issues no invoice until that date. It is
+        # how a creator keeps the rest of a complimentary term after
+        # electing to continue. ``resolve_deferred_trial_end`` owns the
+        # date (and Stripe's 48-hour floor); None means bill normally.
+        subscription_data=(
+            {"metadata": metadata, "trial_end": int(trial_end.timestamp())}
+            if trial_end is not None
+            else {"metadata": metadata}
+        ),
         # Stripe automatic tax config left OFF for MVP — Fresh
         # Collective's GST treatment is a Lindsey decision (see the
         # workstream's "GST / TAX — HOLD POINT" section). When she

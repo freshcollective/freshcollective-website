@@ -55,7 +55,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.services.creator_grant_expiry import reconcile_expired_grants
+from app.services.creator_grant_expiry import (
+    reconcile_expired_grants,
+    survey_manual_grants,
+)
 
 
 logging.basicConfig(
@@ -78,6 +81,33 @@ def main() -> int:
     Session = sessionmaker(bind=engine, expire_on_commit=False, future=True)
     with Session() as db:
         try:
+            # Dry run doubles as the pre-arming report: every manual
+            # grant with its lifecycle classification, including the
+            # excluded ones and why. Skipped when applying, where the
+            # per-row log lines below are the record.
+            if not args.apply:
+                survey = survey_manual_grants(db)
+                logger.info(
+                    "creator_grant_expiry_reconcile: surveying %s manual grant(s)",
+                    len(survey),
+                )
+                for row in survey:
+                    logger.info(
+                        "  [%s] user=%s <%s> plan=%s status=%s reason=%s "
+                        "starts=%s ends=%s paid_sub=%s sub=%s",
+                        row.lifecycle, row.user_id, row.user_email,
+                        row.plan_slug, row.status, row.grant_reason,
+                        row.starts_at, row.ends_at,
+                        row.has_paid_subscription, row.subscription_id,
+                    )
+                counts: dict[str, int] = {}
+                for row in survey:
+                    counts[row.lifecycle] = counts.get(row.lifecycle, 0) + 1
+                logger.info(
+                    "creator_grant_expiry_reconcile: by lifecycle — %s",
+                    ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "none",
+                )
+
             report = reconcile_expired_grants(db, apply=args.apply)
 
             if report.halted_reason:

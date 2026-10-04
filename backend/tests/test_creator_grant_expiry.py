@@ -32,14 +32,28 @@ from app.models.platform import (
 )
 from app.services.creator_grant_expiry import (
     EXPIRABLE_GRANT_REASONS,
+    GRACE_PERIOD,
     NEVER_EXPIRE_PLAN_SLUGS,
+    RENEWAL_WINDOW,
+    SYSTEM_REVOKED_REASON,
+    classify_grant,
     community_is_the_fallback,
     reconcile_expired_grants,
 )
 
 NOW = datetime(2026, 10, 4, 12, 0, 0)
-PAST = NOW - timedelta(days=1)
+#: Term ended yesterday — inside the 7-day grace window, so Creator
+#: access continues and nothing is due yet.
+IN_GRACE = NOW - timedelta(days=1)
+#: Term ended 8 days ago — grace has run out, so fallback is due.
+PAST_GRACE = NOW - timedelta(days=8)
+#: Still inside the term, before the 14-day renewal window opens.
 FUTURE = NOW + timedelta(days=30)
+#: Inside the final 14 days — the renewal window.
+IN_RENEWAL = NOW + timedelta(days=7)
+
+# Historical alias: every pre-grace test meant "due for fallback".
+PAST = PAST_GRACE
 
 
 def _uid(prefix: str) -> str:
@@ -110,10 +124,14 @@ class TestFiniteGrantLifecycle:
         assert report.expired_count == 0
         assert resolve_creator_plan(creator, db).slug == "creator"
 
-    def test_at_the_end_date_the_grant_expires(self, plans, db, make_user):
-        """``ends_at <= now`` — the boundary itself is due, not just past."""
+    def test_at_the_end_of_grace_the_grant_expires(self, plans, db, make_user):
+        """The boundary is ``ends_at + GRACE_PERIOD``, not ``ends_at``.
+
+        A creator must never drop to Community on their end date — they
+        get the grace window to decide first.
+        """
         creator = make_user(role="creator")
-        sub = _grant(db, creator, plans["creator"], ends_at=NOW)
+        sub = _grant(db, creator, plans["creator"], ends_at=NOW - GRACE_PERIOD)
 
         report = reconcile_expired_grants(db, NOW, apply=True)
         assert report.expired_count == 1
@@ -499,7 +517,7 @@ class TestAuditTrail:
         )
         assert event.action == "revoked"
         assert event.actor_user_id is None
-        assert event.reason == "complimentary_grant_expired"
+        assert event.reason == SYSTEM_REVOKED_REASON
         assert "Community" in (event.note or "")
 
     def test_the_audit_row_preserves_the_original_term(
@@ -519,3 +537,462 @@ class TestAuditTrail:
         )
         assert event.ends_at == original_ends_at
         assert event.creator_plan_id == plans["creator"].id
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle classification — renewal window, grace, fallback
+# ---------------------------------------------------------------------------
+
+
+def _classify(db, sub, plan_slug, now=NOW):
+    from app.services.creator_grant_expiry import has_active_paid_subscription
+    return classify_grant(
+        sub, plan_slug, now,
+        has_paid_subscription=has_active_paid_subscription(db, sub.user_id),
+    )
+
+
+class TestLifecycleClassification:
+    def test_the_windows_are_the_agreed_durations(self):
+        assert RENEWAL_WINDOW == timedelta(days=14)
+        assert GRACE_PERIOD == timedelta(days=7)
+
+    def test_well_inside_the_term_is_plain_active(self, plans, db, make_user):
+        creator = make_user(role="creator")
+        sub = _grant(db, creator, plans["creator"], ends_at=FUTURE)
+        assert _classify(db, sub, "creator") == "active"
+
+    def test_the_renewal_window_opens_fourteen_days_out(
+        self, plans, db, make_user,
+    ):
+        creator = make_user(role="creator")
+        # One second inside the boundary.
+        sub = _grant(
+            db, creator, plans["creator"],
+            ends_at=NOW + RENEWAL_WINDOW - timedelta(seconds=1),
+        )
+        assert _classify(db, sub, "creator") == "renewal window"
+
+    def test_one_second_before_the_window_is_active(self, plans, db, make_user):
+        creator = make_user(role="creator")
+        sub = _grant(
+            db, creator, plans["creator"],
+            ends_at=NOW + RENEWAL_WINDOW + timedelta(seconds=1),
+        )
+        assert _classify(db, sub, "creator") == "active"
+
+    def test_past_the_end_date_is_grace_not_fallback(
+        self, plans, db, make_user,
+    ):
+        """The product rule: never straight to Community at ends_at."""
+        creator = make_user(role="creator")
+        sub = _grant(db, creator, plans["creator"], ends_at=IN_GRACE)
+        assert _classify(db, sub, "creator") == "grace"
+
+    def test_after_grace_it_would_fall_back(self, plans, db, make_user):
+        creator = make_user(role="creator")
+        sub = _grant(db, creator, plans["creator"], ends_at=PAST_GRACE)
+        assert _classify(db, sub, "creator") == "would fall back"
+
+    def test_an_elected_creator_is_excluded_even_past_grace(
+        self, plans, db, make_user,
+    ):
+        """A paid row — including a not-yet-charged early election —
+        takes the creator out of this lifecycle entirely."""
+        creator = make_user(role="creator")
+        sub = _grant(db, creator, plans["creator"], ends_at=PAST_GRACE)
+        db.add(CreatorSubscription(
+            id=_uid("sub"), user_id=creator.id,
+            creator_plan_id=plans["creator"].id,
+            status=CreatorSubscriptionStatus.past_due,   # trial running
+            starts_at=NOW, source="stripe_paid",
+            stripe_subscription_id="sub_trial_1",
+        ))
+        db.flush()
+        assert _classify(db, sub, "creator") == (
+            "excluded: paid subscription already active"
+        )
+
+    @pytest.mark.parametrize("slug", ["founding-creator", "organisation"])
+    def test_protected_plans_are_excluded_by_slug(
+        self, plans, db, make_user, slug,
+    ):
+        creator = make_user(role="creator")
+        sub = _grant(db, creator, plans[slug], ends_at=PAST_GRACE)
+        assert _classify(db, sub, slug) == f"excluded: plan={slug}"
+
+    def test_an_indefinite_grant_is_excluded(self, plans, db, make_user):
+        creator = make_user(role="creator")
+        sub = _grant(db, creator, plans["creator"], ends_at=None)
+        assert _classify(db, sub, "creator") == "excluded: indefinite"
+
+
+class TestGraceProtectsAccess:
+    def test_a_creator_in_grace_keeps_creator_capability(
+        self, plans, db, make_user,
+    ):
+        creator = make_user(role="creator")
+        _grant(db, creator, plans["creator"], ends_at=IN_GRACE)
+        db.flush()
+
+        report = reconcile_expired_grants(db, NOW, apply=True)
+        assert report.expired_count == 0, "grace must not fall back"
+        resolved = resolve_creator_plan(creator, db)
+        assert resolved.slug == "creator"
+        assert resolved.paid_offers_enabled is True
+
+    def test_a_creator_in_the_renewal_window_is_untouched(
+        self, plans, db, make_user,
+    ):
+        creator = make_user(role="creator")
+        sub = _grant(db, creator, plans["creator"], ends_at=IN_RENEWAL)
+        db.flush()
+
+        report = reconcile_expired_grants(db, NOW, apply=True)
+        assert report.expired_count == 0
+        assert sub.status == CreatorSubscriptionStatus.active
+
+
+class TestPaidElectionIsNeverExpired:
+    def test_an_early_election_survives_past_grace(
+        self, plans, db, make_user,
+    ):
+        """The window this protects: the creator committed and Stripe is
+        running a trial to their end date, so the paid row is
+        ``past_due`` and the grant is deliberately still active. Without
+        the exclusion the job would revoke the access they just paid
+        for."""
+        creator = make_user(role="creator")
+        grant = _grant(db, creator, plans["creator"], ends_at=PAST_GRACE)
+        db.add(CreatorSubscription(
+            id=_uid("sub"), user_id=creator.id,
+            creator_plan_id=plans["creator"].id,
+            status=CreatorSubscriptionStatus.past_due,
+            starts_at=NOW, source="stripe_paid",
+            stripe_subscription_id="sub_trial_2",
+        ))
+        db.flush()
+
+        report = reconcile_expired_grants(db, NOW, apply=True)
+        assert report.expired_count == 0
+        assert report.skipped_count == 1
+        assert report.skipped[0].reason == "paid_subscription_active"
+        assert grant.status == CreatorSubscriptionStatus.active
+
+    def test_a_fully_converted_creator_is_out_of_the_lifecycle(
+        self, plans, db, make_user,
+    ):
+        """After the first paid invoice, ``plan_activation``'s supersede
+        has already cancelled the grant — the index would not permit two
+        active rows anyway, which is what the conversion fix exists to
+        respect. So the grant is excluded by status, before the
+        paid-subscription check is even reached.
+        """
+        creator = make_user(role="creator")
+        grant = _grant(
+            db, creator, plans["creator"], ends_at=PAST_GRACE,
+            status=CreatorSubscriptionStatus.cancelled,
+        )
+        db.add(CreatorSubscription(
+            id=_uid("sub"), user_id=creator.id,
+            creator_plan_id=plans["creator"].id,
+            status=CreatorSubscriptionStatus.active,
+            starts_at=NOW, source="stripe_paid",
+            stripe_subscription_id="sub_live_9",
+        ))
+        db.flush()
+
+        report = reconcile_expired_grants(db, NOW, apply=True)
+        assert report.expired_count == 0
+        assert report.skipped_count == 0
+        assert grant.status == CreatorSubscriptionStatus.cancelled
+        assert resolve_creator_plan(creator, db).slug == "creator"
+
+
+# ---------------------------------------------------------------------------
+# Commercial safety after fallback
+# ---------------------------------------------------------------------------
+
+
+class TestCommercialSafetyAfterFallback:
+    """Production runs with ``CREATOR_PLAN_GUARD_ENABLED=true``
+    (confirmed 2026-10-04), so a creator with no active subscription is
+    refused at checkout rather than silently falling back to a 0% fee.
+    These tests pin that, because it is the whole basis on which paid
+    content is allowed to remain stored after a downgrade: dormant, not
+    destroyed.
+    """
+
+    @pytest.fixture
+    def guard_on(self, monkeypatch):
+        from app.core.config import settings
+        monkeypatch.setattr(settings, "creator_plan_guard_enabled", True)
+
+    def _fall_back(self, db, creator, plans):
+        _grant(db, creator, plans["creator"], ends_at=PAST_GRACE)
+        db.flush()
+        report = reconcile_expired_grants(db, NOW, apply=True)
+        assert report.expired_count == 1
+        db.flush()
+
+    def test_the_canonical_plan_is_community(self, plans, db, make_user):
+        creator = make_user(role="creator")
+        self._fall_back(db, creator, plans)
+        assert resolve_creator_plan(creator, db).slug == "community"
+
+    def test_existing_paid_offers_can_no_longer_be_checked_out(
+        self, plans, db, make_user, guard_on,
+    ):
+        """The proof that stored paid content is inert rather than
+        sellable."""
+        from app.services.checkout_orchestration import (
+            NoActiveCreatorPlanError,
+            _resolve_fee_bps_for_creator,
+        )
+
+        creator = make_user(role="creator")
+        self._fall_back(db, creator, plans)
+
+        with pytest.raises(NoActiveCreatorPlanError):
+            _resolve_fee_bps_for_creator(creator.id, db)
+
+    def test_a_creator_in_grace_can_still_transact(
+        self, plans, db, make_user, guard_on,
+    ):
+        """Grace means Creator access really continues — including
+        commerce — so the deadline is the only thing that changes."""
+        from app.services.checkout_orchestration import (
+            _resolve_fee_bps_for_creator,
+        )
+
+        creator = make_user(role="creator")
+        _grant(db, creator, plans["creator"], ends_at=IN_GRACE)
+        db.flush()
+        reconcile_expired_grants(db, NOW, apply=True)
+        db.flush()
+
+        fee_bps, plan_id, _ = _resolve_fee_bps_for_creator(creator.id, db)
+        assert plan_id == plans["creator"].id
+
+    def test_no_new_paid_offers_can_be_created(self, plans, db, make_user):
+        from fastapi import HTTPException
+
+        from app.creator.plan_guards import guard_paid_offers_enabled
+
+        creator = make_user(role="creator")
+        self._fall_back(db, creator, plans)
+
+        with pytest.raises(HTTPException) as exc:
+            guard_paid_offers_enabled(creator, db, "paid_monthly")
+        assert exc.value.status_code == 403
+
+    def test_free_offers_still_work(self, plans, db, make_user):
+        from app.creator.plan_guards import guard_paid_offers_enabled
+
+        creator = make_user(role="creator")
+        self._fall_back(db, creator, plans)
+        guard_paid_offers_enabled(creator, db, "free")   # does not raise
+
+    def test_stored_commercial_content_is_not_deleted(
+        self, plans, db, make_user, make_space, make_event,
+    ):
+        """Downgrade must leave the work intact so a later upgrade
+        reactivates rather than recreates."""
+        from app.models.platform import Pathway
+
+        creator = make_user(role="creator")
+        space = make_space(creator=creator, pricing_type="paid_monthly")
+        pathway = Pathway(
+            id=str(uuid.uuid4()), space_id=space.id,
+            slug="p-paid", title="A paid pathway",
+        )
+        db.add(pathway)
+        event = make_event(space=space)
+        event.ticket_price_cents = 2500
+        event.status = "published"
+        db.flush()
+
+        # The reconciler refuses to expire a creator who is selling, so
+        # reach the fallback state the way an admin would: the grant is
+        # gone and no paid subscription exists.
+        grant = _grant(db, creator, plans["creator"], ends_at=PAST_GRACE)
+        grant.status = CreatorSubscriptionStatus.cancelled
+        db.flush()
+
+        assert resolve_creator_plan(creator, db).slug == "community"
+        # Every artefact is still there.
+        db.refresh(space)
+        db.refresh(pathway)
+        db.refresh(event)
+        assert space.pricing_type == "paid_monthly"
+        assert pathway.title == "A paid pathway"
+        assert event.ticket_price_cents == 2500
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle notifications
+# ---------------------------------------------------------------------------
+
+
+class TestLifecycleNotifications:
+    """In-app notifications for the three states the creator should hear
+    about. Conversion to paid is already announced by
+    ``plan_activation._notify_creator``, so it is not duplicated.
+
+    Dedup is derived from the grant's own dates, so a daily schedule
+    sends each message once per term rather than once per run.
+    """
+
+    @staticmethod
+    def _notifications(db, user, kind=None):
+        from app.models.notification import Notification
+        q = db.query(Notification).filter(Notification.user_id == user.id)
+        if kind:
+            q = q.filter(Notification.notification_type == kind)
+        return q.all()
+
+    def test_the_renewal_window_notifies_once(self, plans, db, make_user):
+        from app.services.creator_grant_expiry import NOTIFY_ENDING_SOON
+
+        creator = make_user(role="creator")
+        _grant(db, creator, plans["creator"], ends_at=IN_RENEWAL)
+        db.flush()
+
+        first = reconcile_expired_grants(db, NOW, apply=True)
+        db.flush()
+        second = reconcile_expired_grants(db, NOW, apply=True)
+        db.flush()
+
+        assert first.in_renewal == 1
+        assert first.notified == 1
+        assert second.notified == 0, "a daily run must not re-notify"
+        sent = self._notifications(db, creator, NOTIFY_ENDING_SOON)
+        assert len(sent) == 1
+        assert "4" in sent[0].message or "ends on" in sent[0].message
+        assert "grace" in sent[0].message
+        assert "remain" in sent[0].message
+
+    def test_grace_notifies_with_the_deadline(self, plans, db, make_user):
+        from app.services.creator_grant_expiry import NOTIFY_GRACE
+
+        creator = make_user(role="creator")
+        _grant(db, creator, plans["creator"], ends_at=IN_GRACE)
+        db.flush()
+
+        report = reconcile_expired_grants(db, NOW, apply=True)
+        db.flush()
+
+        assert report.in_grace == 1
+        sent = self._notifications(db, creator, NOTIFY_GRACE)
+        assert len(sent) == 1
+        assert "until" in sent[0].message
+        assert "Community" in sent[0].message
+
+    def test_fallback_notifies_that_content_is_intact(
+        self, plans, db, make_user,
+    ):
+        from app.services.creator_grant_expiry import NOTIFY_ENDED
+
+        creator = make_user(role="creator")
+        _grant(db, creator, plans["creator"], ends_at=PAST_GRACE)
+        db.flush()
+
+        report = reconcile_expired_grants(db, NOW, apply=True)
+        db.flush()
+
+        assert report.expired_count == 1
+        sent = self._notifications(db, creator, NOTIFY_ENDED)
+        assert len(sent) == 1
+        assert "still here" in sent[0].message
+        assert "Community" in sent[0].message
+
+    def test_no_notification_claims_an_automatic_charge(
+        self, plans, db, make_user,
+    ):
+        for ends_at in (IN_RENEWAL, IN_GRACE, PAST_GRACE):
+            creator = make_user(role="creator")
+            _grant(db, creator, plans["creator"], ends_at=ends_at)
+            db.flush()
+            reconcile_expired_grants(db, NOW, apply=True)
+            db.flush()
+            for n in self._notifications(db, creator):
+                assert "charged automatically" not in n.message.lower()
+                assert "will be charged" not in n.message.lower()
+
+    def test_a_dry_run_counts_but_sends_nothing(self, plans, db, make_user):
+        creator = make_user(role="creator")
+        _grant(db, creator, plans["creator"], ends_at=IN_RENEWAL)
+        db.flush()
+
+        report = reconcile_expired_grants(db, NOW, apply=False)
+        db.flush()
+
+        assert report.in_renewal == 1
+        assert report.notified == 0
+        assert self._notifications(db, creator) == []
+
+    def test_an_elected_creator_is_not_nagged(self, plans, db, make_user):
+        """A creator who already committed should not be asked again."""
+        creator = make_user(role="creator")
+        _grant(db, creator, plans["creator"], ends_at=IN_RENEWAL)
+        db.add(CreatorSubscription(
+            id=_uid("sub"), user_id=creator.id,
+            creator_plan_id=plans["creator"].id,
+            status=CreatorSubscriptionStatus.past_due,
+            starts_at=NOW, source="stripe_paid",
+            stripe_subscription_id="sub_trial_3",
+        ))
+        db.flush()
+
+        report = reconcile_expired_grants(db, NOW, apply=True)
+        db.flush()
+
+        assert report.in_renewal == 0
+        assert report.notified == 0
+        assert self._notifications(db, creator) == []
+
+    @pytest.mark.parametrize("slug", ["founding-creator", "organisation"])
+    def test_protected_plans_are_never_notified(
+        self, plans, db, make_user, slug,
+    ):
+        creator = make_user(role="creator")
+        _grant(db, creator, plans[slug], ends_at=IN_RENEWAL)
+        db.flush()
+
+        report = reconcile_expired_grants(db, NOW, apply=True)
+        db.flush()
+
+        assert report.in_renewal == 0
+        assert report.notified == 0
+        assert self._notifications(db, creator) == []
+
+
+class TestSurveyReport:
+    def test_the_survey_classifies_every_manual_grant(
+        self, plans, db, make_user,
+    ):
+        from app.services.creator_grant_expiry import survey_manual_grants
+
+        comp = make_user(role="creator")
+        _grant(db, comp, plans["creator"], ends_at=IN_RENEWAL)
+        founding = make_user(role="creator")
+        _grant(db, founding, plans["founding-creator"], ends_at=None,
+               reason="internal")
+        db.flush()
+
+        rows = {r.user_id: r for r in survey_manual_grants(db, NOW)}
+        assert rows[comp.id].lifecycle == "renewal window"
+        assert rows[comp.id].user_email is not None
+        assert rows[founding.id].lifecycle.startswith("excluded")
+
+    def test_the_survey_mutates_nothing(self, plans, db, make_user):
+        from app.services.creator_grant_expiry import survey_manual_grants
+
+        creator = make_user(role="creator")
+        grant = _grant(db, creator, plans["creator"], ends_at=PAST_GRACE)
+        db.flush()
+
+        survey_manual_grants(db, NOW)
+        db.flush()
+        assert grant.status == CreatorSubscriptionStatus.active
+        assert grant.revoked_at is None

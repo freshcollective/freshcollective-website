@@ -4,7 +4,11 @@ import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { describeCreatorAccess } from './creatorPlanAccess.ts'
+import {
+  describeCreatorAccess,
+  GRACE_PERIOD_DAYS,
+  RENEWAL_WINDOW_DAYS,
+} from './creatorPlanAccess.ts'
 import { buildCreatorPlanCard } from './creatorPlanCard.ts'
 import type { CreatorPlanOut, CreatorSubscriptionOut } from '@/types/platform'
 
@@ -87,12 +91,16 @@ describe('a complimentary grant is never shown as a paid subscription', () => {
     }
   })
 
-  test('the copy names the free plan it falls back to, not a price', () => {
-    const note = describeCreatorAccess(
+  test('the active phase states the term without urgency', () => {
+    // A grant with a month left needs no countdown and no mention of
+    // what happens if they do nothing — that belongs in the renewal
+    // window, where there is actually a decision to make.
+    const v = describeCreatorAccess(
       plan(), sub({ grant_reason: 'comp', ends_at: '2026-11-04T00:00:00Z' }), NOW,
-    ).termNote ?? ''
-    assert.match(note, /Community/)
-    assert.match(note, /not be charged/)
+    )
+    assert.equal(v.phase, 'active')
+    assert.match(v.termNote ?? '', /Active until/)
+    assert.match(v.termNote ?? '', /not be charged/)
   })
 
   test('a just-past end date gets no bespoke claim either way', () => {
@@ -267,5 +275,113 @@ describe('the Billing status pill does not warn an unbilled creator', () => {
     assert.match(pill, /const stripePaid = sub\?\.source === 'stripe_paid'/)
     assert.match(pill, /Past due \(grace\)/)
     assert.match(pill, /Lapsed/)
+  })
+})
+
+describe('the complimentary lifecycle has three phases', () => {
+  const ENDS = '2026-11-04T00:00:00Z'
+
+  function at(iso: string) {
+    return describeCreatorAccess(
+      plan(), sub({ grant_reason: 'comp', ends_at: ENDS }), new Date(iso),
+    )
+  }
+
+  test('more than 14 days out is active', () => {
+    assert.equal(at('2026-10-20T00:00:00Z').phase, 'active')
+  })
+
+  test('inside the final 14 days is the renewal window', () => {
+    // 2026-10-21 is exactly 14 days before 2026-11-04.
+    assert.equal(at('2026-10-22T00:00:00Z').phase, 'renewal')
+  })
+
+  test('after the end date is grace, not fallback', () => {
+    // The product rule: never straight to Community at ends_at.
+    const v = at('2026-11-05T00:00:00Z')
+    assert.equal(v.phase, 'grace')
+    assert.match(v.label ?? '', /has ended/)
+  })
+
+  test('grace copy gives the deadline and protects the content', () => {
+    const v = at('2026-11-05T00:00:00Z')
+    assert.match(v.termNote ?? '', /11 Nov 2026/)   // ends_at + 7 days
+    assert.match(v.termNote ?? '', /until/)
+    assert.equal(v.graceEndsOn, '11 Nov 2026')
+  })
+
+  test('the renewal phase names the end date', () => {
+    assert.match(at('2026-10-25T00:00:00Z').termNote ?? '', /4 Nov 2026/)
+  })
+
+  test('no phase ever implies an automatic charge', () => {
+    for (const when of [
+      '2026-10-20T00:00:00Z', '2026-10-25T00:00:00Z', '2026-11-05T00:00:00Z',
+    ]) {
+      const note = at(when).termNote ?? ''
+      assert.ok(
+        !/will be charged|automatically|charged automatically/i.test(note),
+        `continuing is always an explicit purchase: ${note}`,
+      )
+    }
+  })
+
+  test('an indefinite grant has no phase', () => {
+    const v = describeCreatorAccess(
+      plan(), sub({ grant_reason: 'comp', ends_at: null }), NOW,
+    )
+    assert.equal(v.phase, 'none')
+    assert.equal(v.graceEndsOn, null)
+  })
+
+  test('a paid subscription has no complimentary phase', () => {
+    const v = describeCreatorAccess(
+      plan(), sub({ source: 'stripe_paid', grant_reason: null }), NOW,
+    )
+    assert.equal(v.phase, 'none')
+  })
+
+  test('the windows match the backend constants', () => {
+    assert.equal(RENEWAL_WINDOW_DAYS, 14)
+    assert.equal(GRACE_PERIOD_DAYS, 7)
+  })
+})
+
+describe('Billing surfaces the continuation offer', () => {
+  const BILLING = 'app/creator-studio/billing/page.tsx'
+
+  test('the panel renders only in the renewal and grace phases', () => {
+    const src = codeOnly(BILLING)
+    assert.match(
+      src,
+      /access\.phase === 'renewal' \|\| access\.phase === 'grace'/,
+    )
+  })
+
+  test('it offers the real Stripe subscribe flow, not a prototype', () => {
+    const src = codeOnly(BILLING)
+    const panel = src.slice(src.indexOf('function ComplimentaryContinuationPanel'))
+    assert.match(panel, /StartSubscriptionButton/)
+    assert.match(panel, /planSlug="creator"/)
+    assert.ok(!panel.includes('/signup/creator'))
+    assert.ok(!panel.includes('/checkout/next'))
+  })
+
+  test('it never promises an automatic charge', () => {
+    const src = codeOnly(BILLING)
+    const panel = src.slice(src.indexOf('function ComplimentaryContinuationPanel'))
+    assert.ok(!/charged automatically|will be charged/i.test(panel))
+  })
+
+  test('it says the content survives', () => {
+    const src = codeOnly(BILLING)
+    const panel = src.slice(src.indexOf('function ComplimentaryContinuationPanel'))
+    assert.match(panel, /Collective and (everything in it|content)/)
+  })
+
+  test('it explains that electing early costs nothing extra', () => {
+    const src = codeOnly(BILLING)
+    const panel = src.slice(src.indexOf('function ComplimentaryContinuationPanel'))
+    assert.match(panel, /complimentary time short/)
   })
 })

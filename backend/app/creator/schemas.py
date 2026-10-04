@@ -1809,6 +1809,13 @@ class CreatorSubscribeRequest(BaseModel):
 class CreatorSubscribeResponse(BaseModel):
     """Response with the Stripe Checkout URL to redirect to."""
     checkout_url: str
+    #: When the first paid invoice will be issued, when it is being
+    #: deferred to the end of a complimentary term. None means billing
+    #: starts on the ordinary Stripe schedule. Can be *later* than the
+    #: grant's ``ends_at`` — Stripe requires a trial to begin at least
+    #: 48 hours out, and that floor is always resolved forwards so the
+    #: creator is never charged before the date they were shown.
+    first_billing_at: datetime | None = None
 
 
 class CreatorBillingPortalResponse(BaseModel):

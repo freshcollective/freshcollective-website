@@ -44,6 +44,8 @@ from app.creator.plan_config import (
 )
 from app.services.creator_paid_content import derived_has_paid_content
 from app.creator.plan_guards import (
+    CURRENT_SUBSCRIPTION_STATUSES,
+    current_subscription_order,
     guard_active_collective_limit,
     guard_location_allowed,
     guard_member_allowance,
@@ -714,8 +716,11 @@ def get_creator_billing(
             # the Billing page correctly falls back to the empty-
             # state card at that boundary. See the 2026-09-17
             # grace-lifecycle audit.
-            CreatorSubscription.status.in_(["active", "trialing", "past_due"]),
+            CreatorSubscription.status.in_(CURRENT_SUBSCRIPTION_STATUSES),
         )
+        # Same precedence the guards use, so Billing never describes a
+        # different plan from the one being enforced.
+        .order_by(*current_subscription_order())
         .first()
     )
 
@@ -990,6 +995,32 @@ def start_creator_subscription(
             ),
         )
 
+    # Keep the rest of a complimentary term. If this creator holds a
+    # finite complimentary grant that has not yet ended, the paid
+    # subscription starts with a trial running to that date, so the
+    # first charge lands when the free period genuinely finishes rather
+    # than the moment they elect. ``resolve_deferred_trial_end`` returns
+    # None when there is nothing to defer — no grant, or the term has
+    # already passed into grace, where immediate billing is the agreed
+    # behaviour.
+    comp_grant = (
+        db.query(CreatorSubscription)
+        .filter(
+            CreatorSubscription.user_id == current_user.id,
+            CreatorSubscription.source == "manual_grant",
+            CreatorSubscription.status.in_([
+                CreatorSubscriptionStatus.active,
+                CreatorSubscriptionStatus.trialing,
+            ]),
+            CreatorSubscription.ends_at.is_not(None),
+        )
+        .order_by(CreatorSubscription.ends_at.desc())
+        .first()
+    )
+    trial_end = _scb.resolve_deferred_trial_end(
+        comp_grant.ends_at if comp_grant else None,
+    )
+
     try:
         session = _scb.create_checkout_session(
             user=current_user,
@@ -997,6 +1028,7 @@ def start_creator_subscription(
             success_url=f"{_public_app_url()}/creator-studio/billing?activated=1",
             cancel_url=f"{_public_app_url()}/creator-studio/billing?cancelled=1",
             db=db,
+            trial_end=trial_end,
         )
     except _scb.StripeCreatorBillingConfigError as exc:
         # Missing env-var Price ID. Fail-safe 503 — never proceed
@@ -1005,7 +1037,14 @@ def start_creator_subscription(
     except _scb.PlanNotSubscribableError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
-    return CreatorSubscribeResponse(checkout_url=session["url"])
+    # Disclose the real first billing date: it can be later than the
+    # creator's complimentary end date when Stripe's 48-hour floor
+    # pushes it out, and the UI must never promise a date we are not
+    # using.
+    return CreatorSubscribeResponse(
+        checkout_url=session["url"],
+        first_billing_at=trial_end,
+    )
 
 
 @router.post(

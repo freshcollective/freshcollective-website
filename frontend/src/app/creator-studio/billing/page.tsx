@@ -473,6 +473,14 @@ function CreatorBilling({ billing, header, connectStatus }: {
                 {access.termNote}
               </p>
             )}
+            {(access.phase === 'renewal' || access.phase === 'grace') && (
+              <ComplimentaryContinuationPanel
+                access={access}
+                creatorPlan={
+                  billing.available_plans.find((p) => p.slug === 'creator') ?? null
+                }
+              />
+            )}
             {billing.is_platform_owner && (
               <p className="mt-1 text-[12px] italic text-black">
                 Platform Owner privileges also apply to this account.
@@ -773,6 +781,80 @@ function CreatorBilling({ billing, header, connectStatus }: {
       </>
       )}
 
+    </div>
+  )
+}
+
+/**
+ * The continuation offer for a finite complimentary grant.
+ *
+ * Shown in the final 14 days and through the 7-day grace window — the
+ * two phases where the creator has a decision to make. Nothing before
+ * that, because a grant with months left does not need a countdown.
+ *
+ * The one thing this must never do is imply an automatic charge.
+ * Electing to continue is always an explicit Stripe Checkout, and not
+ * electing returns the account to the free Community plan with every
+ * Collective and all content intact. Both halves are stated, because
+ * the silence is what people fill in with fear about losing their work.
+ *
+ * Electing *before* the end date does not forfeit the remainder: the
+ * backend sets the subscription's first billing date to the grant's
+ * ``ends_at`` (``resolve_deferred_trial_end``), so the card is
+ * committed now and charged then.
+ */
+function ComplimentaryContinuationPanel({ access, creatorPlan }: {
+  access: ReturnType<typeof describeCreatorAccess>
+  creatorPlan: CreatorPlanOut | null
+}) {
+  const inGrace = access.phase === 'grace'
+  const price = creatorPlan && creatorPlan.monthly_price_cents != null
+    ? formatPrice(creatorPlan.monthly_price_cents, creatorPlan.currency)
+    : null
+  const fee = creatorPlan?.transaction_fee_basis_points != null
+    ? formatFee(creatorPlan.transaction_fee_basis_points)
+    : null
+
+  return (
+    <div
+      className="mt-4 rounded-xl border p-4 md:p-5"
+      style={{
+        background: inGrace ? 'rgba(180,83,9,0.05)' : 'rgba(56,160,158,0.05)',
+        borderColor: inGrace ? 'rgba(180,83,9,0.26)' : 'rgba(56,160,158,0.26)',
+      }}
+    >
+      <p className="text-[14px] font-semibold text-navy-900">
+        {inGrace
+          ? 'Continue with Creator to keep your commercial tools'
+          : 'Keep creating commercially'}
+      </p>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-black">
+        {price
+          ? `Continue with Creator for ${price}/month to keep your paid offers and commercial tools active.`
+          : 'Continue with Creator to keep your paid offers and commercial tools active.'}
+        {fee && ` The standard ${fee} transaction fee applies to member sales.`}
+      </p>
+      <p className="mt-1.5 text-[12.5px] leading-relaxed" style={{ color: 'rgba(12,24,38,0.66)' }}>
+        {inGrace
+          ? (access.graceEndsOn
+            ? `If you don’t continue by ${access.graceEndsOn}, your account moves to the free Community plan. Your Collective and everything in it stay exactly as they are.`
+            : 'If you don’t continue, your account moves to the free Community plan. Your Collective and everything in it stay exactly as they are.')
+          : (access.endsOn
+            ? `If you don’t continue, you’ll have a 7-day grace period after ${access.endsOn} before your account moves to the free Community plan. Your Collective and content remain.`
+            : 'If you don’t continue, you’ll have a 7-day grace period before your account moves to the free Community plan. Your Collective and content remain.')}
+      </p>
+      {!inGrace && access.endsOn && (
+        <p className="mt-1.5 text-[12.5px] italic" style={{ color: 'rgba(12,24,38,0.66)' }}>
+          Choosing now doesn’t cut your complimentary time short — your
+          first payment is taken when it ends.
+        </p>
+      )}
+      <div className="mt-4">
+        <StartSubscriptionButton
+          planSlug="creator"
+          label={inGrace ? 'Continue with Creator →' : 'Keep my Creator plan →'}
+        />
+      </div>
     </div>
   )
 }

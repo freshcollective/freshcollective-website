@@ -74,6 +74,46 @@ def is_platform_owner(user: User) -> bool:
     return user.role == "admin"
 
 
+# ---------------------------------------------------------------------------
+# Which subscription is the current one
+# ---------------------------------------------------------------------------
+
+#: Statuses that count as "this creator holds a plan".
+CURRENT_SUBSCRIPTION_STATUSES: tuple[str, ...] = ("active", "trialing", "past_due")
+
+
+def current_subscription_order():
+    """Deterministic precedence for picking the current subscription.
+
+    Two rows can legitimately sit in ``CURRENT_SUBSCRIPTION_STATUSES`` at
+    once. The case that forced this: a creator on a complimentary grant
+    elects to keep paying before their term ends, so Stripe Checkout
+    creates the paid subscription with a trial running to the grant's
+    ``ends_at``. The local paid row is written ``past_due`` (linked, not
+    yet charged) while the grant stays ``active`` — the partial unique
+    index permits that, because it only covers ``active``/``trialing``.
+
+    An unordered ``.first()`` then returned either row at random, which
+    for a comp-Creator → paid-Pro election meant the resolved *plan*
+    flickered between tiers. Ordering by status precedence resolves it
+    to the truthful answer: the grant is what the creator holds until
+    the first paid invoice is collected, at which point the grant is
+    superseded and the paid row becomes the only candidate.
+
+    ``created_at DESC`` breaks any remaining tie in favour of the newest
+    assignment, matching ``admin.routes.change_creator_plan_atomic``.
+    """
+    from sqlalchemy import case
+    return (
+        case(
+            (CreatorSubscription.status == "active", 0),
+            (CreatorSubscription.status == "trialing", 1),
+            else_=2,          # past_due — linked or in dunning, not current
+        ),
+        CreatorSubscription.created_at.desc(),
+    )
+
+
 def resolve_creator_plan(user: User, db: Session) -> PlanCapability | None:
     """Return the capability record for this user's active creator plan.
 
@@ -98,8 +138,9 @@ def resolve_creator_plan(user: User, db: Session) -> PlanCapability | None:
             # 7 days; ``unpaid`` remains outside this filter so
             # commercial capability collapses on that boundary, as
             # designed. See the 2026-09-17 grace-lifecycle audit.
-            CreatorSubscription.status.in_(["active", "trialing", "past_due"]),
+            CreatorSubscription.status.in_(CURRENT_SUBSCRIPTION_STATUSES),
         )
+        .order_by(*current_subscription_order())
         .first()
     )
     if subscription:

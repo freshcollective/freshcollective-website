@@ -46,6 +46,24 @@ import type { CreatorPlanOut, CreatorSubscriptionOut } from '@/types/platform'
  * Collective".
  */
 
+/**
+ * Where a finite complimentary grant sits in its lifecycle. Mirrors
+ * ``services/creator_grant_expiry.classify_grant`` — 14 days of renewal
+ * window before ``ends_at``, then 7 days of grace after it.
+ */
+export type ComplimentaryPhase =
+  /** More than 14 days left. No urgency. */
+  | 'active'
+  /** Final 14 days — invite them to continue. */
+  | 'renewal'
+  /** Term ended; Creator access continues for 7 more days. */
+  | 'grace'
+  /** Not a finite complimentary grant. */
+  | 'none'
+
+export const RENEWAL_WINDOW_DAYS = 14
+export const GRACE_PERIOD_DAYS = 7
+
 export type CreatorAccessKind =
   /** Stripe-billed subscription — the retail price is what they pay. */
   | 'paid'
@@ -73,6 +91,12 @@ export interface CreatorAccessView {
   termNote: string | null
   /** True when the creator pays nothing for this plan. */
   isUnbilled: boolean
+  /** Lifecycle phase of a finite complimentary grant. */
+  phase: ComplimentaryPhase
+  /** End of the 7-day grace window, when in or approaching grace. */
+  graceEndsOn: string | null
+  /** The grant's own end date, formatted. */
+  endsOn: string | null
 }
 
 function formatDate(iso: string | null | undefined): string | null {
@@ -84,14 +108,6 @@ function formatDate(iso: string | null | undefined): string | null {
   })
 }
 
-/** `ends_at` in the past. Access continues regardless — see module note. */
-function termHasPassed(iso: string | null | undefined, now: Date): boolean {
-  if (!iso) return false
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return false
-  return d.getTime() < now.getTime()
-}
-
 export function describeCreatorAccess(
   plan: CreatorPlanOut | null | undefined,
   subscription: CreatorSubscriptionOut | null | undefined,
@@ -100,6 +116,7 @@ export function describeCreatorAccess(
   const none: CreatorAccessView = {
     kind: 'none', priceOverride: null, label: null,
     termNote: null, isUnbilled: false,
+    phase: 'none', graceEndsOn: null, endsOn: null,
   }
   if (!plan) return none
 
@@ -109,6 +126,7 @@ export function describeCreatorAccess(
     return {
       kind: 'free', priceOverride: null, label: null,
       termNote: null, isUnbilled: true,
+      phase: 'none', graceEndsOn: null, endsOn: null,
     }
   }
 
@@ -119,32 +137,59 @@ export function describeCreatorAccess(
     return {
       kind: 'paid', priceOverride: null, label: null,
       termNote: null, isUnbilled: false,
+      phase: 'none', graceEndsOn: null, endsOn: null,
     }
   }
 
   const isComp = subscription.grant_reason === 'comp'
   const endsOn = formatDate(subscription.ends_at)
-  const passed = termHasPassed(subscription.ends_at, now)
 
-  // States when the access ends, because the backend now enforces it,
-  // but never implies a charge follows — none does: expiry returns the
-  // creator to the free Community plan.
+  // Lifecycle phase. Only a finite grant has one — an indefinite grant
+  // never approaches an end date.
+  const endsAt = subscription.ends_at ? new Date(subscription.ends_at) : null
+  const endsAtValid = endsAt && !Number.isNaN(endsAt.getTime()) ? endsAt : null
+  let phase: ComplimentaryPhase = 'none'
+  let graceEnd: Date | null = null
+  if (endsAtValid) {
+    graceEnd = new Date(endsAtValid.getTime() + GRACE_PERIOD_DAYS * 86400000)
+    const renewalOpens = new Date(
+      endsAtValid.getTime() - RENEWAL_WINDOW_DAYS * 86400000,
+    )
+    if (now < renewalOpens) phase = 'active'
+    else if (now < endsAtValid) phase = 'renewal'
+    else if (now < graceEnd) phase = 'grace'
+    else phase = 'grace'   // past grace: the reconciler has not run yet
+  }
+  const graceEndsOn = graceEnd ? formatDate(graceEnd.toISOString()) : null
+
+  // States when the access ends, and never implies a charge follows —
+  // none does. Continuing is always an explicit purchase; not
+  // continuing returns them to the free Community plan.
   let termNote: string
   if (!endsOn) {
     termNote = 'No end date. This is not a paid subscription, so you will not be charged.'
-  } else if (passed) {
-    termNote = `This complimentary period ended on ${endsOn}.`
+  } else if (phase === 'grace') {
+    termNote = graceEndsOn
+      ? `Your complimentary access ended on ${endsOn}. You have until ${graceEndsOn} to continue on Creator before your account moves to Community.`
+      : `Your complimentary access ended on ${endsOn}.`
+  } else if (phase === 'renewal') {
+    termNote = `Your complimentary Creator access ends on ${endsOn}.`
   } else {
-    termNote = `Active until ${endsOn}. You will not be charged — your account returns to the free Community plan.`
+    termNote = `Active until ${endsOn}. This is not a paid subscription, so you will not be charged.`
   }
 
   return {
     kind: isComp ? 'complimentary' : 'granted',
     priceOverride: isComp ? 'Complimentary' : 'Provided by Fresh Collective',
     label: isComp
-      ? 'Complimentary Creator access'
+      ? (phase === 'grace'
+        ? 'Your complimentary Creator access has ended'
+        : 'Complimentary Creator access')
       : 'Creator access granted by Fresh Collective',
     termNote,
     isUnbilled: true,
+    phase,
+    graceEndsOn,
+    endsOn,
   }
 }
