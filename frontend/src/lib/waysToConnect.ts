@@ -79,9 +79,18 @@ export interface PersonRef {
    *  letter. Decided server-side so this surface and the member
    *  directory cannot disagree about what somebody looks like. */
   image: MemberImage
+  /** Where this pair stands, decided server-side from the two possible
+   *  hello rows. The card renders what it is told: an optimistic click
+   *  may run ahead of a refetch, but it never outranks this on
+   *  re-render. Optional so a payload from before 5b still parses. */
+  relationship?: HelloRelationship
   collectives: CollectiveRef[]
   shared: SharedThing[]
 }
+
+/** The four states a pair can be in. Mirrors
+ *  ``ways_to_connect.hello_service.HelloState``. */
+export type HelloRelationship = 'none' | 'outgoing' | 'incoming' | 'mutual'
 
 export interface WaysToConnectPayload {
   /** Every recognisable person. The first `featured_count` are the
@@ -457,4 +466,28 @@ export function contextSentence(
   return context.kind === 'gathering'
     ? gatheringSentence(context.people, context.basis, vantage)
     : pathwaySentence(context.people)
+}
+
+/**
+ * Say hello to someone on the Ways to Connect page.
+ *
+ * Throws on anything other than a 2xx so the card can show its own
+ * retry copy. A duplicate send is *not* an error — the endpoint
+ * answers a repeat click with the same body as the first, so an
+ * optimistic card and a double-tap both converge on the server's view
+ * rather than on a failure state.
+ *
+ * The resulting relationship is returned but the card currently only
+ * needs to know the call succeeded; the authoritative state arrives on
+ * the next payload.
+ */
+export async function sayHello(
+  personId: string,
+): Promise<{ relationship: HelloRelationship; became_mutual: boolean }> {
+  const res = await fetch(
+    `/api/ways-to-connect/${encodeURIComponent(personId)}/hello`,
+    { method: 'POST', credentials: 'include' },
+  )
+  if (!res.ok) throw new Error(`say hello failed: ${res.status}`)
+  return res.json()
 }

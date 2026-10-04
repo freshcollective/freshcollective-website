@@ -31,6 +31,7 @@ import MemberImage from '@/components/ui/MemberImage'
 import {
   primaryCollective,
   reasonSentence,
+  sayHello,
   type PersonRef,
 } from '@/lib/waysToConnect'
 
@@ -41,12 +42,26 @@ export default function PersonCard({
   onSendHello,
 }: {
   person: PersonRef
-  /** Absent during 5a: the card keeps its own local state so the
-   *  interaction can be reviewed, and nothing is persisted. */
+  /** Override for the send. Only the preview harness passes this; in
+   *  the product the card calls the API itself, because the page that
+   *  renders it is a server component and cannot hand down a function.
+   *  Supplying a no-op is how a review context runs the confirm step
+   *  without persisting anything. */
   onSendHello?: (personId: string) => Promise<void>
 }) {
   const [state, setState] = useState<HelloState>('idle')
   const [error, setError] = useState<string | null>(null)
+  // The server's answer, once this card has sent one. Until then the
+  // relationship is whatever the page was told — the backend owns this,
+  // and an optimistic local flag must not outrank it on re-render.
+  const [sentNow, setSentNow] = useState(false)
+
+  const relationship = person.relationship ?? 'none'
+  const isMutual = relationship === 'mutual'
+  const isIncoming = relationship === 'incoming'
+  // Outgoing either because the page said so, or because this card just
+  // sent one and the payload has not been refetched yet.
+  const isOutgoing = relationship === 'outgoing' || (sentNow && !isMutual)
 
   // Unnamed members never become a card — the API does not feature
   // them — so this is a guard against a future caller, not a state
@@ -61,7 +76,12 @@ export default function PersonCard({
     setState('sending')
     setError(null)
     try {
-      await onSendHello?.(person.id)
+      if (onSendHello) {
+        await onSendHello(person.id)
+      } else {
+        await sayHello(person.id)
+      }
+      setSentNow(true)
       setState('sent')
     } catch {
       setError('That didn’t send. Please try again.')
@@ -145,13 +165,32 @@ export default function PersonCard({
         {/* Action area, pinned to the bottom so cards of different
             heights still line their buttons up. */}
         <div className="mt-auto pt-5">
-          {state === 'sent' ? (
+          {/* Mutual first: once two people have both said hello, the
+              card stops asking anything of them. Deliberately no
+              "Message" action — the existing messaging model is
+              creator↔member inside a Collective and has no peer
+              thread, so offering one here would be a promise the
+              backend cannot keep. See the 5b report. */}
+          {isMutual ? (
+            <p
+              aria-live="polite"
+              className="text-[13px] font-semibold"
+              style={{ color: '#1E6E6C', fontFamily: 'Georgia, serif' }}
+            >
+              <span aria-hidden="true">✓</span> Connected
+              <span className="sr-only"> — you and {name} have both said hello</span>
+            </p>
+          ) : isOutgoing || state === 'sent' ? (
+            /* Pending, and not a button: there is nothing useful to do
+               with a second click, and a disabled-looking control reads
+               as something that failed. */
             <p
               aria-live="polite"
               className="text-[13px]"
               style={{ color: '#1E6E6C', fontFamily: 'Georgia, serif' }}
             >
               Hello sent
+              <span className="sr-only"> — waiting for {name}</span>
             </p>
           ) : state === 'confirming' || state === 'sending' ? (
             <div>
@@ -159,14 +198,15 @@ export default function PersonCard({
                 className="text-[13.5px] leading-[1.55]"
                 style={{ color: '#0C1826', fontFamily: 'Georgia, serif' }}
               >
-                Say hello to {name}?
+                {isIncoming ? `Say hello back to ${name}?` : `Say hello to ${name}?`}
               </p>
               <p
                 className="mt-1.5 text-[12.5px] leading-[1.55]"
                 style={{ color: 'rgba(12, 24, 38, 0.6)' }}
               >
-                This lets {name} know you’re open to connecting. You
-                won’t be able to message unless {name} says hello back.
+                {isIncoming
+                  ? `${name} has already said hello, so this connects you both.`
+                  : `This lets ${name} know you’re open to connecting.`}
               </p>
               {error && (
                 <p className="mt-2 text-[12.5px]" style={{ color: '#B4483C' }}>
@@ -194,17 +234,31 @@ export default function PersonCard({
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => setState('confirming')}
-              className="rounded text-[13px] font-semibold transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-              style={{ color: '#2F8F8D' }}
-            >
-              Say hello
-              {/* Names who, so a screen reader hears "Say hello —
-                  Sarah" rather than the same two words three times. */}
-              <span className="sr-only"> — {name}</span>
-            </button>
+            <>
+              {/* Somebody has greeted the viewer. Said plainly, above
+                  the action, so the card reads as a person waiting
+                  rather than another recommendation. */}
+              {isIncoming && (
+                <p
+                  className="mb-2 text-[13px]"
+                  style={{ color: '#0C1826', fontFamily: 'Georgia, serif' }}
+                >
+                  <span aria-hidden="true">👋</span>{' '}
+                  <span className="font-semibold">{name}</span> said hello
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setState('confirming')}
+                className="rounded text-[13px] font-semibold transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
+                style={{ color: '#2F8F8D' }}
+              >
+                {isIncoming ? 'Say hello back' : 'Say hello'}
+                {/* Names who, so a screen reader hears "Say hello —
+                    Sarah" rather than the same two words three times. */}
+                <span className="sr-only"> — {name}</span>
+              </button>
+            </>
           )}
         </div>
       </div>

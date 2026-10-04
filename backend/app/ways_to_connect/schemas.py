@@ -109,6 +109,11 @@ class PersonRef(BaseModel):
     image: MemberImagePayload
     #: Collectives this pair shares. Context and privacy boundary,
     #: never on its own a reason to be here.
+    #: Where this pair stands: none / outgoing / incoming / mutual.
+    #: Derived server-side from the two possible hello rows — the card
+    #: renders what it is told rather than inferring from a click.
+    relationship: Literal["none", "outgoing", "incoming", "mutual"] = "none"
+
     collectives: list[CollectiveRef]
     #: Why this person is shown. Always at least one entry — a person
     #: with nothing shared is not recognisable and never appears.
@@ -136,3 +141,19 @@ class WaysToConnectResponse(BaseModel):
     #: The safety bound was reached. Not a cursor and not a total —
     #: there is nothing to page to.
     truncated: bool = False
+
+
+class SayHelloResponse(BaseModel):
+    """Result of saying hello.
+
+    Returns the resulting state rather than an acknowledgement, so the
+    optimistic card can reconcile against the server's answer — and so
+    a duplicate click gets the same body as the first, not an error.
+
+    ``became_mutual`` is the transition, not the state: it is True only
+    on the request that completed the pair, which is what the client
+    needs to celebrate once rather than on every reload.
+    """
+
+    relationship: Literal["none", "outgoing", "incoming", "mutual"]
+    became_mutual: bool = False

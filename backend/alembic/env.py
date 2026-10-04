@@ -30,6 +30,7 @@ import app.models.community_care    # noqa: F401 — registers CommunityCare mod
 import app.models.access_grant_record  # noqa: F401 — registers AccessGrantRecord (FIP3 grant log, migration 119)
 import app.models.refund_operation  # noqa: F401 — registers RefundOperation (migration 128)
 import app.models.creator_payout_batch  # noqa: F401 — registers CreatorPayoutBatch + BatchItem (migration 129)
+import app.models.connections       # noqa: F401 — registers MemberHello (Ways to Connect 5b, migration 147)
 import app.comms.models             # noqa: F401 — registers Communications Layer models (Milestone 1)
 
 config = context.config

@@ -780,6 +780,10 @@ class TestNoPrivateFields:
 
         assert set(person.keys()) == {
             "id", "display_name", "avatar_url", "collectives", "shared", "image",
+            # 5b: where this pair stands. Derived from the viewer's own
+            # hello rows, so it discloses nothing about the other person
+            # beyond what the viewer already did or was sent.
+            "relationship",
         }
         # The resolved picture, and nothing more about the person.
         assert set(person["image"].keys()) == {"kind", "url", "initial"}

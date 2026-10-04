@@ -233,6 +233,36 @@ def _within_category_key(e: Evidence):
     return (primary, soonest, e.user_id)
 
 
+def is_eligible_pair(
+    recognitions: list[Recognition],
+    other_user_id: str,
+    *,
+    now: datetime,
+) -> bool:
+    """Would this person be eligible to be introduced to the viewer?
+
+    The authorisation half of the same rule ``select_people`` uses for
+    display, expressed through the same two primitives —
+    ``read_evidence`` and ``Evidence.is_eligible`` — so the two cannot
+    drift. If the threshold ever changes, it changes here too because
+    there is only one threshold.
+
+    Deliberately **not** limited. ``select_people`` takes the few people
+    the page introduces today; a person who is eligible but fell outside
+    that day's rotation is still someone the viewer may greet. The
+    display limit is a presentation choice and must not become an
+    authorisation rule.
+
+    Returns False for a stranger: a user id the viewer shares nothing
+    with is absent from ``recognitions`` entirely, which is also what
+    makes probing arbitrary ids uninformative.
+    """
+    for recognition in recognitions:
+        if recognition.other_user_id == other_user_id:
+            return read_evidence(recognition, now).is_eligible
+    return False
+
+
 def select_people(
     recognitions: list[Recognition],
     *,

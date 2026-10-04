@@ -20,6 +20,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import string
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -343,6 +345,49 @@ PLATFORM_ARTWORK_KEYS: dict[str, dict[str, str]] = {
         ),
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Member cards — the A–Z monogram fallback set
+# ---------------------------------------------------------------------------
+#
+# ``services/member_image.py`` already resolves a member's picture as
+# photo → alphabet card → neutral card → plain initial, and loads the
+# cards by key prefix (``member_card_%``) so it needs no registry of its
+# own. What it could not do was let anyone *upload* them: this dict is
+# the validation gate for the admin artwork endpoints, and an unlisted
+# key is a 404. Registering the twenty-seven slots is therefore the
+# whole of the change — no new resolver, no CSS initials, and the same
+# fallback a person gets everywhere else on Fresh Collective.
+#
+# Generated rather than typed out: twenty-six near-identical entries
+# invite a typo in exactly the key that would then silently 404, and a
+# missing letter shows up as one member with a different fallback from
+# everyone else.
+MEMBER_CARD_ARTWORK_KEYS: dict[str, dict[str, str]] = {
+    f"member_card_{letter}": {
+        "title": f"Member card — {letter.upper()}",
+        "description": (
+            f"The Fresh Collective card shown for a member whose display "
+            f"name begins with {letter.upper()}, when they have no profile "
+            f"photo. Identical for everybody sharing the letter, so it "
+            f"discloses nothing about the person."
+        ),
+    }
+    for letter in string.ascii_lowercase
+}
+
+MEMBER_CARD_ARTWORK_KEYS["member_card_neutral"] = {
+    "title": "Member card — neutral",
+    "description": (
+        "The fallback card for a member whose display name yields no "
+        "usable A–Z letter at all — a name written in another "
+        "script, or one made only of punctuation. Used instead of "
+        "breaking, and instead of guessing a letter."
+    ),
+}
+
+PLATFORM_ARTWORK_KEYS.update(MEMBER_CARD_ARTWORK_KEYS)
 
 
 admin_router = APIRouter(prefix="/api/admin/platform-artwork", tags=["admin-platform-artwork"])

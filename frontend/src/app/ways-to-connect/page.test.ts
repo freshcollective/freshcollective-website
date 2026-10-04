@@ -189,12 +189,21 @@ describe('the destination is people-first', () => {
 describe('Say hello is a two-step action', () => {
   test('pressing it asks for confirmation rather than sending', () => {
     assert.match(CARD_P, /setState\('confirming'\)/)
-    assert.match(CARD_P, /Say hello to \{name\}\?/)
+    // 5b: the question varies — replying to someone who already said
+    // hello reads differently from greeting first.
+    assert.match(CARD_P, /Say hello to \$\{name\}\?/)
+    assert.match(CARD_P, /Say hello back to \$\{name\}\?/)
   })
 
-  test('the confirmation explains what it does and does not do', () => {
+  test('the confirmation explains what it does', () => {
     assert.match(CARD_P, /open to connecting/)
-    assert.match(CARD_P, /won.{1,3}t be able to message/)
+    // 5b: replying completes the pair, so say that instead.
+    assert.match(CARD_P, /connects you both/)
+    // The old copy promised messaging after a mutual hello. 5b
+    // deliberately stops at "Connected" — the existing messaging model
+    // is creator-to-member inside a Collective and has no peer thread —
+    // so that sentence would now be untrue.
+    assert.ok(!/be able to message/.test(CARD_P))
   })
 
   test('it offers a way out', () => {
@@ -206,14 +215,25 @@ describe('Say hello is a two-step action', () => {
     assert.match(CARD_P, /aria-live="polite"/)
   })
 
-  test('the send path is wired for a real action later', () => {
+  test('the send path reaches the real endpoint', () => {
+    // 5a left this as an injected callback with nothing behind it. 5b
+    // has the card call the API itself, because the page that renders
+    // it is a server component and cannot hand down a function; the
+    // prop survives as a preview override.
     assert.match(CARD_P, /onSendHello\?:/)
-    assert.match(CARD_P, /await onSendHello\?\.\(person\.id\)/)
+    assert.match(CARD_P, /await onSendHello\(person\.id\)/)
+    assert.match(CARD_P, /await sayHello\(person\.id\)/)
   })
 
-  test('nothing is persisted during 5a', () => {
-    assert.ok(!/fetch\(/.test(CARD_P), 'no request yet')
+  test('the card does not hand-roll its own request', () => {
+    // Was "nothing is persisted during 5a". 5b persists, so the
+    // invariant worth keeping is the narrower one: the transport lives
+    // in ``lib/waysToConnect`` with the types and the endpoint shape,
+    // and the card calls it. An inline fetch here would be a second
+    // place for the URL and the error handling to drift.
+    assert.ok(!/fetch\(/.test(CARD_P), 'no inline fetch in the card')
     assert.ok(!/apiUrl/.test(CARD_P))
+    assert.match(CARD_P, /sayHello/)
   })
 
   test('the action names who it is for', () => {

@@ -34,6 +34,7 @@ few are chosen without ranking anybody.
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -52,13 +53,24 @@ from app.services.recognition_service import (
 from app.services.member_identity import optional_display_name
 from app.services.member_image import MemberCardArtwork, MemberImagePayload
 from app.ways_to_connect.schemas import (
+    SayHelloResponse,
     CollectiveRef,
     PersonRef,
     SharedGatheringRef,
     SharedPathwayRef,
     WaysToConnectResponse,
 )
-from app.ways_to_connect.selection import MAX_PEOPLE, select_people
+from app.ways_to_connect.hello_service import (
+    HelloState,
+    hello_states,
+    incoming_hello_senders,
+    say_hello,
+)
+from app.ways_to_connect.selection import (
+    MAX_PEOPLE,
+    is_eligible_pair,
+    select_people,
+)
 
 router = APIRouter(prefix="/api/ways-to-connect", tags=["ways-to-connect"])
 
@@ -136,6 +148,7 @@ def _to_person(
     name: str | None,
     profile: CreatorProfile | None,
     artwork: MemberCardArtwork,
+    relationship: HelloState = HelloState.NONE,
 ) -> PersonRef:
     """One Recognition as the person it has always been about."""
     shared: list[SharedGatheringRef | SharedPathwayRef] = []
@@ -183,6 +196,7 @@ def _to_person(
         display_name=name,
         avatar_url=image.url if image.kind == "photo" else None,
         image=image,
+        relationship=relationship.value,
         collectives=[
             CollectiveRef(
                 id=c.collective_id, slug=c.slug, name=c.name, timezone=c.timezone
@@ -233,19 +247,180 @@ def get_ways_to_connect(
     featured_ids = [r.other_user_id for r in featured]
     featured_set = set(featured_ids)
 
-    ordered = featured + [
-        r for r in recognitions if r.other_user_id not in featured_set
+    # Somebody greeting you should not be buried because that day's
+    # rotation put them outside the featured few. Incoming hellos are
+    # lifted to the front of the featured block — they are the one thing
+    # on this page that is waiting on the viewer rather than offered to
+    # them. Only nameable people can be lifted, for the same reason only
+    # nameable people can be featured: a card introduces somebody.
+    incoming = incoming_hello_senders(db, current_user.id)
+    waiting = [
+        r for r in nameable
+        if r.other_user_id in incoming and r.other_user_id not in featured_set
+    ]
+    ordered = waiting + featured + [
+        r for r in recognitions
+        if r.other_user_id not in featured_set
+        and r.other_user_id not in {w.other_user_id for w in waiting}
     ]
     truncated = len(ordered) > MAX_PEOPLE_IN_PAYLOAD
     ordered = ordered[:MAX_PEOPLE_IN_PAYLOAD]
 
+    # One query for the whole page rather than one per card.
+    states = hello_states(
+        db, current_user.id, {r.other_user_id for r in ordered},
+    )
+
     people = [
-        _to_person(r, *index.get(r.other_user_id, (None, None)), artwork)
+        _to_person(
+            r, *index.get(r.other_user_id, (None, None)), artwork,
+            states.get(r.other_user_id, HelloState.NONE),
+        )
         for r in ordered
     ]
 
     return WaysToConnectResponse(
         people=people,
-        featured_count=len(featured_ids),
+        # The frontend slices the first ``featured_count`` people as the
+        # cards, so lifting incoming hellos to the front has to count
+        # them too — otherwise the slice would cut the featured people
+        # off the end by exactly the number of hellos waiting.
+        #
+        # A waiting person is carded whether or not they are still
+        # eligible: evidence can lapse after a hello, and a greeting
+        # already sent is not withdrawn because an upcoming Gathering
+        # has since passed.
+        featured_count=len(waiting) + len(featured_ids),
         truncated=truncated,
     )
+
+
+def _viewer_display_name(db: Session, user: User) -> str | None:
+    """The greeter's own name, for the notification the other side reads."""
+    profile = (
+        db.query(CreatorProfile)
+        .filter(CreatorProfile.user_id == user.id)
+        .first()
+    )
+    return _display_name(user, profile)
+
+
+def _notify(
+    db: Session, recipient_id: str, notification_type: str,
+    title: str, message: str,
+) -> None:
+    """Queue one in-app notification inside the caller's transaction.
+
+    Written directly rather than through
+    ``notification_service.create_notification``, which commits — the
+    hello and its notification must land together, so the route keeps
+    the transaction boundary.
+    """
+    from app.models.notification import Notification
+
+    db.add(Notification(
+        id=str(uuid4()),
+        user_id=recipient_id,
+        notification_type=notification_type,
+        title=title,
+        message=message,
+        url="/ways-to-connect",
+        is_read=False,
+    ))
+
+#: In-app notification types for the two moments worth telling someone
+#: about. Deliberately no evidence in the text: "you were both at X"
+#: would publish a shared history into a notification surface that the
+#: card already states in context and with consent of the page.
+NOTIFY_HELLO_RECEIVED = "ways_to_connect_hello_received"
+NOTIFY_CONNECTED = "ways_to_connect_connected"
+
+
+def _first_name(name: str | None) -> str:
+    """The part of a display name a greeting should use."""
+    if not name:
+        return "Someone"
+    return name.strip().split()[0] or "Someone"
+
+
+@router.post("/{user_id}/hello", response_model=SayHelloResponse)
+def post_say_hello(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SayHelloResponse:
+    """Say hello to someone the viewer currently shares enough with.
+
+    Authorisation reuses the canonical rule rather than restating it:
+    ``RecognitionService.for_user`` derives what the pair shares (and
+    silently excludes anyone who has switched off their own
+    participation), and ``is_eligible_pair`` applies the same
+    two-signals-one-realised threshold ``select_people`` uses for
+    display. Knowing a user id is not sufficient and never becomes
+    sufficient.
+
+    404 for every refusal that is about *who* the target is — ineligible,
+    unnameable, nonexistent, opted out. A distinct 403 for "you may not
+    greet this person" would answer the question the 404 exists to
+    refuse, turning the endpoint into a probe for who shares what with
+    whom. Self-hello is a 400 because it reveals nothing.
+
+    Already-sent is a success with the current state, not a conflict:
+    the card is optimistic, and a retry or a double click should agree
+    with the first answer rather than surface an error.
+    """
+    _ensure_flag_on()
+
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot say hello to yourself.",
+        )
+
+    now = datetime.utcnow()
+    recognitions = RecognitionService.for_user(db, current_user.id, now=now)
+
+    # Nameable for the same reason a card requires it: a greeting
+    # addresses a person, and we do not introduce someone we cannot name.
+    index = _people_index(db, {user_id})
+    name, _profile = index.get(user_id, (None, None))
+    if not name or not is_eligible_pair(recognitions, user_id, now=now):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="That person is not available to greet right now.",
+        )
+
+    state, created = say_hello(db, current_user.id, user_id)
+    mutual = state is HelloState.MUTUAL
+    # The *transition*, not the state: true only on the request that
+    # completed the pair, so a reload or a double click does not make
+    # the client celebrate twice.
+    became_mutual = mutual and created
+
+    # Notify only on a genuine transition. ``say_hello`` is idempotent,
+    # so a repeat click reaches here with the state unchanged; keying the
+    # notification on whether a row was actually created is what keeps a
+    # double click, a retry and a reload from each announcing themselves.
+    if created:
+        viewer_name = _first_name(_viewer_display_name(db, current_user))
+        if mutual:
+            # Both sides hear about a connection; only the second
+            # greeter's request knows it happened.
+            for recipient, other in (
+                (user_id, viewer_name),
+                (current_user.id, _first_name(name)),
+            ):
+                _notify(
+                    db, recipient, NOTIFY_CONNECTED,
+                    "You have both said hello",
+                    f"You and {other} have both said hello \U0001F44B",
+                )
+        else:
+            _notify(
+                db, user_id, NOTIFY_HELLO_RECEIVED,
+                f"{viewer_name} said hello",
+                f"{viewer_name} said hello \U0001F44B — you can say hello back.",
+            )
+
+    db.commit()
+    return SayHelloResponse(relationship=state.value, became_mutual=became_mutual)
