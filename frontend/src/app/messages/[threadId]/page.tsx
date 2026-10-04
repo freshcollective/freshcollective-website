@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import SiteShell from '@/components/layout/SiteShell'
-import { isWaysToConnectEnabled } from '@/lib/featureFlags'
+import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
 import { getMe, getPeerThread } from '@/lib/serverApi'
 import type { PeerThreadDetail } from '@/lib/peerMessages'
 import PeerConversationClient from './PeerConversationClient'
@@ -28,7 +28,7 @@ export default async function ConversationPage({
 }: {
   params: Promise<{ threadId: string }>
 }) {
-  if (!isWaysToConnectEnabled()) notFound()
+  if (!(await waysToConnectVisible())) notFound()
 
   const { threadId } = await params
   const [thread, me] = await Promise.all([

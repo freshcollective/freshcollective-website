@@ -111,10 +111,13 @@ describe('the inbox is the peer surface, not the creator one', () => {
     assert.ok(!/creator_id|creator inbox/i.test(src))
   })
 
-  test('both pages are gated on the Ways to Connect flag', () => {
+  test('both pages are gated on Ways to Connect availability', () => {
     for (const page of [INBOX, THREAD]) {
       const src = codeOnly(page)
-      assert.match(src, /isWaysToConnectEnabled\(\)/)
+      // The shared gate: the launch flag, plus the Platform Owner
+      // preview. Awaited, because a bare Promise would be truthy and
+      // open the page to everybody.
+      assert.match(src, /await waysToConnectVisible\(\)/)
       assert.match(src, /notFound\(\)/)
     }
   })

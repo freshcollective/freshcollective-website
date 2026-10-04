@@ -15,7 +15,8 @@ import {
 import { collectiveTimezone } from '@/lib/collectiveTimezone'
 import { formatGatheringTimeFriendly, parseServerDatetime } from '@/lib/dateTime'
 import { getCollectiveCoverStyle } from '@/lib/coverArt'
-import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureFlags'
+import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
+import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
 import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary, UserProfile } from '@/types/platform'
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from '@/components/collective/AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
@@ -240,7 +241,9 @@ export default async function DashboardPage({
   const publicBySlug = new Map(publicSpaces.map((s) => [s.slug, s]))
   const { soon, hasMore } = filterUpcoming(cards)
   const discoveryOn = isDiscoveryPillarEnabled()
-  const waysToConnectOn = isWaysToConnectEnabled()
+  // Platform Owner sees the entry tile during the private preview —
+  // the same rule the nav, the pages and the API apply.
+  const waysToConnectOn = await waysToConnectVisible()
 
   return (
     <div className="min-h-screen" style={{ background: '#FAFAF8' }}>

@@ -60,6 +60,7 @@ from app.ways_to_connect.schemas import (
     SharedPathwayRef,
     WaysToConnectResponse,
 )
+from app.creator.plan_guards import is_platform_owner
 from app.ways_to_connect.hello_service import (
     HelloState,
     hello_states,
@@ -83,9 +84,38 @@ router = APIRouter(prefix="/api/ways-to-connect", tags=["ways-to-connect"])
 MAX_PEOPLE_IN_PAYLOAD = 60
 
 
-def _ensure_flag_on() -> None:
-    """Refuse while Ways to Connect is not enabled on this deployment."""
-    if not settings.ways_to_connect_enabled:
+def ways_to_connect_available(user: User) -> bool:
+    """May this caller use Ways to Connect at all?
+
+    The launch flag, or Platform Owner — the one private-preview
+    exception, so Lindsey can test the real production experience
+    before the flag is flipped for everybody.
+
+    ``is_platform_owner`` is reused rather than re-derived: it is the
+    documented single source of truth for the owner identity, so there
+    is no email comparison, no hard-coded user id, and no query-string
+    or cookie back door anywhere in this gate.
+
+    Scope is deliberately one thing — the **launch flag**. Platform
+    Owner bypasses nothing else: eligibility, the mutual-hello
+    requirement, thread participation and the block rules all still
+    apply to the owner exactly as they apply to a member, because none
+    of them consult this function. Once the flag is on this returns
+    True for everyone and the owner has no remaining difference.
+
+    Removing the preview is deleting the second clause.
+    """
+    return settings.ways_to_connect_enabled or is_platform_owner(user)
+
+
+def _ensure_available(user: User) -> None:
+    """Refuse unless the caller may use Ways to Connect.
+
+    The 503 and its wording are unchanged, so an ordinary member — and
+    an unauthenticated visitor, who never reaches here — sees exactly
+    what they saw before the preview existed.
+    """
+    if not ways_to_connect_available(user):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Ways to Connect is not yet enabled on this deployment.",
@@ -225,7 +255,7 @@ def get_ways_to_connect(
     authorisation failure, and the service already answers "nothing"
     for them; the route does not need to know why.
     """
-    _ensure_flag_on()
+    _ensure_available(current_user)
 
     now = datetime.utcnow()
     recognitions = RecognitionService.for_user(db, current_user.id, now=now)
@@ -369,7 +399,7 @@ def post_say_hello(
     the card is optimistic, and a retry or a double click should agree
     with the first answer rather than surface an error.
     """
-    _ensure_flag_on()
+    _ensure_available(current_user)
 
     if user_id == current_user.id:
         raise HTTPException(

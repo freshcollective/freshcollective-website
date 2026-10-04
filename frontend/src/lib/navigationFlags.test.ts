@@ -65,7 +65,10 @@ describe('route guards name the flag they depend on', () => {
 
   test('/ways-to-connect is gated by its own flag, not Discovery', () => {
     const src = read('app/ways-to-connect/page.tsx')
-    assert.ok(src.includes('if (!isWaysToConnectEnabled()) notFound()'))
+    // ``waysToConnectVisible`` is the Ways to Connect flag plus the
+    // Platform Owner preview — still its own gate, still nothing to do
+    // with Discovery.
+    assert.ok(src.includes('if (!(await waysToConnectVisible())) notFound()'))
     assert.ok(
       !src.includes('isDiscoveryPillarEnabled'),
       'Ways to Connect must no longer import the Discovery flag',

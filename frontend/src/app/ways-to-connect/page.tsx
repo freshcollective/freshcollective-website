@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
-import { isWaysToConnectEnabled } from '@/lib/featureFlags'
+import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
 import {
   getWaysToConnect,
   getMyMemberships,
@@ -110,7 +110,7 @@ async function findDoorway() {
  * See docs/foundations/discovery-connection-belonging-ways-to-connect.md.
  */
 export default async function WaysToConnectPage() {
-  if (!isWaysToConnectEnabled()) notFound()
+  if (!(await waysToConnectVisible())) notFound()
 
   const result = await getWaysToConnect()
 

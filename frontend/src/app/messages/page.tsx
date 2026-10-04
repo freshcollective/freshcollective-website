@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
 import MemberImage from '@/components/ui/MemberImage'
-import { isWaysToConnectEnabled } from '@/lib/featureFlags'
+import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
 import { getPeerThreads } from '@/lib/serverApi'
 import { participantName, type PeerThreadSummary } from '@/lib/peerMessages'
 
@@ -40,7 +40,7 @@ export const dynamic = 'force-dynamic'
  * reachable while the surface that creates connections is off.
  */
 export default async function MessagesPage() {
-  if (!isWaysToConnectEnabled()) notFound()
+  if (!(await waysToConnectVisible())) notFound()
 
   const threads = (await getPeerThreads()) as PeerThreadSummary[]
 

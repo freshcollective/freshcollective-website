@@ -2,7 +2,8 @@ import { ReactNode } from 'react'
 import { cookies } from 'next/headers'
 import { SESSION_COOKIE } from '@/lib/session'
 import { apiUrl } from '@/lib/api'
-import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureFlags'
+import { isDiscoveryPillarEnabled } from '@/lib/featureFlags'
+import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
 import WorldHeader from './WorldHeader'
 
 /**
@@ -51,7 +52,10 @@ async function getCurrentUser(): Promise<MeResponse | null> {
 export default async function WorldShell({ children }: { children: ReactNode }) {
   const user = await getCurrentUser()
   const discoveryOn = isDiscoveryPillarEnabled()
-  const waysToConnectOn = isWaysToConnectEnabled()
+  // Platform Owner sees the nav entries during the private
+  // preview; every other member sees them only once the launch
+  // flag is on. Same rule the pages and the API apply.
+  const waysToConnectOn = await waysToConnectVisible()
 
   // If the visitor is not authenticated, WorldShell renders no chrome.
   // Auth-guarded layouts (dashboard/layout.tsx etc.) already redirect

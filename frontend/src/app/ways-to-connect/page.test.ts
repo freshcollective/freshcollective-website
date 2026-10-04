@@ -42,8 +42,14 @@ const PATHWAY_STEP = code('app/spaces/[slug]/pathways/[pathway-slug]/[step-slug]
 const GATHERING_PAGE = code('app/spaces/[slug]/events/[eventId]/page.tsx')
 
 describe('feature gating', () => {
-  test('the route still 404s when the frontend flag is off', () => {
-    assert.match(PAGE, /if\s*\(!isWaysToConnectEnabled\(\)\)\s*notFound\(\)/)
+  test('the route still 404s when it is unavailable', () => {
+    // The gate moved from the raw flag to the shared
+    // ``waysToConnectVisible`` helper, which adds the Platform Owner
+    // preview on top of the same flag. For every ordinary member the
+    // behaviour is unchanged — proven server-side in
+    // test_ways_to_connect_owner_preview.py, which is the enforcing
+    // layer rather than this one.
+    assert.match(PAGE, /if\s*\(!\(await waysToConnectVisible\(\)\)\)\s*notFound\(\)/)
   })
 
   test('in-context Recognition is gated on the same flag', () => {
