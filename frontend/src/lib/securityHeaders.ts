@@ -76,32 +76,58 @@ const STRIPE_CHECKOUT_ORIGIN = 'https://checkout.stripe.com'
 
 // MailerLite book-resource opt-in form on /tnlbook.
 //
-// This is the only third-party script Fresh Collective loads, which is
-// why none of this was here before. Scoped to the exact origins the
-// embed fetches. No wildcards: a widening here is a widening for every
-// page the header is served on, which is all of them.
+// The only third-party form in the app, and the only third-party
+// scripts. Scoped to the exact origins. No wildcards: a widening here
+// is a widening for every page the header is served on, which is all
+// of them.
 //
-// Three directives need it, and ``form-action`` is the one that is easy
-// to miss. The <form> posts to assets.mailerlite.com, so without it the
-// browser refuses the submission even when the script has loaded.
+// ``webforms.min.js`` is not self-contained — it is a loader. Reading
+// the script, it reaches three further origins, and the form's submit
+// handler is only bound at the end of that chain, so blocking ANY of
+// them leaves the form submitting natively. That is exactly what
+// happened in production: the browser posted to MailerLite and landed
+// on the raw ``{"success": true}`` instead of staying on /tnlbook.
 //
-//   script-src   groot.mailerlite.com — webforms.min.js
-//   connect-src  assets.mailerlite.com — the /takel impression ping and
-//                the script's own XHR submit
-//   form-action  assets.mailerlite.com — the POST itself
+//   script-src
+//     groot.mailerlite.com   webforms.min.js itself
+//     assets.mlcdn.com       jQuery 3.7.1, which it injects when
+//                            neither ml_jQuery nor jQuery exists. This
+//                            is the one that broke the form.
+//     static.mailerlite.com  ml_jQuery.inputmask.bundle.min.js. Not
+//                            optional despite the empty data-inputmask
+//                            attributes: the loader sets the binding
+//                            callback on the LAST script's onload, and
+//                            this is that script.
+//     assets.mailerlite.com  the submit itself. The endpoint path says
+//                            ``/jsonp/`` and the call passes
+//                            ``jsonpCallback``, so the request is a
+//                            script injection, not an XHR — which is
+//                            why connect-src alone was not enough.
 //
-// ``frame-src`` is NOT among them any more. It briefly carried Google
-// reCAPTCHA sources, which existed solely for this form; reCAPTCHA was
-// switched off in the MailerLite dashboard and the grants went with it,
-// along with the two script-src entries. Nothing else in the app asked
-// for them, so the directive is back to embed providers plus Stripe.
+//   connect-src  assets.mailerlite.com — our own /takel impression
+//                fetch in MailerLiteBookForm.
+//   form-action  assets.mailerlite.com — the native POST, which is the
+//                no-JS fallback and must stay permitted.
 //
-// Deliberately NOT added: assets.mlcdn.com. MailerLite's embed imports
-// an Open Sans stylesheet from there, which is cosmetic — the form is
-// styled with Fresh Collective's own type instead, so style-src,
-// font-src and img-src stay as they were.
+// NOT added, and checked rather than assumed: track.mailerlite.com. The
+// open pixel is gated on the form's ``data-id`` attribute, which this
+// embed does not have, so it never fires.
+//
+// ``frame-src`` carries nothing for this form. It briefly held Google
+// reCAPTCHA sources; reCAPTCHA was switched off in the MailerLite
+// dashboard and those grants went with it.
 const MAILERLITE_FORM_SCRIPT_ORIGIN = 'https://groot.mailerlite.com'
 const MAILERLITE_API_ORIGIN = 'https://assets.mailerlite.com'
+const MAILERLITE_JQUERY_ORIGIN = 'https://assets.mlcdn.com'
+const MAILERLITE_STATIC_ORIGIN = 'https://static.mailerlite.com'
+
+/** Every origin webforms.min.js needs to reach to bind its handler. */
+const MAILERLITE_SCRIPT_SOURCES: readonly string[] = [
+  MAILERLITE_FORM_SCRIPT_ORIGIN,
+  MAILERLITE_JQUERY_ORIGIN,
+  MAILERLITE_STATIC_ORIGIN,
+  MAILERLITE_API_ORIGIN,
+]
 
 const CSP_DIRECTIVES: Record<string, readonly string[]> = {
   'default-src': ["'self'"],
@@ -109,7 +135,7 @@ const CSP_DIRECTIVES: Record<string, readonly string[]> = {
   // is accepted for Stage A per policy — nonce/hash strategy is
   // deferred until after SEC-016 lands, since SEC-001 sanitisation
   // already closes the primary XSS surface.
-  'script-src': ["'self'", "'unsafe-inline'", MAILERLITE_FORM_SCRIPT_ORIGIN],
+  'script-src': ["'self'", "'unsafe-inline'", ...MAILERLITE_SCRIPT_SOURCES],
   // Same reasoning as script-src, plus pervasive React inline
   // ``style={…}`` attributes that would require every value to be
   // nonced/hashed. Not tractable without a large refactor.

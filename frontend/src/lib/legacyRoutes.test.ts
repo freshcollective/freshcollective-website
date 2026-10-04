@@ -890,7 +890,7 @@ describe('the CSP additions for MailerLite are narrow', () => {
 
   test('the three required directives are widened, and only those', () => {
     const src = csp()
-    assert.match(src, /'script-src':[\s\S]*?MAILERLITE_FORM_SCRIPT_ORIGIN/)
+    assert.match(src, /'script-src':[\s\S]*?MAILERLITE_SCRIPT_SOURCES/)
     assert.match(src, /'connect-src':[\s\S]*?MAILERLITE_API_ORIGIN/)
     assert.match(src, /'form-action':[\s\S]*?MAILERLITE_API_ORIGIN/)
   })
@@ -920,10 +920,50 @@ describe('the CSP additions for MailerLite are narrow', () => {
     }
   })
 
-  test('the MailerLite font CDN is not allowed', () => {
+  test('every origin the MailerLite loader needs is in script-src', () => {
+    // The regression this file exists to prevent, stated as the whole
+    // chain rather than one host.
+    //
+    // webforms.min.js is a loader. It injects jQuery from
+    // assets.mlcdn.com, then an inputmask bundle from
+    // static.mailerlite.com whose onload is what binds the submit
+    // handler, and the submit is JSONP against assets.mailerlite.com.
+    // Miss any one and the form falls back to a native POST — which in
+    // production meant the browser left /tnlbook for MailerLite's raw
+    // {"success": true}.
+    //
+    // Sourced by reading webforms.min.js, not from documentation.
+    const src = csp()
+    const scriptSrc = src.slice(
+      src.indexOf("'script-src'"),
+      src.indexOf("'style-src'"),
+    )
+    assert.match(scriptSrc, /MAILERLITE_SCRIPT_SOURCES/)
+    for (const origin of [
+      "'https://groot.mailerlite.com'",
+      "'https://assets.mlcdn.com'",
+      "'https://static.mailerlite.com'",
+      "'https://assets.mailerlite.com'",
+    ]) {
+      assert.ok(src.includes(origin), `script-src is missing ${origin}`)
+    }
+  })
+
+  test('the form still submits through MailerLite, not a rewrite', () => {
+    // The fix for the raw-JSON bug was a CSP grant, not a change to how
+    // the form submits. If someone "fixes" it next time by dropping
+    // target="_blank" or posting to our own endpoint, this fails.
+    const f = read('app/tnlbook/MailerLiteBookForm.tsx')
+    assert.match(f, /action=\{ACTION\}/)
+    assert.match(f, /target="_blank"/)
+    assert.match(f, /method="post"/)
     assert.ok(
-      !codeOnly('lib/securityHeaders.ts').includes('mlcdn.com'),
-      'the cosmetic Open Sans import was meant to stay dropped',
+      !codeOnly('app/tnlbook/MailerLiteBookForm.tsx').includes('onSubmit'),
+      'a React submit handler would fight MailerLite for the event',
+    )
+    assert.ok(
+      !codeOnly('app/tnlbook/MailerLiteBookForm.tsx').includes('preventDefault'),
+      'interception is webforms.min.js\'s job, not ours',
     )
   })
 })

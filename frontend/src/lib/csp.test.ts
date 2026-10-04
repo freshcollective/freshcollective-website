@@ -181,12 +181,42 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     ])
   })
 
-  test('script-src adds only the MailerLite form script', () => {
+  test('script-src carries the whole MailerLite loader chain', () => {
+    // webforms.min.js is a loader, not a self-contained script. It
+    // injects jQuery from assets.mlcdn.com, then an inputmask bundle
+    // from static.mailerlite.com whose onload is what finally binds the
+    // submit handler, and the submit itself is JSONP against
+    // assets.mailerlite.com. Blocking any one of them leaves the form
+    // posting natively to the raw {"success": true}.
     assert.deepEqual(parsed['script-src'], [
       "'self'",
       "'unsafe-inline'",
       'https://groot.mailerlite.com',
+      'https://assets.mlcdn.com',
+      'https://static.mailerlite.com',
+      'https://assets.mailerlite.com',
     ])
+  })
+
+  test('the JSONP submit host is in script-src, not only connect-src', () => {
+    // The distinction that caused the production bug. The endpoint path
+    // is /jsonp/ and the call passes jsonpCallback, so the browser
+    // fetches it by injecting a <script> — connect-src never applies.
+    assert.ok(parsed['script-src'].includes('https://assets.mailerlite.com'))
+  })
+
+  test('no tracking host is granted', () => {
+    // track.mailerlite.com serves the open pixel, which is gated on a
+    // data-id attribute this embed does not have. Verified in the
+    // script rather than assumed, and left out accordingly.
+    for (const [directive, values] of Object.entries(parsed)) {
+      for (const v of values) {
+        assert.ok(
+          !v.includes('track.mailerlite.com'),
+          `${directive} grants ${v}, which the form never requests`,
+        )
+      }
+    }
   })
 
   test('no reCAPTCHA source survives in any directive', () => {
@@ -220,15 +250,20 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     }
   })
 
-  test('no MailerLite asset CDN is allowed anywhere', () => {
-    // assets.mlcdn.com serves the embed's Open Sans import, which is
-    // cosmetic and deliberately dropped. If it reappears in any
-    // directive, the styling decision has quietly been reversed.
+  test('assets.mlcdn.com is granted for scripts but nothing else', () => {
+    // This test used to assert the opposite, on the basis that
+    // mlcdn.com only served the embed's cosmetic Open Sans import. That
+    // was half true: the same host also serves the jQuery that
+    // webforms.min.js depends on, and excluding it is what broke the
+    // live form. It belongs in script-src — and only there, because the
+    // font import really is still dropped.
+    assert.ok(parsed['script-src'].includes('https://assets.mlcdn.com'))
     for (const [directive, values] of Object.entries(parsed)) {
+      if (directive === 'script-src') continue
       for (const v of values) {
         assert.ok(
           !v.includes('mlcdn.com'),
-          `${directive} allows ${v}; the font import was meant to be dropped`,
+          `${directive} allows ${v}; only script-src needs it`,
         )
       }
     }
