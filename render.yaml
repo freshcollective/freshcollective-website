@@ -492,6 +492,75 @@ services:
           name: fc-db
           property: connectionString
 
+  # ── Complimentary Creator grant expiry ─────────────────────────────
+  # Closes the finite complimentary Creator lifecycle: notifies during
+  # the 14-day renewal window and the 7-day grace period, then returns
+  # a creator to the implicit Community plan if they did not elect to
+  # continue.
+  #
+  # Daily rather than every 15 minutes, deliberately: these are
+  # day-level commercial terms, so a grant that becomes due at 02:00
+  # does not need sub-hourly precision, and a lower frequency means
+  # fewer opportunities for an entitlement-changing job to run while
+  # something else is wrong.
+  #
+  # Idempotent on every axis, so a missed run self-heals on the next
+  # and a double run changes nothing: expiry only matches grants still
+  # holding the active slot (a cancelled one no longer matches), and
+  # notifications dedupe against the grant's own dates rather than the
+  # run time.
+  #
+  # ``--apply`` is required for the job to write anything at all; the
+  # script's default is a read-only dry run that also prints the
+  # pre-arming survey. Dropping the flag turns this cron into a
+  # reporter, which is the safe failure direction.
+  #
+  # Protected by canonical plan slug, not by wording or by a null end
+  # date: founding-creator and organisation can never be expired here.
+  # That is load-bearing — the 2026-10-04 production survey showed
+  # Lindsey's Founding Creator grant carries ``reason='comp'``, so the
+  # grant_reason filter alone would not have saved it.
+  #
+  # Least-privilege env — strictly less than fc-api:
+  #
+  #   * FC_SERVICE_ROLE=job          — skips the web-role JWT_SECRET
+  #                                    and R2 requirements.
+  #   * FC_JOB_REQUIRES_STRIPE=false — no Stripe key or webhook secret.
+  #                                    This job never calls Stripe; it
+  #                                    only reads local subscription
+  #                                    rows. A paid subscriber is
+  #                                    excluded by a DB query, not by
+  #                                    asking Stripe.
+  #   * DATABASE_URL                 — same DB as fc-api.
+  #   * APP_ENV=production           — correct environment in logs.
+  #
+  # Deliberately NOT granted: RESEND_API_KEY / EMAIL_FROM. The
+  # lifecycle notifications are in-app ``notifications`` rows with a
+  # relative URL, so this job dispatches no email and needs no mail
+  # credentials or FRONTEND_ORIGIN. If email is added later, grant them
+  # then — see the Gathering reminders block for why that pair is
+  # genuinely privileged.
+  - type: cron
+    name: fc-creator-grant-expiry
+    runtime: python
+    region: singapore
+    branch: main
+    rootDir: backend
+    schedule: "0 2 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/creator_grant_expiry_reconcile.py --apply
+    envVars:
+      - key: FC_SERVICE_ROLE
+        value: "job"
+      - key: FC_JOB_REQUIRES_STRIPE
+        value: "false"
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fc-db
+          property: connectionString
+
   # ── Gathering reminders ────────────────────────────────────────────
   # Sends the single 24-hour reminder for every confirmed booking whose
   # reminder point has come due. Every 15 minutes; the sweep's own
