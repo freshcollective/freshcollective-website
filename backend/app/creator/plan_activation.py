@@ -164,11 +164,30 @@ def activate_creator_plan(
         .first()
     )
     if existing_active:
-        if existing_active.creator_plan_id == plan.id:
-            # Already active on this exact plan — safe no-op. Still
-            # promote_to_creator + reconcile defensively so a repeat
-            # activation heals any drift (role got reset elsewhere,
-            # World Builders membership was removed by hand, etc.).
+        # A paid activation supersedes an active manual grant rather
+        # than colliding with it. This is checked BEFORE the plan-id
+        # comparison below, because that comparison keyed on the plan
+        # alone: a complimentary Creator grant looked identical to a
+        # paid Creator subscription, so a creator who paid got a silent
+        # no-op — no paid row, no Stripe linkage — and then kept being
+        # treated as complimentary. A different paid plan raised
+        # ActivationConflictError instead. Both happened after the
+        # charge.
+        if (
+            activation.source == "stripe_paid"
+            and existing_active.source == "manual_grant"
+        ):
+            supersede_active_manual_grant(db, user.id)
+            # Fall through: the slot is free, so the paid row is created
+            # or reactivated below exactly as it would be for a creator
+            # who never held a grant.
+            existing_active = None
+        elif existing_active.creator_plan_id == plan.id:
+            # Already active on this exact plan, same source — safe
+            # no-op. Still promote_to_creator + reconcile defensively so
+            # a repeat activation heals any drift (role got reset
+            # elsewhere, World Builders membership was removed by hand,
+            # etc.).
             promote_to_creator(user, db)
             db.flush()
             return ActivationResult(
@@ -177,6 +196,8 @@ def activate_creator_plan(
                 was_noop=True,
                 activation_event=None,
             )
+
+    if existing_active:
         raise ActivationConflictError(
             f"User already has an active subscription for plan "
             f"'{existing_active.plan.slug if existing_active.plan else existing_active.creator_plan_id}'; "
@@ -258,6 +279,117 @@ def _load_plan_or_raise(db: Session, plan_slug: str) -> CreatorPlan:
             f"CreatorPlan '{plan_slug}' is not present or not active."
         )
     return plan
+
+
+SUPERSEDED_BY_PAID_REASON = "superseded_by_paid_subscription"
+
+
+def supersede_active_manual_grant(
+    db: Session,
+    user_id: str,
+    *,
+    keep_subscription_id: str | None = None,
+) -> CreatorSubscription | None:
+    """Move an active manual grant out of the active slot so a
+    Stripe-paid subscription can take it. Returns the superseded row,
+    or None when there was nothing to supersede.
+
+    Why this exists
+    ---------------
+    ``creator_subscriptions_one_active_per_user_uidx`` is
+    ``UNIQUE (user_id) WHERE status IN ('active','trialing')`` — one
+    active-or-trialing subscription per user, enforced by the database.
+    A complimentary grant occupies that slot, so a creator who pays to
+    continue could not be activated:
+
+      * the ``invoice.paid`` handler writes ``status='active'``
+        directly, which raised an IntegrityError **after the charge**
+        and left the webhook failing on every redelivery;
+      * the claim path reached ``activate_creator_plan``, whose
+        idempotency check keyed on ``creator_plan_id`` alone and so
+        read "manual Creator" as equivalent to "paid Creator" — a
+        silent no-op that recorded no paid subscription at all, or an
+        ``ActivationConflictError`` when the paid plan differed.
+
+    Both routes took the money and failed to grant what was bought.
+
+    Ordering is the point
+    ---------------------
+    Postgres evaluates a partial unique index per statement, not at
+    commit, so the grant must leave the slot *before* the paid row
+    enters it. Callers therefore call this, then flush, then activate.
+    Both rows are locked ``FOR UPDATE`` first so a webhook redelivery
+    racing the claim path cannot interleave between the check and the
+    write.
+
+    Nothing is deleted. The row keeps its original ``starts_at`` /
+    ``ends_at`` / ``grant_reason`` and gains revocation provenance, so
+    the complimentary period stays auditable after conversion.
+    ``revoked_by_user_id`` is NULL because no admin did this — the same
+    convention the expiry reconciler uses — and the reason distinguishes
+    it from both an admin revoke and a lapse.
+    """
+    rows = (
+        db.query(CreatorSubscription)
+        .filter(
+            CreatorSubscription.user_id == user_id,
+            CreatorSubscription.status.in_([s.value for s in _ACTIVE_STATUSES]),
+        )
+        .with_for_update()
+        .order_by(CreatorSubscription.created_at.desc())
+        .all()
+    )
+    grant = next(
+        (
+            r for r in rows
+            if r.source == "manual_grant"
+            and r.id != keep_subscription_id
+            and r.status in (
+                CreatorSubscriptionStatus.active,
+                CreatorSubscriptionStatus.trialing,
+            )
+        ),
+        None,
+    )
+    if grant is None:
+        # Nothing in the way. Either an ordinary paid subscription with
+        # no grant history, or a redelivery after the transition already
+        # happened — both are no-ops, which is what makes this safe to
+        # call unconditionally.
+        return None
+
+    now = datetime.utcnow()
+    grant.status = CreatorSubscriptionStatus.cancelled
+    grant.revoked_at = now
+    grant.revoked_by_user_id = None
+    grant.revoked_reason = (
+        "Superseded by a paid Creator subscription. The complimentary "
+        "period was ended early because the creator elected to pay; "
+        "its original dates are preserved on this row."
+    )
+    grant.updated_at = now
+    record_grant_event(
+        db,
+        subscription=grant,
+        action="revoked",
+        reason=SUPERSEDED_BY_PAID_REASON,
+        note=(
+            "Automatic transition: the creator started a Stripe-paid "
+            "subscription while this complimentary grant was active. The "
+            "grant row is preserved for audit; no content, Collective, "
+            "role or World Builders membership was affected."
+        ),
+        actor_user_id=None,
+    )
+    # Land the UPDATE before the caller activates the paid row, so the
+    # partial unique index never sees two occupants.
+    db.flush()
+    logger.info(
+        "creator plan supersede: manual grant %s (user=%s, reason=%s, "
+        "ends_at=%s) cancelled in favour of a paid subscription",
+        grant.id, user_id, grant.grant_reason, grant.ends_at,
+    )
+    return grant
 
 
 def _create_or_reactivate(

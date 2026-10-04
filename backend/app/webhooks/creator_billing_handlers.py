@@ -53,6 +53,7 @@ from datetime import datetime, timedelta
 import stripe
 from sqlalchemy.orm import Session
 
+from app.creator.plan_activation import supersede_active_manual_grant
 from app.checkout.stripe_client import (
     invoice_subscription_id,
     stripe_field,
@@ -267,6 +268,28 @@ def handle_invoice_paid(
         )
         db.add(sub_row)
         db.flush()
+
+    # A paid activation supersedes an active complimentary grant.
+    #
+    # This handler writes ``status='active'`` directly rather than going
+    # through ``activate_creator_plan``, so it needs the same rule — and
+    # it is the path that actually broke: with a grant still holding the
+    # active slot, the UPDATE below violated
+    # ``creator_subscriptions_one_active_per_user_uidx`` and raised an
+    # IntegrityError *after* Stripe had taken the money, failing on
+    # every redelivery. Shared with the claim path via one helper so the
+    # two cannot drift into subtly different rules.
+    #
+    # Called before the flip, because the partial unique index is
+    # evaluated per statement: the grant must leave the slot first. It
+    # is a no-op when there is no grant (the ordinary paid flow) or when
+    # a redelivery already did it, which is what makes it safe to call
+    # unconditionally. ``keep_subscription_id`` guards the degenerate
+    # case of this row itself being a manual grant.
+    if sub_row.source == "stripe_paid":
+        supersede_active_manual_grant(
+            db, sub_row.user_id, keep_subscription_id=sub_row.id,
+        )
 
     # Flip to active (or keep active). Clear grace, refresh period end.
     was_past_due = sub_row.status == CreatorSubscriptionStatus.past_due
