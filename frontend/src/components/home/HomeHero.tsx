@@ -120,7 +120,7 @@ export default function HomeHero() {
           </p>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <HeroPrimaryCta href="/for-creators">Create a Collective</HeroPrimaryCta>
+            <HeroPrimaryCta href="/for-creators#plans">Create a Collective</HeroPrimaryCta>
             <HeroSecondaryCta href="/spaces">Explore Collectives</HeroSecondaryCta>
           </div>
 

@@ -58,7 +58,9 @@ describe('completion routes into Your World', () => {
 
   test('the client routes your_world to the canonical member dashboard', () => {
     const src = codeOnly(CLIENT)
-    assert.match(src, /router\.push\('\/dashboard'\)/)
+    // Carries ?creator_onboarding=complete so Your World can point at
+    // the creator band, which sits below the fold.
+    assert.match(src, /router\.push\('\/dashboard\?creator_onboarding=complete'\)/)
   })
 
   test('the default destination is Your World, not Creator Studio', () => {

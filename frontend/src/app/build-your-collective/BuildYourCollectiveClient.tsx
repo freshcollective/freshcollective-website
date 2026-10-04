@@ -244,7 +244,10 @@ export default function BuildYourCollectiveClient({
         } else if (destination === 'creator_studio') {
           router.push(`/creator-studio/collective/switch/${newSlug}`)
         } else {
-          router.push('/dashboard')
+          // Carry "just finished" so Your World can point at the
+          // creator band, which sits below the fold. The dashboard
+          // clears the param once consumed.
+          router.push('/dashboard?creator_onboarding=complete')
         }
         // Deliberately leave busy=true — the navigation is in flight,
         // and we don't want the CTAs re-enabling before the next page

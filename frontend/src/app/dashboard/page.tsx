@@ -19,6 +19,7 @@ import { isDiscoveryPillarEnabled, isWaysToConnectEnabled } from '@/lib/featureF
 import type { CreatorSpaceDetail, SpaceMembership, SpaceSummary, PublicSpaceCard, SpaceResponse, EventSummary, UserProfile } from '@/types/platform'
 import { ATLAS_CARD_STYLE, AtlasArtwork, AtlasCardBody } from '@/components/collective/AtlasCard'
 import CreatorCollectiveCard from './CreatorCollectiveCard'
+import FirstCollectiveOrientation from './FirstCollectiveOrientation'
 import RecentMomentsSection from './RecentMomentsSection'
 import VerifyEmailBanner from '@/components/settings/VerifyEmailBanner'
 
@@ -169,7 +170,22 @@ async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
 // Page
 // ---------------------------------------------------------------------------
 
-export default async function DashboardPage() {
+/** Anchor for the creator band, targeted by the post-onboarding
+ *  orientation prompt's "Show me where" control. */
+const CREATOR_BAND_ID = 'what-youre-building'
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ creator_onboarding?: string }>
+}) {
+  // Build Your Collective hands off here with
+  // ?creator_onboarding=complete after a first Collective is created.
+  // The prompt below is gated on that *and* on being a Creator, and the
+  // component clears the param once consumed.
+  const { creator_onboarding: onboardingFlag } = await searchParams
+  const justFinishedFirstCollective = onboardingFlag === 'complete'
+
   const [user, memberships, publicSpaces, platformArtwork, creatorSpaces]: [
     UserProfile | null,
     SpaceMembership[],
@@ -243,6 +259,13 @@ export default async function DashboardPage() {
       ) : null}
 
       <main className="mx-auto max-w-[1440px] px-6 pt-12 pb-24 md:px-10 md:pt-14 md:pb-28">
+
+        {/* Post-onboarding pointer. Creators only, and only on the
+            handoff from Build Your Collective — the component clears
+            the query param so this never becomes permanent. */}
+        {justFinishedFirstCollective && isCreatorOrAdmin && (
+          <FirstCollectiveOrientation targetId={CREATOR_BAND_ID} />
+        )}
 
         {/* Page title — kept for now (product decision to trial keeping
             vs. removing). Subtitle reframed toward the brief: what's
@@ -328,7 +351,7 @@ export default async function DashboardPage() {
             <Section
               title="Your Collectives"
               subtitle="Communities you&rsquo;re currently part of."
-              action={cards.length > 0 ? <CreateCollectiveLink /> : null}
+              action={cards.length > 0 ? <CreateCollectiveLink isCreator={isCreatorOrAdmin} /> : null}
               noSpacing
               className="order-3 lg:col-start-1 lg:row-start-2"
             >
@@ -343,7 +366,7 @@ export default async function DashboardPage() {
                   ))}
                 </div>
               ) : (
-                <EmptyCollectivesCard />
+                <EmptyCollectivesCard isCreator={isCreatorOrAdmin} />
               )}
             </Section>
           </div>
@@ -356,7 +379,7 @@ export default async function DashboardPage() {
             <Section
               title="Your Collectives"
               subtitle="Communities you&rsquo;re currently part of."
-              action={cards.length > 0 ? <CreateCollectiveLink /> : null}
+              action={cards.length > 0 ? <CreateCollectiveLink isCreator={isCreatorOrAdmin} /> : null}
               noSpacing
             >
               {cards.length > 0 ? (
@@ -370,7 +393,7 @@ export default async function DashboardPage() {
                   ))}
                 </div>
               ) : (
-                <EmptyCollectivesCard />
+                <EmptyCollectivesCard isCreator={isCreatorOrAdmin} />
               )}
             </Section>
           </div>
@@ -427,6 +450,7 @@ export default async function DashboardPage() {
             they've created at least one Collective. ─────── */}
         {(creatorCards.length > 0 || isCreatorOrAdmin) && (
           <div
+            id={CREATOR_BAND_ID}
             className="mt-20 pt-12"
             style={{ borderTop: '1px dashed rgba(12,24,38,0.10)' }}
           >
@@ -561,12 +585,37 @@ function Section({
 // the existing backend/creation path — this component only surfaces
 // the entry point.
 
-const CREATE_COLLECTIVE_HREF = '/for-creators'
+// Where "Create a Collective" should land depends on whether the reader
+// is already a Creator.
+//
+//   * Not a Creator yet → the plan chooser, anchored at the plans
+//     themselves. ``/for-creators`` is the canonical live chooser and
+//     all three of its CTAs are real: Community Collective →
+//     /signup/creator?plan=community (live activation), Creator and
+//     Creator Portfolio → /checkout/creator?plan=… which POSTs to
+//     /api/purchases/creator-subscription for a genuine Stripe Checkout
+//     Session. The ``#plans`` anchor matters: without it the button
+//     dropped the reader at the top of a long marketing page, where the
+//     first thing in reach is the free Community card — which reads as
+//     the dashboard having chosen Community for them.
+//
+//   * Already a Creator → Creator Studio's My World, which is already
+//     plan-aware: it renders "N of N collectives used", offers "Build
+//     another" only below the allowance, and shows an at-limit state
+//     otherwise. So a Community Creator at 1 of 1 is told why rather
+//     than walked into a 403, and the allowance is never bypassed —
+//     ``guard_active_collective_limit`` still owns the decision.
+const PLAN_CHOOSER_HREF = '/for-creators#plans'
+const CREATOR_HOME_HREF = '/creator-studio'
 
-function CreateCollectiveLink() {
+function createCollectiveHref(isCreator: boolean): string {
+  return isCreator ? CREATOR_HOME_HREF : PLAN_CHOOSER_HREF
+}
+
+function CreateCollectiveLink({ isCreator }: { isCreator: boolean }) {
   return (
     <Link
-      href={CREATE_COLLECTIVE_HREF}
+      href={createCollectiveHref(isCreator)}
       className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-navy-900 transition-colors hover:border-teal-400 hover:bg-teal-50"
     >
       <span aria-hidden>+</span> Create a Collective
@@ -574,7 +623,7 @@ function CreateCollectiveLink() {
   )
 }
 
-function EmptyCollectivesCard() {
+function EmptyCollectivesCard({ isCreator }: { isCreator: boolean }) {
   return (
     <div
       className="rounded-2xl bg-white px-6 py-8 text-center"
@@ -596,7 +645,7 @@ function EmptyCollectivesCard() {
           Explore Collectives
         </Link>
         <Link
-          href={CREATE_COLLECTIVE_HREF}
+          href={createCollectiveHref(isCreator)}
           className="inline-flex items-center rounded-full px-4 py-1.5 text-[12.5px] font-semibold text-white transition-opacity hover:opacity-90"
           style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
         >

@@ -663,6 +663,25 @@ function CreatorBilling({ billing, header, connectStatus }: {
         </div>
       </div>
 
+      {/* Everything below is commercial infrastructure: Creator
+          billing, member-payment routing, Stripe Connect, the fee
+          acknowledgement and the payout explanations. A Community
+          creator has no paid offers, no creator subscription to bill
+          and no reason to connect Stripe, so prompting them to
+          configure any of it invites them to set up something they
+          cannot use.
+
+          Gated on the resolved plan capability rather than a plan-name
+          string, so Creator, Creator Portfolio, Founding Creator,
+          Organisation and an active complimentary Creator grant all
+          keep it unchanged — Community is the only plan with
+          paid_offers_enabled=false.
+
+          Nothing replaces it. The plan comparison directly above
+          already makes the upgrade path obvious, and another CTA here
+          would be the third on one page. */}
+      {current_plan.paid_offers_enabled && (
+      <>
       {/* Payment setup status */}
       <div
         className="rounded-2xl p-6"
@@ -751,6 +770,8 @@ function CreatorBilling({ billing, header, connectStatus }: {
           </ul>
         </div>
       </div>
+      </>
+      )}
 
     </div>
   )
