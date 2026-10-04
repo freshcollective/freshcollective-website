@@ -11,6 +11,7 @@ from app.core.config import settings
 
 from app.auth.dependencies import get_current_user, get_optional_user, get_verified_current_user
 from app.core.database import get_db
+from app.creator.plan_guards import guard_member_allowance
 from app.creator.schemas import AboutBlockResponse, BlockMediaInfo, StepBlockResponse
 from app.models.payment_option import PaymentOption, PaymentOptionStatus
 from app.models.payment_option_schedule import PaymentOptionSchedule
@@ -1144,6 +1145,11 @@ def join_space(
     if existing:
         return {"joined": True, "already_member": True}
 
+    # Plan enforcement: the owning creator's member allowance. Checked
+    # here, after the already-a-member return above, so an existing
+    # member is never turned away from a Collective they are already in.
+    guard_member_allowance(space, db)
+
     db.add(SpaceMembership(
         id=str(uuid.uuid4()),
         user_id=current_user.id,
@@ -1283,6 +1289,12 @@ def accept_invite(
     )
     if not existing:
         role_value = invite.role.value if hasattr(invite.role, "value") else str(invite.role)
+        # An invitation does not exempt the Collective from its plan's
+        # member allowance — otherwise the cap could be bypassed simply
+        # by inviting past it. Caretaker roles (creator / moderator) are
+        # not members for allowance purposes, so only learners count.
+        if role_value == SpaceRole.learner.value:
+            guard_member_allowance(space, db)
         db.add(SpaceMembership(
             id=str(uuid.uuid4()),
             user_id=current_user.id,

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import { getPublicSpaces } from '@/lib/serverApi'
@@ -74,6 +74,16 @@ export default async function CheckoutNextPage({
   const { flow: flowParam, plan: planParam, collective: collectiveSlug } = await searchParams
 
   if (!isFlow(flowParam)) notFound()
+
+  // The free Community plan is live — it creates a real account, grants
+  // Creator capability and opens onboarding. It no longer has anything
+  // to hold, so send it to the real flow rather than render a screen
+  // that says the steps are "not yet supported end-to-end". The paid
+  // plans still reach their account step through Stripe checkout and
+  // keep their holding screens unchanged.
+  if (planParam === 'community' && (flowParam === 'creator' || flowParam === 'upgrade')) {
+    redirect('/signup/creator?plan=community')
+  }
 
   const screen = await buildScreen(flowParam, planParam, collectiveSlug)
   if (!screen) notFound()
@@ -186,25 +196,8 @@ async function buildScreen(
 }
 
 function creatorScreen(plan: PublicPlanDisplay): Screen {
-  if (plan.slug === 'community') {
-    return {
-      eyebrow: 'Community Collective — new account',
-      heading: 'Your Community Collective will be set up here',
-      willHappen:
-        'Once account creation and role activation are connected, this ' +
-        'step will create your Fresh Collective account, add Creator ' +
-        'capability to it, assign the Community plan, enrol you in ' +
-        'World Builders, and route you into first-Collective onboarding.',
-      prototypeReality:
-        'A backend audit is complete and several of those steps are ' +
-        'not yet supported end-to-end (see the audit findings shared ' +
-        'with the team). In this prototype no account has been created, ' +
-        'no Creator capability has been granted, no plan has been ' +
-        'assigned, and no Collective has been set up.',
-      primary: { label: 'Back to /for-creators', href: '/for-creators#plans' },
-      secondary: { label: 'Return home', href: '/' },
-    }
-  }
+  // Community has no branch here: it is a live flow and the page
+  // redirects it away before buildScreen() is reached.
   return {
     eyebrow: `${plan.displayName} — new account`,
     heading: `Your Fresh Collective account and ${plan.displayName} plan will be activated here`,
@@ -223,25 +216,7 @@ function creatorScreen(plan: PublicPlanDisplay): Screen {
 }
 
 function upgradeScreen(plan: PublicPlanDisplay): Screen {
-  if (plan.slug === 'community') {
-    return {
-      eyebrow: 'Adding Community Collective to your account',
-      heading: 'Your Community upgrade will be completed here',
-      willHappen:
-        'Once role and plan activation are connected, this step will ' +
-        'add Creator capability to your existing Fresh Collective ' +
-        'account, assign the Community plan, enrol you in World Builders, ' +
-        'and route you into first-Collective onboarding. You will keep ' +
-        'your current account, memberships and activity.',
-      prototypeReality:
-        'A backend audit is complete and several of those steps are ' +
-        'not yet supported end-to-end. Nothing has changed on your ' +
-        'account. No Creator capability has been added, no plan has ' +
-        'been assigned, no enrolment has happened.',
-      primary: { label: 'Back to /for-creators', href: '/for-creators#plans' },
-      secondary: { label: 'Return home', href: '/' },
-    }
-  }
+  // Community has no branch here either — see creatorScreen above.
   return {
     eyebrow: `Adding ${plan.displayName} to your account`,
     heading: 'Your Creator upgrade will be completed here',

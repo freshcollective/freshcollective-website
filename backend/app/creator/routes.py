@@ -45,6 +45,7 @@ from app.creator.plan_config import (
 from app.creator.plan_guards import (
     guard_active_collective_limit,
     guard_location_allowed,
+    guard_member_allowance,
     guard_offer_pages_enabled,
     guard_paid_offers_enabled,
     is_platform_owner as _is_platform_owner,
@@ -1554,6 +1555,11 @@ def update_space(
     if body.themes is not None:
         space.themes = body.themes
     if body.pricing_type is not None:
+        # Plan enforcement on the UPDATE path, not only on create. Without
+        # this, a non-commercial plan could create a free Collective (which
+        # the create-path guard allows) and then PATCH it to a paid pricing
+        # type, bypassing `paid_offers_enabled` entirely.
+        guard_paid_offers_enabled(current_user, db, body.pricing_type)
         space.pricing_type = body.pricing_type
         if body.pricing_type == "free":
             space.pricing_amount_cents = None
@@ -2786,6 +2792,10 @@ def approve_access_request(
         .first()
     )
     if not existing:
+        # Approving an access request admits a new learner, so the plan's
+        # member allowance applies. The creator is the caller here, so the
+        # refusal names their plan and limit.
+        guard_member_allowance(space, db, for_creator=True)
         db.add(SpaceMembership(
             id=str(uuid4()),
             user_id=req.user_id,
@@ -5073,6 +5083,10 @@ def add_or_invite_member(
                 result="already_member",
                 message="This person is already a member of this collective.",
             )
+        # Caretaker roles (creator / moderator) are not members for
+        # allowance purposes — only learners count against the cap.
+        if role_enum == SpaceRole.learner:
+            guard_member_allowance(space, db, for_creator=True)
         # Add as active member — existing users are added directly, no email needed
         membership = SpaceMembership(
             id=str(uuid4()),

@@ -147,6 +147,7 @@ MIGRATED_SURFACES = {
     "components/layout/AuthCard.tsx": "FreshCollectiveLogo",
     "app/signup/SignupForm.tsx": "FreshCollectiveLogo",
     "components/checkout/PrototypeSignupForm.tsx": "FreshCollectiveLogo",
+    "components/checkout/CommunityCollectiveSignup.tsx": "FreshCollectiveLogo",
 }
 
 

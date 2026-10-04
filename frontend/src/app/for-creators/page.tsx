@@ -253,7 +253,7 @@ const PLANS: Plan[] = [
     body: 'A welcoming home for the gatherings that do not need to become a business — neighbourhood groups, clubs, volunteer teams, hobby circles and shared-interest communities. A beautiful place to come together, freely and without pressure.',
     facts: [
       'Free',
-      'One approved Collective',
+      'One Collective',
       'Up to 100 members',
       'Up to 5 Pathways',
       'For non-commercial gatherings',

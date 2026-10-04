@@ -19,14 +19,21 @@ Guards documented and implemented so far:
 
     guard_paid_offers_enabled(user, db) — enforces
         `PlanCapability.paid_offers_enabled`. Rejects paid pricing types
-        on plans that don't allow commercial offers.
+        on plans that don't allow commercial offers. Runs on both the
+        create and the update paths, so a free Collective cannot be
+        flipped to paid after the fact.
+
+    guard_member_allowance(space, db) — enforces
+        `PlanCapability.member_allowance_per_collective` against the
+        owning creator's plan on every learner-admitting path.
 
 Platform Owner (role='admin') bypasses every guard here — Owner does not
 belong to any creator plan.
 
 Not yet enforced (see docs/permissions-matrix.md migration checklist):
 
-    - member_allowance_per_collective / pooled_member_allowance
+    - pooled_member_allowance (Organisation; the per-Collective cap is
+      enforced by guard_member_allowance)
     - caretaker_limit_per_collective
     - storage_allowance_mb
     - pathways_enabled / gatherings_enabled / resources_enabled
@@ -45,7 +52,13 @@ from app.creator.plan_config import (
     get_plan_capability,
 )
 from app.models.creator_billing import CreatorPlan, CreatorSubscription
-from app.models.platform import Location, Space, SpaceMembership
+from app.models.platform import (
+    Location,
+    Space,
+    SpaceMembership,
+    SpaceMembershipStatus,
+    SpaceRole,
+)
 from app.models.user import User
 
 
@@ -327,6 +340,86 @@ def guard_pathway_limit(user: User, space: Space, db: Session) -> None:
                 "Upgrade to Creator to add more."
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# Member allowance
+# ---------------------------------------------------------------------------
+
+
+def count_space_members(space: Space, db: Session) -> int:
+    """Count the active learners in ``space``.
+
+    Deliberately the *same* predicate the public Collective cards and the
+    About page use (active + role='learner'), so the number a creator is
+    blocked against is the number everyone can see. Creators, moderators
+    and the owner are not members for this purpose.
+    """
+    return (
+        db.query(SpaceMembership)
+        .filter(
+            SpaceMembership.space_id == space.id,
+            SpaceMembership.status == SpaceMembershipStatus.active,
+            SpaceMembership.role == SpaceRole.learner,
+        )
+        .count()
+    )
+
+
+def guard_member_allowance(space: Space, db: Session, *, for_creator: bool = False) -> None:
+    """Refuse a new learner admission when the owning creator's plan caps
+    members per Collective. Community is capped at 100; Creator / Pro are
+    higher; Organisation pools its allowance and is uncapped here.
+
+    Resolves the plan of the Collective's **owner**, not of the person being
+    admitted — a visitor joining someone else's Collective is bounded by
+    that creator's plan, not their own.
+
+    Bypasses:
+      * auto-managed Collectives (World Builders) — membership is computed
+        from platform eligibility, not admitted;
+      * Collectives owned by a Platform Owner — no creator plan applies;
+      * plans whose ``member_allowance_per_collective`` is None — uncapped.
+
+    ``for_creator`` selects the audience for the 403 message. A creator
+    adding or approving someone is told which plan limit they hit; a
+    visitor joining is told only that the Collective is full, so a
+    stranger cannot read the owner's plan tier off an error.
+
+    Callers must invoke this only for genuinely *new* active learners —
+    after the already-a-member check — so an existing member is never
+    locked out of their own Collective.
+    """
+    if space.auto_grant_role is not None:
+        return
+
+    owner = (
+        db.query(User).filter(User.id == space.creator_id).first()
+        if space.creator_id
+        else None
+    )
+    if owner is None:
+        # Orphaned Collective — no plan to enforce. Refusing here would
+        # break joining on data we cannot attribute; the collective-limit
+        # guard already owns the "no plan resolved" refusal at create time.
+        return
+
+    plan = resolve_creator_plan(owner, db)
+    if plan is None or plan.member_allowance_per_collective is None:
+        return
+
+    allowance = plan.member_allowance_per_collective
+    if count_space_members(space, db) < allowance:
+        return
+
+    if for_creator:
+        detail = (
+            f"Your {plan.display_name} plan includes {allowance} members "
+            f"per Collective. Upgrade your plan to add more."
+        )
+    else:
+        detail = "This collective has reached its member limit."
+    raise HTTPException(status_code=403, detail=detail)
 
 
 # ---------------------------------------------------------------------------

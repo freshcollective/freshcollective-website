@@ -58,6 +58,7 @@ from app.members.routes import members_router, profiles_router
 from app.creator.routes import router as creator_router
 from app.creator.attendance import router as creator_attendance_router
 from app.creator.build_your_collective import router as build_your_collective_router
+from app.creator.community_start import router as creator_community_start_router
 from app.uploads.routes import uploads_router
 from app.checkout.routes import router as checkout_router
 from app.commerce.finite_plan_repair_routes import router as finite_plan_repair_router
@@ -253,6 +254,7 @@ app.include_router(profiles_router)
 app.include_router(creator_router)
 app.include_router(creator_attendance_router)
 app.include_router(build_your_collective_router)
+app.include_router(creator_community_start_router)
 app.include_router(uploads_router)
 app.include_router(invites_router)
 app.include_router(checkout_router)

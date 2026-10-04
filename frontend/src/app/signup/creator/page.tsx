@@ -4,6 +4,9 @@ import { notFound, redirect } from 'next/navigation'
 import SiteShell from '@/components/layout/SiteShell'
 import Container from '@/components/layout/Container'
 import PrototypeSignupForm from '@/components/checkout/PrototypeSignupForm'
+import CommunityCollectiveSignup, {
+  type CommunityStage,
+} from '@/components/checkout/CommunityCollectiveSignup'
 import ArtworkFeatureComposition from '@/components/marketing/ArtworkFeatureComposition'
 import {
   buildPlatformArtLookup,
@@ -14,36 +17,62 @@ import {
 import { getPublicPlan } from '@/lib/plans'
 
 /**
- * /signup/creator?plan=creator|pro|community — creator signup prototype.
+ * /signup/creator?plan=creator|pro|community — the creator account step.
  *
- * PROTOTYPE ONLY. Renders the selected plan and a visual-only signup
- * form. Submitting the form does not create an account, does not
- * grant Creator capability, does not assign a plan, does not enrol
- * anyone in World Builders, and does not open Creator Studio.
+ * Community (free) is LIVE. Choosing it creates a real Fresh Collective
+ * account, grants Creator capability on the free Community plan, enrols
+ * the account in World Builders (via the auto-role reconciler behind
+ * `promote_to_creator`), and forwards into the existing
+ * /creator-onboarding → /build-your-collective flow. The limits shown
+ * in the summary card are enforced server-side by
+ * `backend/app/creator/plan_guards.py`, not merely displayed here.
  *
- * Logged-in visitors do not see a second form — they are forwarded
- * to the honest holding screen for the upgrade flow. The existing
- * /signup route and SignupForm.tsx are unaffected by this page.
+ * The paid plans (Creator, Pro) remain a prototype at this step: they
+ * reach their account creation through Stripe checkout, which is a
+ * separate flow, so they keep PrototypeSignupForm and the honest
+ * holding screen at /checkout/next. Nothing about the paid path is
+ * changed by the Community work.
  *
  * Left-column order (per the approved journey design):
  *   1. Selected plan artwork
  *   2. "You're choosing …" heading
  *   3. Plan tagline
- *   4. Prototype pill + short live-flow / prototype explanation
+ *   4. What this step does (prototype notice for paid plans only)
  *   5. Plan summary card
  *   6. "View the other plans" link
- * Right column is the signup form card, kept visually focused on
- * account creation (no plan artwork inside it).
+ * Right column is the account card.
  */
-
-export const metadata: Metadata = {
-  title: 'Create your account — Fresh Collective',
-  robots: { index: false, follow: false },
-}
 
 const NAVY = '#0C1826'
 const TEAL_DEEP = '#246B6A'
 const INK_SOFT = 'rgba(12, 24, 38, 0.66)'
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<{ plan?: string }>
+}): Promise<Metadata> {
+  const { plan: planParam } = await searchParams
+  const plan = getPublicPlan(planParam)
+  const isLive = plan?.slug === 'community'
+  return {
+    title: isLive
+      ? 'Start a free Community Collective — Fresh Collective'
+      : 'Create your account — Fresh Collective',
+    // The free Community path is a real, completable signup, so it is
+    // indexable. The paid plans' account step is still a prototype and
+    // stays out of search until it is live.
+    robots: isLive ? undefined : { index: false, follow: false },
+  }
+}
+
+/** Which step of the live Community flow this visitor is actually at. */
+function communityStage(me: { role?: string; email_verified_at?: string | null } | null): CommunityStage {
+  if (!me) return 'signed_out'
+  if (me.role && me.role !== 'user') return 'already_creator'
+  if (!me.email_verified_at) return 'unverified'
+  return 'ready'
+}
 
 export default async function SignupCreatorPage({
   searchParams,
@@ -54,17 +83,20 @@ export default async function SignupCreatorPage({
   const plan = getPublicPlan(planParam)
   if (!plan) notFound()
 
+  const isCommunity = plan.slug === 'community'
+
   const [me, artwork] = await Promise.all([
     getMe().catch(() => null),
     getPublicPlatformArtwork().catch(() => [] as PublicPlatformArtwork[]),
   ])
-  if (me?.id) {
-    // Already have an account — never create a second one.
+
+  // Paid plans: a signed-in visitor is upgrading, not signing up, so they
+  // never see a second account form. Unchanged behaviour.
+  if (!isCommunity && me?.id) {
     redirect(`/checkout/next?flow=upgrade&plan=${plan.slug}&preview=true`)
   }
-  const artUrl = buildPlatformArtLookup(artwork)(plan.artworkKey)
 
-  // Form submit navigates to the honest holding screen.
+  const artUrl = buildPlatformArtLookup(artwork)(plan.artworkKey)
   const nextHref = `/checkout/next?flow=creator&plan=${plan.slug}&preview=true`
 
   return (
@@ -100,15 +132,30 @@ export default async function SignupCreatorPage({
                 {plan.tagline}
               </p>
 
-              <PrototypePill className="mt-6" />
-              <p
-                className="mt-3 max-w-[520px] text-[15.5px] italic leading-relaxed"
-                style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
-              >
-                {plan.slug === 'community'
-                  ? 'In the live flow, this step will create your Fresh Collective account, add Creator capability, assign the Community plan, and open the first-Collective onboarding. Nothing is created in this prototype — no account, no Creator capability, no Collective access.'
-                  : 'In the live flow, account creation follows the payment step. Nothing is created in this prototype — no account, no Creator plan, no access.'}
-              </p>
+              {isCommunity ? (
+                <p
+                  className="mt-6 max-w-[520px] text-[15.5px] italic leading-relaxed"
+                  style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
+                >
+                  This step creates your Fresh Collective account, adds
+                  Creator capability on the free Community plan, includes
+                  you in the World Builders Collective, and opens the
+                  first-Collective onboarding. You can start building
+                  straight away.
+                </p>
+              ) : (
+                <>
+                  <PrototypePill className="mt-6" />
+                  <p
+                    className="mt-3 max-w-[520px] text-[15.5px] italic leading-relaxed"
+                    style={{ color: INK_SOFT, fontFamily: 'Georgia, serif' }}
+                  >
+                    In the live flow, account creation follows the payment
+                    step. Nothing is created in this prototype — no
+                    account, no Creator plan, no access.
+                  </p>
+                </>
+              )}
 
               <div
                 className="mt-8 rounded-2xl border p-6 sm:p-7"
@@ -162,11 +209,15 @@ export default async function SignupCreatorPage({
             </div>
 
             <div className="flex justify-center md:justify-end">
-              <PrototypeSignupForm
-                nextHref={nextHref}
-                heading="Create your Fresh Collective account"
-                subheading="A single account carries your membership, your Creator work, and everything you build."
-              />
+              {isCommunity ? (
+                <CommunityCollectiveSignup stage={communityStage(me)} />
+              ) : (
+                <PrototypeSignupForm
+                  nextHref={nextHref}
+                  heading="Create your Fresh Collective account"
+                  subheading="A single account carries your membership, your Creator work, and everything you build."
+                />
+              )}
             </div>
           </div>
         </Container>

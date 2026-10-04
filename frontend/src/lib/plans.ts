@@ -59,8 +59,13 @@ export const PUBLIC_PLANS: Record<CreatorPlanSlug, PublicPlanDisplay> = {
     tagline: 'A first place to gather.',
     priceLabel: 'Free',
     ctaHref: '/signup/creator?plan=community',
+    // Every bullet here is enforced server-side — see
+    // backend/app/creator/plan_guards.py. "approved" was removed from the
+    // first bullet because Community has `approval_required=False` and no
+    // approval step exists anywhere in the platform; promising review we
+    // do not perform is worse than promising nothing.
     summaryBullets: [
-      'One approved Collective',
+      'One Collective',
       'Up to 100 members',
       'Up to 5 Pathways',
       'For non-commercial gatherings',
