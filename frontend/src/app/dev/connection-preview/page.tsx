@@ -73,6 +73,7 @@ export default async function ConnectionPreviewPage({
     state?: string
     convo?: string
     set?: string
+    menu?: string
   }>
 }) {
   if (!(await viewerIsPlatformOwner())) notFound()
@@ -112,12 +113,19 @@ export default async function ConnectionPreviewPage({
   const threads = previewThreadSummaries(artworkByKey)
   const conversation = previewConversation(artworkByKey, convoState)
 
+  // Opens the conversation menu on load, so the rows inside it can be
+  // reviewed without a click — and so the blocked state can be checked
+  // for the absence of Block rather than taken on trust. Independent of
+  // ``convoState``, because it is worth seeing in more than one.
+  const menuOpen = params.menu === 'open'
+
   const href = (next: Partial<Record<string, string>>) => {
     const q = new URLSearchParams({
       view,
       state: wtcState,
       convo: convoState,
       set: set.key,
+      menu: menuOpen ? 'open' : 'closed',
       ...next,
     })
     return `/dev/connection-preview?${q.toString()}`
@@ -163,6 +171,15 @@ export default async function ConnectionPreviewPage({
                 {set.note} Three at a time, as the product shows them.
               </p>
             </>
+          )}
+          {view === 'conversation' && (
+            <Control
+              label="Options menu"
+              options={[
+                { label: 'Closed', href: href({ menu: 'closed' }), active: !menuOpen },
+                { label: 'Open', href: href({ menu: 'open' }), active: menuOpen },
+              ]}
+            />
           )}
           {view === 'conversation' && (
             <Control
@@ -226,7 +243,13 @@ export default async function ConnectionPreviewPage({
             initialThread={conversation}
             currentUserId={PREVIEW_VIEWER_ID}
             previewOnly
-            previewOpen={convoState === 'report' ? 'report' : undefined}
+            previewOpen={
+              convoState === 'report'
+                ? 'report'
+                : menuOpen
+                  ? 'menu'
+                  : undefined
+            }
           />
           {convoState === 'normal' && (
             <p

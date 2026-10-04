@@ -16,8 +16,12 @@
  *      so saving goes through the mechanism already in place rather
  *      than a second request with its own failure modes.
  *
- *   3. The control is a real switch — role + aria-checked bound to
- *      state — so it is announced and operable assistively.
+ *   3. The control is a real switch — announced and operable
+ *      assistively. It now gets that by *being* the shared
+ *      ``platform/Switch`` rather than by hand-rolling
+ *      ``role="switch"`` here, so the assertion follows it: this file
+ *      checks the control is wired to the state, and
+ *      ``switch.test.ts`` checks the switch is a switch.
  *
  *   4. The copy states both directions. A member reading only "show
  *      you people" would not learn that they are shown to others.
@@ -84,8 +88,20 @@ describe('Ways to Connect participation toggle', () => {
     assert.equal(patches.length, 1, 'one Save, one request')
   })
 
-  test('renders as a switch bound to its state', () => {
-    assert.match(CODE, /role="switch"[^]*?aria-checked=\{waysToConnect\}/)
+  test('renders the shared switch, bound to its state', () => {
+    // Not a local copy of one. The copy this replaced drifted from the
+    // canonical geometry and sat its thumb off-centre.
+    assert.match(CODE, /<Switch\s+checked=\{waysToConnect\}/)
+    assert.match(CODE, /from '@\/components\/platform'/)
+  })
+
+  test('no hand-rolled switch markup remains', () => {
+    for (const smell of ['role="switch"', 'translate-x-0.5', 'aria-checked=']) {
+      assert.ok(
+        !CODE.includes(smell),
+        `the shared component owns this now: ${smell}`,
+      )
+    }
   })
 
   test('the switch carries an accessible name', () => {

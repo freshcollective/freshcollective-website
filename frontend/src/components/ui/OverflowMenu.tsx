@@ -18,6 +18,28 @@ interface Props {
   ariaLabel?: string
   /** Menu horizontal alignment relative to the trigger. */
   align?: 'left' | 'right'
+  /**
+   * How much the trigger announces itself at rest.
+   *
+   * ``bare`` is the original: grey dots on nothing until hovered. It
+   * works where the surrounding card already frames it as a control —
+   * a row in a list of Pathways, say.
+   *
+   * ``outlined`` gives it a border and a surface, for somewhere the
+   * dots stand alone next to body content. Without one they read as
+   * decorative punctuation, which is how the safety menu on a
+   * conversation went unfound during review.
+   */
+  appearance?: 'bare' | 'outlined'
+  /**
+   * Visible text beside the dots, shown from ``sm`` up. Off on small
+   * screens, where a header has no room for it and the outline is
+   * doing the work.
+   */
+  triggerLabel?: string
+  /** Render the menu already open. The admin preview harness only — it
+   *  needs the panel visible without a click to screenshot. */
+  defaultOpen?: boolean
 }
 
 /**
@@ -25,8 +47,15 @@ interface Props {
  * Kept lightweight so it can drop into any card without pulling in a full
  * headless-ui / radix dependency.
  */
-export default function OverflowMenu({ items, ariaLabel = 'Actions', align = 'right' }: Props) {
-  const [open, setOpen] = useState(false)
+export default function OverflowMenu({
+  items,
+  ariaLabel = 'Actions',
+  align = 'right',
+  appearance = 'bare',
+  triggerLabel,
+  defaultOpen = false,
+}: Props) {
+  const [open, setOpen] = useState(defaultOpen)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -53,8 +82,31 @@ export default function OverflowMenu({ items, ariaLabel = 'Actions', align = 'ri
         aria-label={ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-navy-900"
+        className={
+          appearance === 'outlined'
+            // 36px tall, so it is a comfortable target on a phone
+            // without becoming a primary action. Focus is visible for
+            // keyboard users and the border makes it legible as a
+            // control before anyone hovers it.
+            ? 'inline-flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-full'
+              + ' border bg-white px-2.5 transition-colors'
+              + ' hover:border-teal-300 hover:text-teal-700'
+              + ' focus-visible:outline-none focus-visible:ring-2'
+              + ' focus-visible:ring-teal-400/40 focus-visible:ring-offset-2'
+            : 'inline-flex h-8 w-8 items-center justify-center rounded-full'
+              + ' text-slate-400 transition-colors hover:bg-slate-100 hover:text-navy-900'
+        }
+        style={
+          appearance === 'outlined'
+            ? { borderColor: 'rgba(12,24,38,0.16)', color: 'rgba(12,24,38,0.62)' }
+            : undefined
+        }
       >
+        {triggerLabel && (
+          <span className="hidden text-[13px] font-medium sm:inline">
+            {triggerLabel}
+          </span>
+        )}
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <circle cx="5" cy="12" r="1.75" />
           <circle cx="12" cy="12" r="1.75" />

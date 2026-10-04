@@ -56,9 +56,19 @@ describe('the composer closes when a block stands', () => {
 describe('the safety controls are quiet', () => {
   const src = codeOnly(CLIENT)
 
-  test('they sit behind one unobtrusive control', () => {
-    assert.match(src, /setSafetyOpen\(\(open\) => !open\)/)
-    assert.match(src, /Safety options for this conversation/)
+  test('they sit behind one control, not loose in the conversation', () => {
+    // The intent is unchanged — one control, not a row of moderation
+    // buttons over somebody's conversation. What changed is that the
+    // control is now the shared menu with a border and a word on it:
+    // the original was three grey dots rendered as text, and on review
+    // it could not be found at all. See conversationOptions.test.ts for
+    // the affordance itself.
+    assert.equal((src.match(/<OverflowMenu/g) ?? []).length, 1)
+    assert.match(src, /ariaLabel="Conversation options"/)
+    assert.ok(
+      !src.includes('Safety options for this conversation'),
+      'the hand-rolled trigger is gone',
+    )
   })
 
   test('block asks for confirmation and explains the consequences', () => {

@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Avatar from '@/components/ui/Avatar'
+import { Switch } from '@/components/platform'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import type { UserProfile } from '@/types/platform'
 
@@ -211,23 +212,19 @@ export default function ProfileForm({ profile }: Props) {
               instead.
             </p>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={isPublic}
-            onClick={() => setIsPublic(!isPublic)}
-            className={[
-              'relative mt-0.5 h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-teal-300 focus:ring-offset-1',
-              isPublic ? 'bg-teal-500' : 'bg-slate-200',
-            ].join(' ')}
-          >
-            <span
-              className={[
-                'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
-                isPublic ? 'translate-x-4' : 'translate-x-0.5',
-              ].join(' ')}
+          {/* The shared Switch, not a local copy of one. The copy
+              this replaced anchored its thumb at 0 and translated by
+              16px, which left 2px of track on one side and 4px on the
+              other — the off-centre thumb seen on review. It also had
+              no accessible name at all, being a bare role="switch"
+              button with no text inside it. */}
+          <span className="mt-0.5 shrink-0">
+            <Switch
+              checked={isPublic}
+              onChange={() => setIsPublic(!isPublic)}
+              aria-label="Public profile"
             />
-          </button>
+          </span>
         </div>
 
         {/* Recognition participation. Saved by the same submit as the
@@ -246,24 +243,13 @@ export default function ProfileForm({ profile }: Props) {
               Connect in both directions.
             </p>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={waysToConnect}
-            aria-label="Include me in Ways to Connect"
-            onClick={() => setWaysToConnect(!waysToConnect)}
-            className={[
-              'relative mt-0.5 h-6 w-10 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-teal-300 focus:ring-offset-1',
-              waysToConnect ? 'bg-teal-500' : 'bg-slate-200',
-            ].join(' ')}
-          >
-            <span
-              className={[
-                'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
-                waysToConnect ? 'translate-x-4' : 'translate-x-0.5',
-              ].join(' ')}
+          <span className="mt-0.5 shrink-0">
+            <Switch
+              checked={waysToConnect}
+              onChange={() => setWaysToConnect(!waysToConnect)}
+              aria-label="Include me in Ways to Connect"
             />
-          </button>
+          </span>
         </div>
       </div>
 

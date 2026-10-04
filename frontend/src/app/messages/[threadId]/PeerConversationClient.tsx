@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import MemberImage from '@/components/ui/MemberImage'
+import OverflowMenu from '@/components/ui/OverflowMenu'
 import {
   blockPeer,
   fetchPeerThread,
@@ -48,7 +49,9 @@ export default function PeerConversationClient({
   const [error, setError] = useState<string | null>(null)
   // Safety controls are deliberately out of the way until asked for:
   // a conversation should not carry a visible threat of moderation.
-  const [safetyOpen, setSafetyOpen] = useState(previewOpen === 'menu')
+  // No ``safetyOpen`` any more: the menu owns its own open state, and
+  // owns closing on Escape and on an outside click — neither of which
+  // the hand-rolled panel did.
   const [confirmBlock, setConfirmBlock] = useState(false)
   const [reporting, setReporting] = useState(previewOpen === 'report')
   const [reportCategory, setReportCategory] = useState<string>('')
@@ -57,6 +60,9 @@ export default function PeerConversationClient({
   const [busy, setBusy] = useState(false)
 
   const name = participantName(thread.other)
+  // "Block Maya" rather than "Block Maya Fuller": a menu row is short,
+  // and the confirmation that follows still names her in full.
+  const firstName = name.split(/\s+/)[0] || name
 
   async function reload() {
     if (previewOnly) return
@@ -70,7 +76,6 @@ export default function PeerConversationClient({
       if (!previewOnly) await blockPeer(thread.thread_id)
       await reload()
       setConfirmBlock(false)
-      setSafetyOpen(false)
     } catch {
       setError('That didn’t work. Please try again.')
     } finally {
@@ -169,45 +174,44 @@ export default function PeerConversationClient({
         <h1 className="flex-1 font-serif text-[20px]" style={{ color: '#0C1826' }}>
           {name}
         </h1>
-        {/* Low-noise: a single unobtrusive control, not a row of
-            moderation buttons sitting over the conversation. */}
-        <button
-          type="button"
-          onClick={() => setSafetyOpen((open) => !open)}
-          aria-expanded={safetyOpen}
-          className="shrink-0 rounded-full px-2 py-1 text-[13px] transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40"
-          style={{ color: 'rgba(12, 24, 38, 0.55)' }}
-        >
-          <span aria-hidden="true">···</span>
-          <span className="sr-only">Safety options for this conversation</span>
-        </button>
-      </div>
+        {/* Still quiet — a single control in the corner, not a row of
+            moderation buttons over the conversation. But outlined, so
+            it reads as something you can press. Three grey dots on
+            nothing read as punctuation, and the menu went unfound.
 
-      {safetyOpen && !thread.blocked_by_me && (
-        <div
-          className="mt-3 rounded-xl p-3"
-          style={{ background: '#FAFAF8', border: '1px solid rgba(12,24,38,0.08)' }}
-        >
-          <div className="flex flex-wrap gap-4">
-            <button
-              type="button"
-              onClick={() => { setConfirmBlock(true); setReporting(false) }}
-              className="text-[13px] font-medium transition-opacity hover:opacity-70"
-              style={{ color: '#0C1826' }}
-            >
-              Block {name}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setReporting(true); setConfirmBlock(false) }}
-              className="text-[13px] font-medium transition-opacity hover:opacity-70"
-              style={{ color: '#0C1826' }}
-            >
-              Report {name}
-            </button>
-          </div>
+            Block and Report stay behind it: they belong to the
+            conversation, not in it. */}
+        <div className="shrink-0">
+          <OverflowMenu
+            appearance="outlined"
+            triggerLabel="More"
+            ariaLabel="Conversation options"
+            defaultOpen={previewOpen === 'menu'}
+            items={
+              thread.blocked_by_me
+                // Already blocked: offering Block again says nothing.
+                // Unblock lives in the conversation body, where the
+                // blocked state explains itself.
+                ? [
+                    {
+                      label: `Report ${firstName}`,
+                      onClick: () => { setReporting(true); setConfirmBlock(false) },
+                    },
+                  ]
+                : [
+                    {
+                      label: `Block ${firstName}`,
+                      onClick: () => { setConfirmBlock(true); setReporting(false) },
+                    },
+                    {
+                      label: `Report ${firstName}`,
+                      onClick: () => { setReporting(true); setConfirmBlock(false) },
+                    },
+                  ]
+            }
+          />
         </div>
-      )}
+      </div>
 
       {confirmBlock && (
         <div

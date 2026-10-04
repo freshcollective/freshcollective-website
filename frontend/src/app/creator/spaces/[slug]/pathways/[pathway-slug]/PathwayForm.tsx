@@ -111,8 +111,8 @@ export default function PathwayForm({
           >
             <span
               className={[
-                'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
-                isSequential ? 'translate-x-4' : 'translate-x-0.5',
+                'absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform',
+                isSequential ? 'translate-x-4' : 'translate-x-0',
               ].join(' ')}
             />
           </button>
