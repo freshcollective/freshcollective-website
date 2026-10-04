@@ -3,9 +3,13 @@
 import { useState } from 'react'
 import MemberImage from '@/components/ui/MemberImage'
 import {
+  blockPeer,
   fetchPeerThread,
   participantName,
+  REPORT_CATEGORIES,
+  reportPeer,
   sendPeerMessage,
+  unblockPeer,
   type PeerThreadDetail,
 } from '@/lib/peerMessages'
 
@@ -31,8 +35,72 @@ export default function PeerConversationClient({
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Safety controls are deliberately out of the way until asked for:
+  // a conversation should not carry a visible threat of moderation.
+  const [safetyOpen, setSafetyOpen] = useState(false)
+  const [confirmBlock, setConfirmBlock] = useState(false)
+  const [reporting, setReporting] = useState(false)
+  const [reportCategory, setReportCategory] = useState<string>('')
+  const [reportNote, setReportNote] = useState('')
+  const [caseNumber, setCaseNumber] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const name = participantName(thread.other)
+
+  async function reload() {
+    setThread(await fetchPeerThread(thread.thread_id))
+  }
+
+  async function doBlock() {
+    setBusy(true)
+    setError(null)
+    try {
+      await blockPeer(thread.thread_id)
+      await reload()
+      setConfirmBlock(false)
+      setSafetyOpen(false)
+    } catch {
+      setError('That didn’t work. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doUnblock() {
+    setBusy(true)
+    setError(null)
+    try {
+      await unblockPeer(thread.thread_id)
+      // Re-read rather than assuming: if the other person has also
+      // blocked, the conversation stays closed and the server is the
+      // only thing that knows.
+      await reload()
+    } catch {
+      setError('That didn’t work. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doReport(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!reportCategory || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      const number = await reportPeer(
+        thread.thread_id, reportCategory, reportNote.trim() || undefined,
+      )
+      setCaseNumber(number)
+      setReporting(false)
+      setReportCategory('')
+      setReportNote('')
+    } catch {
+      setError('We couldn’t send that. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -62,10 +130,183 @@ export default function PeerConversationClient({
         <span className="h-11 w-11 shrink-0 overflow-hidden rounded-full">
           <MemberImage image={thread.other.image} className="h-11 w-11" />
         </span>
-        <h1 className="font-serif text-[20px]" style={{ color: '#0C1826' }}>
+        <h1 className="flex-1 font-serif text-[20px]" style={{ color: '#0C1826' }}>
           {name}
         </h1>
+        {/* Low-noise: a single unobtrusive control, not a row of
+            moderation buttons sitting over the conversation. */}
+        <button
+          type="button"
+          onClick={() => setSafetyOpen((open) => !open)}
+          aria-expanded={safetyOpen}
+          className="shrink-0 rounded-full px-2 py-1 text-[13px] transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40"
+          style={{ color: 'rgba(12, 24, 38, 0.55)' }}
+        >
+          <span aria-hidden="true">···</span>
+          <span className="sr-only">Safety options for this conversation</span>
+        </button>
       </div>
+
+      {safetyOpen && !thread.blocked_by_me && (
+        <div
+          className="mt-3 rounded-xl p-3"
+          style={{ background: '#FAFAF8', border: '1px solid rgba(12,24,38,0.08)' }}
+        >
+          <div className="flex flex-wrap gap-4">
+            <button
+              type="button"
+              onClick={() => { setConfirmBlock(true); setReporting(false) }}
+              className="text-[13px] font-medium transition-opacity hover:opacity-70"
+              style={{ color: '#0C1826' }}
+            >
+              Block {name}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setReporting(true); setConfirmBlock(false) }}
+              className="text-[13px] font-medium transition-opacity hover:opacity-70"
+              style={{ color: '#0C1826' }}
+            >
+              Report {name}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {confirmBlock && (
+        <div
+          className="mt-3 rounded-xl p-4"
+          style={{ background: '#FAFAF8', border: '1px solid rgba(12,24,38,0.12)' }}
+        >
+          <p className="text-[13.5px] leading-[1.55]" style={{ color: '#0C1826' }}>
+            Block {name}?
+          </p>
+          <p
+            className="mt-1.5 text-[12.5px] leading-[1.55]"
+            style={{ color: 'rgba(12, 24, 38, 0.62)' }}
+          >
+            You won&rsquo;t be able to message each other, and you
+            won&rsquo;t appear to each other in Ways to Connect. Your
+            existing conversation will remain. {name} won&rsquo;t be told.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={doBlock}
+              disabled={busy}
+              className="rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              style={{ background: '#0C1826' }}
+            >
+              {busy ? 'Blocking…' : 'Block'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmBlock(false)}
+              className="text-[13px] font-medium"
+              style={{ color: 'rgba(12, 24, 38, 0.6)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {reporting && (
+        <form
+          onSubmit={doReport}
+          className="mt-3 rounded-xl p-4"
+          style={{ background: '#FAFAF8', border: '1px solid rgba(12,24,38,0.12)' }}
+        >
+          <p className="text-[13.5px]" style={{ color: '#0C1826' }}>
+            Tell Fresh Collective what happened
+          </p>
+          <label htmlFor="report-category" className="sr-only">
+            What kind of problem is it?
+          </label>
+          <select
+            id="report-category"
+            value={reportCategory}
+            onChange={(e) => setReportCategory(e.target.value)}
+            required
+            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13.5px]"
+          >
+            <option value="">Choose a reason…</option>
+            {REPORT_CATEGORIES.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+          <label htmlFor="report-note" className="sr-only">
+            Anything you&rsquo;d like to add
+          </label>
+          <textarea
+            id="report-note"
+            value={reportNote}
+            onChange={(e) => setReportNote(e.target.value)}
+            rows={3}
+            placeholder="Anything you'd like to add…"
+            required={reportCategory === 'something_else'}
+            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13.5px]"
+          />
+          <p
+            className="mt-2 text-[12px] leading-[1.5]"
+            style={{ color: 'rgba(12, 24, 38, 0.62)' }}
+          >
+            A person at Fresh Collective will read this. {name} won&rsquo;t
+            be told you reported them. Reporting doesn&rsquo;t block
+            them — you can do that separately.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={busy || !reportCategory}
+              className="rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+            >
+              {busy ? 'Sending…' : 'Send report'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setReporting(false)}
+              className="text-[13px] font-medium"
+              style={{ color: 'rgba(12, 24, 38, 0.6)' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+
+      {caseNumber && (
+        <div
+          role="status"
+          className="mt-3 rounded-xl p-4"
+          style={{
+            background: 'rgba(56,160,158,0.06)',
+            border: '1px solid rgba(56,160,158,0.24)',
+          }}
+        >
+          <p className="text-[13.5px]" style={{ color: '#0C1826' }}>
+            Thank you for telling us.
+          </p>
+          <p
+            className="mt-1 text-[12.5px] leading-[1.55]"
+            style={{ color: 'rgba(12, 24, 38, 0.62)' }}
+          >
+            Someone at Fresh Collective will look into it. Your
+            reference is {caseNumber}.
+          </p>
+          {!thread.blocked_by_me && (
+            <button
+              type="button"
+              onClick={() => { setCaseNumber(null); setConfirmBlock(true) }}
+              className="mt-2 text-[13px] font-semibold transition-opacity hover:opacity-70"
+              style={{ color: '#2F8F8D' }}
+            >
+              Would you also like to block {name}?
+            </button>
+          )}
+        </div>
+      )}
 
       <ul className="mt-6 flex flex-col gap-3">
         {thread.messages.length === 0 && (
@@ -107,6 +348,56 @@ export default function PeerConversationClient({
         })}
       </ul>
 
+      {!thread.can_send ? (
+        /* Composer replaced, not disabled-looking: a greyed-out box
+           reads as something broken. The blocker is told plainly and
+           offered the way back; the person who was blocked is told only
+           that the conversation is closed, never by whom — which is why
+           this branches on ``blocked_by_me`` rather than on who is
+           viewing. */
+        <div
+          className="mt-6 rounded-xl p-4"
+          style={{ background: '#FAFAF8', border: '1px solid rgba(12,24,38,0.10)' }}
+        >
+          {thread.blocked_by_me ? (
+            <>
+              <p className="text-[13.5px]" style={{ color: '#0C1826' }}>
+                You&rsquo;ve blocked {name}.
+              </p>
+              <p
+                className="mt-1 text-[12.5px] leading-[1.55]"
+                style={{ color: 'rgba(12, 24, 38, 0.62)' }}
+              >
+                Neither of you can send messages, and you won&rsquo;t
+                appear to each other in Ways to Connect. Your
+                conversation is still here.
+              </p>
+              <button
+                type="button"
+                onClick={doUnblock}
+                disabled={busy}
+                className="mt-3 text-[13px] font-semibold transition-opacity hover:opacity-70 disabled:opacity-60"
+                style={{ color: '#2F8F8D' }}
+              >
+                {busy ? 'Unblocking…' : `Unblock ${name}`}
+              </button>
+            </>
+          ) : (
+            <p
+              className="text-[13.5px] leading-[1.55]"
+              style={{ color: 'rgba(12, 24, 38, 0.70)' }}
+            >
+              You can&rsquo;t send messages in this conversation. Your
+              history is still here.
+            </p>
+          )}
+          {error && (
+            <p className="mt-2 text-[12.5px]" style={{ color: '#B4483C' }}>
+              {error}
+            </p>
+          )}
+        </div>
+      ) : (
       <form onSubmit={submit} className="mt-6">
         <label htmlFor="peer-message" className="sr-only">
           Message {name}
@@ -135,6 +426,7 @@ export default function PeerConversationClient({
           </button>
         </div>
       </form>
+      )}
     </div>
   )
 }

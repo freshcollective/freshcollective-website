@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.models.connections import MemberHello
 from app.models.peer_messages import PeerMessage, PeerThread, canonical_pair
+from app.services.member_block_service import is_blocked_between
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +61,35 @@ def sanitize_body(text: str) -> str:
     return _HTML_RE.sub("", text).strip()
 
 
+class Blocked(Exception):
+    """An active block in one direction or the other."""
+
+
+def may_interact(db: Session, user_a: str, user_b: str) -> bool:
+    """The whole authorisation rule for peer messaging, in one place.
+
+    Mutual hello AND no active block in either direction. Block
+    outranks the connection: a mutual hello says two people agreed to
+    talk, a block says one of them has withdrawn that, and withdrawal
+    wins.
+
+    Every peer route goes through this rather than asking the two
+    questions separately, so a future surface cannot check connection
+    and forget the block.
+    """
+    return are_mutually_connected(db, user_a, user_b) and not is_blocked_between(
+        db, user_a, user_b
+    )
+
+
 def are_mutually_connected(db: Session, user_a: str, user_b: str) -> bool:
     """Do both directional hello rows exist?
 
     Two rows, counted in one query. A one-sided hello — in either
     direction — is not a connection and grants nothing.
+
+    Says nothing about blocks: callers wanting the full rule use
+    :func:`may_interact`.
     """
     if user_a == user_b:
         return False
@@ -111,6 +136,11 @@ def get_or_create_thread(db: Session, user_a: str, user_b: str) -> PeerThread:
         raise NotConnected("A member cannot hold a conversation with themselves.")
     if not are_mutually_connected(db, user_a, user_b):
         raise NotConnected("These members are not mutually connected.")
+    if is_blocked_between(db, user_a, user_b):
+        # No new conversation while a block stands. An existing one
+        # stays readable — see ``thread_for_participant`` — but there is
+        # nothing to open between two people who have withdrawn.
+        raise Blocked("These members cannot start a conversation.")
 
     low, high = canonical_pair(user_a, user_b)
     db.execute(
@@ -189,6 +219,11 @@ def send_message(
     other = thread.other_participant(sender_id)
     if not are_mutually_connected(db, sender_id, other):
         raise NotConnected("These members are not mutually connected.")
+    if is_blocked_between(db, sender_id, other):
+        # Checked on every send, not only at thread creation: a block
+        # set after a conversation began must stop it, in both
+        # directions, without anybody having to close the thread.
+        raise Blocked("You cannot send a message in this conversation.")
 
     body = sanitize_body(raw_body)
     if not body:

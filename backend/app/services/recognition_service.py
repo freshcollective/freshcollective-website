@@ -396,6 +396,23 @@ class RecognitionService:
             return []
 
         eligible = _eligible_peer_ids(db, set(shared_spaces))            # 4
+
+        # Blocks are removed here, at the one place every Ways to
+        # Connect surface draws its candidates from — the listing route
+        # and the Say-hello authorisation both call ``for_user``, so
+        # neither can forget. Filtering in the frontend, or in the
+        # selection step downstream, would leave the hello endpoint
+        # able to greet somebody who had blocked the caller.
+        #
+        # Symmetric: a block in either direction removes the pair, so
+        # neither person surfaces to the other. The hello rows
+        # themselves are untouched — a block outranks a connection
+        # rather than undoing it, which is what lets an unblock restore
+        # things without anybody having to say hello again.
+        blocked = _blocked_peer_ids(db, user_id)
+        if blocked:
+            eligible = {peer for peer in eligible if peer not in blocked}
+
         if not eligible:
             return []
 
@@ -552,6 +569,17 @@ def _peer_shared_space_ids(
     for peer_id, space_id in db.execute(stmt).all():
         shared.setdefault(peer_id, set()).add(space_id)
     return shared
+
+
+def _blocked_peer_ids(db: Session, user_id: str) -> set[str]:
+    """Everyone this member cannot be shown, in either direction.
+
+    Thin wrapper over ``member_block_service`` so Recognition does not
+    learn the block schema — the rule stays in one module.
+    """
+    from app.services.member_block_service import blocked_user_ids
+
+    return blocked_user_ids(db, user_id)
 
 
 def _eligible_peer_ids(db: Session, candidate_ids: set[str]) -> set[str]:

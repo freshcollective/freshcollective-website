@@ -24,7 +24,9 @@ from app.core.database import get_db
 from app.models.peer_messages import PeerThread
 from app.models.platform import CreatorProfile
 from app.models.user import User
+from app.community_care.peer_reports import REPORT_CATEGORIES, submit_peer_report
 from app.peer_messages import service
+from app.services import member_block_service
 from app.services.member_identity import optional_display_name
 from app.services.member_image import (
     MemberCardArtwork,
@@ -73,6 +75,15 @@ class PeerThreadDetail(BaseModel):
     thread_id: str
     other: PeerParticipant
     messages: list[PeerMessageOut]
+    #: True when *the caller* has blocked the other person. One-sided on
+    #: purpose: somebody who has been blocked is never told, so this is
+    #: False for them and the composer is simply unavailable.
+    blocked_by_me: bool = False
+    #: Whether a message may be sent right now. False while a block
+    #: stands in either direction — so the person who was blocked sees a
+    #: closed composer without being told why, and without being told by
+    #: whom.
+    can_send: bool = True
 
 
 class SendPeerMessageRequest(BaseModel):
@@ -201,7 +212,10 @@ def open_thread(
     """
     try:
         thread = service.get_or_create_thread(db, current_user.id, body.user_id)
-    except service.NotConnected:
+    except (service.NotConnected, service.Blocked):
+        # Same 404 for both: a distinct status would tell the blocked
+        # person that they have been blocked, which is exactly what the
+        # product must not disclose.
         raise _not_found() from None
 
     db.commit()
@@ -241,7 +255,8 @@ def send_peer_message(
         message = service.send_message(
             db, thread, current_user.id, body.body,
         )
-    except (service.NotAParticipant, service.NotConnected):
+    except (service.NotAParticipant, service.NotConnected, service.Blocked):
+        # Indistinguishable by design — see ``open_thread``.
         raise _not_found() from None
     except service.EmptyMessage as exc:
         raise HTTPException(
@@ -323,6 +338,8 @@ def _detail(db: Session, thread: PeerThread, viewer_id: str) -> PeerThreadDetail
     return PeerThreadDetail(
         thread_id=thread.id,
         other=person,
+        blocked_by_me=member_block_service.has_blocked(db, viewer_id, other_id),
+        can_send=service.may_interact(db, viewer_id, other_id),
         messages=[
             PeerMessageOut(
                 id=m.id,
@@ -334,3 +351,149 @@ def _detail(db: Session, thread: PeerThread, viewer_id: str) -> PeerThreadDetail
             for m in service.messages_for(db, thread)
         ],
     )
+
+# ---------------------------------------------------------------------------
+# Safety — block, unblock, report
+# ---------------------------------------------------------------------------
+
+
+class BlockStateOut(BaseModel):
+    """Whether the *caller* has blocked the other person.
+
+    Deliberately one-sided. A member who has been blocked is never told
+    so: they see a conversation they cannot send into, not a notice
+    naming the person who closed it. Telling them would turn a boundary
+    into a confrontation, and it is not information they need.
+    """
+    blocked_by_me: bool
+
+
+class ReportPeerRequest(BaseModel):
+    category: str
+    reporter_note: str | None = None
+    #: Optional. Must belong to this thread — checked server-side.
+    message_id: str | None = None
+
+
+class ReportPeerResult(BaseModel):
+    case_number: str
+
+
+@router.post("/{thread_id}/block", response_model=BlockStateOut)
+def block_peer(
+    thread_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BlockStateOut:
+    """Block the other participant in this conversation.
+
+    Reached from inside a conversation rather than from an arbitrary
+    user id, so a block is always something a member does to someone
+    they are actually talking to.
+
+    Idempotent. No notification of any kind: the blocked person is not
+    told, which is the whole point.
+    """
+    try:
+        thread = service.thread_for_participant(db, thread_id, current_user.id)
+    except service.NotAParticipant:
+        raise _not_found() from None
+
+    other_id = thread.other_participant(current_user.id)
+    member_block_service.block(db, current_user.id, other_id)
+    db.commit()
+    return BlockStateOut(blocked_by_me=True)
+
+
+@router.delete("/{thread_id}/block", response_model=BlockStateOut)
+def unblock_peer(
+    thread_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BlockStateOut:
+    """Remove the block the caller set.
+
+    Only ever clears the caller's own row. If the other person has also
+    blocked them, the pair stays blocked — asymmetric state resolves
+    only when both sides have cleared, and this endpoint has no way to
+    reach somebody else's boundary.
+
+    Messaging resumes only when no block remains in either direction
+    *and* the mutual hello still stands; nobody has to say hello again,
+    because the hello rows were never removed.
+    """
+    try:
+        thread = service.thread_for_participant(db, thread_id, current_user.id)
+    except service.NotAParticipant:
+        raise _not_found() from None
+
+    other_id = thread.other_participant(current_user.id)
+    member_block_service.unblock(db, current_user.id, other_id)
+    db.commit()
+    return BlockStateOut(blocked_by_me=False)
+
+
+@router.post("/{thread_id}/report", response_model=ReportPeerResult, status_code=201)
+def report_peer(
+    thread_id: str,
+    body: ReportPeerRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReportPeerResult:
+    """Report the other participant to Fresh Collective.
+
+    Routes into the existing Community Care framework rather than a
+    second reporting system, and needs no schema change to do it:
+    ``member_behaviour`` is already a permitted case ``content_type``,
+    ``subject_space_id`` is already nullable, and ``content_snapshot``
+    already exists to hold "a point-in-time copy of the reported
+    content... kept for review and audit even if the source is later
+    edited or removed". The conversation reference and the messages go
+    there.
+
+    Reporting does not block. The two are offered together in the UI
+    but are independent actions, so a member can report without
+    withdrawing and withdraw without reporting.
+
+    The reported person is not notified.
+    """
+    try:
+        thread = service.thread_for_participant(db, thread_id, current_user.id)
+    except service.NotAParticipant:
+        raise _not_found() from None
+
+    if body.category not in REPORT_CATEGORIES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unknown report category.",
+        )
+    note = (body.reporter_note or "").strip() or None
+    if body.category == "something_else" and not note:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Please tell us what happened.",
+        )
+
+    other_id = thread.other_participant(current_user.id)
+
+    # An optional message reference must belong to this conversation —
+    # otherwise the field would let a participant attach somebody
+    # else's message to their report.
+    messages = service.messages_for(db, thread)
+    if body.message_id is not None and body.message_id not in {
+        m.id for m in messages
+    }:
+        raise _not_found()
+
+    case_number = submit_peer_report(
+        db,
+        reporter_user_id=current_user.id,
+        reported_user_id=other_id,
+        thread_id=thread.id,
+        category=body.category,
+        reporter_note=note,
+        message_id=body.message_id,
+        messages=messages,
+    )
+    db.commit()
+    return ReportPeerResult(case_number=case_number)
