@@ -40,6 +40,7 @@ from app.services.test_account_cleanup import (
     protected_snapshot,
     recheck_unchanged,
     user_fk_columns,
+    verify_deletion_outcome,
     verify_protected_intact,
 )
 
@@ -857,3 +858,173 @@ class TestTheRecheckBeforeMutation:
         ), {"i": _uid("n"), "u": jenson.id})
         db.flush()
         assert recheck_unchanged(db, plan) == []
+
+
+class TestTheDeletionOutcomeCheck:
+    """The post-delete verification, which had the scoping bug.
+
+    It asserted that every account in ``TARGET_EMAILS`` was gone — true
+    while every run deleted all three, and wrong the moment ``--only``
+    could retain one. A correctly scoped Jenson-only apply failed on the
+    two retained accounts still being present, which was the entire
+    point of retaining them.
+
+    Two obligations now, and they are opposite: in-scope accounts must
+    be absent, retained accounts must still be there.
+    """
+
+    def test_whole_set_apply_requires_every_target_absent(self, db, mk):
+        mk(JENSON)
+        mk(CREATOR)
+        mk(LINDSEY_TEST)
+
+        plan = audit(db)
+        apply_cleanup(db, plan)
+        db.flush()
+
+        assert verify_deletion_outcome(db, plan) == []
+        for email in TARGET_EMAILS:
+            assert db.scalar(
+                text("SELECT count(*) FROM users WHERE lower(email) = :e"),
+                {"e": email},
+            ) == 0, email
+
+    def test_jenson_only_passes_with_the_others_retained(
+        self, db, mk, make_space,
+    ):
+        """The exact production scenario that failed."""
+        jenson = mk(JENSON, role="creator")
+        creator = mk(CREATOR)
+        lindsey = mk(LINDSEY_TEST)
+        tom = mk(TOM, name="Tom Test")
+        space = make_space(creator=jenson, slug="jensons-test-community")
+        db.add(SpaceMembership(
+            id=_uid("sm"), space_id=space.id, user_id=jenson.id,
+            role=SpaceRole.creator, status=SpaceMembershipStatus.active,
+            joined_at=datetime.utcnow(),
+        ))
+        db.flush()
+        before = protected_snapshot(db)
+
+        plan = audit(db, apply_to=(JENSON,))
+        assert plan.safe
+        apply_cleanup(db, plan)
+        db.flush()
+
+        assert verify_deletion_outcome(db, plan) == [], (
+            "a correctly scoped run must not be reported as a failure"
+        )
+        assert not _exists(db, jenson.id), "Jenson absent"
+        assert _exists(db, creator.id), "Creator Test remains"
+        assert _exists(db, lindsey.id), "Lindsey Test remains"
+        assert _exists(db, tom.id), "Tom Test remains"
+        assert verify_protected_intact(db, before) == []
+
+    def test_only_the_scoped_account_is_required_absent(self, db, mk):
+        """Scoped to a different approved target: the check follows the
+        scope rather than the approved list."""
+        jenson = mk(JENSON)
+        creator = mk(CREATOR)
+        lindsey = mk(LINDSEY_TEST)
+
+        plan = audit(db, apply_to=(LINDSEY_TEST,))
+        apply_cleanup(db, plan)
+        db.flush()
+
+        assert verify_deletion_outcome(db, plan) == []
+        assert not _exists(db, lindsey.id)
+        assert _exists(db, jenson.id)
+        assert _exists(db, creator.id)
+
+    def test_a_retained_account_disappearing_is_a_failure(self, db, mk):
+        """The other direction. If the delete reached further than its
+        scope, this is what notices."""
+        jenson = mk(JENSON)
+        creator = mk(CREATOR)
+
+        plan = audit(db, apply_to=(JENSON,))
+        apply_cleanup(db, plan)
+        db.flush()
+        assert verify_deletion_outcome(db, plan) == []
+
+        # Simulate the cascade having reached a retained account.
+        db.execute(text("DELETE FROM users WHERE id = :u"), {"u": creator.id})
+        db.flush()
+
+        problems = verify_deletion_outcome(db, plan)
+        assert problems
+        assert any(
+            CREATOR in p and "retained but has disappeared" in p
+            for p in problems
+        ), problems
+
+    def test_an_in_scope_account_surviving_is_a_failure(self, db, mk):
+        """And the first direction still works — the check did not get
+        narrowed into uselessness."""
+        jenson = mk(JENSON)
+        plan = audit(db, apply_to=(JENSON,))
+        # Never applied, so Jenson is still there.
+        problems = verify_deletion_outcome(db, plan)
+        assert any(
+            JENSON in p and "still present after delete" in p
+            for p in problems
+        ), problems
+
+    def test_protected_tom_disappearing_is_a_failure(self, db, mk):
+        tom = mk(TOM, name="Tom Test")
+        mk(JENSON)
+        before = protected_snapshot(db)
+        assert before[TOM]["present"] == 1
+
+        db.execute(text("DELETE FROM users WHERE id = :u"), {"u": tom.id})
+        db.flush()
+
+        problems = verify_protected_intact(db, before)
+        assert problems
+        assert any("presence changed" in p for p in problems)
+
+    def test_the_script_rolls_back_on_any_verification_failure(self):
+        """Source contract: every verification failure has to reach the
+        rollback, not just the first one. The three checks raise or
+        return 2, and both paths roll back."""
+        src = (
+            __import__("pathlib").Path("scripts/cleanup_production_test_accounts.py")
+            .read_text()
+        )
+        code = __import__("re").sub(r'"""[\s\S]*?"""', "", src)
+        code = __import__("re").sub(r"#.*", "", code)
+
+        # The outcome check raises, and the except clause rolls back.
+        assert "verify_deletion_outcome(db, plan)" in code
+        assert "raise RuntimeError" in code
+        tail = code[code.index("except Exception:"):]
+        assert "db.rollback()" in tail
+        assert "return 1" in tail
+
+        # The pre-mutation re-check returns 2, and rolls back explicitly.
+        recheck = code[code.index("recheck_unchanged(db, plan)"):]
+        assert "db.rollback()" in recheck[:recheck.index("apply_cleanup")]
+
+        # Nothing commits before the verifications.
+        commit_at = code.index("db.commit()")
+        for check in (
+            "recheck_unchanged(db, plan)",
+            "verify_deletion_outcome(db, plan)",
+            "verify_protected_intact(db, before)",
+        ):
+            assert code.index(check) < commit_at, check
+
+    def test_the_old_whole_list_assumption_is_gone(self):
+        """The bug in one assertion: the check must not iterate the
+        approved list where it means the scoped set."""
+        src = (
+            __import__("pathlib").Path("app/services/test_account_cleanup.py")
+            .read_text()
+        )
+        fn = src[src.index("def verify_deletion_outcome"):]
+        fn = fn[:fn.index("def verify_protected_intact")]
+        code = __import__("re").sub(r'"""[\s\S]*?"""', "", fn)
+        assert "in_scope" in code, "the outcome check must consult the scope"
+        assert "TARGET_EMAILS" not in code, (
+            "the outcome check must not reason about the approved list"
+        )

@@ -677,6 +677,52 @@ def recheck_unchanged(db: Session, plan: CleanupPlan) -> list[str]:
     return problems
 
 
+def verify_deletion_outcome(db: Session, plan: CleanupPlan) -> list[str]:
+    """What actually happened to each account. Empty list is good.
+
+    Both directions, because a scoped run has two obligations and they
+    are opposite:
+
+      * every **in-scope** account that was present must now be absent;
+      * every **retained** account that was present must still be
+        present.
+
+    The check this replaces asserted the first against the whole of
+    ``TARGET_EMAILS``. That was written before ``--only`` existed and
+    was correct while every run deleted all three. Once a run could
+    retain an account, the same code demanded that the retained
+    accounts be gone — so a correctly scoped Jenson-only apply failed
+    on ``hello@freshcollective.au`` and ``lindsey.wd@gmail.com`` still
+    being there, which was the whole point of retaining them.
+
+    Called inside the transaction, so anything it returns rolls the
+    delete back. Protected accounts are covered separately by
+    ``verify_protected_intact``, which compares a full before/after
+    snapshot rather than mere presence.
+    """
+    problems: list[str] = []
+
+    def exists(user_id: str) -> bool:
+        return bool(db.execute(
+            text("SELECT 1 FROM users WHERE id = :uid"), {"uid": user_id},
+        ).first())
+
+    for finding in plan.findings:
+        if not finding.present or finding.user_id is None:
+            continue
+        if finding.in_scope:
+            if exists(finding.user_id):
+                problems.append(
+                    f"{finding.email}: still present after delete"
+                )
+        else:
+            if not exists(finding.user_id):
+                problems.append(
+                    f"{finding.email}: was retained but has disappeared"
+                )
+    return problems
+
+
 def verify_protected_intact(
     db: Session, before: dict[str, dict[str, int | str]],
 ) -> list[str]:

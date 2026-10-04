@@ -81,6 +81,7 @@ from app.services.test_account_cleanup import (
     audit,
     protected_snapshot,
     recheck_unchanged,
+    verify_deletion_outcome,
     verify_protected_intact,
 )
 
@@ -315,17 +316,13 @@ def main() -> int:
                     + "; ".join(problems)
                 )
 
-            # Re-resolve the targets: all three must now be gone.
-            still_there = [
-                f.email for f in plan.findings
-                if f.present and db.execute(
-                    text("SELECT 1 FROM users WHERE id = :uid"),
-                    {"uid": f.user_id},
-                ).first()
-            ]
-            if still_there:
+            # In-scope accounts must be gone; retained ones must still
+            # be here. Not "all three must be gone" — that was true only
+            # while every run deleted the whole set.
+            outcome = verify_deletion_outcome(db, plan)
+            if outcome:
                 raise RuntimeError(
-                    f"targets still present after delete: {still_there}"
+                    "deletion outcome is wrong: " + "; ".join(outcome)
                 )
 
             db.commit()
