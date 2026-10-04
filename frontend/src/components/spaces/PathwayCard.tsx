@@ -6,6 +6,7 @@ import {
   formatPathwayPrice,
 } from '@/lib/pathwayAccess'
 import type { PathwaySummary } from '@/types/platform'
+import { isKnowledgeGuide, openLabel, unitCountLabel } from '@/lib/pathwayTerminology'
 
 interface PathwayCardProps {
   pathway: PathwaySummary
@@ -36,9 +37,9 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
         ? 'Payment options'
         : formatPathwayPrice(pathway.price_cents, pathway.currency, pathway.billing_interval))
     : null
-  const stepLabel = pathway.step_count > 0
-    ? `${pathway.step_count} step${pathway.step_count !== 1 ? 's' : ''}`
-    : null
+  // "5 sections" for a Knowledge Guide, "5 steps" for a Guided
+  // Experience. Derived from ``pathway_type``, never from the title.
+  const stepLabel = unitCountLabel(pathway, pathway.step_count)
 
   const baseClass = 'group flex flex-col overflow-hidden rounded-2xl border border-border bg-white'
   const hoverClass = 'shadow-sm transition-all hover:-translate-y-1 hover:shadow-lg hover:border-[color:var(--fc-accent-line,rgba(56,160,158,0.20))]'
@@ -190,7 +191,7 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
                   className="text-[13px] font-semibold transition-opacity group-hover:opacity-80"
                   style={{ color: 'var(--fc-accent, #0f766e)' }}
                 >
-                  Join to begin →
+                  {isKnowledgeGuide(pathway) ? 'Join to read' : 'Join to begin'} →
                 </Link>
               ) : (
                 <>
@@ -205,7 +206,7 @@ export default function PathwayCard({ pathway, spaceSlug, isAuthenticated = true
                     className="text-[13px] font-semibold transition-opacity group-hover:opacity-80"
                     style={{ color: 'var(--fc-accent, #0f766e)' }}
                   >
-                    Begin →
+                    {openLabel(pathway)} →
                   </Link>
                 </>
               )}

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { apiUrl, resolveMediaUrl } from '@/lib/api'
 import type { CreatorPathway, CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
 import PrimaryActionLink from '@/components/creator/PrimaryActionLink'
+import { unitCountLabel } from '@/lib/pathwayTerminology'
 
 /**
  * Creator Studio → Pathways.
@@ -333,7 +334,7 @@ function PathwayCard({
 
         {/* Metadata — quiet supporting line (reduced emphasis) */}
         <p className="mt-4 text-[11.5px]" style={{ color: 'rgba(12, 24, 38, 0.45)' }}>
-          <span>{pathway.step_count} {pathway.step_count === 1 ? 'step' : 'steps'}</span>
+          <span>{unitCountLabel(pathway, pathway.step_count)}</span>
           {dateStr && (
             <>
               <span aria-hidden="true"> • </span>

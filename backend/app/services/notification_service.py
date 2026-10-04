@@ -410,9 +410,47 @@ def trigger_new_step(step_id: str, creator_id: str) -> None:
         if not space:
             return
 
-        title = f"New step added: \"{step.title}\""
-        message = f"A new step has been added to the pathway \"{pathway.title}\"."
-        notif_url = f"/spaces/{space.slug}/pathways/{pathway.slug}/{step.slug}"
+        # Never announce content members cannot open.
+        #
+        # The route already decides this before queueing — that is the
+        # real fix, and it is where the decision belongs. This is the
+        # second line: the task runs after the response, so the Pathway
+        # can be returned to draft, archived, or its Collective closed,
+        # in the gap. Re-reading here costs one query and removes the
+        # window entirely.
+        from app.services.pathway_announcement import is_member_visible
+
+        if not is_member_visible(db, pathway):
+            logger.info(
+                "trigger_new_step: pathway %s is not member-visible; "
+                "not announcing step %s", pathway.id, step_id,
+            )
+            return
+
+        # A Knowledge Guide is a reference document, so its content is
+        # a "section", not a "step". Same stored row either way — the
+        # distinction is presentation, and a member-facing email is a
+        # presentation surface like any other.
+        from app.models.platform import PathwayType
+
+        ptype = getattr(pathway.pathway_type, "value", pathway.pathway_type)
+        is_guide = ptype == PathwayType.knowledge_guide.value
+        unit = "section" if is_guide else "step"
+
+        title = f"New {unit} added: \"{step.title}\""
+        message = (
+            f"A new {unit} has been added to "
+            f"{'the guide' if is_guide else 'the pathway'} "
+            f"\"{pathway.title}\"."
+        )
+        # A Knowledge Guide is one continuous page with anchors, so link
+        # to the guide itself rather than to a per-step route the reader
+        # does not navigate by.
+        notif_url = (
+            f"/spaces/{space.slug}/pathways/{pathway.slug}"
+            if is_guide
+            else f"/spaces/{space.slug}/pathways/{pathway.slug}/{step.slug}"
+        )
 
         memberships = (
             db.query(SpaceMembership)

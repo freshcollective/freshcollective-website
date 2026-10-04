@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
+import { isKnowledgeGuide, unitCountLabel } from '@/lib/pathwayTerminology'
 
 type Tab = 'content' | 'settings' | 'manual-releases' | 'about'
 
@@ -63,11 +64,20 @@ export default function PathwayHeader({
 
   const statusLabel = STATUS_LABEL[pathway.status] ?? pathway.status
   const metaParts: string[] = []
+  // A Knowledge Guide's content units are "sections"; a Guided
+  // Experience's are "steps". Derived from ``pathway_type``.
   if (steps && steps.length > 0) {
-    metaParts.push(`${steps.length} ${steps.length === 1 ? 'step' : 'steps'}`)
+    metaParts.push(unitCountLabel(pathway, steps.length) as string)
   }
   if (sections && sections.length > 0) {
-    metaParts.push(`${sections.length} ${sections.length === 1 ? 'section' : 'sections'}`)
+    // The named groupings. "Chapters" for a guide, because its content
+    // units are already called sections above and "6 sections · 22
+    // sections" says nothing — and chapter is the word the member-facing
+    // guide view already uses (see ``knowledgeGuideChapters.ts``).
+    const groupNoun = isKnowledgeGuide(pathway)
+      ? (sections.length === 1 ? 'chapter' : 'chapters')
+      : (sections.length === 1 ? 'section' : 'sections')
+    metaParts.push(`${sections.length} ${groupNoun}`)
   }
   metaParts.push(statusLabel)
 

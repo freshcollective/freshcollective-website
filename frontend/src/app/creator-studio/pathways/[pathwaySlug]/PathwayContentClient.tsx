@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
 import ImagePickerField from '@/components/creator/ImagePickerField'
 import { apiUrl } from '@/lib/api'
+import { isKnowledgeGuide, unitNoun } from '@/lib/pathwayTerminology'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -21,6 +22,7 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
 
 function AddStepForm({
   spaceSlug, pathwaySlug, sections, defaultSectionId, onAdded, onCancel,
+  unit,
 }: {
   spaceSlug: string
   pathwaySlug: string
@@ -28,6 +30,10 @@ function AddStepForm({
   defaultSectionId: string | null
   onAdded: () => void
   onCancel: () => void
+  /** What this pathway's content units are called — "step" for a
+   *  Guided Experience, "section" for a Knowledge Guide. Passed in
+   *  rather than re-derived so there is one place the type is read. */
+  unit: 'step' | 'section'
 }) {
   const [title, setTitle] = useState('')
   const [contentType, setContentType] = useState('text')
@@ -36,7 +42,10 @@ function AddStepForm({
   const [error, setError] = useState<string | null>(null)
 
   async function handleAdd() {
-    if (!title.trim()) { setError('Step title is required.'); return }
+    if (!title.trim()) {
+      setError(`${unit === 'section' ? 'Section' : 'Step'} title is required.`)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -56,12 +65,12 @@ function AddStepForm({
       if (!res.ok) {
         let detail: string | null = null
         try { const b = await res.json(); if (typeof b.detail === 'string') detail = b.detail } catch { /* ignore */ }
-        setError(detail ?? 'Could not add step. Please try again.')
+        setError(detail ?? `Could not add ${unit}. Please try again.`)
         return
       }
       onAdded()
     } catch {
-      setError('Could not add step. Please try again.')
+      setError(`Could not add ${unit}. Please try again.`)
     } finally {
       setLoading(false)
     }
@@ -69,7 +78,9 @@ function AddStepForm({
 
   return (
     <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4">
-      <p className="mb-3 text-[13px] font-semibold text-navy-900">New step</p>
+      <p className="mb-3 text-[13px] font-semibold text-navy-900">
+        New {unit}
+      </p>
       <div className="mb-3">
         <input
           type="text"
@@ -113,7 +124,7 @@ function AddStepForm({
           className="rounded-lg px-4 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
         >
-          {loading ? 'Adding…' : 'Add step'}
+          {loading ? 'Adding…' : `Add ${unit}`}
         </button>
         <button type="button" onClick={onCancel} className="text-[13px] text-black transition-colors hover:text-navy-900">
           Cancel
@@ -475,7 +486,9 @@ function PathwayStructure({
           <h2 className="text-[17px] font-semibold tracking-tight text-navy-900">Pathway structure</h2>
           <p className="mt-0.5 text-[13px] text-black">
             {isEmpty
-              ? 'Add steps to shape the journey, or create sections to organise them into modules.'
+              ? (isKnowledgeGuide(pathway)
+                  ? 'Add sections to build the guide, or create chapters to group them.'
+                  : 'Add steps to shape the journey, or create sections to organise them into modules.')
               : `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}${sections.length > 0 ? ` · ${sections.length} ${sections.length === 1 ? 'section' : 'sections'}` : ''}`
             }
           </p>
@@ -721,6 +734,7 @@ function PathwayStructure({
                       defaultSectionId={section.id}
                       onAdded={handleStepAdded}
                       onCancel={() => setAddingToContext(null)}
+                      unit={unitNoun(pathway)}
                     />
                   ) : (
                     !addingToContext && (
@@ -729,7 +743,7 @@ function PathwayStructure({
                         onClick={() => setAddingToContext(section.id)}
                         className="text-[12px] font-medium text-black transition-colors hover:text-teal-700"
                       >
-                        + Add step here
+                        + Add {unitNoun(pathway)} here
                       </button>
                     )
                   )}
@@ -814,6 +828,7 @@ function PathwayStructure({
             defaultSectionId={null}
             onAdded={handleStepAdded}
             onCancel={() => setAddingToContext(null)}
+            unit={unitNoun(pathway)}
           />
         ) : (
           !addingToContext && (
@@ -822,7 +837,10 @@ function PathwayStructure({
               onClick={() => setAddingToContext('global')}
               className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-[13px] font-medium text-black transition-colors hover:border-teal-300 hover:text-teal-700"
             >
-              {sections.length > 0 ? '+ Add step without section' : '+ Add step'}
+              {sections.length > 0
+                ? `+ Add ${unitNoun(pathway)} without ${
+                    isKnowledgeGuide(pathway) ? 'chapter' : 'section'}`
+                : `+ Add ${unitNoun(pathway)}`}
             </button>
           )
         )}

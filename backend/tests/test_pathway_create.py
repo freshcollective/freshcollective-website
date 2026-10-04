@@ -15,6 +15,7 @@ correct contract is ``currency: str | None``.
 from __future__ import annotations
 
 import pytest
+from fastapi import BackgroundTasks
 
 from app.creator.routes import create_pathway
 from app.creator.schemas import PathwayCreateRequest
@@ -70,6 +71,7 @@ class TestPathwayCreateEndToEnd:
         result = create_pathway(
             slug=space.slug,
             body=body,
+            background_tasks=BackgroundTasks(),
             db=db,
             current_user=owner,
         )
@@ -90,6 +92,7 @@ class TestPathwayCreateEndToEnd:
         result = create_pathway(
             slug=space.slug,
             body=body,
+            background_tasks=BackgroundTasks(),
             db=db,
             current_user=owner,
         )

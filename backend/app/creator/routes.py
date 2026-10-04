@@ -227,7 +227,13 @@ from app.services.content_url import (
 )
 from app.services.embed_validator import EmbedValidationError, extract_and_validate_embed_url
 from app.services.gathering_types import normalise_access_type
+from app.comms.rollout import schedule_routing_if_needed
 from app.services.notification_service import trigger_new_step
+from app.services.pathway_announcement import (
+    ANNOUNCEMENT_EVENT as PATHWAY_ANNOUNCEMENT_EVENT,
+    announce_if_newly_available,
+    is_member_visible,
+)
 from app.services.schedule_validation import (
     apply_recurring_derivations,
     apply_recurring_update_derivations,
@@ -2891,6 +2897,7 @@ def get_pathway(
 def create_pathway(
     slug: str,
     body: PathwayCreateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
@@ -2937,8 +2944,20 @@ def create_pathway(
             created_by=current_user.id,
         )
 
+    # A Pathway created straight into ``active`` is available to members
+    # from birth, so this is its first-availability moment. Created as a
+    # draft — the normal case — announces nothing, and the publish that
+    # follows later is what announces.
+    announcement = announce_if_newly_available(
+        db, pathway, actor_user_id=current_user.id,
+    )
+
     db.commit()
     db.refresh(pathway)
+    if announcement is not None:
+        schedule_routing_if_needed(
+            background_tasks, announcement, PATHWAY_ANNOUNCEMENT_EVENT,
+        )
     return {
         **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
                                              "cover_image_url", "access_type", "pricing_mode", "price_cents",
@@ -2954,6 +2973,7 @@ def update_pathway(
     slug: str,
     pathway_slug: str,
     body: PathwayUpdateRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_creator_user),
 ) -> dict:
@@ -2988,8 +3008,20 @@ def update_pathway(
             # correct a mistake even on an active pathway.
             pathway.pathway_type = val
 
+    # First availability, if this update is what caused it. Emitted
+    # before the commit so the announcement and the publication share
+    # one transaction; idempotent on (pathway, Collective), so
+    # republishing after a return to draft announces nothing.
+    announcement = announce_if_newly_available(
+        db, pathway, actor_user_id=current_user.id,
+    )
+
     db.commit()
     db.refresh(pathway)
+    if announcement is not None:
+        schedule_routing_if_needed(
+            background_tasks, announcement, PATHWAY_ANNOUNCEMENT_EVENT,
+        )
     step_count = db.query(PathwayStep).filter(PathwayStep.pathway_id == pathway.id).count()
     return {
         **{c: getattr(pathway, c) for c in ["id", "slug", "title", "description", "practice_body",
@@ -3266,7 +3298,18 @@ def create_step(
     db.add(step)
     db.commit()
     db.refresh(step)
-    background_tasks.add_task(trigger_new_step, step.id, current_user.id)
+
+    # Only announce a new step on a Pathway members can actually open.
+    #
+    # This is the draft-notification bug: the task was queued
+    # unconditionally, so authoring a draft emailed every active member
+    # of the Collective once per section, each linking to content they
+    # could not access. Decided here, at the lifecycle source, rather
+    # than inside the sender — the notification should not be created at
+    # all. ``trigger_new_step`` re-checks too, because it runs later and
+    # the Pathway can be unpublished in between.
+    if is_member_visible(db, pathway):
+        background_tasks.add_task(trigger_new_step, step.id, current_user.id)
     return step
 
 

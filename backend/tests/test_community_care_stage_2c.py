@@ -35,7 +35,7 @@ import uuid
 from datetime import datetime
 
 import pytest
-from fastapi import HTTPException, Request
+from fastapi import BackgroundTasks, HTTPException, Request
 from pydantic import ValidationError
 
 from app.admin.community_care.routes import (
@@ -709,6 +709,7 @@ class TestCreatorRestriction:
             create_pathway(
                 space.slug,
                 PathwayCreateRequest(title="A pathway"),
+                background_tasks=BackgroundTasks(),
                 db=db, current_user=creator,
             )
         assert e.value.status_code == 403

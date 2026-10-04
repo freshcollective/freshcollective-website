@@ -23,7 +23,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 from app.creator.routes import (
     get_pathway as creator_get_pathway,
@@ -169,6 +169,7 @@ class TestUpdatePathwayType:
             slug=space.slug,
             pathway_slug=pathway.slug,
             body=PathwayUpdateRequest(pathway_type="knowledge_guide"),
+            background_tasks=BackgroundTasks(),
             db=db,
             current_user=creator,
         )
@@ -186,6 +187,7 @@ class TestUpdatePathwayType:
             slug=space.slug,
             pathway_slug=pathway.slug,
             body=PathwayUpdateRequest(pathway_type="guided_experience"),
+            background_tasks=BackgroundTasks(),
             db=db,
             current_user=creator,
         )

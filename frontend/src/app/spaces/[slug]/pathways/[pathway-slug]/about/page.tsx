@@ -9,6 +9,12 @@ import { isPathwayLocked, formatPathwayPrice, unlockCtaLabel } from '@/lib/pathw
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import type { PathwayWithSteps, PathwayAboutBlock, PaymentOptionSummary, SpaceResponse } from '@/types/platform'
+import {
+  isKnowledgeGuide,
+  showsProgress,
+  unitCountLabel,
+  viewAllLabel,
+} from '@/lib/pathwayTerminology'
 
 interface Props {
   params: Promise<{ slug: string; 'pathway-slug': string }>
@@ -154,7 +160,8 @@ export default async function PathwayAboutPage({ params }: Props) {
               )}
               {pathway.step_count > 0 && (
                 <p className="text-[14px] text-black">
-                  {pathway.step_count} step{pathway.step_count !== 1 ? 's' : ''} in this pathway.
+                  {unitCountLabel(pathway, pathway.step_count)} in this{' '}
+                  {isKnowledgeGuide(pathway) ? 'guide' : 'pathway'}.
                 </p>
               )}
             </div>
@@ -200,7 +207,11 @@ export default async function PathwayAboutPage({ params }: Props) {
                 <p className="text-[14px] font-semibold text-black">Coming soon</p>
               ) : locked && isPaymentOptionsMode && publishedOptions.length === 0 ? (
                 <p className="text-[14px] text-black">Opening soon — options coming</p>
-              ) : pathway.step_count > 0 ? (
+              ) : showsProgress(pathway) && pathway.step_count > 0 ? (
+                /* Guided Experiences only. A Knowledge Guide is a
+                   reference document — nobody finishes one, so a
+                   percentage measures nothing and "0 of 5 complete"
+                   implies an expectation that does not exist. */
                 <>
                   <div className="mb-1 flex items-baseline justify-between text-xs text-black">
                     <span>{pathway.completed_count} of {pathway.step_count} complete</span>
@@ -222,7 +233,7 @@ export default async function PathwayAboutPage({ params }: Props) {
             {/* Step count */}
             {pathway.step_count > 0 && (
               <p className="mb-4 text-[13px] text-black">
-                {pathway.step_count} step{pathway.step_count !== 1 ? 's' : ''}
+                {unitCountLabel(pathway, pathway.step_count)}
               </p>
             )}
 
@@ -261,7 +272,16 @@ export default async function PathwayAboutPage({ params }: Props) {
                 className="block w-full rounded-full px-5 py-2.5 text-center text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
               >
-                {pathway.completed_count === 0 ? 'Begin pathway' : pathway.completed_count >= pathway.step_count ? 'Review' : 'Continue'}
+                {isKnowledgeGuide(pathway)
+                  /* No "Continue": nothing stores a reading position,
+                     and a verb implying one would be a promise the
+                     product does not keep. */
+                  ? 'Open guide'
+                  : pathway.completed_count === 0
+                    ? 'Begin pathway'
+                    : pathway.completed_count >= pathway.step_count
+                      ? 'Review'
+                      : 'Continue'}
               </Link>
             ) : (
               <Link
@@ -269,7 +289,7 @@ export default async function PathwayAboutPage({ params }: Props) {
                 className="block w-full rounded-full px-5 py-2.5 text-center text-[14px] font-semibold text-white transition-opacity hover:opacity-90"
                 style={{ background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)' }}
               >
-                View pathway
+                {isKnowledgeGuide(pathway) ? 'View guide' : 'View pathway'}
               </Link>
             )}
 
@@ -278,7 +298,7 @@ export default async function PathwayAboutPage({ params }: Props) {
               href={`/spaces/${slug}/pathways/${pathwaySlug}`}
               className="mt-3 block text-center text-[12px] text-black transition-colors hover:text-[color:var(--fc-accent,#0d9488)]"
             >
-              View all steps →
+              {viewAllLabel(pathway)} →
             </Link>
           </div>
           )}
