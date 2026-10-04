@@ -27,9 +27,20 @@ import {
 export default function PeerConversationClient({
   initialThread,
   currentUserId,
+  previewOnly = false,
+  previewOpen,
 }: {
   initialThread: PeerThreadDetail
   currentUserId: string
+  /** Admin visual-QA harness only. Suppresses every network call —
+   *  send, block, unblock and report all become no-ops — so each state
+   *  can be reviewed without writing anything or submitting a report.
+   *  Serialisable, because the preview page is a server component.
+   *  Never set in production. */
+  previewOnly?: boolean
+  /** Opens the harness directly into the safety menu or the report
+   *  form, which are otherwise only reachable by clicking. */
+  previewOpen?: 'menu' | 'report'
 }) {
   const [thread, setThread] = useState(initialThread)
   const [draft, setDraft] = useState('')
@@ -37,9 +48,9 @@ export default function PeerConversationClient({
   const [error, setError] = useState<string | null>(null)
   // Safety controls are deliberately out of the way until asked for:
   // a conversation should not carry a visible threat of moderation.
-  const [safetyOpen, setSafetyOpen] = useState(false)
+  const [safetyOpen, setSafetyOpen] = useState(previewOpen === 'menu')
   const [confirmBlock, setConfirmBlock] = useState(false)
-  const [reporting, setReporting] = useState(false)
+  const [reporting, setReporting] = useState(previewOpen === 'report')
   const [reportCategory, setReportCategory] = useState<string>('')
   const [reportNote, setReportNote] = useState('')
   const [caseNumber, setCaseNumber] = useState<string | null>(null)
@@ -48,6 +59,7 @@ export default function PeerConversationClient({
   const name = participantName(thread.other)
 
   async function reload() {
+    if (previewOnly) return
     setThread(await fetchPeerThread(thread.thread_id))
   }
 
@@ -55,7 +67,7 @@ export default function PeerConversationClient({
     setBusy(true)
     setError(null)
     try {
-      await blockPeer(thread.thread_id)
+      if (!previewOnly) await blockPeer(thread.thread_id)
       await reload()
       setConfirmBlock(false)
       setSafetyOpen(false)
@@ -70,7 +82,7 @@ export default function PeerConversationClient({
     setBusy(true)
     setError(null)
     try {
-      await unblockPeer(thread.thread_id)
+      if (!previewOnly) await unblockPeer(thread.thread_id)
       // Re-read rather than assuming: if the other person has also
       // blocked, the conversation stays closed and the server is the
       // only thing that knows.
@@ -88,9 +100,14 @@ export default function PeerConversationClient({
     setBusy(true)
     setError(null)
     try {
-      const number = await reportPeer(
-        thread.thread_id, reportCategory, reportNote.trim() || undefined,
-      )
+      // Nothing is submitted in the harness — the acknowledgement is
+      // shown with a placeholder reference so the final state can be
+      // reviewed.
+      const number = previewOnly
+        ? 'FC-PREVIEW'
+        : await reportPeer(
+            thread.thread_id, reportCategory, reportNote.trim() || undefined,
+          )
       setCaseNumber(number)
       setReporting(false)
       setReportCategory('')
@@ -110,6 +127,25 @@ export default function PeerConversationClient({
     setSending(true)
     setError(null)
     try {
+      if (previewOnly) {
+        // Appended locally so spacing and alternation can be reviewed;
+        // nothing is persisted and nothing is re-read.
+        setThread({
+          ...thread,
+          messages: [
+            ...thread.messages,
+            {
+              id: `preview-${thread.messages.length + 1}`,
+              sender_user_id: currentUserId,
+              body,
+              created_at: new Date().toISOString(),
+              is_read: false,
+            },
+          ],
+        })
+        setDraft('')
+        return
+      }
       await sendPeerMessage(thread.thread_id, body)
       // Re-read rather than appending the local draft: the server
       // sanitises the body, so what is stored can differ from what was

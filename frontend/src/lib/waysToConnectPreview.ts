@@ -1,5 +1,5 @@
-import { getMe } from '@/lib/serverApi'
 import { isWaysToConnectEnabled } from '@/lib/featureFlags'
+import { viewerIsPlatformOwner } from '@/lib/platformOwner'
 
 /**
  * Private production preview for the Platform Owner.
@@ -35,6 +35,5 @@ export async function waysToConnectVisible(): Promise<boolean> {
   // Platform Owner is the collapsed `admin` role — the same identity
   // the backend's ``is_platform_owner`` uses. No email match, no
   // hard-coded id.
-  const me = await getMe().catch(() => null)
-  return me?.role === 'admin'
+  return viewerIsPlatformOwner()
 }

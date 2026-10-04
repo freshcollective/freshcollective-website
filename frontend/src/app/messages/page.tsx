@@ -1,12 +1,11 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import PageHero from '@/components/layout/PageHero'
 import SiteShell from '@/components/layout/SiteShell'
-import MemberImage from '@/components/ui/MemberImage'
 import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
 import { getPeerThreads } from '@/lib/serverApi'
-import { participantName, type PeerThreadSummary } from '@/lib/peerMessages'
+import PeerThreadList from '@/components/messages/PeerThreadList'
+import type { PeerThreadSummary } from '@/lib/peerMessages'
 
 export const metadata: Metadata = {
   title: 'Messages · Fresh Collective',
@@ -51,67 +50,7 @@ export default async function MessagesPage() {
         supportingCopy="Private conversations with people you’ve both said hello to."
       />
       <div className="mx-auto max-w-[680px] px-6 pb-24 pt-2 md:px-8">
-        {threads.length === 0 ? (
-          <p
-            className="rounded-2xl bg-white px-6 py-8 text-center text-[14px] italic"
-            style={{
-              color: 'rgba(12, 24, 38, 0.62)',
-              fontFamily: 'Georgia, serif',
-              border: '1px solid rgba(12,24,38,0.08)',
-            }}
-          >
-            No conversations yet. When you and someone else have both
-            said hello, you&rsquo;ll be able to talk here.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {threads.map((thread) => {
-              const name = participantName(thread.other)
-              const unread = thread.unread_count > 0
-              return (
-                <li key={thread.thread_id}>
-                  <Link
-                    href={`/messages/${thread.thread_id}`}
-                    className="flex items-center gap-4 rounded-2xl bg-white px-4 py-3.5 transition-colors hover:bg-teal-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40"
-                    style={{ border: '1px solid rgba(12,24,38,0.08)' }}
-                  >
-                    <span className="h-12 w-12 shrink-0 overflow-hidden rounded-full">
-                      <MemberImage image={thread.other.image} className="h-12 w-12" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span
-                        className="block truncate text-[14.5px]"
-                        style={{
-                          color: '#0C1826',
-                          fontWeight: unread ? 600 : 500,
-                        }}
-                      >
-                        {name}
-                      </span>
-                      {/* A preview, not the conversation. Truncated by
-                          CSS rather than sliced, so no partial word. */}
-                      <span
-                        className="block truncate text-[13px]"
-                        style={{ color: 'rgba(12, 24, 38, 0.56)' }}
-                      >
-                        {thread.last_message ?? 'No messages yet'}
-                      </span>
-                    </span>
-                    {unread && (
-                      <span
-                        aria-label={`${thread.unread_count} unread`}
-                        className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold text-white"
-                        style={{ background: '#38A09E' }}
-                      >
-                        {thread.unread_count}
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        )}
+        <PeerThreadList threads={threads} />
       </div>
     </SiteShell>
   )

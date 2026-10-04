@@ -12,6 +12,10 @@ const codeOnly = (p: string) =>
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
 
 const PREVIEW = 'lib/waysToConnectPreview.ts'
+// The owner check itself was extracted so the admin-only preview
+// harness could share one definition of it. The gate delegates; these
+// properties are asserted against whichever file holds the check.
+const OWNER = 'lib/platformOwner.ts'
 const GATED = [
   'app/ways-to-connect/page.tsx',
   'app/messages/page.tsx',
@@ -28,13 +32,21 @@ describe('the preview gate', () => {
     assert.match(src, /if \(isWaysToConnectEnabled\(\)\) return true/)
   })
 
+  test('the owner path defers to the one shared definition', () => {
+    assert.match(src, /viewerIsPlatformOwner\(\)/)
+    assert.match(src, /from '@\/lib\/platformOwner'/)
+  })
+
   test('otherwise only the Platform Owner role', () => {
-    assert.match(src, /me\?\.role === 'admin'/)
+    assert.match(codeOnly(OWNER), /me\?\.role === 'admin'/)
   })
 
   test('identity comes from the session, not the request', () => {
     // Nothing a member could set: no query string, no cookie read, no
-    // email comparison, no hard-coded id.
+    // email comparison, no hard-coded id. Checked on both halves —
+    // the gate must not reintroduce a request-derived shortcut beside
+    // the delegated role check.
+    const src = codeOnly(OWNER) + codeOnly(PREVIEW)
     assert.match(src, /getMe\(\)/)
     for (const smell of [
       'searchParams', 'cookies(', 'headers(', 'lindsey',
@@ -54,12 +66,14 @@ describe('the preview gate', () => {
   })
 
   test('a failed identity lookup denies rather than reveals', () => {
-    assert.match(src, /\.catch\(\(\) => null\)/)
+    assert.match(codeOnly(OWNER), /\.catch\(\(\) => null\)/)
   })
 
   test('it is server-only', () => {
-    assert.ok(!src.includes("'use client'"))
-    assert.match(src, /@\/lib\/serverApi/)
+    for (const path of [PREVIEW, OWNER]) {
+      assert.ok(!codeOnly(path).includes("'use client'"), `${path} is server-only`)
+    }
+    assert.match(codeOnly(OWNER), /@\/lib\/serverApi/)
   })
 })
 

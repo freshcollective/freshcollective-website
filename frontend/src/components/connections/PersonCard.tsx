@@ -42,6 +42,8 @@ type HelloState = 'idle' | 'confirming' | 'sending' | 'sent'
 export default function PersonCard({
   person,
   onSendHello,
+  previewOnly = false,
+  previewMessageHref,
 }: {
   person: PersonRef
   /** Override for the send. Only the preview harness passes this; in
@@ -50,6 +52,15 @@ export default function PersonCard({
    *  Supplying a no-op is how a review context runs the confirm step
    *  without persisting anything. */
   onSendHello?: (personId: string) => Promise<void>
+  /** Admin visual-QA harness only. Suppresses every network call so
+   *  the card can be reviewed in each relationship state without
+   *  writing anything or POSTing anywhere. Serialisable on purpose —
+   *  the preview page is a server component and cannot hand down a
+   *  function. Never set in production. */
+  previewOnly?: boolean
+  /** Where Message → goes in the harness, since there is no real
+   *  thread to open. */
+  previewMessageHref?: string
 }) {
   const router = useRouter()
   const [state, setState] = useState<HelloState>('idle')
@@ -81,6 +92,11 @@ export default function PersonCard({
     setOpening(true)
     setOpenError(null)
     try {
+      if (previewOnly) {
+        if (previewMessageHref) router.push(previewMessageHref)
+        setOpening(false)
+        return
+      }
       const threadId = await openConversation(person.id)
       router.push(`/messages/${threadId}`)
     } catch {
@@ -93,7 +109,10 @@ export default function PersonCard({
     setState('sending')
     setError(null)
     try {
-      if (onSendHello) {
+      if (previewOnly) {
+        // Nothing persisted; the card still transitions so the state
+        // change can be reviewed.
+      } else if (onSendHello) {
         await onSendHello(person.id)
       } else {
         await sayHello(person.id)

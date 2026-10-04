@@ -19,6 +19,7 @@ const INBOX = 'app/messages/page.tsx'
 const THREAD = 'app/messages/[threadId]/page.tsx'
 const CLIENT = 'app/messages/[threadId]/PeerConversationClient.tsx'
 const HEADER = 'components/layout/WorldHeader.tsx'
+const THREAD_LIST = 'components/messages/PeerThreadList.tsx'
 
 describe('Message appears only on a mutual connection', () => {
   const src = codeOnly(CARD)
@@ -128,14 +129,20 @@ describe('the inbox is the peer surface, not the creator one', () => {
   })
 
   test('profile pictures come from the shared resolver', () => {
-    for (const page of [INBOX, CLIENT]) {
+    // The row markup lives in ``PeerThreadList`` now — extracted so the
+    // admin preview renders the real list rather than a copy of it.
+    for (const page of [THREAD_LIST, CLIENT]) {
       const src = codeOnly(page)
       assert.match(src, /<MemberImage image=/)
     }
     // No second monogram implementation.
-    const both = codeOnly(INBOX) + codeOnly(CLIENT)
-    assert.ok(!/charAt\(0\)/.test(both))
-    assert.ok(!/toUpperCase\(\)/.test(both))
+    const all = codeOnly(THREAD_LIST) + codeOnly(CLIENT) + codeOnly(INBOX)
+    assert.ok(!/charAt\(0\)/.test(all))
+    assert.ok(!/toUpperCase\(\)/.test(all))
+  })
+
+  test('the inbox delegates its list to the shared component', () => {
+    assert.match(codeOnly(INBOX), /<PeerThreadList threads=\{threads\} \/>/)
   })
 
   test('the inbox is never prerendered', () => {

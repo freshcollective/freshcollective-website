@@ -24,8 +24,14 @@ import type { PersonRef } from '@/lib/waysToConnect'
 
 export default function PeopleYouveCrossed({
   people,
+  previewOnly = false,
+  previewMessageHref,
 }: {
   people: PersonRef[]
+  /** Admin visual-QA harness only — forwarded to every card so the
+   *  populated page can be reviewed without any network calls. */
+  previewOnly?: boolean
+  previewMessageHref?: string
 }) {
   if (people.length === 0) return null
 
@@ -44,7 +50,12 @@ export default function PeopleYouveCrossed({
           themselves — see PersonCard. */}
       <ul className="mt-5 flex flex-wrap justify-center gap-5">
         {people.map((person) => (
-          <PersonCard key={person.id} person={person} />
+          <PersonCard
+            key={person.id}
+            person={person}
+            previewOnly={previewOnly}
+            previewMessageHref={previewMessageHref}
+          />
         ))}
       </ul>
     </section>
