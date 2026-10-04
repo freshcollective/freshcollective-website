@@ -191,6 +191,80 @@ class TestConnectionPersistsNotEligibility:
         assert "is_eligible_pair" not in code
         assert "RecognitionService" not in code
 
+    def test_opting_out_does_not_close_an_established_conversation(
+        self, client, db, connected,
+    ):
+        """Participation opt-out is not blocking.
+
+        Turning Ways to Connect off withdraws somebody from *discovery*.
+        It is not a statement about people they already chose to connect
+        with, and treating it as one would silently cut off conversations
+        as a side effect of a privacy setting — the opposite of what the
+        setting is for. Blocking is the thing that closes a conversation,
+        and it is a separate, deliberate act.
+        """
+        a, b = connected()
+        as_user(a)
+        thread_id = _open(client, b.id).json()["thread_id"]
+        _send(client, thread_id, "Before")
+
+        a.ways_to_connect_enabled = False
+        db.flush()
+
+        # The one who opted out can still read and still write.
+        as_user(a)
+        assert client.get(f"{URL}/{thread_id}").status_code == 200
+        assert _send(client, thread_id, "After opting out").status_code == 201
+
+        # And so can the other side — they did nothing.
+        as_user(b)
+        assert client.get(f"{URL}/{thread_id}").status_code == 200
+        assert _send(client, thread_id, "Reply").status_code == 201
+
+    def test_opting_out_keeps_the_thread_in_the_inbox(
+        self, client, db, connected,
+    ):
+        """It must not vanish from Messages either — a conversation the
+        member cannot find is as good as deleted."""
+        a, b = connected()
+        as_user(a)
+        thread_id = _open(client, b.id).json()["thread_id"]
+        _send(client, thread_id, "Hello there")
+
+        a.ways_to_connect_enabled = False
+        db.flush()
+
+        as_user(a)
+        threads = client.get(URL).json()
+        assert thread_id in {t["thread_id"] for t in threads}
+
+    def test_opting_out_destroys_no_history(
+        self, client, db, connected,
+    ):
+        """The hello rows and the messages are still there afterwards.
+        5c/5d chose to keep them; a participation change must not become
+        a deletion."""
+        from app.models.connections import MemberHello
+        from app.models.peer_messages import PeerMessage
+
+        a, b = connected()
+        as_user(a)
+        thread_id = _open(client, b.id).json()["thread_id"]
+        _send(client, thread_id, "One")
+        _send(client, thread_id, "Two")
+
+        hellos_before = db.query(MemberHello).count()
+        messages_before = db.query(PeerMessage).count()
+
+        a.ways_to_connect_enabled = False
+        db.flush()
+
+        assert db.query(MemberHello).count() == hellos_before
+        assert db.query(PeerMessage).count() == messages_before
+        as_user(b)
+        body = client.get(f"{URL}/{thread_id}").json()
+        assert [m["body"] for m in body["messages"]] == ["One", "Two"]
+
 
 # ---------------------------------------------------------------------------
 # One thread per pair

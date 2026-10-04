@@ -39,20 +39,50 @@ def as_user(user):
 # ---------------------------------------------------------------------------
 
 class TestTheColumn:
-    def test_a_new_member_is_included_by_default(self, db, make_user):
-        """Silence means yes. Nobody should have to opt in to being
-        recognised by people they genuinely share things with."""
-        alice = make_user()
-        assert alice.ways_to_connect_enabled is True
+    def test_a_new_member_is_excluded_by_default(self, db):
+        """Silence means no.
 
-    def test_the_orm_default_matches_the_database_default(self, db, make_user):
+        The reverse of what this file asserted at launch. Participation
+        is affirmative now: nobody is surfaced to other people on the
+        strength of a shared Gathering until they have said yes.
+
+        Built from the model directly, not from ``make_user`` — that
+        factory opts in deliberately so the rest of the suite can be
+        about Recognition rather than consent, which would make this
+        assertion a test of the fixture instead of the product. The
+        signup path and the database column are covered in
+        ``test_ways_to_connect_opt_in_default.py``.
+        """
+        import uuid as _uuid
+
+        alice = User(
+            id=f"u_{_uuid.uuid4().hex[:12]}",
+            email=f"default-{_uuid.uuid4().hex[:8]}@example.test",
+            name="Default Member",
+            role="user",
+            password_hash="$2b$12$" + "0" * 53,
+        )
+        db.add(alice)
+        db.flush()
+        assert alice.ways_to_connect_enabled is False
+
+    def test_the_orm_default_matches_the_database_default(self, db):
         """Inserted without the column named, the DB server default
         supplies it — so a row created outside the ORM agrees with one
         created through it."""
-        alice = make_user()
+        import uuid as _uuid
+
+        alice = User(
+            id=f"u_{_uuid.uuid4().hex[:12]}",
+            email=f"orm-{_uuid.uuid4().hex[:8]}@example.test",
+            name="ORM Default",
+            role="user",
+            password_hash="$2b$12$" + "0" * 53,
+        )
+        db.add(alice)
         db.flush()
         db.expire(alice)
-        assert alice.ways_to_connect_enabled is True
+        assert alice.ways_to_connect_enabled is False
 
     def test_it_is_not_nullable(self, db, make_user):
         from sqlalchemy import inspect as sa_inspect

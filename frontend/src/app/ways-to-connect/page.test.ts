@@ -56,10 +56,31 @@ describe('feature gating', () => {
     assert.match(INCONTEXT, /isWaysToConnectEnabled\(\)/)
   })
 
-  test('the backend flag is not mirrored through the profile', () => {
-    for (const source of [PAGE, INCONTEXT]) {
-      assert.ok(!/ways_to_connect_enabled/.test(source))
+  test('the launch flag is never derived from the member preference', () => {
+    // These are two different questions — whether the product exists,
+    // and whether this person takes part — and conflating them is how
+    // the feature would vanish for somebody who opted out, leaving
+    // them no route back to it.
+    //
+    // The page now reads ``ways_to_connect_enabled`` on purpose, to
+    // choose between the opt-in state and the recommendations. What it
+    // must not do is let that decide *availability*: the only gate is
+    // ``waysToConnectVisible()``. Covered in depth in
+    // ``waysToConnectOptIn.test.ts``; asserted here because this is
+    // the file about the flag.
+    assert.match(PAGE, /ways_to_connect_enabled/, 'the page reads the preference')
+    for (const line of PAGE.split('\n')) {
+      if (!line.includes('notFound')) continue
+      assert.ok(
+        !line.includes('ways_to_connect_enabled'),
+        `availability must not depend on participation: ${line.trim()}`,
+      )
     }
+
+    // In-context Recognition stays clear of it entirely: those lines
+    // come from the API, which already drops opted-out members, so the
+    // component has no business re-deciding it.
+    assert.ok(!/ways_to_connect_enabled/.test(INCONTEXT))
   })
 })
 

@@ -6,6 +6,7 @@ import { waysToConnectVisible } from '@/lib/waysToConnectPreview'
 import {
   getWaysToConnect,
   getMyMemberships,
+  getMe,
   getSpace,
   getSpaceEvents,
 } from '@/lib/serverApi'
@@ -15,6 +16,7 @@ import WaysToConnectEmptyState, {
   buildDoorway,
 } from '@/components/connections/WaysToConnectEmptyState'
 import WaysToConnectUnavailable from '@/components/connections/WaysToConnectUnavailable'
+import WaysToConnectOptIn from '@/components/connections/WaysToConnectOptIn'
 import type { EventSummary, SpaceMembership } from '@/types/platform'
 
 export const metadata: Metadata = {
@@ -112,10 +114,36 @@ async function findDoorway() {
 export default async function WaysToConnectPage() {
   if (!(await waysToConnectVisible())) notFound()
 
-  const result = await getWaysToConnect()
+  // Participation is the member's own choice and is read before the
+  // recommendations, because the two produce pages that mean opposite
+  // things. The API answers "nothing" for an opted-out member — the
+  // same answer as "nobody qualifies" — so without this the page would
+  // tell somebody who switched the feature off that we simply had not
+  // found anyone, and offer them no way back in.
+  //
+  // Read from the canonical profile endpoint rather than widening the
+  // Ways to Connect response: it is the same field Settings writes, and
+  // one source for it is the point.
+  const me = await getMe().catch(() => null)
+  const participating = me?.ways_to_connect_enabled === true
+
+  const result = participating
+    ? await getWaysToConnect()
+    // Not fetched at all when opted out. The API would return an empty
+    // list, which is correct and useless here, and asking for
+    // recommendations on behalf of somebody who declined them is the
+    // wrong instinct even when the answer is empty.
+    : null
 
   let body: React.ReactNode
-  if (result.status === 'unavailable' || result.status === 'error') {
+  if (!participating) {
+    body = <WaysToConnectOptIn />
+  } else if (result === null) {
+    // Unreachable: ``participating`` and ``result === null`` are set
+    // together. Present so the narrowing below is total rather than
+    // asserted.
+    body = <WaysToConnectUnavailable reason="error" />
+  } else if (result.status === 'unavailable' || result.status === 'error') {
     body = <WaysToConnectUnavailable reason={result.status} />
   } else {
     // Featured people only. The payload's tail exists for the

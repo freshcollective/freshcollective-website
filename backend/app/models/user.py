@@ -9,8 +9,8 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    false,
     func,
-    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -143,14 +143,21 @@ class User(Base):
     # exists at all. This column decides whether one person takes part
     # in it. Both must be true for a member to see anything.
     #
-    # Boolean, not nullable, defaulting true: every existing account
-    # stays opted in, and there is no third "hasn't decided" state to
-    # interpret differently from "yes" at read time.
+    # Boolean, not nullable, defaulting **false**: participation is
+    # opt-in, so a new account is surfaced to nobody until its owner
+    # says otherwise. There is still no third "hasn't decided" state —
+    # false *is* "hasn't decided", and the two are treated the same
+    # because neither is consent.
+    #
+    # It defaulted true at launch (migration 138), which is why a true
+    # value on an older row cannot be read as a choice: nobody was
+    # asked. See migration 150 and
+    # ``scripts/ways_to_connect_participation_audit.py``.
     ways_to_connect_enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
-        default=True,
-        server_default=true(),
+        default=False,
+        server_default=false(),
     )
 
     __table_args__ = (

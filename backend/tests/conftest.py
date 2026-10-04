@@ -238,6 +238,19 @@ def make_user(db: Session):
         # trust-action gates cleanly. New SEC-009 tests explicitly
         # pass ``email_verified_at=None`` to test the unverified
         # branch.
+        # Ways to Connect: opted IN here, which is deliberately not the
+        # product default. Participation became opt-in (migration 150),
+        # so a real new account arrives ``false`` — but almost every
+        # test that touches Recognition is about the mechanics of
+        # sharing a Gathering, not about consent, and would otherwise
+        # have to opt in on every line to say nothing new.
+        #
+        # Same reasoning as ``email_verified_at`` above: the fixture
+        # hands back an account in the state the bulk of the suite
+        # needs, and the tests that are genuinely about the setting pass
+        # it explicitly. The real default is asserted against the actual
+        # signup path and the database column, never through this
+        # factory — see ``test_ways_to_connect_opt_in_default.py``.
         defaults = dict(
             id=_uid("u"),
             email=f"test-{uuid.uuid4().hex[:8]}@example.test",
@@ -245,6 +258,7 @@ def make_user(db: Session):
             role="user",
             password_hash="$2b$12$0000000000000000000000000000000000000000000000000000",
             email_verified_at=datetime.utcnow(),
+            ways_to_connect_enabled=True,
         )
         defaults.update(overrides)
         u = User(**defaults)
