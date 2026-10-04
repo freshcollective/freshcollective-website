@@ -125,21 +125,30 @@ export default async function WaysToConnectPage() {
   // Ways to Connect response: it is the same field Settings writes, and
   // one source for it is the point.
   const me = await getMe().catch(() => null)
-  const participating = me?.ways_to_connect_enabled === true
 
-  const result = participating
-    ? await getWaysToConnect()
+  // No profile is not the same as a profile that says no.
+  //
+  // This route carries no auth redirect of its own, so a signed-out
+  // visitor reaches it and ``getMe`` returns null for them. Reading
+  // that as "opted out" showed a stranger a page about *their* setting
+  // being off, with a button that would 401 — which is worse than the
+  // generic state they saw before, because it is confidently wrong.
+  const signedIn = me !== null
+  const optedOut = signedIn && me?.ways_to_connect_enabled !== true
+
+  const result = optedOut
     // Not fetched at all when opted out. The API would return an empty
     // list, which is correct and useless here, and asking for
     // recommendations on behalf of somebody who declined them is the
     // wrong instinct even when the answer is empty.
-    : null
+    ? null
+    : await getWaysToConnect()
 
   let body: React.ReactNode
-  if (!participating) {
+  if (optedOut) {
     body = <WaysToConnectOptIn />
   } else if (result === null) {
-    // Unreachable: ``participating`` and ``result === null`` are set
+    // Unreachable: ``optedOut`` and ``result === null`` are set
     // together. Present so the narrowing below is total rather than
     // asserted.
     body = <WaysToConnectUnavailable reason="error" />

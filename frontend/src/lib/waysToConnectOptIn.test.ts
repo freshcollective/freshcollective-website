@@ -21,11 +21,20 @@ describe('participation decides the page, not whether the feature exists', () =>
 
   test('the page reads the member’s own setting', () => {
     assert.match(page, /const me = await getMe\(\)/)
-    assert.match(page, /me\?\.ways_to_connect_enabled === true/)
+    assert.match(page, /ways_to_connect_enabled !== true/)
   })
 
   test('opted out renders the opt-in state', () => {
-    assert.match(page, /if \(!participating\) \{[\s\S]{0,120}<WaysToConnectOptIn \/>/)
+    assert.match(page, /if \(optedOut\) \{[\s\S]{0,120}<WaysToConnectOptIn \/>/)
+  })
+
+  test('a signed-out visitor is not treated as opted out', () => {
+    // This route has no auth redirect of its own, so getMe() returns
+    // null for a stranger. Reading that as a declined setting showed
+    // them a page about *their* participation being off, with a CTA
+    // that would 401 — confidently wrong, rather than merely unhelpful.
+    assert.match(page, /const signedIn = me !== null/)
+    assert.match(page, /const optedOut = signedIn && /)
   })
 
   test('participation is read before the recommendations', () => {
@@ -39,7 +48,8 @@ describe('participation decides the page, not whether the feature exists', () =>
   })
 
   test('no recommendations are requested for somebody who declined them', () => {
-    assert.match(page, /participating\s*\?\s*await getWaysToConnect\(\)/)
+    assert.match(page, /optedOut\s*\n?\s*(\/\/[^\n]*\n\s*)*\?\s*null/)
+    assert.match(page, /:\s*await getWaysToConnect\(\)/)
   })
 
   test('the route is still gated only on the launch flag', () => {
