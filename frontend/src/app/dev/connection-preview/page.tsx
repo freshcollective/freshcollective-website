@@ -11,7 +11,9 @@ import PeerConversationClient from '@/app/messages/[threadId]/PeerConversationCl
 import { viewerIsPlatformOwner } from '@/lib/platformOwner'
 import { getPublicPlatformArtwork } from '@/lib/serverApi'
 import {
-  PREVIEW_PEOPLE,
+  MAX_PREVIEW_CARDS,
+  PREVIEW_SETS,
+  previewSet,
   PREVIEW_VIEWER_ID,
   previewConversation,
   previewPersonRef,
@@ -66,7 +68,12 @@ const CONVO_STATES: ConversationState[] = ['normal', 'blocked', 'report']
 export default async function ConnectionPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; state?: string; convo?: string }>
+  searchParams: Promise<{
+    view?: string
+    state?: string
+    convo?: string
+    set?: string
+  }>
 }) {
   if (!(await viewerIsPlatformOwner())) notFound()
 
@@ -93,7 +100,15 @@ export default async function ConnectionPreviewPage({
     ]),
   )
 
-  const people = PREVIEW_PEOPLE.map((p) => previewPersonRef(p, artworkByKey))
+  // One fixture set at a time, never the whole cast: the product shows
+  // at most three people, so a preview showing more would be reviewing
+  // a page that cannot exist. Sliced as well as curated — the limit is
+  // asserted here rather than trusted to the fixture data staying the
+  // right length.
+  const set = previewSet(params.set)
+  const people = set.people
+    .slice(0, MAX_PREVIEW_CARDS)
+    .map((p) => previewPersonRef(p, artworkByKey))
   const threads = previewThreadSummaries(artworkByKey)
   const conversation = previewConversation(artworkByKey, convoState)
 
@@ -102,6 +117,7 @@ export default async function ConnectionPreviewPage({
       view,
       state: wtcState,
       convo: convoState,
+      set: set.key,
       ...next,
     })
     return `/dev/connection-preview?${q.toString()}`
@@ -130,6 +146,23 @@ export default async function ConnectionPreviewPage({
                 active: wtcState === s,
               }))}
             />
+          )}
+          {view === 'ways-to-connect' && wtcState === 'populated' && (
+            <>
+              <Control
+                label="Fixture set"
+                options={PREVIEW_SETS.map((s) => ({
+                  label: s.label,
+                  href: href({ set: s.key }),
+                  active: set.key === s.key,
+                }))}
+              />
+              {/* Preview-only. The real page has no set control and no
+                  way to ask for a different three. */}
+              <p className="text-[12px] italic" style={{ color: 'rgba(12,24,38,0.55)' }}>
+                {set.note} Three at a time, as the product shows them.
+              </p>
+            </>
           )}
           {view === 'conversation' && (
             <Control

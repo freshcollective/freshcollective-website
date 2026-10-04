@@ -86,19 +86,36 @@ def hello_state(db: Session, viewer_id: str, other_user_id: str) -> HelloState:
     )
 
 
-def incoming_hello_senders(db: Session, viewer_id: str) -> set[str]:
-    """Everyone who has said hello to the viewer, mutual or not.
+def incoming_hellos_recent_first(db: Session, viewer_id: str) -> list[str]:
+    """Everyone who has said hello to the viewer, most recent first.
 
     Used to make an incoming hello discoverable even when the sender
     falls outside the day's introductions — somebody greeting you should
     not be buried because the rotation put them on page two.
+
+    Ordered, not a set, because the page shows at most
+    ``selection.MAX_PEOPLE`` people and more than that many greetings can
+    be waiting. Something then has to decide which are shown, and the
+    order has to be stable or the cards would shuffle on every reload.
+
+    Most recent first, so a new greeting is seen promptly and an old
+    unanswered one cannot hold a slot forever. The alternative —
+    longest-waiting first — sounds fairer and behaves worse: a greeting
+    the viewer has decided not to answer would sit at the top
+    indefinitely and bury every greeting that came after it.
+
+    Being shown is not what permits a reply. ``is_eligible_pair`` is the
+    authorisation rule and is not limited, so a greeting that falls off
+    today's page can still be answered — the sender's own page, and the
+    notification they generated, both still reach the viewer.
     """
-    return {
+    return [
         r.from_user_id
         for r in db.query(MemberHello)
         .filter(MemberHello.to_user_id == viewer_id)
+        .order_by(MemberHello.created_at.desc(), MemberHello.from_user_id)
         .all()
-    }
+    ]
 
 
 def say_hello(

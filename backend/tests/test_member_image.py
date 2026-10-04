@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 import app.models.community_care  # noqa: F401
 from app.auth.dependencies import get_current_user, get_optional_user
 from app.core.database import get_db
+from app.models.connections import MemberHello
 from app.main import app
 from app.models.platform import (
     CreatorProfile,
@@ -713,3 +714,238 @@ class TestTheInitialRevealsNothingExtra:
 
         assert rows[0]["display_name"] == "Mira"
         assert rows[0]["image"]["initial"] == "M"
+
+
+# ---------------------------------------------------------------------------
+# The rung below a photo
+# ---------------------------------------------------------------------------
+
+
+class TestAPhotoCarriesItsFallback:
+    """A photo is the only tier that can fail after the server picks it.
+
+    It is member-supplied, it can disappear from storage, and the
+    failure is discovered in a browser long after this decision was
+    made. Before ``fallback_url`` existed the client had nothing left
+    to try, so a member with a broken photo dropped to a bare glyph —
+    worse treatment than a member with no photo at all, who gets a
+    designed card.
+    """
+
+    def _photo(self, db, make_user, name="Anna"):
+        cp = _profile(
+            db, make_user(), avatar_url="/api/uploads/avatars/a.png",
+            is_public=True,
+        )
+        return resolve_member_image(
+            display_name=name, profile=cp, artwork=MemberCardArtwork.load(db),
+        )
+
+    def test_the_fallback_is_the_members_own_card(self, db, make_user):
+        _install_cards(db, letters=("A",), neutral=True)
+        image = self._photo(db, make_user)
+        assert image.kind is MemberImageKind.PHOTO
+        assert image.fallback_url.endswith("card_a.png")
+
+    def test_it_is_the_neutral_card_when_the_letter_has_none(
+        self, db, make_user,
+    ):
+        _install_cards(db, letters=("B",), neutral=True)
+        image = self._photo(db, make_user)
+        assert image.fallback_url.endswith("card_neutral.png")
+
+    def test_a_name_with_no_latin_initial_falls_to_neutral(
+        self, db, make_user,
+    ):
+        _install_cards(db, letters=("A",), neutral=True)
+        image = self._photo(db, make_user, name="左 Lin")
+        assert image.fallback_url.endswith("card_neutral.png")
+
+    def test_with_no_artwork_installed_there_is_nothing_to_fall_to(
+        self, db, make_user,
+    ):
+        """Honest None rather than a path that would 404 in turn. The
+        client then shows the initial, which is the correct end of the
+        ladder when the artwork genuinely does not exist."""
+        image = self._photo(db, make_user)
+        assert image.fallback_url is None
+        assert image.initial == "A"
+
+    def test_only_a_photo_carries_one(self, db, make_user):
+        """A card has no rung below it worth naming: if the artwork
+        itself fails the initial is all that is left, and the client
+        already has it."""
+        _install_cards(db, letters=("S",), neutral=True)
+        card = resolve_member_image(
+            display_name="Sarah", profile=None,
+            artwork=MemberCardArtwork.load(db),
+        )
+        assert card.kind is MemberImageKind.ALPHABET
+        assert card.fallback_url is None
+
+    def test_a_private_photo_contributes_no_fallback(self, db, make_user):
+        """The member is not showing a photo at all, so the card is the
+        picture rather than a fallback for one."""
+        _install_cards(db, letters=("S",), neutral=True)
+        cp = _profile(
+            db, make_user(), avatar_url="/api/uploads/avatars/a.png",
+            is_public=False,
+        )
+        image = resolve_member_image(
+            display_name="Sarah", profile=cp,
+            artwork=MemberCardArtwork.load(db),
+        )
+        assert image.kind is MemberImageKind.ALPHABET
+        assert image.fallback_url is None
+
+    def test_it_crosses_the_api_boundary(self, db, make_user):
+        """Useless if the payload drops it."""
+        from app.services.member_image import MemberImagePayload
+
+        _install_cards(db, letters=("A",), neutral=True)
+        cp = _profile(
+            db, make_user(), avatar_url="/api/uploads/avatars/a.png",
+            is_public=True,
+        )
+        payload = MemberImagePayload.resolve(
+            display_name="Anna", profile=cp,
+            artwork=MemberCardArtwork.load(db),
+        )
+        assert payload.kind == "photo"
+        assert payload.fallback_url.endswith("card_a.png")
+
+
+class TestEveryLetterResolves:
+    """Not just A. The twenty-seven slots are generated, so a defect in
+    key derivation would hit some letters and not others — exactly the
+    shape of the report that prompted this."""
+
+    @pytest.mark.parametrize(
+        "letter,name",
+        [
+            ("A", "Anna Byrne"),
+            ("J", "Jo Marsden"),
+            ("M", "Maya Fuller"),
+            ("R", "Rosemary Ngata"),
+            ("Z", "Zahra Okonjo"),
+        ],
+    )
+    def test_the_letters_card_is_found(self, db, letter, name):
+        _install_cards(db, letters=(letter,), neutral=True)
+        image = resolve_member_image(
+            display_name=name, profile=None,
+            artwork=MemberCardArtwork.load(db),
+        )
+        assert image.kind is MemberImageKind.ALPHABET
+        assert image.url.endswith(f"card_{letter.lower()}.png")
+        assert image.initial == letter
+
+    @pytest.mark.parametrize(
+        "name,letter",
+        [
+            ("anna byrne", "A"),          # lowercase display name
+            ("  jo marsden", "J"),        # leading whitespace
+            ("Émile Zola", "E"),          # accent folded to its base
+            ("ZAHRA", "Z"),               # already uppercase
+        ],
+    )
+    def test_the_key_is_derived_case_and_accent_insensitively(
+        self, db, name, letter,
+    ):
+        """The lookup key is lowercase on both sides. A name's own case
+        and accents must not decide whether a card is found."""
+        _install_cards(db, letters=(letter,), neutral=True)
+        image = resolve_member_image(
+            display_name=name, profile=None,
+            artwork=MemberCardArtwork.load(db),
+        )
+        assert image.kind is MemberImageKind.ALPHABET
+        assert image.url.endswith(f"card_{letter.lower()}.png")
+
+    def test_all_twenty_six_plus_neutral_resolve_when_installed(self, db):
+        """The whole set at once, because the admin page offers it as a
+        set and a single missing letter is invisible one card at a
+        time."""
+        import string
+
+        letters = tuple(string.ascii_uppercase)
+        _install_cards(db, letters=letters, neutral=True)
+        artwork = MemberCardArtwork.load(db)
+        for letter in letters:
+            image = resolve_member_image(
+                display_name=f"{letter}ana", profile=None, artwork=artwork,
+            )
+            assert image.kind is MemberImageKind.ALPHABET, letter
+            assert image.url.endswith(f"card_{letter.lower()}.png"), letter
+        neutral = resolve_member_image(
+            display_name="左 Lin", profile=None, artwork=artwork,
+        )
+        assert neutral.kind is MemberImageKind.NEUTRAL
+
+
+class TestOneResolverForEverySurface:
+    """Ways to Connect and Messages must agree about one person.
+
+    Not a style point. The two surfaces sit next to each other in the
+    same journey — you meet somebody on a card and then open a
+    conversation with them — so a different picture or a different
+    fallback between the two reads as a different person.
+    """
+
+    def test_no_route_builds_a_member_image_by_hand(self):
+        """The guard against a seventh avatar implementation.
+
+        Every surface must go through ``MemberImagePayload.resolve``;
+        constructing the wire shape directly is how the surfaces
+        disagreed before the resolver existed.
+        """
+        import re
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parent.parent / "app"
+        offenders = []
+        for path in root.rglob("*.py"):
+            if path.name == "member_image.py":
+                continue
+            src = path.read_text()
+            # Comments stripped: the modules describe the payload in
+            # prose, and a blunt substring check trips on the
+            # description rather than on a breach.
+            code = re.sub(r"#.*", "", src)
+            if "MemberImagePayload(" in code:
+                offenders.append(str(path.relative_to(root)))
+        assert not offenders, (
+            "these build the payload directly instead of resolving it: "
+            f"{offenders}"
+        )
+
+    def test_both_surfaces_resolve_one_member_identically(
+        self, client, db, make_user, make_space, make_event, flag_on,
+    ):
+        """The same two people, read through both routes."""
+        _install_cards(db, letters=("A", "B"), neutral=True)
+        a, b = make_user(name="Anna Byrne"), make_user(name="Bea Lowe")
+        space = _visible_space(make_space)
+        for u in (a, b):
+            _join(db, u, space)
+        _two_attended(db, make_event, (a, b), space)
+        # A photo on one of them, so the tier that carries a fallback is
+        # the one being compared.
+        _profile(db, b, avatar_url="/api/uploads/avatars/b.png", is_public=True)
+        db.add(MemberHello(id=str(uuid.uuid4()), from_user_id=a.id, to_user_id=b.id))
+        db.add(MemberHello(id=str(uuid.uuid4()), from_user_id=b.id, to_user_id=a.id))
+        db.flush()
+
+        as_user(a)
+
+        ways = client.get("/api/ways-to-connect").json()
+        card = next(p for p in ways["people"] if p["id"] == b.id)
+
+        opened = client.post("/api/messages/open", json={"user_id": b.id}).json()
+        thread = client.get(f"/api/messages/{opened['thread_id']}").json()
+
+        assert card["image"] == thread["other"]["image"], (
+            "the same person, two surfaces, one picture"
+        )
+        assert card["image"]["kind"] == "photo"
+        assert card["image"]["fallback_url"].endswith("card_b.png")

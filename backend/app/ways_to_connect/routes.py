@@ -64,7 +64,7 @@ from app.creator.plan_guards import is_platform_owner
 from app.ways_to_connect.hello_service import (
     HelloState,
     hello_states,
-    incoming_hello_senders,
+    incoming_hellos_recent_first,
     say_hello,
 )
 from app.ways_to_connect.selection import (
@@ -273,25 +273,48 @@ def get_ways_to_connect(
     # name them where they are; the destination stays quiet.
     nameable = [r for r in recognitions if index.get(r.other_user_id, (None, None))[0]]
     artwork = MemberCardArtwork.load(db)
-    featured = select_people(nameable, now=now, limit=MAX_PEOPLE)
-    featured_ids = [r.other_user_id for r in featured]
-    featured_set = set(featured_ids)
 
     # Somebody greeting you should not be buried because that day's
     # rotation put them outside the featured few. Incoming hellos are
-    # lifted to the front of the featured block — they are the one thing
-    # on this page that is waiting on the viewer rather than offered to
-    # them. Only nameable people can be lifted, for the same reason only
-    # nameable people can be featured: a card introduces somebody.
-    incoming = incoming_hello_senders(db, current_user.id)
+    # lifted to the front — they are the one thing on this page that is
+    # waiting on the viewer rather than offered to them. Only nameable
+    # people can be lifted, for the same reason only nameable people can
+    # be featured: a card introduces somebody.
+    #
+    # Resolved *before* the recommendations, and counted against the
+    # same ``MAX_PEOPLE`` budget. Taking them in the other order is what
+    # used to make the page overflow: the cap applied to
+    # ``select_people`` alone and the greetings were then added on top,
+    # so N people waiting produced N + MAX_PEOPLE cards.
+    by_id = {r.other_user_id: r for r in nameable}
     waiting = [
-        r for r in nameable
-        if r.other_user_id in incoming and r.other_user_id not in featured_set
-    ]
-    ordered = waiting + featured + [
-        r for r in recognitions
-        if r.other_user_id not in featured_set
-        and r.other_user_id not in {w.other_user_id for w in waiting}
+        by_id[user_id]
+        for user_id in incoming_hellos_recent_first(db, current_user.id)
+        if user_id in by_id
+    ][:MAX_PEOPLE]
+    waiting_set = {r.other_user_id for r in waiting}
+
+    # Only the slots the greetings left. Greetings can legitimately take
+    # all of them: answering someone who reached out matters more than
+    # meeting somebody new, and a page of three greetings is a fuller
+    # answer than two greetings and a stranger.
+    #
+    # People already carded are withheld from the recommendation pool
+    # rather than filtered out afterwards — a person cannot compete for
+    # a second slot, and leaving them in would silently shrink the page.
+    featured = select_people(
+        [r for r in nameable if r.other_user_id not in waiting_set],
+        now=now,
+        limit=MAX_PEOPLE - len(waiting),
+    )
+    featured_ids = [r.other_user_id for r in featured]
+
+    # The cards, in the order they are read.
+    carded = waiting + featured
+    carded_set = waiting_set | set(featured_ids)
+
+    ordered = carded + [
+        r for r in recognitions if r.other_user_id not in carded_set
     ]
     truncated = len(ordered) > MAX_PEOPLE_IN_PAYLOAD
     ordered = ordered[:MAX_PEOPLE_IN_PAYLOAD]
@@ -316,11 +339,14 @@ def get_ways_to_connect(
         # them too — otherwise the slice would cut the featured people
         # off the end by exactly the number of hellos waiting.
         #
+        # Never more than ``MAX_PEOPLE``: both halves are drawn from one
+        # budget above, and this is the number the page renders.
+        #
         # A waiting person is carded whether or not they are still
         # eligible: evidence can lapse after a hello, and a greeting
         # already sent is not withdrawn because an upcoming Gathering
         # has since passed.
-        featured_count=len(waiting) + len(featured_ids),
+        featured_count=len(carded),
         truncated=truncated,
     )
 

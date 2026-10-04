@@ -665,6 +665,9 @@ export interface MemberImage {
   kind: 'photo' | 'alphabet' | 'neutral' | 'initial'
   url: string | null
   initial: string | null
+  /** The card to draw if `url` fails to load. Photos only — see
+   *  `services/member_image.MemberImage.fallback_url`. */
+  fallback_url?: string | null
 }
 
 export interface UserProfile {

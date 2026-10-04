@@ -81,7 +81,24 @@ const pathway = (title: string, days: number): SharedThing => ({
  * component renders it — no second avatar implementation.
  */
 export type PreviewImageSpec =
-  | { kind: 'photo'; url: string; initial: string }
+  /**
+   * A member's own photo.
+   *
+   * ``artworkKey`` rather than a URL, because the harness runs on
+   * production and production's CSP allows images only from ``'self'``,
+   * the API origin, R2 and ``data:``. The first version of these
+   * fixtures pointed at ``images.unsplash.com``; the browser refused
+   * both of them, and the two people with photos were the two that
+   * looked broken under review. Pointing at a real uploaded asset
+   * keeps the photo tier reviewable — real bytes, real media path,
+   * same ``object-cover`` crop a member's photo gets.
+   *
+   * ``fallbackLetter`` is the card this photo degrades to, which is the
+   * behaviour the plain-initial fallback is *not* supposed to reach.
+   */
+  | { kind: 'photo'; artworkKey: string; initial: string; fallbackLetter: string }
+  /** Deliberately unresolvable, to review the end of the ladder. */
+  | { kind: 'broken-photo'; initial: string; fallbackLetter: string }
   | { kind: 'alphabet'; letter: string }
   | { kind: 'neutral' }
 
@@ -94,9 +111,10 @@ export interface PreviewPerson {
 }
 
 /**
- * Seven people covering every card state, in the order the real page
- * would produce: an incoming hello is lifted to the front, because
- * somebody waiting on you should not sit behind a recommendation.
+ * The full cast the fixture sets draw from. Never rendered as one
+ * list: the real page shows at most ``MAX_PREVIEW_CARDS`` people, and
+ * a preview that shows more than the product does is not a preview of
+ * the product. See ``PREVIEW_SETS``.
  */
 export const PREVIEW_PEOPLE: PreviewPerson[] = [
   {
@@ -113,8 +131,9 @@ export const PREVIEW_PEOPLE: PreviewPerson[] = [
     name: 'Anna Byrne',
     image: {
       kind: 'photo',
-      url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&q=70',
+      artworkKey: 'homepage_conversations',
       initial: 'A',
+      fallbackLetter: 'A',
     },
     relationship: 'mutual',
     shared: [attended('EMBODY — Monday', 9), upcoming('EMBODY — Thursday', 4)],
@@ -141,8 +160,9 @@ export const PREVIEW_PEOPLE: PreviewPerson[] = [
     name: 'Jo Marsden',
     image: {
       kind: 'photo',
-      url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400&q=70',
+      artworkKey: 'homepage_ways_to_connect',
       initial: 'J',
+      fallbackLetter: 'J',
     },
     relationship: 'none',
     shared: [pathway('Life in Alignment', 12), upcoming('EMBODY — Thursday', 4)],
@@ -163,15 +183,101 @@ export const PREVIEW_PEOPLE: PreviewPerson[] = [
     relationship: 'none',
     shared: [pathway('Life in Alignment', 18), attended('EMBODY — Monday', 9)],
   },
+  {
+    // The end of the ladder: a photo that cannot be loaded. Must show
+    // this member's own card, never a bare glyph.
+    id: 'prev-wren',
+    name: 'Wren Adeyemi',
+    image: { kind: 'broken-photo', initial: 'W', fallbackLetter: 'W' },
+    relationship: 'none',
+    shared: [pathway('Life in Alignment', 16), attended('Winter Gathering', 44)],
+  },
 ]
+
+// ---------------------------------------------------------------------------
+// Fixture sets
+// ---------------------------------------------------------------------------
+
+/**
+ * The product's own limit, mirrored.
+ *
+ * ``selection.MAX_PEOPLE`` on the backend is the authority; this is the
+ * number the harness is held to so the preview cannot quietly show a
+ * page the product would never render. Reviewing seven cards at once is
+ * what made the destination read as a directory.
+ */
+export const MAX_PREVIEW_CARDS = 3
+
+export type PreviewSetKey = 'discovery' | 'hello' | 'connected'
+
+export interface PreviewSet {
+  key: PreviewSetKey
+  label: string
+  /** What this set is for, shown beside the control. */
+  note: string
+  people: PreviewPerson[]
+}
+
+const byId = (id: string): PreviewPerson => {
+  const found = PREVIEW_PEOPLE.find((p) => p.id === id)
+  if (!found) throw new Error(`unknown preview person: ${id}`)
+  return found
+}
+
+/**
+ * Three sets of three, instead of one page of seven.
+ *
+ * Every state still gets reviewed — they are just not all on screen at
+ * once, because the product never puts them there. Each set is a page
+ * the real product could actually produce.
+ */
+export const PREVIEW_SETS: PreviewSet[] = [
+  {
+    key: 'discovery',
+    label: 'Discovery',
+    note: 'Nobody has said hello yet. Photo, monogram and the broken-photo fallback.',
+    people: [byId('prev-jo'), byId('prev-dee'), byId('prev-wren')],
+  },
+  {
+    key: 'hello',
+    label: 'Hello states',
+    note: 'An incoming hello first, then one sent and one not yet acted on.',
+    people: [byId('prev-maya'), byId('prev-tess'), byId('prev-neutral')],
+  },
+  {
+    key: 'connected',
+    label: 'Connected',
+    note: 'Two mutual connections side by side, to judge repetition.',
+    people: [byId('prev-anna'), byId('prev-rose'), byId('prev-dee')],
+  },
+]
+
+export function previewSet(key: string | undefined): PreviewSet {
+  return PREVIEW_SETS.find((s) => s.key === key) ?? PREVIEW_SETS[0]
+}
 
 /** Turn a spec into the payload ``MemberImage`` expects. */
 export function resolvePreviewImage(
   spec: PreviewImageSpec,
   artworkByKey: Map<string, string | null>,
 ): MemberImage {
-  if (spec.kind === 'photo') {
-    return { kind: 'photo', url: spec.url, initial: spec.initial }
+  if (spec.kind === 'photo' || spec.kind === 'broken-photo') {
+    return {
+      kind: 'photo',
+      url: spec.kind === 'photo'
+        ? artworkByKey.get(spec.artworkKey) ?? null
+        // A path that resolves to nothing, so the ladder is exercised
+        // rather than described.
+        : '/api/uploads/preview/this-photo-is-gone.webp',
+      initial: spec.initial,
+      // The rung below, exactly as the real resolver now sends it: a
+      // photo that fails falls to the member's card, never straight to
+      // a bare glyph.
+      fallback_url:
+        artworkByKey.get(`member_card_${spec.fallbackLetter.toLowerCase()}`)
+        ?? artworkByKey.get('member_card_neutral')
+        ?? null,
+    }
   }
   if (spec.kind === 'neutral') {
     return {
@@ -197,7 +303,7 @@ export function previewPersonRef(
   return {
     id: person.id,
     display_name: person.name,
-    avatar_url: person.image.kind === 'photo' ? person.image.url : null,
+    avatar_url: null,
     image: resolvePreviewImage(person.image, artworkByKey),
     relationship: person.relationship,
     collectives: [COLLECTIVE],

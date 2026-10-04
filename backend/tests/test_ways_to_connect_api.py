@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 import app.models.community_care  # noqa: F401
 from app.auth.dependencies import get_current_user
+from app.models.connections import MemberHello
 from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
@@ -786,7 +787,39 @@ class TestNoPrivateFields:
             "relationship",
         }
         # The resolved picture, and nothing more about the person.
-        assert set(person["image"].keys()) == {"kind", "url", "initial"}
+        #
+        # ``fallback_url`` is the card this picture degrades to if it
+        # cannot be loaded. It is platform artwork — identical for
+        # everybody sharing a letter, and the same URL a member with no
+        # photo at all is served — so it describes Fresh Collective's
+        # asset library rather than this person. Its presence does
+        # reveal that the top tier is a photo, which ``kind`` already
+        # says outright.
+        assert set(person["image"].keys()) == {
+            "kind", "url", "initial", "fallback_url",
+        }
+
+    def test_the_image_fallback_is_platform_artwork_not_member_data(
+        self, client, db, flag_on, make_user, make_space, make_event
+    ):
+        """The one field added to the image payload, held to the same
+        rule as every other: a member must not be able to learn
+        anything about another member from it."""
+        alice, bob = self._pair(
+            db, make_user, make_space, make_event,
+            name="Bob", email="bob-private@example.test",
+        )
+        as_user(alice)
+
+        image = client.get(URL).json()["people"][0]["image"]
+        fallback = image["fallback_url"]
+
+        if fallback is not None:
+            assert fallback.startswith("/api/uploads/platform-artwork/"), (
+                "the fallback must be platform artwork, never member media"
+            )
+            assert bob.id not in fallback
+            assert "avatar" not in fallback
 
     def test_nothing_private_appears_anywhere_in_the_payload(
         self, client, db, flag_on, make_user, make_space, make_event
@@ -951,3 +984,209 @@ class TestFinite:
         as_user(alice)
 
         assert client.get(URL).json()["truncated"] is False
+
+
+# ---------------------------------------------------------------------------
+# The three-card limit
+# ---------------------------------------------------------------------------
+
+
+class TestTheThreeCardLimit:
+    """``MAX_PEOPLE`` is the number of cards the page renders — all of
+    them, not just the recommended ones.
+
+    The cap used to apply to ``select_people`` alone. Incoming hellos
+    were then lifted to the front *in addition*, so every greeting
+    waiting added a card: four people saying hello to a viewer who also
+    had three recommendations produced seven cards, and Ways to Connect
+    read as a directory rather than an introduction.
+    """
+
+    def _crowd(self, db, make_user, make_space, make_event, n):
+        """``n`` eligible peers — two attended Gatherings each, on their
+        own dates so nobody shares another's evidence."""
+        alice = make_user()
+        space = _visible_space(make_space)
+        _join(db, alice, space)
+        peers = []
+        for i in range(n):
+            u = make_user(name=f"Peer {i:02d}")
+            _join(db, u, space)
+            for days in (i * 3 + 5, i * 3 + 60):
+                ev = _past_attended_event(
+                    make_event, space, days=days, title=f"Sitting {i}-{days}",
+                )
+                for who in (alice, u):
+                    _book(db, who, ev, attendance="attended")
+            peers.append(u)
+        return alice, peers
+
+    def _hello(self, db, sender, recipient, *, minutes_ago=0):
+        db.add(MemberHello(
+            id=_uid("h"),
+            from_user_id=sender.id,
+            to_user_id=recipient.id,
+            created_at=NOW - timedelta(minutes=minutes_ago),
+        ))
+        db.flush()
+
+    def _carded(self, client):
+        body = client.get(URL).json()
+        return body, body["people"][: body["featured_count"]]
+
+    def test_nine_eligible_people_render_three_cards(
+        self, client, db, flag_on, make_user, make_space, make_event,
+    ):
+        alice, _ = self._crowd(db, make_user, make_space, make_event, 9)
+        as_user(alice)
+
+        body, carded = self._carded(client)
+
+        assert body["featured_count"] == 3
+        assert len(carded) == 3
+
+    def test_every_eligible_person_also_saying_hello_still_renders_three(
+        self, client, db, flag_on, make_user, make_space, make_event,
+    ):
+        """The regression, at its sharpest.
+
+        Nine eligible people who have each said hello: the greetings
+        used to be lifted to the front *and* the recommendations kept
+        their three slots, so ``featured_count`` reached nine.
+        """
+        alice, peers = self._crowd(db, make_user, make_space, make_event, 9)
+        for i, peer in enumerate(peers):
+            self._hello(db, peer, alice, minutes_ago=i)
+        as_user(alice)
+
+        body, carded = self._carded(client)
+
+        assert body["featured_count"] == 3, "the page is three people"
+        assert len(carded) == 3
+        assert len(body["people"]) == 9, "the tail still feeds in-context lines"
+
+    def test_four_greetings_render_three_cards_and_all_are_greetings(
+        self, client, db, flag_on, make_user, make_space, make_event,
+    ):
+        """Greetings may take every slot.
+
+        Answering somebody who reached out matters more than meeting
+        somebody new, so a recommendation never displaces a greeting to
+        make room for itself.
+        """
+        alice, peers = self._crowd(db, make_user, make_space, make_event, 8)
+        greeters = peers[:4]
+        for i, peer in enumerate(greeters):
+            self._hello(db, peer, alice, minutes_ago=i)
+        as_user(alice)
+
+        body, carded = self._carded(client)
+
+        assert body["featured_count"] == 3
+        greeter_ids = {u.id for u in greeters}
+        assert {p["id"] for p in carded} <= greeter_ids, (
+            "a recommendation took a slot a greeting was waiting for"
+        )
+
+    def test_a_greeting_is_carded_before_any_recommendation(
+        self, client, db, flag_on, make_user, make_space, make_event,
+    ):
+        alice, peers = self._crowd(db, make_user, make_space, make_event, 8)
+        greeter = peers[5]
+        self._hello(db, greeter, alice)
+        as_user(alice)
+
+        body, carded = self._carded(client)
+
+        assert body["featured_count"] == 3
+        assert carded[0]["id"] == greeter.id, "the greeting reads first"
+        assert len({p["id"] for p in carded}) == 3, "and nobody is carded twice"
+
+    def test_the_most_recent_greetings_are_the_ones_shown(
+        self, client, db, flag_on, make_user, make_space, make_event,
+    ):
+        """Ordering has to be decided, because five greetings cannot all
+        be shown. Newest first: an unanswered greeting must not hold a
+        slot forever and bury everything that came after it."""
+        alice, peers = self._crowd(db, make_user, make_space, make_event, 5)
+        # peers[0] greeted longest ago, peers[4] most recently.
+        for i, peer in enumerate(peers):
+            self._hello(db, peer, alice, minutes_ago=(len(peers) - i) * 60)
+        as_user(alice)
+
+        body, carded = self._carded(client)
+
+        assert [p["id"] for p in carded] == [p.id for p in reversed(peers[2:])]
+
+    def test_the_order_is_stable_across_reloads(
+        self, client, db, flag_on, make_user, make_space, make_event,
+    ):
+        alice, peers = self._crowd(db, make_user, make_space, make_event, 6)
+        for i, peer in enumerate(peers):
+            self._hello(db, peer, alice, minutes_ago=i * 7)
+        as_user(alice)
+
+        first = [p["id"] for p in self._carded(client)[1]]
+        second = [p["id"] for p in self._carded(client)[1]]
+
+        assert first == second and len(first) == 3
+
+    def test_the_cap_is_display_only_and_does_not_gate_saying_hello(
+        self, client, db, flag_on, make_user, make_space, make_event,
+    ):
+        """The limit is a presentation choice. Somebody eligible who fell
+        outside today's three is still someone the viewer may greet —
+        otherwise the cap would quietly become an authorisation rule."""
+        alice, peers = self._crowd(db, make_user, make_space, make_event, 9)
+        as_user(alice)
+        body, carded = self._carded(client)
+        carded_ids = {p["id"] for p in carded}
+        uncarded = next(u for u in peers if u.id not in carded_ids)
+
+        assert client.post(f"{URL}/{uncarded.id}/hello").status_code == 200
+
+    def test_eligibility_is_untouched_by_the_cap(
+        self, client, db, flag_on, make_user, make_space, make_event,
+    ):
+        """Two signals with one realised is still the threshold, and the
+        cap never lowers it to fill a slot."""
+        alice, peers = self._thin(db, make_user, make_space, make_event, 5)
+        as_user(alice)
+
+        body = client.get(URL).json()
+
+        assert body["featured_count"] == 0, (
+            "five recognisable people, nobody eligible, so no cards"
+        )
+        assert len(body["people"]) == 5
+
+    def _thin(self, db, make_user, make_space, make_event, n):
+        """``n`` peers sharing one upcoming Gathering each — one signal,
+        and that signal unrealised. Recognisable, never eligible."""
+        alice = make_user()
+        space = _visible_space(make_space)
+        _join(db, alice, space)
+        peers = []
+        for i in range(n):
+            u = make_user(name=f"Thin {i:02d}")
+            _join(db, u, space)
+            ev = _upcoming(make_event, space, days=i + 2, title=f"Once {i}")
+            for who in (alice, u):
+                _book(db, who, ev)
+            peers.append(u)
+        return alice, peers
+
+    def test_a_greeting_from_somebody_no_longer_eligible_is_still_carded(
+        self, client, db, flag_on, make_user, make_space, make_event,
+    ):
+        """Evidence can lapse after a hello. A greeting already sent is
+        not withdrawn because a Gathering has since passed."""
+        alice, peers = self._thin(db, make_user, make_space, make_event, 3)
+        greeter = peers[1]
+        self._hello(db, greeter, alice)
+        as_user(alice)
+
+        body, carded = self._carded(client)
+
+        assert body["featured_count"] == 1
+        assert carded[0]["id"] == greeter.id

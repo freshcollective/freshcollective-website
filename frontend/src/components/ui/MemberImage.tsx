@@ -39,9 +39,23 @@ export default function MemberImage({
   /** Callers choose the shape: cards use a square, inline rows a circle. */
   rounded?: string
 }) {
-  const [failed, setFailed] = useState(false)
-  const url = failed ? null : resolveMediaUrl(image.url ?? undefined)
-  const isPhoto = image.kind === 'photo'
+  // How many rungs of the ladder this client has had to step down.
+  // The server picked the top one it could see; only a photo can still
+  // fail after that, and when it does there is a card waiting below it.
+  // Counting rather than a boolean because stepping down can happen
+  // twice: a broken photo, and then artwork that is itself unreachable.
+  const [stepsDown, setStepsDown] = useState(0)
+
+  const rungs = [image.url, image.fallback_url].filter(
+    (u): u is string => !!u,
+  )
+  const current = rungs[stepsDown] ?? null
+  const url = resolveMediaUrl(current ?? undefined)
+
+  // A photo is cropped to the frame; a card is drawn for it and must
+  // not be. Once the photo has failed, what is showing is a card —
+  // so the crop has to step down with it.
+  const isPhoto = image.kind === 'photo' && stepsDown === 0
 
   return (
     <div
@@ -61,9 +75,11 @@ export default function MemberImage({
           src={url}
           alt=""
           aria-hidden="true"
-          onError={() => setFailed(true)}
-          // A photo is cropped to the frame; a card is drawn for it and
-          // must not be.
+          // Keyed on the URL so React remounts the element when the
+          // source changes; without it the browser can keep the failed
+          // image and never request the fallback.
+          key={url}
+          onError={() => setStepsDown((n) => n + 1)}
           className={`absolute inset-0 h-full w-full ${isPhoto ? 'object-cover' : 'object-contain'}`}
         />
       ) : (

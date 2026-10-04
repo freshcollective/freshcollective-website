@@ -635,7 +635,17 @@ class TestPrivacy:
         as_user(a)
         other = _open(client, b.id).json()["other"]
         assert set(other.keys()) == {"id", "display_name", "image"}
-        assert set(other["image"].keys()) == {"kind", "url", "initial"}
+        # ``fallback_url`` is the card this picture degrades to. Platform
+        # artwork, shared by everybody with the same initial, so it says
+        # nothing about this participant — and it is the same set of keys
+        # Ways to Connect sends, which is the point of one resolver.
+        assert set(other["image"].keys()) == {
+            "kind", "url", "initial", "fallback_url",
+        }
+        if other["image"]["fallback_url"] is not None:
+            assert other["image"]["fallback_url"].startswith(
+                "/api/uploads/platform-artwork/"
+            )
 
     def test_no_email_anywhere_in_the_payloads(self, client, db, connected):
         a, b = connected()

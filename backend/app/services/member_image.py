@@ -70,11 +70,24 @@ class MemberImage:
     ``initial`` is present for every kind, not just ``INITIAL``: it is
     the alt text for a card, and it lets a client fall back on its own
     if an image 404s mid-render.
+
+    ``fallback_url`` is the rung *below* this one, and is set only for a
+    photo. A member's own photo is the only tier that can fail after the
+    server has chosen it — it is member-supplied, it can be deleted from
+    storage, and a client-side block or a 404 is discovered in the
+    browser, long after this decision was made. Without the next rung
+    travelling alongside it, that failure skipped straight to a bare
+    glyph: the client had nothing else to try, so a member with a broken
+    photo got worse treatment than a member with no photo at all, who
+    gets a designed card. Carrying it keeps the ladder a ladder all the
+    way down, on every surface, without a second resolver.
     """
 
     kind: MemberImageKind
     url: str | None
     initial: str | None
+    #: The card to draw if ``url`` cannot be loaded. Photos only.
+    fallback_url: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -212,13 +225,20 @@ def resolve_member_image(
     """Walk the ladder once and return what to draw."""
     letter = alphabet_letter(display_name)
 
+    card = artwork.for_letter(letter)
+
     photo = visible_photo_url(profile)
     if photo:
+        # Resolved now rather than on failure, because the artwork is
+        # loaded here and the browser that discovers the failure has no
+        # way to ask for it.
         return MemberImage(
-            kind=MemberImageKind.PHOTO, url=photo, initial=letter
+            kind=MemberImageKind.PHOTO,
+            url=photo,
+            initial=letter,
+            fallback_url=card or artwork.neutral,
         )
 
-    card = artwork.for_letter(letter)
     if card:
         return MemberImage(
             kind=MemberImageKind.ALPHABET, url=card, initial=letter
@@ -248,10 +268,17 @@ class MemberImagePayload(BaseModel):
     kind: str
     url: str | None = None
     initial: str | None = None
+    #: Only ever set on a photo. See ``MemberImage.fallback_url``.
+    fallback_url: str | None = None
 
     @classmethod
     def of(cls, image: MemberImage) -> "MemberImagePayload":
-        return cls(kind=image.kind.value, url=image.url, initial=image.initial)
+        return cls(
+            kind=image.kind.value,
+            url=image.url,
+            initial=image.initial,
+            fallback_url=image.fallback_url,
+        )
 
     @classmethod
     def resolve(

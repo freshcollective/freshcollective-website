@@ -28,6 +28,7 @@
 
 import { useState } from 'react'
 import MemberImage from '@/components/ui/MemberImage'
+import { personCardType as T } from './personCardType'
 import { useRouter } from 'next/navigation'
 import {
   openConversation,
@@ -154,17 +155,14 @@ export default function PersonCard({
       <MemberImage image={person.image} className="w-full" />
 
       <div className="flex flex-1 flex-col p-5">
-        <h3
-          className="font-serif text-[19px] leading-tight break-words"
-          style={{ color: '#0C1826' }}
-        >
+        <h3 className={T.name.className} style={T.name.style}>
           {name}
         </h3>
 
         {reason && (
           <p
-            className="mt-2 text-[14px] leading-[1.6] break-words"
-            style={{ color: 'rgba(12, 24, 38, 0.78)', fontFamily: 'Georgia, serif' }}
+            className={`mt-2 ${T.reason.className}`}
+            style={T.reason.style}
           >
             {reason}
           </p>
@@ -173,8 +171,8 @@ export default function PersonCard({
         {person.shared.length > 0 && (
           <div className="mt-4">
             <p
-              className="text-[11px] font-semibold uppercase tracking-[0.14em]"
-              style={{ color: 'rgba(12, 24, 38, 0.42)' }}
+              className={T.sharedLabel.className}
+              style={T.sharedLabel.style}
             >
               Shared
             </p>
@@ -182,8 +180,8 @@ export default function PersonCard({
               {person.shared.map((thing) => (
                 <li
                   key={`${thing.kind}-${thing.id}`}
-                  className="flex items-start gap-2 text-[13.5px] leading-snug break-words"
-                  style={{ color: 'rgba(12, 24, 38, 0.72)' }}
+                  className={`flex items-start gap-2 ${T.evidence.className}`}
+                  style={T.evidence.style}
                 >
                   <span aria-hidden="true" className="mt-[7px] shrink-0">
                     <span
@@ -211,8 +209,8 @@ export default function PersonCard({
             <div>
               <p
                 aria-live="polite"
-                className="text-[13px] font-semibold"
-                style={{ color: '#1E6E6C', fontFamily: 'Georgia, serif' }}
+                className={T.state.className}
+                style={T.state.style}
               >
                 <span aria-hidden="true">✓</span> Connected
                 <span className="sr-only"> — you and {name} have both said hello</span>
@@ -227,14 +225,14 @@ export default function PersonCard({
                 type="button"
                 onClick={openMessage}
                 disabled={opening}
-                className="mt-2 rounded text-[13px] font-semibold transition-opacity hover:opacity-70 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-                style={{ color: '#2F8F8D' }}
+                className={`mt-2 rounded transition-opacity hover:opacity-70 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 ${T.action.className}`}
+                style={T.action.style}
               >
                 {opening ? 'Opening…' : 'Message →'}
                 <span className="sr-only"> — {name}</span>
               </button>
               {openError && (
-                <p className="mt-2 text-[12.5px]" style={{ color: '#B4483C' }}>
+                <p className={`mt-2 ${T.error.className}`} style={T.error.style}>
                   {openError}
                 </p>
               )}
@@ -245,30 +243,27 @@ export default function PersonCard({
                as something that failed. */
             <p
               aria-live="polite"
-              className="text-[13px]"
-              style={{ color: '#1E6E6C', fontFamily: 'Georgia, serif' }}
+              className={T.state.className}
+              style={T.state.style}
             >
               Hello sent
               <span className="sr-only"> — waiting for {name}</span>
             </p>
           ) : state === 'confirming' || state === 'sending' ? (
             <div>
-              <p
-                className="text-[13.5px] leading-[1.55]"
-                style={{ color: '#0C1826', fontFamily: 'Georgia, serif' }}
-              >
+              <p className={T.prompt.className} style={T.prompt.style}>
                 {isIncoming ? `Say hello back to ${name}?` : `Say hello to ${name}?`}
               </p>
               <p
-                className="mt-1.5 text-[12.5px] leading-[1.55]"
-                style={{ color: 'rgba(12, 24, 38, 0.6)' }}
+                className={`mt-1.5 ${T.supporting.className}`}
+                style={T.supporting.style}
               >
                 {isIncoming
                   ? `${name} has already said hello, so this connects you both.`
                   : `This lets ${name} know you’re open to connecting.`}
               </p>
               {error && (
-                <p className="mt-2 text-[12.5px]" style={{ color: '#B4483C' }}>
+                <p className={`mt-2 ${T.error.className}`} style={T.error.style}>
                   {error}
                 </p>
               )}
@@ -277,16 +272,19 @@ export default function PersonCard({
                   type="button"
                   onClick={send}
                   disabled={state === 'sending'}
-                  className="rounded-full px-4 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-                  style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
+                  className={`rounded-full px-4 py-2 transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 ${T.actionPrimary.className}`}
+                  style={{
+                    ...T.actionPrimary.style,
+                    background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)',
+                  }}
                 >
                   {state === 'sending' ? 'Sending…' : 'Send hello'}
                 </button>
                 <button
                   type="button"
                   onClick={() => { setState('idle'); setError(null) }}
-                  className="rounded text-[13px] font-medium transition-colors hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-                  style={{ color: 'rgba(12, 24, 38, 0.6)' }}
+                  className={`rounded transition-colors hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 ${T.actionQuiet.className}`}
+                  style={T.actionQuiet.style}
                 >
                   Cancel
                 </button>
@@ -299,18 +297,21 @@ export default function PersonCard({
                   rather than another recommendation. */}
               {isIncoming && (
                 <p
-                  className="mb-2 text-[13px]"
-                  style={{ color: '#0C1826', fontFamily: 'Georgia, serif' }}
+                  className={`mb-2 ${T.state.className}`}
+                  style={T.state.style}
                 >
-                  <span aria-hidden="true">👋</span>{' '}
-                  <span className="font-semibold">{name}</span> said hello
+                  {/* No inner weight span: the state role is already
+                      semibold, and emphasising the name inside an
+                      already-emphasised line was one of the three
+                      weights this element used to render in. */}
+                  <span aria-hidden="true">👋</span> {name} said hello
                 </p>
               )}
               <button
                 type="button"
                 onClick={() => setState('confirming')}
-                className="rounded text-[13px] font-semibold transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2"
-                style={{ color: '#2F8F8D' }}
+                className={`rounded transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400/40 focus-visible:ring-offset-2 ${T.action.className}`}
+                style={T.action.style}
               >
                 {isIncoming ? 'Say hello back' : 'Say hello'}
                 {/* Names who, so a screen reader hears "Say hello —
@@ -324,10 +325,10 @@ export default function PersonCard({
 
       {collective && (
         <p
-          className="border-t px-5 py-2.5 text-[11.5px]"
+          className={`border-t px-5 py-2.5 ${T.footer.className}`}
           style={{
+            ...T.footer.style,
             borderColor: 'rgba(12, 24, 38, 0.06)',
-            color: 'rgba(12, 24, 38, 0.45)',
           }}
         >
           {/* Also a privacy statement: it says where this person can
