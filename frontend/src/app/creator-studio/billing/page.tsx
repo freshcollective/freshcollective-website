@@ -511,10 +511,45 @@ function CreatorBilling({ billing, header, connectStatus }: {
                 ``payment_setup.stripe_connect_connected`` is deliberately not
                 consulted here — the panel reads the richer nine-state
                 projection instead of a boolean. */}
-            <StripeConnectPanel
-              initialStatus={connectStatus}
-              planFeeBasisPoints={current_plan.transaction_fee_basis_points}
-            />
+            {billing.is_platform_owner ? (
+              /* The Platform Owner has nothing to connect.
+                 Their creator sales already run through the Fresh
+                 Collective Stripe account, so there is no creator share
+                 to transfer out to a separate connected account —
+                 "Not connected" would describe an incomplete task that
+                 does not exist.
+
+                 Keyed on the account role, not the plan. The Platform
+                 Owner happens to hold a Founding Creator grant, and a
+                 future Founding Creator who is *not* the Platform Owner
+                 is an external creator who does need Connect. */
+              <div
+                className="rounded-xl bg-slate-50 px-4 py-4"
+                style={{ border: '1px solid #E2E8F0' }}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[14px] font-semibold text-navy-900">
+                    Platform payouts
+                  </p>
+                  <span
+                    className="rounded-full px-2.5 py-1 text-[11.5px] font-semibold"
+                    style={{ background: 'rgba(56,160,158,0.12)', color: '#1E6E6C' }}
+                  >
+                    Payout setup not required
+                  </span>
+                </div>
+                <p className="mt-2 max-w-[62ch] text-[13px] leading-relaxed text-black">
+                  Sales from your platform-owned Collectives are processed
+                  through the Fresh Collective Stripe account, so a separate
+                  creator payout account isn’t required.
+                </p>
+              </div>
+            ) : (
+              <StripeConnectPanel
+                initialStatus={connectStatus}
+                planFeeBasisPoints={current_plan.transaction_fee_basis_points}
+              />
+            )}
           </div>
 
           {/* Sits directly above the live Connect earnings list, so it has
@@ -522,20 +557,29 @@ function CreatorBilling({ billing, header, connectStatus }: {
               "Phase 1" label: this block said payouts were disbursed by
               hand and that automatic Stripe payouts were still to come,
               while the panel below it showed real transfers marked "Sent
-              to Stripe". */}
-          <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-[13px] text-black">
-            <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-black">{payoutPhase.title}</p>
-            <p>{payoutPhase.body}</p>
-          </div>
+              to Stripe".
 
-          <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
-            <p className="text-[12px] font-semibold uppercase tracking-wide text-black">Coming later</p>
-            <ul className="mt-2 space-y-1 text-[13px] text-black">
-              {payoutPhase.comingLater.map((item) => (
-                <li key={item}>· {item}</li>
-              ))}
-            </ul>
-          </div>
+              Not shown to the Platform Owner: its copy points at
+              "Connecting Stripe above", and for the owner there is no
+              Connect panel above and nothing to connect. The owner state
+              rendered above already says how their sales are paid. */}
+          {!billing.is_platform_owner && (
+            <>
+              <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-[13px] text-black">
+                <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-black">{payoutPhase.title}</p>
+                <p>{payoutPhase.body}</p>
+              </div>
+
+              <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
+                <p className="text-[12px] font-semibold uppercase tracking-wide text-black">Coming later</p>
+                <ul className="mt-2 space-y-1 text-[13px] text-black">
+                  {payoutPhase.comingLater.map((item) => (
+                    <li key={item}>· {item}</li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
         </div>
       </>
       )}

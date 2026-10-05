@@ -116,10 +116,12 @@ export default async function CreatorStudioHome() {
   const paidOffersEnabled = !!(
     billing?.current_plan?.paid_offers_enabled || billing?.is_platform_owner
   )
-  const connectStatus = paidOffersEnabled
+  const connectStatus = paidOffersEnabled && !isPlatformOwner
     ? await getCreatorStripeConnectStatus().catch(() => null)
     : null
-  const payoutCard = payoutSetupCard(paidOffersEnabled, connectStatus)
+  const payoutCard = payoutSetupCard(
+    paidOffersEnabled, connectStatus, isPlatformOwner,
+  )
   const collectiveLimit = billing?.current_plan?.collective_limit ?? 1
   const activeSpaceCount = spaces.filter((s) => s.status !== 'archived').length
   const atLimit = !isPlatformOwner && activeSpaceCount >= collectiveLimit

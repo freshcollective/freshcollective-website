@@ -226,7 +226,7 @@ describe('Creator Studio home wiring', () => {
   })
 
   test('the status is not fetched for creators who cannot sell', () => {
-    assert.match(src, /paidOffersEnabled\s*\n?\s*\?\s*await getCreatorStripeConnectStatus/)
+    assert.match(src, /paidOffersEnabled && !isPlatformOwner\s*\n?\s*\?\s*await getCreatorStripeConnectStatus/)
   })
 
   test('the card renders only when there is one', () => {
@@ -346,5 +346,127 @@ describe('Community still sees no payout setup on Billing', () => {
     assert.ok(plan > -1 && start < plan,
       'payouts must come before plan detail',
     )
+  })
+})
+
+describe('the Platform Owner exception', () => {
+  // Their creator sales already run through the Fresh Collective Stripe
+  // account, so there is no creator share to transfer out and nothing
+  // to set up. "Set up payouts" is not merely unhelpful for them — it
+  // is untrue.
+
+  test('no card, whatever the Connect state says', () => {
+    for (const state of [
+      'not_started', 'onboarding', 'verifying', 'action_required',
+      'restricted', 'transfers_only', 'unsupported', 'closed', 'ready',
+    ]) {
+      assert.equal(
+        payoutSetupCard(true, status(state), true), null,
+        `Platform Owner must see no card in state '${state}'`,
+      )
+    }
+  })
+
+  test('no card even with no status at all', () => {
+    assert.equal(payoutSetupCard(true, null, true), null)
+  })
+
+  test('it is keyed on the account role, not the plan', () => {
+    // Founding Creator is a plan; Platform Owner is an account role.
+    // A future Founding Creator who is not the Platform Owner is an
+    // external creator who genuinely needs Connect.
+    const src = codeOnly('./payoutSetupCard.ts')
+    assert.match(src, /if \(isPlatformOwner\) return null/)
+    for (const slug of ['founding', 'Founding']) {
+      assert.ok(!src.includes(slug), `plan reference in the gate: ${slug}`)
+    }
+  })
+
+  test('a Founding Creator who is NOT the owner still sees it', () => {
+    // Same capability, same unready Connect state, owner flag false.
+    const view = payoutSetupCard(true, status('not_started'), false)
+    assert.ok(view, 'an external Founding Creator must still be prompted')
+    assert.equal(view.heading, 'Set up payouts')
+  })
+
+  test('the default is unchanged for every existing caller', () => {
+    // Third argument defaults to false, so nothing that does not pass
+    // it changes behaviour.
+    assert.ok(payoutSetupCard(true, status('not_started')))
+  })
+
+  test('Creator Studio passes the owner flag through', () => {
+    const src = codeOnly(STUDIO)
+    assert.match(
+      src,
+      /payoutSetupCard\(\s*paidOffersEnabled, connectStatus, isPlatformOwner,?\s*\)/,
+    )
+  })
+
+  test('Creator Studio does not even fetch Connect status for the owner', () => {
+    assert.match(codeOnly(STUDIO), /paidOffersEnabled && !isPlatformOwner/)
+  })
+})
+
+describe('Billing shows the owner a truthful payout state', () => {
+  // Comment-stripped: the owner branch carries a comment explaining why
+  // "Not connected" is wrong for them and why Founding Creator is a
+  // plan rather than a role — so a raw read fails on the reasoning
+  // instead of on a breach. The rendered copy is JSX text and survives
+  // stripping, so it is still fully checked.
+  const src = codeOnly(BILLING)
+
+  test('the owner gets the owner panel, not the Connect panel', () => {
+    assert.match(src, /billing\.is_platform_owner \? \(/)
+    // The Connect panel is the else branch.
+    const branch = src.indexOf('billing.is_platform_owner ? (')
+    const panel = src.indexOf('<StripeConnectPanel')
+    assert.ok(panel > branch, 'StripeConnectPanel must be the non-owner branch')
+  })
+
+  test('it says payout setup is not required', () => {
+    assert.match(src, /Platform payouts/)
+    assert.match(src, /Payout setup not required/)
+  })
+
+  test('it explains why, in the agreed words', () => {
+    assert.match(
+      src,
+      /Sales from your platform-owned Collectives are processed\s*\n?\s*through the Fresh Collective Stripe account, so a separate\s*\n?\s*creator payout account isn’t required\./,
+    )
+  })
+
+  test('it offers the owner no Connect CTA', () => {
+    const start = src.indexOf('billing.is_platform_owner ? (')
+    const end = src.indexOf('<StripeConnectPanel')
+    const ownerBranch = src.slice(start, end)
+    for (const cta of ['Connect Stripe', 'Set up payouts', 'Finish payout setup']) {
+      assert.ok(!ownerBranch.includes(cta), `owner branch offers: ${cta}`)
+    }
+  })
+
+  test('"Not connected" is never the owner’s state', () => {
+    const start = src.indexOf('billing.is_platform_owner ? (')
+    const end = src.indexOf('<StripeConnectPanel')
+    assert.ok(!src.slice(start, end).includes('Not connected'))
+  })
+
+  test('the connect-oriented phase copy is hidden from the owner', () => {
+    // Its text points at "Connecting Stripe above", and for the owner
+    // there is no panel above and nothing to connect.
+    assert.match(src, /\{!billing\.is_platform_owner && \(/)
+  })
+
+  test('the owner keeps plan details and platform payment status', () => {
+    // The exception is about the creator payout prompt only.
+    assert.match(src, /member_payments_connected/)
+    assert.match(src, /Current plan/)
+  })
+
+  test('it is keyed on the role, not the plan slug', () => {
+    const start = src.indexOf('billing.is_platform_owner ? (')
+    const end = src.indexOf('<StripeConnectPanel')
+    const ownerBranch = src.slice(start, end)
+    assert.ok(!/founding/i.test(ownerBranch.replace(/\{\/\*[\s\S]*?\*\/\}/g, '')))
   })
 })

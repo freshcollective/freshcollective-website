@@ -76,7 +76,22 @@ const PREPARATION_BODY =
 export function payoutSetupCard(
   paidOffersEnabled: boolean,
   status: CreatorStripeConnectStatus | null | undefined,
+  isPlatformOwner = false,
 ): PayoutSetupCardView | null {
+  // The Platform Owner is the one account this prompt is untrue for.
+  //
+  // Their creator sales are already processed through the Fresh
+  // Collective Stripe account — there is no creator share to transfer
+  // out to a separate connected account, so there is nothing for them
+  // to set up and "Set up payouts" is simply wrong.
+  //
+  // Keyed on the account role, never on a plan. Founding Creator is a
+  // *plan* and the Platform Owner happens to hold one; a future
+  // Founding Creator who is not the Platform Owner is an external
+  // creator who genuinely does need Connect, and keying on the plan
+  // would silently hide it from them.
+  if (isPlatformOwner) return null
+
   if (!paidOffersEnabled) return null
   if (!status) return null
   if (status.state === 'ready') return null
