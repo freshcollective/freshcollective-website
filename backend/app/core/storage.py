@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import io
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import pathlib
 import re
 from functools import lru_cache
@@ -324,6 +325,9 @@ class ObjectInfo:
     size: int
     content_type: str | None
     etag: str | None
+    #: Storage's own timestamp. The only creation time an object with no
+    #: database row has, so an age-based sweep depends on it.
+    last_modified: "datetime | None" = None
 
 
 def object_head(rel_path: str) -> "ObjectInfo | None":
@@ -354,6 +358,7 @@ def object_head(rel_path: str) -> "ObjectInfo | None":
             size=int(head.get("ContentLength") or 0),
             content_type=head.get("ContentType"),
             etag=(head.get("ETag") or "").strip('"') or None,
+            last_modified=head.get("LastModified"),
         )
 
     path = UPLOAD_DIR / rel_path
@@ -366,7 +371,75 @@ def object_head(rel_path: str) -> "ObjectInfo | None":
         size=len(data),
         content_type=None,
         etag=hashlib.md5(data).hexdigest(),  # noqa: S324 - identity, not security
+        last_modified=datetime.fromtimestamp(
+            path.stat().st_mtime, tz=timezone.utc,
+        ),
     )
+
+
+@dataclass(frozen=True)
+class StoredObject:
+    """One object as the backend lists it.
+
+    ``last_modified`` is storage's own timestamp, not a database
+    column, which is the point: an orphan has no database row to carry
+    a creation time, so age has to come from the object itself.
+
+    A listing gives no content type — S3 reports that only on a HEAD —
+    so this deliberately omits it rather than inventing one. Callers
+    that need it HEAD the few objects they actually care about.
+    """
+
+    key: str
+    size: int
+    last_modified: "datetime"
+    etag: str | None
+
+
+def list_objects(prefix: str) -> "list[StoredObject]":
+    """Every object under a key prefix, paginated.
+
+    Raises rather than returning a short list on failure. A truncated
+    listing presented as complete would read as "these are all the
+    objects", and a caller deciding what is unreferenced from an
+    incomplete picture is how a reconciliation job deletes something it
+    simply failed to see.
+
+    Filesystem mode walks ``UPLOAD_DIR`` so dev and tests exercise the
+    same code path; mtime stands in for ``LastModified``.
+    """
+    if settings.is_r2_enabled:
+        out: list[StoredObject] = []
+        paginator = _r2_client().get_paginator("list_objects_v2")
+        # ``_bucket_for_key`` on the prefix: the public/private split is
+        # by key prefix, so a prefix resolves to exactly one bucket.
+        for page in paginator.paginate(
+            Bucket=_bucket_for_key(prefix), Prefix=prefix,
+        ):
+            for item in page.get("Contents") or []:
+                out.append(StoredObject(
+                    key=item["Key"],
+                    size=int(item.get("Size") or 0),
+                    last_modified=item["LastModified"],
+                    etag=(item.get("ETag") or "").strip('"') or None,
+                ))
+        return out
+
+    root = UPLOAD_DIR / prefix
+    if not root.exists():
+        return []
+    found: list[StoredObject] = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        stat = path.stat()
+        found.append(StoredObject(
+            key=str(path.relative_to(UPLOAD_DIR)),
+            size=stat.st_size,
+            last_modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+            etag=None,
+        ))
+    return found
 
 
 def copy_object(src_path: str, dest_path: str) -> None:
