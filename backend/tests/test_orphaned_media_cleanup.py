@@ -954,3 +954,233 @@ class TestSafetyPredicatesInDetail:
     def test_an_aware_timestamp_is_left_alone(self):
         aware = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
         assert om._aware(aware) is aware
+
+
+# ---------------------------------------------------------------------------
+# Age must not hide reference status
+# ---------------------------------------------------------------------------
+
+
+class TestAReferencedObjectIsAlwaysReportedAsReferenced:
+    """From a production audit that read as though a live image were
+    unreferenced.
+
+    The object was the canonical copy the legacy-media migration had
+    just created, so its ``LastModified`` was hours old. The audit
+    short-circuited on age before the reference scan ran, and printed::
+
+        conversation-image  3 ELIGIBLE
+        has a live reference  0
+
+    Nothing was ever at risk — a young object is not a candidate — but
+    the two facts an operator needs separated before pressing --apply
+    had been merged into one. "Kept because something points at it" and
+    "kept because it is recent" are different assurances, and only the
+    first survives the grace period being lowered, a clock skewing, or
+    an object being re-copied.
+
+    So the reference scan now runs for every in-namespace object and age
+    is applied after it.
+    """
+
+    #: The exact shape from the production report.
+    CANONICAL = "media/embody/community/{uuid}_IMG_3359.jpeg"
+
+    def _embody(self, db, collective, put, *, age_hours: float):
+        creator, space, post, comment = collective()
+        key = self.CANONICAL.format(uuid=uuid.uuid4().hex)
+        # The slug has to be the one in the key.
+        db.execute(text("UPDATE spaces SET slug = :s WHERE id = :i"),
+                   {"s": "embody", "i": space.id})
+        db.flush()
+        put(key, age_hours=age_hours)
+        comment.image_url = f"/api/uploads/{key}"
+        db.flush()
+        return space, comment, key
+
+    def test_a_freshly_copied_referenced_object_reports_as_referenced(
+        self, db, collective, put,
+    ):
+        """The production case, as a test: 20h old and referenced."""
+        space, comment, key = self._embody(db, collective, put, age_hours=20)
+
+        report = om.audit(db)
+        assert [c.key for c in report.orphans] == []
+        assert [c.key for c in report.referenced] == [key]
+        # And explicitly NOT filed under age, which is what made the
+        # report misleading.
+        assert key not in [c.key for c in report.too_young]
+        assert any(comment.id in r for r in report.referenced[0].references)
+
+    def test_the_canonical_url_shape_is_matched(self, db, collective, put):
+        """``/api/uploads/media/embody/community/<uuid>_IMG_3359.jpeg``
+        — searched for by filename, bare key and full URL."""
+        space, comment, key = self._embody(db, collective, put, age_hours=20)
+        url = f"/api/uploads/{key}"
+
+        assert comment.image_url == url
+        hits = om.find_references(db, [key])
+        assert hits[key], hits
+        assert any("post_comments.image_url" in h for h in hits[key])
+
+        for needle in om.needles_for(key):
+            assert needle in url or url.endswith(needle) or needle in key, needle
+
+    def test_every_in_namespace_object_is_reference_searched(
+        self, db, collective, put,
+    ):
+        """The count that makes the report readable.
+
+        Without it, "has a live reference 0" cannot be distinguished
+        from "nothing was checked".
+        """
+        creator, space, post, comment = collective()
+        young = put(conversation_key(space.slug), age_hours=1)
+        old = put(conversation_key(space.slug), age_hours=9000)
+
+        report = om.audit(db)
+        assert report.reference_checked == 2, report.reference_checked
+        assert {young, old} == {
+            c.key for c in report.referenced + report.owned
+            + report.too_young + report.orphans
+        }
+
+    def test_no_referenced_object_is_ever_filed_anywhere_else(
+        self, db, collective, put,
+    ):
+        """The invariant, over a mixed set. If a reference exists, the
+        object appears in exactly one group: referenced."""
+        creator, space, post, comment = collective()
+        channel = db.execute(text(
+            "SELECT id FROM conversation_channels WHERE space_id = :s LIMIT 1"
+        ), {"s": space.id}).scalar()
+
+        referenced_keys = []
+        for age in (0.5, 20, 100, 9000):
+            key = put(conversation_key(space.slug), age_hours=age)
+            db.add(CommunityPost(
+                id=_uid("cp"), space_id=space.id, author_id=creator.id,
+                channel_id=channel, body="x",
+                image_url=f"/api/uploads/{key}",
+            ))
+            referenced_keys.append(key)
+        unreferenced_old = put(conversation_key(space.slug), age_hours=9000)
+        unreferenced_young = put(conversation_key(space.slug), age_hours=2)
+        db.flush()
+
+        report = om.audit(db)
+        assert sorted(c.key for c in report.referenced) == sorted(referenced_keys)
+        assert [c.key for c in report.orphans] == [unreferenced_old]
+        assert [c.key for c in report.too_young] == [unreferenced_young]
+        for group in (report.orphans, report.too_young, report.owned):
+            for candidate in group:
+                assert candidate.references == [], candidate.key
+
+    def test_a_referenced_object_is_never_a_candidate_at_any_age(
+        self, db, collective, put,
+    ):
+        """Even with the grace period at its minimum, a referenced
+        object stays out of the candidate list."""
+        space, comment, key = self._embody(db, collective, put, age_hours=9000)
+        for grace in (24, 72, 168):
+            report = om.audit(db, grace_hours=grace)
+            assert [c.key for c in report.orphans] == [], grace
+            assert [c.key for c in report.referenced] == [key], grace
+
+
+# ---------------------------------------------------------------------------
+# Excluded namespaces are listable
+# ---------------------------------------------------------------------------
+
+
+class TestExcludedObjectsCanBeListed:
+    """A count cannot answer "which two objects are those?".
+
+    The production audit reported ``legacy-flattened 2 excluded`` and
+    then had nothing to print, because excluded candidates were counted
+    and discarded. They are retained now.
+    """
+
+    def test_excluded_candidates_are_retained_not_just_counted(
+        self, db, collective, put,
+    ):
+        creator, space, post, comment = collective()
+        legacy_a = put(
+            f"media/{space.slug}_community/{_written_name('ocean')}",
+            age_hours=9000,
+        )
+        legacy_b = put(
+            f"media/{space.slug}_community/{_written_name('IMG_3359')}",
+            age_hours=9000,
+        )
+        library = put(f"media/{space.slug}/{_written_name('asset')}", age_hours=50)
+
+        report = om.audit(db)
+        assert report.excluded_namespace["legacy-flattened"] == 2
+        assert sorted(c.key for c in report.in_namespace("legacy-flattened")) == (
+            sorted([legacy_a, legacy_b])
+        )
+        assert [c.key for c in report.in_namespace("media-library")] == [library]
+        # Still not candidates.
+        assert [c.key for c in report.orphans] == []
+
+    def test_describe_namespace_fills_in_reference_status(
+        self, db, collective, put,
+    ):
+        """An excluded namespace is not reference-scanned by the audit —
+        there is no point searching for objects nothing will delete. The
+        detail view answers the question on request instead."""
+        creator, space, post, comment = collective()
+        referenced = put(
+            f"media/{space.slug}_community/{_written_name('ocean')}",
+            age_hours=9000,
+        )
+        orphaned = put(
+            f"media/{space.slug}_community/{_written_name('other')}",
+            age_hours=9000,
+        )
+        comment.image_url = f"/api/uploads/{referenced}"
+        db.flush()
+
+        report = om.audit(db)
+        # Not scanned during the audit itself.
+        assert all(
+            c.references == [] for c in report.in_namespace("legacy-flattened")
+        )
+
+        described = om.describe_namespace(db, report, "legacy-flattened")
+        by_key = {c.key: c for c in described}
+        assert by_key[referenced].references, by_key[referenced]
+        assert any(
+            comment.id in r for r in by_key[referenced].references
+        )
+        assert by_key[orphaned].references == []
+        # Sizes, ages and content types are available for the report.
+        assert by_key[orphaned].size > 0
+        assert by_key[orphaned].age_hours > 8000
+
+    def test_describe_namespace_writes_and_deletes_nothing(
+        self, db, collective, put, upload_dir,
+    ):
+        creator, space, post, comment = collective()
+        key = put(
+            f"media/{space.slug}_community/{_written_name()}", age_hours=9000,
+        )
+        before = {p: p.read_bytes() for p in upload_dir.rglob("*") if p.is_file()}
+        rows = db.execute(text("SELECT count(*) FROM post_comments")).scalar()
+
+        report = om.audit(db)
+        om.describe_namespace(db, report, "legacy-flattened")
+
+        assert {p: p.read_bytes() for p in upload_dir.rglob("*")
+                if p.is_file()} == before
+        assert db.execute(
+            text("SELECT count(*) FROM post_comments")).scalar() == rows
+        assert (upload_dir / key).is_file()
+
+    def test_an_unknown_namespace_name_is_empty_rather_than_an_error(
+        self, db, collective, put,
+    ):
+        collective()
+        report = om.audit(db)
+        assert om.describe_namespace(db, report, "no-such-namespace") == []

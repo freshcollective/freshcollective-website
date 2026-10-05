@@ -383,8 +383,24 @@ class AuditReport:
     referenced: list[Candidate] = field(default_factory=list)
     owned: list[Candidate] = field(default_factory=list)
     excluded_namespace: dict[str, int] = field(default_factory=dict)
+    #: Every object excluded by its namespace, kept rather than counted.
+    #: A count alone cannot answer "which two objects are those?", which
+    #: is the first thing an operator asks about an excluded group.
+    excluded: list[Candidate] = field(default_factory=list)
     unclassified: list[Candidate] = field(default_factory=list)
     orphans: list[Candidate] = field(default_factory=list)
+    #: How many objects actually reached the reference scan. Printed, so
+    #: "has a live reference 0" can never be read as "none of these is
+    #: referenced" when it might mean "none of them was checked".
+    reference_checked: int = 0
+
+    def in_namespace(self, namespace: str) -> list[Candidate]:
+        """Every candidate in one namespace, whatever became of it."""
+        groups = (
+            self.orphans, self.referenced, self.owned, self.too_young,
+            self.unclassified, self.excluded,
+        )
+        return [c for group in groups for c in group if c.namespace == namespace]
 
     @property
     def reclaimable_bytes(self) -> int:
@@ -432,6 +448,8 @@ def audit(
             candidate.exclusions.append(f"namespace '{ns}' is not eligible")
             if ns == "unclassified":
                 report.unclassified.append(candidate)
+            else:
+                report.excluded.append(candidate)
             report.excluded_namespace[ns] = (
                 report.excluded_namespace.get(ns, 0) + 1
             )
@@ -462,20 +480,27 @@ def audit(
             continue
         candidate.space_id = row[0]
 
-        if _aware(obj.last_modified) > cutoff:
-            candidate.exclusions.append(
-                f"{candidate.age_hours:.1f}h old, inside the {grace_hours}h "
-                f"grace period"
-            )
-            report.too_young.append(candidate)
-            continue
-
+        # Age is applied below, *after* the reference scan, not here.
+        # Short-circuiting on it was safe — a young object was never
+        # deleted — but it made the report unreadable: an object
+        # protected by a live reference and one protected only by being
+        # recent came out indistinguishable, both reported as "inside
+        # the grace period" with "has a live reference 0" beside them.
+        # That is exactly the pair of facts an operator needs separated
+        # before pressing --apply, and it mattered in practice: the
+        # object the legacy migration had just copied looked, in the
+        # report, like an unreferenced file waiting out its grace
+        # period.
         eligible.append(candidate)
 
-    # One reference sweep for every surviving candidate together.
+    # One reference sweep for every in-namespace object, regardless of
+    # age. The cost is per column, not per key, so widening this is
+    # free; what it buys is that nothing in the eligible namespace is
+    # ever reported without its reference status known.
     columns = searchable_columns(db)
     report.columns_scanned = len(columns)
     found = find_references(db, [c.key for c in eligible])
+    report.reference_checked = len(eligible)
 
     for candidate in eligible:
         candidate.references = found.get(candidate.key, [])
@@ -487,11 +512,21 @@ def audit(
             report.owned.append(candidate)
             continue
         if candidate.references:
+            # Reported as referenced whatever its age. A referenced
+            # object is kept because something points at it, and that is
+            # the reason worth printing.
             candidate.exclusions.append(
                 f"{len(candidate.references)} live reference(s): "
                 + ", ".join(candidate.references[:5])
             )
             report.referenced.append(candidate)
+            continue
+        if _aware(candidate.last_modified) > cutoff:
+            candidate.exclusions.append(
+                f"{candidate.age_hours:.1f}h old, inside the {grace_hours}h "
+                f"grace period"
+            )
+            report.too_young.append(candidate)
             continue
         report.orphans.append(candidate)
 
@@ -516,6 +551,36 @@ def _aware(value: datetime) -> datetime:
     """Treat a naive timestamp as UTC. R2 returns aware datetimes; a
     filesystem stat might not, depending on the platform."""
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def describe_namespace(
+    db: Session, report: AuditReport, namespace: str,
+) -> list[Candidate]:
+    """Fill in reference status and content type for one namespace.
+
+    Read-only. Needed because an excluded namespace is, by design, not
+    reference-scanned during the audit — there is no point searching the
+    database for objects nothing will delete. But "which two objects are
+    those, and is anything still pointing at them?" is the first
+    question an operator asks about an excluded group, and answering it
+    should not require a different tool.
+
+    Scoped to one namespace rather than widening the audit, so asking
+    about two legacy keys does not pull every object in the bucket
+    through a schema-wide search.
+    """
+    candidates = report.in_namespace(namespace)
+    if not candidates:
+        return []
+
+    found = find_references(db, [c.key for c in candidates])
+    for candidate in candidates:
+        candidate.references = found.get(candidate.key, [])
+        candidate.owning_asset = owning_media_asset(db, candidate.key)
+        info = storage.object_head(candidate.key)
+        if info is not None:
+            candidate.content_type = info.content_type
+    return candidates
 
 
 # ---------------------------------------------------------------------------

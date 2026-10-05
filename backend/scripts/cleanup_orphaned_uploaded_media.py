@@ -102,6 +102,7 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 from app.services.orphaned_media import (
     DEFAULT_GRACE_HOURS,
+    describe_namespace,
     LISTING_PREFIXES,
     MINIMUM_GRACE_HOURS,
     NAMESPACES,
@@ -142,7 +143,15 @@ def main() -> int:
     )
     parser.add_argument(
         "--show-all", action="store_true",
-        help="List every excluded object too, not just the candidates.",
+        help="List every object and the reason it was kept, not just the "
+             "orphan candidates.",
+    )
+    parser.add_argument(
+        "--namespace", metavar="NAME",
+        help="Report one namespace in full, read-only — every key, with a "
+             "reference search run for it even though the namespace is "
+             "excluded from cleanup. Use this to answer 'which objects are "
+             "those, and does anything still point at them?'.",
     )
     args = parser.parse_args()
 
@@ -204,9 +213,17 @@ def main() -> int:
             log.info("  text/JSON columns scanned  %5d", report.columns_scanned)
             log.info("")
             log.info("ELIGIBLE NAMESPACE — WHY EACH OBJECT WAS KEPT OR NOT")
-            log.info("  inside the grace period    %5d", len(report.too_young))
+            # Printed first and on its own line: every number below is a
+            # subset of it, and reading "has a live reference 0" without
+            # knowing how many objects were actually searched is how a
+            # protected object looks unprotected.
+            log.info(
+                "  reference-searched         %5d  (every in-namespace "
+                "object, regardless of age)", report.reference_checked,
+            )
             log.info("  has a live reference       %5d", len(report.referenced))
             log.info("  owned by a media-asset row %5d", len(report.owned))
+            log.info("  inside the grace period    %5d", len(report.too_young))
             log.info("  unclassified / odd name    %5d", len(report.unclassified))
             log.info("  ORPHAN CANDIDATES          %5d", len(report.orphans))
             log.info(
@@ -214,12 +231,46 @@ def main() -> int:
                 human(report.reclaimable_bytes),
             )
 
+            if args.namespace:
+                log.info("")
+                log.info("=" * 78)
+                log.info("NAMESPACE %r — read-only detail", args.namespace)
+                log.info("  %s", NAMESPACES[args.namespace].note
+                         if args.namespace in NAMESPACES else "(unknown name)")
+                log.info("=" * 78)
+                described = describe_namespace(db, report, args.namespace)
+                if not described:
+                    log.info("  no objects in this namespace")
+                for c in described:
+                    log.info("")
+                    log.info("    key            %s", c.key)
+                    log.info("    size           %s", human(c.size))
+                    log.info("    content type   %s", c.content_type or "—")
+                    log.info(
+                        "    age            %.1fh (modified %s)",
+                        c.age_hours, c.last_modified,
+                    )
+                    log.info(
+                        "    references     %s",
+                        ", ".join(c.references) if c.references
+                        else f"none found in {report.columns_scanned} "
+                             f"text/JSON column(s)",
+                    )
+                    log.info("    owning asset   %s", c.owning_asset or "none")
+                    log.info("    excluded by    %s", "; ".join(c.exclusions))
+                log.info("")
+                log.info(
+                    "  Read-only. Nothing in this namespace is eligible for "
+                    "cleanup, and --apply would not touch any of it."
+                )
+
             if args.show_all:
                 for label, group in (
-                    ("inside the grace period", report.too_young),
                     ("referenced", report.referenced),
                     ("owned", report.owned),
+                    ("inside the grace period", report.too_young),
                     ("unclassified", report.unclassified),
+                    ("excluded by namespace", report.excluded),
                 ):
                     if not group:
                         continue
@@ -227,8 +278,8 @@ def main() -> int:
                     log.info("-- kept: %s", label)
                     for c in group:
                         log.info(
-                            "   %-62s %8s %7.1fh  %s",
-                            c.key, human(c.size), c.age_hours,
+                            "   %-14s %-62s %8s %7.1fh  %s",
+                            c.namespace, c.key, human(c.size), c.age_hours,
                             "; ".join(c.exclusions),
                         )
 
