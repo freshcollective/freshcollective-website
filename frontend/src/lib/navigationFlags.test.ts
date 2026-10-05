@@ -19,9 +19,14 @@ import { dirname, join } from 'node:path'
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8')
 
+// WorldHeader's list moved into ``lib/memberNavItems.ts`` when the
+// Creator Studio doorway was added, so that the list could be tested by
+// running it rather than by reading it — see memberNavItems.test.ts.
+// The source check follows it there; the other three surfaces still
+// build their lists inline.
 const NAV_SURFACES = [
   'components/layout/PublicHeader.tsx',
-  'components/layout/WorldHeader.tsx',
+  'lib/memberNavItems.ts',
   'components/layout/MobileNav.tsx',
   'app/dashboard/page.tsx',
 ]

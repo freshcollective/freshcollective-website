@@ -11,6 +11,15 @@
  * visitor is authenticated, and mounted directly by WorldShell on
  * member routes that do not use SiteShell.
  *
+ * Breakpoint note: the horizontal bar appears at ``lg`` rather than
+ * ``md``. Six destinations at 14px do not fit beside the brand lockup
+ * and the auth cluster in a 768px viewport — they either wrap inside a
+ * 64px-tall header or push it into horizontal overflow, and tightening
+ * the gaps cannot recover the ~280px needed. The tablet band therefore
+ * uses the drawer, where every destination has room. Nothing is hidden
+ * from anyone at any width: below ``lg`` the whole nav is in the
+ * drawer, Creator Studio included.
+ *
  * Client component: needs `usePathname` for active-state, and reuses
  * NotificationBell + LogoutButton + Avatar which are all client.
  * The user profile is fetched by the parent server component and
@@ -25,6 +34,9 @@ import LogoutButton from './LogoutButton'
 import NotificationBell from './NotificationBell'
 import Avatar from '@/components/ui/Avatar'
 import { apiUrl } from '@/lib/api'
+import { canAccessCreatorStudio } from '@/lib/creatorStudioAccess'
+import { isNavItemActive, memberNavItems } from '@/lib/memberNavItems'
+import type { NavItem } from '@/lib/memberNavItems'
 import { BrandLockup } from '@/components/brand/FreshCollectiveBrand'
 
 interface Props {
@@ -38,50 +50,16 @@ interface Props {
   waysToConnectOn: boolean
 }
 
-interface NavItem {
-  href: string
-  label: string
-}
-
-/**
- * Peer destinations in the pillar order defined by
- * docs/foundations/discovery-connection-belonging-v1.1.md.
- * Your World is always first for signed-in visitors.
- */
-function peerNavItems(discoveryOn: boolean, waysToConnectOn: boolean): NavItem[] {
-  const items: NavItem[] = [
-    { href: '/dashboard', label: 'Your World' },
-    { href: '/spaces',    label: 'Explore Collectives' },
-  ]
-  // One flag each — see lib/featureFlags.ts.
-  if (discoveryOn) items.push({ href: '/discover-places', label: 'Discover Places' })
-  if (waysToConnectOn) items.push({ href: '/ways-to-connect', label: 'Ways to Connect' })
-  // Messages rides the same flag rather than getting one of its own: a
-  // private conversation can only come into existence through a mutual
-  // hello, so with Ways to Connect off there is nothing for this
-  // destination to show. One flag, one feature.
-  if (waysToConnectOn) items.push({ href: '/messages', label: 'Messages' })
-  return items
-}
-
-/**
- * A nav item is "active" when its href matches the pathname exactly,
- * or when a Collective-scoped page (/spaces/[slug]/...) is being
- * viewed and the item is Explore Collectives. Nested Discover-Places
- * and Ways-to-Connect subpaths (if they ever exist) also count.
- */
-function isActive(pathname: string, href: string): boolean {
-  if (pathname === href) return true
-  if (href === '/spaces' && pathname.startsWith('/spaces/')) return true
-  if (href === '/discover-places' && pathname.startsWith('/discover-places/')) return true
-  if (href === '/ways-to-connect' && pathname.startsWith('/ways-to-connect/')) return true
-  if (href === '/dashboard' && pathname.startsWith('/dashboard/')) return true
-  return false
-}
-
 export default function WorldHeader({ user, discoveryOn, waysToConnectOn }: Props) {
   const pathname = usePathname() ?? ''
-  const items = peerNavItems(discoveryOn, waysToConnectOn)
+  // ``canAccessCreatorStudio`` is the same rule the /creator-studio and
+  // /creator layout guards use — the doorway appears exactly for the
+  // accounts that can walk through it.
+  const items = memberNavItems({
+    discoveryOn,
+    waysToConnectOn,
+    creatorStudioOn: canAccessCreatorStudio(user),
+  })
   const displayName = user.name ?? 'Member'
 
   return (
@@ -92,21 +70,24 @@ export default function WorldHeader({ user, discoveryOn, waysToConnectOn }: Prop
         borderBottom: '1px solid #E8E8E5',
       }}
     >
-      <Container className="flex h-16 items-center justify-between gap-8">
+      <Container className="flex h-16 items-center justify-between gap-4 xl:gap-8">
         {/* Brand → Your World */}
         <BrandLockup tone="light" href="/dashboard" />
 
         {/* Desktop nav — peer destinations with active state */}
-        <nav aria-label="Member" className="hidden flex-1 items-center justify-center gap-8 md:flex">
+        <nav
+          aria-label="Member"
+          className="hidden min-w-0 flex-1 items-center justify-center gap-4 lg:flex xl:gap-8"
+        >
           {items.map(({ href, label }) => {
-            const active = isActive(pathname, href)
+            const active = isNavItemActive(pathname, href)
             return (
               <Link
                 key={href}
                 href={href}
                 aria-current={active ? 'page' : undefined}
                 className={
-                  'text-[14px] transition-colors ' +
+                  'whitespace-nowrap text-[14px] transition-colors ' +
                   (active
                     ? 'font-semibold text-navy-950 border-b-2 border-teal-500 pb-0.5'
                     : 'font-medium text-navy-500 hover:text-navy-950')
@@ -119,7 +100,7 @@ export default function WorldHeader({ user, discoveryOn, waysToConnectOn }: Prop
         </nav>
 
         {/* Desktop auth cluster — notifications + profile shortcut + logout */}
-        <div className="hidden shrink-0 items-center gap-3 md:flex">
+        <div className="hidden shrink-0 items-center gap-3 lg:flex">
           <NotificationBell initialCount={0} />
           <Link
             href="/settings/profile"
@@ -184,7 +165,7 @@ function WorldMobileNav({
   }
 
   return (
-    <div className="md:hidden">
+    <div className="lg:hidden">
       <button
         onClick={() => setOpen(!open)}
         aria-label={open ? 'Close menu' : 'Open menu'}
@@ -221,7 +202,7 @@ function WorldMobileNav({
           >
             <nav aria-label="Member — mobile" className="mb-5 space-y-0.5">
               {items.map(({ href, label }) => {
-                const active = isActive(pathname, href)
+                const active = isNavItemActive(pathname, href)
                 return (
                   <Link
                     key={href}

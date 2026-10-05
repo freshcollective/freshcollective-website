@@ -18,7 +18,11 @@ const LIB = 'lib/peerMessages.ts'
 const INBOX = 'app/messages/page.tsx'
 const THREAD = 'app/messages/[threadId]/page.tsx'
 const CLIENT = 'app/messages/[threadId]/PeerConversationClient.tsx'
-const HEADER = 'components/layout/WorldHeader.tsx'
+// The member nav list moved out of WorldHeader.tsx into
+// lib/memberNavItems.ts when the Creator Studio doorway was added,
+// so it could be tested by running it. The flag-gating assertions
+// below follow the lines they are pinning.
+const NAV_LIST = 'lib/memberNavItems.ts'
 const THREAD_LIST = 'components/messages/PeerThreadList.tsx'
 
 describe('Message appears only on a mutual connection', () => {
@@ -154,7 +158,7 @@ describe('the inbox is the peer surface, not the creator one', () => {
   })
 
   test('Messages rides the Ways to Connect flag, not a new one', () => {
-    const src = codeOnly(HEADER)
+    const src = codeOnly(NAV_LIST)
     assert.match(src, /if \(waysToConnectOn\) items\.push\(\{ href: '\/messages'/)
   })
 })

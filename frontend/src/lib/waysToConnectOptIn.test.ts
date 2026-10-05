@@ -13,7 +13,11 @@ const PAGE = '../app/ways-to-connect/page.tsx'
 const OPTIN = '../components/connections/WaysToConnectOptIn.tsx'
 const EMPTY = '../components/connections/WaysToConnectEmptyState.tsx'
 const SETTINGS = '../components/settings/ProfileForm.tsx'
-const HEADER = '../components/layout/WorldHeader.tsx'
+// The member nav list moved out of WorldHeader.tsx into
+// lib/memberNavItems.ts when the Creator Studio doorway was added,
+// so it could be tested by running it. The flag-gating assertions
+// below follow the lines they are pinning.
+const NAV_LIST = './memberNavItems.ts'
 const DASHBOARD = '../app/dashboard/page.tsx'
 
 describe('participation decides the page, not whether the feature exists', () => {
@@ -201,7 +205,7 @@ describe('the privacy copy', () => {
 
 describe('navigation never depends on participation', () => {
   test('the header gates only on the launch flag', () => {
-    const src = codeOnly(HEADER)
+    const src = codeOnly(NAV_LIST)
     assert.match(src, /if \(waysToConnectOn\) items\.push\(\{ href: '\/ways-to-connect'/)
     assert.match(src, /if \(waysToConnectOn\) items\.push\(\{ href: '\/messages'/)
     assert.ok(!src.includes('ways_to_connect_enabled'))

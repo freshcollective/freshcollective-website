@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { cookies } from 'next/headers'
 import { requireAuthenticatedUser } from '@/lib/requireAuthenticatedUser'
+import { canAccessCreatorStudio } from '@/lib/creatorStudioAccess'
 import { getCreatorSpaces, ACTIVE_SPACE_COOKIE } from '@/lib/serverApi'
 import CreatorStudioShell from '@/app/creator-studio/CreatorStudioShell'
 import type { SpaceSummary } from '@/types/platform'
@@ -13,7 +14,9 @@ export default async function CreatorLayout({ children }: { children: React.Reac
   // wrong role (authenticated member) then falls through to /dashboard,
   // preserving the previous "non-creator has nothing to do here" behaviour.
   const profile = await requireAuthenticatedUser()
-  if (!['creator', 'admin'].includes(profile.role)) {
+  // The same rule the navigation doorway uses — see
+  // lib/creatorStudioAccess.ts.
+  if (!canAccessCreatorStudio(profile)) {
     redirect('/dashboard')
   }
 
