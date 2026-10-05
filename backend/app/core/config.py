@@ -260,7 +260,17 @@ class Settings(BaseSettings):
     #                     access.suspended, payment.recovered,
     #                     purchase.plan_completed (all R3 events;
     #                     category is default-enabled + locked)
-    comms_live_topics: str = "security,account,gatherings,conversations,purchases"
+    # ``pathways`` added so ``pathway.published`` actually delivers.
+    # Only that event is emitted in the topic — ``pathway.step_added``
+    # and ``pathway.enrolment.completed`` have no emitters — and the
+    # legacy ``trigger_new_step`` carries no ``is_event_live`` guard,
+    # so the new-section announcement keeps working through the legacy
+    # path exactly as before. Set here rather than in the Dashboard:
+    # a blueprint sync reasserts render.yaml, and this value is not
+    # declared there.
+    comms_live_topics: str = (
+        "security,account,gatherings,conversations,purchases,pathways"
+    )
     # Minimum age (seconds) an event must reach before the shadow
     # reconciler will attempt to compare it. Gives both the legacy
     # BackgroundTasks trigger and the shadow routing task time to

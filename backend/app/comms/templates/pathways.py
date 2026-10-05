@@ -34,6 +34,8 @@ class PathwayPublishedInAppTemplate:
                 "notification_type": "new_pathway",
                 "pathway_id": recipient.template_context.get("pathway_id"),
                 "space_id": recipient.template_context.get("space_id"),
+                # So the in-app notification is clickable too.
+                "url": recipient.template_context.get("pathway_url"),
             },
         )
 
@@ -52,16 +54,24 @@ class PathwayPublishedEmailTemplate:
         subject = r.text("subject")
         opening = r.text("body.opening")
         closing = r.text("body.closing")
+        # A CTA, now that the resolver carries the destination. Without
+        # one the email announced a Pathway and gave the reader nothing
+        # to press, which is the main reason this template read as
+        # unfinished.
+        url = recipient.template_context.get("pathway_url")
+        action = ("Open the pathway", url) if url else None
+
         body_text = (
             f"{opening}\n\n"
-            f"{closing}"
+            + (f"Open the pathway:\n{url}\n\n" if url else "")
+            + f"{closing}"
         )
-        # No CTA: this event's template_context carries no pathway URL.
         body_html = render_email_shell(
             db=db,
             preheader=opening,
             heading=r.text("heading"),
             body_paragraphs=[opening, closing],
+            action=action,
         )
         return RenderedPayload(
             to="",

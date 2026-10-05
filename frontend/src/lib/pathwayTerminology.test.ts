@@ -196,15 +196,20 @@ describe('Creator Studio', () => {
     assert.match(src, /unitCountLabel\(pathway, steps\.length\)/)
   })
 
-  test('the header calls a guide’s named groupings chapters', () => {
-    // Otherwise a guide would read "22 sections · 6 sections".
+  test('a guide header shows only its section count', () => {
+    // "N sections · Published" — the grouping count is suppressed
+    // rather than renamed, because a compact header does not earn a
+    // second word for the groupings. The structure is visible in the
+    // editor, where it is actually worked on.
     const src = codeOnly(STUDIO_HEADER)
-    assert.match(src, /isKnowledgeGuide\(pathway\)/)
-    assert.match(src, /'chapters'/)
+    assert.match(src, /&& !isKnowledgeGuide\(pathway\)/)
+    assert.ok(!src.includes("'chapters'"), 'no chapter count in the header')
   })
 
-  test('Guided Experience still says sections for its groupings', () => {
-    assert.match(codeOnly(STUDIO_HEADER), /'section' : 'sections'/)
+  test('Guided Experience still shows both counts', () => {
+    const src = codeOnly(STUDIO_HEADER)
+    assert.match(src, /unitCountLabel\(pathway, steps\.length\)/)
+    assert.match(src, /'section' : 'sections'/)
   })
 
   test('authoring labels take the unit as a prop', () => {

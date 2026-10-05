@@ -34,6 +34,27 @@ class PathwayPublishedResolver:
         )
         pathway_title = (event.payload or {}).get("pathway_title") or "a new pathway"
 
+        # Re-check availability at routing time, not just at emit time.
+        #
+        # Routing runs in a background task after the response, so the
+        # Pathway can be returned to draft, archived, or its Collective
+        # closed in the gap. Nobody should be emailed a link to content
+        # they cannot open — the same rule the emit applied, applied
+        # again at the moment recipients are chosen.
+        from app.models.platform import Pathway
+        from app.services.pathway_announcement import is_member_visible
+
+        pathway_id = (event.payload or {}).get("pathway_id") or event.subject_id
+        pathway = db.get(Pathway, pathway_id) if pathway_id else None
+        if pathway is None or not is_member_visible(db, pathway):
+            return []
+
+        # The CTA destination. Previously absent, which left the email
+        # with nothing to click — see the template.
+        pathway_url = (
+            f"/spaces/{space.slug}/pathways/{pathway.slug}" if space else None
+        )
+
         rows = db.execute(
             select(SpaceMembership).where(
                 SpaceMembership.space_id == space_id,
@@ -53,6 +74,7 @@ class PathwayPublishedResolver:
                         "pathway_id": event.subject_id,
                         "pathway_title": pathway_title,
                         "space_id": space_id,
+                        "pathway_url": pathway_url,
                     },
                 )
             )

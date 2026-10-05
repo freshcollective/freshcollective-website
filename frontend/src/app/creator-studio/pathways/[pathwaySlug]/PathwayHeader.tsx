@@ -69,15 +69,17 @@ export default function PathwayHeader({
   if (steps && steps.length > 0) {
     metaParts.push(unitCountLabel(pathway, steps.length) as string)
   }
-  if (sections && sections.length > 0) {
-    // The named groupings. "Chapters" for a guide, because its content
-    // units are already called sections above and "6 sections · 22
-    // sections" says nothing — and chapter is the word the member-facing
-    // guide view already uses (see ``knowledgeGuideChapters.ts``).
-    const groupNoun = isKnowledgeGuide(pathway)
-      ? (sections.length === 1 ? 'chapter' : 'chapters')
-      : (sections.length === 1 ? 'section' : 'sections')
-    metaParts.push(`${sections.length} ${groupNoun}`)
+  // The named groupings, for a Guided Experience only.
+  //
+  // A Knowledge Guide's header stays "N sections · Published". Its
+  // content units are already called sections, so showing the groupings
+  // too needed a second word for them ("6 chapters · 22 sections"),
+  // which is more vocabulary than a compact header earns. The grouping
+  // structure is visible where it is actually worked on — the editor
+  // lists chapters with their sections inside — so nothing is lost
+  // here that a creator cannot see.
+  if (sections && sections.length > 0 && !isKnowledgeGuide(pathway)) {
+    metaParts.push(`${sections.length} ${sections.length === 1 ? 'section' : 'sections'}`)
   }
   metaParts.push(statusLabel)
 

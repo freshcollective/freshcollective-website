@@ -96,7 +96,11 @@ class TestList:
         assert WELCOME in keys
         assert RESET_TPL in keys          # system, but listed read-only
         assert DARK not in keys           # topic not live — excluded
-        assert "pathway.published.email_transactional" not in keys
+        # The pathways topic is live now, so the publication email is
+        # listed and its copy is editable here. It was excluded while the
+        # topic was shadow; the exclusion rule is unchanged and is still
+        # covered by DARK above.
+        assert "pathway.published.email_transactional" in keys
 
     def test_classifications_are_reported(self, client):
         by_key = {t["template_key"]: t for t in client.get(BASE).json()}

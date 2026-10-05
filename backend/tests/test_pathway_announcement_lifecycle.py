@@ -575,3 +575,262 @@ class TestAccessSafety:
 
         assert already_announced(db, announced) is True
         assert already_announced(db, other) is False
+
+
+# ---------------------------------------------------------------------------
+# The live send path
+# ---------------------------------------------------------------------------
+
+class _NoClose:
+    """Session wrapper whose ``close`` is a no-op, so routing can run
+    inside the test's SAVEPOINT-scoped session."""
+
+    def __init__(self, real):
+        self._real = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def close(self):
+        pass
+
+
+def _route(db, event_id: str) -> None:
+    """Drive the routing layer against the test session.
+
+    The pattern ``test_creator_purchase_notification_routing.py``
+    established: routing opens its own ``SessionLocal``, which cannot
+    see SAVEPOINT-scoped rows, so both the rollout module and the
+    in-app provider are pointed at this session for the call.
+    """
+    from unittest.mock import patch
+
+    from app.comms.providers import get as _get_provider
+    from app.comms.rollout import _route_event_bg
+
+    inapp = _get_provider("in_app")
+    original = inapp._session_factory
+    inapp._session_factory = lambda: _NoClose(db)
+    try:
+        with patch("app.comms.rollout.SessionLocal", return_value=_NoClose(db)):
+            _route_event_bg(event_id, "live")
+    finally:
+        inapp._session_factory = original
+
+
+def _intents(db, event_id: str):
+    from app.comms.models import CommunicationIntent
+
+    return db.query(CommunicationIntent).filter(
+        CommunicationIntent.event_id == event_id,
+    ).all()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_email():
+    """The provider round-trip is not the subject; intents are."""
+    from unittest.mock import MagicMock, patch
+
+    with patch("resend.Emails.send", new_callable=MagicMock), \
+         patch("resend.api_key", create=True), \
+         patch(
+             "app.services.email_service.email_service.send",
+             new_callable=MagicMock,
+         ):
+        yield
+
+
+class TestTheTopicIsLive:
+    def test_pathway_published_is_a_live_event(self):
+        """Without this the event is created, a shadow intent is
+        recorded, and no member is ever emailed."""
+        from app.comms.rollout import is_event_live
+
+        assert is_event_live("pathway.published") is True
+
+    def test_the_step_announcement_is_unaffected_by_the_promotion(self):
+        """``trigger_new_step`` carries no ``is_event_live`` guard, and
+        nothing emits ``pathway.step_added`` — so promoting the topic
+        does not silence the legacy new-section announcement."""
+        import inspect
+
+        from app.services import notification_service
+
+        src = inspect.getsource(notification_service.trigger_new_step)
+        assert "_rollout_is_live" not in src
+
+
+class TestPublicationDelivers:
+    def test_publishing_routes_intents_to_the_members(
+        self, db, world_builders, make_pathway,
+    ):
+        creator, space, members = world_builders
+        pathway = make_pathway(space, status=PathwayStatus.active)
+        event = announce_if_newly_available(
+            db, pathway, actor_user_id=creator.id,
+        )
+        db.flush()
+        assert _intents(db, event.id) == [], "emit alone sends nothing"
+
+        _route(db, event.id)
+
+        intents = _intents(db, event.id)
+        assert intents, "routing produced nothing — no member can be reached"
+        recipients = {i.recipient_user_id for i in intents}
+        assert recipients == {m.id for m in members}, (
+            "every active member, and nobody else"
+        )
+
+    def test_the_creator_is_not_a_recipient_of_their_own_publication(
+        self, db, world_builders, make_pathway,
+    ):
+        creator, space, _m = world_builders
+        pathway = make_pathway(space, status=PathwayStatus.active)
+        event = announce_if_newly_available(
+            db, pathway, actor_user_id=creator.id,
+        )
+        db.flush()
+        _route(db, event.id)
+
+        # The creator has no active membership row in this fixture, so
+        # they are not resolved. Asserted rather than assumed.
+        assert creator.id not in {
+            i.recipient_user_id for i in _intents(db, event.id)
+        }
+
+    def test_an_unpublished_pathway_routes_to_nobody(
+        self, db, world_builders, make_pathway,
+    ):
+        """Routing runs after the response. If the Pathway went back to
+        draft in the gap, nobody should be emailed a link to it."""
+        creator, space, _m = world_builders
+        pathway = make_pathway(space, status=PathwayStatus.active)
+        event = announce_if_newly_available(
+            db, pathway, actor_user_id=creator.id,
+        )
+        db.flush()
+
+        pathway.status = PathwayStatus.draft
+        db.flush()
+        _route(db, event.id)
+
+        assert _intents(db, event.id) == [], (
+            "a draft pathway must reach no recipients"
+        )
+
+    def test_a_closed_collective_routes_to_nobody(
+        self, db, world_builders, make_pathway,
+    ):
+        creator, space, _m = world_builders
+        pathway = make_pathway(space, status=PathwayStatus.active)
+        event = announce_if_newly_available(
+            db, pathway, actor_user_id=creator.id,
+        )
+        db.flush()
+
+        space.status = "archived"
+        db.flush()
+        _route(db, event.id)
+
+        assert _intents(db, event.id) == []
+
+    def test_republishing_cannot_produce_a_second_send(
+        self, db, world_builders, make_pathway,
+    ):
+        """No duplicate email, guaranteed one level up.
+
+        Routing idempotency is the comms layer's own property with its
+        own tests. What this work is responsible for is that there is
+        never a *second event* to route — so republishing cannot reach
+        the delivery path at all, whatever routing would do with it.
+        """
+        creator, space, _members = world_builders
+        pathway = make_pathway(space, status=PathwayStatus.active)
+        assert announce_if_newly_available(
+            db, pathway, actor_user_id=creator.id,
+        ) is not None
+        db.flush()
+
+        # No routing needed to show this: the guarantee is that there is
+        # nothing left to route.
+        # Unpublish, republish, and try again.
+        pathway.status = PathwayStatus.draft
+        db.flush()
+        pathway.status = PathwayStatus.active
+        db.flush()
+
+        assert announce_if_newly_available(
+            db, pathway, actor_user_id=creator.id,
+        ) is None, "no second event, so nothing more can be delivered"
+        assert len(_events(db, pathway)) == 1
+
+
+class TestTheRenderedEmail:
+    def _render(self, db, pathway, creator, space):
+        from app.comms.routing.resolvers.pathways import (
+            PathwayPublishedResolver,
+        )
+        from app.comms.templates.pathways import PathwayPublishedEmailTemplate
+
+        event = announce_if_newly_available(
+            db, pathway, actor_user_id=creator.id,
+        )
+        db.flush()
+        recipients = PathwayPublishedResolver().resolve(db, event)
+        assert recipients, "no recipients resolved"
+        return PathwayPublishedEmailTemplate().render(db, event, recipients[0])
+
+    def test_it_has_a_subject_and_a_cta_to_the_pathway(
+        self, db, world_builders, make_pathway,
+    ):
+        """The template previously said "No CTA: this event's
+        template_context carries no pathway URL" — it announced a
+        Pathway and gave the reader nothing to press."""
+        creator, space, _m = world_builders
+        pathway = make_pathway(
+            space, status=PathwayStatus.active, title="Finding Your Ground",
+        )
+        payload = self._render(db, pathway, creator, space)
+
+        assert "Finding Your Ground" in payload.subject
+        assert space.name in payload.subject
+        expected = f"/spaces/{space.slug}/pathways/{pathway.slug}"
+        assert expected in payload.body_text
+        assert expected in (payload.body_html or "")
+
+    def test_a_knowledge_guide_email_never_says_step(
+        self, db, world_builders, make_pathway,
+    ):
+        creator, space, _m = world_builders
+        guide = make_pathway(
+            space, status=PathwayStatus.active,
+            ptype=PathwayType.knowledge_guide, title="The Reference",
+        )
+        payload = self._render(db, guide, creator, space)
+
+        blob = " ".join([
+            payload.subject, payload.body_text or "", payload.body_html or "",
+        ]).lower()
+        for word in ("step", "steps", "complete", "progress"):
+            assert word not in blob, f"guide email mentions {word!r}"
+
+    def test_the_in_app_notification_is_clickable(
+        self, db, world_builders, make_pathway,
+    ):
+        from app.comms.routing.resolvers.pathways import (
+            PathwayPublishedResolver,
+        )
+        from app.comms.templates.pathways import PathwayPublishedInAppTemplate
+
+        creator, space, _m = world_builders
+        pathway = make_pathway(space, status=PathwayStatus.active)
+        event = announce_if_newly_available(
+            db, pathway, actor_user_id=creator.id,
+        )
+        db.flush()
+        recipient = PathwayPublishedResolver().resolve(db, event)[0]
+        payload = PathwayPublishedInAppTemplate().render(db, event, recipient)
+
+        assert payload.metadata["url"] == (
+            f"/spaces/{space.slug}/pathways/{pathway.slug}"
+        )
