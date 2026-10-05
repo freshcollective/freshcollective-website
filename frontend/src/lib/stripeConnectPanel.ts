@@ -161,6 +161,26 @@ function outstandingForCreator(status: CreatorStripeConnectStatus): number {
  * state this build does not know about is not grounds for telling someone
  * their payouts are fine.
  */
+/**
+ * How a creator's payout position should be described once Stripe has
+ * accepted their details.
+ *
+ * ``ready`` means Stripe is satisfied. It does **not** mean Fresh
+ * Collective has switched this creator's sales to Connect — that needs
+ * ``connect_payouts_enabled_at``, which only Fresh Collective sets, and
+ * which the status payload already surfaces as
+ * ``connect_routing_enabled``. So the two can be told apart from
+ * existing data, with no new backend field.
+ */
+export function payoutReadyHeadline(
+  status: CreatorStripeConnectStatus,
+): string {
+  return status.connect_routing_enabled
+    ? 'Automatic payouts are active'
+    : 'Your payout details are set up'
+}
+
+
 export function describeConnect(
   status: CreatorStripeConnectStatus,
 ): ConnectPanelView {
@@ -264,12 +284,21 @@ export function describeConnect(
 
     case 'ready':
       return {
-        badge: 'Connected',
+        badge: status.connect_routing_enabled ? 'Active' : 'Ready',
         tone: 'good',
-        headline: 'Stripe is connected and ready to pay you',
-        body:
-          'Your Stripe account can receive funds and pay them into your bank ' +
-          'account.',
+        // Two different facts, and conflating them is the one claim
+        // that would be untrue. Stripe accepting the details is not
+        // the same as Fresh Collective having switched this creator's
+        // sales over — that needs a separate decision, and until it is
+        // made the old headline ("ready to pay you") promised
+        // something that had not happened.
+        headline: payoutReadyHeadline(status),
+        body: status.connect_routing_enabled
+          ? 'Your Stripe account can receive funds and pay them into your '
+            + 'bank account.'
+          : 'Your Stripe account can receive funds and pay them into your '
+            + 'bank account. Fresh Collective still handles your payouts '
+            + 'for now — nothing about how you are paid has changed yet.',
         action: 'none',
         actionLabel: null,
         showRefresh: true,

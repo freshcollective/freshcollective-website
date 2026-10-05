@@ -179,7 +179,11 @@ describe('ready does not overclaim', () => {
 
   test('shows connected and the payout schedule', () => {
     const view = describeConnect(readyStatus())
-    assert.equal(view.badge, 'Connected')
+    // "Ready", not "Connected": Stripe having accepted the details is
+    // not the same as Fresh Collective paying this creator that way.
+    // The badge follows connect_routing_enabled — see the
+    // routing-distinction tests below.
+    assert.equal(view.badge, 'Ready')
     assert.equal(view.tone, 'good')
     assert.match(view.scheduleNote ?? '', /every day/)
     assert.match(view.scheduleNote ?? '', /2 days/)

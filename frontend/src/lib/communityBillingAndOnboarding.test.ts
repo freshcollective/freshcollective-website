@@ -51,13 +51,35 @@ describe('Community Billing hides payment setup', () => {
   })
 
   test('the current-plan card and plan comparison stay outside the gate', () => {
+    // Asserted as "not inside the gate", not as "before the gate".
+    //
+    // Position used to be a fair proxy, because the gate was the last
+    // thing on the page. The payout section moved to the top and took
+    // the gate with it, so the plan card now comes *after* the gate
+    // while still being outside it — and the old form would have failed
+    // on a page that was perfectly correct.
     const src = codeOnly(BILLING)
-    const gate = src.indexOf('{current_plan.paid_offers_enabled && (')
-    const currentPlanCard = src.indexOf('Current plan')
-    const comparison = src.indexOf('available_plans')
-    assert.ok(currentPlanCard > -1 && currentPlanCard < gate,
+    const lines = src.split('\n')
+    const gateStart = lines.findIndex(
+      (l) => l.includes('{current_plan.paid_offers_enabled && ('),
+    )
+    assert.ok(gateStart > -1, 'the capability gate exists')
+    const indent = lines[gateStart].length - lines[gateStart].trimStart().length
+    const gateEnd = lines.findIndex(
+      (l, i) => i > gateStart && l.trim() === ')}'
+        && l.length - l.trimStart().length === indent,
+    )
+    assert.ok(gateEnd > gateStart, 'the gate closes')
+
+    const insideGate = (needle: string) => {
+      const at = lines.findIndex((l) => l.includes(needle))
+      assert.ok(at > -1, `missing from the page: ${needle}`)
+      return at > gateStart && at < gateEnd
+    }
+
+    assert.equal(insideGate('Current plan'), false,
       'Community must still see its current plan')
-    assert.ok(comparison > -1 && comparison < gate,
+    assert.equal(insideGate('available_plans'), false,
       'Community must still see the plan comparison / upgrade options')
   })
 

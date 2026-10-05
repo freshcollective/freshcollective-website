@@ -8,6 +8,7 @@ import {
   getCreatorBilling,
   getSpaceMembers,
   getBuildYourCollectiveDraft,
+  getCreatorStripeConnectStatus,
 } from '@/lib/serverApi'
 import type { DraftData } from '@/lib/build-your-collective/types'
 import { resolveMediaUrl } from '@/lib/api'
@@ -18,6 +19,8 @@ import type {
   MemberProfile,
   SpaceSummary,
 } from '@/types/platform'
+import { payoutSetupCard } from '@/lib/payoutSetupCard'
+import PayoutSetupCard from './PayoutSetupCard'
 
 /**
  * My World — the Creator Studio landing.
@@ -95,6 +98,28 @@ export default async function CreatorStudioHome() {
 
   const billing = await getCreatorBilling()
   const isPlatformOwner = billing?.is_platform_owner ?? false
+
+  // Payout setup orientation.
+  //
+  // Gated on the plan capability, never a slug — so Community sees
+  // nothing and any future paid tier is included without a change here.
+  // ``current_plan`` is null for a Platform Owner, hence the optional
+  // chain: the capability is what decides, not the presence of a plan
+  // object.
+  //
+  // The Connect state comes from ``GET /connect/status`` — the
+  // canonical projection — and not from
+  // ``payment_setup.stripe_connect_connected``, which only says a row
+  // exists. A failed fetch yields null and the card simply does not
+  // appear; a prompt built on an unanswered question is worse than no
+  // prompt.
+  const paidOffersEnabled = !!(
+    billing?.current_plan?.paid_offers_enabled || billing?.is_platform_owner
+  )
+  const connectStatus = paidOffersEnabled
+    ? await getCreatorStripeConnectStatus().catch(() => null)
+    : null
+  const payoutCard = payoutSetupCard(paidOffersEnabled, connectStatus)
   const collectiveLimit = billing?.current_plan?.collective_limit ?? 1
   const activeSpaceCount = spaces.filter((s) => s.status !== 'archived').length
   const atLimit = !isPlatformOwner && activeSpaceCount >= collectiveLimit
@@ -132,6 +157,10 @@ export default async function CreatorStudioHome() {
           </p>
         )}
       </header>
+
+      {/* Below the hero on purpose: the first thing in Creator Studio
+          should still be the creator's own work. */}
+      {payoutCard && <PayoutSetupCard view={payoutCard} />}
 
       {/* ── Empty state — no collectives yet ─── */}
       {spaces.length === 0 && (

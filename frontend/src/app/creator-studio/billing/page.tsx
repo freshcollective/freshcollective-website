@@ -428,6 +428,117 @@ function CreatorBilling({ billing, header, connectStatus }: {
       )}
 
       {/* Plan + subscription status */}
+      {/* Everything below is commercial infrastructure: Creator
+          billing, member-payment routing, Stripe Connect, the fee
+          acknowledgement and the payout explanations. A Community
+          creator has no paid offers, no creator subscription to bill
+          and no reason to connect Stripe, so prompting them to
+          configure any of it invites them to set up something they
+          cannot use.
+
+          Gated on the resolved plan capability rather than a plan-name
+          string, so Creator, Creator Portfolio, Founding Creator,
+          Organisation and an active complimentary Creator grant all
+          keep it unchanged — Community is the only plan with
+          paid_offers_enabled=false.
+
+          Nothing replaces it. The plan comparison directly above
+          already makes the upgrade path obvious, and another CTA here
+          would be the third on one page. */}
+      {current_plan.paid_offers_enabled && (
+      <>
+        {/* Payouts, first. Getting paid is what a creator came here to
+            sort out, and this sat below plan comparison — which is why
+            payout setup was easy to miss entirely. */}
+        <div id="payouts"
+          className="rounded-2xl p-6"
+          style={{ background: '#FFFFFF', border: '1px solid #E2E8F0' }}
+        >
+          <h2 className="mb-4 text-[15px] font-semibold text-navy-900">Payouts</h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <div>
+                <p className="text-[13px] font-medium text-navy-900">Creator billing</p>
+                <p className="text-[12px] text-black">
+                  Your monthly subscription payment to Fresh Collective
+                </p>
+              </div>
+              {/* Any $0 plan has nothing to bill — surface
+                  "Not required" instead of "Not connected", which would
+                  imply a broken Stripe setup. Covers BOTH Founding
+                  Creator (``monthly=0`` + ``is_purchasable=false``,
+                  admin-comped) AND Community (``monthly=0`` +
+                  ``is_purchasable=true``, free non-commercial). Only
+                  priced plans that lack a live Stripe subscription
+                  fall through to "Not connected". Note: an ended /
+                  lapsed / cancelled Stripe subscription cannot reach
+                  this pill — the backend's subscription query filters
+                  on ``status IN ('active','trialing')`` so
+                  ``creator_billing_connected`` can only be True when
+                  billing is actually healthy. */}
+              <StatusBadge
+                state={
+                  payment_setup.creator_billing_connected
+                    ? 'connected'
+                    : current_plan.monthly_price_cents === 0
+                      ? 'not_applicable'
+                      : 'not_connected'
+                }
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+              <div>
+                <p className="text-[13px] font-medium text-navy-900">Member payments</p>
+                <p className="text-[12px] text-black">
+                  {payment_setup.member_payments_connected
+                    ? 'Processed through Fresh Collective · Paid pathway checkout is live'
+                    : 'Platform Stripe not yet configured · Contact Fresh Collective'}
+                  {payment_setup.member_payments_connected && payment_setup.stripe_test_mode && (
+                    <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                      Test mode
+                    </span>
+                  )}
+                </p>
+              </div>
+              <StatusBadge state={payment_setup.member_payments_connected ? 'connected' : 'not_connected'} />
+            </div>
+
+            {/* Stripe Connect. Self-loading rather than server-rendered: the
+                status endpoint reads FC's own projection with no Stripe call,
+                so it is cheap, and keeping it out of the page's server fetch
+                means a slow Stripe never delays the whole Billing page.
+                ``payment_setup.stripe_connect_connected`` is deliberately not
+                consulted here — the panel reads the richer nine-state
+                projection instead of a boolean. */}
+            <StripeConnectPanel
+              initialStatus={connectStatus}
+              planFeeBasisPoints={current_plan.transaction_fee_basis_points}
+            />
+          </div>
+
+          {/* Sits directly above the live Connect earnings list, so it has
+              to agree with it. Driven by routing state rather than a fixed
+              "Phase 1" label: this block said payouts were disbursed by
+              hand and that automatic Stripe payouts were still to come,
+              while the panel below it showed real transfers marked "Sent
+              to Stripe". */}
+          <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-[13px] text-black">
+            <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-black">{payoutPhase.title}</p>
+            <p>{payoutPhase.body}</p>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-black">Coming later</p>
+            <ul className="mt-2 space-y-1 text-[13px] text-black">
+              {payoutPhase.comingLater.map((item) => (
+                <li key={item}>· {item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </>
+      )}
       <div
         className="mb-6 rounded-2xl p-6"
         style={{ background: '#FFFFFF', border: '1px solid #E2E8F0' }}
@@ -671,115 +782,6 @@ function CreatorBilling({ billing, header, connectStatus }: {
         </div>
       </div>
 
-      {/* Everything below is commercial infrastructure: Creator
-          billing, member-payment routing, Stripe Connect, the fee
-          acknowledgement and the payout explanations. A Community
-          creator has no paid offers, no creator subscription to bill
-          and no reason to connect Stripe, so prompting them to
-          configure any of it invites them to set up something they
-          cannot use.
-
-          Gated on the resolved plan capability rather than a plan-name
-          string, so Creator, Creator Portfolio, Founding Creator,
-          Organisation and an active complimentary Creator grant all
-          keep it unchanged — Community is the only plan with
-          paid_offers_enabled=false.
-
-          Nothing replaces it. The plan comparison directly above
-          already makes the upgrade path obvious, and another CTA here
-          would be the third on one page. */}
-      {current_plan.paid_offers_enabled && (
-      <>
-      {/* Payment setup status */}
-      <div
-        className="rounded-2xl p-6"
-        style={{ background: '#FFFFFF', border: '1px solid #E2E8F0' }}
-      >
-        <h2 className="mb-4 text-[15px] font-semibold text-navy-900">Payment setup</h2>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-            <div>
-              <p className="text-[13px] font-medium text-navy-900">Creator billing</p>
-              <p className="text-[12px] text-black">
-                Your monthly subscription payment to Fresh Collective
-              </p>
-            </div>
-            {/* Any $0 plan has nothing to bill — surface
-                "Not required" instead of "Not connected", which would
-                imply a broken Stripe setup. Covers BOTH Founding
-                Creator (``monthly=0`` + ``is_purchasable=false``,
-                admin-comped) AND Community (``monthly=0`` +
-                ``is_purchasable=true``, free non-commercial). Only
-                priced plans that lack a live Stripe subscription
-                fall through to "Not connected". Note: an ended /
-                lapsed / cancelled Stripe subscription cannot reach
-                this pill — the backend's subscription query filters
-                on ``status IN ('active','trialing')`` so
-                ``creator_billing_connected`` can only be True when
-                billing is actually healthy. */}
-            <StatusBadge
-              state={
-                payment_setup.creator_billing_connected
-                  ? 'connected'
-                  : current_plan.monthly_price_cents === 0
-                    ? 'not_applicable'
-                    : 'not_connected'
-              }
-            />
-          </div>
-
-          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-            <div>
-              <p className="text-[13px] font-medium text-navy-900">Member payments</p>
-              <p className="text-[12px] text-black">
-                {payment_setup.member_payments_connected
-                  ? 'Processed through Fresh Collective · Paid pathway checkout is live'
-                  : 'Platform Stripe not yet configured · Contact Fresh Collective'}
-                {payment_setup.member_payments_connected && payment_setup.stripe_test_mode && (
-                  <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                    Test mode
-                  </span>
-                )}
-              </p>
-            </div>
-            <StatusBadge state={payment_setup.member_payments_connected ? 'connected' : 'not_connected'} />
-          </div>
-
-          {/* Stripe Connect. Self-loading rather than server-rendered: the
-              status endpoint reads FC's own projection with no Stripe call,
-              so it is cheap, and keeping it out of the page's server fetch
-              means a slow Stripe never delays the whole Billing page.
-              ``payment_setup.stripe_connect_connected`` is deliberately not
-              consulted here — the panel reads the richer nine-state
-              projection instead of a boolean. */}
-          <StripeConnectPanel
-            initialStatus={connectStatus}
-            planFeeBasisPoints={current_plan.transaction_fee_basis_points}
-          />
-        </div>
-
-        {/* Sits directly above the live Connect earnings list, so it has
-            to agree with it. Driven by routing state rather than a fixed
-            "Phase 1" label: this block said payouts were disbursed by
-            hand and that automatic Stripe payouts were still to come,
-            while the panel below it showed real transfers marked "Sent
-            to Stripe". */}
-        <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-[13px] text-black">
-          <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-black">{payoutPhase.title}</p>
-          <p>{payoutPhase.body}</p>
-        </div>
-
-        <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
-          <p className="text-[12px] font-semibold uppercase tracking-wide text-black">Coming later</p>
-          <ul className="mt-2 space-y-1 text-[13px] text-black">
-            {payoutPhase.comingLater.map((item) => (
-              <li key={item}>· {item}</li>
-            ))}
-          </ul>
-        </div>
-      </div>
-      </>
-      )}
 
     </div>
   )
