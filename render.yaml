@@ -442,6 +442,13 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python scripts/fip3_reconcile_grace.py
     envVars:
+      # Canonical public address for every member-facing link. Declared on
+      # EVERY python service, not only the ones that send email: each of
+      # them constructs the shared ``Settings`` object, and
+      # ``_check_public_app_url`` is a global production invariant on it.
+      # See the fc-api block for why this is not FRONTEND_ORIGIN.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
       - key: DATABASE_URL
         fromDatabase:
           name: fc-db
@@ -687,4 +694,105 @@ services:
       - key: RESEND_API_KEY
         sync: false
       - key: EMAIL_FROM
+        sync: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # Connect sweepers — declared here, deliberately
+  # ─────────────────────────────────────────────────────────────────
+  # Both of these were specified in ``docs/connect-go-live.md`` §2.1 and
+  # §2.2 and then created in the Render Dashboard rather than from this
+  # file. A Dashboard-only service is outside every guarantee the
+  # blueprint provides: it cannot receive a new env var from a sync, it
+  # is invisible to any check that reads this file, and its drift
+  # surfaces only when the job fails.
+  #
+  # It has now surfaced twice. First ``fc-connect-transfer-sweeper``
+  # reached Stripe with no usable key (see
+  # tests/test_stripe_api_key_only.py), then both failed to construct
+  # ``Settings`` once PUBLIC_APP_URL became a production invariant —
+  # while every blueprint-declared service picked the variable up from a
+  # sync. The blocks below are the ones the design document already
+  # described, so adopting them changes no intended behaviour.
+
+  # Connect transfer sweeper — sends the creator shares that are owed and
+  # still unsent. The inline attempt off the payment webhook is the normal
+  # path; this is the retry net for it. Every 15 minutes, matching the other
+  # crons: the sweep selects on state, not on a time window, so a late run
+  # catches everything correctly.
+  #
+  # The usual reason a transfer is waiting is not an outage — a transfer
+  # against a charge that has not settled is refused for insufficient
+  # balance, and the identical call succeeds shortly after. Those rows stay
+  # pending and are retried, never written off.
+  - type: cron
+    name: fc-connect-transfer-sweeper
+    runtime: python
+    region: singapore
+    branch: main
+    rootDir: backend
+    schedule: "*/15 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/fc_connect_transfer_sweeper.py
+    envVars:
+      - key: FC_SERVICE_ROLE
+        value: "job"
+      - key: APP_ENV
+        value: production
+      # Canonical public address for every member-facing link. Declared on
+      # EVERY python service, not only the ones that send email: each of
+      # them constructs the shared ``Settings`` object, and
+      # ``_check_public_app_url`` is a global production invariant on it.
+      # See the fc-api block for why this is not FRONTEND_ORIGIN.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fc-db
+          property: connectionString
+      # The API key, and only the API key. A cron receives no webhooks,
+      # so STRIPE_WEBHOOK_SECRET would be a capability it cannot use —
+      # see tests/test_stripe_api_key_only.py for the incident that
+      # established the split.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+
+  # Connect recovery sweeper — the counterpart to the transfer sweeper. That
+  # one sends money FC owes a creator; this one recovers money a creator owes
+  # FC after a refund or dispute, where the reversal could not complete.
+  #
+  # Every 15 minutes, which is also the first retry cooldown. Pacing is the
+  # sweep's own, not the schedule's: attempts back off exponentially from 15
+  # minutes to a day, because the usual cause is an empty creator balance and
+  # that does not change minute to minute. Rows inside their cooldown are
+  # counted and skipped, so a frequent schedule costs nothing.
+  #
+  # All reversal arithmetic stays in the reversal service: the cumulative
+  # target is recomputed under a row lock from stored refund and dispute
+  # state, and only the remaining delta is reversed.
+  - type: cron
+    name: fc-connect-recovery-sweeper
+    runtime: python
+    region: singapore
+    branch: main
+    rootDir: backend
+    schedule: "*/15 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/fc_connect_recovery_sweeper.py
+    envVars:
+      - key: FC_SERVICE_ROLE
+        value: "job"
+      - key: APP_ENV
+        value: production
+      # Canonical public address for every member-facing link. Declared on
+      # EVERY python service, not only the ones that send email: each of
+      # them constructs the shared ``Settings`` object, and
+      # ``_check_public_app_url`` is a global production invariant on it.
+      # See the fc-api block for why this is not FRONTEND_ORIGIN.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fc-db
+          property: connectionString
+      - key: STRIPE_SECRET_KEY
         sync: false
