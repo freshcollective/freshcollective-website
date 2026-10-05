@@ -3,6 +3,12 @@ import re
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# A leaf module that imports nothing from ``app`` — see
+# ``app/core/url_policy.py``. Importing the *policy* here is safe;
+# importing ``app.core.public_url`` would not be, because that reads
+# ``settings``, which does not exist until this module finishes.
+from app.core.url_policy import offending_markers
+
 
 # Cloudflare R2 account IDs are 32-character hex strings — the value
 # shown as "Account ID" in the R2 dashboard. Case-insensitive because
@@ -727,11 +733,8 @@ class Settings(BaseSettings):
         if self.app_env != "production":
             return self
 
-        from app.core.public_url import NON_PUBLIC_HOST_MARKERS
-
         resolved = (self.public_app_url or self.frontend_origin or "").strip()
-        lowered = resolved.lower()
-        offending = [m for m in NON_PUBLIC_HOST_MARKERS if m in lowered]
+        offending = offending_markers(resolved)
         if not resolved or offending:
             raise ValueError(
                 "PUBLIC_APP_URL is not set to the public domain, so every "

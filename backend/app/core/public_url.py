@@ -24,18 +24,25 @@ services and templates, each repeating ``.rstrip("/")`` and its own
 slash. Fourteen agreed and one did not, which is what shipped a Render
 host into a password-reset email. One function, one source of truth,
 and a source test that fails if a new f-string appears.
+
+Where the rules live
+--------------------
+The *policy* — what a non-public host is, how to join an origin to a
+path — is in ``app.core.url_policy``, which imports nothing. This module
+only supplies the configured origin. That split is not tidiness: it is
+what lets ``app.core.config`` apply the same policy in its boot
+validator without importing this module and deadlocking on a
+partially-initialised ``config``.
 """
 
 from __future__ import annotations
 
-from app.core.config import settings
-
-#: Hosts that must never appear in a member-facing link in production.
-#: The Render host is a working address — this is not about reachability.
-#: It is the wrong *identity*: it tells a member the product lives
-#: somewhere other than where it lives, and it breaks the moment the
-#: service is renamed or moved.
-NON_PUBLIC_HOST_MARKERS = ("onrender.com", "localhost", "127.0.0.1", "0.0.0.0")
+from app.core.url_policy import (
+    NON_PUBLIC_HOST_MARKERS,
+    is_public_host,
+    join_public_url,
+    offending_markers,
+)
 
 
 def public_app_url(path: str = "") -> str:
@@ -46,43 +53,23 @@ def public_app_url(path: str = "") -> str:
         public_app_url()                 # the bare origin
 
     Exactly one slash at the join, query and fragment preserved
-    verbatim, and no opinion about what the path means.
+    verbatim, and no opinion about what the path means. Raises on an
+    absolute URL — see ``url_policy.join_public_url``.
 
-    Raises on an absolute URL, rather than returning it unchanged or
-    concatenating it onto the origin. A caller passing one has either
-    already built the link — in which case routing it through here
-    again is a mistake worth seeing — or is passing something
-    user-supplied, which must never be reflected into an email as if it
-    were ours.
+    ``settings`` is read inside the function rather than imported at
+    module scope. The joining rules in ``url_policy`` are needed by
+    ``config``'s own boot validator, and keeping this module's
+    dependency on ``config`` deferred to call time means no import
+    order can reintroduce a cycle here.
     """
-    base = settings.resolved_public_app_url.rstrip("/")
+    from app.core.config import settings
 
-    if not path:
-        return base
-
-    lowered = path.lower()
-    if lowered.startswith(("http://", "https://", "//")):
-        raise ValueError(
-            f"public_app_url() takes a path, not an absolute URL: {path!r}. "
-            f"If the link is already built, use it as it is; if it came "
-            f"from input, do not put it in an email."
-        )
-
-    return f"{base}/{path.lstrip('/')}"
+    return join_public_url(settings.resolved_public_app_url, path)
 
 
-def is_public_host(url: str) -> bool:
-    """False for a URL on an internal or platform host.
-
-    Used by the boot guard and by tests. Deliberately substring-based
-    rather than a hostname parse: the question is "could this have come
-    from the wrong setting", and a marker anywhere in the authority is
-    enough to answer yes.
-    """
-    lowered = (url or "").lower()
-    return bool(lowered) and not any(
-        marker in lowered for marker in NON_PUBLIC_HOST_MARKERS
-    )
-
-
-__all__ = ["public_app_url", "is_public_host", "NON_PUBLIC_HOST_MARKERS"]
+__all__ = [
+    "public_app_url",
+    "is_public_host",
+    "offending_markers",
+    "NON_PUBLIC_HOST_MARKERS",
+]

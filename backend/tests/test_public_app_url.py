@@ -222,7 +222,10 @@ class TestTheSettingsAreSeparated:
         readers: list[str] = []
         for path in sorted(BACKEND.glob("app/**/*.py")):
             rel = path.relative_to(BACKEND).as_posix()
-            if rel in ("app/core/config.py", "app/core/public_url.py"):
+            if rel in (
+                "app/core/config.py", "app/core/public_url.py",
+                "app/core/url_policy.py",
+            ):
                 continue
             for i, line in enumerate(path.read_text().splitlines(), 1):
                 code = line.split("#", 1)[0]
@@ -245,7 +248,10 @@ class TestTheSettingsAreSeparated:
         offenders: list[str] = []
         for path in sorted(BACKEND.glob("app/**/*.py")):
             rel = path.relative_to(BACKEND).as_posix()
-            if rel in ("app/core/config.py", "app/core/public_url.py"):
+            if rel in (
+                "app/core/config.py", "app/core/public_url.py",
+                "app/core/url_policy.py",
+            ):
                 continue
             for i, line in enumerate(path.read_text().splitlines(), 1):
                 code = line.split("#", 1)[0]
@@ -270,7 +276,7 @@ class TestTheSettingsAreSeparated:
         offenders: list[str] = []
         for path in sorted(BACKEND.glob("app/**/*.py")):
             rel = path.relative_to(BACKEND).as_posix()
-            if rel == "app/core/public_url.py":
+            if rel == "app/core/url_policy.py":
                 continue  # defines the marker list
             tree = ast.parse(path.read_text(encoding="utf-8"))
             docstrings = set()
