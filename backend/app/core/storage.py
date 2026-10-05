@@ -38,6 +38,7 @@ the pre-existing ``resolve() + is_relative_to`` traversal guard.
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass
 import pathlib
 import re
 from functools import lru_cache
@@ -309,6 +310,97 @@ def save_media_file(
 
     file_url = f"/api/uploads/{storage_path}"
     return storage_path, file_url, media_type, stored_filename, size
+
+
+@dataclass(frozen=True)
+class ObjectInfo:
+    """What a stored object is, without reading its bytes.
+
+    Enough to compare a copy against its source — size, type and, where
+    the backend offers one, a content hash — so a migration can verify
+    before it deletes anything.
+    """
+
+    size: int
+    content_type: str | None
+    etag: str | None
+
+
+def object_head(rel_path: str) -> "ObjectInfo | None":
+    """Describe a stored object, or None if it is not there.
+
+    Deliberately unlike ``delete_file``: this one does **not** swallow
+    errors into a success-looking result. A caller asking "does this
+    exist" and getting a confident "no" from a transient failure would
+    then happily create a duplicate or refuse a valid migration, so a
+    missing object is None and a broken connection raises.
+    """
+    if not rel_path:
+        return None
+
+    if settings.is_r2_enabled:
+        from botocore.exceptions import ClientError
+
+        try:
+            head = _r2_client().head_object(
+                Bucket=_bucket_for_key(rel_path), Key=rel_path,
+            )
+        except ClientError as exc:
+            code = (exc.response or {}).get("Error", {}).get("Code")
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                return None
+            raise
+        return ObjectInfo(
+            size=int(head.get("ContentLength") or 0),
+            content_type=head.get("ContentType"),
+            etag=(head.get("ETag") or "").strip('"') or None,
+        )
+
+    path = UPLOAD_DIR / rel_path
+    if not path.is_file():
+        return None
+    import hashlib
+
+    data = path.read_bytes()
+    return ObjectInfo(
+        size=len(data),
+        content_type=None,
+        etag=hashlib.md5(data).hexdigest(),  # noqa: S324 - identity, not security
+    )
+
+
+def copy_object(src_path: str, dest_path: str) -> None:
+    """Copy a stored object to a new key, server-side where possible.
+
+    On R2 this is a ``copy_object`` call — the bytes never travel
+    through this process, which matters for anything large and removes
+    a download/re-upload that could corrupt on the way. Both keys route
+    through ``_bucket_for_key``, so a cross-bucket copy would be
+    expressed correctly too, though today every ``media/`` key lives in
+    the private bucket.
+
+    Raises on failure. A copy that silently did nothing would be the
+    worst outcome here: the caller deletes the source next.
+    """
+    if not src_path or not dest_path:
+        raise ValueError("copy_object needs both a source and a destination")
+    if src_path == dest_path:
+        return
+
+    if settings.is_r2_enabled:
+        _r2_client().copy_object(
+            Bucket=_bucket_for_key(dest_path),
+            Key=dest_path,
+            CopySource={"Bucket": _bucket_for_key(src_path), "Key": src_path},
+        )
+        return
+
+    src = UPLOAD_DIR / src_path
+    dest = UPLOAD_DIR / dest_path
+    if not src.is_file():
+        raise FileNotFoundError(f"source object missing: {src_path}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(src.read_bytes())
 
 
 def delete_file(rel_path: str) -> None:

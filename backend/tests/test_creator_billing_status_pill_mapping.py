@@ -207,7 +207,19 @@ class TestFrontendBillingPillMapping:
         assert self._BILLING.exists()
         source = self._BILLING.read_text(encoding="utf-8")
         # Positive: the broadened check is present.
-        assert "current_plan.monthly_price_cents === 0\n                    ? 'not_applicable'" in source, (
+        #
+        # Matched whitespace-insensitively. The literal form of this
+        # assertion baked in the exact indentation, so it failed the
+        # moment the payout section moved inside the
+        # ``paid_offers_enabled`` gate and everything in it gained two
+        # spaces — a pure reindent, with the logic untouched. What is
+        # worth protecting is the mapping, not the column it sits in.
+        import re as _re
+
+        assert _re.search(
+            r"current_plan\.monthly_price_cents === 0\s*\?\s*'not_applicable'",
+            source,
+        ), (
             "billing/page.tsx: expected the Creator billing pill to "
             "map ANY ``monthly_price_cents === 0`` plan to "
             "'not_applicable' ('Not required'). If this check has "
