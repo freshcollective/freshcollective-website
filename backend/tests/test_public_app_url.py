@@ -278,6 +278,11 @@ class TestTheSettingsAreSeparated:
             rel = path.relative_to(BACKEND).as_posix()
             if rel == "app/core/url_policy.py":
                 continue  # defines the marker list
+            if rel == "app/services/notification_link_canonicalisation.py":
+                # Names the exact origin it migrates in-app links away
+                # from. A one-time cleanup has to know which host was
+                # wrong; that is the opposite of building a link from it.
+                continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             docstrings = set()
             for node in ast.walk(tree):

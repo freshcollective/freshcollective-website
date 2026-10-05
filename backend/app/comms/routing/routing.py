@@ -15,7 +15,7 @@ originating write.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -25,7 +25,7 @@ from app.comms.intents import DELIVERY_MODE_LIVE, DELIVERY_MODE_SHADOW
 from app.comms.models import CommunicationEvent
 from app.comms.routing.decision import DecisionOutcome, process_one
 from app.comms.routing.provider_map import supported_channels_for_category
-from app.comms.routing.resolver import get_resolver_for
+from app.comms.routing.resolver import ResolvedRecipient, get_resolver_for
 
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,9 @@ def route_event(
         })
         return result
 
-    recipients = resolver.resolve(db, event)
+    recipients = [
+        _canonicalise_recipient_links(r) for r in resolver.resolve(db, event)
+    ]
     channels = supported_channels_for_category(event.category_key)
 
     for recipient in recipients:
@@ -118,6 +120,63 @@ def route_event(
             _absorb(result, outcome, recipient_user_id=recipient.user_id)
 
     return result
+
+
+def _canonicalise_recipient_links(
+    recipient: "ResolvedRecipient",
+) -> "ResolvedRecipient":
+    """Move any non-public origin in the template context onto the
+    public address, before anything is rendered.
+
+    Why this is here rather than in the stored event
+    ------------------------------------------------
+    ``CommunicationEvent`` is "an immutable record that something
+    communication-worthy happened", and its ``payload`` is documented as
+    "structured facts … never rendered content". Absolute URLs were put
+    in payloads anyway, and a batch of historical events consequently
+    carries the old Render origin. Editing them would make the ledger
+    say something other than what happened, for a cosmetic reason.
+
+    So the origin is corrected on the way *out* instead. An old event
+    re-routed today produces a link on today's public domain while its
+    record keeps saying what it said. The same applies to the next time
+    the public address changes: nothing needs a migration.
+
+    ``route_event`` is the single funnel every emit passes through, and
+    ``template_context`` is the only channel event data has into a
+    template — no template reads ``event.payload`` directly. One place
+    covers every event type, every resolver and both channels.
+
+    External links are untouched: the rewrite fires only on a host
+    carrying a non-public marker, so a Stripe or Resend URL passes
+    through, and relative in-app paths have no origin to correct.
+    """
+    context = recipient.template_context
+    if not context:
+        return recipient
+
+    from app.core.public_url import public_app_url
+    from app.core.url_policy import canonicalise_origin
+
+    public_base = public_app_url()
+    corrected: dict[str, Any] = {}
+    changed = False
+    for key, value in context.items():
+        if isinstance(value, str):
+            moved = canonicalise_origin(value, public_base)
+            if moved != value:
+                changed = True
+                logger.info(
+                    "comms routing: canonicalised %s for recipient %s",
+                    key, recipient.user_id,
+                )
+            corrected[key] = moved
+        else:
+            corrected[key] = value
+
+    if not changed:
+        return recipient
+    return replace(recipient, template_context=corrected)
 
 
 def _absorb(

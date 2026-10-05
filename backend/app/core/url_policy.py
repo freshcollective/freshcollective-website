@@ -97,9 +97,83 @@ def join_public_url(base: str, path: str = "") -> str:
     return f"{origin}/{path.lstrip('/')}"
 
 
+def canonicalise_origin(url: str | None, public_base: str) -> str | None:
+    """Move a URL on a non-public host onto the public origin.
+
+    Path, query and fragment are preserved exactly — only the scheme
+    and authority change::
+
+        https://fc-web-xxx.onrender.com/reset-password?token=X
+        →  https://freshcollective.au/reset-password?token=X
+
+    Left alone, deliberately:
+
+      * relative URLs — in-app navigation is relative by design and
+        has no origin to correct;
+      * anything whose host carries no non-public marker, which means
+        every genuinely external link. A Stripe or Resend URL is not
+        ours to rewrite, and silently repointing one at our own domain
+        would break it.
+
+    Keyed on the marker list rather than on one known hostname, so this
+    keeps working the next time the public address changes. The strict
+    single-host form belongs in the one-time script that edits stored
+    records — see ``replace_origin``.
+    """
+    if not url:
+        return url
+    if not url.lower().startswith(("http://", "https://")):
+        return url
+    if not offending_markers(url):
+        return url
+
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    target = urlsplit(public_base.rstrip("/"))
+    return urlunsplit((
+        target.scheme or parts.scheme,
+        target.netloc or parts.netloc,
+        parts.path,
+        parts.query,
+        parts.fragment,
+    ))
+
+
+def replace_origin(
+    url: str | None, old_origin: str, new_origin: str,
+) -> str | None:
+    """Rewrite one exact origin, and nothing else.
+
+    Deliberately narrower than ``canonicalise_origin``: this one edits
+    stored records, so it matches a single scheme+host+port and leaves
+    everything else untouched — a different ``onrender.com`` subdomain,
+    an external host, a relative path. Returns the URL unchanged when
+    the origin does not match exactly.
+    """
+    if not url:
+        return url
+
+    from urllib.parse import urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    old = urlsplit(old_origin.rstrip("/"))
+    if (parts.scheme.lower(), parts.netloc.lower()) != (
+        old.scheme.lower(), old.netloc.lower()
+    ):
+        return url
+
+    new = urlsplit(new_origin.rstrip("/"))
+    return urlunsplit((
+        new.scheme, new.netloc, parts.path, parts.query, parts.fragment,
+    ))
+
+
 __all__ = [
     "NON_PUBLIC_HOST_MARKERS",
     "is_public_host",
     "offending_markers",
     "join_public_url",
+    "canonicalise_origin",
+    "replace_origin",
 ]
