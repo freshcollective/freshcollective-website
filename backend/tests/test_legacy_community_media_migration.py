@@ -623,3 +623,513 @@ class TestNotScheduled:
             pathlib.Path(__file__).resolve().parent.parent.parent / "render.yaml"
         ).read_text()
         assert "migrate_legacy_community_media_keys" not in blueprint
+
+
+# ---------------------------------------------------------------------------
+# Deleting the orphaned legacy object, after the migration
+# ---------------------------------------------------------------------------
+
+
+class TestOrphanCleanup:
+    """The second half: the migration ran with ``--keep-source``, so the
+    old object is still in storage and deliberately unreferenced.
+
+    Discovery is useless here — nothing points at the old key, which is
+    the *goal* — so the pair is named explicitly and the question becomes
+    "prove this is safe to lose". These tests are mostly about the ways
+    it refuses, since the operation is irreversible and the canonical
+    object is the only copy left once it completes.
+    """
+
+    def _pair(self, slug, filename=OCEAN):
+        return (
+            f"media/{slug}_community/{filename}",
+            f"media/{slug}/community/{filename}",
+        )
+
+    def _migrated(self, db, conversation, upload_dir, make_user, *, bytes_=BYTES):
+        """A Collective whose reply image has already been migrated:
+        canonical reference in the DB, both objects still in storage."""
+        creator, space, post, comment = conversation()
+        src, dest = self._pair(space.slug)
+        _write(upload_dir, src, bytes_)
+        _write(upload_dir, dest, bytes_)
+        comment.image_url = canonical_url(space.slug)
+        db.flush()
+        make_user()  # an outsider, so the deny side can be verified
+        return space, comment, src, dest
+
+    # -- the clean case ----------------------------------------------
+
+    def test_a_properly_migrated_object_is_safe_to_delete(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        from app.services.legacy_community_media import check_orphan
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        c = check_orphan(db, src, dest)
+
+        assert c.blockers == [], c.blockers
+        assert c.safe
+        assert c.source_exists and not c.already_deleted
+        assert c.legacy_references == []
+        assert any(comment.id in r for r in c.canonical_references), (
+            c.canonical_references
+        )
+        # The authorisation half actually ran, both directions.
+        assert c.member_allowed == "allowed"
+        assert c.non_member_denied == "denied"
+
+    def test_the_audit_deletes_nothing(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        from app.services.legacy_community_media import check_orphan
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        check_orphan(db, src, dest)
+        assert (upload_dir / src).is_file()
+        assert (upload_dir / dest).is_file()
+
+    def test_apply_removes_the_legacy_object_and_only_that(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        from app.services.legacy_community_media import (
+            check_orphan, delete_orphan,
+        )
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        assert delete_orphan(check_orphan(db, src, dest)) is True
+
+        assert not (upload_dir / src).exists()
+        assert (upload_dir / dest).is_file()
+        assert (upload_dir / dest).read_bytes() == BYTES
+        # And the reference still resolves to the canonical object.
+        assert comment.image_url == canonical_url(space.slug)
+
+    def test_re_running_after_a_successful_delete_is_a_no_op(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        from app.services.legacy_community_media import (
+            check_orphan, delete_orphan,
+        )
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        delete_orphan(check_orphan(db, src, dest))
+
+        again = check_orphan(db, src, dest)
+        assert again.safe, again.blockers
+        assert again.already_deleted
+        assert any("already gone" in n for n in again.notes)
+        assert delete_orphan(again) is False
+        assert (upload_dir / dest).is_file()
+
+    # -- the refusals -------------------------------------------------
+
+    def test_a_missing_canonical_object_blocks(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        """The one that matters most: if the replacement is not there,
+        deleting the legacy object destroys the only copy."""
+        from app.services.legacy_community_media import (
+            check_orphan, delete_orphan,
+        )
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        (upload_dir / dest).unlink()
+
+        c = check_orphan(db, src, dest)
+        assert not c.safe
+        assert any("canonical object is missing" in b for b in c.blockers)
+        with pytest.raises(RuntimeError, match="refusing to delete"):
+            delete_orphan(c)
+        assert (upload_dir / src).is_file()
+
+    def test_a_different_size_at_the_destination_blocks(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        from app.services.legacy_community_media import check_orphan
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        _write(upload_dir, dest, BYTES[:-10])
+
+        c = check_orphan(db, src, dest)
+        assert any("sizes differ" in b for b in c.blockers), c.blockers
+
+    def test_the_same_size_but_different_bytes_blocks(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        """Size alone is not identity. A truncated-then-padded copy, or
+        a different image that happens to weigh the same, must not pass
+        as the replacement."""
+        from app.services.legacy_community_media import check_orphan
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        other = bytes(b ^ 0x5A for b in BYTES)
+        assert len(other) == len(BYTES)
+        _write(upload_dir, dest, other)
+
+        c = check_orphan(db, src, dest)
+        assert any("content hashes differ" in b for b in c.blockers), c.blockers
+
+    def test_a_surviving_legacy_reference_blocks(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        from app.services.legacy_community_media import check_orphan
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        # A second post still on the old URL — the migration did not
+        # finish, so the bytes are still being served from the old key.
+        comment.image_url = legacy_url(space.slug)
+        db.flush()
+
+        c = check_orphan(db, src, dest)
+        assert any("still point at the legacy URL" in b for b in c.blockers), (
+            c.blockers
+        )
+
+    def test_a_legacy_reference_anywhere_in_the_schema_blocks(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        """The scan is wider than the two columns the migration writes.
+
+        A migration cares where Conversation images are *written*. A
+        delete cares whether anything at all still points at the bytes —
+        so this searches every text column that could hold a media URL,
+        by substring, and one hit outside the expected pair is enough to
+        stop it.
+        """
+        from app.services.legacy_community_media import check_orphan
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        db.execute(text(
+            "UPDATE spaces SET cover_image_url = :u WHERE id = :i"
+        ), {"u": legacy_url(space.slug), "i": space.id})
+        db.flush()
+
+        c = check_orphan(db, src, dest)
+        assert any("still point at the legacy URL" in b for b in c.blockers), (
+            c.blockers
+        )
+        assert any("spaces.cover_image_url" in r for r in c.legacy_references)
+        assert c.columns_scanned > len(("community_posts", "post_comments"))
+
+    def test_no_canonical_reference_blocks(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        """Zero references to either URL is not "clean", it is a sign
+        the migration moved the reference somewhere unexpected."""
+        from app.services.legacy_community_media import check_orphan
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        comment.image_url = None
+        db.flush()
+
+        c = check_orphan(db, src, dest)
+        assert any("no database reference points at" in b for b in c.blockers), (
+            c.blockers
+        )
+
+    def test_no_verifiable_member_blocks(
+        self, db, conversation, upload_dir, make_user,
+    ):
+        """If the canonical key cannot be *shown* to serve, the legacy
+        object stays. An unprovable success is a refusal."""
+        from app.services.legacy_community_media import check_orphan
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        db.execute(text(
+            "UPDATE space_memberships SET status = 'removed' WHERE space_id = :i"
+        ), {"i": space.id})
+        db.execute(text(
+            "UPDATE spaces SET creator_id = NULL WHERE id = :i"
+        ), {"i": space.id})
+        db.flush()
+
+        c = check_orphan(db, src, dest)
+        assert any("cannot prove the canonical image" in b for b in c.blockers), (
+            c.blockers
+        )
+
+    def test_a_canonical_key_a_member_cannot_read_blocks(
+        self, db, conversation, upload_dir, make_user, monkeypatch,
+    ):
+        """Deleting the legacy object is only safe if the replacement
+        authorises. A 403 on the canonical path would leave a broken
+        image and nothing to fall back to."""
+        from app.services import legacy_community_media as svc
+        from fastapi import HTTPException
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+
+        import app.uploads.authorization as authz
+
+        def deny(file_path, user, db_):
+            raise HTTPException(status_code=403, detail="Access denied.")
+
+        monkeypatch.setattr(authz, "authorize_upload", deny)
+
+        c = svc.check_orphan(db, src, dest)
+        assert any("cannot read the canonical object" in b for b in c.blockers), (
+            c.blockers
+        )
+        assert c.member_allowed and c.member_allowed.startswith("DENIED")
+
+    def test_a_silently_failed_delete_is_reported_not_swallowed(
+        self, db, conversation, upload_dir, make_user, monkeypatch,
+    ):
+        """``storage.delete_file`` swallows backend errors by design, so
+        the result is verified rather than trusted."""
+        from app.services.legacy_community_media import (
+            check_orphan, delete_orphan,
+        )
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        monkeypatch.setattr(storage, "delete_file", lambda key: None)
+
+        c = check_orphan(db, src, dest)
+        with pytest.raises(RuntimeError, match="still there"):
+            delete_orphan(c)
+        assert (upload_dir / src).is_file()
+        assert (upload_dir / dest).is_file()
+
+    def test_losing_the_canonical_object_during_the_delete_is_fatal(
+        self, db, conversation, upload_dir, make_user, monkeypatch,
+    ):
+        """Should be impossible. Checked anyway, because the alternative
+        is reporting success while the image is gone."""
+        from app.services.legacy_community_media import (
+            check_orphan, delete_orphan,
+        )
+
+        space, comment, src, dest = self._migrated(
+            db, conversation, upload_dir, make_user,
+        )
+        c = check_orphan(db, src, dest)
+
+        real = storage.delete_file
+
+        def delete_both(key):
+            real(key)
+            real(dest)
+
+        monkeypatch.setattr(storage, "delete_file", delete_both)
+        with pytest.raises(RuntimeError, match="restore from backup"):
+            delete_orphan(c)
+
+    # -- the script around it -----------------------------------------
+
+    def test_the_cleanup_script_defaults_to_the_known_pair(self):
+        """Named explicitly, not discovered. The pair is the production
+        object and its canonical replacement, and they differ only in
+        where the separator sits.
+
+        Read with ``ast`` rather than imported. Operational scripts set
+        ``FC_SERVICE_ROLE`` at import time so they can run outside the
+        web process, and importing one mid-suite leaves that in
+        ``os.environ`` for every test after it — which is exactly how
+        this broke three unrelated boot-guard tests on its first run.
+        """
+        import ast
+
+        path = (
+            pathlib.Path(__file__).resolve().parent.parent
+            / "scripts/delete_legacy_community_media_object.py"
+        )
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        consts = {}
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            try:
+                value = ast.literal_eval(node.value)
+            except ValueError:
+                continue  # BACKEND_ROOT and friends are not literals
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    consts[t.id] = value
+        src = consts["DEFAULT_SOURCE_KEY"]
+        dest = consts["DEFAULT_DEST_KEY"]
+        assert src.startswith("media/embody_community/")
+        assert dest.startswith("media/embody/community/")
+        assert src.rsplit("/", 1)[1] == dest.rsplit("/", 1)[1]
+
+    def test_the_cleanup_script_is_not_scheduled(self):
+        """A one-time delete must not be wired into the blueprint. A
+        ``value:`` entry there is reasserted on every sync, so a
+        scheduled delete would come back after being removed."""
+        blueprint = (
+            pathlib.Path(__file__).resolve().parent.parent.parent / "render.yaml"
+        )
+        assert blueprint.exists()
+        assert "delete_legacy_community_media_object" not in blueprint.read_text()
+
+
+class TestDiscoveryDoesNotOverMatch:
+    """``LIKE`` reads a bare ``_`` as a single-character wildcard, and
+    these two keys differ only in that character::
+
+        media/embody_community/ocean.jpeg     <- legacy
+        media/embody/community/ocean.jpeg     <- canonical
+
+    So an unescaped ``%_community/%`` prefilter matches both, and every
+    correctly migrated reference comes back as a candidate. The regex
+    downstream threw them out, so the audit's answer was right while its
+    query was wrong — the kind of thing that stays invisible until a
+    second caller reuses the pattern and has no regex behind it.
+    """
+
+    def test_the_prefilter_sql_the_audit_actually_sends_is_escaped(self, db):
+        """Captured off the cursor, not read off a literal in the test.
+
+        Asserting on a pattern written out here would prove only that
+        the test can spell it. These are the statements and parameters
+        the audit hands to the database.
+        """
+        from sqlalchemy import event
+
+        sent: list[tuple[str, object]] = []
+
+        def record(conn, cursor, statement, params, context, executemany):
+            sent.append((statement, params))
+
+        bind = db.get_bind()
+        event.listen(bind, "before_cursor_execute", record)
+        try:
+            audit(db)
+        finally:
+            event.remove(bind, "before_cursor_execute", record)
+
+        prefilters = [
+            (st, pr) for st, pr in sent if "LIKE" in st and "community" in str(pr)
+        ]
+        assert prefilters, [st for st, _ in sent]
+        for statement, params in prefilters:
+            assert "ESCAPE" in statement, statement
+            assert "\\_community/" in str(params), params
+
+        # And the escaped pattern really does separate the two shapes,
+        # asked of this same database rather than of LIKE in the
+        # abstract.
+        legacy = "/api/uploads/media/embody_community/ocean.jpeg"
+        canonical = "/api/uploads/media/embody/community/ocean.jpeg"
+        pattern = next(
+            v for _st, pr in prefilters
+            for v in (pr.values() if hasattr(pr, "values") else pr)
+            if "community" in str(v)
+        )
+        matched = db.execute(text(
+            "SELECT v FROM (VALUES (:a), (:b)) AS t(v) "
+            "WHERE v LIKE :p ESCAPE '\\'"
+        ), {"a": legacy, "b": canonical, "p": pattern}).scalars().all()
+        assert matched == [legacy]
+
+    def test_a_canonical_reference_is_not_a_candidate(
+        self, db, conversation, upload_dir,
+    ):
+        """The behaviour the escaping protects, end to end."""
+        creator, space, post, comment = conversation()
+        comment.image_url = canonical_url(space.slug)
+        post.image_url = canonical_url(space.slug, "other.png")
+        db.flush()
+        assert audit(db) == []
+
+
+class TestTheDenySideIsActuallyExercised:
+    """``check_orphan`` verifies that a non-member is refused the
+    canonical key. A check like that is easy to write so that it passes
+    without having asked anything — the refusal arrives as an exception,
+    and an exception is also what a broken call produces.
+
+    So: make the authoriser allow everybody and confirm it notices, and
+    make it fail in a non-authorisation way and confirm it does not
+    count that as a refusal.
+    """
+
+    def _migrated(self, db, conversation, upload_dir, make_user):
+        creator, space, post, comment = conversation()
+        src = f"media/{space.slug}_community/{OCEAN}"
+        dest = f"media/{space.slug}/community/{OCEAN}"
+        _write(upload_dir, src)
+        _write(upload_dir, dest)
+        comment.image_url = canonical_url(space.slug)
+        db.flush()
+        make_user()
+        return space, src, dest
+
+    def test_a_non_member_who_can_read_it_blocks(
+        self, db, conversation, upload_dir, make_user, monkeypatch,
+    ):
+        from app.services import legacy_community_media as svc
+        import app.uploads.authorization as authz
+
+        space, src, dest = self._migrated(db, conversation, upload_dir, make_user)
+        monkeypatch.setattr(authz, "authorize_upload", lambda *a, **k: None)
+
+        c = svc.check_orphan(db, src, dest)
+        assert any("a non-member can read" in b for b in c.blockers), c.blockers
+        assert c.non_member_denied.startswith("ALLOWED")
+
+    def test_a_crash_in_the_authoriser_is_not_a_refusal(
+        self, db, conversation, upload_dir, make_user, monkeypatch,
+    ):
+        """The quiet failure: a broken authoriser raises, and a bare
+        ``except`` would record that as "correctly denied" — proving
+        nothing while looking like proof."""
+        from app.services import legacy_community_media as svc
+        import app.uploads.authorization as authz
+        from fastapi import HTTPException
+
+        space, src, dest = self._migrated(db, conversation, upload_dir, make_user)
+
+        calls = {"n": 0}
+
+        def allow_member_then_explode(file_path, user, db_):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return  # the member read succeeds
+            raise RuntimeError("connection reset")
+
+        monkeypatch.setattr(authz, "authorize_upload", allow_member_then_explode)
+
+        c = svc.check_orphan(db, src, dest)
+        assert any("could not verify" in b for b in c.blockers), c.blockers
+        assert "errored" in c.non_member_denied
+
+        # And a 500 from the authoriser is not a refusal either.
+        calls["n"] = 0
+
+        def allow_member_then_500(file_path, user, db_):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return
+            raise HTTPException(status_code=500, detail="boom")
+
+        monkeypatch.setattr(authz, "authorize_upload", allow_member_then_500)
+        c = svc.check_orphan(db, src, dest)
+        assert any("rather than a refusal" in b for b in c.blockers), c.blockers

@@ -41,12 +41,15 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.main import app
 from app.models.platform import (
+    CommunityPost,
+    ConversationChannel,
     Event,
     Pathway,
     PathwayEntitlement,
     PathwayStatus,
     PathwayStep,
     PathwayType,
+    PostComment,
     Space,
     SpaceMembership,
     SpaceMembershipStatus,
@@ -821,61 +824,280 @@ class TestConversationsImageKeysResolve:
             storage.UPLOAD_DIR = original
 
 
-class TestLegacyConversationsKeys:
-    """Images posted before the key fix are still in storage and still
-    referenced by live posts, so the flattened shape has to keep
-    resolving — under the same membership rule, not a looser one."""
+class TestLegacyFallbackIsGone:
+    """The flattened key shape is no longer resolvable, and that is what
+    closes the slug-collision edge.
 
-    def test_a_legacy_flattened_key_resolves_to_its_collective(
+    While the fallback existed, ``media/{slug}_community/{file}`` was
+    read two ways: first as a Collective literally named that, and —
+    only if no such Collective existed — as the historical flattened
+    form of ``{target}/community``. The ordering kept a real
+    ``wellness_community`` Collective working, but it also meant a
+    Collective's *name* could decide which Collective's media a key
+    resolved to. Register ``{target}_community`` and your members read
+    the target's legacy Conversation images.
+
+    Production now holds zero references to the old shape and the one
+    object was migrated, so the fallback is deleted and a slug is only
+    ever a whole path segment.
+    """
+
+    def test_the_flattened_historical_path_is_no_longer_resolved(
         self, db, spaces_and_users,
     ):
+        """The behaviour change itself: what used to resolve, 404s."""
         s = spaces_and_users
         slug = s["space_private"].slug
         key = f"media/{slug}_community/uuid_ocean.jpeg"
+        # 404 for everyone, including the people the fallback used to
+        # let through — there is no Collective with that slug.
+        for who in ("learner_priv", "owner_private", "admin", "unrelated"):
+            _assert_deny(lambda u=s[who]: authorize_upload(key, u, db), 404)
+
+    def test_no_naming_can_reinterpret_another_collectives_slug(
+        self, db, spaces_and_users, make_user, make_space,
+    ):
+        """The collision, built for real and shown to be closed.
+
+        Two Collectives: ``target`` and ``target_community``. The second
+        is the attack shape — under the fallback its members could read
+        the first's legacy Conversation images.
+        """
+        target = spaces_and_users["space_private"]
+        collider = make_space(slug=f"{target.slug}_community")
+        collider_member = make_user()
+        db.add(SpaceMembership(
+            id=_uid("mem"), space_id=collider.id, user_id=collider_member.id,
+            role=SpaceRole.learner, status=SpaceMembershipStatus.active,
+            source="joined",
+        ))
+        db.flush()
+
+        # The collider's own key belongs to the collider, and only its
+        # members read it. It is an ordinary Media Library key.
+        own = f"media/{collider.slug}/uuid_asset.png"
+        _assert_allow(lambda: authorize_upload(own, collider_member, db))
+        _assert_deny(
+            lambda: authorize_upload(own, spaces_and_users["learner_priv"], db),
+        )
+
+        # And the collider's members get nothing from the target —
+        # neither its canonical Conversation images nor its library.
+        _assert_deny(lambda: authorize_upload(
+            f"media/{target.slug}/community/uuid_ocean.jpeg",
+            collider_member, db,
+        ))
+        _assert_deny(lambda: authorize_upload(
+            f"media/{target.slug}/uuid_asset.png", collider_member, db,
+        ))
+
+    def test_a_real_collective_named_with_the_suffix_is_handled_normally(
+        self, db, spaces_and_users, make_user, make_space,
+    ):
+        """A Collective may genuinely be called "wellness_community".
+
+        Nothing about that name is special any more: its library key and
+        its own nested Conversation key both resolve to it, by the whole
+        segment, under the ordinary membership rule.
+        """
+        space = make_space(slug="wellness_community")
+        member = make_user()
+        db.add(SpaceMembership(
+            id=_uid("mem"), space_id=space.id, user_id=member.id,
+            role=SpaceRole.learner, status=SpaceMembershipStatus.active,
+            source="joined",
+        ))
+        db.flush()
+
+        for key in (
+            f"media/{space.slug}/uuid_asset.png",
+            f"media/{space.slug}/community/uuid_post.png",
+        ):
+            _assert_allow(lambda k=key: authorize_upload(k, member, db))
+            _assert_deny(lambda k=key: authorize_upload(
+                k, spaces_and_users["unrelated"], db,
+            ))
+
+    def test_a_collective_that_does_not_exist_is_404_either_way(
+        self, db, spaces_and_users,
+    ):
+        s = spaces_and_users
+        # 404 and not 403 for both shapes: there is no Collective to be
+        # a member of, and the status must not distinguish the two.
+        _assert_deny(lambda: authorize_upload(
+            "media/no-such-collective_community/uuid_x.png", s["admin"], db,
+        ), 404)
+        _assert_deny(lambda: authorize_upload(
+            "media/no-such-collective/community/uuid_x.png", s["admin"], db,
+        ), 404)
+
+    def test_the_resolver_has_no_suffix_arithmetic_left(self):
+        """A source contract, because no behavioural test can stop this
+        from being helpfully re-added.
+
+        Read from the parsed function with its docstring removed — the
+        docstring documents the removed fallback at length and would
+        match any plain substring check.
+        """
+        import ast
+        import inspect
+
+        from app.uploads import authorization
+
+        tree = ast.parse(inspect.getsource(authorization))
+        fn = next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "_authorise_media"
+        )
+        body = fn.body
+        if (
+            body and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            body = body[1:]
+        code = "\n".join(ast.unparse(n) for n in body)
+
+        assert "_community" not in code, (
+            "the community suffix is back in _authorise_media's logic; the "
+            "slug must be matched as a whole path segment"
+        )
+        assert "endswith" not in code, (
+            "no suffix test belongs in media authorisation — that is what "
+            "made a Collective's name able to redirect media resolution"
+        )
+        # And exactly one Space lookup, so a second "retry on another
+        # slug" cannot creep back in beside the first.
+        assert code.count("Space.slug ==") == 1, code
+
+
+class TestCanonicalConversationMediaStillServes:
+    """The canonical path, exercised end to end from a real post and a
+    real reply rather than from a hand-written key.
+
+    This is the pairing that was missing when the flattening bug shipped:
+    the authoriser's tests asserted on keys they had typed themselves, so
+    nothing noticed that the writer produced a different shape. Here the
+    URL comes off the stored row.
+    """
+
+    def _channel(self, db, space):
+        channel = ConversationChannel(
+            id=_uid("ch"), space_id=space.id, name="General", slug="general",
+        )
+        db.add(channel)
+        db.flush()
+        return channel
+
+    def _key_from(self, url: str) -> str:
+        assert url.startswith("/api/uploads/"), url
+        return url[len("/api/uploads/"):]
+
+    def test_a_post_image_on_the_canonical_key_serves_to_members_only(
+        self, db, spaces_and_users,
+    ):
+        s = spaces_and_users
+        space = s["space_private"]
+        channel = self._channel(db, space)
+        url = (
+            f"/api/uploads/media/{space.slug}/community/"
+            f"{uuid.uuid4().hex}_ocean.jpeg"
+        )
+        db.add(CommunityPost(
+            id=_uid("post"), space_id=space.id, author_id=s["learner_priv"].id,
+            channel_id=channel.id, body="", image_url=url,
+        ))
+        db.flush()
+
+        key = self._key_from(url)
         _assert_allow(lambda: authorize_upload(key, s["learner_priv"], db))
+        _assert_allow(lambda: authorize_upload(key, s["moderator_priv"], db))
         _assert_allow(lambda: authorize_upload(key, s["owner_private"], db))
-
-    def test_a_legacy_key_is_no_more_readable_than_the_conversation(
-        self, db, spaces_and_users,
-    ):
-        s = spaces_and_users
-        slug = s["space_private"].slug
-        key = f"media/{slug}_community/uuid_ocean.jpeg"
         _assert_deny(lambda: authorize_upload(key, s["unrelated"], db))
         _assert_deny(lambda: authorize_upload(key, s["suspended_priv"], db))
         _assert_deny(lambda: authorize_upload(key, s["removed_priv"], db))
 
-    def test_an_unknown_collective_is_still_not_found(self, db, spaces_and_users):
-        s = spaces_and_users
-        key = "media/no-such-collective_community/uuid_x.png"
-        # 404, not 403: there is no Collective to be a member of, and
-        # the status must not reveal which of the two it was.
-        _assert_deny(lambda: authorize_upload(key, s["admin"], db), 404)
-
-    def test_a_real_collective_named_with_the_suffix_keeps_its_library(
-        self, db, spaces_and_users, make_user, make_space,
+    def test_a_reply_image_on_the_canonical_key_serves_to_members_only(
+        self, db, spaces_and_users,
     ):
-        """The reason the legacy branch runs *after* the plain lookup.
-
-        A Collective may genuinely be called "something_community", and
-        its Media Library key is a single segment that happens to end
-        the same way. Reading the suffix first would hand its files to
-        members of a different Collective.
-        """
-        from app.models.platform import (
-            SpaceMembership, SpaceMembershipStatus, SpaceRole,
+        """The EMBODY case was a reply, not a post."""
+        s = spaces_and_users
+        space = s["space_private"]
+        channel = self._channel(db, space)
+        post = CommunityPost(
+            id=_uid("post"), space_id=space.id, author_id=s["learner_priv"].id,
+            channel_id=channel.id, body="a question",
         )
+        db.add(post)
+        db.flush()
 
-        space = make_space(slug="wellness_community")
-        member = make_user()
-        db.add(SpaceMembership(
-            id=str(uuid.uuid4()), space_id=space.id, user_id=member.id,
-            role=SpaceRole.learner, status=SpaceMembershipStatus.active,
+        url = (
+            f"/api/uploads/media/{space.slug}/community/"
+            f"{uuid.uuid4().hex}_IMG_3359.jpeg"
+        )
+        db.add(PostComment(
+            id=_uid("cmt"), post_id=post.id,
+            author_id=s["moderator_priv"].id, body="", image_url=url,
         ))
         db.flush()
 
-        key = f"media/{space.slug}/uuid_asset.png"
-        _assert_allow(lambda: authorize_upload(key, member, db))
-        _assert_deny(
-            lambda: authorize_upload(key, spaces_and_users["unrelated"], db),
+        key = self._key_from(url)
+        _assert_allow(lambda: authorize_upload(key, s["learner_priv"], db))
+        _assert_allow(lambda: authorize_upload(key, s["owner_private"], db))
+        _assert_deny(lambda: authorize_upload(key, s["unrelated"], db))
+
+    def test_another_collectives_members_cannot_read_it(
+        self, db, spaces_and_users,
+    ):
+        """Explicitly: membership of some other Collective is not a key
+        to this one's Conversation images."""
+        s = spaces_and_users
+        space = s["space_private"]
+        channel = self._channel(db, space)
+        url = (
+            f"/api/uploads/media/{space.slug}/community/"
+            f"{uuid.uuid4().hex}_private.jpeg"
         )
+        db.add(CommunityPost(
+            id=_uid("post"), space_id=space.id, author_id=s["owner_private"].id,
+            channel_id=channel.id, body="", image_url=url,
+        ))
+        db.flush()
+
+        key = self._key_from(url)
+        # learner_pub is an active member — of the *public* Space.
+        _assert_deny(lambda: authorize_upload(key, s["learner_pub"], db))
+        # As is that Space's owner.
+        _assert_deny(lambda: authorize_upload(key, s["owner_public"], db))
+
+    def test_the_key_the_writer_produces_is_the_key_that_serves(
+        self, db, spaces_and_users,
+    ):
+        """Ask the real writer for a key, hand it straight to the reader.
+
+        The test that would have caught the original bug, kept here now
+        that the fallback no longer papers over a mismatch.
+        """
+        import pathlib as _pathlib
+        import tempfile
+
+        from app.core import storage
+
+        s = spaces_and_users
+        slug = s["space_private"].slug
+        original = storage.UPLOAD_DIR
+        storage.UPLOAD_DIR = _pathlib.Path(tempfile.mkdtemp())
+        try:
+            key, url, _kind, _name, _size = storage.save_media_file(
+                data=b"\x89PNG\r\n\x1a\n" + b"0" * 32,
+                original_name="ocean.png",
+                mime_type="image/png",
+                space_slug=f"{slug}/community",
+            )
+        finally:
+            storage.UPLOAD_DIR = original
+
+        assert key == self._key_from(url)
+        assert key.startswith(f"media/{slug}/community/"), key
+        _assert_allow(lambda: authorize_upload(key, s["learner_priv"], db))
+        _assert_deny(lambda: authorize_upload(key, s["unrelated"], db))

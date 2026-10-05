@@ -225,10 +225,6 @@ def _authorise_step_resource(user: User, file_path: str, db: Session) -> None:
     _check_pathway_access(user, pathway, space, db)
 
 
-#: What ``save_media_file`` used to flatten "{slug}/community" to.
-_LEGACY_COMMUNITY_SUFFIX = "_community"
-
-
 def _authorise_media(user: User, file_path: str, db: Session) -> None:
     """media/… namespace — three sub-cases:
 
@@ -240,6 +236,26 @@ def _authorise_media(user: User, file_path: str, db: Session) -> None:
         in that Space. Paid-pathway asset-reference analysis is
         deliberately NOT applied here; see the launch report §7 for
         the deferred tightening.
+
+    The Collective is identified by a whole path segment and nothing
+    else. There used to be a fallback that read a *trailing* substring:
+    ``save_media_file`` once flattened "{slug}/community" into
+    "{slug}_community", so historical Conversation images sat at
+    ``media/{slug}_community/{file}``, and the authoriser learned to
+    strip the suffix and retry when the segment matched no Collective.
+
+    It is gone, because that shape no longer exists in production — the
+    objects were migrated to the nested key and the database holds zero
+    references to the old one — and because the fallback is what made a
+    slug collision reachable at all: register a Collective named exactly
+    ``{target}_community`` and the plain lookup matches it first, so its
+    members could read the target's legacy Conversation images. With a
+    whole segment and no suffix arithmetic, no Collective's *name* can
+    be made to resolve to another Collective's media.
+
+    Do not reintroduce a fallback here. ``media/{slug}_community/…`` is
+    now simply a Media Library key belonging to a Collective whose slug
+    happens to end that way, and a 404 if no such Collective exists.
     """
     parts = file_path.split("/", 3)
     # parts[0] = 'media'; parts[1] = slug (or 'world-guide'); parts[2]
@@ -251,35 +267,9 @@ def _authorise_media(user: User, file_path: str, db: Session) -> None:
     if slug == "world-guide":
         return  # any authenticated user allowed.
 
+    # One lookup, on the whole segment. There is deliberately no
+    # fallback here — see the note in the docstring above.
     space = db.query(Space).filter(Space.slug == slug).first()
-
-    # Legacy Conversations keys.
-    #
-    # ``save_media_file`` used to flatten "{slug}/community" into
-    # "{slug}_community", so images posted before that was fixed live at
-    # ``media/{slug}_community/{file}`` — one path segment, and not a
-    # Collective slug, so the lookup above found nothing and the image
-    # 404'd for everybody including its author. Those objects are still
-    # in storage and still referenced by live posts, so the key shape
-    # has to keep resolving.
-    #
-    # Deliberately *after* the plain lookup: a Collective may genuinely
-    # be called "wellness_community", and its Media Library must keep
-    # working. Only when no such Collective exists is the suffix read as
-    # the old Conversations prefix.
-    #
-    # Residual, and worth closing by migrating those objects to the
-    # nested key: if somebody registers a Collective whose slug is
-    # exactly "{target}_community", the lookup above matches it and
-    # their members can read the target's *legacy* Conversations images.
-    # Not reachable for anything uploaded after this change — new keys
-    # are nested, where the slug is a whole segment and cannot be
-    # spoofed by naming.
-    if space is None and slug.endswith(_LEGACY_COMMUNITY_SUFFIX):
-        base = slug[: -len(_LEGACY_COMMUNITY_SUFFIX)]
-        if base:
-            space = db.query(Space).filter(Space.slug == base).first()
-
     if space is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
     _require_member_or_manager(user, space, db)

@@ -10,18 +10,16 @@ separator flattened::
     written:   media/{slug}_community/{file}
 
 The writer was fixed, so new uploads are nested. Objects written before
-that are still at the flattened key, still referenced by live posts and
-comments, and are readable only because
-``uploads/authorization._authorise_media`` learned to resolve the old
-shape.
+that sat at the flattened key, readable only because
+``uploads/authorization._authorise_media`` had learned to resolve the
+old shape — a compatibility branch with a small edge, since it resolved
+a plain slug first and so a Collective genuinely named
+``{target}_community`` would match ahead of the legacy interpretation.
 
-That compatibility branch carries a small edge: it resolves a plain slug
-first, so a Collective whose slug genuinely *was* ``{target}_community``
-would match before the legacy interpretation and its members could read
-the target's legacy Conversation images. Not reachable for anything
-written after the fix — a nested key puts the slug in a whole segment
-that naming cannot spoof — but it is only closable by moving the old
-objects and then deleting the branch.
+Production has now been migrated: one reference, one object, zero legacy
+references remaining, and the compatibility branch is deleted. What is
+left here is the audit that proves it stays that way, and the cleanup of
+the orphaned object at the bottom of this module.
 
 What is actually stored
 -----------------------
@@ -145,10 +143,16 @@ def audit(db: Session) -> list[Candidate]:
     candidates: list[Candidate] = []
 
     for table, column in REFERENCE_COLUMNS:
+        # ``ESCAPE`` and a backslashed underscore, because ``LIKE``
+        # reads a bare ``_`` as "any character" — and the legacy and
+        # canonical keys differ only in whether the separator before
+        # ``community`` is ``_`` or ``/``. Unescaped, this prefilter
+        # pulls in every canonical URL too; the regex below then
+        # discards them, so the result was right and the query was not.
         rows = db.execute(text(
             f"SELECT id, {column} FROM {table} "  # noqa: S608 - fixed allowlist
-            f"WHERE {column} LIKE :pattern"
-        ), {"pattern": f"%{URL_PREFIX}media/%{LEGACY_SUFFIX}/%"}).all()
+            f"WHERE {column} LIKE :pattern ESCAPE '\\'"
+        ), {"pattern": f"%{URL_PREFIX}media/%\\{LEGACY_SUFFIX}/%"}).all()
 
         for row_id, url in rows:
             parsed = parse_legacy_key(url)
@@ -359,3 +363,307 @@ def remaining_legacy_references(db: Session) -> int:
     """For the re-audit that has to come back zero before the
     compatibility resolver can be removed."""
     return len(audit(db))
+
+
+# ---------------------------------------------------------------------------
+# Orphan cleanup
+# ---------------------------------------------------------------------------
+#
+# After the migration, the old object is deliberately unreferenced: the
+# database is canonical, so nothing points at the flattened key any
+# more. That makes DB discovery useless for finding it — the absence of
+# a reference is the goal, not the signal — so this half works from an
+# explicit key pair and proves the object is safe to lose rather than
+# inferring it.
+
+
+@dataclass
+class OrphanCheck:
+    """One legacy object, examined against its canonical replacement."""
+
+    source_key: str
+    dest_key: str
+
+    source_info: object | None = None
+    dest_info: object | None = None
+
+    legacy_references: list[str] = field(default_factory=list)
+    canonical_references: list[str] = field(default_factory=list)
+    columns_scanned: int = 0
+
+    member_allowed: str | None = None
+    non_member_denied: str | None = None
+
+    blockers: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+    @property
+    def source_url(self) -> str:
+        return URL_PREFIX + self.source_key
+
+    @property
+    def dest_url(self) -> str:
+        return URL_PREFIX + self.dest_key
+
+    @property
+    def source_exists(self) -> bool:
+        return self.source_info is not None
+
+    @property
+    def already_deleted(self) -> bool:
+        """Re-run of a completed cleanup. Not a failure."""
+        return self.source_info is None
+
+    @property
+    def safe(self) -> bool:
+        return not self.blockers
+
+
+#: Column names worth searching for a surviving reference. Broader than
+#: ``REFERENCE_COLUMNS`` on purpose: that list is where a Conversation
+#: image is *written*, which is the right scope for a migration, but
+#: this is about to delete bytes. Before that, the question is whether
+#: *anything* in the database still points at them.
+_MEDIA_COLUMN_PATTERNS = (
+    "%url%", "%image%", "%media%", "%thumbnail%",
+    "%asset%", "%artwork%", "%avatar%", "%logo%", "%cover%",
+)
+
+
+def media_text_columns(db: Session) -> list[tuple[str, str]]:
+    """Every text-ish column that could plausibly hold a media URL.
+
+    Restricted in SQL to tables that also have an ``id`` column, so
+    every query the scan then runs is known to be valid. The earlier
+    shape tried each column and caught failures, which meant a
+    ``rollback()`` inside the caller's transaction — quietly discarding
+    whatever the caller had not committed yet.
+    """
+    rows = db.execute(text(
+        "SELECT c.table_name, c.column_name FROM information_schema.columns c "
+        "JOIN information_schema.tables t "
+        "  ON t.table_schema = c.table_schema AND t.table_name = c.table_name "
+        " AND t.table_type = 'BASE TABLE' "
+        "WHERE c.table_schema = 'public' "
+        "  AND c.data_type IN ('text', 'character varying', 'character') "
+        "  AND (" + " OR ".join(
+            f"c.column_name LIKE :p{i}"
+            for i in range(len(_MEDIA_COLUMN_PATTERNS))
+        ) + ") "
+        "  AND EXISTS ("
+        "    SELECT 1 FROM information_schema.columns k "
+        "    WHERE k.table_schema = c.table_schema "
+        "      AND k.table_name = c.table_name AND k.column_name = 'id'"
+        "  ) "
+        "ORDER BY c.table_name, c.column_name"
+    ), {f"p{i}": p for i, p in enumerate(_MEDIA_COLUMN_PATTERNS)}).all()
+    return [(r[0], r[1]) for r in rows]
+
+
+def find_references(db: Session, url: str) -> tuple[list[str], int]:
+    """Where this URL still appears, as ``table.column=id`` strings.
+
+    Matched as a substring, not equality: a URL embedded in rich-text
+    or JSON-ish content counts just as much as one in its own column
+    when the question is "will deleting this break a page".
+
+    ``strpos`` rather than ``LIKE``, because these URLs are full of
+    underscores and ``LIKE`` reads ``_`` as "any character". The legacy
+    and canonical keys differ only in whether the separator before
+    ``community`` is ``_`` or ``/`` — so a ``LIKE`` search for the
+    legacy URL matches the canonical one, and every properly migrated
+    object looks like it still has a live legacy reference.
+    """
+    hits: list[str] = []
+    columns = media_text_columns(db)
+    for table, column in columns:
+        rows = db.execute(text(
+            f'SELECT id FROM "{table}" '  # noqa: S608 - from the catalogue
+            f'WHERE strpos("{column}", :needle) > 0 LIMIT 25'
+        ), {"needle": url}).all()
+        hits.extend(f"{table}.{column}={r[0]}" for r in rows)
+    return hits, len(columns)
+
+
+def check_orphan(db: Session, source_key: str, dest_key: str) -> OrphanCheck:
+    """Can this legacy object be deleted? Writes nothing.
+
+    Every condition is proved, not assumed. The object is about to stop
+    existing, and the only acceptable evidence that nobody needs it is
+    that its replacement is byte-identical, present, referenced, and
+    readable by exactly the people who should read it.
+    """
+    c = OrphanCheck(source_key=source_key, dest_key=dest_key)
+
+    c.source_info = storage.object_head(source_key)
+    c.dest_info = storage.object_head(dest_key)
+
+    # The canonical object has to be there whether or not the source
+    # still is — that is the one this check exists to protect.
+    if c.dest_info is None:
+        c.blockers.append(f"canonical object is missing: {dest_key}")
+
+    if c.source_info is None:
+        c.notes.append(
+            "legacy object is already gone — this has run before, or the "
+            "migration deleted it. Nothing to delete."
+        )
+    elif c.dest_info is not None:
+        if c.source_info.size != c.dest_info.size:
+            c.blockers.append(
+                f"sizes differ: legacy {c.source_info.size}B vs canonical "
+                f"{c.dest_info.size}B — these are not the same object"
+            )
+        src_tag, dst_tag = c.source_info.etag, c.dest_info.etag
+        if src_tag and dst_tag:
+            if src_tag != dst_tag:
+                c.blockers.append(
+                    f"content hashes differ: {src_tag} vs {dst_tag}"
+                )
+        else:
+            # Not a blocker. R2 returns a plain MD5 etag for a
+            # single-part upload and a composite one for multipart, so
+            # an absent or unusable hash is a known shape of this
+            # backend rather than evidence of a problem. Size matched.
+            c.notes.append(
+                "no comparable content hash on this backend — verified on "
+                "size alone"
+            )
+
+    # Nothing may still point at the legacy URL, and something must
+    # point at the canonical one. The second half matters as much as
+    # the first: zero references to either would mean the migration
+    # repointed that row somewhere else entirely.
+    c.legacy_references, c.columns_scanned = find_references(db, c.source_url)
+    c.canonical_references, _ = find_references(db, c.dest_url)
+
+    if c.legacy_references:
+        c.blockers.append(
+            f"{len(c.legacy_references)} database reference(s) still point at "
+            f"the legacy URL: {', '.join(c.legacy_references[:5])}"
+        )
+    if not c.canonical_references:
+        c.blockers.append(
+            f"no database reference points at the canonical URL {c.dest_url} "
+            f"— the migration has not happened, or it moved the reference "
+            f"somewhere else"
+        )
+
+    _check_canonical_authorisation(db, c)
+    return c
+
+
+def _check_canonical_authorisation(db: Session, c: OrphanCheck) -> None:
+    """Prove the canonical key is readable by a member and nobody else.
+
+    Deleting the legacy object is only safe if the replacement actually
+    serves. A canonical object that exists but 403s for its own
+    Collective's members would leave a broken image and no way back.
+    """
+    from fastapi import HTTPException
+
+    from app.models.user import User
+    from app.uploads.authorization import authorize_upload
+
+    slug = c.dest_key.split("/")[1] if c.dest_key.count("/") >= 2 else None
+    if not slug:
+        c.blockers.append(f"cannot read a Collective slug from {c.dest_key}")
+        return
+
+    space = db.execute(text(
+        "SELECT id FROM spaces WHERE slug = :s"
+    ), {"s": slug}).first()
+    if space is None:
+        c.blockers.append(f"no Collective with slug '{slug}'")
+        return
+    space_id = space[0]
+
+    member = db.execute(text(
+        "SELECT u.id FROM space_memberships m JOIN users u ON u.id = m.user_id "
+        "WHERE m.space_id = :s AND m.status = 'active' "
+        "  AND coalesce(u.role, '') <> 'admin' LIMIT 1"
+    ), {"s": space_id}).first()
+    outsider = db.execute(text(
+        "SELECT u.id FROM users u WHERE coalesce(u.role, '') <> 'admin' "
+        "  AND u.id NOT IN ("
+        "    SELECT user_id FROM space_memberships WHERE space_id = :s"
+        "  ) "
+        "  AND u.id NOT IN ("
+        "    SELECT creator_id FROM spaces WHERE id = :s "
+        "      AND creator_id IS NOT NULL"
+        "  ) LIMIT 1"
+    ), {"s": space_id}).first()
+
+    if member is None:
+        c.blockers.append(
+            f"no active non-admin member of '{slug}' to verify authorisation "
+            f"with — cannot prove the canonical image actually serves"
+        )
+        return
+
+    try:
+        authorize_upload(c.dest_key, db.get(User, member[0]), db)
+        c.member_allowed = "allowed"
+    except Exception as exc:
+        c.member_allowed = f"DENIED ({exc})"
+        c.blockers.append(
+            f"a member of '{slug}' cannot read the canonical object — "
+            f"deleting the legacy one would leave a broken image"
+        )
+
+    if outsider is None:
+        c.notes.append("no non-member account available to verify the deny side")
+        return
+    try:
+        authorize_upload(c.dest_key, db.get(User, outsider[0]), db)
+    except HTTPException as exc:
+        # Only a real authorisation refusal counts. Catching anything
+        # at all here would let a crash in the authoriser read as a
+        # correct denial, which is the one failure this check exists to
+        # notice.
+        if exc.status_code in (403, 404):
+            c.non_member_denied = "denied"
+        else:
+            c.non_member_denied = f"unexpected status {exc.status_code}"
+            c.blockers.append(
+                f"the deny side returned {exc.status_code} rather than a "
+                f"refusal — authorisation is not behaving as expected"
+            )
+    except Exception as exc:
+        c.non_member_denied = f"errored ({exc})"
+        c.blockers.append(
+            f"could not verify that a non-member is refused {c.dest_key}: "
+            f"{exc}"
+        )
+    else:
+        c.non_member_denied = "ALLOWED — expected a denial"
+        c.blockers.append(
+            f"a non-member can read {c.dest_key} — the canonical path is not "
+            f"enforcing membership"
+        )
+
+
+def delete_orphan(check: OrphanCheck) -> bool:
+    """Delete the legacy object, and only it. True if it was removed.
+
+    Verifies afterwards rather than trusting the call: ``delete_file``
+    swallows backend errors by design, so a silent failure would
+    otherwise be reported as a success.
+    """
+    if not check.safe:
+        raise RuntimeError("refusing to delete: the audit found blockers")
+    if check.already_deleted:
+        return False
+
+    storage.delete_file(check.source_key)
+
+    if storage.object_head(check.source_key) is not None:
+        raise RuntimeError(
+            f"delete reported no error but {check.source_key} is still there"
+        )
+    if storage.object_head(check.dest_key) is None:
+        raise RuntimeError(
+            f"the canonical object {check.dest_key} is gone after deleting the "
+            f"legacy one — this should be impossible; restore from backup"
+        )
+    return True

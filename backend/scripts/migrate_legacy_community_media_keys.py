@@ -7,11 +7,14 @@ separator flattened::
     expected:  media/{slug}/community/{file}
     written:   media/{slug}_community/{file}
 
-The writer is fixed and new uploads are nested. This moves what was
-written before, so the compatibility branch in
-``uploads/authorization._authorise_media`` can eventually be deleted —
-and with it the edge where a Collective genuinely named
-``{target}_community`` could resolve ahead of the legacy interpretation.
+The writer is fixed and new uploads are nested. This moved what was
+written before, which allowed the compatibility branch in
+``uploads/authorization._authorise_media`` to be deleted — and with it
+the edge where a Collective genuinely named ``{target}_community`` could
+resolve ahead of the legacy interpretation.
+
+Production is migrated and that branch is gone. This is kept as the
+re-audit: it must keep reporting zero.
 
 Read-only by default. ``--apply`` is the only way to write.
 
@@ -267,11 +270,11 @@ def main() -> int:
                     "confirmed the images still render."
                 )
             log.info(
-                "  Next: re-run this audit. It must report zero references "
-                "before the compatibility resolver in "
-                "``uploads/authorization._authorise_media`` is removed — that "
-                "removal belongs in a separate change, so there is a rollback "
-                "window."
+                "  Next: re-run this audit — it must report zero references. "
+                "The compatibility resolver in "
+                "``uploads/authorization._authorise_media`` is already "
+                "removed, so a legacy reference appearing here now would be a "
+                "broken image rather than a slow one."
             )
             return 0
 
