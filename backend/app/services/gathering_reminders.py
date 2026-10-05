@@ -54,7 +54,7 @@ from typing import NamedTuple
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.public_url import public_app_url
 from app.models.platform import (
     BookingStatus,
     Event,
@@ -121,8 +121,7 @@ def _gathering_url(space: Space | None, event: Event) -> str:
     confirmation already links to."""
     if space is None or not getattr(space, "slug", None):
         return ""
-    base = settings.frontend_origin.rstrip("/")
-    return f"{base}/spaces/{space.slug}/events/{event.id}"
+    return public_app_url(f"/spaces/{space.slug}/events/{event.id}")
 
 
 def find_due_bookings(

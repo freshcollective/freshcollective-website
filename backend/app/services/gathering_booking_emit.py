@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy.orm import Session
 
 from app.models.platform import Event, EventBooking, Space
+from app.core.public_url import public_app_url
 
 if TYPE_CHECKING:
     from app.comms.models import CommunicationEvent
@@ -153,23 +154,21 @@ def emit_booking_confirmed(
 def _gathering_url(space: Space, event: Event) -> str:
     """Existing member-facing gathering page — no new route is added
     for the email."""
-    from app.core.config import settings
     if not getattr(space, "slug", None):
         return ""
-    base = settings.frontend_origin.rstrip("/")
-    return f"{base}/spaces/{space.slug}/events/{event.id}"
+    return public_app_url(f"/spaces/{space.slug}/events/{event.id}")
 
 
 def _series_url(space: Space, series: Any) -> str:
     """Existing member-facing Series page, when the bookings belong to
     a real ``EventSeries``."""
-    from app.core.config import settings
     if series is None or not getattr(series, "slug", None):
         return ""
     if not getattr(space, "slug", None):
         return ""
-    base = settings.frontend_origin.rstrip("/")
-    return f"{base}/spaces/{space.slug}/gathering-series/{series.slug}"
+    return public_app_url(
+        f"/spaces/{space.slug}/gathering-series/{series.slug}"
+    )
 
 
 def _multi_dedupe_key(user_id: str, scope: str, operation_at) -> str:

@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 
 from app.checkout.stripe_client import StripeNotConfiguredError, get_stripe
 from app.core.config import settings
+from app.core.public_url import public_app_url
 from app.models.creator_billing import CreatorPlan
 from app.models.purchase_intent import (
     PurchaseIntent,
@@ -419,7 +420,7 @@ def _build_success_url(raw_claim_token: str) -> str:
     prototype holding screen at /checkout/next is still available and
     /checkout/complete itself would just render a 404 or a placeholder.
     """
-    return f"{settings.resolved_public_app_url}/checkout/complete?token={raw_claim_token}"
+    return public_app_url(f"/checkout/complete?token={raw_claim_token}")
 
 
 def _build_cancel_url(intent: PurchaseIntent) -> str:
@@ -427,14 +428,13 @@ def _build_cancel_url(intent: PurchaseIntent) -> str:
     so a cancelled Creator checkout lands back on /for-creators, and a
     cancelled Collective checkout lands back on the Collective's about
     page."""
-    base = settings.resolved_public_app_url
     if intent.kind == PurchaseIntentKind.creator_subscription:
-        return f"{base}/for-creators#plans"
+        return public_app_url("/for-creators#plans")
     if intent.kind == PurchaseIntentKind.collective_membership and intent.space_id:
         # Slug is unknown here without a DB roundtrip; land the buyer
         # on the Collectives directory instead, which is always safe.
-        return f"{base}/spaces"
-    return f"{base}/"
+        return public_app_url("/spaces")
+    return public_app_url("/")
 
 
 # ---------------------------------------------------------------------------

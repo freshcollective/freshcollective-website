@@ -68,8 +68,8 @@ def _first_name(user: User) -> str:
 
 
 def _origin() -> str:
-    from app.core.config import settings
-    return settings.frontend_origin.rstrip("/")
+    from app.core.public_url import public_app_url
+    return public_app_url()
 
 
 def _member_url_for_option(db: Session, option: PaymentOption | None) -> str:

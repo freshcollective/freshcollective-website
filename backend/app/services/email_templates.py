@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import html as _html
 
-from app.core.config import settings
+from app.core.public_url import public_app_url
 from typing import Any
 from app.brand.email import brand_header_html
 
@@ -62,7 +62,7 @@ _FONT_STACK_SERIF  = "Georgia, 'Times New Roman', Times, serif"
 # ---------------------------------------------------------------------------
 
 def _preferences_url() -> str:
-    return f"{settings.frontend_origin.rstrip('/')}/settings/stay-connected"
+    return public_app_url("/settings/stay-connected")
 
 
 def render_email(

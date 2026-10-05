@@ -45,6 +45,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_creator_user
 from app.checkout.stripe_client import StripeNotConfiguredError
 from app.core.config import settings
+from app.core.public_url import public_app_url
 from app.core.database import get_db
 from app.models.creator_stripe_account import (
     CreatorStripeAccount,
@@ -221,7 +222,7 @@ def _business_url(db: Session, creator: User) -> str | None:
     if space is None or not space.slug:
         return None
 
-    base = settings.resolved_public_app_url
+    base = public_app_url()
     parsed = urlparse(base)
     host = (parsed.hostname or "").lower()
     if parsed.scheme != "https" or not host or host in _UNUSABLE_URL_HOSTS:
@@ -232,10 +233,9 @@ def _business_url(db: Session, creator: User) -> str | None:
 
 
 def _link_urls() -> tuple[str, str]:
-    base = settings.resolved_public_app_url
     return (
-        f"{base}/creator-studio/billing/connect/return",
-        f"{base}/creator-studio/billing/connect/refresh",
+        public_app_url("/creator-studio/billing/connect/return"),
+        public_app_url("/creator-studio/billing/connect/refresh"),
     )
 
 

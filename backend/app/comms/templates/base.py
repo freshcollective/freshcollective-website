@@ -66,7 +66,7 @@ from app.brand.email import brand_header_html
 from app.comms.models import CommunicationEvent
 from app.comms.providers.base import RenderedPayload
 from app.comms.routing.resolver import ResolvedRecipient
-from app.core.config import settings
+from app.core.public_url import public_app_url
 
 
 class Template(Protocol):
@@ -117,7 +117,7 @@ _FONT_STACK_SERIF = "Georgia, 'Times New Roman', Times, serif"
 
 def preferences_url() -> str:
     """Absolute URL of the member's Stay Connected preferences page."""
-    return f"{settings.frontend_origin.rstrip('/')}/settings/stay-connected"
+    return public_app_url("/settings/stay-connected")
 
 
 def _esc_text(value: str) -> str:

@@ -68,6 +68,11 @@ _LIVE_STRIPE = {
     "stripe_webhook_secret": "whsec_stub",
 }
 
+# Same reason as _LIVE_STRIPE: production now also refuses to boot
+# without a public link origin, so supply one and let these tests keep
+# asserting R2 behaviour only. See test_public_app_url.py for that rule.
+_PUBLIC_URL = {"public_app_url": "https://freshcollective.au"}
+
 
 def _mk_settings(**kwargs) -> Settings:
     """Instantiate Settings without reading any .env file so tests
@@ -81,6 +86,7 @@ def _mk_settings(**kwargs) -> Settings:
     }
     if kwargs.get("app_env") == "production":
         defaults.update(_LIVE_STRIPE)
+        defaults.update(_PUBLIC_URL)
     defaults.update(kwargs)
     return Settings(**defaults)
 

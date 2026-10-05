@@ -230,6 +230,25 @@ services:
       # Committed, safe defaults ------------------------------------
       - key: APP_ENV
         value: production
+      # The canonical public address of the app, and the ONLY source
+      # for links a member sees — emails, Stripe return URLs, anything
+      # clickable. Pinned with ``value:`` rather than ``sync: false``
+      # on purpose: this is a stable fact about the product, not an
+      # operator toggle, and a blueprint sync reasserting it is the
+      # behaviour we want here.
+      #
+      # Deliberately NOT ``FRONTEND_ORIGIN``. That is the CORS origin
+      # and is wired to fc-web's ``RENDER_EXTERNAL_URL``, so its value
+      # is the platform host by construction. Leaving this undeclared
+      # let the fallback in ``resolved_public_app_url`` resolve every
+      # member-facing link to ``fc-web-….onrender.com`` — which is how
+      # a password-reset email shipped a Render URL.
+      #
+      # ``Settings._check_public_app_url`` now refuses to boot a
+      # production service whose link origin is a platform or localhost
+      # host, so this must stay set on every APP_ENV=production service.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
       # Public member finite-plan checkout — Dashboard-managed kill
       # switch. Declared here with ``sync: false`` so Render prompts on
       # first Blueprint sync but NEVER overwrites the production
@@ -348,10 +367,14 @@ services:
       # Auto-wired from fc-web's RENDER_EXTERNAL_URL via Render's
       # Blueprint fromService.envVarKey mechanism — the full
       # public HTTPS URL is injected at deploy time, so no
-      # dashboard placeholder step is needed. Used for CORS and
-      # as the fallback for PUBLIC_APP_URL (which is intentionally
-      # not declared here — the code falls back to FRONTEND_ORIGIN
-      # when PUBLIC_APP_URL is unset).
+      # dashboard placeholder step is needed.
+      #
+      # Used for CORS *only* — this is the browser origin allowed to
+      # call the API, and it is the platform host by construction.
+      # Member-facing links come from PUBLIC_APP_URL above. It used to
+      # be the documented fallback for PUBLIC_APP_URL, and since that
+      # var was never declared, every email link resolved to this
+      # Render host.
       - key: FRONTEND_ORIGIN
         fromService:
           type: web
@@ -464,6 +487,12 @@ services:
         value: "job"
       - key: APP_ENV
         value: production
+      # Canonical public address for every member-facing link. Required
+      # on each APP_ENV=production service — ``_check_public_app_url``
+      # refuses to boot without it. See the fc-api block for why this is
+      # not FRONTEND_ORIGIN.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
       - key: DATABASE_URL
         fromDatabase:
           name: fc-db
@@ -505,6 +534,12 @@ services:
         value: "false"
       - key: APP_ENV
         value: production
+      # Canonical public address for every member-facing link. Required
+      # on each APP_ENV=production service — ``_check_public_app_url``
+      # refuses to boot without it. See the fc-api block for why this is
+      # not FRONTEND_ORIGIN.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
       - key: DATABASE_URL
         fromDatabase:
           name: fc-db
@@ -574,6 +609,12 @@ services:
         value: "false"
       - key: APP_ENV
         value: production
+      # Canonical public address for every member-facing link. Required
+      # on each APP_ENV=production service — ``_check_public_app_url``
+      # refuses to boot without it. See the fc-api block for why this is
+      # not FRONTEND_ORIGIN.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
       - key: DATABASE_URL
         fromDatabase:
           name: fc-db
@@ -631,6 +672,12 @@ services:
         value: "false"
       - key: APP_ENV
         value: production
+      # Canonical public address for every member-facing link. Required
+      # on each APP_ENV=production service — ``_check_public_app_url``
+      # refuses to boot without it. See the fc-api block for why this is
+      # not FRONTEND_ORIGIN.
+      - key: PUBLIC_APP_URL
+        value: https://freshcollective.au
       - key: DATABASE_URL
         fromDatabase:
           name: fc-db

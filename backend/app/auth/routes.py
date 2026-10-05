@@ -23,6 +23,7 @@ from app.auth.schemas import (
 )
 from app.models.platform import CreatorProfile, Space, SpaceMembership
 from app.core.config import settings
+from app.core.public_url import public_app_url
 from app.core.database import get_db
 from app.models.user import User
 
@@ -511,7 +512,10 @@ async def forgot_password(
     raw_token = service.create_password_reset_token(db, payload.email)
 
     if raw_token:
-        reset_url = f"{settings.frontend_origin}/reset-password?token={raw_token}"
+        # The public domain, never the CORS origin. ``FRONTEND_ORIGIN``
+        # is fc-web's Render host by construction, and this line sent it
+        # to members in a password-reset email.
+        reset_url = public_app_url(f"/reset-password?token={raw_token}")
         # Development convenience — mirror the link into the log so
         # operators without email delivery can still complete the flow.
         # The email path below is the primary delivery mechanism in

@@ -27,6 +27,7 @@ from app.community_care.shared import (
     is_space_frozen,
 )
 from app.core.config import settings
+from app.core.public_url import public_app_url
 from app.core.database import get_db
 from app.services.creator_eligibility import is_eligible_creator
 from app.core.storage import (
@@ -923,10 +924,10 @@ def _resolve_active_creator_subscription(
 
 
 def _public_app_url() -> str:
-    """Public origin for Stripe redirect URLs. Delegates to the
-    existing ``settings.resolved_public_app_url`` helper (strips
-    trailing slash and falls back to ``FRONTEND_ORIGIN``)."""
-    return settings.resolved_public_app_url
+    """Public origin for Stripe redirect URLs. Thin alias for the
+    canonical helper, kept because several call sites below read
+    better with it."""
+    return public_app_url()
 
 
 @router.post(
@@ -2656,7 +2657,7 @@ def send_invitation(
     if invitation.sent_at is not None:
         raise HTTPException(status_code=409, detail="Invitation has already been sent.")
 
-    accept_url = f"{_settings.frontend_origin.rstrip('/')}/invites/{invitation.token}"
+    accept_url = public_app_url(f"/invites/{invitation.token}")
     inviter_name = current_user.name or current_user.email
 
     # Communications Layer emit — the Resend send happens inside

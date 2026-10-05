@@ -655,7 +655,7 @@ def trigger_booking_confirmed(event_id: str, user_id: str) -> None:
     """
     from app.services.email_service import email_service
     from app.services.email_templates import booking_confirmation_email
-    from app.core.config import settings
+    from app.core.public_url import public_app_url
 
     db = SessionLocal()
     try:
@@ -683,7 +683,7 @@ def trigger_booking_confirmed(event_id: str, user_id: str) -> None:
 
         view_url = None
         if space:
-            view_url = f"{settings.frontend_origin.rstrip('/')}/spaces/{space.slug}/events/{event.id}"
+            view_url = public_app_url(f"/spaces/{space.slug}/events/{event.id}")
 
         title = f"Booking confirmed: {event.title}"
         message = f'Your place is held at "{event.title}" on {starts_when}.'

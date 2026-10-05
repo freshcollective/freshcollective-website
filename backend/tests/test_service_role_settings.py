@@ -33,6 +33,7 @@ _KEYS = (
     "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
     "R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY",
     "R2_BUCKET_PRIVATE", "R2_BUCKET_PUBLIC", "R2_PUBLIC_BASE_URL",
+    "PUBLIC_APP_URL", "FRONTEND_ORIGIN",
 )
 
 
@@ -48,6 +49,12 @@ def _make(monkeypatch, **env):
     monkeypatch.setenv("DATABASE_URL", env.pop(
         "DATABASE_URL", "postgresql://localhost/fc_test",
     ))
+    # Production also refuses to boot without a public link origin —
+    # the rule that stops member emails being built from the CORS
+    # origin. These tests are about service roles, so supply it unless
+    # the test is deliberately setting it.
+    if env.get("APP_ENV") == "production":
+        env.setdefault("PUBLIC_APP_URL", "https://freshcollective.au")
     for k, v in env.items():
         monkeypatch.setenv(k, v)
     from app.core.config import Settings

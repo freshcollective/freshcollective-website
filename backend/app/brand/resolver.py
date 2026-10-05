@@ -51,6 +51,7 @@ from app.brand.roles import (
     storage_key_for,
 )
 from app.core.config import settings
+from app.core.public_url import public_app_url
 from app.models.platform import PlatformArtwork
 
 
@@ -85,7 +86,7 @@ class BrandAssetResolution:
 
 
 def _app_origin() -> str:
-    return settings.resolved_public_app_url.rstrip("/")
+    return public_app_url()
 
 
 def _absolute_for_default(path: str) -> str:

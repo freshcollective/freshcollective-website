@@ -45,6 +45,11 @@ _VALID_R2 = {
     "r2_public_base_url": "https://cdn.test",
 }
 
+# Same reason as _VALID_R2: production also refuses to boot without a
+# public link origin, so these tests supply one and keep asserting
+# Stripe rules only. See test_public_app_url.py for that rule.
+_PUBLIC_URL = {"public_app_url": "https://freshcollective.au"}
+
 
 def _mk_settings(**kwargs) -> Settings:
     """Instantiate Settings without loading .env so tests only see
@@ -56,6 +61,7 @@ def _mk_settings(**kwargs) -> Settings:
     }
     if kwargs.get("app_env") == "production":
         defaults.update(_VALID_R2)
+        defaults.update(_PUBLIC_URL)
     defaults.update(kwargs)
     return Settings(**defaults)
 
@@ -258,6 +264,11 @@ class TestGraceReconcilerScriptBoot:
             app_env="production",
             fc_service_role="job",
             fc_job_requires_stripe=False,
+            # The cron declares this too, and production refuses to boot
+            # without it — the job's own emails would otherwise be built
+            # from the CORS origin. Kept here so this test continues to
+            # mirror the blueprint exactly, which is its whole purpose.
+            public_app_url="https://freshcollective.au",
             _env_file=None,
         )
         # None of the "web-only" secrets need to be set for this job

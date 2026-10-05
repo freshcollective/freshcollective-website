@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.core.public_url import public_app_url
 from app.models.creator_billing import CreatorSubscription
 from app.models.user import User
 from app.services.creator_plan_labels import creator_facing_plan_label
@@ -65,7 +65,7 @@ def _safe_emit(fn: Callable[..., Any]) -> Callable[..., Any]:
 
 
 def _billing_url() -> str:
-    return f"{settings.frontend_origin.rstrip('/')}/creator-studio/billing"
+    return public_app_url("/creator-studio/billing")
 
 
 def _first_name(user: User | None) -> str:

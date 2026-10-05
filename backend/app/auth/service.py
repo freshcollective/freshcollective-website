@@ -73,12 +73,13 @@ def emit_welcome_after_signup(
     from app.comms import Source, emit as comms_emit
     from app.comms.rollout import schedule_routing_if_needed
     from app.core.config import settings
+    from app.core.public_url import public_app_url
 
     first_name = ""
     if user.name:
         first_name = user.name.strip().split(" ", 1)[0]
 
-    resolved_next_url = next_url or f"{settings.frontend_origin.rstrip('/')}/dashboard"
+    resolved_next_url = next_url or public_app_url("/dashboard")
 
     # No dedupe_key: each caller reaches this only after
     # ``get_user_by_email`` confirmed no existing account, so a genuine
@@ -394,13 +395,12 @@ def emit_email_verification_requested(
     from app.comms import Source, emit as comms_emit
     from app.comms.rollout import schedule_routing_if_needed
     from app.core.config import settings
+    from app.core.public_url import public_app_url
 
     first_name = ""
     if user.name:
         first_name = user.name.strip().split(" ", 1)[0]
-    verify_url = (
-        f"{settings.frontend_origin.rstrip('/')}/verify-email?token={raw_token}"
-    )
+    verify_url = public_app_url(f"/verify-email?token={raw_token}")
     ev = comms_emit(
         db,
         event_type="account.email_verification_requested",

@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     jwt_secret: str | None = None
     jwt_algorithm: str = "HS256"
     jwt_expire_days: int = 7
+    # Which browser origin may call this API — the CORS allow-list in
+    # ``app/main.py``, and nothing else. On Render this is wired to
+    # fc-web's ``RENDER_EXTERNAL_URL``, so in production its value is
+    # ``https://fc-web-….onrender.com`` by construction.
+    #
+    # NOT the address to give a member. That is ``public_app_url``
+    # below, reached through ``app/core/public_url.py``. The two were
+    # used interchangeably, which is how a Render host reached a
+    # password-reset email.
     frontend_origin: str = "http://localhost:3000"
     app_env: str = "development"
 
@@ -89,10 +98,18 @@ class Settings(BaseSettings):
     stripe_price_id_creator: str | None = None
     stripe_price_id_pro: str | None = None
 
-    # Absolute base URL of the public frontend, used to build Stripe
-    # success/cancel URLs. Defaults to `frontend_origin` when unset;
-    # split as a distinct setting so a future CDN-fronted deployment can
-    # override the payment return URL without changing CORS.
+    # The canonical public address of the app — ``https://freshcollective.au``
+    # in production. The single source for every member-facing link:
+    # emails, Stripe return URLs, anything a person sees or clicks.
+    #
+    # Distinct from ``frontend_origin`` on purpose. That one is a CORS
+    # origin and is pinned to the platform host; this one is the
+    # product's identity and follows the custom domain. They were
+    # conflated, and because this was never declared in the blueprint
+    # the fallback below quietly resolved every link to the Render host.
+    #
+    # Always read through ``app.core.public_url.public_app_url()``, never
+    # by string-concatenating this value.
     public_app_url: str | None = None
 
     # Standalone Gathering ticket sales — hard-off by default. Even when
@@ -668,10 +685,65 @@ class Settings(BaseSettings):
 
     @property
     def resolved_public_app_url(self) -> str:
-        """Base URL used to construct Stripe success/cancel URLs.
-        Falls back to `frontend_origin` when the dedicated
-        `public_app_url` is unset."""
+        """The origin for every member-facing link.
+
+        Falls back to ``frontend_origin`` so local development and the
+        test suite keep working with nothing configured. In production
+        that fallback is a misconfiguration rather than a convenience —
+        it yields the Render host — and
+        ``_check_public_app_url`` below refuses to boot rather than let
+        it reach a member.
+
+        Prefer ``app.core.public_url.public_app_url(path)`` over reading
+        this directly: it owns the slash joining and refuses an
+        already-absolute URL.
+        """
         return (self.public_app_url or self.frontend_origin).rstrip("/")
+
+    @model_validator(mode="after")
+    def _check_public_app_url(self) -> "Settings":
+        """Refuse to boot in production with a non-public link origin.
+
+        Every member-facing link — password reset, email verification,
+        Gathering reminders, Stripe return URLs — is built from
+        ``resolved_public_app_url``. When ``PUBLIC_APP_URL`` is unset
+        that resolves to ``FRONTEND_ORIGIN``, which on Render is the
+        platform host. Nothing failed: members received working links to
+        ``fc-web-….onrender.com`` for as long as it took someone to
+        notice.
+
+        A silent wrong answer is the failure mode worth trading for a
+        loud refusal, so this follows the R2 and Stripe guards above: on
+        Render a raise aborts the deploy and the previous image keeps
+        serving.
+
+        Applies to background jobs as well as the web service — the
+        Gathering reminder cron sends email, so a job with the wrong
+        origin is exactly as visible to a member.
+
+        Development and test are untouched: they are not production, and
+        ``localhost`` is the correct answer there.
+        """
+        if self.app_env != "production":
+            return self
+
+        from app.core.public_url import NON_PUBLIC_HOST_MARKERS
+
+        resolved = (self.public_app_url or self.frontend_origin or "").strip()
+        lowered = resolved.lower()
+        offending = [m for m in NON_PUBLIC_HOST_MARKERS if m in lowered]
+        if not resolved or offending:
+            raise ValueError(
+                "PUBLIC_APP_URL is not set to the public domain, so every "
+                "member-facing link would be built from "
+                f"{resolved or '(empty)'}"
+                + (f" — a {offending[0]} host." if offending else ".")
+                + " Set PUBLIC_APP_URL to the canonical public address "
+                "(e.g. https://freshcollective.au). FRONTEND_ORIGIN is the "
+                "CORS origin and is deliberately the platform host; it is "
+                "not a substitute."
+            )
+        return self
 
 
 settings = Settings()

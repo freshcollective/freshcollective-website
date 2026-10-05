@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.config import settings
+from app.core.public_url import public_app_url
 from app.core.database import get_db
 from app.models.purchase_plan import PurchasePlan, PurchasePlanStatus
 from app.models.user import User
@@ -142,9 +143,8 @@ def create_repair_session(
             detail="Payment plan is not ready to be repaired.",
         )
 
-    frontend = settings.frontend_origin.rstrip("/")
-    success_url = f"{frontend}/checkout/repair-return?plan_id={plan.id}"
-    cancel_url = f"{frontend}/dashboard"
+    success_url = public_app_url(f"/checkout/repair-return?plan_id={plan.id}")
+    cancel_url = public_app_url("/dashboard")
 
     try:
         session = finite_plan_repair.create_repair_setup_session(

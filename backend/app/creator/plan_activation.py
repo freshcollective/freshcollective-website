@@ -544,7 +544,7 @@ def _emit_plan_activated_event(
     # dependencies at collection time (mirrors the pattern in
     # rollout.py).
     from app.comms import Source, emit as comms_emit
-    from app.core.config import settings
+    from app.core.public_url import public_app_url
 
     first_name = ""
     if user.name:
@@ -562,11 +562,10 @@ def _emit_plan_activated_event(
     # never-onboarded first-time Creator (via either manual grant or
     # Stripe) gets the "Set up your Collective" variant.
     is_fresh_creator = user.creator_onboarded_at is None
-    origin = settings.frontend_origin.rstrip("/")
     next_url = (
-        f"{origin}/creator-onboarding"
+        public_app_url("/creator-onboarding")
         if is_fresh_creator
-        else f"{origin}/creator-studio"
+        else public_app_url("/creator-studio")
     )
     # No dedupe_key on the emit itself. Duplicate suppression is
     # provided by ``activate_creator_plan``'s idempotent no-op branch:

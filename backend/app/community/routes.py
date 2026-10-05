@@ -94,12 +94,12 @@ def _emit_comment_created(db, background_tasks, *, post, comment, commenter, spa
     """
     from app.comms import Source, emit as comms_emit
     from app.comms.rollout import schedule_routing_if_needed
-    from app.core.config import settings as _settings
+    from app.core.public_url import public_app_url
 
     post_title = getattr(post, "title", None) or "your post"
     commenter_name = getattr(commenter, "name", None) or "Someone"
     view_url = (
-        f"{_settings.frontend_origin.rstrip('/')}/spaces/{space.slug}/community/{post.id}"
+        public_app_url(f"/spaces/{space.slug}/community/{post.id}")
         if space else ""
     )
 
