@@ -6,7 +6,11 @@ import { useRouter } from 'next/navigation'
 import type { CreatorMediaAsset, CreatorPathway, CreatorSection, CreatorStep } from '@/types/platform'
 import ImagePickerField from '@/components/creator/ImagePickerField'
 import { apiUrl } from '@/lib/api'
-import { isKnowledgeGuide, unitNoun } from '@/lib/pathwayTerminology'
+import {
+  isKnowledgeGuide,
+  unitCountLabel,
+  unitNoun,
+} from '@/lib/pathwayTerminology'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -252,6 +256,11 @@ function PathwayStructure({
   const [addingSection, setAddingSection] = useState(false)
   const [newSectionTitle, setNewSectionTitle] = useState('')
   const [savingSection, setSavingSection] = useState(false)
+
+  // What this pathway calls its larger grouping. A Knowledge Guide's
+  // groupings are chapters — the word its member-facing view already
+  // uses — because "section" there is the content unit.
+  const groupNoun = isKnowledgeGuide(pathway) ? 'chapter' : 'section'
   // addingToContext: null=closed, 'global'=unsectioned form, or a section id
   const [addingToContext, setAddingToContext] = useState<string | null>(null)
   const [deletingStepId, setDeletingStepId] = useState<string | null>(null)
@@ -489,7 +498,7 @@ function PathwayStructure({
               ? (isKnowledgeGuide(pathway)
                   ? 'Add sections to build the guide, or create chapters to group them.'
                   : 'Add steps to shape the journey, or create sections to organise them into modules.')
-              : `${steps.length} ${steps.length === 1 ? 'step' : 'steps'}${sections.length > 0 ? ` · ${sections.length} ${sections.length === 1 ? 'section' : 'sections'}` : ''}`
+              : `${unitCountLabel(pathway, steps.length)}${sections.length > 0 ? ` · ${sections.length} ${sections.length === 1 ? groupNoun : `${groupNoun}s`}` : ''}`
             }
           </p>
         </div>
@@ -499,15 +508,22 @@ function PathwayStructure({
             onClick={() => setAddingSection(true)}
             className="shrink-0 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[12px] font-medium text-black transition-colors hover:border-teal-300 hover:text-teal-700"
           >
-            + Add section
+            + Add {groupNoun}
           </button>
         )}
       </div>
 
-      {/* ── New section form ── */}
+      {/* ── New grouping form ──
+          This posts to /sections, which is the larger grouping. For a
+          Knowledge Guide that grouping is a *chapter*; "section" there
+          is the content unit, created by the add control at the foot of
+          the page. Both read "+ Add section" before this, which is the
+          confusion being fixed. */}
       {addingSection && (
         <div className="mb-5 rounded-xl border border-teal-200 bg-teal-50/40 p-4">
-          <p className="mb-2.5 text-[13px] font-semibold text-navy-900">New section</p>
+          <p className="mb-2.5 text-[13px] font-semibold text-navy-900">
+            New {groupNoun}
+          </p>
           <input
             autoFocus
             type="text"
@@ -528,7 +544,7 @@ function PathwayStructure({
               className="rounded-lg px-4 py-1.5 text-[13px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
               style={{ background: 'linear-gradient(135deg, #38A09E 0%, #55B8B6 100%)' }}
             >
-              {savingSection ? 'Adding…' : 'Add section'}
+              {savingSection ? 'Adding…' : `Add ${groupNoun}`}
             </button>
             <button
               type="button"
@@ -632,7 +648,7 @@ function PathwayStructure({
                   )}
 
                   <span className="shrink-0 text-[11px] text-black">
-                    {sectionSteps.length} {sectionSteps.length === 1 ? 'step' : 'steps'}
+                    {unitCountLabel(pathway, sectionSteps.length)}
                   </span>
 
                   {isEditing ? (
@@ -768,7 +784,9 @@ function PathwayStructure({
                 }}
               >
                 <span className="text-[12px] font-medium uppercase tracking-[0.08em] text-slate-500">
-                  Unsectioned · {unsectionedSteps.length} {unsectionedSteps.length === 1 ? 'step' : 'steps'}
+                  {isKnowledgeGuide(pathway) ? 'No chapter' : 'Unsectioned'}
+                  {' · '}
+                  {unitCountLabel(pathway, unsectionedSteps.length)}
                 </span>
               </div>
               <div className="divide-y divide-slate-100">

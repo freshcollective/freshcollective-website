@@ -362,7 +362,13 @@ export default function RichTextRenderer({ content, className }: Props) {
         {content.split('\n\n').filter(Boolean).map((para, i) => {
           if (para === '---') return <hr key={i} className="my-6 border-slate-200" />
           return (
-            <p key={i} className="my-3 text-[15px] leading-[1.85] text-black">
+            // ``whitespace-pre-wrap`` on the *legacy plain-text* path
+            // only. The split above turns blank lines into paragraphs,
+            // but a single newline inside one was still collapsed by
+            // HTML — so a three-line prompt rendered on one line. The
+            // TipTap branch above is untouched: it carries its own
+            // hardBreak nodes and needs no whitespace handling.
+            <p key={i} className="my-3 whitespace-pre-wrap text-[15px] leading-[1.85] text-black">
               {para}
             </p>
           )

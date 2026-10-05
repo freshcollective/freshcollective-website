@@ -325,12 +325,22 @@ export function renderBlocks(
               <RichTextRenderer content={block.content} />
             </div>
           ) : (
-            <p className="font-serif italic text-[18px] leading-snug text-navy-900">
+            /* ``whitespace-pre-wrap``: the prompt is plain text from
+               PromptEditor's textarea and authors lay it out in lines.
+               The newlines are stored — 4 of the 8 reflection prompts in
+               the database contain them — and were only being collapsed
+               here, by ordinary HTML whitespace handling. ``pre-wrap``
+               keeps author breaks and blank lines while still wrapping
+               long lines normally. No content is manipulated and the
+               text stays escaped by JSX. */
+            <p className="whitespace-pre-wrap font-serif italic text-[18px] leading-snug text-navy-900">
               {block.content}
             </p>
           )}
           {block.caption && (
-            <p className="mt-2 text-[14px] leading-relaxed text-black">
+            /* The supporting context under the prompt — same plain
+               text, same treatment, so the two cannot disagree. */
+            <p className="mt-2 whitespace-pre-wrap text-[14px] leading-relaxed text-black">
               {block.caption}
             </p>
           )}
