@@ -414,6 +414,22 @@ services:
         value: fc-media-public
       - key: R2_PUBLIC_BASE_URL
         sync: false
+      # Error reporting (Sentry project fc-api). Dashboard-owned: it is
+      # an ingest endpoint rather than a stable fact about the product,
+      # and it is rotated independently of a deploy.
+      #
+      # Absent or empty is a clean no-op — ``init_sentry`` logs that
+      # reporting is off and the app boots normally, which is how every
+      # local run and the whole test suite behave.
+      #
+      # Phase 1 is fc-api only. The seven cron services get their own
+      # DSN wiring in Phase 2; do not copy this block there yet.
+      #
+      # No SENTRY_ENVIRONMENT: the environment is derived from APP_ENV
+      # above so the two cannot drift. No SENTRY_RELEASE: Render
+      # supplies RENDER_GIT_COMMIT and the SDK reads it directly.
+      - key: SENTRY_DSN
+        sync: false
 
   # ─────────────────────────────────────────────────────────────────
   # FIP3 grace-expiry reconciler — independent cron

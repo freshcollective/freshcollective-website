@@ -46,6 +46,13 @@ httpx>=0.27.0
 # credentials never triggers the import.
 boto3>=1.35.0
 
+# Error reporting. Pinned exactly: an unpinned SDK alongside an
+# unpinned fastapi is how integration breakage arrives on an
+# unrelated deploy. The [fastapi] extra pulls nothing new today —
+# fastapi and starlette are already direct dependencies — it records
+# which integration we rely on.
+sentry-sdk[fastapi]==2.71.0
+
 # --- Dev / test only (scoped to backend/tests/) ---------------------------
 # Bootstrapped 2026-07-16 for the standalone paid Gathering test scaffold.
 # See backend/tests/README.md. `pytest` is the only new backend dependency

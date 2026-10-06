@@ -76,12 +76,26 @@ from app.comms.routes import (
     webhook_router as comms_webhook_router,
 )
 from app.core.config import settings
+from app.core.observability import init_sentry
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Error reporting
+# ---------------------------------------------------------------------------
+# Before ``FastAPI(...)`` on purpose: the SDK's FastAPI integration
+# patches Starlette's middleware stack at init, so an app constructed
+# first would not be instrumented.
+#
+# A no-op when ``SENTRY_DSN`` is unset, which is every local run and the
+# whole test suite. No custom middleware and no per-site capture calls —
+# the integration covers unhandled requests and the logging integration
+# covers the ``logger.exception`` paths. See app/core/observability.py.
+init_sentry("fc-api")
 
 # ---------------------------------------------------------------------------
 # Rate limiter (in-memory; swap for Redis-backed in production)
