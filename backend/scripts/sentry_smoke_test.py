@@ -1,8 +1,13 @@
 """ONE-OFF: prove an error reaches the fc-api Sentry project.
 
-Run this once from the fc-api Render shell after ``SENTRY_DSN`` is set.
-It sends exactly one synthetic error through the real ``init_sentry()``
-and the real scrubber, then exits.
+Run this once from a Render shell after ``SENTRY_DSN`` is set on that
+service. It sends exactly one synthetic error through the real
+``init_sentry()`` and the real scrubber, then exits.
+
+One script, any component. ``--component`` names which process is
+pretending to fail, so a cron can be verified with the same evidence
+and the same fake secrets as fc-api — the component tag is the only
+difference between them, and proving the tag arrives is half the point.
 
 Why a script and not an endpoint
 --------------------------------
@@ -27,14 +32,21 @@ address at ``.invalid`` (a reserved TLD that can never resolve) and
 obvious ``FAKE_…`` strings. Nothing is read from the environment, so
 this cannot print or transmit a real secret.
 
-Usage, from the fc-api shell::
+Usage, from the service's own Render shell::
 
     python scripts/sentry_smoke_test.py
+    python scripts/sentry_smoke_test.py --component fc-refund-reconciler
+
+A cron service has a shell of its own, and that is the one to use: it
+is the environment that carries that job's ``APP_ENV`` and its own copy
+of ``SENTRY_DSN``. Running the cron's component name from the fc-api
+shell would prove the tag and nothing else.
 
 Exit codes::
 
     0  one event was submitted and flushed
-    1  SENTRY_DSN is not set, or the flush timed out
+    1  SENTRY_DSN is not set, the component is unknown, or the flush
+       timed out
 
 Then, in Sentry: open the fc-api project, find the newest issue, and
 confirm the heading is the synthetic one and that **none** of
@@ -49,6 +61,7 @@ Not scheduled, not imported by anything, absent from render.yaml.
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -60,13 +73,28 @@ os.environ.setdefault("FC_SERVICE_ROLE", "job")
 # ruff: noqa: E402
 from app.core.observability import init_sentry
 
+#: Every process that reports to the fc-api Sentry project: the API and
+#: the seven crons, each tagged with its own Render service name.
+#: ``test_cron_observability`` asserts this agrees with render.yaml, so
+#: a new service cannot be verified under a name Sentry has never seen.
+COMPONENTS = (
+    "fc-api",
+    "fc-fip3-grace-reconciler",
+    "fc-refund-reconciler",
+    "fc-creator-subscription-grace-reconciler",
+    "fc-creator-grant-expiry",
+    "fc-gathering-reminders",
+    "fc-connect-transfer-sweeper",
+    "fc-connect-recovery-sweeper",
+)
+
 #: Fake, and recognisable as fake. ``.invalid`` is reserved by RFC 2606
 #: and can never resolve, so this address cannot reach anyone.
 FAKE_EMAIL = "test@example.invalid"
 FAKE_TOKEN = "FAKE_SENTRY_TEST_TOKEN"
 FAKE_BEARER = "Bearer FAKE_TOKEN"
 
-MARKER = "fc-api Sentry smoke test — synthetic, safe to delete"
+MARKER = "Sentry smoke test — synthetic, safe to delete"
 
 
 class SentrySmokeTestError(RuntimeError):
@@ -75,11 +103,19 @@ class SentrySmokeTestError(RuntimeError):
 
 
 def main() -> int:
-    if not init_sentry("fc-api"):
+    parser = argparse.ArgumentParser(description="Sentry smoke test.")
+    parser.add_argument(
+        "--component", default="fc-api", choices=COMPONENTS,
+        help="which process this event should be tagged as (default fc-api)",
+    )
+    args = parser.parse_args()
+    component = args.component
+
+    if not init_sentry(component):
         print(
             "SENTRY_DSN is not set in this shell, so nothing was sent.\n"
-            "Set it on the fc-api service first, let the service pick it "
-            "up, then run this again.",
+            f"Set it on the {component} service first, let the service "
+            "pick it up, then run this again.",
             file=sys.stderr,
         )
         return 1
@@ -88,7 +124,7 @@ def main() -> int:
 
     print(f"environment : {os.environ.get('APP_ENV') or '(unset)'}")
     print(f"release     : {os.environ.get('RENDER_GIT_COMMIT') or '(unset)'}")
-    print("component   : fc-api")
+    print(f"component   : {component}")
     print()
 
     # Fake secrets through every channel the scrubber covers, so a
@@ -131,7 +167,7 @@ def main() -> int:
     print("  * is titled SentrySmokeTestError")
     print(f"  * carries environment={os.environ.get('APP_ENV') or '(unset)'} "
           f"and release={(os.environ.get('RENDER_GIT_COMMIT') or '(unset)')[:12]}")
-    print("  * has tag component=fc-api")
+    print(f"  * has tag component={component}")
     print("  * contains 'this one should survive' in its extra data")
     print(f"  * contains NO occurrence of {FAKE_EMAIL}, {FAKE_TOKEN}, "
           f"or {FAKE_BEARER}")

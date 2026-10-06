@@ -17,12 +17,39 @@ cron can call ``init_sentry()`` as its very first statement, and no
 import order can ever make this participate in a cycle. ``config``
 already learned that lesson the hard way — see ``app/core/url_policy.py``.
 
-Scope, Phase 1
---------------
+Scope
+-----
 Errors only. ``traces_sample_rate=0``, no profiling, no session replay,
 no performance instrumentation beyond what error capture needs. The
 FastAPI and logging integrations come from the SDK's defaults; nothing
 here widens what they capture.
+
+Phase 1 was fc-api. Phase 2 added the seven cron jobs, which need two
+things a web process does not: an explicit :func:`flush_sentry` before
+a short-lived process exits, and :func:`capture_job_summary` for the
+runs that finish *successfully* while leaving something a person has to
+act on. Render stays the alarm for "the cron exited non-zero"; these
+two cover the failures that exit zero.
+
+On ``data_collection`` (SDK 2.71)
+--------------------------------
+The SDK now offers a structured ``data_collection`` option that
+supersedes ``send_default_pii``. We deliberately do not use it.
+
+Supplying it wins over ``send_default_pii`` outright and fills every
+*omitted* field with the permissive spec default — ``user_info=True``,
+``stack_frame_variables=True``, ``database_query_data=True``,
+``queues=True``, GraphQL and gen-AI capture on. So a partial dict,
+written in good faith to express "collect less", silently turns on
+member identity and frame locals, and deprecates the one switch that
+currently says no to all of it.
+
+``send_default_pii=False`` plus ``include_local_variables=False``
+already resolve to exactly the restrictive configuration we want —
+``test_cron_observability`` asserts the resolved dict field by field,
+so an SDK upgrade that changes the mapping fails a test rather than
+quietly starting to collect. Revisit only with a reason better than
+the age of the API.
 
 The scrubber fails closed
 -------------------------
@@ -90,6 +117,13 @@ _INLINE_SECRET = re.compile(
     r"(?i)\b(" + "|".join(SENSITIVE_QUERY_PARAMS) + r")=([^\s&'\"<>\)\]]+)"
 )
 
+#: ``Bearer <value>`` in free text. An exception that interpolated a
+#: header value does not write it as ``key=value``, so the pattern
+#: above cannot see it — this is the one credential shape that
+#: announces itself by a prefix instead of a name. Deliberately tight:
+#: the word, whitespace, then one run of token characters.
+_INLINE_BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-~+/=]+")
+
 #: Ordinary email shapes only. Kept deliberately plain: a greedier
 #: pattern starts eating Stripe ids and exception text, and a redacted
 #: stack trace is worth less than a redacted address.
@@ -115,6 +149,7 @@ def redact_text(value: str) -> str:
     is where the debugging value lives.
     """
     value = _INLINE_SECRET.sub(lambda m: f"{m.group(1)}={REDACTED}", value)
+    value = _INLINE_BEARER.sub(f"Bearer {REDACTED}", value)
     return _EMAIL.sub(REDACTED_EMAIL, value)
 
 
@@ -335,12 +370,144 @@ def init_sentry(component: str) -> bool:
         # mistake into an issue. Tune the right one if you ever need to.
         default_integrations=True,
     )
+    # Both the event handler and the breadcrumb handler consult this,
+    # which is the whole point — see RENDER_ONLY_LOGGER_SUFFIX.
+    from sentry_sdk.integrations.logging import ignore_logger
+
+    for pattern in NEVER_REPORTED_LOGGERS:
+        ignore_logger(pattern)
+
     sentry_sdk.get_global_scope().set_tag("component", component)
     return True
 
 
+#: A logger whose name ends in this is for Render's logs only. It
+#: produces neither an issue nor a breadcrumb on somebody else's issue.
+#:
+#: The need is specific and was found by a test rather than reasoned
+#: about. The Connect sweepers log the ids of the transfers still owed,
+#: because acting on them means opening those rows — and a log line at
+#: WARNING becomes a *breadcrumb* attached to the next event the
+#: process sends. So the counted summary went out clean and the same
+#: ids arrived beside it anyway, through a channel nobody had looked
+#: at. Scrubbing could not help: an internal id is not email-shaped and
+#: carries no key to match on.
+#:
+#: A suffix rather than a list of names, so this needs no second source
+#: of truth to keep in step, and the logger's own name says what it is.
+RENDER_ONLY_LOGGER_SUFFIX = ".ids"
+
+#: Patterns excluded from reporting entirely, registered at init.
+#: ``fnmatch``, matched against the logger name.
+NEVER_REPORTED_LOGGERS: tuple[str, ...] = (f"*{RENDER_ONLY_LOGGER_SUFFIX}",)
+
+#: How long a dying process will wait for the network. Short: a cron
+#: must not hang on error reporting, and the business work is already
+#: done and committed by the time this runs.
+FLUSH_TIMEOUT_SECONDS = 5.0
+
+#: Substituted for a summary value that is not a count. The key is kept
+#: so the mistake is visible in Sentry rather than silent.
+DROPPED_NOT_A_COUNT = "[dropped: not a count]"
+
+#: Levels a job summary may use. A summary is never ``info`` — a run
+#: with nothing to act on must send nothing at all.
+JOB_SUMMARY_LEVELS = ("warning", "error")
+
+
+def flush_sentry(timeout: float = FLUSH_TIMEOUT_SECONDS) -> None:
+    """Hand anything queued to the network before the process exits.
+
+    A cron is a few seconds long. The SDK sends from a background
+    worker, so a process that exits the moment its work is done can
+    drop the event that explains why it failed. The SDK's own atexit
+    hook would usually catch that, with a 2-second budget; this makes
+    it explicit, bounded, and visible in the script that depends on it.
+
+    Never raises, and never blocks longer than ``timeout``. A Sentry
+    outage must not turn a successful reconciliation into a failed
+    cron — so every failure here is swallowed, and the caller's exit
+    code is the caller's own.
+    """
+    try:
+        import sentry_sdk
+
+        if not sentry_sdk.get_client().is_active():
+            return
+        sentry_sdk.flush(timeout=timeout)
+    except Exception:
+        logger.warning(
+            "observability: flushing Sentry failed — the job's own outcome "
+            "is unaffected",
+            exc_info=True,
+        )
+
+
+def capture_job_summary(
+    message: str, *, level: str = "warning", **counts: int,
+) -> str | None:
+    """Report one actionable partial failure for a run that exits zero.
+
+    The gap this closes: a sweep can finish exactly as designed and
+    still leave a creator unpaid or a refund unresolved. The process
+    exits 0, Render sees a healthy cron, and the only trace is a log
+    line nobody is reading.
+
+    One event per run, not one per affected row. Sentry groups on the
+    message, so a condition that persists becomes a single issue with a
+    rising count rather than a stream of near-duplicates.
+
+    **Counts only.** Every value is required to be an ``int``; anything
+    else — a list of transaction ids, a Stripe object, an address — is
+    replaced with :data:`DROPPED_NOT_A_COUNT`. That is a structural
+    guarantee rather than a convention: the aggregate is what a person
+    needs in order to decide to go and look, and the ids are already in
+    the Render log, which is where acting on them belongs.
+
+    Returns the event id, or ``None`` when reporting is off — which is
+    every local run and the whole test suite.
+    """
+    if level not in JOB_SUMMARY_LEVELS:
+        logger.warning(
+            "observability: %r is not a job-summary level, using 'warning'",
+            level,
+        )
+        level = "warning"
+
+    safe: dict[str, Any] = {}
+    for key, value in counts.items():
+        if isinstance(value, int):
+            safe[key] = value
+        else:
+            logger.warning(
+                "observability: job summary field %r was dropped — a "
+                "summary carries counts, not values",
+                key,
+            )
+            safe[key] = DROPPED_NOT_A_COUNT
+
+    try:
+        import sentry_sdk
+
+        if not sentry_sdk.get_client().is_active():
+            return None
+        with sentry_sdk.new_scope() as scope:
+            for key, value in safe.items():
+                scope.set_extra(key, value)
+            return sentry_sdk.capture_message(message, level=level)
+    except Exception:
+        logger.warning(
+            "observability: reporting a job summary failed — the job's own "
+            "outcome is unaffected",
+            exc_info=True,
+        )
+        return None
+
+
 __all__ = [
     "init_sentry",
+    "flush_sentry",
+    "capture_job_summary",
     "scrub_event",
     "redact_text",
     "redact_url",
@@ -348,4 +515,9 @@ __all__ = [
     "SENSITIVE_QUERY_PARAMS",
     "DEFAULT_APP_ENV",
     "REDACTED",
+    "DROPPED_NOT_A_COUNT",
+    "NEVER_REPORTED_LOGGERS",
+    "RENDER_ONLY_LOGGER_SUFFIX",
+    "FLUSH_TIMEOUT_SECONDS",
+    "JOB_SUMMARY_LEVELS",
 ]

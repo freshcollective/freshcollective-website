@@ -1,6 +1,7 @@
 """Error reporting that cannot leak a credential.
 
-Phase 1 adds Sentry to fc-api. The risk is not that it fails to
+Phase 1 adds Sentry to fc-api; Phase 2 extends it to the seven crons
+(``test_cron_observability``). The risk is not that it fails to
 report — it is that it reports too much. Every secret this platform
 handles passes through a path Sentry would capture by default: a raw
 reset token in a request body, a session cookie in a header, a Stripe
@@ -676,22 +677,47 @@ class TestWiring:
         )
         assert re.match(r"^sentry-sdk\[fastapi\]==\d+\.\d+\.\d+$", line), line
 
-    def test_the_blueprint_declares_the_dsn_for_fc_api_only(self):
-        """Phase 1 scope, enforced. The seven crons get theirs in
-        Phase 2 and this fails if one is added early."""
+    def test_every_python_service_declares_the_dsn_and_fc_web_does_not(self):
+        """fc-api plus the seven crons — one Sentry project, eight
+        components. fc-web is Phase 3 and this fails if its DSN is
+        added here instead of as part of that work, which would mean a
+        browser DSN sitting in a backend service's environment.
+
+        Derived from ``runtime`` rather than from a list of names, so a
+        new python service is covered the day it is declared.
+        """
         import yaml
 
         data = yaml.safe_load((BACKEND.parent / "render.yaml").read_text())
-        with_dsn = sorted(
-            s["name"] for s in data["services"]
-            if any(e["key"] == "SENTRY_DSN" for e in s.get("envVars", []))
-        )
-        assert with_dsn == ["fc-api"], with_dsn
 
-        api = next(s for s in data["services"] if s["name"] == "fc-api")
-        entry = next(e for e in api["envVars"] if e["key"] == "SENTRY_DSN")
-        assert entry.get("sync") is False
-        assert "value" not in entry, "the DSN must not be committed"
+        def declares_dsn(service):
+            return any(
+                e["key"] == "SENTRY_DSN" for e in service.get("envVars", [])
+            )
+
+        python_services = sorted(
+            s["name"] for s in data["services"] if s.get("runtime") == "python"
+        )
+        with_dsn = sorted(
+            s["name"] for s in data["services"] if declares_dsn(s)
+        )
+        assert with_dsn == python_services, (
+            f"declared on {with_dsn}, expected {python_services}"
+        )
+
+        web = next(s for s in data["services"] if s["name"] == "fc-web")
+        assert not declares_dsn(web), "fc-web is Phase 3"
+
+        for service in data["services"]:
+            if not declares_dsn(service):
+                continue
+            entry = next(
+                e for e in service["envVars"] if e["key"] == "SENTRY_DSN"
+            )
+            assert entry.get("sync") is False, service["name"]
+            assert "value" not in entry, (
+                f"{service['name']}: the DSN must not be committed"
+            )
 
     def test_no_sentry_environment_variable_is_declared(self):
         """Derived from APP_ENV instead, so the two cannot drift."""

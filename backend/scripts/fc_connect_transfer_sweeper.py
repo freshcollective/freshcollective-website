@@ -33,6 +33,31 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
+# Logging is configured first so that the line below is actually
+# emitted. Without a handler installed, Python's last-resort handler
+# drops anything below WARNING — and "SENTRY_DSN is not set" is an INFO
+# line that matters most on the one deploy where it is true.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s: %(message)s",
+)
+
+# Error reporting starts here, before the app imports below, and that
+# order is deliberate: the first thing that can go wrong in a cron is
+# ``Settings`` refusing to construct, and that happens at import time.
+# ``app.core.observability`` imports nothing from ``app``, so calling it
+# first cannot affect import order or reintroduce a cycle.
+#
+# A missing ``SENTRY_DSN`` makes this a clean no-op, which is how every
+# local and ad-hoc run behaves.
+from app.core.observability import (  # noqa: E402
+    capture_job_summary,
+    flush_sentry,
+    init_sentry,
+)
+
+init_sentry("fc-connect-transfer-sweeper")
+
 # ruff: noqa: E402
 # Load the model registry without importing app.main — the web app pulls in
 # uploads/R2, comms and auth config this job has no use for. List mirrors
@@ -66,12 +91,12 @@ from app.core.database import SessionLocal
 from app.services import connect_transfer_sweeper as _sweeper
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s: %(message)s",
-)
-
 logger = logging.getLogger("fc_connect_transfer_sweeper")
+
+#: Render-only: the ``.ids`` suffix keeps these lines out of error
+#: reporting entirely, breadcrumbs included. See
+#: ``RENDER_ONLY_LOGGER_SUFFIX`` in ``app/core/observability.py``.
+id_logger = logging.getLogger("fc_connect_transfer_sweeper.ids")
 
 
 def _report_only(db, limit: int) -> int:
@@ -106,6 +131,35 @@ def _report_only(db, limit: int) -> int:
     return 0
 
 
+def report_partial_failures(report) -> str | None:
+    """One Sentry event for a pass that finished and still left money
+    unsent. Returns the event id, or ``None`` when there is nothing to
+    report — which is the overwhelming majority of runs.
+
+    This exists because the sweep can do exactly what it was built to
+    do and a creator can still be unpaid at the end of it. The process
+    exits 0, Render sees a healthy cron, and the only trace is a log
+    line nobody is reading.
+
+    ``failed`` is the serious half: terminal by classification, so that
+    money will not move again on its own. ``needs_attention`` is still
+    being retried — a slower problem, and a quieter level.
+    """
+    if not (report.failed or report.needs_attention):
+        return None
+    return capture_job_summary(
+        "connect transfer sweep left transfers unsent",
+        level="error" if report.failed else "warning",
+        failed=report.failed,
+        needs_attention=len(report.needs_attention),
+        still_pending=report.still_pending,
+        fee_unavailable=report.fee_unavailable,
+        held_by_dispute=report.held_by_dispute,
+        considered=report.considered,
+        sent=report.sent,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -125,12 +179,19 @@ def main() -> int:
 
         report = _sweeper.sweep_pending_transfers(db, limit=args.limit)
         logger.info("sweep complete: %s", report.as_log_fields())
+
+        # The ids stay here, in the Render log, because acting on them
+        # means opening those transactions. The Render-only logger is
+        # what keeps them out of the summary's breadcrumb trail, and
+        # WARNING is what keeps this from becoming a second issue for
+        # the one condition.
         if report.needs_attention:
-            # Still owed, not abandoned — worth a human look.
-            logger.error(
+            id_logger.warning(
                 "still owed after repeated attempts: %s",
                 ", ".join(report.needs_attention),
             )
+
+        report_partial_failures(report)
         return 0
     except Exception:
         logger.exception("connect transfer sweep failed")
@@ -140,4 +201,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The flush is in a ``finally`` so it runs on the failure path too,
+    # which is the path whose event matters most. It is bounded and
+    # swallows its own errors, so it cannot change the exit code — a
+    # Sentry outage must never turn a good run into a failed cron.
+    try:
+        raise SystemExit(main())
+    finally:
+        flush_sentry()

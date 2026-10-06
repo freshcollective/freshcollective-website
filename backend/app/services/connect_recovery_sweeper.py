@@ -48,6 +48,12 @@ from app.services import connect_reversals
 
 logger = logging.getLogger(__name__)
 
+#: The ids of the rows still owed go here instead of to ``logger``.
+#: Render keeps them; error reporting never sees them, as an issue or
+#: as a breadcrumb on one. The ``.ids`` suffix is what arranges that —
+#: see ``RENDER_ONLY_LOGGER_SUFFIX`` in ``app/core/observability.py``.
+id_logger = logging.getLogger(__name__ + ".ids")
+
 #: Rows considered per run. Anything left over is picked up next time.
 DEFAULT_BATCH_SIZE = 50
 
@@ -210,8 +216,11 @@ def sweep_pending_recoveries(
             report.needs_attention.append(txn.id)
 
     if report.needs_attention:
-        # Loud, and never mistaken for resolved: FC is still owed this.
-        logger.error(
+        # Still owed, and never mistaken for resolved. Render-only
+        # logger at WARNING, for the same two reasons as the transfer
+        # sweeper: one signal per condition, and no ids riding along as
+        # a breadcrumb.
+        id_logger.warning(
             "connect recovery sweeper: %s row(s) still owed after %s+ attempts "
             "and needing a person: %s",
             len(report.needs_attention), ATTENTION_ATTEMPTS,

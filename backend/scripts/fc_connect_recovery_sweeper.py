@@ -36,6 +36,31 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
+# Logging is configured first so that the line below is actually
+# emitted. Without a handler installed, Python's last-resort handler
+# drops anything below WARNING — and "SENTRY_DSN is not set" is an INFO
+# line that matters most on the one deploy where it is true.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s: %(message)s",
+)
+
+# Error reporting starts here, before the app imports below, and that
+# order is deliberate: the first thing that can go wrong in a cron is
+# ``Settings`` refusing to construct, and that happens at import time.
+# ``app.core.observability`` imports nothing from ``app``, so calling it
+# first cannot affect import order or reintroduce a cycle.
+#
+# A missing ``SENTRY_DSN`` makes this a clean no-op, which is how every
+# local and ad-hoc run behaves.
+from app.core.observability import (  # noqa: E402
+    capture_job_summary,
+    flush_sentry,
+    init_sentry,
+)
+
+init_sentry("fc-connect-recovery-sweeper")
+
 # ruff: noqa: E402
 # Load the model registry without importing app.main — the web app pulls in
 # uploads/R2, comms and auth config this job has no use for. List mirrors
@@ -69,12 +94,11 @@ from app.core.database import SessionLocal
 from app.services import connect_recovery_sweeper as _sweeper
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s: %(message)s",
-)
-
 logger = logging.getLogger("fc_connect_recovery_sweeper")
+
+#: Render-only — see the transfer sweeper, and
+#: ``RENDER_ONLY_LOGGER_SUFFIX`` in ``app/core/observability.py``.
+id_logger = logging.getLogger("fc_connect_recovery_sweeper.ids")
 
 
 def _report_only(db, limit: int) -> int:
@@ -126,6 +150,35 @@ def _report_only(db, limit: int) -> int:
     return 0
 
 
+def report_partial_failures(report) -> str | None:
+    """One Sentry event for money a creator owes FC that could not be
+    taken back. Returns the event id, or ``None`` when there is nothing
+    to report.
+
+    ``warning`` rather than ``error``, and that is a judgement about
+    the mechanism rather than about the amount: nothing is ever written
+    off here, so a row past the attention threshold is still in the
+    queue and still backing off towards its next attempt. What it needs
+    is a person choosing to intervene, which is what reporting it is
+    for.
+
+    ``outstanding_cents`` is an aggregate across the pass — no row, no
+    creator, no Stripe object.
+    """
+    if not report.needs_attention:
+        return None
+    return capture_job_summary(
+        "connect recovery sweep still owed after repeated attempts",
+        level="warning",
+        needs_attention=len(report.needs_attention),
+        outstanding_cents=report.outstanding_cents,
+        attempted=report.attempted,
+        still_retryable=report.still_retryable,
+        recovery_required=report.recovery_required,
+        cooling_off=report.cooling_off,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -145,12 +198,16 @@ def main() -> int:
 
         report = _sweeper.sweep_pending_recoveries(db, limit=args.limit)
         logger.info("sweep complete: %s", report.as_log_fields())
+
+        # Ids in the Render log, counts in Sentry — see the transfer
+        # sweeper for why this is the Render-only logger at WARNING.
         if report.needs_attention:
-            # Still owed, not abandoned.
-            logger.error(
+            id_logger.warning(
                 "still owed after repeated attempts: %s",
                 ", ".join(report.needs_attention),
             )
+
+        report_partial_failures(report)
         return 0
     except Exception:
         logger.exception("connect recovery sweep failed")
@@ -160,4 +217,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # The flush is in a ``finally`` so it runs on the failure path too,
+    # which is the path whose event matters most. It is bounded and
+    # swallows its own errors, so it cannot change the exit code — a
+    # Sentry outage must never turn a good run into a failed cron.
+    try:
+        raise SystemExit(main())
+    finally:
+        flush_sentry()

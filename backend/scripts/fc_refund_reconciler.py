@@ -35,6 +35,31 @@ from pathlib import Path
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
+# Logging is configured first so that the line below is actually
+# emitted. Without a handler installed, Python's last-resort handler
+# drops anything below WARNING — and "SENTRY_DSN is not set" is an INFO
+# line that matters most on the one deploy where it is true.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s: %(message)s",
+)
+
+# Error reporting starts here, before the app imports below, and that
+# order is deliberate: the first thing that can go wrong in a cron is
+# ``Settings`` refusing to construct, and that happens at import time.
+# ``app.core.observability`` imports nothing from ``app``, so calling it
+# first cannot affect import order or reintroduce a cycle.
+#
+# A missing ``SENTRY_DSN`` makes this a clean no-op, which is how every
+# local and ad-hoc run behaves.
+from app.core.observability import (  # noqa: E402
+    capture_job_summary,
+    flush_sentry,
+    init_sentry,
+)
+
+init_sentry("fc-refund-reconciler")
+
 # ruff: noqa: E402
 # Force full SQLAlchemy model registry load WITHOUT importing app.main.
 # app.main pulls in every FastAPI router → every service → every model
@@ -76,10 +101,37 @@ from app.models.refund_operation import (
 from app.services import refund_reconciliation as _rec
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s: %(message)s",
-)
+def report_partial_failures(summary: dict) -> str | None:
+    """One Sentry event for a pass that left a refund's outcome
+    unknown. Returns the event id, or ``None`` when every operation
+    resolved.
+
+    A transient count means Stripe could not be reached, the row was
+    left exactly where it was, and the run exited 0. One run of that is
+    ordinary and self-heals in fifteen minutes; the same count every
+    run is a member waiting on money. Sentry groups these into one
+    issue, so the *pattern* is what shows — which is the thing a
+    per-run log line cannot tell you.
+
+    ``warning``, not ``error``: the next run is the normal fix. The
+    genuinely wrong states inside the sweep — an ``accepted`` operation
+    with no Stripe refund id, a refund id Stripe does not recognise —
+    already log at ERROR inside ``app.services.refund_reconciliation``
+    and become their own issues from there. One signal per condition.
+    """
+    unresolved = (
+        summary["in_flight_transient"] + summary["accepted_transient"]
+    )
+    if not unresolved:
+        return None
+    return capture_job_summary(
+        "refund reconciler left operations unresolved",
+        level="warning",
+        in_flight_transient=summary["in_flight_transient"],
+        accepted_transient=summary["accepted_transient"],
+        in_flight_reconciled=summary["in_flight_reconciled"],
+        accepted_reconciled=summary["accepted_reconciled"],
+    )
 
 
 def main() -> int:
@@ -140,6 +192,8 @@ def main() -> int:
             f"accepted reconciled={summary['accepted_reconciled']} "
             f"transient={summary['accepted_transient']}"
         )
+
+        report_partial_failures(summary)
         return 0
     except Exception:
         logging.exception("refund reconcile failed")
@@ -149,4 +203,11 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # The flush is in a ``finally`` so it runs on the failure path too,
+    # which is the path whose event matters most. It is bounded and
+    # swallows its own errors, so it cannot change the exit code — a
+    # Sentry outage must never turn a good run into a failed cron.
+    try:
+        raise SystemExit(main())
+    finally:
+        flush_sentry()

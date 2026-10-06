@@ -422,8 +422,10 @@ services:
       # reporting is off and the app boots normally, which is how every
       # local run and the whole test suite behave.
       #
-      # Phase 1 is fc-api only. The seven cron services get their own
-      # DSN wiring in Phase 2; do not copy this block there yet.
+      # Every cron now declares the same variable, holding the same
+      # value — one project, eight components. Each process tags its
+      # events with its Render service name, so "which job" is a filter
+      # rather than a separate project to go and look at.
       #
       # No SENTRY_ENVIRONMENT: the environment is derived from APP_ENV
       # above so the two cannot drift. No SENTRY_RELEASE: Render
@@ -442,12 +444,51 @@ services:
   # The script is standalone-safe as of the registry-priming import
   # added on 2026-08-19 (see the script's header comment).
   #
-  # Does NOT need Stripe / Resend credentials — the sweep is DB-only.
+  # Does NOT need Stripe credentials — the sweep itself is DB-only.
   # But it imports app.main to load the full SQLAlchemy model
   # registry, which pulls in ``settings = Settings()`` at module
-  # load; that requires DATABASE_URL and JWT_SECRET to be present
-  # (both have no dataclass defaults in ``app.core.config.Settings``).
-  # Every other setting has a safe default.
+  # load; that requires DATABASE_URL to be present (no dataclass
+  # default in ``app.core.config.Settings``).
+  #
+  # Runtime config, completed 2026-10-06 — the three go together:
+  #
+  #   * ``APP_ENV=production``        — this job had no APP_ENV at all,
+  #                                     so it ran as "development": the
+  #                                     production guards below never
+  #                                     applied to it, and its error
+  #                                     reports would have arrived in
+  #                                     Sentry tagged as development
+  #                                     while running against the
+  #                                     production database.
+  #   * ``FC_SERVICE_ROLE=job``       — required *because of* the line
+  #                                     above. At the default ``web``
+  #                                     role, APP_ENV=production demands
+  #                                     the full R2 credential set,
+  #                                     which this job has no use for
+  #                                     and must not be given.
+  #   * ``FC_JOB_REQUIRES_STRIPE=false`` — and this one because a
+  #                                     production job otherwise has to
+  #                                     carry STRIPE_SECRET_KEY. It
+  #                                     never calls Stripe.
+  #
+  # Adding APP_ENV on its own would stop this cron booting. There is a
+  # test that fails if anyone tries.
+  #
+  # JWT_SECRET is kept although ``role=job`` no longer requires it:
+  # this is the one cron that imports app.main, which loads the auth
+  # module, and least-privilege is not worth a surprise in a safety-net
+  # job. It signs nothing.
+  #
+  # Deliberately NOT granted: RESEND_API_KEY / EMAIL_FROM. A suspension
+  # emits ``access.suspended``, which is a live topic, so this job
+  # creates the intent and the Resend provider then declines it with
+  # ``config_missing`` at WARNING — the member gets no email from *this*
+  # path. In practice the in-process reconciler inside fc-api does this
+  # work every 5 minutes with full credentials and sends it; the cron is
+  # the safety net, and only a long fc-api outage would make the
+  # difference visible. Granting mail credentials to an entitlement job
+  # is a bigger decision than this blueprint entry, so it is recorded
+  # here rather than quietly made.
   - type: cron
     name: fc-fip3-grace-reconciler
     runtime: python
@@ -470,6 +511,19 @@ services:
           name: fc-db
           property: connectionString
       - key: JWT_SECRET
+        sync: false
+      - key: APP_ENV
+        value: production
+      - key: FC_SERVICE_ROLE
+        value: "job"
+      - key: FC_JOB_REQUIRES_STRIPE
+        value: "false"
+      # Error reporting — the same Sentry project and the same DSN
+      # value as fc-api. The ``component`` tag, set by the script from
+      # its own Render service name, is what separates this job's
+      # issues from the API's. Dashboard-owned; absent is a clean
+      # no-op. See the fc-api block for the full reasoning.
+      - key: SENTRY_DSN
         sync: false
 
   # Refund reconciler — safety net for creator-initiated refunds whose
@@ -522,6 +576,13 @@ services:
           property: connectionString
       - key: STRIPE_SECRET_KEY
         sync: false
+      # Error reporting — the same Sentry project and the same DSN
+      # value as fc-api. The ``component`` tag, set by the script from
+      # its own Render service name, is what separates this job's
+      # issues from the API's. Dashboard-owned; absent is a clean
+      # no-op. See the fc-api block for the full reasoning.
+      - key: SENTRY_DSN
+        sync: false
 
   # Creator subscription grace-expiry reconciler — flips past_due →
   # unpaid after Fresh Collective's 7-day grace window elapses. Runs
@@ -567,6 +628,13 @@ services:
         fromDatabase:
           name: fc-db
           property: connectionString
+      # Error reporting — the same Sentry project and the same DSN
+      # value as fc-api. The ``component`` tag, set by the script from
+      # its own Render service name, is what separates this job's
+      # issues from the API's. Dashboard-owned; absent is a clean
+      # no-op. See the fc-api block for the full reasoning.
+      - key: SENTRY_DSN
+        sync: false
 
   # ── Complimentary Creator grant expiry ─────────────────────────────
   # Closes the finite complimentary Creator lifecycle: notifies during
@@ -642,6 +710,13 @@ services:
         fromDatabase:
           name: fc-db
           property: connectionString
+      # Error reporting — the same Sentry project and the same DSN
+      # value as fc-api. The ``component`` tag, set by the script from
+      # its own Render service name, is what separates this job's
+      # issues from the API's. Dashboard-owned; absent is a clean
+      # no-op. See the fc-api block for the full reasoning.
+      - key: SENTRY_DSN
+        sync: false
 
   # ── Gathering reminders ────────────────────────────────────────────
   # Sends the single 24-hour reminder for every confirmed booking whose
@@ -711,6 +786,13 @@ services:
         sync: false
       - key: EMAIL_FROM
         sync: false
+      # Error reporting — the same Sentry project and the same DSN
+      # value as fc-api. The ``component`` tag, set by the script from
+      # its own Render service name, is what separates this job's
+      # issues from the API's. Dashboard-owned; absent is a clean
+      # no-op. See the fc-api block for the full reasoning.
+      - key: SENTRY_DSN
+        sync: false
 
   # ─────────────────────────────────────────────────────────────────
   # Connect sweepers — declared here, deliberately
@@ -771,6 +853,13 @@ services:
       # established the split.
       - key: STRIPE_SECRET_KEY
         sync: false
+      # Error reporting — the same Sentry project and the same DSN
+      # value as fc-api. The ``component`` tag, set by the script from
+      # its own Render service name, is what separates this job's
+      # issues from the API's. Dashboard-owned; absent is a clean
+      # no-op. See the fc-api block for the full reasoning.
+      - key: SENTRY_DSN
+        sync: false
 
   # Connect recovery sweeper — the counterpart to the transfer sweeper. That
   # one sends money FC owes a creator; this one recovers money a creator owes
@@ -811,4 +900,11 @@ services:
           name: fc-db
           property: connectionString
       - key: STRIPE_SECRET_KEY
+        sync: false
+      # Error reporting — the same Sentry project and the same DSN
+      # value as fc-api. The ``component`` tag, set by the script from
+      # its own Render service name, is what separates this job's
+      # issues from the API's. Dashboard-owned; absent is a clean
+      # no-op. See the fc-api block for the full reasoning.
+      - key: SENTRY_DSN
         sync: false

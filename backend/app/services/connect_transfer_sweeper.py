@@ -53,6 +53,12 @@ from app.services import connect_transfers
 
 logger = logging.getLogger(__name__)
 
+#: The ids of the rows still owed go here instead of to ``logger``.
+#: Render keeps them; error reporting never sees them, as an issue or
+#: as a breadcrumb on one. The ``.ids`` suffix is what arranges that —
+#: see ``RENDER_ONLY_LOGGER_SUFFIX`` in ``app/core/observability.py``.
+id_logger = logging.getLogger(__name__ + ".ids")
+
 #: Transactions considered per run. Bounded so one invocation cannot run
 #: unboundedly long; anything left over is picked up by the next run.
 DEFAULT_BATCH_SIZE = 50
@@ -257,8 +263,13 @@ def sweep_pending_transfers(
             report.needs_attention.append(txn.id)
 
     if report.needs_attention:
-        # Loud, and never mistaken for resolved: these are still owed.
-        logger.error(
+        # Still owed, and never mistaken for resolved. The ids go to the
+        # Render-only logger and the level is WARNING, for one reason
+        # each: the cron script turns this same condition into a single
+        # counted summary, so an ERROR here would file the same problem
+        # twice, and a breadcrumb would carry the ids alongside the
+        # summary that deliberately omits them.
+        id_logger.warning(
             "connect sweeper: %s transfer(s) still owed after %s+ attempts: %s",
             len(report.needs_attention),
             connect_transfers.ATTENTION_ATTEMPTS,
