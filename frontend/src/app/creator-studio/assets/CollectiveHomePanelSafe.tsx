@@ -3,6 +3,7 @@
 import React from 'react'
 import CollectiveHomePanel from './CollectiveHomePanel'
 
+import { captureHandledFailure } from '@/lib/sentryHandled'
 /**
  * Wraps CollectiveHomePanel in a small ErrorBoundary so a runtime failure
  * inside the panel cannot blank the rest of the Assets page. The Atlas
@@ -42,8 +43,18 @@ class Boundary extends React.Component<React.PropsWithChildren<{ slug: string }>
     return { error }
   }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // Development-visible error containing the collective slug and the
-    // real exception so the diagnostic path is short.
+    // This boundary contains the failure, which is exactly why it has
+    // to report: React stops here, Next's error boundary never sees it,
+    // and the member is left looking at "Island couldn't be shown."
+    // with nothing recorded anywhere.
+    //
+    // The slug identifies the collective, not a member, and the React
+    // component stack is structure rather than data — so neither is
+    // withheld.
+    captureHandledFailure(error, {
+      tags: { degraded_surface: 'creator-collective-home-panel' },
+      extra: { slug: this.props.slug, componentStack: info.componentStack ?? '' },
+    })
     console.error(
       `[CollectiveHomePanel] rendering failed for slug=${this.props.slug}:`,
       error,

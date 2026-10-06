@@ -54,6 +54,22 @@ const nextConfig: NextConfig = {
     },
   },
 
+  // Release identity for the browser bundle.
+  //
+  // The Node runtime reads Render's ``RENDER_GIT_COMMIT`` directly, but
+  // the browser cannot: only ``NEXT_PUBLIC_*`` variables and the keys
+  // listed here are inlined into the client bundle. Mapping the one
+  // Render already provides is what lets a browser issue say which
+  // deploy it came from without anyone having to set — and keep in step
+  // — a second variable.
+  //
+  // Absent (a local build) yields an empty string, which
+  // ``sentryRelease()`` reads as "no release". Never a placeholder:
+  // "unknown" looks like a version and groups every deploy together.
+  env: {
+    NEXT_PUBLIC_RELEASE_COMMIT: process.env.RENDER_GIT_COMMIT ?? '',
+  },
+
   async headers() {
     return [
       {

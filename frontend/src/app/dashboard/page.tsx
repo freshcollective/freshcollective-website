@@ -24,6 +24,7 @@ import FirstCollectiveOrientation from './FirstCollectiveOrientation'
 import RecentMomentsSection from './RecentMomentsSection'
 import VerifyEmailBanner from '@/components/settings/VerifyEmailBanner'
 
+import { captureDegradedSurface } from '@/lib/sentryHandled'
 /**
  * Shared card-grid class for every full-width band on /dashboard —
  * Elsewhere in the world, Your Collectives (when the Coming up
@@ -164,7 +165,16 @@ function filterUpcoming(cards: MembershipCard[]): { soon: UpcomingEvent[]; hasMo
 
 async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
   try { return await p }
-  catch (err) { console.error(`[dashboard] ${label} failed:`, err); return fallback }
+  catch (err) {
+    // A transport-level failure, not a backend "no": serverApi returns
+    // null/[] for every non-OK response, so nothing reaches here unless
+    // fc-api could not be reached at all — which means fc-api's own
+    // Sentry has nothing either, and the member just gets an empty
+    // dashboard.
+    captureDegradedSurface(err, 'dashboard', label)
+    console.error(`[dashboard] ${label} failed:`, err)
+    return fallback
+  }
 }
 
 // ---------------------------------------------------------------------------

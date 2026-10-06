@@ -25,6 +25,7 @@
 
 import { EMBED_PROVIDERS } from './embedAllowlist.ts'
 
+
 // Media host — fc-api's public origin, baked in at build time.
 // After the same-origin media routing fix, browser ``<img src>``
 // requests for private uploads go to fc-web (``'self'``) rather than
@@ -129,48 +130,113 @@ const MAILERLITE_SCRIPT_SOURCES: readonly string[] = [
   MAILERLITE_API_ORIGIN,
 ]
 
-const CSP_DIRECTIVES: Record<string, readonly string[]> = {
-  'default-src': ["'self'"],
-  // Next.js 16 hydration injects inline <script> tags. 'unsafe-inline'
-  // is accepted for Stage A per policy — nonce/hash strategy is
-  // deferred until after SEC-016 lands, since SEC-001 sanitisation
-  // already closes the primary XSS surface.
-  'script-src': ["'self'", "'unsafe-inline'", ...MAILERLITE_SCRIPT_SOURCES],
-  // Same reasoning as script-src, plus pervasive React inline
-  // ``style={…}`` attributes that would require every value to be
-  // nonced/hashed. Not tractable without a large refactor.
-  'style-src': ["'self'", "'unsafe-inline'"],
-  // ``self`` for Next optimised images + static assets.
-  // MEDIA_ORIGIN — defensive allow-list entry for fc-api's public
-  // origin (the primary flow is same-origin ``/api/uploads/…``).
-  // R2_MEDIA_ORIGINS for the redirect hop when R2 mode is active —
-  // per CSP L3 each hop in the fetch chain is re-checked.
-  // ``data:`` for Next's built-in image blur-up placeholders.
-  // ``blob:`` for local file previews (URL.createObjectURL).
-  'img-src': ["'self'", MEDIA_ORIGIN, ...R2_MEDIA_ORIGINS, 'data:', 'blob:'],
-  'font-src': ["'self'"],
-  // Browser code only talks to same-origin /api/* (SEC-002). If we
-  // ever add browser telemetry, extend this directive.
-  'connect-src': ["'self'", MAILERLITE_API_ORIGIN],
-  // <audio> and <video> sources. Same host set as ``img-src`` minus
-  // the ``data:``/``blob:`` variants that only apply to previews.
-  // Previously omitted — falling back to ``default-src 'self'`` — which
-  // would silently block audio/video from the fc-api origin (a
-  // cross-origin host). No live audio content exercises this yet, but
-  // shipping R2 mode without a real ``media-src`` would leave the same
-  // gap open once audio blocks are exercised in production.
-  'media-src': ["'self'", MEDIA_ORIGIN, ...R2_MEDIA_ORIGINS],
-  // Embed providers + Stripe Checkout (defensive; not currently used
-  // as an iframe but the redirect target is Stripe).
-  'frame-src': [...EMBED_ORIGINS, STRIPE_CHECKOUT_ORIGIN],
-  // Same-origin form posts + Stripe Checkout redirect target.
-  'form-action': ["'self'", STRIPE_CHECKOUT_ORIGIN, MAILERLITE_API_ORIGIN],
-  // No page in Fresh Collective is intentionally embeddable.
-  'frame-ancestors': ["'none'"],
-  // Prevent <base href="//evil"> from repointing all relative URLs.
-  'base-uri': ["'self'"],
-  // No <object>, <embed>, Flash.
-  'object-src': ["'none'"],
+/**
+ * The browser Sentry SDK's ingest origin, derived from the DSN.
+ *
+ * Browser Sentry POSTs its envelopes to the host inside the DSN. With
+ * an enforcing ``connect-src`` that does not name it, every one of
+ * those POSTs is blocked — and blocked silently, because the only
+ * evidence is a CSP violation in a console nobody has open and an
+ * issue list that stays empty. That is the specific way this
+ * integration would appear to work and not work.
+ *
+ * Derived rather than hardcoded for two reasons. Fresh Collective's
+ * Sentry organisation stores data in the EU, so the host carries a
+ * region segment (``o<org>.ingest.de.sentry.io``) that is easy to
+ * write down wrong and impossible to notice wrong. And a derived value
+ * cannot drift from the DSN actually in use: one variable, one origin.
+ *
+ * **The shape is validated, deliberately.** This turns an environment
+ * variable into a CSP origin, so without a check a typo — or a
+ * mistakenly pasted value — would widen the policy of every page to a
+ * host of someone else's choosing. Only Sentry's own ingest hostnames
+ * are accepted: an organisation id, ``ingest``, an optional two-letter
+ * region, then ``sentry.io``. Anything else yields ``null`` and the
+ * header is left exactly as it was.
+ *
+ * No wildcard. One exact origin, scheme included.
+ */
+export function sentryIngestOrigin(dsn: string | undefined): string | null {
+  const trimmed = (dsn ?? '').trim()
+  if (!trimmed) return null
+  let host: string
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'https:') return null
+    host = parsed.hostname
+  } catch {
+    return null
+  }
+  // ``o4508…ingest.de.sentry.io`` (EU) or ``o4508….ingest.sentry.io``.
+  if (!/^o\d+\.ingest\.(?:[a-z]{2}\.)?sentry\.io$/.test(host)) return null
+  return `https://${host}`
+}
+
+/**
+ * The directive table, as a function of the DSN.
+ *
+ * A function rather than a constant so ``csp.test.ts`` can assert both
+ * states exactly — the header with Sentry configured and the header
+ * without it — in one process. A module-level constant read from
+ * ``process.env`` can only ever be tested in whichever state the test
+ * runner happens to be in, which is the state where the interesting
+ * directive is absent.
+ */
+export function cspDirectives(
+  dsn: string | undefined,
+): Record<string, readonly string[]> {
+  const sentryIngest = sentryIngestOrigin(dsn)
+  return {
+    'default-src': ["'self'"],
+    // Next.js 16 hydration injects inline <script> tags. 'unsafe-inline'
+    // is accepted for Stage A per policy — nonce/hash strategy is
+    // deferred until after SEC-016 lands, since SEC-001 sanitisation
+    // already closes the primary XSS surface.
+    'script-src': ["'self'", "'unsafe-inline'", ...MAILERLITE_SCRIPT_SOURCES],
+    // Same reasoning as script-src, plus pervasive React inline
+    // ``style={…}`` attributes that would require every value to be
+    // nonced/hashed. Not tractable without a large refactor.
+    'style-src': ["'self'", "'unsafe-inline'"],
+    // ``self`` for Next optimised images + static assets.
+    // MEDIA_ORIGIN — defensive allow-list entry for fc-api's public
+    // origin (the primary flow is same-origin ``/api/uploads/…``).
+    // R2_MEDIA_ORIGINS for the redirect hop when R2 mode is active —
+    // per CSP L3 each hop in the fetch chain is re-checked.
+    // ``data:`` for Next's built-in image blur-up placeholders.
+    // ``blob:`` for local file previews (URL.createObjectURL).
+    'img-src': ["'self'", MEDIA_ORIGIN, ...R2_MEDIA_ORIGINS, 'data:', 'blob:'],
+    'font-src': ["'self'"],
+    // Browser code talks to same-origin /api/* (SEC-002), MailerLite's
+    // own endpoint from the /tnlbook form, and — once a DSN is
+    // configured — Sentry's ingest host for error envelopes. The Sentry
+    // entry appears only when a DSN is set and only as the one exact
+    // origin that DSN names; with no DSN this directive is byte-for-byte
+    // what it was before Phase 3.
+    'connect-src': [
+      "'self'",
+      MAILERLITE_API_ORIGIN,
+        ...(sentryIngest ? [sentryIngest] : []),
+    ],
+    // <audio> and <video> sources. Same host set as ``img-src`` minus
+    // the ``data:``/``blob:`` variants that only apply to previews.
+    // Previously omitted — falling back to ``default-src 'self'`` — which
+    // would silently block audio/video from the fc-api origin (a
+    // cross-origin host). No live audio content exercises this yet, but
+    // shipping R2 mode without a real ``media-src`` would leave the same
+    // gap open once audio blocks are exercised in production.
+    'media-src': ["'self'", MEDIA_ORIGIN, ...R2_MEDIA_ORIGINS],
+    // Embed providers + Stripe Checkout (defensive; not currently used
+    // as an iframe but the redirect target is Stripe).
+    'frame-src': [...EMBED_ORIGINS, STRIPE_CHECKOUT_ORIGIN],
+    // Same-origin form posts + Stripe Checkout redirect target.
+    'form-action': ["'self'", STRIPE_CHECKOUT_ORIGIN, MAILERLITE_API_ORIGIN],
+    // No page in Fresh Collective is intentionally embeddable.
+    'frame-ancestors': ["'none'"],
+    // Prevent <base href="//evil"> from repointing all relative URLs.
+    'base-uri': ["'self'"],
+    // No <object>, <embed>, Flash.
+    'object-src': ["'none'"],
+  }
 }
 
 function serializeCsp(directives: Record<string, readonly string[]>): string {
@@ -179,7 +245,12 @@ function serializeCsp(directives: Record<string, readonly string[]>): string {
     .join('; ')
 }
 
-export const CSP_REPORT_ONLY = serializeCsp(CSP_DIRECTIVES)
+/** The header value for a given DSN. */
+export function buildCsp(dsn: string | undefined): string {
+  return serializeCsp(cspDirectives(dsn))
+}
+
+export const CSP_REPORT_ONLY = buildCsp(process.env.NEXT_PUBLIC_SENTRY_DSN)
 
 // Permissions-Policy — deny most; allow embed providers only where
 // necessary (fullscreen for video, picture-in-picture for video,

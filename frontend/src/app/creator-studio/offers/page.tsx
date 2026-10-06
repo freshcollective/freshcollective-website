@@ -19,6 +19,7 @@ import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeade
 import OffersIndexClient from './OffersIndexClient'
 import UpgradeNotice from './UpgradeNotice'
 
+import { captureDegradedSurface } from '@/lib/sentryHandled'
 /**
  * Offer Pages — index.
  *
@@ -35,6 +36,7 @@ async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
   try {
     return await p
   } catch (err) {
+    captureDegradedSurface(err, 'creator-offers', label)
     console.error(`[creator-studio/offers] ${label} failed:`, err)
     return fallback
   }

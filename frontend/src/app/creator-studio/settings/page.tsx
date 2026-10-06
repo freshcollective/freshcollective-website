@@ -10,10 +10,12 @@ import type { BuildYourCollectiveOptions } from '@/lib/build-your-collective/typ
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import SettingsTabbedShell from './SettingsTabbedShell'
 
+import { captureDegradedSurface } from '@/lib/sentryHandled'
 async function _safe<T>(p: Promise<T>, slug: string, label: string, fallback: T): Promise<T> {
   try {
     return await p
   } catch (err) {
+    captureDegradedSurface(err, 'creator-settings', label)
     console.error(`[creator-studio/settings] ${label} failed for ${slug}:`, err)
     return fallback
   }
@@ -51,6 +53,7 @@ export default async function SettingsPage() {
       )
     }
   } catch (err) {
+    captureDegradedSurface(err, 'creator-settings', 'billing')
     console.error('[creator-studio/settings] billing fetch failed:', err)
   }
 

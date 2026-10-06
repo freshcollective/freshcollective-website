@@ -16,7 +16,13 @@ import { strict as assert } from 'node:assert'
 import { describe, test } from 'node:test'
 
 // @ts-expect-error - Node-native import path
-import { CSP_REPORT_ONLY, SECURITY_HEADERS } from './securityHeaders.ts'
+import {
+  CSP_REPORT_ONLY,
+  SECURITY_HEADERS,
+  buildCsp,
+  cspDirectives,
+  sentryIngestOrigin,
+} from './securityHeaders.ts'
 // @ts-expect-error - Node-native import path
 import { EMBED_PROVIDERS } from './embedAllowlist.ts'
 
@@ -160,12 +166,19 @@ describe('SEC-011 Stage A — CSP directive shape', () => {
     assert.deepEqual(parsed['font-src'], ["'self'"])
   })
 
-  test('connect-src is self plus MailerLite only (SEC-002)', () => {
-    // SEC-002 keeps browser XHR same-origin. The one exception is the
+  test('connect-src is self plus MailerLite only, with no DSN configured', () => {
+    // SEC-002 keeps browser XHR same-origin. The exceptions are the
     // MailerLite opt-in form on /tnlbook, which pings its own endpoint
-    // and submits through it. Asserted as an exact set rather than a
-    // contains-check, so the next addition has to be argued for here.
-    assert.deepEqual(parsed['connect-src'], [
+    // and submits through it, and — only when a DSN is configured —
+    // Sentry's ingest host (asserted separately below). Asserted as an
+    // exact set rather than a contains-check, so the next addition has
+    // to be argued for here.
+    //
+    // Built from an explicit absent DSN rather than read from the
+    // ambient environment, so the result does not depend on whether
+    // whoever ran the tests happens to have one set.
+    const withoutSentry = parseCsp(buildCsp(undefined))
+    assert.deepEqual(withoutSentry['connect-src'], [
       "'self'",
       'https://assets.mailerlite.com',
     ])
@@ -354,6 +367,101 @@ describe('SEC-011 Stage A — no dev origins in CSP', () => {
         assert.ok(
           !/localhost|127\.0\.0\.1|\.local(?![a-z])/.test(v),
           `CSP directive ${name} contains dev origin ${v!} in production build`,
+        )
+      }
+    }
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// 9. Browser error monitoring — the ingest origin (Phase 3)
+// ---------------------------------------------------------------------------
+
+describe('Sentry ingest is permitted, narrowly', () => {
+  // Fresh Collective's Sentry organisation stores data in the EU, so the
+  // ingest host carries a region segment. Shape only — no real key.
+  const EU_DSN = 'https://fakekey@o4509876543210.ingest.de.sentry.io/4509000000001'
+  const EU_ORIGIN = 'https://o4509876543210.ingest.de.sentry.io'
+
+  test('the browser can reach the host its DSN names', () => {
+    // Without this the enforcing CSP blocks every envelope, and it does
+    // so silently: a console violation nobody has open, and an issue
+    // list that simply stays empty.
+    const parsed = parseCsp(buildCsp(EU_DSN))
+    assert.deepEqual(parsed['connect-src'], [
+      "'self'",
+      'https://assets.mailerlite.com',
+      EU_ORIGIN,
+    ])
+  })
+
+  test('the origin is derived from the DSN, not written down', () => {
+    assert.equal(sentryIngestOrigin(EU_DSN), EU_ORIGIN)
+  })
+
+  test('it is one exact origin, not a wildcard', () => {
+    const value = buildCsp(EU_DSN)
+    assert.ok(!value.includes('*.sentry.io'))
+    assert.ok(!value.includes('*.ingest'))
+    assert.ok(value.includes(EU_ORIGIN))
+  })
+
+  test('the EU region segment is preserved', () => {
+    // A US origin would be permitted-but-wrong: the SDK would still be
+    // blocked, because it posts to the host in the DSN.
+    assert.ok(sentryIngestOrigin(EU_DSN)!.includes('.ingest.de.sentry.io'))
+  })
+
+  for (const [label, dsn] of [
+    ['no DSN', undefined],
+    ['an empty DSN', ''],
+    ['whitespace', '   '],
+    ['a non-Sentry host', 'https://key@evil.example.com/1'],
+    ['a lookalike host', 'https://key@o1.ingest.de.sentry.io.evil.com/1'],
+    ['a host with no org id', 'https://key@ingest.de.sentry.io/1'],
+    ['plain http', 'http://key@o1.ingest.de.sentry.io/1'],
+    ['nonsense', 'not a url'],
+  ] as [string, string | undefined][]) {
+    test(`${label} adds nothing to the policy`, () => {
+      // This turns an environment variable into a CSP origin, so an
+      // unvalidated value would let a typo widen every page's policy to
+      // a host of someone else's choosing.
+      assert.equal(sentryIngestOrigin(dsn), null)
+      assert.deepEqual(parseCsp(buildCsp(dsn))['connect-src'], [
+        "'self'",
+        'https://assets.mailerlite.com',
+      ])
+    })
+  }
+
+  test('no other directive changes when a DSN is configured', () => {
+    // The existing R2, MailerLite and Stripe grants are not this
+    // phase's business.
+    const without = cspDirectives(undefined)
+    const with_ = cspDirectives(EU_DSN)
+    assert.deepEqual(Object.keys(with_), Object.keys(without))
+    for (const name of Object.keys(without)) {
+      if (name === 'connect-src') continue
+      assert.deepEqual(with_[name], without[name], `${name} changed`)
+    }
+  })
+
+  test('the shipped header is the one built from the environment', () => {
+    assert.equal(CSP_REPORT_ONLY, buildCsp(process.env.NEXT_PUBLIC_SENTRY_DSN))
+  })
+
+  test('no Sentry host appears in any other directive', () => {
+    // Error envelopes are a fetch. Sentry needs no script, frame, image
+    // or form grant, and granting one would be a widening with no
+    // purpose.
+    const parsed = parseCsp(buildCsp(EU_DSN))
+    for (const [directive, values] of Object.entries(parsed)) {
+      if (directive === 'connect-src') continue
+      for (const value of values) {
+        assert.ok(
+          !value.includes('sentry.io'),
+          `${directive} grants ${value}, which Sentry never needs`,
         )
       }
     }

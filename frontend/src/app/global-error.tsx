@@ -13,12 +13,28 @@
  * @see docs/fresh-design-language.md §18.3
  */
 
+import { useEffect } from 'react'
+
+import { captureBoundaryError } from '@/lib/sentryBoundary'
+
 interface Props {
   error: Error & { digest?: string }
   reset: () => void
 }
 
 export default function GlobalError({ error, reset }: Props) {
+  // The root layout itself failed, so this is the most serious error
+  // the app can produce and the one most likely to be invisible — no
+  // stylesheet, no navigation, and until now no report. Reported at
+  // ``fatal`` with the boundary named, once per error object.
+  //
+  // In an effect rather than in the render body: a boundary renders
+  // more than once, and reporting during render would file the same
+  // failure again on every re-render and again in StrictMode.
+  useEffect(() => {
+    captureBoundaryError(error, 'global')
+  }, [error])
+
   return (
     <html lang="en">
       <body

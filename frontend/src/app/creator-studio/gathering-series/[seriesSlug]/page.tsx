@@ -23,6 +23,7 @@ import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeade
 import OfferPagesShortcut from '../../offers/OfferPagesShortcut'
 import SeriesEditorClient from './SeriesEditorClient'
 
+import { captureDegradedSurface } from '@/lib/sentryHandled'
 /**
  * Gathering Series editor.
  *
@@ -40,6 +41,7 @@ async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
   try {
     return await p
   } catch (err) {
+    captureDegradedSurface(err, 'creator-gathering-series', label)
     console.error(`[creator-studio/gathering-series] ${label} failed:`, err)
     return fallback
   }

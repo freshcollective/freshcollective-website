@@ -679,9 +679,16 @@ class TestWiring:
 
     def test_every_python_service_declares_the_dsn_and_fc_web_does_not(self):
         """fc-api plus the seven crons — one Sentry project, eight
-        components. fc-web is Phase 3 and this fails if its DSN is
-        added here instead of as part of that work, which would mean a
-        browser DSN sitting in a backend service's environment.
+        components, one variable name.
+
+        fc-web reports to its own Sentry project and reads
+        ``NEXT_PUBLIC_SENTRY_DSN`` instead: Next inlines that into the
+        browser bundle, which a server-only ``SENTRY_DSN`` cannot be.
+        The two names must not cross. A ``SENTRY_DSN`` on fc-web would
+        be read by nothing, and a ``NEXT_PUBLIC_SENTRY_DSN`` on a python
+        service would put a frontend project's DSN in a backend
+        environment — either way the events would arrive in the wrong
+        project, or not at all.
 
         Derived from ``runtime`` rather than from a list of names, so a
         new python service is covered the day it is declared.
@@ -706,7 +713,18 @@ class TestWiring:
         )
 
         web = next(s for s in data["services"] if s["name"] == "fc-web")
-        assert not declares_dsn(web), "fc-web is Phase 3"
+        assert not declares_dsn(web), (
+            "fc-web must use NEXT_PUBLIC_SENTRY_DSN, which the browser "
+            "bundle can actually read"
+        )
+        web_keys = {e["key"] for e in web.get("envVars", [])}
+        assert "NEXT_PUBLIC_SENTRY_DSN" in web_keys, web_keys
+
+        for service in data["services"]:
+            if service.get("runtime") != "python":
+                continue
+            keys = {e["key"] for e in service.get("envVars", [])}
+            assert "NEXT_PUBLIC_SENTRY_DSN" not in keys, service["name"]
 
         for service in data["services"]:
             if not declares_dsn(service):

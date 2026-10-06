@@ -13,6 +13,7 @@ import CollectiveThemeProvider from '@/components/collective/CollectiveThemeProv
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import type { CreatorSpaceDetail, SpaceSummary } from '@/types/platform'
 
+import { captureDegradedSurface } from '@/lib/sentryHandled'
 export const metadata = { title: 'Creator Studio — Fresh Collective' }
 
 export default async function CreatorStudioLayout({ children }: { children: React.ReactNode }) {
@@ -47,6 +48,7 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
       const detail = await getCreatorSpace(activeSpace.slug) as CreatorSpaceDetail | null
       palette = detail?.colour_palette ?? null
     } catch (err) {
+      captureDegradedSurface(err, 'creator-studio-layout', 'palette')
       console.error(`[creator-studio/layout] palette fetch failed for ${activeSpace.slug}:`, err)
     }
   }
@@ -68,6 +70,7 @@ export default async function CreatorStudioLayout({ children }: { children: Reac
       )
     }
   } catch (err) {
+    captureDegradedSurface(err, 'creator-studio-layout', 'billing')
     console.error('[creator-studio/layout] billing fetch failed:', err)
   }
 

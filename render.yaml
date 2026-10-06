@@ -195,6 +195,36 @@ services:
       # limiter accuracy but no security regression.
       - key: INTERNAL_BFF_SECRET
         sync: false
+      # Error reporting (Sentry project fc-web). ONE variable for both
+      # runtimes, deliberately.
+      #
+      # A DSN is a public submission endpoint and has to reach the
+      # browser to be any use there, so a second server-only
+      # ``SENTRY_DSN`` holding the identical value would buy no secrecy
+      # and would add the one thing worth avoiding: two places to
+      # rotate, and silence if they disagree. Next inlines
+      # ``NEXT_PUBLIC_*`` into the client bundle at build time and
+      # Render also hands it to the running server, so this covers the
+      # browser, server components, route handlers and the BFF proxy.
+      #
+      # Build-time inlined, like the feature flags above: changing the
+      # DSN takes effect on a rebuild, never on a restart. The enforcing
+      # CSP's ``connect-src`` entry is derived from this same value at
+      # build time (see ``src/lib/securityHeaders.ts``), which is the
+      # other reason a restart is not enough — and the reason a wrong
+      # value fails closed rather than quietly sending nowhere.
+      #
+      # Absent or empty is a clean no-op: ``init`` is never called, the
+      # app boots, and the CSP is byte-for-byte its pre-Sentry value.
+      # That is how every local run and every CI build behaves.
+      #
+      # No SENTRY_ENVIRONMENT — derived from NODE_ENV. No SENTRY_RELEASE
+      # — ``next.config.ts`` maps Render's own RENDER_GIT_COMMIT into
+      # the client bundle and the server reads it directly. No
+      # SENTRY_AUTH_TOKEN / SENTRY_ORG / SENTRY_PROJECT: source-map
+      # upload is Phase 4, and this integration needs no build wrapper.
+      - key: NEXT_PUBLIC_SENTRY_DSN
+        sync: false
 
   # ─────────────────────────────────────────────────────────────────
   # Backend web service — fc-api (FastAPI)

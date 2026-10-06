@@ -19,6 +19,7 @@ import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeade
 import OfferPageEditor from './OfferPageEditor'
 import UpgradeNotice from '../UpgradeNotice'
 
+import { captureDegradedSurface } from '@/lib/sentryHandled'
 /**
  * Offer Page — editor entry.
  *
@@ -37,6 +38,7 @@ async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
   try {
     return await p
   } catch (err) {
+    captureDegradedSurface(err, 'creator-offer-editor', label)
     console.error(`[creator-studio/offers/edit] ${label} failed:`, err)
     return fallback
   }

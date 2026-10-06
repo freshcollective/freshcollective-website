@@ -40,6 +40,7 @@ import { NextRequest } from 'next/server'
 
 import { resolveInternalApiBase } from '@/lib/api'
 import { applyBffAuthHeaders } from '@/lib/bffAuth'
+import { captureProxyFailure, classifyProxyFailure } from '@/lib/sentryHandled'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -178,6 +179,22 @@ async function proxy(
       headers: responseHeaders,
     })
   } catch (err: unknown) {
+    // Only this branch reports. A backend that answers — 401, 404, 422,
+    // even its own 500 — is not a proxy failure: the response is
+    // returned untouched above, and fc-api's own Sentry project already
+    // owns whatever it did wrong. What reaches here is the case where
+    // fc-api never answered at all, and today that disappears into a
+    // Render log line.
+    //
+    // Reported before the response is built, so the ordering can never
+    // put reporting between the member and their answer. Neither
+    // branch's status, body or timing changes.
+    captureProxyFailure(err, {
+      method,
+      path: joined,
+      kind: classifyProxyFailure(err),
+      timeoutMs: REQUEST_TIMEOUT_MS,
+    })
     if (err instanceof Error && err.name === 'AbortError') {
       return jsonResponse(504, {
         detail: 'The backend took too long to respond.',

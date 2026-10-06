@@ -8,6 +8,7 @@ import type { CreatorSpaceDetail, LibraryListResponse } from '@/types/platform'
 import CollectiveArtworkHeader from '@/components/creator/CollectiveArtworkHeader'
 import LibraryClient from './LibraryClient'
 
+import { captureDegradedSurface } from '@/lib/sentryHandled'
 /**
  * Library — one creator surface over the file store and the link
  * store. The creator uploads files and adds links here; folders
@@ -22,6 +23,7 @@ async function _safe<T>(p: Promise<T>, slug: string, label: string, fallback: T)
   try {
     return await p
   } catch (err) {
+    captureDegradedSurface(err, 'creator-library', label)
     console.error(`[creator-studio/library] ${label} failed for ${slug}:`, err)
     return fallback
   }

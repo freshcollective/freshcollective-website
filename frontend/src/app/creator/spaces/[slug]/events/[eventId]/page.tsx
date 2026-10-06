@@ -16,10 +16,12 @@ import type {
 import CreatorBackLink from '@/components/creator/CreatorBackLink'
 import EventEditorTabs from './EventEditorTabs'
 
+import { captureDegradedSurface } from '@/lib/sentryHandled'
 async function _safe<T>(p: Promise<T>, label: string, fallback: T): Promise<T> {
   try {
     return await p
   } catch (err) {
+    captureDegradedSurface(err, 'creator-event-editor', label)
     console.error(`[creator/events/edit] ${label} failed:`, err)
     return fallback
   }

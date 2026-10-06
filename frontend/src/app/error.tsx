@@ -12,6 +12,7 @@
 
 import { useEffect } from 'react'
 import Link from 'next/link'
+import { captureBoundaryError } from '@/lib/sentryBoundary'
 import { Button } from '@/components/platform/Button'
 import { Heading } from '@/components/platform/Heading'
 import { Text } from '@/components/platform/Text'
@@ -23,8 +24,16 @@ interface Props {
 
 export default function RouteError({ error, reset }: Props) {
   useEffect(() => {
-    // Surface to the browser console during development; production errors
-    // should already flow into whatever monitoring tool is configured.
+    // Report once per error object, and only when nothing else has.
+    // ``captureBoundaryError`` declines an error carrying a ``digest``
+    // — that one threw on the server and ``onRequestError`` already
+    // filed it with the stack this one does not have. See
+    // ``src/lib/sentryBoundary.ts``.
+    captureBoundaryError(error, 'route')
+
+    // Development keeps its console line: the boundary is often the
+    // first place a local failure is noticed, and with no DSN set
+    // locally the capture above is a no-op.
     if (process.env.NODE_ENV !== 'production') {
       console.error('[Fresh Collective RouteError]', error)
     }
