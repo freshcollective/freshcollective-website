@@ -410,6 +410,20 @@ export function scrubEvent(event: LooseEvent | null): LooseEvent | null {
       }
     }
 
+    // ``extra.arguments`` is not ours. The browser SDK's wrapper around
+    // ``setTimeout`` / ``addEventListener`` attaches the wrapped
+    // callback's arguments to the event, which for an event handler
+    // means the DOM event — and through it, in principle, whatever a
+    // member had typed. The same unbounded channel as a console
+    // breadcrumb's arguments and a log record's params, and dropped for
+    // the same reason: there is no key to recognise a value by, and a
+    // timer callback's arguments were never the diagnostic part.
+    if (out.extra && typeof out.extra === 'object') {
+      const extra = { ...(out.extra as Record<string, unknown>) }
+      delete extra.arguments
+      out.extra = extra
+    }
+
     if (typeof out.message === 'string') out.message = redactText(out.message)
     if (out.logentry && typeof out.logentry === 'object') {
       const logentry = { ...out.logentry }

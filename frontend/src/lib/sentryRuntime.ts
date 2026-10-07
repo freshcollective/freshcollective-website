@@ -90,9 +90,20 @@ export function sentryRelease(): string | undefined {
  *                       OnUncaughtException, OnUnhandledRejection,
  *                       ChildProcess, WorkerThreads, NodeSystemError
  *   described by        ContextLines, Context, Modules, CultureContext,
- *                       HttpContext, RequestData, LinkedErrors
+ *                       HttpContext, RequestData, LinkedErrors,
+ *                       NextjsClientStackFrameNormalization
  *   given a trail by    Breadcrumbs, Console, Http, NodeFetch
  *   filtered by         EventFilters, Dedupe, FunctionToString
+ *
+ * The cost of an allowlist, met once already: this list was written
+ * against the **server**'s resolved integrations, and the browser's
+ * differs. ``NextjsClientStackFrameNormalization`` is browser-only, is
+ * pure error monitoring — it rewrites stack-frame filenames to
+ * ``app:///_next/…`` and marks framework chunks ``in_app: false`` —
+ * and was excluded by oversight rather than by decision.
+ * ``sentryBrowserPipeline.test.ts`` now pins the browser's resolved set
+ * the way the server's has been pinned all along, so the next such
+ * difference fails a test.
  *
  * ``Http`` and ``NodeFetch`` are tracing instrumentations in name, but
  * with tracing off what they contribute is the breadcrumb that says
@@ -121,6 +132,10 @@ export const ERROR_MONITORING_INTEGRATIONS: readonly string[] = [
   'HttpContext',
   'LinkedErrors',
   'Modules',
+  // Browser-only, from @sentry/nextjs itself: stack-frame filenames
+  // normalised to ``app:///_next/…``, framework chunks marked not-ours.
+  // Collects nothing and sends nothing of its own.
+  'NextjsClientStackFrameNormalization',
   'NodeFetch',
   'NodeSystemError',
   'OnUncaughtException',

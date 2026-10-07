@@ -359,6 +359,26 @@ describe('scrubEvent — a fully loaded event', () => {
   })
 })
 
+describe('scrubEvent — the wrapped-callback arguments channel', () => {
+  test('extra.arguments is dropped outright', () => {
+    // Attached by the browser SDK's own wrapper around setTimeout and
+    // addEventListener. For an event handler those arguments are the
+    // DOM event, and through it whatever a member had typed.
+    const out = scrubEvent({
+      extra: {
+        arguments: [{ target: { value: 'what someone typed' } }, 0],
+        harmless_detail: 'kept',
+      },
+    })!
+    assert.equal(out.extra!.arguments, undefined)
+    assert.equal(out.extra!.harmless_detail, 'kept')
+  })
+
+  test('an event with no extra is unaffected', () => {
+    assert.ok(scrubEvent({ message: 'x' }))
+  })
+})
+
 describe('scrubEvent — user context', () => {
   test('an event with no user is left alone', () => {
     const out = scrubEvent({ message: 'x' })!
