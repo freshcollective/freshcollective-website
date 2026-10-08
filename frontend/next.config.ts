@@ -1,3 +1,7 @@
+// From the ``./config`` entry point, not the SDK root: the root is the
+// runtime SDK and resolves per-runtime (browser / node / edge), while
+// the build wrapper is build-time only and has its own export.
+import { withSentryConfig } from "@sentry/nextjs/config";
 import type { NextConfig } from "next";
 
 // SEC-011 Stage A — the actual header definitions live in
@@ -8,6 +12,10 @@ import type { NextConfig } from "next";
 // Explicit ``.ts`` extension matches the other Node-native test
 // imports elsewhere in the codebase.
 import { SECURITY_HEADERS } from "./src/lib/securityHeaders.ts";
+import {
+  sentryBuildOptions,
+  withoutTraceMetadata,
+} from "./src/lib/sentryBuildOptions.ts";
 
 /**
  * SEC-011 Stage A — browser security headers.
@@ -127,4 +135,17 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+/**
+ * Private source maps for fc-web — Phase 4B.
+ *
+ * The options, and the reasoning behind each one, live in
+ * ``src/lib/sentryBuildOptions.ts`` so that a test can assert on them:
+ * this file cannot be imported under Node's type-stripping loader
+ * because of the ``__dirname`` above, which is the same reason
+ * ``securityHeaders.ts`` exists.
+ */
+export default withoutTraceMetadata(
+  withSentryConfig(nextConfig, sentryBuildOptions()) as NextConfig & {
+    experimental?: Record<string, unknown>
+  },
+);

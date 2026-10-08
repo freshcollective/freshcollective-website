@@ -172,28 +172,46 @@ describe('nothing beyond error monitoring is wired in', () => {
 // C. Source maps are Phase 4
 // ---------------------------------------------------------------------------
 
-describe('source maps are not part of this phase', () => {
-  test('no build wrapper was needed', () => {
-    // Measured, not assumed: the build compiles, the browser SDK lands
-    // in the client bundle and the DSN and release are inlined, all
-    // without withSentryConfig. So it is absent rather than present and
-    // disabled.
-    assert.ok(!/withSentryConfig/.test(code(read('next.config.ts'))))
+describe('the build wrapper earns its place', () => {
+  // Phases 1–3 asserted that ``withSentryConfig`` was absent, because
+  // it was measured as unnecessary for initialising the SDK. Phase 4B
+  // adds it for the one thing it genuinely owns — uploading source maps
+  // — so these assertions now pin that it is there *for that*, and for
+  // nothing else. The source-map behaviour itself is asserted in
+  // ``sentrySourceMaps.test.ts``.
+
+  test('it is applied once, with the options kept in their own module', () => {
+    const source = code(read('next.config.ts'))
+    assert.equal((source.match(/withSentryConfig\(/g) ?? []).length, 1)
+    assert.ok(/sentryBuildOptions\(\)/.test(source), 'options must be the shared ones')
   })
 
-  test('browser source maps are not published', () => {
+  test('browser source maps are still not published by our config', () => {
     assert.ok(!/productionBrowserSourceMaps\s*:\s*true/.test(code(read('next.config.ts'))))
   })
 
-  test('no upload credential is referenced or declared', () => {
-    for (const key of ['SENTRY_AUTH_TOKEN', 'SENTRY_ORG', 'SENTRY_PROJECT']) {
-      const offenders = sourceFiles().filter((f) => f.includes(key))
-      assert.deepEqual(offenders, [])
-      const blueprint = readFileSync(`${REPO}render.yaml`, 'utf8')
-      assert.ok(
-        !new RegExp(`key:\\s*${key}\\b`).test(blueprint),
-        `${key} is declared in the blueprint — that is Phase 4`,
+  test('the project slug is source, the org is environment, the token is neither', () => {
+    const buildOptions = code(read('src/lib/sentryBuildOptions.ts'))
+    assert.ok(/project: SENTRY_PROJECT/.test(buildOptions))
+    assert.ok(/process\.env\.SENTRY_ORG/.test(buildOptions))
+    // The one secret is read by the bundler plugin itself, never here.
+    assert.ok(!/process\.env\.SENTRY_AUTH_TOKEN/.test(buildOptions))
+  })
+
+  test('the blueprint declares the two build variables and no more', () => {
+    const blueprint = readFileSync(`${REPO}render.yaml`, 'utf8')
+    const declared = [...blueprint.matchAll(/key: (SENTRY_\w+)/g)].map((m) => m[1])
+    // SENTRY_PROJECT is deliberately not a variable — it is a literal
+    // in source, so it cannot be set to the wrong project by mistake.
+    assert.ok(!declared.includes('SENTRY_PROJECT'))
+    for (const key of ['SENTRY_AUTH_TOKEN', 'SENTRY_ORG']) {
+      assert.ok(declared.includes(key), `${key} must be declared for the build`)
+      const entry = blueprint.slice(
+        blueprint.indexOf(`key: ${key}`),
+        blueprint.indexOf(`key: ${key}`) + 120,
       )
+      assert.ok(/sync: false/.test(entry), `${key} must be operator-supplied`)
+      assert.ok(!/value:/.test(entry), `${key} must not be committed`)
     }
   })
 })
@@ -443,11 +461,17 @@ describe('render.yaml', () => {
     return blueprint.slice(start, end)
   }
 
-  test('fc-web declares exactly one Sentry variable', () => {
+  test('fc-web declares exactly one runtime Sentry variable', () => {
+    // One DSN for both runtimes. The other two are build-time only —
+    // the running service would behave identically without them.
     const keys = [...fcWebBlock().matchAll(/key: (\w+)/g)]
       .map((m) => m[1])
       .filter((k) => k.includes('SENTRY'))
-    assert.deepEqual(keys, ['NEXT_PUBLIC_SENTRY_DSN'])
+    assert.deepEqual(keys, ['NEXT_PUBLIC_SENTRY_DSN', 'SENTRY_AUTH_TOKEN', 'SENTRY_ORG'])
+    const runtimeVars = keys.filter(
+      (k) => k !== 'SENTRY_AUTH_TOKEN' && k !== 'SENTRY_ORG',
+    )
+    assert.deepEqual(runtimeVars, ['NEXT_PUBLIC_SENTRY_DSN'])
   })
 
   test('fc-web is not given the server-side variable name as well', () => {

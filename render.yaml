@@ -225,6 +225,41 @@ services:
       # upload is Phase 4, and this integration needs no build wrapper.
       - key: NEXT_PUBLIC_SENTRY_DSN
         sync: false
+      # ── Private source maps (Phase 4B) ───────────────────────────────
+      # Build-time only. Both are read by Sentry's bundler plugin during
+      # ``npm run build``; nothing at runtime touches either, so the
+      # running service would behave identically with both absent.
+      #
+      # What they buy: a production browser stack frame that reads
+      # ``src/app/creator-studio/offers/page.tsx:38`` instead of
+      # ``09ae.el~njpln.js:1:48213``.
+      #
+      # The maps never become public. Turbopack generates them during
+      # the build, the plugin uploads them, then deletes every ``*.map``
+      # under ``.next/static`` and strips the ``sourceMappingURL``
+      # comments that pointed at them — all inside ``next build``, so
+      # the image this service starts has no client maps in it. Verified
+      # against a served build: a chunk returns 200 and its ``.map``
+      # returns 404.
+      #
+      # SENTRY_AUTH_TOKEN is the only secret in the Sentry work. It is
+      # an Organization Auth Token scoped to project:releases — enough
+      # to create a release and upload artifacts, and nothing else. A
+      # missing or revoked token does not fail the build: the plugin
+      # logs that it uploaded nothing and the deploy proceeds, so
+      # rotating it degrades symbolication and never availability.
+      #
+      # SENTRY_ORG is the organisation slug. Not a secret, but not
+      # knowable from this repository either — the DSN carries the
+      # numeric org id, not the slug — so it is operator-supplied.
+      #
+      # No SENTRY_PROJECT: ``fc-web`` is a literal in
+      # ``src/lib/sentryBuildOptions.ts``, where it cannot be set to the
+      # wrong project by a typo in a dashboard field.
+      - key: SENTRY_AUTH_TOKEN
+        sync: false
+      - key: SENTRY_ORG
+        sync: false
 
   # ─────────────────────────────────────────────────────────────────
   # Backend web service — fc-api (FastAPI)
