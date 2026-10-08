@@ -351,6 +351,110 @@ describe('the built output exposes no source maps', () => {
 })
 
 // ---------------------------------------------------------------------------
+// The shape a symbolicated frame has to point at
+// ---------------------------------------------------------------------------
+//
+// Added after the first production probe came back unsymbolicated. The
+// upload was fine and every debug ID matched; the probe was aimed at
+// coordinates no source map could ever cover. These assertions pin the
+// two facts that made it wrong, so the next person does not have to
+// rediscover them from a Sentry UI.
+
+describe('where real code lives in an emitted chunk', () => {
+  function chunks(): string[] {
+    const files = builtStaticFiles()
+    return (files ?? []).filter((f) => /\/chunks\/.*\.js$/.test(f))
+  }
+
+  test('every chunk carries a debug id', (t) => {
+    const found = chunks()
+    if (found.length === 0) {
+      t.skip('no .next build present — run `npm run build` to assert this')
+      return
+    }
+    const without = found.filter(
+      (f) => !/\/\/# debugId=[0-9a-f-]+/.test(readFileSync(f, 'utf8')),
+    )
+    // One Turbopack runtime chunk legitimately has no module code and
+    // therefore no debug id; everything else must have one, since the
+    // debug id is how Sentry finds the map at all.
+    assert.ok(
+      without.length <= 1,
+      `${without.length} chunks have no debug id: ${without.slice(0, 3).join(', ')}`,
+    )
+  })
+
+  test('line 1 of a chunk is the debug-id prologue, not application code', (t) => {
+    // Sentry's debug-id registration is injected as the first line of
+    // every chunk. It is generated code with no original source, so the
+    // map's single section starts at generated line 2 — and a frame
+    // reported on line 1 can never resolve to anything.
+    const found = chunks()
+    if (found.length === 0) {
+      t.skip('no .next build present')
+      return
+    }
+    const sampled = found.slice(0, 20)
+    for (const file of sampled) {
+      const firstLine = readFileSync(file, 'utf8').split('\n')[0]
+      assert.ok(
+        /globalThis|_sentryDebugIds|_debugIds/.test(firstLine),
+        `${file.replace(FRONTEND, '')} line 1 is not the prologue: ${firstLine.slice(0, 60)}`,
+      )
+    }
+  })
+
+  test('a chunk is more than one line, so a character offset is not a column', (t) => {
+    // The actual mistake: ``indexOf(marker) + 1`` is an offset from the
+    // start of the *file*, and the probe passed it as a column on line
+    // 1. Line 1 is 284 characters long, so the coordinate did not even
+    // exist.
+    const found = chunks()
+    if (found.length === 0) {
+      t.skip('no .next build present')
+      return
+    }
+    const withCode = found.filter((f) => readFileSync(f, 'utf8').includes('\n'))
+    assert.ok(withCode.length > 0, 'no multi-line chunk found')
+  })
+
+  test('the documented probe arithmetic finds line 2 or later', (t) => {
+    // This is the exact computation the production verification runbook
+    // uses, asserted against the real build. If a future Turbopack
+    // version changes the layout, this fails instead of a probe quietly
+    // reporting an unsymbolicated frame.
+    const found = chunks()
+    if (found.length === 0) {
+      t.skip('no .next build present')
+      return
+    }
+    const MARKER = 'Something went wrong.'
+    const located: { file: string; line: number; column: number }[] = []
+    for (const file of found) {
+      const text = readFileSync(file, 'utf8')
+      const at = text.indexOf(MARKER)
+      if (at < 0) continue
+      const upTo = text.slice(0, at)
+      located.push({
+        file: file.replace(FRONTEND, ''),
+        line: upTo.split('\n').length,
+        column: at - (upTo.lastIndexOf('\n') + 1) + 1,
+      })
+    }
+    assert.ok(located.length > 0, `no chunk contains ${MARKER}`)
+    // Every one of them, not just the first: a probe picks whichever
+    // chunk the page happened to load.
+    const onLineOne = located.filter((l) => l.line <= 1)
+    assert.deepEqual(
+      onLineOne,
+      [],
+      'application code on line 1 cannot be symbolicated — the map starts at line 2',
+    )
+    for (const l of located) assert.ok(l.column > 0)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // E + F. Phases 1–3 are untouched
 // ---------------------------------------------------------------------------
 
