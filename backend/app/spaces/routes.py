@@ -4122,3 +4122,12 @@ from app.spaces import _series_member_routes as _series_member_routes  # noqa: E
 # ---------------------------------------------------------------------------
 
 from app.spaces import _regular_sessions_routes as _regular_sessions_routes  # noqa: E402,F401
+
+# ---------------------------------------------------------------------------
+# Exercise responses — same side-effect registration. A member's private
+# writing against one Exercise block, shaped like the step-reflection
+# endpoint above it because it is the same kind of thing at a finer
+# grain.
+# ---------------------------------------------------------------------------
+
+from app.spaces import _exercise_response_routes as _exercise_response_routes  # noqa: E402,F401
