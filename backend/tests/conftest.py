@@ -82,6 +82,94 @@ os.environ["DATABASE_URL"] = TEST_URL
 
 
 # ---------------------------------------------------------------------------
+# Outbound email: off, for the whole session, before the app is imported.
+#
+# On 2026-10-09 a test suite run sent real booking confirmations through
+# the live Resend account. ``load_dotenv`` above had just read a
+# developer's ``backend/.env``, which carried a production API key, and
+# nothing between that key and Resend's API consulted APP_ENV.
+#
+# Three independent things are done here, deliberately redundantly,
+# because the failure was a *chain* and any one link holding would have
+# stopped it:
+#
+#   * The SDK tripwire below makes reaching Resend's API raise. This is
+#     the actual enforcement.
+#   * ``RESEND_API_KEY`` is overwritten with an obviously-fake value, so
+#     a developer's real key cannot be used by anything in this process
+#     — and a request that somehow escaped the tripwire would fail
+#     authentication rather than deliver.
+#
+#     Overwritten rather than blanked, which was the first attempt:
+#     blanking makes ``ResendProvider.send`` short-circuit on its
+#     ``config_missing`` branch, which silently stops the comms suite
+#     (r3) from exercising dispatch at all. A fake key keeps those
+#     tests meaningful while still being incapable of sending.
+#   * ``FC_TEST_MODE`` marks the process for
+#     ``app.comms.delivery_guard``, which is what keeps *development*
+#     from reaching the provider without an explicit opt-in.
+#   * Clearing ``FC_ALLOW_REAL_EMAIL`` stops a flag left exported in a
+#     developer's shell from applying to a test run.
+#
+# Set here rather than in a fixture because background comms routing
+# opens its own session on its own stack, outside any fixture's scope.
+FAKE_RESEND_KEY = "re_FC_TEST_SUITE_FAKE_KEY_DO_NOT_USE"
+
+os.environ["FC_TEST_MODE"] = "1"
+os.environ["RESEND_API_KEY"] = FAKE_RESEND_KEY
+os.environ.pop("FC_ALLOW_REAL_EMAIL", None)
+
+
+class RealEmailSendAttempted(BaseException):
+    """Raised if anything in the suite reaches Resend's SDK.
+
+    Deliberately a ``BaseException``: the comms routing layer catches
+    ``Exception`` broadly and logs it (``schedule_routing_if_needed``
+    promises never to raise), so an ordinary exception here would be
+    swallowed and the send would look merely "failed" rather than
+    stopping the test.
+    """
+
+
+def _install_resend_tripwire() -> None:
+    """Make reaching Resend's API impossible, not merely unlikely.
+
+    This is the enforcement that stops the suite emailing anyone. It
+    sits on the SDK's own send functions — the last point before the
+    network — rather than on a policy check further up, because the
+    comms suite legitimately drives the whole
+    emit → intent → provider path and asserts dispatch succeeded. Those
+    tests patch ``resend.Emails.send`` with their own stub, which
+    replaces this tripwire for the duration of the test and restores it
+    afterwards. A stub is not a send; the network is the thing being
+    guarded.
+
+    Installed at import time, so it covers collection, every test, and
+    any thread a test spawns.
+    """
+    try:
+        import resend
+    except ImportError:          # SDK absent — nothing to guard
+        return
+
+    def _refuse(*args: object, **kwargs: object):
+        raise RealEmailSendAttempted(
+            "A test attempted to send email through the Resend SDK. "
+            "Nothing in the automated suite may contact Resend. Patch "
+            "resend.Emails.send with a stub if this test needs to "
+            "exercise dispatch."
+        )
+
+    for holder_name in ("Emails", "Batch"):
+        holder = getattr(resend, holder_name, None)
+        if holder is not None and hasattr(holder, "send"):
+            setattr(holder, "send", staticmethod(_refuse))
+
+
+_install_resend_tripwire()
+
+
+# ---------------------------------------------------------------------------
 # Engine + schema management (session-scoped)
 # ---------------------------------------------------------------------------
 

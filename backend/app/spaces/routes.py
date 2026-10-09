@@ -96,6 +96,14 @@ from app.spaces.schemas import (
 
 from app.models.platform import EventSeries as _EventSeriesModel  # noqa: E402
 from app.models.platform import PathwayStepManualRelease  # noqa: E402
+from app.services.event_permissions import can_book as _can_book_gate_shared
+from app.services.gathering_booking_rules import (
+    capacity_denial as _capacity_denial,
+    confirmed_booking_count as _confirmed_booking_count,
+    evaluate_pass_for_event as _evaluate_pass_for_event,
+    event_week_bounds as _event_week_bounds,
+    occurrence_timing_denial as _occurrence_timing_denial,
+)
 from app.services.gathering_booking_emit import (  # noqa: E402
     emit_booking_confirmed,
     emit_multi_booking_confirmed,
@@ -1854,9 +1862,15 @@ def book_event(
     if not membership:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Must be a member to book.")
 
+    # Row-locked for the duration of the booking decision. Two members
+    # racing for the last seat now serialise here instead of both
+    # counting the same confirmed total and both inserting. The bulk
+    # "regular sessions" path takes the same lock, ordered by id, so
+    # the two paths cannot oversell against each other either.
     event = (
         db.query(Event)
         .filter(Event.id == event_id, Event.space_id == space.id, Event.is_published.is_(True))
+        .with_for_update()
         .first()
     )
     if not event:
@@ -1888,174 +1902,49 @@ def book_event(
 
     now = datetime.utcnow()
 
-    # --- AccessPass credit check (Phase B) ---
-    # Layered on top of the existing pathway access check.
+    # --- Entitlement check ---
     #
-    # Two eligibility mechanisms are honoured, keyed off the event's
-    # ``booking_access_type`` — NOT off the mere presence of a
-    # ``series_id``. A Series may exist purely for grouping /
-    # presentation of ``free`` or ``included_with_collective`` events;
-    # only ``included_with_series`` opts a Gathering in to term-pass
-    # enforcement.
+    # The decision lives in ``services.gathering_booking_rules`` so
+    # that "Reserve your regular sessions" evaluates twenty
+    # occurrences with the same rules this endpoint applies to one.
+    # The behaviour is unchanged by the move: the reasons, the
+    # messages and the status codes below are the ones this endpoint
+    # has always returned, and the privilege nuances (bypass refusal,
+    # never bypass consumption) are preserved verbatim there.
     #
-    #   1. ``included_with_pathway`` — legacy. An AccessPass with
-    #      ``eligible_pathway_id`` matching the event's
-    #      ``booking_required_pathway_id`` authorises booking.
-    #   2. ``included_with_series`` — new (migration 105). An
-    #      AccessPass with ``eligible_series_id`` matching the
-    #      event's ``series_id`` authorises booking. This is what a
-    #      term-pass buyer holds.
-    #
-    # Validity window: the pass window is enforced against
-    # ``event.starts_at`` — the pass covers a session iff the
-    # session's start falls inside ``[valid_from, valid_until)``.
-    # Keyed on the event's calendar position (not "now") so a member
-    # who buys a future Series can immediately reserve future sessions
-    # within its window. The cross-term concern ("Term 4 pass used to
-    # book a Term 3 event") is already prevented by the series-match
-    # predicate (``eligible_series_id == event.series_id``); a Term 4
-    # pass never satisfies the match for a Term 3 event.
-    #
-    # Privilege rule (creator / moderator on this Collective):
-    #
-    #   * Privilege bypasses REJECTION only — a creator or moderator
-    #     is allowed to attend/test a gathering even when they don't
-    #     hold a matching pass, or when their pass has already
-    #     reached its weekly or total allowance.
-    #   * Privilege does NOT bypass CONSUMPTION. When a matching
-    #     pass exists AND the booking fits inside its remaining
-    #     weekly + total allowance, the pass is charged normally
-    #     (``used_credits += 1``, booking row carries ``access_pass_id``)
-    #     regardless of role — so a creator who purchased their own
-    #     offering sees accurate accounting.
-    #   * Privilege must NEVER inflate accounting past what was
-    #     purchased. When the caps are already met, the booking
-    #     proceeds without a pass attached — attendance outside the
-    #     entitlement, not accounting exceeding the entitlement.
-    #
-    # ``included_with_series`` events with no matching pass and no
-    # privilege are rejected: "I never bought a pass" and "this
-    # event sits outside the pass window" are both correctly a
-    # booking denial. ``included_with_pathway`` events keep the
-    # legacy lenient fallback because a member may hold a manual
-    # PathwayEntitlement without a term pass.
-    access_pass_to_charge: AccessPass | None = None
-    event_series_id: str | None = getattr(event, 'series_id', None)
-    is_series_gated = event_access_type == 'included_with_series'
-    is_pathway_gated = event_access_type == 'included_with_pathway' and bool(required_pid)
-
-    credit_check_applies = is_pathway_gated or is_series_gated
-
-    if credit_check_applies:
-        match_conditions = []
-        if is_pathway_gated:
-            match_conditions.append(AccessPass.eligible_pathway_id == required_pid)
-        if is_series_gated and event_series_id is not None:
-            match_conditions.append(AccessPass.eligible_series_id == event_series_id)
-
-        candidate_pass = None
-        if match_conditions:
-            candidate_pass = (
-                db.query(AccessPass)
-                .filter(
-                    AccessPass.user_id == current_user.id,
-                    AccessPass.status == AccessPassStatus.active,
-                    or_(*match_conditions),
-                    AccessPass.valid_from <= event.starts_at,
-                    or_(
-                        AccessPass.valid_until.is_(None),
-                        AccessPass.valid_until > event.starts_at,
-                    ),
-                )
-                .order_by(AccessPass.created_at.desc())
-                .first()
-            )
-
-        if candidate_pass is None:
-            # No matching pass. Reject only for the strict series-only
-            # gate applied to non-privileged users; everyone else
-            # (privileged, or pathway-gated with the legacy manual-
-            # entitlement fallback) books through without pass tracking.
-            if is_series_gated and not is_pathway_gated and not is_privileged:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        "This session is part of a term. You need an active term "
-                        "pass whose validity window covers this session's date."
-                    ),
-                )
-        else:
-            # Matching pass found. Evaluate caps against the pass;
-            # enforcement is per-role, consumption is decided by
-            # whether the caps have headroom.
-            exceeds_total = (
-                candidate_pass.total_credits is not None
-                and candidate_pass.used_credits >= candidate_pass.total_credits
-            )
-            exceeds_weekly = False
-            if candidate_pass.credits_per_week is not None:
-                # Weekly cap bucket is the EVENT's calendar week, not
-                # the booking creation week. That lets a member book
-                # multiple future weeks on the same weekday while
-                # blocking two sessions inside a single event-week.
-                event_weekday = event.starts_at.weekday()  # 0=Mon … 6=Sun
-                event_week_start = (event.starts_at - timedelta(days=event_weekday)).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                event_week_end = event_week_start + timedelta(days=7)
-                weekly_used = (
-                    db.query(func.count(EventBooking.id))
-                    .join(Event, EventBooking.event_id == Event.id)
-                    .filter(
-                        EventBooking.access_pass_id == candidate_pass.id,
-                        EventBooking.status == BookingStatus.confirmed,
-                        Event.starts_at >= event_week_start,
-                        Event.starts_at < event_week_end,
-                    )
-                    .scalar()
-                ) or 0
-                exceeds_weekly = weekly_used >= candidate_pass.credits_per_week
-
-            if exceeds_total:
-                if not is_privileged:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="You have no remaining sessions on your current pass.",
-                    )
-                # Privileged: allow attendance outside the
-                # entitlement; leave ``access_pass_to_charge`` None so
-                # the booking is created without a pass link.
-            elif exceeds_weekly:
-                if not is_privileged:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
-                            f"You have reached your weekly limit of "
-                            f"{candidate_pass.credits_per_week} session(s)."
-                        ),
-                    )
-                # Privileged: same rationale — attendance outside the
-                # entitlement, no pass consumption.
-            else:
-                # Within caps for everyone (learner and privileged).
-                # Charge the pass so accounting stays accurate for
-                # anyone who legitimately holds one.
-                access_pass_to_charge = candidate_pass
+    # Evaluated before the timing checks that follow, deliberately —
+    # a member without a pass gets "you need a term pass" rather than
+    # "this has already started", which is the more useful answer and
+    # the order this endpoint already had.
+    pass_decision = _evaluate_pass_for_event(
+        db, user=current_user, event=event, is_privileged=is_privileged,
+        # Locked: the occurrence row above stops two members racing for
+        # the last seat, but the allowance is a property of the *pass*,
+        # so two requests from the same member for two different
+        # sessions would otherwise both see headroom and both spend it.
+        lock_pass=True,
+    )
+    if pass_decision.denial is not None:
+        raise HTTPException(
+            status_code=pass_decision.denial.http_status,
+            detail=pass_decision.denial.message,
+        )
+    access_pass_to_charge: AccessPass | None = pass_decision.charge
 
     if event.starts_at <= now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering has already started.")
     if event.booking_closes_at and event.booking_closes_at <= now:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Booking has closed for this gathering.")
 
-    # Check capacity
-    if event.capacity is not None:
-        confirmed = (
-            db.query(func.count(EventBooking.id))
-            .filter(EventBooking.event_id == event.id, EventBooking.status == BookingStatus.confirmed)
-            .scalar()
+    # Check capacity — shared with the bulk reserve path.
+    capacity_problem = _capacity_denial(
+        event, _confirmed_booking_count(db, event.id),
+    )
+    if capacity_problem is not None:
+        raise HTTPException(
+            status_code=capacity_problem.http_status,
+            detail=capacity_problem.message,
         )
-        if confirmed >= event.capacity:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This gathering is fully booked.")
 
     # Reactivate cancelled booking or create new
     existing = (
@@ -2688,8 +2577,49 @@ def book_series(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> SeriesBookingResponse:
-    """Book all future bookable sessions in a recurrence series. Skips full/closed/already-booked."""
+    """Book every remaining bookable session in a recurrence group.
+
+    The recurrence group is a different thing from a Gathering Series:
+    it is the "these rows were created together" tag a bulk create
+    leaves behind, and this endpoint is reached from a Gathering's own
+    page ("reserve the whole run"). It stays, and its response shape
+    stays, because two surfaces consume it.
+
+    What changed, and why it had to
+    -------------------------------
+    This endpoint used to check only Collective membership. It applied
+    no access gate and no term-pass allowance, which made it a way
+    around both: a member could reserve ``included_with_series``
+    sessions without ever buying a term pass, and a pass holder's
+    bookings were created with no ``access_pass_id``, so their weekly
+    and total allowances were neither charged nor enforced. Capacity
+    was counted but not locked.
+
+    It now runs every occurrence through
+    ``services.gathering_booking_rules`` — the same decisions the
+    single-booking endpoint and "Reserve your regular sessions" apply.
+    Legitimate existing behaviour is preserved exactly: ``free`` and
+    ``included_with_collective`` sessions still book on membership
+    alone, caretakers are still never refused, and the counting
+    response is unchanged apart from one added field.
+    """
     space = _get_space_or_404(slug, db)
+
+    # A frozen or closed Collective accepts no bookings. The single
+    # endpoint has refused this since Community Care shipped; this one
+    # did not, which was the same omission in a quieter place.
+    from app.community_care.shared import is_space_closed, is_space_frozen
+    if is_space_closed(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective has been closed.",
+        )
+    if is_space_frozen(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective is temporarily paused by Fresh Collective.",
+        )
+
     membership = (
         db.query(SpaceMembership)
         .filter(
@@ -2703,6 +2633,10 @@ def book_series(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Must be a member to book.")
 
     now = datetime.utcnow()
+    # Locked in id order, so two overlapping bulk requests cannot
+    # deadlock and neither can oversell the last place. Ordered by
+    # ``starts_at`` afterwards in Python, because the member-facing
+    # ordering and the lock ordering are different concerns.
     events = (
         db.query(Event)
         .filter(
@@ -2713,19 +2647,15 @@ def book_series(
             Event.status == "active",
             Event.starts_at > now,
         )
-        .order_by(Event.starts_at)
+        .order_by(Event.id)
+        .with_for_update()
         .all()
     )
+    events.sort(key=lambda e: e.starts_at)
     if not events:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No upcoming bookable sessions in this series.")
 
     event_ids = [e.id for e in events]
-    confirmed_counts: dict[str, int] = dict(
-        db.query(EventBooking.event_id, func.count(EventBooking.id))
-        .filter(EventBooking.event_id.in_(event_ids), EventBooking.status == BookingStatus.confirmed)
-        .group_by(EventBooking.event_id)
-        .all()
-    )
     existing_bookings: dict[str, "EventBooking"] = {
         b.event_id: b
         for b in db.query(EventBooking).filter(
@@ -2734,29 +2664,72 @@ def book_series(
         ).all()
     }
 
+    is_privileged = getattr(membership, "role", None) in (
+        SpaceRole.creator, SpaceRole.moderator,
+    )
+    if current_user.role == "admin" or space.creator_id == current_user.id:
+        is_privileged = True
+
     booked = 0
     already_booked = 0
     created_bookings: list[EventBooking] = []
     skipped_full = 0
     skipped_closed = 0
+    # New: an occurrence the member is not entitled to reserve. It used
+    # to be booked anyway. Counted separately rather than folded into
+    # ``skipped_closed``, because "you need a term pass" and "booking
+    # has closed" are not the same news.
+    skipped_unavailable = 0
+
+    # Allowance consumed by this operation but not yet committed — a
+    # pass allowing two a week cannot pay for five Mondays just because
+    # none of them is in the database yet.
+    pending_weekly: dict[datetime, int] = {}
+    pending_total = 0
+    pending_seats: dict[str, int] = {}
 
     for e in events:
         existing = existing_bookings.get(e.id)
         if existing and existing.status == BookingStatus.confirmed:
             already_booked += 1
             continue
-        if e.booking_closes_at and e.booking_closes_at <= now:
-            skipped_closed += 1
+
+        timing = _occurrence_timing_denial(e, now)
+        if timing is not None:
+            if timing.reason == "booking_closed":
+                skipped_closed += 1
+            else:
+                skipped_unavailable += 1
             continue
-        confirmed = confirmed_counts.get(e.id, 0)
-        if e.capacity is not None and confirmed >= e.capacity:
+
+        gate = _can_book_gate_shared(current_user, e, space, db)
+        if not gate.allowed:
+            skipped_unavailable += 1
+            continue
+
+        seats = pending_seats.get(e.id, 0)
+        if _capacity_denial(
+            e, _confirmed_booking_count(db, e.id), pending=seats,
+        ) is not None:
             skipped_full += 1
             continue
+
+        decision = _evaluate_pass_for_event(
+            db, user=current_user, event=e, is_privileged=is_privileged,
+            pending_weekly=pending_weekly, pending_total=pending_total,
+            lock_pass=True,
+        )
+        if decision.denial is not None:
+            skipped_unavailable += 1
+            continue
+        charge = decision.charge
 
         if existing:
             existing.status = BookingStatus.confirmed
             existing.booked_at = now
             existing.cancelled_at = None
+            existing.access_pass_id = charge.id if charge else None
+            existing.credits_used = 1 if charge else 0
             created_bookings.append(existing)
         else:
             fresh = EventBooking(
@@ -2765,10 +2738,18 @@ def book_series(
                 user_id=current_user.id,
                 status=BookingStatus.confirmed,
                 booked_at=now,
+                access_pass_id=charge.id if charge else None,
+                credits_used=1 if charge else 0,
             )
             db.add(fresh)
             created_bookings.append(fresh)
         booked += 1
+        pending_seats[e.id] = seats + 1
+        if charge is not None:
+            charge.used_credits += 1
+            week_start, _ = _event_week_bounds(e)
+            pending_weekly[week_start] = pending_weekly.get(week_start, 0) + 1
+            pending_total += 1
 
     db.commit()
 
@@ -2805,6 +2786,7 @@ def book_series(
         already_booked=already_booked,
         skipped_full=skipped_full,
         skipped_closed=skipped_closed,
+        skipped_unavailable=skipped_unavailable,
         total_in_series=len(events),
     )
 
@@ -4132,3 +4114,11 @@ def get_public_offer_page(
 # ---------------------------------------------------------------------------
 
 from app.spaces import _series_member_routes as _series_member_routes  # noqa: E402,F401
+
+# ---------------------------------------------------------------------------
+# "Reserve your regular sessions" — same side-effect registration. Kept
+# after the Series member routes because it resolves the same Series by
+# slug and reads naturally as an extension of them.
+# ---------------------------------------------------------------------------
+
+from app.spaces import _regular_sessions_routes as _regular_sessions_routes  # noqa: E402,F401
