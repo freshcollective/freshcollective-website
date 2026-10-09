@@ -184,17 +184,27 @@ function renderNode(node: DocNode, key: string): React.ReactNode {
       )
 
     case 'blockquote':
-      // Blockquote accent reads a scoped CSS variable so that a quote
-      // inside a palette-coloured container adopts the container's own
-      // accent instead of the platform default teal. The variable is
-      // set by ``withContainerBase`` (member) and ``BlockPreview``
-      // (editor); when no container is active the fallback keeps the
-      // long-standing teal-300 look.
+      // Blockquote accent, resolved in three steps.
+      //
+      //   1. ``--fc-quote-accent`` — set by ``withContainerBase``
+      //      (member) and ``BlockPreview`` (editor) when the quote sits
+      //      inside a palette-coloured container. Most specific, so it
+      //      still wins.
+      //   2. ``--fc-accent`` — the Collective's Colour Palette primary,
+      //      published by ``CollectiveThemeProvider`` on every surface a
+      //      quote can appear on. This is the step that was missing: an
+      //      un-contained quote used to render platform teal inside a
+      //      Collective whose palette was nothing of the kind.
+      //   3. the teal-300 literal — only reached by a Collective with no
+      //      palette set, where it is still the right answer.
+      //
+      // Only the rule is tinted. The text stays ``text-black``, so no
+      // palette can push the quote below its current contrast.
       return (
         <blockquote
           key={key}
           className="my-4 border-l-4 pl-4 italic text-black"
-          style={{ borderColor: 'var(--fc-quote-accent, #5eead4)' }}
+          style={{ borderColor: 'var(--fc-quote-accent, var(--fc-accent, #5eead4))' }}
         >
           {node.content?.map((child, i) => renderNode(child, `${key}-${i}`))}
         </blockquote>

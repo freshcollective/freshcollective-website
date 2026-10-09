@@ -65,8 +65,15 @@ export default function StepActions({
         <section
           className="mb-10 rounded-2xl px-6 py-7 md:px-8 md:py-8"
           style={{
-            background: 'rgba(56,160,158,0.045)',
-            border: '1px solid rgba(56,160,158,0.14)',
+            // The rest of this section already themed off the
+            // Collective's palette — the button, the "Private to you"
+            // line, the text area's border — while the panel it all sat
+            // in stayed platform teal. In a Collective whose palette is
+            // warm, that read as a stray cool box. Fallbacks are the
+            // previous literals, so a Collective with no palette set
+            // looks exactly as it did.
+            background: 'var(--fc-accent-tint, rgba(56,160,158,0.045))',
+            border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.14))',
           }}
         >
           <div className="mb-4">
