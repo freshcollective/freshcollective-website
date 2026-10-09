@@ -108,8 +108,12 @@ describe('image cells', () => {
     assert.match(cellImage, /shadow-\[0_1px_3px_rgba\(15,30,55,0\.08\)/)
   })
 
-  test('opt out of prose typography so both surfaces match', () => {
-    assert.match(cellImage, /<figure className="not-prose">/)
+  test('are styled explicitly rather than inheriting from a cell wrapper', () => {
+    // This project has no @tailwindcss/typography — the ``prose
+    // prose-sm`` on the About page's text cells is inert — so the
+    // figure needs no reset, and must not pretend to have one.
+    assert.match(cellImage, /<figure>/)
+    assert.ok(!cellImage.includes('not-prose'), 'dead class implying a plugin we do not have')
   })
 
   test('go through the one alt resolver, not a hand-rolled fallback', () => {

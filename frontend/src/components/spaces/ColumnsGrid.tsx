@@ -79,10 +79,12 @@ function CellImage({ cell }: { cell: ColumnsPayload['cells'][number] }) {
   const src = resolveMediaUrl(image.url) ?? image.url
 
   return (
-    // ``not-prose`` because the About page wraps each cell in Tailwind
-    // typography, which would otherwise impose its own figure and image
-    // margins and put this out of step with the step renderer.
-    <figure className="not-prose">
+    // No typography reset needed: this project has no
+    // @tailwindcss/typography, so the ``prose prose-sm`` the About page
+    // puts on its text cells is inert and imposes no figure or image
+    // margins. Everything below is styled explicitly, which is what
+    // keeps the two surfaces identical.
+    <figure>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
