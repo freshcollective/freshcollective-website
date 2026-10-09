@@ -288,11 +288,25 @@ describe('the header has room for the extra destination', () => {
   test('the bar and the drawer swap at the same breakpoint', () => {
     // Exactly one of them is visible at every width. If these drifted
     // apart there would be a band with two navs or none.
-    assert.ok(src.includes('lg:flex'), 'desktop nav is not lg:flex')
-    assert.ok(src.includes('lg:hidden'), 'drawer is not lg:hidden')
-    assert.ok(
-      !src.includes('md:flex') && !src.includes('md:hidden'),
-      'a md: breakpoint is left over, so the two navs no longer swap together',
+    //
+    // Written against whatever threshold the header uses rather than a
+    // literal: this assertion previously hardcoded ``lg`` and had to be
+    // rewritten when the breakpoint moved to 1152px, even though the
+    // property it cares about never changed. See
+    // ``worldHeaderResponsive.test.ts`` for why 1152px, and for the
+    // measured widths.
+    const switches = [...src.matchAll(/(?:min-\[(\d+)px\]|(lg|md|xl)):(flex|hidden)/g)]
+    const thresholds = new Set(switches.map((m) => m[1] ?? m[2]))
+    assert.equal(
+      thresholds.size,
+      1,
+      `the navs swap at more than one threshold: ${[...thresholds].join(', ')}`,
+    )
+    const kinds = switches.map((m) => m[3]).sort()
+    assert.deepEqual(
+      kinds,
+      ['flex', 'flex', 'hidden'],
+      'expected two reveals (nav + auth cluster) and one drawer hide',
     )
   })
 
@@ -304,8 +318,20 @@ describe('the header has room for the extra destination', () => {
     assert.ok(src.includes('min-w-0 flex-1'))
   })
 
-  test('gaps tighten below the widest breakpoint', () => {
-    assert.ok(src.includes('gap-4 lg:flex xl:gap-8'))
+  test('the three header sections tighten below the widest breakpoint', () => {
+    // Container still does — it separates brand / nav / auth cluster.
     assert.ok(src.includes('justify-between gap-4 xl:gap-8'))
+  })
+
+  test('the nav itself keeps one gap at every width', () => {
+    // The nav used to take ``xl:gap-8`` as well, which added 80px to
+    // what it needed (five gaps) while Container's own xl:gap-8 took
+    // another 32px off its box — leaving the 1280px-and-up band 9.9px
+    // from overlapping the brand and the bell. Measured; see
+    // ``worldHeaderResponsive.test.ts``.
+    const nav = src.match(/className="(hidden min-w-0 flex-1[^"]*)"/)
+    assert.ok(nav, 'desktop nav className not found')
+    assert.match(nav[1], /\bgap-4\b/)
+    assert.ok(!/\bxl:gap-8\b/.test(nav[1]), 'the nav must not widen its gap at xl')
   })
 })
