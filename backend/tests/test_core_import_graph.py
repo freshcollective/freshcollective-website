@@ -44,6 +44,7 @@ import ast
 import os
 import pathlib
 import subprocess
+import tempfile
 import sys
 
 import pytest
@@ -68,17 +69,35 @@ PRODUCTION_ENV = {
 }
 
 
+#: An empty directory to run cold subprocesses from.
+#:
+#: ``Settings.model_config`` sets ``env_file=".env"``, which pydantic
+#: resolves against the *working directory*. Running from the backend
+#: root therefore read the developer's ``backend/.env`` — so these
+#: tests inherited a ``sk_test_…`` Stripe key, and every cold import
+#: with ``APP_ENV=production`` died on the Stripe guard instead of
+#: reaching the behaviour under test. All seven failed on any machine
+#: with a local ``.env``, and passed only where none existed.
+#:
+#: Running from an empty directory makes the docstring below true
+#: rather than aspirational: ``app`` is found through ``PYTHONPATH``,
+#: and there is no ``.env`` beside the process to find.
+_COLD_CWD = tempfile.mkdtemp(prefix="fc-cold-import-")
+
+
 def _cold(code: str, env: dict | None = None) -> subprocess.CompletedProcess:
     """Run a snippet in a brand-new interpreter with a minimal env.
 
-    ``cwd`` is the backend root so ``app`` resolves, and no ``.env``
-    file is read because ``Settings`` is handed everything through the
-    environment.
+    ``app`` resolves through ``PYTHONPATH`` rather than ``cwd``, and the
+    working directory is empty, so no ``.env`` is read: ``Settings``
+    receives exactly what the test puts in ``env`` and nothing else.
     """
+    resolved = {**(env if env is not None else PRODUCTION_ENV)}
+    resolved["PYTHONPATH"] = str(BACKEND)
     return subprocess.run(
         [sys.executable, "-c", code],
-        cwd=BACKEND,
-        env={**(env if env is not None else PRODUCTION_ENV)},
+        cwd=_COLD_CWD,
+        env=resolved,
         capture_output=True,
         text=True,
         timeout=180,

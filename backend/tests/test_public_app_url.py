@@ -29,8 +29,10 @@ Run with::
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
+from unittest import mock
 
 import pytest
 
@@ -314,6 +316,17 @@ class TestProductionRefusesANonPublicLinkOrigin:
     working links to the wrong host for as long as it took someone to
     notice. A silent wrong answer is worth trading for a loud refusal,
     which is what the R2 and Stripe guards already do.
+
+    Every ``Settings`` below is built through ``_settings`` rather than
+    constructed directly. ``Settings.model_config`` reads ``.env``, and
+    ``conftest`` has already loaded that file into ``os.environ``, so a
+    direct call inherited the developer's ``sk_test_…`` Stripe key —
+    which under ``app_env="production"`` tripped the Stripe guard and
+    raised about an entirely different variable. All seven tests in
+    this class failed that way on any machine with a local
+    ``backend/.env``, and passed only where none existed. The guards
+    themselves are unchanged; the tests now supply their own inputs
+    instead of inheriting a machine's.
     """
 
     BASE = {
@@ -323,24 +336,35 @@ class TestProductionRefusesANonPublicLinkOrigin:
         "fc_job_requires_stripe": False,
     }
 
+    @staticmethod
+    def _settings(**kwargs) -> Settings:
+        """Construct ``Settings`` from these values and nothing else.
+
+        ``clear=True`` empties ``os.environ`` for the construction and
+        ``_env_file=None`` stops the ``.env`` file being read, so the
+        only inputs are the keyword arguments.
+        """
+        with mock.patch.dict(os.environ, {}, clear=True):
+            return Settings(_env_file=None, **kwargs)
+
     def test_production_with_public_app_url_set_boots(self):
-        s = Settings(**self.BASE, app_env="production", public_app_url=PUBLIC)
+        s = self._settings(**self.BASE, app_env="production", public_app_url=PUBLIC)
         assert s.resolved_public_app_url == PUBLIC
 
     def test_production_falling_back_to_the_render_host_refuses(self):
         """The live misconfiguration, as a test."""
         with pytest.raises(ValueError, match="PUBLIC_APP_URL"):
-            Settings(**self.BASE, app_env="production",
+            self._settings(**self.BASE, app_env="production",
                      frontend_origin=RENDER_HOST)
 
     def test_production_with_localhost_refuses(self):
         with pytest.raises(ValueError, match="PUBLIC_APP_URL"):
-            Settings(**self.BASE, app_env="production",
+            self._settings(**self.BASE, app_env="production",
                      frontend_origin="http://localhost:3000")
 
     def test_production_with_an_empty_value_refuses(self):
         with pytest.raises(ValueError, match="PUBLIC_APP_URL"):
-            Settings(**self.BASE, app_env="production",
+            self._settings(**self.BASE, app_env="production",
                      public_app_url="", frontend_origin="")
 
     def test_a_render_host_in_public_app_url_itself_refuses(self):
@@ -348,12 +372,12 @@ class TestProductionRefusesANonPublicLinkOrigin:
         thing — which is exactly what a copy-paste from the dashboard
         would produce."""
         with pytest.raises(ValueError, match="PUBLIC_APP_URL"):
-            Settings(**self.BASE, app_env="production",
+            self._settings(**self.BASE, app_env="production",
                      public_app_url=RENDER_HOST)
 
     def test_the_message_names_the_variable_and_the_fix(self):
         with pytest.raises(ValueError) as exc:
-            Settings(**self.BASE, app_env="production",
+            self._settings(**self.BASE, app_env="production",
                      frontend_origin=RENDER_HOST)
         message = str(exc.value)
         assert "PUBLIC_APP_URL" in message
@@ -365,7 +389,7 @@ class TestProductionRefusesANonPublicLinkOrigin:
         link origin is exactly as visible to a member as the web
         service."""
         with pytest.raises(ValueError, match="PUBLIC_APP_URL"):
-            Settings(
+            self._settings(
                 database_url="postgresql://u:p@localhost/db",
                 jwt_secret="x" * 32,
                 fc_service_role="job",
@@ -378,7 +402,7 @@ class TestProductionRefusesANonPublicLinkOrigin:
     def test_non_production_is_untouched(self, env):
         """localhost is the correct answer outside production, and the
         test suite depends on it."""
-        s = Settings(**self.BASE, app_env=env,
+        s = self._settings(**self.BASE, app_env=env,
                      frontend_origin="http://localhost:3000")
         assert s.resolved_public_app_url == "http://localhost:3000"
 

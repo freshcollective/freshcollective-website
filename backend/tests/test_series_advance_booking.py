@@ -247,8 +247,59 @@ def _purchase_term_pass(
     )
 
 
-# Fixed "today" — 10 September 2026, matching the production scenario.
-NOW_SEP = datetime(2026, 9, 10, 12, 0, 0)
+# ---------------------------------------------------------------------------
+# Dates that do not expire
+#
+# This file was written against a fixed calendar — a term running
+# 5 October to 12 December 2026 — because the scenario it reproduces is
+# about specific week boundaries. On 2026-10-09 all 19 of its booking
+# tests began failing with "This gathering has already started": the
+# fixtures had simply aged past real ``utcnow()``, and the file had
+# quietly stopped protecting the allowance logic it exists to cover.
+#
+# Rather than re-pin the dates to a new year — which only resets the
+# fuse — every literal below is shifted forward by whole 52-week
+# periods until the term is safely in the future. 364 days is chosen
+# deliberately over 365: a multiple of seven preserves every weekday,
+# every "these two sessions fall in the same ISO week" relationship the
+# weekly-cap tests depend on, and (because the calendar date drifts by
+# only about a day per period) the Melbourne daylight-saving season of
+# each date, which the 9am AEDT assertion near the term's end relies
+# on.
+#
+# ``tests/test_fixture_dates.py`` asserts those invariants hold, so a
+# future shift cannot silently break them.
+# ---------------------------------------------------------------------------
+
+#: The scenario's original term start. Everything is relative to this.
+BASE_TERM_START = datetime(2026, 10, 5, 7, 0, 0)
+
+#: How far ahead the term must sit, so a test run near the boundary
+#: cannot be overtaken mid-suite.
+_MIN_LEAD = timedelta(days=30)
+
+_PERIOD = timedelta(days=364)
+
+
+def _date_shift(now: datetime | None = None) -> timedelta:
+    """Whole 52-week periods needed to keep the term in the future."""
+    now = now or datetime.utcnow()
+    periods = 0
+    while BASE_TERM_START + _PERIOD * periods < now + _MIN_LEAD:
+        periods += 1
+    return _PERIOD * periods
+
+
+DATE_SHIFT = _date_shift()
+
+
+def _shifted(*args: int) -> datetime:
+    """A fixture date, moved into the future by whole weeks."""
+    return datetime(*args) + DATE_SHIFT
+
+
+# Fixed "today" for the scenario — 25 days before the term starts.
+NOW_SEP = _shifted(2026, 9, 10, 12, 0, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -263,8 +314,8 @@ class TestFuturePurchaseReadsAndBooking:
         Melbourne — matches the shape in ``term4_2026_repair.py``)."""
         return _make_series(
             db, space, title="EMBODY Term 4 2026",
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
-            ends_at=datetime(2026, 12, 12, 12, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
+            ends_at=_shifted(2026, 12, 12, 12, 0, 0),
         )
 
     def test_september_purchase_can_book_first_october_gathering(
@@ -278,7 +329,7 @@ class TestFuturePurchaseReadsAndBooking:
         term4 = self._term4(db, space)
         first_monday = _make_event(
             db, space, series=term4,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         ap = _purchase_term_pass(db, payer=payer, space=space, series=term4)
         db.commit()
@@ -344,7 +395,7 @@ class TestFuturePurchaseReadsAndBooking:
         term4 = self._term4(db, space)
         first_monday = _make_event(
             db, space, series=term4,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         _purchase_term_pass(db, payer=payer, space=space, series=term4)
         db.commit()
@@ -371,7 +422,7 @@ class TestFuturePurchaseReadsAndBooking:
         term4 = self._term4(db, space)
         first_monday = _make_event(
             db, space, series=term4,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         _purchase_term_pass(db, payer=payer, space=space, series=term4)
         db.commit()
@@ -405,14 +456,14 @@ class TestCreditCapsUnderAdvanceBooking:
         _member(db, payer, space)
         term4 = _make_series(
             db, space, title="EMBODY Term 4 2026",
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
-            ends_at=datetime(2026, 12, 12, 12, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
+            ends_at=_shifted(2026, 12, 12, 12, 0, 0),
         )
         # Ten Mondays: 5 Oct → 7 Dec inclusive (still inside window).
         events = [
             _make_event(
                 db, space, series=term4,
-                starts_at=datetime(2026, 10, 5, 7, 0, 0) + timedelta(weeks=w),
+                starts_at=_shifted(2026, 10, 5, 7, 0, 0) + timedelta(weeks=w),
             )
             for w in range(10)
         ]
@@ -441,17 +492,17 @@ class TestCreditCapsUnderAdvanceBooking:
         _member(db, payer, space)
         term4 = _make_series(
             db, space, title="EMBODY Term 4 2026",
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
-            ends_at=datetime(2026, 12, 12, 12, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
+            ends_at=_shifted(2026, 12, 12, 12, 0, 0),
         )
         # Same event-week: Monday 5 Oct + Thursday 8 Oct.
         mon = _make_event(
             db, space, series=term4,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         thu = _make_event(
             db, space, series=term4,
-            starts_at=datetime(2026, 10, 8, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 8, 7, 0, 0),
         )
         _purchase_term_pass(
             db, payer=payer, space=space, series=term4,
@@ -482,8 +533,8 @@ class TestCreditCapsUnderAdvanceBooking:
         _member(db, payer, space)
         term4 = _make_series(
             db, space, title="EMBODY Term 4 2026",
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
-            ends_at=datetime(2026, 12, 12, 12, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
+            ends_at=_shifted(2026, 12, 12, 12, 0, 0),
         )
         # 11 events, all comfortably *inside* the pass window (so the
         # window check does not trip first) and at most 3 per event-
@@ -494,7 +545,7 @@ class TestCreditCapsUnderAdvanceBooking:
         events = [
             _make_event(
                 db, space, series=term4,
-                starts_at=datetime(2026, 10, 5, 7, 0, 0) + timedelta(days=d),
+                starts_at=_shifted(2026, 10, 5, 7, 0, 0) + timedelta(days=d),
             )
             for d in day_offsets
         ]
@@ -540,7 +591,7 @@ class TestWindowBoundaries:
         _member(db, payer, space)
         term4 = _make_series(
             db, space, title="EMBODY Term 4 2026",
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
             # Series ends the same calendar day as the final session
             # (12 Dec Melbourne). Whether the Creator entered noon,
             # end-of-day, or midnight-next-day, the value MUST be
@@ -548,11 +599,11 @@ class TestWindowBoundaries:
             # the final session to be bookable. Assert the boundary
             # case explicitly against noon UTC on 12 Dec (a plausible
             # choice for "end of term day").
-            ends_at=datetime(2026, 12, 12, 12, 0, 0),
+            ends_at=_shifted(2026, 12, 12, 12, 0, 0),
         )
         final_saturday = _make_event(
             db, space, series=term4,
-            starts_at=datetime(2026, 12, 11, 22, 0, 0),  # Sat 12 Dec 9am AEDT
+            starts_at=_shifted(2026, 12, 11, 22, 0, 0),  # Sat 12 Dec 9am AEDT
         )
         _purchase_term_pass(
             db, payer=payer, space=space, series=term4,
@@ -579,12 +630,12 @@ class TestWindowBoundaries:
         _member(db, payer, space)
         term4 = _make_series(
             db, space, title="EMBODY Term 4 2026",
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
-            ends_at=datetime(2026, 12, 12, 12, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
+            ends_at=_shifted(2026, 12, 12, 12, 0, 0),
         )
         beyond_window = _make_event(
             db, space, series=term4,
-            starts_at=datetime(2026, 12, 15, 7, 0, 0),  # 3 days after end
+            starts_at=_shifted(2026, 12, 15, 7, 0, 0),  # 3 days after end
         )
         _purchase_term_pass(
             db, payer=payer, space=space, series=term4,
@@ -613,12 +664,12 @@ class TestWindowBoundaries:
         _member(db, payer, space)
         term4 = _make_series(
             db, space, title="EMBODY Term 4 2026",
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
-            ends_at=datetime(2026, 12, 12, 12, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
+            ends_at=_shifted(2026, 12, 12, 12, 0, 0),
         )
         before_window = _make_event(
             db, space, series=term4,
-            starts_at=datetime(2026, 9, 20, 7, 0, 0),
+            starts_at=_shifted(2026, 9, 20, 7, 0, 0),
         )
         _purchase_term_pass(
             db, payer=payer, space=space, series=term4,
@@ -659,8 +710,8 @@ class TestFuturePassBlocksRepurchase:
         _member(db, payer, space)
         term4 = _make_series(
             db, space, title="EMBODY Term 4 2026",
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
-            ends_at=datetime(2026, 12, 12, 12, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
+            ends_at=_shifted(2026, 12, 12, 12, 0, 0),
         )
         opt = _make_series_option(
             db, space, term4, name="Awaken",
@@ -714,8 +765,8 @@ class TestFuturePassBlocksRepurchase:
         # A prior Term-3 series that ended a year ago.
         term3 = _make_series(
             db, space, title="Prior Term",
-            starts_at=datetime(2025, 7, 1, 7, 0, 0),
-            ends_at=datetime(2025, 9, 30, 12, 0, 0),
+            starts_at=_shifted(2025, 7, 1, 7, 0, 0),
+            ends_at=_shifted(2025, 9, 30, 12, 0, 0),
         )
         db.add(AccessPass(
             id=_uid("ap-expired"),
@@ -733,8 +784,8 @@ class TestFuturePassBlocksRepurchase:
         # duplicate of Term-4.
         term4 = _make_series(
             db, space, title="EMBODY Term 4 2026",
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
-            ends_at=datetime(2026, 12, 12, 12, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
+            ends_at=_shifted(2026, 12, 12, 12, 0, 0),
         )
         opt4 = _make_series_option(
             db, space, term4, name="Awaken",
@@ -791,8 +842,8 @@ def _term4_series(db, space):
     """Same shape as the production Term 4 window."""
     return _make_series(
         db, space, title="EMBODY Term 4 2026",
-        starts_at=datetime(2026, 10, 5, 7, 0, 0),
-        ends_at=datetime(2026, 12, 12, 12, 0, 0),
+        starts_at=_shifted(2026, 10, 5, 7, 0, 0),
+        ends_at=_shifted(2026, 12, 12, 12, 0, 0),
     )
 
 
@@ -845,7 +896,7 @@ class TestLearnerBaseline:
         series = _term4_series(db, space)
         event = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         ap = _seed_pass_directly(
             db, user=payer, space=space, series=series,
@@ -880,7 +931,7 @@ class TestLearnerBaseline:
         series = _term4_series(db, space)
         event = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         db.commit()
 
@@ -901,7 +952,7 @@ class TestLearnerBaseline:
         series = _term4_series(db, space)
         event = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         # 10 of 10 already used.
         _seed_pass_directly(
@@ -928,11 +979,11 @@ class TestLearnerBaseline:
         series = _term4_series(db, space)
         first = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         second = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 8, 7, 0, 0),  # same week
+            starts_at=_shifted(2026, 10, 8, 7, 0, 0),  # same week
         )
         _seed_pass_directly(
             db, user=payer, space=space, series=series,
@@ -974,7 +1025,7 @@ class TestPrivilegedRoleWithPass:
         series = _term4_series(db, space)
         event = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         ap = _seed_pass_directly(
             db, user=payer, space=space, series=series,
@@ -1018,7 +1069,7 @@ class TestPrivilegedRoleWithoutPass:
         series = _term4_series(db, space)
         event = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         db.commit()
 
@@ -1059,7 +1110,7 @@ class TestPrivilegedRoleWithCappedPass:
         series = _term4_series(db, space)
         event = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         ap = _seed_pass_directly(
             db, user=payer, space=space, series=series,
@@ -1098,11 +1149,11 @@ class TestPrivilegedRoleWithCappedPass:
         series = _term4_series(db, space)
         first = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         second = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 8, 7, 0, 0),  # same event-week
+            starts_at=_shifted(2026, 10, 8, 7, 0, 0),  # same event-week
         )
         ap = _seed_pass_directly(
             db, user=payer, space=space, series=series,
@@ -1159,7 +1210,7 @@ class TestReadThroughSummariesAfterPrivilegedBooking:
         series = _term4_series(db, space)
         event = _make_event(
             db, space, series=series,
-            starts_at=datetime(2026, 10, 5, 7, 0, 0),
+            starts_at=_shifted(2026, 10, 5, 7, 0, 0),
         )
         ap = _seed_pass_directly(
             db, user=payer, space=space, series=series,
