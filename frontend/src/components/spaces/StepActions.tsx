@@ -85,15 +85,16 @@ export default function StepActions({
             </p>
           </div>
 
+          {/* The three stock questions that used to sit here are gone.
+              Creators write their own prompt in the step content above,
+              and ours arrived underneath it — so a member who had just
+              been asked something specific was then asked three
+              generic things, and the creator's question was the one
+              that looked optional. The invitation to pause stays; what
+              to reflect on belongs to whoever wrote the step. */}
           <p className="mb-5 text-[15px] leading-relaxed text-navy-900/80">
             Take a moment before moving on.
           </p>
-
-          <ul className="mb-5 space-y-1.5 text-[14.5px] leading-relaxed text-black">
-            <li>What stood out?</li>
-            <li>What challenged you?</li>
-            <li>What feels important enough to remember?</li>
-          </ul>
 
           <textarea
             id="step-notes"
