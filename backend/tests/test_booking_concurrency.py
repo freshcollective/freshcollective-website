@@ -69,6 +69,47 @@ import app.models.payment_option  # noqa: F401
 
 #: A thread that has not finished in this long is a lock we got wrong,
 #: not a slow machine. Failing beats hanging the suite.
+# ---------------------------------------------------------------------------
+# Email: stubbed, because this file commits
+#
+# These tests are about locks, but they are also the only tests in the
+# suite that *commit* bookings and let comms routing run for real — and
+# that combination is what sent live booking confirmations to
+# ``m0-…@example.test`` on 2026-10-09. ``commit_reservations`` emits
+# without ``background_tasks``, which makes routing synchronous, so the
+# Resend round-trip completed inside the test.
+#
+# The SDK tripwire in ``conftest`` now turns that into a loud failure
+# rather than an email (it is what identified these four tests). This
+# fixture is the proper fix for *these* tests specifically: they have no
+# interest in email, so the SDK is replaced with a recorder and dispatch
+# completes without a network call.
+#
+# Autouse and module-wide on purpose — the sends happen on worker
+# threads inside ``commit_reservations``, so an opt-in fixture would be
+# forgotten by exactly the kind of test that needs it.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def stub_resend_sdk():
+    """Record outbound email instead of sending it."""
+    import resend
+
+    sent: list[object] = []
+
+    def _record(request=None, options=None):
+        sent.append(request)
+        return {"id": f"stub-{len(sent)}"}
+
+    original = resend.Emails.send
+    resend.Emails.send = staticmethod(_record)
+    try:
+        yield sent
+    finally:
+        resend.Emails.send = original
+
+
 JOIN_TIMEOUT_SECONDS = 30
 
 

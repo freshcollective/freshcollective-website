@@ -30,6 +30,7 @@ from datetime import datetime
 from typing import Any, Mapping
 
 from app.comms.categories import CHANNEL_EMAIL_TRANSACTIONAL
+from app.comms.delivery_guard import outbound_email_block, redact_recipient
 from app.comms.providers.base import (
     DeliveryProvider,
     HealthStatus,
@@ -69,6 +70,25 @@ class ResendProvider:
     # ── DeliveryProvider (outbound) ─────────────────────────────────
 
     def send(self, payload: RenderedPayload) -> ProviderResult:
+        # Before anything else, including the API key check: a send that
+        # must not happen must not happen even when fully configured.
+        # See ``app/comms/delivery_guard.py`` for why this is one
+        # decision in one place rather than a check per call site.
+        block = outbound_email_block(payload.to)
+        if block is not None:
+            # Recipient redacted to the domain: this line is a Sentry
+            # breadcrumb on fc-api, and the non-production refusal
+            # fires on every send in development.
+            logger.warning(
+                "Blocked outbound email to %s: %s",
+                redact_recipient(payload.to), block.detail,
+            )
+            return ProviderResult(
+                accepted=False,
+                error_class=block.error_class,
+                error_detail=block.detail,
+            )
+
         if not settings.resend_api_key:
             logger.warning(
                 "RESEND_API_KEY is not set — skipping email to %s (subject: %s)",
