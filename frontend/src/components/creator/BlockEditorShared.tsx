@@ -1091,22 +1091,30 @@ export function BlockEditForm({
               minRows={8}
             />
           </div>
+          {/* Presented as a field, like everything else in this editor.
+              It was previously a bare checkbox with no ``field-label``
+              above it — the only control here not following that
+              convention — so after the eight-row instructions editor it
+              read as loose body text rather than as the setting it is,
+              and was easy to scan past. The classes match the house
+              toggle pattern used elsewhere in Creator Studio
+              (``cursor-pointer``, ``accent-teal-500``, bordered row). */}
           <div>
-            <label className="flex items-start gap-2.5">
+            <label className="field-label">Member response</label>
+            <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 px-4 py-3 transition-colors hover:border-slate-300">
               <input
                 type="checkbox"
                 checked={responseEnabled}
                 onChange={(e) => setResponseEnabled(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0"
+                className="mt-0.5 h-4 w-4 shrink-0 accent-teal-500"
               />
-              <span>
-                <span className="block text-[13.5px] font-medium text-navy-900">
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-medium text-navy-900">
                   Allow members to write a response
                 </span>
-                <span className="mt-0.5 block text-[12px] text-slate-500">
-                  Each member gets a private space to answer this exercise,
-                  visible only to them. Turning this off hides the box and
-                  keeps anything already written.
+                <span className="mt-0.5 block text-[12.5px] leading-relaxed text-slate-600">
+                  Members can privately write and save their responses to this
+                  exercise.
                 </span>
               </span>
             </label>
