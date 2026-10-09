@@ -54,6 +54,14 @@ export default function SpaceNav({
   const base = `/spaces/${spaceSlug}`
 
   const tabs: Tab[] = [
+    // About comes first on purpose. It is the doorway that reads for
+    // everyone — a visitor who has not joined, and a member returning
+    // to re-read what this Collective is for — and the Collective root
+    // already sends signed-out visitors to ``/about``, so leading with
+    // it makes the tab bar agree with where the Collective already
+    // opens. Order here drives both the desktop tab bar and the mobile
+    // bottom nav; there is one array so the two cannot disagree.
+    { label: 'About',     href: `${base}/about`,    icon: '◇' },
     {
       // Language shift: "Community" is being retired as a visible feature
       // label in favour of "Conversations", which pluralises naturally when
@@ -65,7 +73,6 @@ export default function SpaceNav({
     { label: 'Pathways',  href: `${base}/pathways`, icon: '◎' },
     { label: 'Gatherings', href: `${base}/events`,    icon: '◷' },
     { label: 'Members',    href: `${base}/members`,   icon: '◉' },
-    { label: 'About',     href: `${base}/about`,    icon: '◇' },
   ]
     .filter((tab) => tab.label !== 'Members' || showMemberDirectory)
     // Area policy decides which doorways exist for this viewer. The
