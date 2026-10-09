@@ -188,6 +188,7 @@ def create_event_about_block(
         content=content,
         label=label,
         caption=caption,
+        heading=body.heading,
         embed_url=embed_url,
         media_asset_id=body.media_asset_id,
         resource_id=body.resource_id,

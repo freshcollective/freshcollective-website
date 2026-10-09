@@ -12,6 +12,7 @@ import { decodeColumns, gridTemplateForVariant } from '@/lib/columnsBlock'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import EmbedRenderer from '@/components/EmbedRenderer'
 import ButtonBlock from '@/components/ButtonBlock'
+import MediaBlockHeading from '@/components/spaces/MediaBlockHeading'
 import { resolveMediaUrl } from '@/lib/api'
 import { safeHref } from '@/lib/safeHref'
 
@@ -191,6 +192,7 @@ export function renderBlocks(
       const href = embedSrc ? null : safeHref(block.embed_url)
       return withContainer(
         <figure className="my-6">
+          <MediaBlockHeading heading={block.heading} />
           {embedSrc ? (
             <div className="aspect-video overflow-hidden rounded-xl bg-slate-100">
               <iframe
@@ -234,7 +236,15 @@ export function renderBlocks(
       const wrapped = !!resolveContainer(block.container_style)
       return withContainer(
         <figure className={wrapped ? '' : 'my-6 rounded-xl border border-border bg-white p-4'}>
-          <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-black">Audio</p>
+          {/* A creator-supplied heading replaces the stock "Audio"
+              label rather than stacking above it: two labels on one
+              player is noise, and "Audio" is only there to say what
+              the thing is when nobody has said anything better. */}
+          {block.heading?.trim() ? (
+            <MediaBlockHeading heading={block.heading} />
+          ) : (
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-black">Audio</p>
+          )}
           <audio controls className="w-full" src={resolveUrl(asset.file_url)} />
           {block.caption && <figcaption className="mt-2 text-[12px] text-black">{block.caption}</figcaption>}
         </figure>,
@@ -244,6 +254,7 @@ export function renderBlocks(
 
     if (t === 'file_download' && block.media_asset) return withContainer(
       <div className="my-4">
+        <MediaBlockHeading heading={block.heading} />
         <a
           href={resolveUrl(block.media_asset.file_url)}
           download

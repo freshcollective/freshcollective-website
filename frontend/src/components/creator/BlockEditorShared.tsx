@@ -11,6 +11,7 @@ import Link from 'next/link'
 import { apiUrl } from '@/lib/api'
 import { exerciseContentToRichText } from '@/lib/exerciseSteps'
 import CollectivePaletteColourPicker from '@/components/creator/CollectivePaletteColourPicker'
+import MediaBlockHeading from '@/components/spaces/MediaBlockHeading'
 import { useCollectivePalette } from '@/components/collective/CollectivePaletteContext'
 import {
   COLUMNS_VARIANTS,
@@ -529,6 +530,7 @@ function renderBlockPreviewInner({
     if (embed) {
       return (
         <figure className="my-7">
+          <MediaBlockHeading heading={block.heading} />
           <div className="overflow-hidden rounded-xl bg-black" style={{ aspectRatio: '16/9' }}>
             <iframe
               src={embed}
@@ -559,6 +561,7 @@ function renderBlockPreviewInner({
     if (asset) {
       return (
         <figure className="my-6">
+          <MediaBlockHeading heading={block.heading} />
           <audio controls className="w-full" src={resolveAssetUrl(asset.file_url)} />
           {block.caption && (
             <figcaption className="mx-auto mt-3 max-w-md text-center text-[13px] italic leading-relaxed text-slate-500">
@@ -577,7 +580,9 @@ function renderBlockPreviewInner({
   }
 
   if (t === 'file_download') return (
-    <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+    <div>
+      <MediaBlockHeading heading={block.heading} />
+      <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-white text-[16px] text-slate-500">↓</span>
       <div className="min-w-0 flex-1">
         {asset ? (
@@ -588,6 +593,7 @@ function renderBlockPreviewInner({
         ) : (
           <p className="text-[13.5px] italic text-slate-500">Click to attach a downloadable file.</p>
         )}
+      </div>
       </div>
     </div>
   )
@@ -819,6 +825,10 @@ export function BlockEditForm({
   // with no caption but has a legacy label (info/tip/warning), seed a
   // matching legacy chip key so the picker reflects what the reader
   // sees today.
+  // Media heading — its own column, so no block type has to give up
+  // its label or caption to carry it. Blank for every block authored
+  // before the field existed, which renders as no heading at all.
+  const [heading, setHeading] = useState(block.heading ?? '')
   const [caption, setCaption] = useState(
     block.block_type === 'callout'
       ? (block.caption
@@ -866,6 +876,9 @@ export function BlockEditForm({
       content: content || null,
       label: isImage ? labelForImage : (label || null),
       caption: caption || null,
+      // '' → null so clearing the field removes the heading rather
+      // than storing an empty string the renderers would have to trim.
+      heading: heading.trim() || null,
       embed_url: embedUrl || null,
       media_asset_id: mediaAssetId,
       resource_id: t === 'resource' ? resourceId : block.resource_id,
@@ -905,7 +918,7 @@ export function BlockEditForm({
     // Callback identity is stable across renders in every caller; the
     // effect is intentionally scoped to the tracked fields.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, label, caption, embedUrl, mediaAssetId, resourceId, containerStyle, imageAltUnset])
+  }, [content, label, caption, heading, embedUrl, mediaAssetId, resourceId, containerStyle, imageAltUnset])
 
   /** Upload an image directly from the writer's device to this
    *  collective's Asset Library. On success the returned asset is
@@ -1086,6 +1099,16 @@ export function BlockEditForm({
             </div>
           )}
           <div>
+            <label className="field-label">Heading (optional)</label>
+            <input
+              value={heading}
+              onChange={e => setHeading(e.target.value)}
+              className="field-input"
+              placeholder="This week's practice"
+              maxLength={300}
+            />
+          </div>
+          <div>
             <label className="field-label">Caption (optional)</label>
             <input value={caption} onChange={e => setCaption(e.target.value)} className="field-input" placeholder="Video description…" />
           </div>
@@ -1108,6 +1131,16 @@ export function BlockEditForm({
             <audio controls className="w-full" src={resolveAssetUrl(assets.find(a => a.id === mediaAssetId)!.file_url)} />
           )}
           <div>
+            <label className="field-label">Heading (optional)</label>
+            <input
+              value={heading}
+              onChange={e => setHeading(e.target.value)}
+              className="field-input"
+              placeholder="Morning meditation"
+              maxLength={300}
+            />
+          </div>
+          <div>
             <label className="field-label">Caption (optional)</label>
             <input value={caption} onChange={e => setCaption(e.target.value)} className="field-input" placeholder="Audio description…" />
           </div>
@@ -1124,6 +1157,16 @@ export function BlockEditForm({
               onChange={setMediaAssetId}
               accept={['document', 'other', 'audio', 'image']}
               emptyMessage="No files in this collective's Assets yet."
+            />
+          </div>
+          <div>
+            <label className="field-label">Heading (optional)</label>
+            <input
+              value={heading}
+              onChange={e => setHeading(e.target.value)}
+              className="field-input"
+              placeholder="Workbook"
+              maxLength={300}
             />
           </div>
           <div>

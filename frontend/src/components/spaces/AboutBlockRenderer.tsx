@@ -7,6 +7,7 @@ import {
   resolveContainerPalette,
 } from '@/lib/calloutPalette'
 import RichTextRenderer from '@/components/RichTextRenderer'
+import MediaBlockHeading from '@/components/spaces/MediaBlockHeading'
 import EmbedRenderer from '@/components/EmbedRenderer'
 import ButtonBlock from '@/components/ButtonBlock'
 import { decodeColumns, gridTemplateForVariant } from '@/lib/columnsBlock'
@@ -152,6 +153,7 @@ function renderInner(
     if (embed) {
       return (
         <figure>
+          <MediaBlockHeading heading={block.heading} />
           <div className="overflow-hidden rounded-xl bg-black" style={{ aspectRatio: '16/9' }}>
             <iframe
               src={embed}
@@ -197,6 +199,7 @@ function renderInner(
     if (!asset) return null
     return (
       <div className={wrapped ? '' : 'rounded-xl border border-border bg-white p-4'}>
+        <MediaBlockHeading heading={block.heading} />
         {block.caption && <p className="mb-2 text-[13px] font-medium text-navy-900">{block.caption}</p>}
         <audio controls className="w-full" src={resolveAssetUrl(asset.file_url)} />
       </div>
@@ -205,7 +208,12 @@ function renderInner(
 
   if (t === 'file_download') {
     if (!asset) return null
+    // The heading sits outside the anchor: it titles the download, it
+    // is not part of the link's accessible name. Without a heading the
+    // fragment renders exactly the anchor it always did.
     return (
+      <div>
+        <MediaBlockHeading heading={block.heading} />
       <a
         href={resolveAssetUrl(asset.file_url)}
         download
@@ -223,6 +231,7 @@ function renderInner(
           <p className="text-[12px] text-black">{asset.original_filename}</p>
         </div>
       </a>
+      </div>
     )
   }
 

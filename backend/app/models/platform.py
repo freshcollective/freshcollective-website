@@ -2116,6 +2116,15 @@ class PathwayStepBlock(Base):
     label: Mapped[str | None] = mapped_column(String(300), nullable=True)
     # Caption shown below media or link blocks
     caption: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Optional creator-supplied title for media blocks (video, audio,
+    # file download). Deliberately its own column: ``label`` is the
+    # download button's text on file blocks and ``caption`` is the
+    # figcaption on the other two, so neither was free across all
+    # three — and rendering a field that is currently written but
+    # never shown would have surfaced stray text on published
+    # pages. NULL on every pre-existing row. See migration 151.
+    heading: Mapped[str | None] = mapped_column(String(300), nullable=True)
     # External URL (video embed, link href, external image)
     embed_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     # FK to media library asset (image, audio, file_download)
@@ -2211,6 +2220,15 @@ class PathwayAboutBlock(Base):
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     label: Mapped[str | None] = mapped_column(String(300), nullable=True)
     caption: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Optional creator-supplied title for media blocks (video, audio,
+    # file download). Deliberately its own column: ``label`` is the
+    # download button's text on file blocks and ``caption`` is the
+    # figcaption on the other two, so neither was free across all
+    # three — and rendering a field that is currently written but
+    # never shown would have surfaced stray text on published
+    # pages. NULL on every pre-existing row. See migration 151.
+    heading: Mapped[str | None] = mapped_column(String(300), nullable=True)
     embed_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     media_asset_id: Mapped[str | None] = mapped_column(
         String,
