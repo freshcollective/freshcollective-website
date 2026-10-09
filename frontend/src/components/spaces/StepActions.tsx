@@ -65,8 +65,15 @@ export default function StepActions({
         <section
           className="mb-10 rounded-2xl px-6 py-7 md:px-8 md:py-8"
           style={{
-            background: 'rgba(56,160,158,0.045)',
-            border: '1px solid rgba(56,160,158,0.14)',
+            // The rest of this section already themed off the
+            // Collective's palette — the button, the "Private to you"
+            // line, the text area's border — while the panel it all sat
+            // in stayed platform teal. In a Collective whose palette is
+            // warm, that read as a stray cool box. Fallbacks are the
+            // previous literals, so a Collective with no palette set
+            // looks exactly as it did.
+            background: 'var(--fc-accent-tint, rgba(56,160,158,0.045))',
+            border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.14))',
           }}
         >
           <div className="mb-4">
@@ -85,15 +92,16 @@ export default function StepActions({
             </p>
           </div>
 
+          {/* The three stock questions that used to sit here are gone.
+              Creators write their own prompt in the step content above,
+              and ours arrived underneath it — so a member who had just
+              been asked something specific was then asked three
+              generic things, and the creator's question was the one
+              that looked optional. The invitation to pause stays; what
+              to reflect on belongs to whoever wrote the step. */}
           <p className="mb-5 text-[15px] leading-relaxed text-navy-900/80">
             Take a moment before moving on.
           </p>
-
-          <ul className="mb-5 space-y-1.5 text-[14.5px] leading-relaxed text-black">
-            <li>What stood out?</li>
-            <li>What challenged you?</li>
-            <li>What feels important enough to remember?</li>
-          </ul>
 
           <textarea
             id="step-notes"

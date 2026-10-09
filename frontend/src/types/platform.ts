@@ -1310,6 +1310,10 @@ export interface StepBlock {
   content: string | null
   label: string | null
   caption: string | null
+  /** Optional creator-supplied title for a media block (video, audio,
+   *  file download). ``null`` on every block authored before the field
+   *  existed, and on every block type that does not offer it. */
+  heading: string | null
   embed_url: string | null
   media_asset_id: string | null
   media_asset: StepBlockMedia | null
@@ -1328,6 +1332,10 @@ export interface PathwayAboutBlock {
   content: string | null
   label: string | null
   caption: string | null
+  /** Optional creator-supplied title for a media block (video, audio,
+   *  file download). ``null`` on every block authored before the field
+   *  existed, and on every block type that does not offer it. */
+  heading: string | null
   embed_url: string | null
   media_asset_id: string | null
   media_asset: StepBlockMedia | null
@@ -1815,6 +1823,8 @@ export interface EditorBlock {
   content: string | null
   label: string | null
   caption: string | null
+  /** Optional media-block title. See ``StepBlock.heading``. */
+  heading: string | null
   embed_url: string | null
   media_asset_id: string | null
   media_asset: StepBlockMedia | null

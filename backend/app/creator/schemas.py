@@ -1522,6 +1522,9 @@ class BlockResourceInfo(BaseModel):
     scope: str
 
 
+# ``heading`` — optional creator-supplied title for media blocks. Its own
+# column rather than a reuse of ``label``/``caption``, neither of which
+# was free across video, audio and file download; see migration 151.
 class StepBlockResponse(BaseModel):
     model_config = {"from_attributes": True}
     id: str
@@ -1531,6 +1534,7 @@ class StepBlockResponse(BaseModel):
     content: str | None
     label: str | None
     caption: str | None
+    heading: str | None
     embed_url: str | None
     media_asset_id: str | None
     media_asset: BlockMediaInfo | None = None
@@ -1547,6 +1551,7 @@ class StepBlockCreateRequest(BaseModel):
     content: str | None = None
     label: str | None = None
     caption: str | None = None
+    heading: str | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
     resource_id: str | None = None
@@ -1569,6 +1574,7 @@ class StepBlockUpdateRequest(BaseModel):
     content: str | None = None
     label: str | None = None
     caption: str | None = None
+    heading: str | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
     resource_id: str | None = None
@@ -1602,6 +1608,7 @@ class AboutBlockResponse(BaseModel):
     content: str | None
     label: str | None
     caption: str | None
+    heading: str | None
     embed_url: str | None
     media_asset_id: str | None
     media_asset: BlockMediaInfo | None = None
@@ -1618,6 +1625,7 @@ class AboutBlockCreateRequest(BaseModel):
     content: str | None = None
     label: str | None = None
     caption: str | None = None
+    heading: str | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
     resource_id: str | None = None
@@ -1640,6 +1648,7 @@ class AboutBlockUpdateRequest(BaseModel):
     content: str | None = None
     label: str | None = None
     caption: str | None = None
+    heading: str | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
     resource_id: str | None = None
