@@ -1057,7 +1057,6 @@ export function BlockEditForm({
       <ColumnsEditor
         content={content}
         onContentChange={setContent}
-        onAutosave={onAutosave ? (() => onAutosave(buildPatch())) : undefined}
         onDone={onCancel}
         onDeleteRequested={onDeleteRequested}
         assets={assets}
@@ -2936,12 +2935,11 @@ function ColumnsPreviewCell({
  * envelope — no schema changes are needed.
  */
 function ColumnsEditor({
-  content, onContentChange, onAutosave, onDone, onDeleteRequested,
+  content, onContentChange, onDone, onDeleteRequested,
   assets, spaceSlug, uploadBusy, uploadError, onUploadFile,
 }: {
   content: string
   onContentChange: (v: string) => void
-  onAutosave?: () => void
   onDone: () => void
   onDeleteRequested?: () => void
   assets: CreatorMediaAsset[]
@@ -2953,17 +2951,32 @@ function ColumnsEditor({
   onUploadFile: (file: File, onUploaded: (asset: CreatorMediaAsset) => void) => void
 }) {
   const [payload, setPayload] = useState<ColumnsPayload>(() => decodeColumns(content))
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Upload state is shared by the whole form, so remember which column
   // asked — otherwise every image column shows "Uploading…" at once.
   const [uploadingCell, setUploadingCell] = useState<number | null>(null)
 
+  // Hand the new envelope up and stop. Saving is BlockEditForm's job:
+  // its autosave effect is keyed on ``content``, so this very call is
+  // what schedules the save, 700ms later, with the layout the creator
+  // just chose.
+  //
+  // This used to run a second 700ms timer of its own, and that timer
+  // sent the WRONG content. The effect closes over the render it ran
+  // in, and that render still carried the ``onAutosave`` prop built
+  // before ``onContentChange`` updated the parent — so ``buildPatch``
+  // inside it read the *previous* content. Changing the layout then
+  // fired two PATCHes microseconds apart, one correct and one carrying
+  // the layout the creator had just moved away from, with nothing to
+  // order them. Whenever the stale one landed last, the block was
+  // persisted with the old variant: Creator Studio kept showing the
+  // new layout, because it renders this local payload, while the
+  // published step showed the old one and parked columns reappeared.
+  //
+  // The parent's effect does not have this problem, because it re-runs
+  // whenever ``content`` changes and so always closes over a fresh
+  // ``buildPatch``.
   useEffect(() => {
     onContentChange(encodeColumns(payload))
-    if (!onAutosave) return
-    if (debounce.current) clearTimeout(debounce.current)
-    debounce.current = setTimeout(() => onAutosave(), 700)
-    return () => { if (debounce.current) clearTimeout(debounce.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload])
 
