@@ -169,8 +169,44 @@ describe('the creator toggle', () => {
   test('it is labelled as agreed and defaults to on', () => {
     const source = code(PREVIEW)
     assert.match(source, /Allow members to write a response/)
+    assert.match(
+      source,
+      /Members can privately write and save their responses to this\s+exercise\./,
+    )
     // NULL reads as on, so existing Exercise blocks need no republishing.
     assert.match(source, /useState\(\s*block\.response_enabled \?\? true,?\s*\)/)
+  })
+
+  test('it is presented as a field, like every other control here', () => {
+    // It shipped as a bare checkbox with no ``field-label`` — the only
+    // control in this editor not following that convention — which made
+    // it read as loose body text after the eight-row instructions
+    // editor and easy to scan past entirely.
+    const source = code(PREVIEW)
+    const start = source.indexOf("{t === 'exercise' && (")
+    assert.ok(start !== -1, 'the exercise editor branch has moved')
+    const branch = source.slice(start, source.indexOf("{t === 'image' && (", start))
+    const fieldLabels = branch.match(/className="field-label"/g) ?? []
+    assert.equal(
+      fieldLabels.length,
+      3,
+      'Title, Instructions and Member response must each carry a field-label',
+    )
+    assert.match(branch, /<label className="field-label">Member response<\/label>/)
+  })
+
+  test('it follows the house toggle pattern', () => {
+    const source = code(PREVIEW)
+    const start = source.indexOf("{t === 'exercise' && (")
+    const branch = source.slice(start, source.indexOf("{t === 'image' && (", start))
+    assert.match(branch, /cursor-pointer/)
+    assert.match(branch, /accent-teal-500/)
+  })
+
+  test('the checkbox is bound to the toggle state in both directions', () => {
+    const source = code(PREVIEW)
+    assert.match(source, /checked=\{responseEnabled\}/)
+    assert.match(source, /onChange=\{\(e\) => setResponseEnabled\(e\.target\.checked\)\}/)
   })
 
   test('it is included in the save payload, for exercises only', () => {
