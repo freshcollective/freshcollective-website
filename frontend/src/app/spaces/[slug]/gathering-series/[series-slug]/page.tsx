@@ -11,6 +11,7 @@ import { resolveMediaUrl } from '@/lib/api'
 import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import SeriesSchedule from './SeriesSchedule'
+import RegularSessions from './RegularSessions'
 import { SidebarWaysToJoin, SidebarYourAccess } from './SeriesSidebar'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import type { PathwayAboutBlock } from '@/types/platform'
@@ -34,6 +35,12 @@ import { formatCalendarDate } from '@/lib/dateTime'
 
 interface Props {
   params: Promise<{ slug: string; 'series-slug': string }>
+  /** ``?checkout=success`` is what a member arrives with after buying a
+   *  term pass — this page is the purchase return destination (see
+   *  ``returnBase`` in ``SeriesSidebar``). It is the moment "Reserve
+   *  your regular sessions" is most useful, so the card opens expanded
+   *  rather than waiting to be found. */
+  searchParams?: Promise<{ checkout?: string }>
 }
 
 interface AccessSummary {
@@ -115,8 +122,11 @@ function formatDateRange(startsAt: string, endsAt: string | null): string {
   return `${start} – ${formatCalendarDate(endsAt)}`
 }
 
-export default async function MemberGatheringSeriesPage({ params }: Props) {
+export default async function MemberGatheringSeriesPage({
+  params, searchParams,
+}: Props) {
   const { slug, 'series-slug': seriesSlug } = await params
+  const justPurchased = (await searchParams)?.checkout === 'success'
 
   const [detail, aboutBlocks, options, space]: [
     SeriesDetail | null,
@@ -256,7 +266,22 @@ export default async function MemberGatheringSeriesPage({ params }: Props) {
             </div>
           )}
           {hasAccess ? (
-            <SidebarYourAccess access={detail.access} palette={collectivePalette} />
+            <>
+              <SidebarYourAccess access={detail.access} palette={collectivePalette} />
+              {/* Offered the moment access is confirmed — including on
+                  the hop back from Stripe — and still here on every
+                  later visit for anyone who skipped it. Renders nothing
+                  when the Series has no remaining sessions to
+                  reserve. */}
+              <div className="mt-4">
+                <RegularSessions
+                  spaceSlug={slug}
+                  seriesSlug={seriesSlug}
+                  palette={collectivePalette}
+                  justPurchased={justPurchased}
+                />
+              </div>
+            </>
           ) : detail.member_plan_state ? (
             /* Suspended member — banner already tells them what to
                do; do not add a fresh ways-to-join CTA. */
