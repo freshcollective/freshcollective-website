@@ -11,14 +11,36 @@
  * visitor is authenticated, and mounted directly by WorldShell on
  * member routes that do not use SiteShell.
  *
- * Breakpoint note: the horizontal bar appears at ``lg`` rather than
- * ``md``. Six destinations at 14px do not fit beside the brand lockup
- * and the auth cluster in a 768px viewport — they either wrap inside a
- * 64px-tall header or push it into horizontal overflow, and tightening
- * the gaps cannot recover the ~280px needed. The tablet band therefore
- * uses the drawer, where every destination has room. Nothing is hidden
- * from anyone at any width: below ``lg`` the whole nav is in the
- * drawer, Creator Studio included.
+ * Breakpoint note: the horizontal bar appears at ``min-[1152px]``, not
+ * at ``lg``.
+ *
+ * It used to appear at ``lg`` (1024px), which is narrower than the row
+ * actually needs, and the failure was not graceful. The brand lockup
+ * and the auth cluster are both ``shrink-0``, so the nav is the only
+ * item that can give — but its links are ``whitespace-nowrap``, so when
+ * the nav box shrinks below its contents the links overflow it rather
+ * than shrinking, and nothing clips them. Being ``justify-center``, the
+ * spill is symmetric: "Your World" lands on the wordmark and "Creator
+ * Studio" on the notification bell. Measured in Chromium, 14.1px over
+ * each side at 1024px.
+ *
+ * 1152px is ``max-w-6xl`` — the width at which Container stops growing.
+ * Choosing it means the bar only exists where the row's geometry is
+ * fixed (content box 1072px, nav box 702px, nav needs 634px), so there
+ * is no width-dependent squeeze left: above the breakpoint nothing
+ * moves, and below it the drawer has room for everything.
+ *
+ * The nav keeps ``gap-4`` at every width. It previously took
+ * ``xl:gap-8``, which added 80px to what the nav needed (five gaps)
+ * while the Container's own ``xl:gap-8`` took another 32px off the nav
+ * box — leaving the 1280px-and-up band 9.9px from overlapping too.
+ *
+ * All three visibility switches below share this one threshold. They
+ * have to: moving the nav without the auth cluster would show the
+ * destinations while the bell, avatar and logout vanished.
+ *
+ * Nothing is hidden from anyone at any width: below the breakpoint the
+ * whole nav is in the drawer, Creator Studio included.
  *
  * Client component: needs `usePathname` for active-state, and reuses
  * NotificationBell + LogoutButton + Avatar which are all client.
@@ -77,7 +99,7 @@ export default function WorldHeader({ user, discoveryOn, waysToConnectOn }: Prop
         {/* Desktop nav — peer destinations with active state */}
         <nav
           aria-label="Member"
-          className="hidden min-w-0 flex-1 items-center justify-center gap-4 lg:flex xl:gap-8"
+          className="hidden min-w-0 flex-1 items-center justify-center gap-4 min-[1152px]:flex"
         >
           {items.map(({ href, label }) => {
             const active = isNavItemActive(pathname, href)
@@ -100,7 +122,7 @@ export default function WorldHeader({ user, discoveryOn, waysToConnectOn }: Prop
         </nav>
 
         {/* Desktop auth cluster — notifications + profile shortcut + logout */}
-        <div className="hidden shrink-0 items-center gap-3 lg:flex">
+        <div className="hidden shrink-0 items-center gap-3 min-[1152px]:flex">
           <NotificationBell initialCount={0} />
           <Link
             href="/settings/profile"
@@ -165,7 +187,7 @@ function WorldMobileNav({
   }
 
   return (
-    <div className="lg:hidden">
+    <div className="min-[1152px]:hidden">
       <button
         onClick={() => setOpen(!open)}
         aria-label={open ? 'Close menu' : 'Open menu'}
