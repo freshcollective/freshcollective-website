@@ -124,7 +124,7 @@ export function renderBlocks(
       const payload = decodeColumns(block.content)
       return withContainer(
         <div
-          className="fc-columns-grid grid gap-6"
+          className="fc-columns-grid my-1.5 grid gap-6"
           style={{ ['--fc-cols' as string]: gridTemplateForVariant(payload.layout.variant) }}
         >
           {payload.cells.map((cell, i) => (
@@ -148,7 +148,13 @@ export function renderBlocks(
     }
 
     if (t === 'text' && block.content) return withContainer(
-      <div>
+      // ``my-1.5`` — 6px. Content and Columns were the only block types
+      // carrying no outer margin, so two adjacent paragraphs sat flush
+      // against each other while every other pairing had 16–32px. This
+      // gives them a floor without touching the types that already have
+      // their own rhythm: adjacent margins collapse, so a Content block
+      // beside an image still resolves to the image's 24px, not 30px.
+      <div className="my-1.5">
         <RichTextRenderer content={block.content} />
       </div>,
       block, id,

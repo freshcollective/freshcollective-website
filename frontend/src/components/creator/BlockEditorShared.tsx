@@ -480,7 +480,9 @@ function renderBlockPreviewInner({
   // travel too far between rows. Warm ink colour on white for a
   // page-in-hand feeling rather than screen text.
   if (t === 'text') return (
-    <div className="max-w-[70ch] text-[16px] font-normal leading-[1.8] tracking-[0.005em] text-navy-900/[0.88]">
+    // ``my-1.5`` matches the member renderer so adjacent paragraphs
+    // preview with the same 6px floor they will have on the page.
+    <div className="my-1.5 max-w-[70ch] text-[16px] font-normal leading-[1.8] tracking-[0.005em] text-navy-900/[0.88]">
       {block.content
         ? <RichTextRenderer content={block.content} />
         : <span className="italic text-slate-400">Empty paragraph — click to write.</span>}
@@ -2753,7 +2755,8 @@ function PromptEditor({
 function ColumnsPreview({ content }: { content: string | null }) {
   const payload = decodeColumns(content)
   return (
-    <div className="my-1">
+    // 6px, matching the member renderer's Columns block.
+    <div className="my-1.5">
       <div
         className="fc-columns-grid grid gap-4 sm:gap-5"
         style={{ ['--fc-cols' as string]: gridTemplateForVariant(payload.layout.variant) }}
