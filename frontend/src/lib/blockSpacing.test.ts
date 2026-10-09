@@ -10,7 +10,13 @@ import { dirname, join } from 'node:path'
  * Every block type in the Pathway renderer carried its own vertical
  * margin except Content and Columns, which had none — so two adjacent
  * paragraphs sat flush while every other pairing had between 16 and
- * 32px. Those two now carry 6px.
+ * 32px.
+ *
+ * Content now carries 16px and Columns 6px. Content was raised from 6px
+ * after review: 6px is smaller than the leading *inside* a paragraph, so
+ * two separate blocks still read as one piece of text. 16px is the
+ * smallest gap that reads as a break, and matches what the file and link
+ * cards already use.
  *
  * What these tests mostly protect is the restraint. Normalising every
  * block to 6px would have been "consistent" and would also have
@@ -96,21 +102,68 @@ function assertEveryMarginArm(arms: string[], expected: string): void {
   }
 }
 
-describe('the two block types that had no spacing now have 6px', () => {
-  test('Content carries my-1.5 in the Pathway renderer', () => {
-    assertEveryMarginArm(branchClasses(code(PATHWAY), 'text'), 'my-1.5')
+describe('the block types that had no spacing now have a floor', () => {
+  test('Content carries my-4 (16px) in the Pathway renderer', () => {
+    assertEveryMarginArm(branchClasses(code(PATHWAY), 'text'), 'my-4')
   })
 
-  test('Columns carries my-1.5 in the Pathway renderer', () => {
+  test('Columns still carries my-1.5 (6px)', () => {
+    // Deliberately not raised with Content. The refinement asked for was
+    // scoped to text blocks, and Columns already separates visually
+    // through its own internal gap.
     assertEveryMarginArm(branchClasses(code(PATHWAY), 'columns'), 'my-1.5')
   })
 
   test('the Creator Studio preview matches, so the preview is honest', () => {
-    assertEveryMarginArm(branchClasses(code(PREVIEW), 'text'), 'my-1.5')
+    assertEveryMarginArm(branchClasses(code(PREVIEW), 'text'), 'my-4')
     // Columns previews through ColumnsPreview, which carries its own.
     const preview = code(PREVIEW)
     const columnsPreview = preview.slice(preview.indexOf('function ColumnsPreview'))
     assert.match(columnsPreview.slice(0, 400), /className="my-1\.5"/)
+  })
+
+  test('the gap is on the block, not on its paragraphs', () => {
+    // Requirement: spacing between blocks must not change the rhythm
+    // inside one. RichTextRenderer owns paragraph spacing and must not
+    // have been touched to achieve this.
+    const rt = code('components/RichTextRenderer.tsx')
+    const para = rt.slice(rt.indexOf("case 'paragraph'"), rt.indexOf("case 'paragraph'") + 400)
+    assert.ok(
+      !/\bmy-4\b/.test(para),
+      'paragraph spacing was changed instead of block spacing',
+    )
+  })
+
+  test('a tinted Content block drops the margin', () => {
+    // ``withContainerBase`` wraps with its own padding, so an inner
+    // margin cannot collapse out and would read as unexplained space
+    // inside the tint. Both surfaces compute this.
+    assert.match(code(PATHWAY), /const wrapped = !!resolveContainer\(block\.container_style\)/)
+    assert.match(
+      code(PATHWAY),
+      /className=\{wrapped \? undefined : 'my-4'\}/,
+    )
+    assert.match(
+      code(PREVIEW),
+      /wrapped \? '' : 'my-4 '/,
+    )
+  })
+
+  test('16px cannot double against a neighbour', () => {
+    // Normal flow, so adjacent margins collapse: the gap is max(16, n),
+    // never 16+n. The guard is that no wrapper turns this into a flex
+    // container or a space-y, which is asserted below — this test pins
+    // that the margin is a plain my-* and not a padding, which would
+    // not collapse.
+    const arms = branchClasses(code(PATHWAY), 'text')
+    assert.ok(
+      arms.some((a) => /\bmy-4\b/.test(a)),
+      'the gap must be a collapsing margin',
+    )
+    assert.ok(
+      !arms.some((a) => /\bpy-\d/.test(a)),
+      'padding would not collapse and would double against neighbours',
+    )
   })
 })
 

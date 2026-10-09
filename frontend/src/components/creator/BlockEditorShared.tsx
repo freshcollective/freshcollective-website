@@ -479,15 +479,19 @@ function renderBlockPreviewInner({
   // reading. Line length capped at ~70ch so the eye doesn't have to
   // travel too far between rows. Warm ink colour on white for a
   // page-in-hand feeling rather than screen text.
-  if (t === 'text') return (
-    // ``my-1.5`` matches the member renderer so adjacent paragraphs
-    // preview with the same 6px floor they will have on the page.
-    <div className="my-1.5 max-w-[70ch] text-[16px] font-normal leading-[1.8] tracking-[0.005em] text-navy-900/[0.88]">
-      {block.content
-        ? <RichTextRenderer content={block.content} />
-        : <span className="italic text-slate-400">Empty paragraph — click to write.</span>}
-    </div>
-  )
+  if (t === 'text') {
+    // Matches the member renderer, including dropping the margin inside
+    // a tinted container — ``BlockPreview`` wraps with its own padding,
+    // so the preview would otherwise show space the page will not.
+    const wrapped = !!resolveContainerPalette(block.container_style, collectivePalette)
+    return (
+      <div className={`${wrapped ? '' : 'my-4 '}max-w-[70ch] text-[16px] font-normal leading-[1.8] tracking-[0.005em] text-navy-900/[0.88]`}>
+        {block.content
+          ? <RichTextRenderer content={block.content} />
+          : <span className="italic text-slate-400">Empty paragraph — click to write.</span>}
+      </div>
+    )
+  }
 
   // ── Image ─────────────────────────────────────────────────────
   // Figures breathe — generous vertical margin, softer corner

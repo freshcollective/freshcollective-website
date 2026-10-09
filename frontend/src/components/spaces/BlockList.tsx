@@ -147,18 +147,32 @@ export function renderBlocks(
       return React.createElement(level, { key: id, className: cls }, block.content)
     }
 
-    if (t === 'text' && block.content) return withContainer(
-      // ``my-1.5`` — 6px. Content and Columns were the only block types
-      // carrying no outer margin, so two adjacent paragraphs sat flush
-      // against each other while every other pairing had 16–32px. This
-      // gives them a floor without touching the types that already have
-      // their own rhythm: adjacent margins collapse, so a Content block
-      // beside an image still resolves to the image's 24px, not 30px.
-      <div className="my-1.5">
-        <RichTextRenderer content={block.content} />
-      </div>,
-      block, id,
-    )
+    if (t === 'text' && block.content) {
+      // ``my-4`` — 16px between adjacent Content blocks. 6px proved too
+      // tight to read as a break: two separate blocks still looked like
+      // one, because the gap between them was smaller than the leading
+      // inside them.
+      //
+      // Set on the block, not on its paragraphs, so the rhythm *within*
+      // a block is untouched — a block of three lines still reads as
+      // three lines. Adjacent margins collapse, so this is a floor and
+      // not an addition: a Content block beside an image still resolves
+      // to the image's 24px, and beside a file card to that card's own
+      // 16px. Nothing with a larger margin moves.
+      //
+      // Dropped when the block sits in a soft-tinted container: that
+      // wrapper has its own padding, so an inner margin cannot collapse
+      // out of it and would instead show up as 16px of unexplained
+      // space inside the tint. Same reasoning as ``audio``,
+      // ``reflection_prompt`` and ``exercise`` above.
+      const wrapped = !!resolveContainer(block.container_style)
+      return withContainer(
+        <div className={wrapped ? undefined : 'my-4'}>
+          <RichTextRenderer content={block.content} />
+        </div>,
+        block, id,
+      )
+    }
 
     if (t === 'image') {
       const src = block.media_asset ? resolveUrl(block.media_asset.file_url) : block.embed_url
