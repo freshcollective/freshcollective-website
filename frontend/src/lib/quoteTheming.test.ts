@@ -131,8 +131,23 @@ describe('the Pause & Reflect panel', () => {
   test('the parts that were already themed still are', () => {
     // Guards against this change accidentally replacing a working
     // variable with a literal while moving things around.
-    const source = code(ACTIONS)
+    //
+    // Reads the panel *and* the shared component it now delegates the
+    // box to: the "Private to you" line and the save button moved into
+    // ``PrivateResponseArea`` when Exercise blocks needed the same
+    // thing. The guarantee is that these are still palette variables
+    // and not literals, which does not depend on which file they are
+    // in.
+    const source = code(ACTIONS) + '\n' + code('components/spaces/PrivateResponseArea.tsx')
     assert.match(source, /var\(--fc-accent,\s*#0f766e\)/)   // "Private to you"
     assert.match(source, /var\(--fc-accent,\s*#38A09E\)/)   // save button
+  })
+
+  test('the panel itself still themes its own background and border', () => {
+    // These stayed in StepActions — the Exercise block deliberately has
+    // no panel of its own, so this is not shared.
+    const source = code(ACTIONS)
+    assert.match(source, /var\(--fc-accent-tint,\s*rgba\(56,160,158,0\.045\)\)/)
+    assert.match(source, /var\(--fc-accent-line,\s*rgba\(56,160,158,0\.14\)\)/)
   })
 })
