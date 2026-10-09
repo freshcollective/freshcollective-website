@@ -176,13 +176,21 @@ export function resolveAssetUrl(url: string): string {
  * is owned by the block itself:
  *   - callout — has its own colour + purpose palette
  *   - reflection_prompt — journal-quote treatment
- *   - exercise — structured step-row card
  * Adding a generic container-style selector on top of those would
  * duplicate the choice and feel like "another Content block".
+ *
+ * ``exercise`` was excluded on that same reasoning and has now been
+ * included, because the card it owns is a neutral white plate rather
+ * than a colour choice — so a container tint replaces it instead of
+ * competing with it. Creators asked for the option. Both member
+ * renderers already read ``container_style`` on exercise rows and drop
+ * the plate when one is set, and rows with a style saved before the
+ * editor offered it exist, so this exposes behaviour the data and the
+ * renderers were already carrying.
  */
 export const CONTAINER_STYLE_BLOCK_TYPES: ReadonlySet<StepBlockType> = new Set([
   'text', 'video_embed', 'audio', 'embed',
-  'file_download', 'resource',
+  'file_download', 'resource', 'exercise',
 ])
 // Deliberately excluded:
 //   - image  — image presentation gets its own controls (width /
@@ -665,8 +673,12 @@ function renderBlockPreviewInner({
   // ── Exercise — a warm plate with a serif title ──────────────
   if (t === 'exercise') {
     const body = exerciseContentToRichText(block.content)
+    // BlockPreview wraps this in the chosen container, with its own
+    // border and padding. Keeping the plate as well would show a card
+    // inside a tinted box — which is not what the member page does.
+    const wrapped = !!resolveContainerPalette(block.container_style, collectivePalette)
     return (
-      <div className="my-6 rounded-xl border border-slate-200 bg-slate-50/70 px-6 py-5">
+      <div className={wrapped ? '' : 'my-6 rounded-xl border border-slate-200 bg-slate-50/70 px-6 py-5'}>
         <div className="mb-2 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-700">
           <span aria-hidden="true" className="text-[13px]">✏</span>
           Exercise
