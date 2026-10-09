@@ -23,13 +23,28 @@ import { dirname, join } from 'node:path'
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (p: string) => readFileSync(join(SRC, p), 'utf8')
 
+/** StepActions plus the shared component it now delegates the text area
+ *  to.
+ *
+ *  The box, the save button, the "Saved." dwell and the privacy line
+ *  moved into ``PrivateResponseArea`` so Exercise blocks could offer the
+ *  same thing without a second copy. These assertions care that a
+ *  member still gets them, not which file they live in — so they read
+ *  both. What stayed in StepActions is the part that is specific to
+ *  reflections: the endpoint, the field name, and the step-completion
+ *  flow that also persists the text. */
+const reflectionSurface = () =>
+  code('components/spaces/StepActions.tsx') +
+  '\n' +
+  code('components/spaces/PrivateResponseArea.tsx')
+
 /** The component source with JSX comments stripped.
  *
  * The removal is explained in a comment that names the questions it
  * removed, so a blunt substring search would match the explanation and
  * report the questions as still present. */
-function code(): string {
-  return read('components/spaces/StepActions.tsx')
+function code(path = 'components/spaces/StepActions.tsx'): string {
+  return read(path)
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
@@ -74,10 +89,14 @@ describe('the invitation to pause stays', () => {
 
 describe('reflection still saves, persists and stays private', () => {
   test('the text area is still rendered and still bound to notes', () => {
-    const source = code()
-    assert.match(source, /<textarea/)
-    assert.match(source, /id="step-notes"/)
-    assert.match(source, /value=\{notes\}/)
+    const surface = reflectionSurface()
+    assert.match(surface, /<textarea/)
+    // StepActions still names the element and still owns the value —
+    // ``handleComplete`` posts the same text, so moving the state into
+    // the shared component would have stopped completion persisting it.
+    assert.match(code('components/spaces/StepActions.tsx'), /textareaId="step-notes"/)
+    assert.match(code('components/spaces/StepActions.tsx'), /value=\{notes\}/)
+    assert.match(surface, /id=\{textareaId\}/)
   })
 
   test('the save round-trip is unchanged', () => {
@@ -94,10 +113,30 @@ describe('reflection still saves, persists and stays private', () => {
   })
 
   test('the privacy promise is still shown', () => {
-    assert.ok(code().includes('Private to you'))
+    assert.ok(reflectionSurface().includes('Private to you'))
   })
 
   test('the per-step reflection toggle still gates the section', () => {
     assert.match(code(), /reflectionEnabled/)
+  })
+
+  test('marking the step complete still persists the reflection', () => {
+    // ``handleComplete`` sends the current text alongside completion.
+    // This is why the shared component is controlled rather than owning
+    // the value, and it is the quietest thing the extraction could have
+    // broken.
+    const source = code()
+    const complete = source.slice(source.indexOf('async function handleComplete'))
+    assert.match(complete.slice(0, 400), /reflection_text: notes \|\| null/)
+  })
+
+  test('the save request itself is unchanged', () => {
+    // Same endpoint, same field, same credentials — the extraction
+    // moved presentation, not storage.
+    const source = code()
+    const save = source.slice(source.indexOf('async function handleSaveNotes'))
+    assert.match(save.slice(0, 500), /\$\{base\}\/notes/)
+    assert.match(save.slice(0, 500), /reflection_text: notes/)
+    assert.match(save.slice(0, 500), /credentials: 'include'/)
   })
 })

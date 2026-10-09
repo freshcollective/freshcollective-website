@@ -1522,6 +1522,11 @@ class BlockResourceInfo(BaseModel):
     scope: str
 
 
+# ``response_enabled`` — Exercise blocks only: whether members get a
+# private response area. Deliberately absent from the About-block
+# schemas, because ``pathway_about_blocks`` has no such column and
+# public About pages must stay non-interactive.
+#
 # ``heading`` — optional creator-supplied title for media blocks. Its own
 # column rather than a reuse of ``label``/``caption``, neither of which
 # was free across video, audio and file download; see migration 151.
@@ -1535,6 +1540,7 @@ class StepBlockResponse(BaseModel):
     label: str | None
     caption: str | None
     heading: str | None
+    response_enabled: bool | None
     embed_url: str | None
     media_asset_id: str | None
     media_asset: BlockMediaInfo | None = None
@@ -1552,6 +1558,7 @@ class StepBlockCreateRequest(BaseModel):
     label: str | None = None
     caption: str | None = None
     heading: str | None = None
+    response_enabled: bool | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
     resource_id: str | None = None
@@ -1575,6 +1582,7 @@ class StepBlockUpdateRequest(BaseModel):
     label: str | None = None
     caption: str | None = None
     heading: str | None = None
+    response_enabled: bool | None = None
     embed_url: str | None = None
     media_asset_id: str | None = None
     resource_id: str | None = None

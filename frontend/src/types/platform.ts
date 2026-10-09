@@ -1314,6 +1314,10 @@ export interface StepBlock {
    *  file download). ``null`` on every block authored before the field
    *  existed, and on every block type that does not offer it. */
   heading: string | null
+  /** Exercise blocks only: whether members get a private response
+   *  area. ``null`` means enabled — every block authored before the
+   *  field existed. Absent from ``PathwayAboutBlock`` on purpose. */
+  response_enabled: boolean | null
   embed_url: string | null
   media_asset_id: string | null
   media_asset: StepBlockMedia | null
@@ -1825,6 +1829,16 @@ export interface EditorBlock {
   caption: string | null
   /** Optional media-block title. See ``StepBlock.heading``. */
   heading: string | null
+  /** Exercise blocks only, and step blocks only: whether members get a
+   *  private response area. ``null`` means enabled.
+   *
+   *  Optional here, unlike on ``StepBlock``, because ``EditorBlock`` is
+   *  the shape both the step editor and the About-page editor pass
+   *  through — and ``pathway_about_blocks`` has no such column. Making
+   *  it required told AboutPageEditor to supply a field that cannot
+   *  exist, which is TypeScript correctly noticing that About blocks
+   *  and step blocks are not the same thing. */
+  response_enabled?: boolean | null
   embed_url: string | null
   media_asset_id: string | null
   media_asset: StepBlockMedia | null

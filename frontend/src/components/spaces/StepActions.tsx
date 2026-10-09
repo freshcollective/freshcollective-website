@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiUrl } from '@/lib/api'
+import PrivateResponseArea from './PrivateResponseArea'
 
 interface StepActionsProps {
   spaceSlug: string
@@ -24,7 +25,6 @@ export default function StepActions({
   const router = useRouter()
   const [notes, setNotes] = useState(initialNotes ?? '')
   const [completed, setCompleted] = useState(initialCompleted)
-  const [notesSaved, setNotesSaved] = useState(false)
   const [justCompleted, setJustCompleted] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -44,17 +44,18 @@ export default function StepActions({
     }
   }
 
-  async function handleSaveNotes() {
+  // Returns whether it saved. The "Saved." dwell and the failure
+  // message now live in PrivateResponseArea, so both this panel and
+  // Exercise blocks report the same thing the same way. The request
+  // itself — endpoint, field, credentials — is unchanged.
+  async function handleSaveNotes(): Promise<boolean> {
     const res = await fetch(apiUrl(`${base}/notes`), {
       method: 'PATCH',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reflection_text: notes }),
     })
-    if (res.ok) {
-      setNotesSaved(true)
-      setTimeout(() => setNotesSaved(false), 2500)
-    }
+    return res.ok
   }
 
   return (
@@ -76,65 +77,17 @@ export default function StepActions({
             border: '1px solid var(--fc-accent-line, rgba(56,160,158,0.14))',
           }}
         >
-          <div className="mb-4">
-            <label
-              htmlFor="step-notes"
-              className="font-serif text-[20px] leading-snug text-navy-900"
-            >
-              <span aria-hidden="true">🌿</span>{' '}
-              <span>Pause &amp; Reflect</span>
-            </label>
-            <p
-              className="mt-1 text-[12px] font-medium uppercase tracking-[0.14em]"
-              style={{ color: 'var(--fc-accent, #0f766e)' }}
-            >
-              Private to you
-            </p>
-          </div>
-
-          {/* The three stock questions that used to sit here are gone.
-              Creators write their own prompt in the step content above,
-              and ours arrived underneath it — so a member who had just
-              been asked something specific was then asked three
-              generic things, and the creator's question was the one
-              that looked optional. The invitation to pause stays; what
-              to reflect on belongs to whoever wrote the step. */}
-          <p className="mb-5 text-[15px] leading-relaxed text-navy-900/80">
-            Take a moment before moving on.
-          </p>
-
-          <textarea
-            id="step-notes"
+          <PrivateResponseArea
+            textareaId="step-notes"
+            label={<><span aria-hidden="true">🌿</span>{' '}<span>Pause &amp; Reflect</span></>}
+            intro="Take a moment before moving on."
             value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={6}
+            onChange={setNotes}
+            onSave={handleSaveNotes}
+            saveLabel="Save reflection"
             placeholder="Write as much or as little as feels right."
-            className="w-full resize-none rounded-xl border bg-white px-5 py-4 text-[15px] leading-relaxed text-navy-900 placeholder:text-slate-300 transition-colors focus:outline-none focus:ring-2"
-            style={{
-              borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.20))',
-              fontFamily: 'inherit',
-            }}
+            rows={6}
           />
-          <div className="mt-3 flex items-center justify-between">
-            <button
-              onClick={handleSaveNotes}
-              disabled={!notes.trim()}
-              className="rounded-full px-4 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-              style={{
-                background: 'linear-gradient(135deg, var(--fc-accent, #38A09E) 0%, var(--fc-accent-strong, #55B8B6) 100%)',
-              }}
-            >
-              Save reflection
-            </button>
-            {notesSaved && (
-              <span
-                className="text-[12px]"
-                style={{ color: 'var(--fc-accent, #0f766e)' }}
-              >
-                Saved.
-              </span>
-            )}
-          </div>
         </section>
       )}
 

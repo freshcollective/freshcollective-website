@@ -13,6 +13,7 @@ import RichTextRenderer from '@/components/RichTextRenderer'
 import EmbedRenderer from '@/components/EmbedRenderer'
 import ButtonBlock from '@/components/ButtonBlock'
 import MediaBlockHeading from '@/components/spaces/MediaBlockHeading'
+import ExerciseResponse from '@/components/spaces/ExerciseResponse'
 import { resolveMediaUrl } from '@/lib/api'
 import { safeHref } from '@/lib/safeHref'
 
@@ -99,9 +100,25 @@ function withContainerBase(
   )
 }
 
+/** Where the member is, when they are somewhere a response belongs.
+ *
+ *  Passing this is what turns Exercise blocks interactive. It is
+ *  optional, and the omission is the feature: the Knowledge Guide
+ *  renders the same blocks as a continuous document and has no
+ *  reflection area of its own, and the public About pages have no
+ *  authenticated member at all. Neither passes a context, so neither
+ *  can render a response box — that exclusion is structural rather
+ *  than a condition someone has to remember. */
+export interface ExerciseResponseContext {
+  spaceSlug: string
+  pathwaySlug: string
+  stepSlug: string
+}
+
 export function renderBlocks(
   blocks: StepBlock[],
   collectivePalette: CollectivePaletteMeta | null,
+  exerciseContext?: ExerciseResponseContext,
 ): React.ReactNode {
   // Closure-scoped helpers so every callsite below reads from the
   // active collective palette without having to thread it through
@@ -410,6 +427,19 @@ export function renderBlocks(
             </p>
           )}
           {body && <RichTextRenderer content={body} />}
+          {/* The response area sits inside the exercise card, under a
+              hairline, so the instructions and the answer read as one
+              activity rather than two blocks. Rendered only where a
+              member and a step actually exist, and only while the
+              creator is still inviting a response. */}
+          {exerciseContext && block.response_enabled !== false && (
+            <ExerciseResponse
+              spaceSlug={exerciseContext.spaceSlug}
+              pathwaySlug={exerciseContext.pathwaySlug}
+              stepSlug={exerciseContext.stepSlug}
+              blockId={id}
+            />
+          )}
         </div>
       )
     }

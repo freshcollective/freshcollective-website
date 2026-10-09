@@ -12,6 +12,7 @@ import { apiUrl } from '@/lib/api'
 import { exerciseContentToRichText } from '@/lib/exerciseSteps'
 import CollectivePaletteColourPicker from '@/components/creator/CollectivePaletteColourPicker'
 import MediaBlockHeading from '@/components/spaces/MediaBlockHeading'
+import PrivateResponseArea from '@/components/spaces/PrivateResponseArea'
 import { useCollectivePalette } from '@/components/collective/CollectivePaletteContext'
 import {
   COLUMNS_VARIANTS,
@@ -662,6 +663,30 @@ function renderBlockPreviewInner({
             ? <RichTextRenderer content={body} />
             : <span className="italic text-slate-400">Walk the reader through the exercise…</span>}
         </div>
+        {/* What the member will see, read-only. It fetches nothing and
+            saves nothing: no endpoint is passed, the box starts empty,
+            and ``onSave`` resolves false without a request — so the
+            preview can neither read a real member's writing nor create
+            a response row. */}
+        {block.response_enabled !== false && (
+          <div
+            className="mt-5 border-t pt-5"
+            style={{ borderColor: 'var(--fc-accent-line, rgba(56,160,158,0.20))' }}
+          >
+            <PrivateResponseArea
+              textareaId={`exercise-response-preview-${block.id}`}
+              label="Your Response"
+              labelClassName="font-serif text-[17px] leading-snug text-navy-900"
+              value=""
+              onChange={() => {}}
+              onSave={async () => false}
+              saveLabel="Save response"
+              placeholder="Write your response here..."
+              rows={5}
+              readOnly
+            />
+          </div>
+        )}
       </div>
     )
   }
@@ -834,6 +859,13 @@ export function BlockEditForm({
   // Media heading — its own column, so no block type has to give up
   // its label or caption to carry it. Blank for every block authored
   // before the field existed, which renders as no heading at all.
+  // Exercise response area. ``?? true`` so every Exercise block
+  // authored before this field existed shows the toggle already on —
+  // which is what the server does with NULL too, so creators republish
+  // nothing.
+  const [responseEnabled, setResponseEnabled] = useState(
+    block.response_enabled ?? true,
+  )
   const [heading, setHeading] = useState(block.heading ?? '')
   const [caption, setCaption] = useState(
     block.block_type === 'callout'
@@ -885,6 +917,9 @@ export function BlockEditForm({
       // '' → null so clearing the field removes the heading rather
       // than storing an empty string the renderers would have to trim.
       heading: heading.trim() || null,
+      // Exercise-only. The About-page editor shares this component and
+      // ``pathway_about_blocks`` has no such column.
+      ...(t === 'exercise' ? { response_enabled: responseEnabled } : {}),
       embed_url: embedUrl || null,
       media_asset_id: mediaAssetId,
       resource_id: t === 'resource' ? resourceId : block.resource_id,
@@ -924,7 +959,7 @@ export function BlockEditForm({
     // Callback identity is stable across renders in every caller; the
     // effect is intentionally scoped to the tracked fields.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, label, caption, heading, embedUrl, mediaAssetId, resourceId, containerStyle, imageAltUnset])
+  }, [content, label, caption, heading, responseEnabled, embedUrl, mediaAssetId, resourceId, containerStyle, imageAltUnset])
 
   /** Upload an image directly from the writer's device to this
    *  collective's Asset Library. On success the returned asset is
@@ -1055,6 +1090,26 @@ export function BlockEditForm({
               placeholder="Walk the reader through the steps… Numbered lists, bullets, and formatting all supported."
               minRows={8}
             />
+          </div>
+          <div>
+            <label className="flex items-start gap-2.5">
+              <input
+                type="checkbox"
+                checked={responseEnabled}
+                onChange={(e) => setResponseEnabled(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0"
+              />
+              <span>
+                <span className="block text-[13.5px] font-medium text-navy-900">
+                  Allow members to write a response
+                </span>
+                <span className="mt-0.5 block text-[12px] text-slate-500">
+                  Each member gets a private space to answer this exercise,
+                  visible only to them. Turning this off hides the box and
+                  keeps anything already written.
+                </span>
+              </span>
+            </label>
           </div>
         </>
       )}
