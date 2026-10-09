@@ -345,6 +345,35 @@ describe('changing layout variants does not destroy populated cells', () => {
     assert.equal(cellIsPopulated({ content: '', kind: 'image' }), false)
     assert.equal(cellIsPopulated(undefined), false)
   })
+
+  test('cellIsPopulated reads TipTap JSON, which is what rows actually hold', () => {
+    // Taken from a real stored columns block: cells hold a serialised
+    // TipTap document, not HTML. Treating that as a plain string would
+    // call every cell populated, because the envelope is never empty.
+    const doc = (...content: unknown[]) => JSON.stringify({ type: 'doc', content })
+    const para = (text?: string) => ({
+      type: 'paragraph',
+      attrs: { textAlign: null },
+      ...(text === undefined ? {} : { content: [{ type: 'text', text }] }),
+    })
+
+    assert.equal(cellIsPopulated({ content: doc(para('jhggh')) }), true)
+    assert.equal(cellIsPopulated({ content: doc(para()) }), false, 'empty paragraph')
+    assert.equal(cellIsPopulated({ content: doc(para('')) }), false, 'empty text node')
+    assert.equal(cellIsPopulated({ content: doc(para('   ')) }), false, 'whitespace only')
+    assert.equal(cellIsPopulated({ content: doc() }), false, 'empty document')
+    // Nested text still counts.
+    assert.equal(cellIsPopulated({
+      content: doc({ type: 'blockquote', content: [para('quoted')] }),
+    }), true)
+    // Content that is not text.
+    assert.equal(cellIsPopulated({ content: doc({ type: 'horizontalRule' }) }), true)
+    assert.equal(cellIsPopulated({
+      content: doc({ type: 'image', attrs: { src: '/a.jpg' } }),
+    }), true)
+    // A JSON-looking string that is not JSON falls back to the HTML read.
+    assert.equal(cellIsPopulated({ content: '{not json' }), true)
+  })
 })
 
 

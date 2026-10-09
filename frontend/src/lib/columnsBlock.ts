@@ -217,12 +217,38 @@ export function cellIsPopulated(cell: ColumnsCell | undefined): boolean {
 }
 
 
-/** An empty TipTap editor serialises to ``''`` or ``<p></p>``, so a
- *  bare length check reads empty paragraphs as content. */
-function richTextHasContent(html: string | null | undefined): boolean {
-  if (!html) return false
-  if (/<(img|iframe|video|hr)[\s>/]/i.test(html)) return true
-  return html.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim().length > 0
+/**
+ * Whether a cell's rich text amounts to anything.
+ *
+ * Cells hold TipTap documents, and stored rows show them as *JSON*
+ * rather than HTML — ``{"type":"doc","content":[…]}``. A length check
+ * would therefore call every cell populated, empty ones included,
+ * because the envelope itself is a long string. An empty HTML
+ * paragraph (``<p></p>``) has the same problem in the other direction,
+ * and both shapes turn up: JSON from the editor, HTML from older rows.
+ */
+function richTextHasContent(content: string | null | undefined): boolean {
+  if (!content || !content.trim()) return false
+  const trimmed = content.trim()
+  if (trimmed.startsWith('{')) {
+    try {
+      return tiptapHasContent(JSON.parse(trimmed))
+    } catch {
+      // Not valid JSON after all — fall through and read it as HTML.
+    }
+  }
+  if (/<(img|iframe|video|hr)[\s>/]/i.test(trimmed)) return true
+  return trimmed.replace(/<[^>]*>/g, '').replace(/&nbsp;/gi, ' ').trim().length > 0
+}
+
+
+/** Any text, image or rule anywhere in a TipTap document tree. */
+function tiptapHasContent(node: unknown): boolean {
+  if (!node || typeof node !== 'object') return false
+  const n = node as { type?: string; text?: string; content?: unknown[] }
+  if (typeof n.text === 'string' && n.text.trim()) return true
+  if (n.type === 'image' || n.type === 'horizontalRule') return true
+  return Array.isArray(n.content) && n.content.some(tiptapHasContent)
 }
 
 
