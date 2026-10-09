@@ -992,6 +992,81 @@ class TestIndividualCancellation:
         assert statuses[events[1].id] == BookingStatus.cancelled
         assert statuses[events[2].id] == BookingStatus.confirmed
 
+    def test_cancelling_a_reservation_returns_exactly_one_credit(
+        self, db, client, world,
+    ):
+        # The pass is charged once per reserved session, so cancelling
+        # one has to give back one — not none, and not the lot. The
+        # cancel endpoint reads ``booking.credits_used`` to know how
+        # much to restore, so a bulk reservation that sets the pass
+        # link but leaves that field at zero takes the credit
+        # permanently. Nothing about the reservation looks wrong when
+        # that happens: the member simply runs out of sessions early.
+        space, series, member = world["space"], world["series"], world["member"]
+        term = _term_pass(db, member, space, series)
+        events = [
+            _occurrence(
+                db, space, series,
+                starts_at=local_to_naive_utc(2027, 3, 1 + 7 * w, 18),
+            )
+            for w in range(3)
+        ]
+        as_user(member)
+        key = client.get(base_url(space, series)).json()["patterns"][0]["key"]
+        client.post(f"{base_url(space, series)}/reserve", json={"pattern_keys": [key]})
+        db.refresh(term)
+        assert term.used_credits == 3
+
+        res = client.post(
+            f"/api/spaces/{space.slug}/events/{events[1].id}/cancel-booking"
+        )
+        assert res.status_code == 200
+
+        db.refresh(term)
+        assert term.used_credits == 2
+
+        # And the sessions either side keep their own charge intact —
+        # cancelling one reservation must not disturb the accounting of
+        # the others it was created alongside.
+        survivors = (
+            db.query(EventBooking)
+            .filter(
+                EventBooking.user_id == member.id,
+                EventBooking.status == BookingStatus.confirmed,
+            )
+            .all()
+        )
+        assert len(survivors) == 2
+        assert all(b.access_pass_id == term.id for b in survivors)
+        assert all(b.credits_used == 1 for b in survivors)
+
+    def test_cancelling_inside_the_24_hour_window_returns_nothing(
+        self, db, client, world,
+    ):
+        # The restoration cut-off that already governs a single booking.
+        # Bulk-reserved sessions are ordinary bookings, so it has to
+        # reach them unchanged rather than becoming a way to cancel late
+        # without cost.
+        space, series, member = world["space"], world["series"], world["member"]
+        term = _term_pass(db, member, space, series)
+        soon = _occurrence(
+            db, space, series,
+            starts_at=datetime.utcnow() + timedelta(hours=12),
+        )
+        as_user(member)
+        key = client.get(base_url(space, series)).json()["patterns"][0]["key"]
+        client.post(f"{base_url(space, series)}/reserve", json={"pattern_keys": [key]})
+        db.refresh(term)
+        assert term.used_credits == 1
+
+        res = client.post(
+            f"/api/spaces/{space.slug}/events/{soon.id}/cancel-booking"
+        )
+        assert res.status_code == 200
+
+        db.refresh(term)
+        assert term.used_credits == 1
+
     def test_the_reservations_are_ordinary_bookings(self, db, client, world):
         # Nothing marks them as special, which is the point: attendance,
         # capacity counting and booking management all keep working
