@@ -303,6 +303,31 @@ select.field-input {
 /* Same three-step accent as the rendered blockquote (see
    RichTextRenderer) so a creator writing a quote sees the colour
    their members will. */
+/* Consecutive Content blocks.
+ *
+ * Content blocks carry ``my-4`` (16px), and paragraphs inside them carry
+ * ``my-3`` (12px) — so a block boundary was only 4px wider than a
+ * paragraph boundary, and three separate blocks read as one passage.
+ * Measured in Chromium against the shipped stylesheet: 43.75px baseline
+ * pitch at a block boundary versus 39.75px at a paragraph boundary, a
+ * 10% difference that no reader can see.
+ *
+ * Raising ``my-4`` cannot fix it. Adjacent margins collapse, so the gap
+ * between a Content block and any other block is max(of the two), and
+ * anything above 16px starts overriding other block types: at 24px the
+ * file and link cards lose their 16px, at 32px images lose their 24px.
+ *
+ * This rule only matches when two Content blocks are actually adjacent,
+ * so every other pairing keeps exactly the spacing it has today. It is
+ * deliberately unlayered — Tailwind's utilities live in @layer
+ * utilities, and unlayered styles win over layered ones, so this beats
+ * ``my-4``'s margin-block without needing an !important.
+ *
+ * Tinted Content blocks are not marked and are unaffected: their border
+ * and fill already separate them, and their wrapper owns the margin.
+ */
+.fc-content-block + .fc-content-block { margin-block-start: 2rem; }
+
 .rich-editor .ProseMirror blockquote { border-left: 3px solid var(--fc-quote-accent, var(--fc-accent, #5BBFBD)); padding-left: 0.75rem; color: #475569; font-style: italic; margin: 0.5rem 0; }
 .rich-editor .ProseMirror a { color: #0f766e; text-decoration: underline; }
 .rich-editor .ProseMirror strong { font-weight: 700; }

@@ -139,13 +139,15 @@ describe('the block types that had no spacing now have a floor', () => {
     // margin cannot collapse out and would read as unexplained space
     // inside the tint. Both surfaces compute this.
     assert.match(code(PATHWAY), /const wrapped = !!resolveContainer\(block\.container_style\)/)
+    // The un-tinted arm carries the margin (and, since the adjacency
+    // rule landed, the marker class); the tinted arm carries neither.
     assert.match(
       code(PATHWAY),
-      /className=\{wrapped \? undefined : 'my-4'\}/,
+      /className=\{wrapped \? undefined : '(?:fc-content-block )?my-4'\}/,
     )
     assert.match(
       code(PREVIEW),
-      /wrapped \? '' : 'my-4 '/,
+      /wrapped \? '' : '(?:fc-content-block )?my-4 '/,
     )
   })
 
@@ -206,6 +208,83 @@ describe('the blocks that already had spacing are untouched', () => {
       values.size > 1,
       'every block now shares one margin — published spacing has been rewritten',
     )
+  })
+})
+
+describe('consecutive Content blocks get 32px', () => {
+  // The gap a reader sees at a block boundary was 4px wider than at a
+  // paragraph boundary — 43.75px of baseline pitch against 39.75px, a
+  // 10% difference. Raising ``my-4`` could not fix it, because adjacent
+  // margins collapse and anything above 16px starts overriding other
+  // block types' spacing. An adjacent-sibling rule fires only between
+  // two Content blocks, so every other pairing is untouched.
+
+  test('the marker class is on the plain Content wrapper', () => {
+    assert.match(
+      code(PATHWAY),
+      /className=\{wrapped \? undefined : 'fc-content-block my-4'\}/,
+    )
+  })
+
+  test('the Creator Studio preview carries the same marker', () => {
+    assert.match(code(PREVIEW), /wrapped \? '' : 'fc-content-block my-4 '/)
+  })
+
+  test('a tinted Content block is NOT marked', () => {
+    // Marking it would stack this rule's 32px on top of the tinted
+    // wrapper's own margin, and the tint already reads as a separate
+    // object. Both surfaces put the class only in the un-tinted arm.
+    for (const [name, path] of [['pathway', PATHWAY], ['preview', PREVIEW]] as const) {
+      const arms = branchClasses(code(path), 'text')
+      const marked = arms.filter((a) => a.includes('fc-content-block'))
+      assert.equal(
+        marked.length,
+        1,
+        `${name}: exactly one arm (the un-tinted one) may carry the marker`,
+      )
+      assert.match(marked[0], /\bmy-4\b/, `${name}: the marked arm is the my-4 one`)
+    }
+  })
+
+  test('the rule exists, targets adjacency, and is 32px', () => {
+    const css = read('app/globals.css')
+    assert.match(
+      css,
+      /\.fc-content-block \+ \.fc-content-block \{ margin-block-start: 2rem; \}/,
+    )
+  })
+
+  test('the rule is unlayered so it beats my-4 without !important', () => {
+    // Tailwind's utilities live in @layer utilities, and unlayered
+    // styles win over layered ones. Wrapping this rule in a @layer
+    // would silently stop it applying; adding !important would be the
+    // wrong fix for the same problem.
+    const css = read('app/globals.css')
+    const at = css.indexOf('.fc-content-block + .fc-content-block')
+    assert.ok(at !== -1)
+    const before = css.slice(0, at)
+    const opens = (before.match(/\{/g) ?? []).length
+    const closes = (before.match(/\}/g) ?? []).length
+    assert.equal(opens, closes, 'the rule must sit at the top level of globals.css')
+    assert.ok(!/!important/.test(css.slice(at, at + 120)), 'no !important needed')
+  })
+
+  test('the marker never reaches the About renderer', () => {
+    // About pages space their blocks with wrapper ``space-y-*``. This
+    // rule's specificity (0,2,0) would beat ``space-y``'s (0,1,1) and
+    // silently change About spacing from 24px to 32px.
+    assert.ok(
+      !code('components/spaces/AboutBlockRenderer.tsx').includes('fc-content-block'),
+      'About pages have their own spacing system and must not be marked',
+    )
+  })
+
+  test('only Content blocks are marked, nothing else', () => {
+    // A marker on a second block type would make that pairing 32px too.
+    for (const path of [PATHWAY, PREVIEW]) {
+      const uses = (code(path).match(/fc-content-block/g) ?? []).length
+      assert.equal(uses, 1, 'exactly one block type may carry the marker')
+    }
   })
 })
 

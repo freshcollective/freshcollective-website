@@ -485,7 +485,7 @@ function renderBlockPreviewInner({
     // so the preview would otherwise show space the page will not.
     const wrapped = !!resolveContainerPalette(block.container_style, collectivePalette)
     return (
-      <div className={`${wrapped ? '' : 'my-4 '}max-w-[70ch] text-[16px] font-normal leading-[1.8] tracking-[0.005em] text-navy-900/[0.88]`}>
+      <div className={`${wrapped ? '' : 'fc-content-block my-4 '}max-w-[70ch] text-[16px] font-normal leading-[1.8] tracking-[0.005em] text-navy-900/[0.88]`}>
         {block.content
           ? <RichTextRenderer content={block.content} />
           : <span className="italic text-slate-400">Empty paragraph — click to write.</span>}
