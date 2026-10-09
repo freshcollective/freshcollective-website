@@ -165,9 +165,18 @@ export function renderBlocks(
       // out of it and would instead show up as 16px of unexplained
       // space inside the tint. Same reasoning as ``audio``,
       // ``reflection_prompt`` and ``exercise`` above.
+      // ``fc-content-block`` carries no styling of its own. It exists so
+      // that one rule in ``globals.css`` can give *consecutive* Content
+      // blocks 32px while leaving every other pairing alone — see the
+      // rule for why a plain larger margin could not do that.
+      //
+      // Only the un-tinted branch is marked. A tinted block already
+      // reads as a separate object through its own border and fill, and
+      // marking it would stack extra space on top of the container's
+      // own margin.
       const wrapped = !!resolveContainer(block.container_style)
       return withContainer(
-        <div className={wrapped ? undefined : 'my-4'}>
+        <div className={wrapped ? undefined : 'fc-content-block my-4'}>
           <RichTextRenderer content={block.content} />
         </div>,
         block, id,
