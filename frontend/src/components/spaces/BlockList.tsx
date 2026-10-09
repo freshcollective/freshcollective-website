@@ -402,11 +402,20 @@ export function renderBlocks(
       // migrated to TipTap JSON on the fly by exerciseContentToRichText
       // so old and new rows render through the same path.
       const body = exerciseContentToRichText(block.content)
+      // A creator-chosen container REPLACES the plate rather than
+      // sitting inside it, so the inner div keeps only its contents and
+      // ``withContainer`` supplies background, border, padding and
+      // margin — the same deal every other container-styled block gets.
+      //
+      // This branch already computed ``wrapped`` and dropped its plate,
+      // but never called ``withContainer``, so nothing arrived in its
+      // place: an exercise row with a container style saved rendered as
+      // bare text on the member page. Rows like that exist, from before
+      // the editor offered the control.
       const wrapped = !!resolveContainer(block.container_style)
-      return (
+      return withContainer(
         <div
-          key={id}
-          className={wrapped ? 'my-6' : 'my-6 rounded-xl border border-slate-200 bg-white px-6 py-5'}
+          className={wrapped ? '' : 'my-6 rounded-xl border border-slate-200 bg-white px-6 py-5'}
         >
           <p className="mb-1 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.16em] text-slate-700">
             <span aria-hidden="true" className="text-[13px]">✏</span>
@@ -431,7 +440,8 @@ export function renderBlocks(
               blockId={id}
             />
           )}
-        </div>
+        </div>,
+        block, id,
       )
     }
 
