@@ -365,14 +365,43 @@ select.field-input {
 .rich-editor .ProseMirror table p { margin: 0; }
 
 /* Columns block — CSS variable holds the desired wide-viewport grid
-   template. Below the ``sm`` breakpoint (640px) cells stack to a single
-   column so each cell keeps a readable measure on phones. */
+   template. Cells stack to a single column on narrow viewports so each
+   keeps a readable measure, and the width at which they stop stacking
+   depends on how many of them there are.
+
+   One breakpoint for every layout was wrong once columns could hold
+   images. A 50/50 split at 640px gives each cell ~300px, which is fine.
+   The same 640px gives a quarter-width column ~150px — too narrow to
+   read a sentence in and too small to show a picture usefully. So three
+   columns wait until 768px and four until 900px, which is roughly where
+   each one clears 200px.
+
+   ``data-cols`` is set by every surface that renders this grid: the
+   member step renderer and public About page (both via ColumnsGrid),
+   and the Creator Studio preview, so the preview stacks exactly where
+   the published page does. A grid with no ``data-cols`` keeps the old
+   single 640px behaviour. */
 .fc-columns-grid {
   grid-template-columns: 1fr;
 }
 @media (min-width: 640px) {
   .fc-columns-grid {
     grid-template-columns: var(--fc-cols, 1fr 1fr);
+  }
+  /* Held back past the point where two columns are comfortable. */
+  .fc-columns-grid[data-cols="3"],
+  .fc-columns-grid[data-cols="4"] {
+    grid-template-columns: 1fr;
+  }
+}
+@media (min-width: 768px) {
+  .fc-columns-grid[data-cols="3"] {
+    grid-template-columns: var(--fc-cols, 1fr 1fr 1fr);
+  }
+}
+@media (min-width: 900px) {
+  .fc-columns-grid[data-cols="4"] {
+    grid-template-columns: var(--fc-cols, 1fr 1fr 1fr 1fr);
   }
 }
 

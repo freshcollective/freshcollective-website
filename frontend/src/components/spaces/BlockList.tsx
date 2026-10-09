@@ -8,7 +8,8 @@ import {
   resolveContainerPalette,
 } from '@/lib/calloutPalette'
 import { exerciseContentToRichText } from '@/lib/exerciseSteps'
-import { decodeColumns, gridTemplateForVariant } from '@/lib/columnsBlock'
+import { decodeColumns } from '@/lib/columnsBlock'
+import ColumnsGrid from '@/components/spaces/ColumnsGrid'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import EmbedRenderer from '@/components/EmbedRenderer'
 import ButtonBlock from '@/components/ButtonBlock'
@@ -138,18 +139,8 @@ export function renderBlocks(
     if (t === 'divider') return <hr key={id} className="my-8 border-border" />
 
     if (t === 'columns') {
-      const payload = decodeColumns(block.content)
       return withContainer(
-        <div
-          className="fc-columns-grid my-1.5 grid gap-6"
-          style={{ ['--fc-cols' as string]: gridTemplateForVariant(payload.layout.variant) }}
-        >
-          {payload.cells.map((cell, i) => (
-            <div key={i} className="min-w-0">
-              {cell.content?.trim() ? <RichTextRenderer content={cell.content} /> : null}
-            </div>
-          ))}
-        </div>,
+        <ColumnsGrid payload={decodeColumns(block.content)} className="my-1.5" />,
         block, id,
       )
     }

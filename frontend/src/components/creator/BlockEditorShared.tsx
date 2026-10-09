@@ -15,17 +15,35 @@ import MediaBlockHeading from '@/components/spaces/MediaBlockHeading'
 import PrivateResponseArea from '@/components/spaces/PrivateResponseArea'
 import { useCollectivePalette } from '@/components/collective/CollectivePaletteContext'
 import {
+  COLUMNS_CELL_KINDS,
   COLUMNS_VARIANTS,
+  activeCells,
   cellCountForVariant,
+  cellImageAlt,
+  cellIsPopulated,
+  cellKind,
   decodeColumns,
   encodeColumns,
   gridTemplateForVariant,
   labelForVariant,
+  parkedCells,
   resizeColumns,
+  setCellContent,
+  setCellKind,
   variantShortLabel,
+  type ColumnsCellKind,
   type ColumnsPayload,
   type ColumnsVariant,
 } from '@/lib/columnsBlock'
+import {
+  applyAltTextToCell,
+  applyAltUnsetToCell,
+  applyAssetIdToCell,
+  applyAssetToCell,
+  applyCaptionToCell,
+  applyEmbedUrlToCell,
+  cellImageFieldProps,
+} from '@/lib/columnsImageFields'
 import RichTextEditor from '@/components/creator/RichTextEditor'
 import RichTextRenderer from '@/components/RichTextRenderer'
 import { checkEmbed, supportedEmbedsList, type EmbedProvider } from '@/lib/embedAllowlist'
@@ -970,7 +988,22 @@ export function BlockEditForm({
    *  be filled without navigating away from the pathway editor. */
   const [uploadBusy, setUploadBusy] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
-  async function uploadFromDevice(file: File) {
+  // An upload can outlive the form: a creator can press Done, or the
+  // whole block editor can close, while the request is still in flight.
+  // Writing the result into state after that is a stale write, and for
+  // a columns cell it would be a write into a payload nobody is editing
+  // any more.
+  const mounted = useRef(true)
+  useEffect(() => () => { mounted.current = false }, [])
+  /** Upload to the collective's Asset Library.
+   *
+   *  ``onUploaded`` lets a caller place the asset somewhere other than
+   *  this block's own ``media_asset_id`` — a columns cell passes a
+   *  closure that puts it in the right column. */
+  async function uploadFromDevice(
+    file: File,
+    onUploaded?: (asset: CreatorMediaAsset) => void,
+  ) {
     if (!spaceSlug) return
     setUploadBusy(true)
     setUploadError(null)
@@ -988,12 +1021,17 @@ export function BlockEditForm({
         throw new Error(typeof body.detail === 'string' ? body.detail : `Upload: ${res.status}`)
       }
       const asset = await res.json() as CreatorMediaAsset
+      // The upload succeeded and the asset exists, so register it with
+      // the parent's library list either way — that list outlives this
+      // form. Only our own state is gated on still being mounted.
       onAssetUploaded?.(asset)
-      setMediaAssetId(asset.id)
+      if (!mounted.current) return
+      if (onUploaded) onUploaded(asset)
+      else setMediaAssetId(asset.id)
     } catch (e) {
-      setUploadError((e as Error).message)
+      if (mounted.current) setUploadError((e as Error).message)
     } finally {
-      setUploadBusy(false)
+      if (mounted.current) setUploadBusy(false)
     }
   }
 
@@ -1022,6 +1060,11 @@ export function BlockEditForm({
         onAutosave={onAutosave ? (() => onAutosave(buildPatch())) : undefined}
         onDone={onCancel}
         onDeleteRequested={onDeleteRequested}
+        assets={assets}
+        spaceSlug={spaceSlug}
+        uploadBusy={uploadBusy}
+        uploadError={uploadError}
+        onUploadFile={(file, onUploaded) => void uploadFromDevice(file, onUploaded)}
       />
     )
   }
@@ -2821,26 +2864,65 @@ function PromptEditor({
  */
 function ColumnsPreview({ content }: { content: string | null }) {
   const payload = decodeColumns(content)
+  const variant = payload.layout.variant
   return (
     // 6px, matching the member renderer's Columns block.
     <div className="my-1.5">
       <div
-        className="fc-columns-grid grid gap-4 sm:gap-5"
-        style={{ ['--fc-cols' as string]: gridTemplateForVariant(payload.layout.variant) }}
+        className="fc-columns-grid grid items-start gap-4 sm:gap-5"
+        // Same attribute the member renderers set, so the preview
+        // stacks at exactly the width the published page stacks at.
+        data-cols={cellCountForVariant(variant)}
+        style={{ ['--fc-cols' as string]: gridTemplateForVariant(variant) }}
       >
-        {payload.cells.map((cell, i) => (
+        {activeCells(payload).map((cell, i) => (
           <div
             key={i}
             className="min-w-0 rounded-md border border-slate-200 bg-white p-3 text-[14.5px] leading-relaxed text-black"
           >
-            {cell.content?.trim()
-              ? <RichTextRenderer content={cell.content} />
-              : <span className="italic text-slate-400">Column {i + 1} — click Edit to add content.</span>}
+            <ColumnsPreviewCell cell={cell} index={i} />
           </div>
         ))}
       </div>
     </div>
   )
+}
+
+
+/** One cell of the block-stack preview: the real image or the real
+ *  text, never a placeholder standing in for content that exists. */
+function ColumnsPreviewCell({
+  cell, index,
+}: {
+  cell: ColumnsPayload['cells'][number]
+  index: number
+}) {
+  const empty = (what: string) => (
+    <span className="italic text-slate-400">Column {index + 1} — {what}</span>
+  )
+
+  if (cellKind(cell) === 'image') {
+    const url = cell.image?.url
+    if (!url) return empty('click Edit to choose an image.')
+    return (
+      <figure>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={resolveAssetUrl(url)}
+          alt={cellImageAlt(cell.image)}
+          className="h-auto w-full rounded-md"
+        />
+        {cell.image?.caption?.trim() && (
+          <figcaption className="mt-1.5 text-center text-[11.5px] text-slate-500">
+            {cell.image.caption}
+          </figcaption>
+        )}
+      </figure>
+    )
+  }
+
+  if (!cell.content?.trim()) return empty('click Edit to add content.')
+  return <RichTextRenderer content={cell.content} />
 }
 
 
@@ -2855,15 +2937,26 @@ function ColumnsPreview({ content }: { content: string | null }) {
  */
 function ColumnsEditor({
   content, onContentChange, onAutosave, onDone, onDeleteRequested,
+  assets, spaceSlug, uploadBusy, uploadError, onUploadFile,
 }: {
   content: string
   onContentChange: (v: string) => void
   onAutosave?: () => void
   onDone: () => void
   onDeleteRequested?: () => void
+  assets: CreatorMediaAsset[]
+  spaceSlug?: string
+  uploadBusy: boolean
+  uploadError: string | null
+  /** Upload and hand the finished asset back, so it lands in the column
+   *  the creator started the upload from. */
+  onUploadFile: (file: File, onUploaded: (asset: CreatorMediaAsset) => void) => void
 }) {
   const [payload, setPayload] = useState<ColumnsPayload>(() => decodeColumns(content))
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Upload state is shared by the whole form, so remember which column
+  // asked — otherwise every image column shows "Uploading…" at once.
+  const [uploadingCell, setUploadingCell] = useState<number | null>(null)
 
   useEffect(() => {
     onContentChange(encodeColumns(payload))
@@ -2875,15 +2968,59 @@ function ColumnsEditor({
   }, [payload])
 
   function updateCell(i: number, value: string) {
-    setPayload((prev) => ({
-      ...prev,
-      cells: prev.cells.map((c, j) => (j === i ? { ...c, content: value } : c)),
-    }))
+    setPayload((prev) => setCellContent(prev, i, value))
   }
 
   function changeVariant(v: ColumnsVariant) {
     setPayload((prev) => resizeColumns(prev, v))
   }
+
+  function changeKind(i: number, kind: ColumnsCellKind) {
+    // Switching is non-destructive at the data layer: the text stays on
+    // an image cell and the image stays on a text cell. Nothing to
+    // confirm, and nothing to warn about.
+    setPayload((prev) => setCellKind(prev, i, kind))
+  }
+
+  // --- image controls, per cell ---------------------------------------
+  //
+  // ImageBlockFields is fully controlled, so it drives a column's image
+  // exactly as it drives a block's. The mapping below is the whole of
+  // the adaptation; the controls themselves are reused untouched.
+
+  // All of these delegate to ``lib/columnsImageFields``, which exists
+  // so the fiddly parts — the two-callback gestures, the three alt
+  // states — are pure functions with tests against the exact sequences
+  // ImageBlockFields fires. See that module's note.
+  function applyAsset(i: number, asset: CreatorMediaAsset) {
+    setPayload((prev) => applyAssetToCell(prev, i, asset))
+  }
+  function pickAsset(i: number, id: string | null) {
+    setPayload((prev) => applyAssetIdToCell(prev, i, id, assets))
+  }
+  function setEmbed(i: number, url: string) {
+    setPayload((prev) => applyEmbedUrlToCell(prev, i, url))
+  }
+  function setAltText(i: number, value: string) {
+    setPayload((prev) => applyAltTextToCell(prev, i, value))
+  }
+  function setAltUnset(i: number, unset: boolean) {
+    setPayload((prev) => applyAltUnsetToCell(prev, i, unset))
+  }
+  function setImageCaption(i: number, value: string) {
+    setPayload((prev) => applyCaptionToCell(prev, i, value))
+  }
+
+  const cells = activeCells(payload)
+  // Image controls need room. A quarter-width column cannot hold a
+  // library picker, an upload button and an alt-text field usefully, so
+  // when any column holds an image the editor stacks its columns full
+  // width. Text-only blocks keep the familiar side-by-side editing that
+  // mirrors the chosen layout.
+  const anyImage = cells.some((cell) => cellKind(cell) === 'image')
+  // Columns held back by a narrower layout. They are not lost, and the
+  // creator should know that rather than assume they were deleted.
+  const parkedPopulated = parkedCells(payload).filter(cellIsPopulated).length
 
   return (
     <div className="w-full">
@@ -2936,27 +3073,96 @@ function ColumnsEditor({
       </div>
 
       <div
-        className="fc-columns-grid grid gap-4"
-        style={{ ['--fc-cols' as string]: gridTemplateForVariant(payload.layout.variant) }}
+        className={
+          anyImage
+            ? 'space-y-6'
+            : 'fc-columns-grid grid items-start gap-4'
+        }
+        data-cols={anyImage ? undefined : cellCountForVariant(payload.layout.variant)}
+        style={
+          anyImage
+            ? undefined
+            : { ['--fc-cols' as string]: gridTemplateForVariant(payload.layout.variant) }
+        }
       >
-        {payload.cells.map((cell, i) => (
-          <div key={i} className="min-w-0">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Column {i + 1}
+        {cells.map((cell, i) => {
+          const kind = cellKind(cell)
+          return (
+            <div key={i} className="min-w-0">
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Column {i + 1}
+              </div>
+
+              <label className="field-label" id={`col-${i}-type-label`}>
+                Content type
+              </label>
+              <div
+                role="group"
+                aria-labelledby={`col-${i}-type-label`}
+                className="mb-3 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5"
+              >
+                {COLUMNS_CELL_KINDS.map((k) => {
+                  const on = kind === k
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => changeKind(i, k)}
+                      aria-pressed={on}
+                      className={`rounded-md px-3 py-1 text-[12.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 ${
+                        on
+                          ? 'bg-white text-teal-700 shadow-sm ring-1 ring-teal-200'
+                          : 'text-slate-600 hover:text-navy-900'
+                      }`}
+                    >
+                      {k === 'text' ? 'Text' : 'Image'}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {kind === 'image' ? (
+                <ImageBlockFields
+                  assets={assets}
+                  {...cellImageFieldProps(cell)}
+                  onMediaAssetIdChange={(id) => pickAsset(i, id)}
+                  onEmbedUrlChange={(v) => setEmbed(i, v)}
+                  onCaptionChange={(v) => setImageCaption(i, v)}
+                  onAltTextChange={(v) => setAltText(i, v)}
+                  onAltUnsetChange={(v) => setAltUnset(i, v)}
+                  spaceSlug={spaceSlug}
+                  uploadBusy={uploadBusy && uploadingCell === i}
+                  uploadError={uploadingCell === i ? uploadError : null}
+                  onUploadFile={(file) => {
+                    setUploadingCell(i)
+                    onUploadFile(file, (asset) => applyAsset(i, asset))
+                  }}
+                />
+              ) : (
+                <RichTextEditor
+                  content={cell.content}
+                  onChange={(next) => updateCell(i, next)}
+                  placeholder={`Column ${i + 1}…`}
+                  minRows={6}
+                />
+              )}
             </div>
-            <RichTextEditor
-              content={cell.content}
-              onChange={(next) => updateCell(i, next)}
-              placeholder={`Column ${i + 1}…`}
-              minRows={6}
-            />
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       <p className="mt-3 text-[12px] text-slate-500">
-        Columns stack vertically on narrow screens so each cell remains readable on mobile.
+        Each column can hold text or an image. Columns stack vertically on
+        narrow screens so every column stays readable on mobile.
       </p>
+
+      {parkedPopulated > 0 && (
+        <p className="mt-2 text-[12px] text-slate-500">
+          {parkedPopulated === 1
+            ? 'One column of content is being kept aside because this layout is narrower. It will come back if you choose a layout with more columns.'
+            : `${parkedPopulated} columns of content are being kept aside because this layout is narrower. They will come back if you choose a layout with more columns.`}
+        </p>
+      )}
 
       <div className="mt-5 flex items-center">
         {onDeleteRequested && (

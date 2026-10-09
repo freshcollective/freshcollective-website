@@ -37,6 +37,7 @@ from app.core.storage import (
     save_file,
     save_media_file,
 )
+from app.creator._columns_media import columns_image_asset_columns
 from app.creator.plan_config import (
     ALL_PLANS,
     ORGANISATION,
@@ -6064,8 +6065,11 @@ def get_media_usage(
 ):
     """Read-only: every place this media asset is referenced.
 
-    Currently covers step blocks (image / audio / file_download) and about
-    blocks. Pathway covers and step banners are referenced by URL (not
+    Covers step blocks and about blocks that point at the asset through
+    ``media_asset_id`` (image / audio / file_download), plus images
+    placed inside columns blocks, which store their cells as JSON in
+    ``content`` and so are invisible to a ``media_asset_id`` query.
+    Pathway covers and step banners are referenced by URL (not
     media_asset_id) so they're not included here.
     """
     space = _get_managed_space(slug, current_user, db)
@@ -6119,6 +6123,56 @@ def get_media_usage(
             pathway_slug=pathway.slug,
             label=f"{pathway.title} (about page · {bt})",
         ))
+
+    # Columns blocks keep their cells as JSON in ``content``, so an
+    # image in a column has no ``media_asset_id`` to query. The LIKE is
+    # only a prefilter to keep this off every columns block in the
+    # collective; ``columns_image_asset_columns`` then parses the
+    # envelope, so a creator who merely typed the id into a paragraph is
+    # not reported as using the image.
+    columns_step_rows = (
+        db.query(PathwayStepBlock, PathwayStep, Pathway)
+        .join(PathwayStep, PathwayStep.id == PathwayStepBlock.step_id)
+        .join(Pathway, Pathway.id == PathwayStep.pathway_id)
+        .filter(
+            PathwayStepBlock.block_type == StepBlockType.columns,
+            PathwayStepBlock.content.contains(media_id),
+            Pathway.space_id == space.id,
+        )
+        .all()
+    )
+    for block, step, pathway in columns_step_rows:
+        for column in columns_image_asset_columns(block.content, media_id):
+            refs.append(MediaUsageReference(
+                kind="step_block_columns",
+                pathway_id=pathway.id,
+                pathway_title=pathway.title,
+                pathway_slug=pathway.slug,
+                step_id=step.id,
+                step_title=step.title,
+                step_slug=step.slug,
+                label=f"{pathway.title} — {step.title} (columns · column {column})",
+            ))
+
+    columns_about_rows = (
+        db.query(PathwayAboutBlock, Pathway)
+        .join(Pathway, Pathway.id == PathwayAboutBlock.pathway_id)
+        .filter(
+            PathwayAboutBlock.block_type == StepBlockType.columns,
+            PathwayAboutBlock.content.contains(media_id),
+            Pathway.space_id == space.id,
+        )
+        .all()
+    )
+    for block, pathway in columns_about_rows:
+        for column in columns_image_asset_columns(block.content, media_id):
+            refs.append(MediaUsageReference(
+                kind="about_block_columns",
+                pathway_id=pathway.id,
+                pathway_title=pathway.title,
+                pathway_slug=pathway.slug,
+                label=f"{pathway.title} (about page · columns · column {column})",
+            ))
 
     return MediaUsageResponse(media_id=media_id, references=refs)
 

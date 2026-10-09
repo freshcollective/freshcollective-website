@@ -10,7 +10,8 @@ import RichTextRenderer from '@/components/RichTextRenderer'
 import MediaBlockHeading from '@/components/spaces/MediaBlockHeading'
 import EmbedRenderer from '@/components/EmbedRenderer'
 import ButtonBlock from '@/components/ButtonBlock'
-import { decodeColumns, gridTemplateForVariant } from '@/lib/columnsBlock'
+import { decodeColumns } from '@/lib/columnsBlock'
+import ColumnsGrid from '@/components/spaces/ColumnsGrid'
 import { exerciseContentToRichText } from '@/lib/exerciseSteps'
 import { resolveMediaUrl } from '@/lib/api'
 import { safeHref } from '@/lib/safeHref'
@@ -98,18 +99,11 @@ function renderInner(
   if (t === 'divider') return <hr className="border-slate-200" />
 
   if (t === 'columns') {
-    const payload = decodeColumns(block.content)
     return (
-      <div
-        className="fc-columns-grid grid gap-6"
-        style={{ ['--fc-cols' as string]: gridTemplateForVariant(payload.layout.variant) }}
-      >
-        {payload.cells.map((cell, i) => (
-          <div key={i} className="min-w-0 prose prose-sm max-w-none text-black">
-            {cell.content?.trim() ? <RichTextRenderer content={cell.content} /> : null}
-          </div>
-        ))}
-      </div>
+      <ColumnsGrid
+        payload={decodeColumns(block.content)}
+        cellClassName="prose prose-sm max-w-none text-black"
+      />
     )
   }
 
