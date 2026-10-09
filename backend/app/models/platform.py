@@ -894,6 +894,53 @@ class StepProgress(Base):
 # Step Resources
 # ---------------------------------------------------------------------------
 
+
+class ExerciseResponse(Base):
+    """A member's private written response to one Exercise block.
+
+    Sibling to ``StepProgress.reflection_text``: same ownership, same
+    privacy, same explicit-save behaviour. The difference is granularity
+    — a step has one reflection, but it can hold several exercises, so
+    this is keyed on the block rather than the step.
+
+    ``UNIQUE (user_id, block_id)`` is the load-bearing part. It is what
+    makes "saving one exercise cannot disturb another, or the step
+    reflection" true by construction rather than by care: each response
+    is its own row, and nothing here can reach ``reflection_text``.
+
+    ``block_id`` is stable across everything a creator can do to a block
+    short of deleting it — ``block_type`` is not updatable, so editing
+    instructions is a PATCH on the same id, and reordering rewrites
+    ``position`` only. Responses stay attached through both.
+    """
+
+    __tablename__ = "exercise_responses"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    block_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("pathway_step_blocks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    response_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "block_id", name="exercise_responses_user_block_unique"),
+    )
+
+
 class StepResource(Base):
     """
     Supplementary resources attached to a pathway step.
@@ -2125,6 +2172,14 @@ class PathwayStepBlock(Base):
     # never shown would have surfaced stray text on published
     # pages. NULL on every pre-existing row. See migration 151.
     heading: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+    # Exercise blocks only: whether members get a private response area.
+    # Nullable with no default so every block authored before the field
+    # existed reads NULL, and NULL is read as enabled — the same
+    # ``?? true`` reading ``PathwayStep.reflection_enabled`` already
+    # gets. Turning it off writes False and touches no stored
+    # response. See migration 152.
+    response_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # External URL (video embed, link href, external image)
     embed_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     # FK to media library asset (image, audio, file_download)
