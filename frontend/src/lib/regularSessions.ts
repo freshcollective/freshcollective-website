@@ -174,3 +174,85 @@ export function patternDescription(pattern: SchedulePattern): string {
     : `${sessionCount(pattern.occurrence_count)} remaining`
   return scope
 }
+
+// ---------------------------------------------------------------------------
+// Waiting for access to arrive after a purchase
+// ---------------------------------------------------------------------------
+//
+// The AccessPass is created by webhook-driven fulfilment, not by the
+// redirect back from Stripe — ``purchase_fulfilment`` writes it when
+// the payment event arrives. So a member can land on this page with
+// ``?checkout=success`` a second or two before they have access, and
+// for the weekly-payment setup flow the gap can be longer.
+//
+// What must never happen in that window is the one thing the page used
+// to do: fall through to "Ways to join" and offer to sell them the term
+// they have just bought. So the window has its own state, it waits, and
+// it says so.
+
+/** Long enough to be gentle on the API, short enough to feel live. */
+export const ACCESS_POLL_INTERVAL_MS = 3000
+
+/** Two minutes. Past this, waiting silently stops being honest. */
+export const ACCESS_POLL_MAX_ATTEMPTS = 40
+
+export type AccessWaitPhase = 'confirming' | 'slow' | 'timed_out'
+
+/**
+ * Where the wait has got to.
+ *
+ * Three phases rather than two, because "this is taking a moment" and
+ * "this has taken two minutes" call for different things to be said,
+ * and neither of them is a purchase button.
+ */
+export function accessWaitPhase(attempt: number): AccessWaitPhase {
+  if (attempt >= ACCESS_POLL_MAX_ATTEMPTS) return 'timed_out'
+  if (attempt > 5) return 'slow'
+  return 'confirming'
+}
+
+export interface AccessWaitCopy {
+  heading: string
+  body: string
+  /** True once the member should be told to act rather than wait. */
+  showReload: boolean
+}
+
+/**
+ * What to say while access is being set up.
+ *
+ * Every line is written on the assumption that the member has paid —
+ * because they have. None of them suggests paying again, and the
+ * longest wait still ends with reassurance plus something to do,
+ * rather than an apology and a dead end.
+ */
+export function accessWaitCopy(phase: AccessWaitPhase): AccessWaitCopy {
+  if (phase === 'timed_out') {
+    return {
+      heading: 'Your payment went through',
+      body:
+        'Your access is still being set up, which occasionally takes a ' +
+        'few minutes. You do not need to pay again. Reload this page, ' +
+        'and if your access still is not here, let us know and we will ' +
+        'sort it out.',
+      showReload: true,
+    }
+  }
+  if (phase === 'slow') {
+    return {
+      heading: 'Confirming your payment',
+      body:
+        'This is taking a little longer than usual. Your payment has ' +
+        'gone through — we are waiting for it to be confirmed, and your ' +
+        'sessions will appear here as soon as it is.',
+      showReload: false,
+    }
+  }
+  return {
+    heading: 'Confirming your payment',
+    body:
+      'One moment — as soon as this is confirmed you can choose the ' +
+      'sessions you usually come to and reserve them all at once.',
+    showReload: false,
+  }
+}

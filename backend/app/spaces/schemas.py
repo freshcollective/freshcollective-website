@@ -558,6 +558,12 @@ class SeriesBookingResponse(BaseModel):
     already_booked: int
     skipped_full: int
     skipped_closed: int
+    #: Occurrences the member is not entitled to reserve — no term
+    #: pass, allowance spent, outside the pass window, or an access
+    #: type that is not theirs. Added when this endpoint stopped
+    #: booking them regardless; defaulted so existing clients that do
+    #: not read it are unaffected.
+    skipped_unavailable: int = 0
     total_in_series: int
 
 

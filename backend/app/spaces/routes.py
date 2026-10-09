@@ -96,10 +96,13 @@ from app.spaces.schemas import (
 
 from app.models.platform import EventSeries as _EventSeriesModel  # noqa: E402
 from app.models.platform import PathwayStepManualRelease  # noqa: E402
+from app.services.event_permissions import can_book as _can_book_gate_shared
 from app.services.gathering_booking_rules import (
     capacity_denial as _capacity_denial,
     confirmed_booking_count as _confirmed_booking_count,
     evaluate_pass_for_event as _evaluate_pass_for_event,
+    event_week_bounds as _event_week_bounds,
+    occurrence_timing_denial as _occurrence_timing_denial,
 )
 from app.services.gathering_booking_emit import (  # noqa: E402
     emit_booking_confirmed,
@@ -1915,6 +1918,11 @@ def book_event(
     # the order this endpoint already had.
     pass_decision = _evaluate_pass_for_event(
         db, user=current_user, event=event, is_privileged=is_privileged,
+        # Locked: the occurrence row above stops two members racing for
+        # the last seat, but the allowance is a property of the *pass*,
+        # so two requests from the same member for two different
+        # sessions would otherwise both see headroom and both spend it.
+        lock_pass=True,
     )
     if pass_decision.denial is not None:
         raise HTTPException(
@@ -2569,8 +2577,49 @@ def book_series(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_verified_current_user),  # SEC-009
 ) -> SeriesBookingResponse:
-    """Book all future bookable sessions in a recurrence series. Skips full/closed/already-booked."""
+    """Book every remaining bookable session in a recurrence group.
+
+    The recurrence group is a different thing from a Gathering Series:
+    it is the "these rows were created together" tag a bulk create
+    leaves behind, and this endpoint is reached from a Gathering's own
+    page ("reserve the whole run"). It stays, and its response shape
+    stays, because two surfaces consume it.
+
+    What changed, and why it had to
+    -------------------------------
+    This endpoint used to check only Collective membership. It applied
+    no access gate and no term-pass allowance, which made it a way
+    around both: a member could reserve ``included_with_series``
+    sessions without ever buying a term pass, and a pass holder's
+    bookings were created with no ``access_pass_id``, so their weekly
+    and total allowances were neither charged nor enforced. Capacity
+    was counted but not locked.
+
+    It now runs every occurrence through
+    ``services.gathering_booking_rules`` — the same decisions the
+    single-booking endpoint and "Reserve your regular sessions" apply.
+    Legitimate existing behaviour is preserved exactly: ``free`` and
+    ``included_with_collective`` sessions still book on membership
+    alone, caretakers are still never refused, and the counting
+    response is unchanged apart from one added field.
+    """
     space = _get_space_or_404(slug, db)
+
+    # A frozen or closed Collective accepts no bookings. The single
+    # endpoint has refused this since Community Care shipped; this one
+    # did not, which was the same omission in a quieter place.
+    from app.community_care.shared import is_space_closed, is_space_frozen
+    if is_space_closed(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective has been closed.",
+        )
+    if is_space_frozen(space):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This collective is temporarily paused by Fresh Collective.",
+        )
+
     membership = (
         db.query(SpaceMembership)
         .filter(
@@ -2584,6 +2633,10 @@ def book_series(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Must be a member to book.")
 
     now = datetime.utcnow()
+    # Locked in id order, so two overlapping bulk requests cannot
+    # deadlock and neither can oversell the last place. Ordered by
+    # ``starts_at`` afterwards in Python, because the member-facing
+    # ordering and the lock ordering are different concerns.
     events = (
         db.query(Event)
         .filter(
@@ -2594,19 +2647,15 @@ def book_series(
             Event.status == "active",
             Event.starts_at > now,
         )
-        .order_by(Event.starts_at)
+        .order_by(Event.id)
+        .with_for_update()
         .all()
     )
+    events.sort(key=lambda e: e.starts_at)
     if not events:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No upcoming bookable sessions in this series.")
 
     event_ids = [e.id for e in events]
-    confirmed_counts: dict[str, int] = dict(
-        db.query(EventBooking.event_id, func.count(EventBooking.id))
-        .filter(EventBooking.event_id.in_(event_ids), EventBooking.status == BookingStatus.confirmed)
-        .group_by(EventBooking.event_id)
-        .all()
-    )
     existing_bookings: dict[str, "EventBooking"] = {
         b.event_id: b
         for b in db.query(EventBooking).filter(
@@ -2615,29 +2664,72 @@ def book_series(
         ).all()
     }
 
+    is_privileged = getattr(membership, "role", None) in (
+        SpaceRole.creator, SpaceRole.moderator,
+    )
+    if current_user.role == "admin" or space.creator_id == current_user.id:
+        is_privileged = True
+
     booked = 0
     already_booked = 0
     created_bookings: list[EventBooking] = []
     skipped_full = 0
     skipped_closed = 0
+    # New: an occurrence the member is not entitled to reserve. It used
+    # to be booked anyway. Counted separately rather than folded into
+    # ``skipped_closed``, because "you need a term pass" and "booking
+    # has closed" are not the same news.
+    skipped_unavailable = 0
+
+    # Allowance consumed by this operation but not yet committed — a
+    # pass allowing two a week cannot pay for five Mondays just because
+    # none of them is in the database yet.
+    pending_weekly: dict[datetime, int] = {}
+    pending_total = 0
+    pending_seats: dict[str, int] = {}
 
     for e in events:
         existing = existing_bookings.get(e.id)
         if existing and existing.status == BookingStatus.confirmed:
             already_booked += 1
             continue
-        if e.booking_closes_at and e.booking_closes_at <= now:
-            skipped_closed += 1
+
+        timing = _occurrence_timing_denial(e, now)
+        if timing is not None:
+            if timing.reason == "booking_closed":
+                skipped_closed += 1
+            else:
+                skipped_unavailable += 1
             continue
-        confirmed = confirmed_counts.get(e.id, 0)
-        if e.capacity is not None and confirmed >= e.capacity:
+
+        gate = _can_book_gate_shared(current_user, e, space, db)
+        if not gate.allowed:
+            skipped_unavailable += 1
+            continue
+
+        seats = pending_seats.get(e.id, 0)
+        if _capacity_denial(
+            e, _confirmed_booking_count(db, e.id), pending=seats,
+        ) is not None:
             skipped_full += 1
             continue
+
+        decision = _evaluate_pass_for_event(
+            db, user=current_user, event=e, is_privileged=is_privileged,
+            pending_weekly=pending_weekly, pending_total=pending_total,
+            lock_pass=True,
+        )
+        if decision.denial is not None:
+            skipped_unavailable += 1
+            continue
+        charge = decision.charge
 
         if existing:
             existing.status = BookingStatus.confirmed
             existing.booked_at = now
             existing.cancelled_at = None
+            existing.access_pass_id = charge.id if charge else None
+            existing.credits_used = 1 if charge else 0
             created_bookings.append(existing)
         else:
             fresh = EventBooking(
@@ -2646,10 +2738,18 @@ def book_series(
                 user_id=current_user.id,
                 status=BookingStatus.confirmed,
                 booked_at=now,
+                access_pass_id=charge.id if charge else None,
+                credits_used=1 if charge else 0,
             )
             db.add(fresh)
             created_bookings.append(fresh)
         booked += 1
+        pending_seats[e.id] = seats + 1
+        if charge is not None:
+            charge.used_credits += 1
+            week_start, _ = _event_week_bounds(e)
+            pending_weekly[week_start] = pending_weekly.get(week_start, 0) + 1
+            pending_total += 1
 
     db.commit()
 
@@ -2686,6 +2786,7 @@ def book_series(
         already_booked=already_booked,
         skipped_full=skipped_full,
         skipped_closed=skipped_closed,
+        skipped_unavailable=skipped_unavailable,
         total_in_series=len(events),
     )
 

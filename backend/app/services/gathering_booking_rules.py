@@ -20,6 +20,15 @@ preview in "Reserve your regular sessions" be honest: it runs the same
 decisions the confirmation will run, and the only thing that can change
 between them is the world, not the rules.
 
+Lock ordering
+-------------
+Callers that write take locks in one order: the occurrence row first,
+then the pass. Both the single-booking endpoint and the two bulk paths
+follow it, which is what keeps a bulk reserve and an individual booking
+from deadlocking against each other. The bulk paths additionally lock
+their occurrences in id order so two overlapping bulk requests cannot
+deadlock either.
+
 In-flight consumption
 ---------------------
 One subtlety the single-booking path never had to think about. A term
@@ -198,12 +207,29 @@ def find_candidate_pass(
     event: Event,
     is_pathway_gated: bool,
     is_series_gated: bool,
+    lock: bool = False,
 ) -> AccessPass | None:
     """The pass that would authorise this booking, if the member holds one.
 
     The validity window is tested against ``event.starts_at``, not
     against now: a pass covers a session when the session falls inside
     the window, which is what lets someone buy next term today.
+
+    ``lock`` takes a row lock on the pass, and it is the difference
+    between an allowance that holds and one that only usually holds.
+
+    The contended resource for an allowance is the **pass**, not the
+    occurrence. Two simultaneous requests from the same member for two
+    *different* Mondays lock two different ``events`` rows, so they
+    never block each other — and each then counts the weekly usage,
+    each sees zero, and each decides there is headroom. Both commit,
+    and a ``credits_per_week=1`` pass has paid for two sessions.
+    Locking the pass before counting is what serialises that: the
+    second request waits, then counts, then sees the first.
+
+    Every writing caller locks. The preview deliberately does not: it
+    runs while a member reads a page, and holding an allowance lock for
+    that long would block their own confirmation.
     """
     conditions = []
     if is_pathway_gated:
@@ -214,7 +240,7 @@ def find_candidate_pass(
         conditions.append(AccessPass.eligible_series_id == event.series_id)
     if not conditions:
         return None
-    return (
+    query = (
         db.query(AccessPass)
         .filter(
             AccessPass.user_id == user.id,
@@ -227,8 +253,10 @@ def find_candidate_pass(
             ),
         )
         .order_by(AccessPass.created_at.desc())
-        .first()
     )
+    if lock:
+        query = query.with_for_update()
+    return query.first()
 
 
 def evaluate_pass_for_event(
@@ -239,6 +267,7 @@ def evaluate_pass_for_event(
     is_privileged: bool,
     pending_weekly: dict[datetime, int] | None = None,
     pending_total: int = 0,
+    lock_pass: bool = False,
 ) -> PassDecision:
     """Decide which entitlement, if any, this booking consumes.
 
@@ -272,6 +301,7 @@ def evaluate_pass_for_event(
         event=event,
         is_pathway_gated=is_pathway_gated,
         is_series_gated=is_series_gated,
+        lock=lock_pass,
     )
 
     if candidate is None:

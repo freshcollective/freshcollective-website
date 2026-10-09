@@ -438,6 +438,20 @@ def evaluate_selection(
             is_privileged=is_privileged,
             pending_weekly=pending_weekly,
             pending_total=pending_total,
+            # The same flag: a confirmation locks the occurrence rows
+            # and the allowance, a preview locks nothing.
+            #
+            # Belt and braces here, measured as such: this path already
+            # locks *every* remaining occurrence in the Series, so two
+            # concurrent reserves against the same term-pass serialise
+            # on the occurrence rows before they reach the allowance.
+            # Removing this line does not break the concurrency tests.
+            # It stays because the single-booking path has no such
+            # breadth — there the pass lock is the only thing standing
+            # between two different Mondays and a double-spent credit —
+            # and because the redundancy is what makes the whole-Series
+            # lock safe to narrow later.
+            lock_pass=lock,
         )
         if decision.denial is not None:
             plan.unavailable.append(

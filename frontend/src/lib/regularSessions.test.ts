@@ -13,10 +13,15 @@
  */
 
 import { strict as assert } from 'node:assert'
+import { readFileSync } from 'node:fs'
 import { describe, test } from 'node:test'
 
 // @ts-expect-error - Node-native import path
 import {
+  ACCESS_POLL_INTERVAL_MS,
+  ACCESS_POLL_MAX_ATTEMPTS,
+  accessWaitCopy,
+  accessWaitPhase,
   confirmLabel,
   patternDescription,
   previewHeadline,
@@ -263,5 +268,108 @@ describe('the pattern description', () => {
       patternDescription(pattern({ occurrence_count: 4, already_booked_count: 3 })),
       '1 session to reserve · 3 already yours',
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The window between paying and having access
+// ---------------------------------------------------------------------------
+//
+// The AccessPass arrives on a webhook, so a member can return from
+// Stripe before they have access. The page used to fall through to
+// "Ways to join" in that window and offer to sell them the term they
+// had just bought. These assertions are mostly about what the copy
+// must never say.
+
+describe('waiting for access after a purchase', () => {
+  test('the first few polls read as a brief confirmation', () => {
+    assert.equal(accessWaitPhase(1), 'confirming')
+    assert.equal(accessWaitPhase(5), 'confirming')
+  })
+
+  test('a longer wait is acknowledged rather than hidden', () => {
+    assert.equal(accessWaitPhase(6), 'slow')
+    assert.equal(accessWaitPhase(ACCESS_POLL_MAX_ATTEMPTS - 1), 'slow')
+  })
+
+  test('waiting stops being honest after the limit', () => {
+    assert.equal(accessWaitPhase(ACCESS_POLL_MAX_ATTEMPTS), 'timed_out')
+    assert.equal(accessWaitPhase(ACCESS_POLL_MAX_ATTEMPTS + 10), 'timed_out')
+  })
+
+  test('the wait is bounded at roughly two minutes', () => {
+    const totalMs = ACCESS_POLL_INTERVAL_MS * ACCESS_POLL_MAX_ATTEMPTS
+    assert.ok(totalMs >= 60_000, 'too short for a slow webhook')
+    assert.ok(totalMs <= 180_000, 'too long to leave someone watching')
+  })
+
+  for (const phase of ['confirming', 'slow', 'timed_out'] as const) {
+    test(`${phase} never suggests paying again`, () => {
+      // The whole point. The member has paid; the only thing missing
+      // is a webhook.
+      const { heading, body } = accessWaitCopy(phase)
+      const text = `${heading} ${body}`.toLowerCase()
+      for (const forbidden of ['buy', 'purchase', 'checkout', 'pay now']) {
+        assert.ok(!text.includes(forbidden), `${phase} copy says "${forbidden}"`)
+      }
+    })
+
+    test(`${phase} tells the member their payment is safe`, () => {
+      const { heading, body } = accessWaitCopy(phase)
+      const text = `${heading} ${body}`.toLowerCase()
+      assert.ok(
+        /payment|paid/.test(text),
+        `${phase} copy does not mention the payment at all`,
+      )
+    })
+  }
+
+  test('only the longest wait asks the member to do something', () => {
+    assert.equal(accessWaitCopy('confirming').showReload, false)
+    assert.equal(accessWaitCopy('slow').showReload, false)
+    assert.equal(accessWaitCopy('timed_out').showReload, true)
+  })
+
+  test('the longest wait ends with reassurance and a way out', () => {
+    const copy = accessWaitCopy('timed_out')
+    assert.match(copy.body, /do not need to pay again/i)
+    assert.match(copy.body, /reload/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The page's branch order
+// ---------------------------------------------------------------------------
+
+describe('the Series page never sells a term twice', () => {
+  // A source contract, because this is a fact about branch *order* in
+  // a server component that no unit test of the copy can see. The
+  // failure it guards against is specific: a member returns from
+  // Stripe before the webhook lands, falls past the access branch, and
+  // is shown the purchase CTA for the thing they just bought.
+  const PAGE = new URL(
+    '../app/spaces/[slug]/gathering-series/[series-slug]/page.tsx',
+    import.meta.url,
+  ).pathname
+
+  test('the just-purchased branch comes before ways-to-join', () => {
+    const source = readFileSync(PAGE, 'utf8')
+    const pending = source.indexOf('<AccessPending')
+    const waysToJoin = source.indexOf('<SidebarWaysToJoin')
+    assert.ok(pending > 0, 'the pending-access state is not rendered at all')
+    assert.ok(waysToJoin > 0, 'ways-to-join is no longer rendered')
+    assert.ok(
+      pending < waysToJoin,
+      'a member who has just paid would be offered the purchase again',
+    )
+  })
+
+  test('the reserve card is offered on the same page, not a new one', () => {
+    // "Immediately after purchase" and "still there later" are the
+    // same surface deliberately: this page is the Stripe return
+    // destination, so one component covers both.
+    const source = readFileSync(PAGE, 'utf8')
+    assert.ok(source.includes('<RegularSessions'))
+    assert.ok(source.includes("=== 'success'"), 'the return flag is not read')
   })
 })

@@ -12,6 +12,7 @@ import type { CollectivePaletteMeta } from '@/lib/collectivePalette'
 import { AboutBlockRenderer } from '@/components/spaces/AboutBlockRenderer'
 import SeriesSchedule from './SeriesSchedule'
 import RegularSessions from './RegularSessions'
+import AccessPending from './AccessPending'
 import { SidebarWaysToJoin, SidebarYourAccess } from './SeriesSidebar'
 import { PlanRecoveryBanner } from '@/components/commerce/PlanRecoveryBanner'
 import type { PathwayAboutBlock } from '@/types/platform'
@@ -282,6 +283,19 @@ export default async function MemberGatheringSeriesPage({
                 />
               </div>
             </>
+          ) : justPurchased ? (
+            /* Paid, but the pass has not landed yet. The AccessPass is
+               written by webhook-driven fulfilment, so the redirect
+               back from Stripe can arrive first — and the weekly
+               payment flow waits on its first payment event. Showing
+               "Ways to join" here would offer to sell them the term
+               they just bought, which reads as a failed payment and
+               invites a second one. Waits instead, then refreshes. */
+            <AccessPending
+              spaceSlug={slug}
+              seriesSlug={seriesSlug}
+              palette={collectivePalette}
+            />
           ) : detail.member_plan_state ? (
             /* Suspended member — banner already tells them what to
                do; do not add a fresh ways-to-join CTA. */
