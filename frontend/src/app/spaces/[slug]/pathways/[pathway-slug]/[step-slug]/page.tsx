@@ -406,7 +406,11 @@ export default async function StepPage({ params }: Props) {
             className="overflow-hidden rounded-2xl border px-7 py-7 md:px-8 md:py-8"
             style={{ borderColor: 'rgba(56,160,158,0.15)', background: '#FFFFFF' }}
           >
-            {renderBlocks(blocks, collectivePalette)}
+            {renderBlocks(blocks, collectivePalette, {
+              spaceSlug: slug,
+              pathwaySlug,
+              stepSlug,
+            })}
           </article>
         ) : step.content_body ? (
           <article
