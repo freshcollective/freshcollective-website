@@ -33,6 +33,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.dependencies import get_current_user, get_verified_current_user
+from app.creator.schemas import (
+    AboutBlockCreateRequest,
+    AboutBlockUpdateRequest,
+    StepBlockCreateRequest,
+    StepBlockResponse,
+    StepBlockUpdateRequest,
+)
 from app.core.database import get_db
 from app.main import app
 from app.models.platform import (
@@ -497,3 +504,51 @@ class TestReadBack:
             json={"response_text": "x" * 20_001},
         )
         assert res.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# The creator's toggle travels through the API it is saved with
+# ---------------------------------------------------------------------------
+
+
+class TestTheToggleTravels:
+    def test_the_block_response_carries_the_resolved_field(self, db, world):
+        block = world["blocks"][0]
+        out = StepBlockResponse.model_validate(block)
+        assert out.response_enabled is None  # NULL on existing content
+
+    def test_create_and_update_requests_accept_it(self):
+        assert StepBlockCreateRequest(block_type="exercise").response_enabled is None
+        assert StepBlockCreateRequest(
+            block_type="exercise", response_enabled=False,
+        ).response_enabled is False
+        # Omitted stays omitted, so an autosave of some other field
+        # cannot silently re-enable or disable the response area.
+        assert "response_enabled" not in StepBlockUpdateRequest().model_dump(exclude_unset=True)
+        assert StepBlockUpdateRequest(response_enabled=False).model_dump(
+            exclude_unset=True,
+        ) == {"response_enabled": False}
+
+    def test_it_persists_through_the_generic_block_update(self, db, world):
+        # The block PATCH endpoint applies model_dump(exclude_unset=True)
+        # with setattr, so the field needs no endpoint change — but it
+        # does need to survive the round trip.
+        block = world["blocks"][0]
+        patch = StepBlockUpdateRequest(response_enabled=False).model_dump(exclude_unset=True)
+        for field, value in patch.items():
+            setattr(block, field, value)
+        db.flush()
+        db.expire(block)
+        assert block.response_enabled is False
+
+    def test_the_about_block_schemas_have_no_such_field(self):
+        # ``pathway_about_blocks`` has no response_enabled column, and
+        # public About pages must stay non-interactive. Keeping the
+        # field out of these schemas is what makes that structural
+        # rather than a rule someone has to remember.
+        assert "response_enabled" not in AboutBlockCreateRequest.model_fields
+        assert "response_enabled" not in AboutBlockUpdateRequest.model_fields
+
+    def test_the_about_block_table_has_no_such_column(self):
+        from app.models.platform import PathwayAboutBlock
+        assert "response_enabled" not in PathwayAboutBlock.__table__.columns
