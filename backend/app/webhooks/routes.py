@@ -802,10 +802,12 @@ def _handle_checkout_completed(
         return
 
     # --- Retrieve the actual Stripe processing fee, and the charge ----------
-    # For a manual-payout row this remains reporting only. For a
-    # Connect-routed row it is load-bearing: the creator's transfer is
-    # ``net_creator_amount_cents - processing_fee_cents``, so an unknown fee
-    # means no transfer rather than an estimated one.
+    # Reporting only, for every payout model. The creator's transfer is
+    # ``net_creator_amount_cents`` and does not reference this, because
+    # Fresh Collective absorbs the processing cost — so an unknown fee no
+    # longer holds up a transfer. It is still worth reading here, while the
+    # PaymentIntent is already in hand, and ``fc_connect_transfer_sweeper``
+    # reconciles any row this could not price.
     #
     # ``payment_intent_status`` decides whether the money is actually in.
     # Checkout completing is not the same as the payment succeeding for

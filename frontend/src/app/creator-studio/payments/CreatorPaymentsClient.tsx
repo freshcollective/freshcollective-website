@@ -666,7 +666,7 @@ export default function CreatorPaymentsClient({
                 <table className="w-full text-left">
                   <thead>
                     <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                      {['Date', 'Member', 'Collective', 'Purchase', 'Source', 'Gross', 'FC Fee', 'Stripe Fee', 'Est. Retained', 'Status', ''].map((h, idx) => (
+                      {['Date', 'Member', 'Collective', 'Purchase', 'Source', 'Gross', 'FC Fee', 'Processing (we cover)', 'Retained', 'Status', ''].map((h, idx) => (
                         <th key={`${h}-${idx}`} className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wider text-black">
                           {h}
                         </th>
@@ -720,14 +720,17 @@ export default function CreatorPaymentsClient({
                         <td className="px-3 py-3 text-[12px] text-black whitespace-nowrap">
                           {fmt(row.platform_fee_cents, row.currency)}
                         </td>
-                        {/* Stripe's cut. Known only for Connect sales, and
-                            only once Stripe has reported it — never estimated,
-                            because a guess at a real cost that the creator can
-                            check is worse than saying it is not known yet. */}
+                        {/* What card processing cost on this sale. Shown for
+                            transparency, not as a deduction: Fresh Collective
+                            pays it out of its own commission, so it never
+                            reduces the creator's earnings. Still never
+                            estimated — a guess at a real cost the creator
+                            could check is worse than saying it is not known
+                            yet. */}
                         <td
                           className="px-3 py-3 text-[12px] whitespace-nowrap"
                           style={{ color: '#64748B' }}
-                          title="Stripe's processing fee, as charged on this sale."
+                          title="Card processing cost on this sale, paid by Fresh Collective out of its commission. Not deducted from your earnings."
                         >
                           {row.connect
                             ? (row.connect.processing_fee_cents != null
@@ -739,13 +742,15 @@ export default function CreatorPaymentsClient({
                           className="px-3 py-3 text-[12px] font-semibold whitespace-nowrap"
                           style={{ color: '#38A09E' }}
                           title={row.connect
-                            ? "What was transferred to this creator's Stripe account, after both fees."
+                            ? "What was transferred to this creator's bank account, after Fresh Collective's commission."
                             : 'Retained creator earnings — original creator share minus the reversed portion of any refund. Zero when the transaction is fully refunded.'}
                         >
-                          {/* A Connect row shows what actually moved, not
-                              gross-minus-FC-fee: Stripe's fee comes out of
-                              that figure too, so the old column overstated
-                              the sale by the processing fee. */}
+                          {/* A Connect row shows what actually moved. For
+                              sales since Fresh Collective began covering
+                              processing costs that equals gross minus the FC
+                              commission; the few earlier transfers were
+                              smaller, and showing the real figure keeps their
+                              history honest. */}
                           {row.connect ? (
                             <>
                               {row.connect.creator_amount_cents != null

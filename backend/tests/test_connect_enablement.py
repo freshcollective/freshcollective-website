@@ -341,9 +341,12 @@ class TestConnectEarnings:
             + row.creator_amount_cents
         ) == row.sale_amount_cents
 
-    def test_a_zero_percent_creator_receives_gross_less_the_stripe_fee(
+    def test_a_historical_zero_percent_row_keeps_the_figure_that_was_sent(
         self, db, make_user,
     ):
+        """This row was transferred before Fresh Collective absorbed the
+        processing fee, so A$98 really did arrive. Reporting it as A$100 now
+        would tell the creator they received money they never got."""
         creator = make_user(role="creator")
         _connect_txn(
             db, creator.id, platform_fee_basis_points=0, platform_fee_cents=0,
@@ -409,7 +412,9 @@ class TestConnectEarnings:
         assert row.status_label == "Needs attention"
 
     def test_an_unknown_fee_is_not_reported_as_zero(self, db, make_user):
-        """Zero would be a lie about a real cost."""
+        """Zero would be a lie about a real cost — and that cost is Fresh
+        Collective's, so not knowing it says nothing about the creator's
+        share, which is stated exactly."""
         creator = make_user(role="creator")
         _connect_txn(
             db, creator.id, processing_fee_cents=None,
@@ -418,8 +423,9 @@ class TestConnectEarnings:
         )
         row = earnings.list_connect_earnings(db, creator_user_id=creator.id)[0]
         assert row.processing_fee_cents is None
-        assert row.creator_amount_cents is None
-        assert row.amount_is_estimate is True
+        assert row.creator_amount_cents == 9200
+        # Not an estimate: 9200 is precisely what the transfer will send.
+        assert row.amount_is_estimate is False
 
     def test_a_row_exposes_no_stripe_ids_or_recovery_internals(self, db, make_user):
         creator = make_user(role="creator")
@@ -457,13 +463,18 @@ class TestConnectEarnings:
         assert summary.sale_total_cents == 20000
         assert summary.platform_fee_total_cents == 1600
         assert summary.processing_fee_total_cents == 400
-        assert summary.creator_total_cents == 18000
+        # 9000 already sent under the old formula + 9200 still to come under
+        # the new one. Each row reports its own truth.
+        assert summary.creator_total_cents == 18200
         assert summary.sent_total_cents == 9000
-        assert summary.awaiting_total_cents == 9000
+        assert summary.awaiting_total_cents == 9200
 
-    def test_an_unpriced_row_contributes_nothing_to_the_totals(self, db, make_user):
-        """A partial sum presented as a total would be wrong in the one
-        direction that matters."""
+    def test_an_unpriced_row_still_counts_towards_what_the_creator_is_owed(
+        self, db, make_user,
+    ):
+        """The gap is in Fresh Collective's cost of sale, not in the creator's
+        earnings. Leaving the row out of their total would understate what
+        they are owed — wrong in the one direction that matters."""
         creator = make_user(role="creator")
         _connect_txn(
             db, creator.id, processing_fee_cents=None,
@@ -473,7 +484,8 @@ class TestConnectEarnings:
         rows = earnings.list_connect_earnings(db, creator_user_id=creator.id)
         summary = earnings.summarise(rows, currency="AUD")
         assert summary.row_count == 1
-        assert summary.creator_total_cents == 0
+        assert summary.creator_total_cents == 9200
+        # FC's own unknown cost is still not invented as zero.
         assert summary.processing_fee_total_cents == 0
 
 

@@ -97,17 +97,31 @@ export function payoutScheduleSentence(
  * creators is the entire change Connect brings.
  */
 export function feeDisclosure(platformFeeBasisPoints: number | null): string {
-  const base =
-    'Stripe’s processing fee comes out of each sale first, then Fresh ' +
-    'Collective’s platform fee, and the remainder is paid to you.'
+  const covered =
+    'Fresh Collective covers the standard card processing costs on your ' +
+    'sales — they are not taken out of your earnings.'
   if (platformFeeBasisPoints === 0) {
+    // A Founding Creator pays no commission, so there is nothing to deduct
+    // at all. The old copy told them processing fees "still apply", which
+    // is now simply untrue and would understate what they receive.
     return (
-      base +
-      ' Your Fresh Collective platform fee is 0%. Stripe processing fees ' +
-      'still apply.'
+      'Your Fresh Collective commission is 0%, so you receive the full ' +
+      'amount of each sale. ' + covered
     )
   }
-  return base
+  if (platformFeeBasisPoints === null) {
+    return (
+      'Fresh Collective deducts its platform commission from each sale and ' +
+      'you receive the rest. ' + covered
+    )
+  }
+  const pct = (platformFeeBasisPoints / 100).toFixed(
+    platformFeeBasisPoints % 100 === 0 ? 0 : 2,
+  )
+  return (
+    `Fresh Collective deducts its ${pct}% platform commission from each ` +
+    'sale and you receive the rest. ' + covered
+  )
 }
 
 /**
@@ -138,8 +152,8 @@ export function feeAcknowledgement(
     disclosure: feeDisclosure(platformFeeBasisPoints),
     prompt:
       'Before we can switch your sales over, please confirm you’ve read how ' +
-      'the fees work.',
-    actionLabel: 'I understand how the fees work',
+      'your earnings are worked out.',
+    actionLabel: 'I understand how my earnings are worked out',
     note:
       'Confirming doesn’t switch anything on. Fresh Collective enables ' +
       'automatic payouts separately, and we’ll tell you when yours are live.',
@@ -195,16 +209,15 @@ export function describeConnect(
   switch (status.state) {
     case 'not_started':
       return {
-        badge: 'Not connected',
+        badge: 'Not set up',
         tone: 'neutral',
-        headline: 'Get paid directly by Stripe',
+        headline: 'Get paid into your bank account',
         body:
-          'Connect a Stripe account and Stripe will pay your share of each ' +
-          'sale straight into your bank account. It takes a few minutes, and ' +
-          'Stripe collects your details directly — Fresh Collective never ' +
-          'sees them.',
+          'Set up your bank details securely and receive your earnings ' +
+          'directly into your nominated account. Stripe handles verification ' +
+          'and transfers behind the scenes.',
         action: 'connect',
-        actionLabel: 'Connect Stripe',
+        actionLabel: 'Set up bank payouts',
         showRefresh: false,
         routingNote: routing,
         scheduleNote: null,
@@ -215,10 +228,10 @@ export function describeConnect(
       return {
         badge: 'Setup started',
         tone: 'progress',
-        headline: 'Your Stripe setup isn’t finished',
+        headline: 'Your bank payout setup isn’t finished',
         body:
-          'Stripe still needs a few details before it can pay you. You can ' +
-          'pick up where you left off.',
+          'Stripe still needs a few details before your earnings can reach ' +
+          'your bank account. You can pick up where you left off.',
         action: 'continue',
         actionLabel: 'Continue setup',
         showRefresh: true,

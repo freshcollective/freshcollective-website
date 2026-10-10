@@ -1100,10 +1100,11 @@ def _do_invoice_succeeded(
     platform_fee = round(gross * plan.platform_fee_basis_points / 10000)
     net_creator = gross - platform_fee
 
-    # The actual per-invoice processing fee. Reporting only for a manual row;
-    # load-bearing for a Connect one, where this instalment's transfer is
-    # ``net_creator_amount_cents - processing_fee_cents``. Each invoice has its
-    # own fee — never reused from a sibling instalment.
+    # The actual per-invoice processing fee. Reporting only, whatever the
+    # payout model: this instalment's transfer is ``net_creator_amount_cents``
+    # and does not reference the fee, because Fresh Collective absorbs it.
+    # Each invoice still has its own fee — never reused from a sibling
+    # instalment, and never estimated from one.
     processing_fee_cents: int | None = None
     if charge_id:
         from app.services.stripe_finite_plan import retrieve_processing_fee_for_charge

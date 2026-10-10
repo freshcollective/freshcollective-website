@@ -219,7 +219,11 @@ PRO = PlanCapability(
     approval_required=False,
     is_self_service=True,
     is_purchasable=True,
-    transaction_fee_basis_points=300,  # 3% on Pro paid offers (lower tier)
+    # 4% from the 2026-10 pricing review. This constant is only the
+    # fallback for a plan with no ``creator_plans`` row; checkout reads
+    # the database row, so the live change is a World Management edit.
+    # Both are updated together so they cannot disagree.
+    transaction_fee_basis_points=400,  # 4% on Pro paid offers (lower tier)
     storage_allowance_mb=None,          # TBD
     card_headline=(
         "Up to five collectives with greater capacity, collaboration and growth tools."

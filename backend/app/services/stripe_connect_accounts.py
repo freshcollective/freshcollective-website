@@ -172,12 +172,20 @@ def _to_dict(value: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+#: The entity types Stripe accepts for an Australian recipient account,
+#: and the only two Fresh Collective will send. Anything else is a caller
+#: bug: passing an unrecognised value through to Stripe would fail
+#: verification later, after the creator had already entered their details.
+SUPPORTED_ENTITY_TYPES: frozenset[str] = frozenset({"individual", "company"})
+
+
 def create_recipient_account(
     *,
     display_name: str,
     contact_email: str | None,
     country: str,
     business_url: str | None = None,
+    entity_type: str = "individual",
 ) -> dict[str, Any]:
     """Create the account configuration Fresh Collective actually uses.
 
@@ -193,6 +201,17 @@ def create_recipient_account(
     ``account_controller_express_dash_without_application_losses_or_fees``.
     So the three are one decision, not three.
 
+    ``entity_type`` decides which identity Stripe verifies: a sole trader
+    is an ``individual``, a Pty Ltd is a ``company``, and Stripe asks each
+    for different documents. It defaults to ``individual`` because that is
+    what every account created so far has used and what most Fresh
+    Collective creators are. Fresh Collective does not currently record a
+    creator's legal entity anywhere, so nothing can derive this yet — see
+    the note in ``connect_routes`` for what supporting companies needs.
+    Validated against :data:`SUPPORTED_ENTITY_TYPES` rather than passed
+    through, so a wrong value fails here instead of surfacing as a
+    verification dead end after the creator has filled in Stripe's form.
+
     ``requirements_collector`` is deliberately not passed. Stripe sets it
     to ``"stripe"`` for an express dashboard, which is why FC cannot write
     identity, ToS or bank details and must hand the creator to hosted
@@ -204,6 +223,12 @@ def create_recipient_account(
     refused as ``url_invalid``), so inventing one would turn a helpful
     prefill into a failed create.
     """
+    if entity_type not in SUPPORTED_ENTITY_TYPES:
+        raise ConnectError(
+            f"unsupported entity_type {entity_type!r}; expected one of "
+            f"{sorted(SUPPORTED_ENTITY_TYPES)}"
+        )
+
     client = get_stripe_client()
 
     defaults: dict[str, Any] = {
@@ -217,7 +242,7 @@ def create_recipient_account(
 
     params: dict[str, Any] = {
         "display_name": display_name,
-        "identity": {"country": country.lower(), "entity_type": "individual"},
+        "identity": {"country": country.lower(), "entity_type": entity_type},
         "configuration": {
             "recipient": {
                 "capabilities": {
@@ -267,6 +292,163 @@ def retrieve_legacy_account(account_id: str) -> dict[str, Any]:
     except stripe.StripeError as exc:
         raise _translate(exc, what=f"retrieving legacy account {account_id}") from exc
     return _to_dict(account)
+
+
+#: Weekly rather than Stripe's daily default. Every payout costs Fresh
+#: Collective a fixed fee plus a percentage, and FC pays those fees, so a
+#: creator selling most days generates roughly 22 payouts a month on daily
+#: and about 4.3 on weekly. The money lands a few days later and costs
+#: materially less to send. Monday keeps it predictable for creators and
+#: lines up with Fresh Collective's own payout day.
+WEEKLY_PAYOUT_SCHEDULE: dict[str, Any] = {
+    "interval": "weekly",
+    "weekly_anchor": "monday",
+}
+
+
+WEEKLY_INTERVAL = "weekly"
+
+
+def _schedule_from(account: Any) -> dict[str, Any] | None:
+    """``settings.payouts.schedule`` off an account, or None if absent."""
+    data = _to_dict(account)
+    settings_block = data.get("settings")
+    if not isinstance(settings_block, dict):
+        return None
+    payouts = settings_block.get("payouts")
+    if not isinstance(payouts, dict):
+        return None
+    schedule = payouts.get("schedule")
+    return schedule if isinstance(schedule, dict) else None
+
+
+def read_payout_schedule(account_id: str) -> dict[str, Any] | None:
+    """What Stripe says this account's payout schedule actually is.
+
+    A plain read, used to confirm a write rather than trust it. Returns
+    ``None`` when Stripe could not be asked or did not say.
+    """
+    api = get_stripe()
+    try:
+        account = api.Account.retrieve(account_id)
+    except Exception as exc:  # noqa: BLE001 — confirmation must not raise
+        logger.warning(
+            "connect: could not read the payout schedule for %s: %s",
+            account_id, exc,
+        )
+        return None
+    return _schedule_from(account)
+
+
+def set_weekly_payout_schedule(account_id: str) -> dict[str, Any] | None:
+    """Put an account on weekly payouts, then check that it took.
+
+    Payout settings live only on the v1 account object — they are absent
+    from v2 entirely — so this is a v1 ``Account.modify``.
+
+    **Verified, not assumed.** The write is followed by a read of what
+    Stripe now reports. If the result is anything other than weekly the
+    mismatch is logged at ERROR with the interval the account is actually
+    on, because the failure mode this guards against is the quiet one: an
+    account left on Stripe's daily default, costing Fresh Collective a
+    payout fee every day a creator sells, with nothing in the logs saying
+    so. ``payout_interval`` on the account row is refreshed from Stripe by
+    every sync, so :func:`accounts_not_on_weekly_payouts` can list the
+    stragglers afterwards without asking Stripe again.
+
+    **Deliberately does not raise.** An account that was created
+    successfully must not be lost because its payout interval could not be
+    set — the creator would be left with no way to be paid at all, which is
+    far worse than a suboptimal payout cadence. The interval is re-appliable
+    at any time; a half-created account is not.
+
+    Returns the schedule Stripe reports, or ``None`` when it refused or
+    would not say — in both cases having logged why.
+
+    Not yet confirmed against Stripe for a ``recipient`` account whose
+    ``requirements_collector`` is ``"stripe"``. That setting is why Fresh
+    Collective cannot write identity, ToS or bank details on these
+    accounts; the payout schedule is a different field and is expected to
+    be writable, but "expected" is the honest word. The ERROR log and the
+    straggler report are what turn a wrong expectation into something
+    somebody notices on the first account created after this shipped.
+    """
+    api = get_stripe()
+    try:
+        account = api.Account.modify(
+            account_id,
+            settings={"payouts": {"schedule": dict(WEEKLY_PAYOUT_SCHEDULE)}},
+        )
+    except Exception as exc:  # noqa: BLE001 — see "does not raise" above
+        logger.error(
+            "connect: Stripe refused weekly payouts for %s (%s). The account "
+            "stays on its existing schedule — Stripe's default is daily, "
+            "which costs a payout fee per selling day. Re-appliable: this "
+            "does not affect transfers or the creator's earnings.",
+            account_id, exc,
+        )
+        return None
+
+    # Confirm against what Stripe reports rather than trusting the write.
+    # The modify response already carries the post-write state; a read is
+    # only needed when it did not include the schedule.
+    schedule = _schedule_from(account) or read_payout_schedule(account_id)
+    interval = (schedule or {}).get("interval")
+
+    if interval == WEEKLY_INTERVAL:
+        logger.info(
+            "connect: payout schedule for %s confirmed as %s", account_id, schedule,
+        )
+        return schedule
+
+    logger.error(
+        "connect: weekly payouts did not take for %s — Stripe reports "
+        "interval=%r (schedule=%r). The account is not on weekly payouts. "
+        "Transfers and creator earnings are unaffected; this is a cost and "
+        "cadence problem, and it is re-appliable.",
+        account_id, interval, schedule,
+    )
+    return schedule
+
+
+def accounts_not_on_weekly_payouts(db: Any) -> list[tuple[str, str, str | None]]:
+    """Connected accounts Stripe is not paying out weekly.
+
+    Reads the ``payout_interval`` already projected onto the account row by
+    every sync, so it costs no Stripe calls and reflects Stripe's own answer
+    rather than what Fresh Collective asked for.
+
+    ``None`` is included: an account that has never synced far enough to
+    learn its interval is exactly as unverified as one known to be daily,
+    and saying so is more useful than assuming it is fine.
+
+    Returns ``(creator_user_id, stripe_account_id, payout_interval)`` for
+    each, so an administrator can act on it without a second query.
+    """
+    from sqlalchemy import or_
+
+    from app.models.creator_stripe_account import CreatorStripeAccount
+
+    # The NULL branch is explicit because SQL's ``<> 'weekly'`` is false for
+    # NULL, so an account with no known interval would otherwise be reported
+    # as fine — the opposite of the truth.
+    rows = (
+        db.query(
+            CreatorStripeAccount.creator_user_id,
+            CreatorStripeAccount.stripe_account_id,
+            CreatorStripeAccount.payout_interval,
+        )
+        .filter(
+            CreatorStripeAccount.stripe_account_id.isnot(None),
+            or_(
+                CreatorStripeAccount.payout_interval.is_(None),
+                CreatorStripeAccount.payout_interval != WEEKLY_INTERVAL,
+            ),
+        )
+        .order_by(CreatorStripeAccount.creator_user_id)
+        .all()
+    )
+    return [(c, a, i) for c, a, i in rows]
 
 
 def is_closed(account: dict[str, Any]) -> bool:

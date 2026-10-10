@@ -115,10 +115,22 @@ class SyncSource(str, enum.Enum):
 
 
 #: Which wording a creator acknowledged. Bump when the fee model itself
-#: changes, so consent to different terms is never inherited silently — the
-#: admin guard compares nothing but presence today, and a future change can
-#: compare versions.
-FEE_DISCLOSURE_VERSION = "2026-09-connect-v1"
+#: changes — not when the wording is merely tidied — so that consent to
+#: different terms is never inherited silently.
+#:
+#: ``-v2`` is the move to Fresh Collective absorbing Stripe's processing
+#: fee: a creator now receives gross minus the platform commission and
+#: nothing else, where ``-v1`` said the processing fee came out first.
+#:
+#: Note what this bump does **not** do. The enablement guard still tests
+#: only that an acknowledgement exists, so a creator who agreed to v1 keeps
+#: routing and is not asked again. That is deliberate for this change and
+#: only this change: v2 is strictly better for the creator — they receive
+#: more, never less — so holding their payouts until they re-agree would
+#: punish them for an improvement. A future revision that reduced what a
+#: creator receives would need the guard to compare versions, which is the
+#: change the note above anticipates.
+FEE_DISCLOSURE_VERSION = "2026-10-connect-v2"
 
 
 _ONBOARDING_STATES = tuple(s.value for s in OnboardingState)

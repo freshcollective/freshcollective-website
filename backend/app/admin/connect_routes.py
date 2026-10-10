@@ -49,6 +49,11 @@ class ConnectReadinessResponse(BaseModel):
     has_stripe_account: bool = False
     fee_disclosure_acknowledged: bool = False
     fee_disclosure_version: str | None = None
+    #: What Stripe says it actually pays this account out on, as of the last
+    #: sync — not what Fresh Collective asked for. ``"weekly"`` is intended;
+    #: ``"daily"`` or ``None`` means the schedule never took, which costs a
+    #: payout fee per selling day and is re-appliable.
+    payout_interval: str | None = None
     #: Non-null when this creator's sales already route through Connect.
     routing_enabled_at: str | None = None
 
@@ -71,6 +76,7 @@ def _readiness(db: Session, creator_user_id: str) -> ConnectReadinessResponse:
             account and account.fee_disclosure_acknowledged_at is not None
         ),
         fee_disclosure_version=account.fee_disclosure_version if account else None,
+        payout_interval=account.payout_interval if account else None,
         routing_enabled_at=(
             account.connect_payouts_enabled_at.isoformat()
             if account and account.connect_payouts_enabled_at else None

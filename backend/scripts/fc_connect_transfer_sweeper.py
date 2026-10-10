@@ -89,6 +89,8 @@ from sqlalchemy import text
 
 from app.core.database import SessionLocal
 from app.services import connect_transfer_sweeper as _sweeper
+from app.services import processing_fee_reconciliation as fee_recon
+from app.services import stripe_connect_accounts as connect_accounts
 
 
 logger = logging.getLogger("fc_connect_transfer_sweeper")
@@ -160,6 +162,171 @@ def report_partial_failures(report) -> str | None:
     )
 
 
+def reconcile_processing_fees(db) -> str | None:
+    """Fill in Stripe's processing fee on succeeded payments that lack one.
+
+    Fresh Collective's own cost of sale, for rows the transfer path never
+    prices — a sent row is out of the sweeper's reach, so without this the
+    gap would never close. Writes no figure a creator can see; see
+    ``services.processing_fee_reconciliation`` for what it will not touch.
+
+    Swallows its own errors, like the reporters above. This runs after the
+    money work, and a bookkeeping read that throws must not turn a sweep
+    that transferred correctly into a failed cron. Keeping the handler here
+    rather than in ``main`` also leaves ``main``'s only ``except`` the fatal
+    one, which is what ``test_cron_observability`` requires of every script.
+
+    Returns a Sentry event id when rows remain unpriced, otherwise ``None``.
+    """
+    try:
+        report = fee_recon.reconcile_missing_fees(db)
+    except Exception:
+        logger.exception("processing fee reconciliation failed")
+        return None
+
+    if not report.unreadable:
+        return None
+    return capture_job_summary(
+        "processing fees could not be read for some succeeded payments; "
+        "Fresh Collective's cost of sale is incomplete",
+        level="warning",
+        rows_unpriced=len(report.unreadable),
+        rows_resolved=report.resolved,
+    )
+
+
+def report_payout_schedule_stragglers(db) -> str | None:
+    """Which connected accounts Stripe is not paying out weekly.
+
+    Setting the schedule at account creation can fail quietly — Stripe may
+    refuse the write, and the function deliberately does not raise so that a
+    creator is never left without a usable account over a payout cadence.
+    This is the other half of that trade: the condition is surfaced on every
+    pass instead of being discovered in a Stripe invoice.
+
+    Costs no Stripe calls. ``payout_interval`` is projected onto the account
+    row by every sync, so this reads Stripe's own answer out of the database.
+
+    Reported, never enforced, and never acted on automatically: changing a
+    live payout schedule is an operator decision. Returns a Sentry event id
+    when there is something to report. Swallows its own errors.
+    """
+    try:
+        stragglers = connect_accounts.accounts_not_on_weekly_payouts(db)
+    except Exception:
+        logger.warning(
+            "payout schedule check: could not list accounts", exc_info=True,
+        )
+        return None
+
+    if not stragglers:
+        logger.info("payout schedule check: every connected account is weekly")
+        return None
+
+    # Ids go to the Render log only, like the needs-attention list above.
+    for creator_id, account_id, interval in stragglers:
+        id_logger.warning(
+            "payout schedule check: creator=%s account=%s interval=%r "
+            "(expected weekly)", creator_id, account_id, interval,
+        )
+    return capture_job_summary(
+        "connected accounts are not on weekly payouts",
+        level="warning",
+        accounts=len(stragglers),
+        intervals=sorted({str(i) for _, _, i in stragglers}),
+    )
+
+
+def _field(entry: object, name: str) -> object | None:
+    """One field off a Stripe object or a plain mapping, never raising."""
+    if isinstance(entry, dict):
+        return entry.get(name)
+    return getattr(entry, name, None)
+
+
+def report_balance_headroom(db) -> str | None:
+    """Can Fresh Collective's balance still cover what it owes creators?
+
+    This became worth watching when FC started absorbing Stripe's
+    processing fee. A charge adds ``gross - stripe_fee`` to FC's balance
+    while the transfer sends ``gross - platform_fee``, so every sale where
+    the commission is smaller than Stripe's fee is funded from FC's own
+    money — always for a 0% creator, and for small sales on the lower
+    commission tiers. FC's balance is also swept to its bank weekly.
+
+    Reported, never enforced. A thin balance must not stop a transfer
+    being attempted: ``source_transaction`` means Stripe accepts the
+    request while the charge is still settling, and ``balance_insufficient``
+    is already classified retryable, so the sweeper recovers on its own
+    once funds land. Gating here would turn a cash-flow wobble into unpaid
+    creators.
+
+    Returns a Sentry event id when the balance cannot cover what is owed,
+    otherwise ``None``. Swallows its own errors — a Stripe read that fails
+    must not fail the cron.
+    """
+    try:
+        owed = db.execute(
+            text(
+                "SELECT currency, count(*), "
+                "       coalesce(sum(net_creator_amount_cents), 0) "
+                "FROM payment_transactions "
+                "WHERE payout_model = 'connect' "
+                "  AND connect_transfer_status = 'pending' "
+                "GROUP BY currency"
+            )
+        ).fetchall()
+    except Exception:
+        logger.warning("balance headroom: could not total what is owed", exc_info=True)
+        return None
+
+    if not owed:
+        logger.info("balance headroom: nothing owed")
+        return None
+
+    try:
+        import stripe
+
+        from app.core.config import settings
+
+        stripe.api_key = settings.stripe_secret_key
+        balance = stripe.Balance.retrieve()
+        # ``balance.available`` entries are ``StripeObject``s, which support
+        # attribute access but not ``.get()``; a plain dict is the other way
+        # round. Read both shapes rather than assume, because getting this
+        # wrong would silently disable the monitor — the whole function
+        # swallows its own errors — rather than announce itself.
+        available: dict[str, int] = {}
+        for entry in balance.available:
+            ccy = _field(entry, "currency")
+            amount = _field(entry, "amount")
+            if ccy is None or amount is None:
+                continue
+            available[str(ccy).upper()] = int(amount)
+    except Exception:
+        logger.warning("balance headroom: could not read the Stripe balance", exc_info=True)
+        return None
+
+    short: dict[str, int] = {}
+    for currency, rows, owed_cents in owed:
+        ccy = str(currency).upper()
+        have = available.get(ccy, 0)
+        logger.info(
+            "balance headroom: %s owed=%s across %s row(s), available=%s",
+            ccy, owed_cents, rows, have,
+        )
+        if owed_cents > have:
+            short[ccy] = int(owed_cents) - have
+
+    if not short:
+        return None
+    return capture_job_summary(
+        "connect transfers owed exceed Fresh Collective's available balance",
+        level="error",
+        **{f"short_{ccy.lower()}_cents": cents for ccy, cents in short.items()},
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -192,6 +359,14 @@ def main() -> int:
             )
 
         report_partial_failures(report)
+        report_balance_headroom(db)
+
+        # Both of these come after the money work and report only. Each
+        # swallows its own errors, so neither can fail a sweep that
+        # transferred correctly — and neither adds a handler to ``main``.
+        reconcile_processing_fees(db)
+        report_payout_schedule_stragglers(db)
+
         return 0
     except Exception:
         logger.exception("connect transfer sweep failed")

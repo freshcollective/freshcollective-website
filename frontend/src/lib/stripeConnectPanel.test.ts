@@ -81,12 +81,18 @@ describe('every backend state renders', () => {
 })
 
 describe('labels and calls to action', () => {
-  test('not connected offers Connect Stripe', () => {
+  test('not set up offers bank payouts, not Stripe plumbing', () => {
+    // A creator is being offered an outcome they want — money in their bank
+    // account — not an integration with a payments company they did not
+    // choose. The word "Stripe" belongs in the body as reassurance about who
+    // handles verification, never in the badge or the button.
     const view = describeConnect(status('not_started'))
-    assert.equal(view.badge, 'Not connected')
+    assert.equal(view.badge, 'Not set up')
     assert.equal(view.action, 'connect')
-    assert.equal(view.actionLabel, 'Connect Stripe')
+    assert.equal(view.actionLabel, 'Set up bank payouts')
     assert.equal(view.showRefresh, false)
+    assert.match(view.headline, /bank account/)
+    assert.ok(!/Stripe/.test(view.badge + view.actionLabel + view.headline))
   })
 
   test('onboarding offers Continue setup', () => {
@@ -257,39 +263,56 @@ describe('payout schedule sentence', () => {
 })
 
 describe('fee disclosure', () => {
-  test('states the order: Stripe first, then FC, then the creator', () => {
+  test('only one deduction is disclosed, and it is Fresh Collective’s', () => {
+    // The order used to matter because two fees came off a sale. Only one
+    // does now: Fresh Collective absorbs card processing out of its own
+    // commission, so telling a creator their earnings are reduced by it
+    // would overstate what they lose.
     const text = feeDisclosure(800)
-    const stripeAt = text.indexOf('Stripe’s processing fee')
-    const fcAt = text.indexOf('Fresh Collective’s platform fee')
-    const creatorAt = text.indexOf('paid to you')
-    assert.ok(stripeAt >= 0 && fcAt > stripeAt && creatorAt > fcAt, text)
+    assert.match(text, /8% platform commission/)
+    assert.ok(!/processing fee comes out/.test(text), text)
+    assert.ok(!/still apply/.test(text), text)
   })
 
   test('the agreed wording, verbatim', () => {
     assert.equal(
       feeDisclosure(800),
-      'Stripe’s processing fee comes out of each sale first, then Fresh ' +
-      'Collective’s platform fee, and the remainder is paid to you.',
+      'Fresh Collective deducts its 8% platform commission from each sale ' +
+      'and you receive the rest. Fresh Collective covers the standard card ' +
+      'processing costs on your sales — they are not taken out of your ' +
+      'earnings.',
     )
   })
 
-  test('a 0% plan gets the explicit second sentence', () => {
+  test('the commission a creator actually pays is named, not implied', () => {
+    assert.match(feeDisclosure(400), /4% platform commission/)
+    assert.match(feeDisclosure(800), /8% platform commission/)
+  })
+
+  test('a 0% plan is told it receives the full amount', () => {
+    // The sentence most at risk of being got wrong for these creators. The
+    // old copy told a Founding Creator that "Stripe processing fees still
+    // apply", which is now untrue and understated their earnings.
     const text = feeDisclosure(0)
     assert.ok(
       text.includes(
-        'Your Fresh Collective platform fee is 0%. Stripe processing fees ' +
-        'still apply.',
+        'Your Fresh Collective commission is 0%, so you receive the full ' +
+        'amount of each sale.',
       ),
       text,
     )
+    assert.ok(!/still apply/.test(text), text)
   })
 
-  test('a 0% plan still gets the Stripe-fee disclosure itself', () => {
-    // The sentence most at risk of being skipped for these creators, and the
-    // one they most need — 0% is easily heard as "nothing is deducted".
-    assert.match(
-      feeDisclosure(0), /Stripe’s processing fee comes out of each sale first/,
-    )
+  test('every variant says who carries the processing cost', () => {
+    for (const bps of [0, 400, 800, null]) {
+      assert.match(
+        feeDisclosure(bps),
+        /Fresh Collective covers the standard card processing costs/,
+        `bps=${bps}`,
+      )
+      assert.match(feeDisclosure(bps), /not taken out of your earnings/, `bps=${bps}`)
+    }
   })
 
   test('no percentages, amounts or pricing tables are quoted', () => {
@@ -301,8 +324,11 @@ describe('fee disclosure', () => {
     }
   })
 
-  test('an unknown plan fee still discloses the order', () => {
-    assert.match(feeDisclosure(null), /Stripe’s processing fee comes out of each sale/)
+  test('an unknown plan fee still discloses that a commission is taken', () => {
+    // Better to be vague about the number than silent about the deduction.
+    const text = feeDisclosure(null)
+    assert.match(text, /deducts its platform commission/)
+    assert.ok(!/%/.test(text), text)
   })
 })
 
